@@ -1,0 +1,47 @@
+<Window
+    x:Class="LemoineTools.Lemoine.StepFlowWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+    Title="Lemoine Tools"
+    Width="500" Height="720"
+    MinWidth="420" MinHeight="560"
+    WindowStartupLocation="CenterScreen"
+    WindowStyle="None"
+    ResizeMode="CanResizeWithGrip"
+    AllowsTransparency="False"
+    ShowInTaskbar="True">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome
+            CaptionHeight="0"
+            ResizeBorderThickness="4"
+            GlassFrameThickness="0"
+            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <!-- Outer border gives the chromeless window a visible 1px edge -->
+    <Border x:Name="_outerBorder" BorderThickness="1">
+        <Grid x:Name="_root">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38" />   <!-- Toolbar       -->
+                <RowDefinition Height="Auto" /> <!-- Progress strip -->
+                <RowDefinition Height="*"  />   <!-- Step accordion -->
+                <RowDefinition Height="Auto" /> <!-- Log area       -->
+                <RowDefinition Height="42" />   <!-- Footer        -->
+            </Grid.RowDefinitions>
+
+            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0,0,0,1" />
+            <StackPanel x:Name="_progressStrip" Grid.Row="1" Margin="12,8,12,0" />
+            <Border x:Name="_stepListBorder" Grid.Row="2" Margin="12,0"
+                    BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_MD}" ClipToBounds="True">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="_stepStack" />
+                </ScrollViewer>
+            </Border>
+            <StackPanel x:Name="_logArea" Grid.Row="3" />
+            <Border x:Name="_footerBorder" Grid.Row="4" Padding="{DynamicResource LemoineTh_FooterPad}" />
+        </Grid>
+    </Border>
+</Window>

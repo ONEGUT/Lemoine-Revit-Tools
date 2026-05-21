@@ -1,0 +1,198 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Tools.Testing.LegendCreator;
+
+namespace LemoineTools.Lemoine.Controls
+{
+    /// <summary>
+    /// Live themed preview of the layout. Reads Layout + Rows in place and
+    /// renders one TextBlock-per-block with a LemoineSwatchGlyph beside it.
+    /// </summary>
+    public partial class LemoineLegendPreview : UserControl
+    {
+        private LegendLayoutConfig    _layout = new LegendLayoutConfig();
+        private List<LegendRowConfig> _rows   = new List<LegendRowConfig>();
+
+        public LemoineLegendPreview()
+        {
+            InitializeComponent();
+            Loaded += (s, e) => Redraw();
+        }
+
+        public void Update(LegendLayoutConfig layout, List<LegendRowConfig> rows)
+        {
+            _layout = layout ?? new LegendLayoutConfig();
+            _rows   = rows   ?? new List<LegendRowConfig>();
+            if (IsLoaded) Redraw();
+        }
+
+        private void Redraw()
+        {
+            _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            _root.Children.Clear();
+            _root.RowDefinitions.Clear();
+            _root.ColumnDefinitions.Clear();
+            _root.ColumnDefinitions.Add(new ColumnDefinition());
+
+            int r = 0;
+
+            // Title + subtitle
+            if (!string.IsNullOrEmpty(_layout.Title))
+            {
+                _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var t = new TextBlock
+                {
+                    Text = _layout.Title,
+                    FontWeight = FontWeights.SemiBold,
+                };
+                t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                t.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                t.FontSize = _layout.FontPt + 4;
+                Grid.SetRow(t, r++);
+                _root.Children.Add(t);
+            }
+            if (!string.IsNullOrEmpty(_layout.Subtitle))
+            {
+                _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var s = new TextBlock { Text = _layout.Subtitle, Margin = new Thickness(0, 0, 0, 6) };
+                s.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+                s.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                s.FontSize = _layout.FontPt;
+                Grid.SetRow(s, r++);
+                _root.Children.Add(s);
+            }
+
+            // Rows
+            foreach (var row in _rows)
+            {
+                _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var rowPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 2, 0, _layout.Gap),
+                };
+                foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
+                    rowPanel.Children.Add(RenderGroup(grp));
+                Grid.SetRow(rowPanel, r++);
+                _root.Children.Add(rowPanel);
+            }
+        }
+
+        private UIElement RenderGroup(LegendGroupConfig grp)
+        {
+            var border = new Border
+            {
+                Margin = new Thickness(0, 0, 14, 0),
+                Padding = new Thickness(2, 0, 2, 0),
+            };
+            var stack = new StackPanel { Orientation = Orientation.Vertical };
+
+            // Title underline
+            var titleRow = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 0, 0, 2) };
+            var titleTb = new TextBlock
+            {
+                Text = (grp.Title ?? "").ToUpperInvariant(),
+                FontWeight = FontWeights.SemiBold,
+            };
+            titleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            titleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            titleTb.FontSize = _layout.FontPt;
+            titleRow.Children.Add(titleTb);
+
+            // Underline
+            var underline = new Border
+            {
+                Height = 1,
+                Margin = new Thickness(0, 1, 0, 2),
+                Background = new SolidColorBrush(ResolveTradeColor(grp)),
+            };
+            titleRow.Children.Add(underline);
+            stack.Children.Add(titleRow);
+
+            // Blocks
+            foreach (var b in grp.Blocks ?? new List<LegendBlockConfig>())
+            {
+                if (!b.Visible) continue;
+                stack.Children.Add(RenderBlock(b));
+            }
+
+            border.Child = stack;
+            return border;
+        }
+
+        private UIElement RenderBlock(LegendBlockConfig b)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 1, 0, 1),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var glyph = new LemoineSwatchGlyph
+            {
+                Kind        = b.Kind ?? "square",
+                Fill        = b.Fill ?? "solid",
+                SwatchColor = ResolveBlockColor(b),
+                GlyphWidth  = _layout.SwatchW,
+                GlyphHeight = _layout.SwatchH,
+                Margin      = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            row.Children.Add(glyph);
+            var label = new TextBlock
+            {
+                Text = ResolveBlockName(b),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            label.FontSize = _layout.FontPt;
+            row.Children.Add(label);
+            return row;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Lookups
+        // ─────────────────────────────────────────────────────────────────────
+        private static Color ResolveTradeColor(LegendGroupConfig grp)
+        {
+            if (string.IsNullOrEmpty(grp.SourceTradeId)) return LemoineTheme.FallbackGrey;
+            var trade = AutoFiltersSettings.Instance.Trades?
+                .FirstOrDefault(t => t.Id == grp.SourceTradeId);
+            if (trade == null) return LemoineTheme.FallbackGrey;
+            return BrushHelper.ColorFromHex(trade.Color, LemoineTheme.FallbackGrey);
+        }
+
+        private static Color ResolveBlockColor(LegendBlockConfig b)
+        {
+            Color fallback = LemoineTheme.FallbackGrey;
+            if (b.ColorOverride) return BrushHelper.ColorFromHex(b.Color, fallback);
+            var rule = LookupRule(b);
+            if (rule != null) return BrushHelper.ColorFromHex(rule.SurfColor, fallback);
+            return BrushHelper.ColorFromHex(b.Color, fallback);
+        }
+
+        private static string ResolveBlockName(LegendBlockConfig b)
+        {
+            if (b.Custom) return b.Name ?? "";
+            if (b.NameOverride && !string.IsNullOrEmpty(b.Name)) return b.Name;
+            return LookupRule(b)?.Name ?? b.Name ?? "";
+        }
+
+        private static FilterRuleConfig? LookupRule(LegendBlockConfig b)
+        {
+            if (string.IsNullOrEmpty(b.SourceTradeId) || string.IsNullOrEmpty(b.SourceRuleId)) return null;
+            var trades = AutoFiltersSettings.Instance.Trades;
+            if (trades == null) return null;
+            var trade = trades.FirstOrDefault(t => t.Id == b.SourceTradeId);
+            if (trade?.Rules == null) return null;
+            return trade.Rules.FirstOrDefault(rr => rr.Id == b.SourceRuleId);
+        }
+    }
+}

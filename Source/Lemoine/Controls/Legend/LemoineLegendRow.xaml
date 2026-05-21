@@ -1,0 +1,15 @@
+<UserControl
+    x:Class="LemoineTools.Lemoine.Controls.LemoineLegendRow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="_root" Margin="10,0,10,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Border x:Name="_rowSplitTop"    Grid.Row="0" Height="5" AllowDrop="True" />
+        <Border x:Name="_rowBorder"      Grid.Row="1" BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_Card}" Padding="6" />
+        <Border x:Name="_rowSplitBottom" Grid.Row="2" Height="5" AllowDrop="True" />
+    </Grid>
+</UserControl>

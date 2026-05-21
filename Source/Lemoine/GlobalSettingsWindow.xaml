@@ -1,0 +1,48 @@
+<Window
+    x:Class="LemoineTools.Lemoine.GlobalSettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+    Title="Lemoine Tools — Settings"
+    Width="1080" Height="660"
+    MinWidth="860" MinHeight="540"
+    WindowStartupLocation="CenterScreen"
+    WindowStyle="None"
+    ResizeMode="CanResizeWithGrip"
+    AllowsTransparency="False"
+    ShowInTaskbar="True">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="4"
+                            GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+
+    <Border x:Name="_outerBorder" BorderThickness="1">
+        <Grid x:Name="_root">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38" />
+                <RowDefinition Height="*"  />
+                <RowDefinition Height="42" />
+            </Grid.RowDefinitions>
+
+            <Border x:Name="_toolbarBorder" Grid.Row="0" BorderThickness="0,0,0,1" ClipToBounds="True" />
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="190" />
+                    <ColumnDefinition Width="*"   />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="_railBorder" Grid.Column="0" BorderThickness="0,0,1,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="_railPanel" />
+                    </ScrollViewer>
+                </Border>
+                <Border x:Name="_contentBorder" Grid.Column="1" />
+            </Grid>
+
+            <Border x:Name="_footerBorder" Grid.Row="2" BorderThickness="0,1,0,0" ClipToBounds="True" />
+        </Grid>
+    </Border>
+</Window>

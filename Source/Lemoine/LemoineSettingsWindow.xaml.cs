@@ -1,0 +1,238 @@
+using System;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using LemoineTools.Lemoine.Controls;
+
+namespace LemoineTools.Lemoine
+{
+    /// <summary>
+    /// Modeless settings window — follows the exact same visual language as StepFlowWindow.
+    ///
+    /// Contains:
+    ///   • Appearance — theme selection (moved here from toolbar)
+    ///   • (Extensible) — add new sections via AddSection() from your tool or App.cs
+    ///
+    /// Usage:
+    ///   var settings = new LemoineSettingsWindow(currentTheme, onThemeChanged);
+    ///   settings.Owner = this;
+    ///   settings.Show();
+    ///
+    /// Adding a section from a tool (e.g. tool-specific defaults):
+    ///   settings.AddSection("My Tool Defaults", BuildMySettingsPanel());
+    /// </summary>
+    public partial class LemoineSettingsWindow : Window
+    {
+        private LemoineTheme                _currentTheme;
+        private readonly Action<LemoineTheme> _onThemeChanged;
+
+        // Keep track of which swatch border is "active" so we can re-border on switch
+        private Border[]? _swatches;
+
+        public LemoineSettingsWindow(LemoineTheme currentTheme, Action<LemoineTheme> onThemeChanged)
+        {
+            InitializeComponent();
+
+            _currentTheme   = currentTheme;
+            _onThemeChanged = onThemeChanged;
+
+            // Inherit theme resources from the parent window at construction time.
+            // The owner must be set before Show() for this to work.
+            Loaded += OnLoaded;
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            // Copy resource references from owner so DynamicResource works here too
+            if (Owner != null)
+                foreach (var key in Owner.Resources.Keys)
+                    Resources[key] = Owner.Resources[key];
+
+            ApplyChrome();
+            BuildAppearanceSection();
+            BuildFooter();
+            // Distinguish this window from GlobalSettingsWindow for screen readers
+            AutomationProperties.SetName(this, "Appearance Settings");
+        }
+
+        // ── Theme pass-through — called by StepFlowWindow when the theme changes ──
+        public void SyncTheme(LemoineTheme theme)
+        {
+            _currentTheme = theme;
+            theme.ApplyTo(Resources);
+            Background = theme.PageBg;
+            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            RefreshSwatches();
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Chrome
+        // ═════════════════════════════════════════════════════════════════════
+        private void ApplyChrome()
+        {
+            this.SetResourceReference(Window.BackgroundProperty, "LemoinePageBg");
+            _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
+            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            // LemoineTitleBar manages its own Surface/Border styling and drag-move.
+            // Close × — ghost styling only; red is reserved for destructive actions.
+            var closeX = LemoineControlStyles.BuildButton("x", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            closeX.Click += (s, e) => Close();
+            closeX.ToolTip = "Close";
+            _toolbarBorder.BorderThickness = new Thickness(0);
+            _toolbarBorder.Child = new Controls.LemoineTitleBar
+            {
+                Title        = "Appearance",
+                IconGlyph    = "",   // Segoe MDL2 "Color" paint-roller
+                RightContent = closeX,
+            };
+        }
+
+        // _outerBorder is declared by x:Name in XAML — no code-behind property needed
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Appearance section — theme selection
+        // ═════════════════════════════════════════════════════════════════════
+        private void BuildAppearanceSection()
+        {
+            _swatches = new Border[LemoineTheme.All.Length];
+
+            var panel = new StackPanel();
+
+            // Theme grid — one card per theme
+            var themeGrid = new WrapPanel { Orientation = Orientation.Horizontal };
+
+            for (int i = 0; i < LemoineTheme.All.Length; i++)
+            {
+                var theme     = LemoineTheme.All[i];
+                var captured  = theme;
+                var isActive  = theme == _currentTheme;
+
+                var card = new Border
+                {
+                    Width           = 160,
+                    Margin          = new Thickness(0, 0, 8, 8),
+                    BorderThickness = new Thickness(2),
+                    CornerRadius    = new CornerRadius(4),
+                    Padding         = new Thickness(10, 10, 10, 10),
+                    Cursor          = Cursors.Hand,
+                    Background      = theme.Raised,
+                    BorderBrush     = isActive ? theme.Accent : theme.Border,
+                };
+
+                // Mini preview strip
+                var preview = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Surface, Margin = new Thickness(0, 0, 0, 3) });
+                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Raised,  Margin = new Thickness(0, 0, 0, 3) });
+                var accentStrip = new StackPanel { Orientation = Orientation.Horizontal };
+                accentStrip.Children.Add(new Border { Width = 20, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Accent, Margin = new Thickness(0, 0, 3, 0) });
+                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Green,  Margin = new Thickness(0, 0, 3, 0) });
+                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Red });
+                preview.Children.Add(accentStrip);
+
+                // Theme name
+                var nameText = new TextBlock
+                {
+                    Text       = theme.Name,
+                    FontSize   = 11,
+                    FontWeight = FontWeights.Medium,
+                    Foreground = theme.Text,
+                    FontFamily = theme.UiFont,
+                };
+
+                var activeTag = new Border
+                {
+                    Visibility  = isActive ? Visibility.Visible : Visibility.Collapsed,
+                    Padding     = new Thickness(5, 1, 5, 1),
+                    CornerRadius= new CornerRadius(2),
+                    Margin      = new Thickness(0, 3, 0, 0),
+                    Background  = theme.AccentDim,
+                };
+                var activeText = new TextBlock { Text = "Active", Foreground = theme.Accent, FontFamily = theme.MonoFont };
+                activeTag.Child = activeText;
+
+                var inner = new StackPanel();
+                inner.Children.Add(preview);
+                inner.Children.Add(nameText);
+                inner.Children.Add(activeTag);
+                card.Child = inner;
+
+                card.MouseLeftButtonDown += (s, e) => SelectTheme(captured);
+
+                _swatches[i] = card;
+                themeGrid.Children.Add(card);
+            }
+
+            panel.Children.Add(themeGrid);
+            AddSection("Appearance", panel);
+        }
+
+        private void SelectTheme(LemoineTheme theme)
+        {
+            _currentTheme = theme;
+            _onThemeChanged?.Invoke(theme);
+            RefreshSwatches();
+        }
+
+        private void RefreshSwatches()
+        {
+            for (int i = 0; i < LemoineTheme.All.Length; i++)
+            {
+                var t      = LemoineTheme.All[i];
+                var card   = _swatches?[i];
+                if (card == null) continue;
+                bool active = t == _currentTheme;
+                card.BorderBrush = active ? t.Accent : t.Border;
+
+                // Refresh the active tag visibility
+                if (card.Child is StackPanel sp && sp.Children.Count >= 3 && sp.Children[2] is Border tag)
+                    tag.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Public API — add tool-specific settings sections
+        // ═════════════════════════════════════════════════════════════════════
+        /// <summary>
+        /// Add a named settings section below the built-in ones.
+        /// Call from App.OnStartup or from a tool viewmodel after creating the window.
+        ///
+        /// Example:
+        ///   settingsWindow.AddSection("Ceiling Grid Defaults", BuildMyPanel());
+        /// </summary>
+        public void AddSection(string title, UIElement content)
+        {
+            // LemoineSectionCard is the canonical reusable primitive for titled sections.
+            // It bakes in the Rec-4-corrected header style (11pt TextSub, +4px top margin).
+            var card = new Controls.LemoineSectionCard
+            {
+                Header      = title,
+                CardContent = content,
+                Margin      = new Thickness(0, 0, 0, 16),
+            };
+            _settingsStack.Children.Add(card);
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Footer
+        // ═════════════════════════════════════════════════════════════════════
+        private void BuildFooter()
+        {
+            _footerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var closeBtn = LemoineControlStyles.BuildButton("Close", LemoineControlStyles.LemoineButtonVariant.Primary);
+            closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
+            closeBtn.Click += (s, e) => Close();
+
+            _footerBorder.Child = closeBtn;
+        }
+
+        // CreateFlatButtonTemplate() removed — use LemoineControlStyles.BuildFlatButtonTemplate()
+        // or LemoineControlStyles.BuildButton() instead.
+
+        private static ControlTemplate CreateFlatButtonTemplate() =>
+            LemoineControlStyles.BuildFlatButtonTemplate();
+    }
+}

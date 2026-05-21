@@ -1,0 +1,10 @@
+<UserControl
+    x:Class="LemoineTools.Lemoine.Controls.LemoineTitleBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Chrome border — code-behind applies theme resource references on Loaded -->
+    <Border x:Name="_chrome" BorderThickness="0,0,0,1">
+        <DockPanel x:Name="_dp" LastChildFill="True" />
+    </Border>
+</UserControl>
