@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Lemoine Tools</Name>
+    <Assembly>LemoineTools.dll</Assembly>
+    <FullClassName>LemoineTools.App</FullClassName>
+    <!-- Replace with a unique GUID: [System.Guid]::NewGuid() in PowerShell -->
+    <AddInId>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</AddInId>
+    <VendorId>LemoineTools</VendorId>
+    <VendorDescription>Lemoine Tools — MEP Automation Suite</VendorDescription>
+  </AddIn>
+</RevitAddIns>

@@ -1,0 +1,331 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+
+namespace LemoineTools.Tools.Ceilings
+{
+    /// <summary>
+    /// Executes ceiling grid Revit API work on the main thread when
+    /// triggered by ExternalEvent.Raise() from a viewmodel's Run() call.
+    ///
+    /// All properties are set by the viewmodel before Raise() is called.
+    /// The Dispatcher callbacks (PushLog / OnProgress / OnComplete) are
+    /// invoked on the WPF thread via the Dispatcher — safe from Execute().
+    /// </summary>
+    public class CeilingGridEventHandler : IExternalEventHandler
+    {
+        public enum ToolMode { Project, Reproject }
+
+        // ── Set by viewmodel before Raise() ───────────────────────────────────
+        public ToolMode Mode           { get; set; }
+        public string   DwgPath        { get; set; } = null!;
+        public string   ReprojectMode  { get; set; } = "all";   // "preselected" | "all"
+
+        // Pre-selected element IDs — set by ReprojectCeilingGridsCommand
+        // on the Revit main thread before the window opens.
+        public IList<ElementId> PreSelectedIds { get; set; } = new List<ElementId>();
+
+        // ── Callbacks — set by viewmodel, invoked on WPF thread ──────────────
+        public Action<string, string>?     PushLog    { get; set; }
+        public Action<int, int, int, int>? OnProgress { get; set; }
+        public Action<int, int, int>?      OnComplete { get; set; }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Execute — called on Revit main thread
+        // ═════════════════════════════════════════════════════════════════════
+        public void Execute(UIApplication app)
+        {
+            var doc  = app.ActiveUIDocument.Document;
+            var view = doc.ActiveView;
+
+            int pass = 0, fail = 0, skip = 0;
+
+            try
+            {
+                if (Mode == ToolMode.Project)
+                    RunProject(doc, view, ref pass, ref fail, ref skip);
+                else
+                    RunReproject(doc, view, ref pass, ref fail, ref skip);
+            }
+            catch (Exception ex)
+            {
+                Log($"Fatal error: {ex.Message}", "fail");
+                fail++;
+            }
+
+            // Signal completion back to WPF — safe to call from Execute()
+            // because the callbacks dispatch to the WPF message pump.
+            Progress(100, pass, fail, skip);
+            Complete(pass, fail, skip);
+        }
+
+        public string GetName() => $"LemoineTools.CeilingGridEventHandler.{Mode}";
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Project
+        // ═════════════════════════════════════════════════════════════════════
+        private void RunProject(Document doc, View view, ref int pass, ref int fail, ref int skip)
+        {
+            if (string.IsNullOrWhiteSpace(DwgPath))
+            {
+                Log("No DWG path set.", "fail"); fail++; return;
+            }
+
+            using (var tx = new Transaction(doc, "Project Ceiling Grids"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                // Ceilings
+                var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
+                if (ceilings.Count == 0)
+                {
+                    Log("No ceiling elements in active view.", "fail");
+                    fail++; tx.RollBack(); return;
+                }
+                Log($"Found {ceilings.Count} ceiling(s).", "info");
+
+                // Soffit faces
+                var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
+                if (faces.Count == 0)
+                {
+                    Log("Could not extract soffit faces.", "fail");
+                    fail++; tx.RollBack(); return;
+                }
+
+                // Import DWG
+                var importId = ImportDwg(doc, view);
+                if (importId == ElementId.InvalidElementId) { fail++; tx.RollBack(); return; }
+
+                // Extract curves
+                var cadCurves = ExtractCadCurves(doc, importId);
+                if (cadCurves.Count == 0)
+                {
+                    Log("No curves found in DWG.", "fail");
+                    doc.Delete(importId); fail++; tx.RollBack(); return;
+                }
+                Log($"Extracted {cadCurves.Count} curve(s) from DWG.", "info");
+
+                // Delete import before curve creation
+                doc.Delete(importId);
+
+                // Project
+                var cache   = new Dictionary<double, SketchPlane>();
+                int noMatch = 0;
+                int total   = cadCurves.Count;
+                int done    = 0;
+
+                foreach (var cad in cadCurves)
+                {
+                    var projected = CeilingGridHelpers.ProjectCurveOntoCeilings(cad, faces);
+                    if (projected.Count == 0) { noMatch++; }
+                    else
+                    {
+                        foreach (var proj in projected)
+                        {
+                            try
+                            {
+                                CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
+                                pass++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Curve creation failed: {ex.Message}", "fail");
+                                fail++;
+                            }
+                        }
+                    }
+                    done++;
+                    Progress((int)(done * 90.0 / total), pass, fail, skip);
+                }
+
+                skip += noMatch;
+                tx.Commit();
+
+                Log($"Complete — {pass} model curve(s) created across {cache.Count} elevation(s).", "pass");
+                if (noMatch > 0) Log($"{noMatch} CAD curve(s) had no ceiling overlap and were skipped.", "info");
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Reproject
+        // ═════════════════════════════════════════════════════════════════════
+        private void RunReproject(Document doc, View view, ref int pass, ref int fail, ref int skip)
+        {
+            // Resolve source curves
+            IList<ModelCurve> sourceCurves;
+            if (ReprojectMode == "preselected" && PreSelectedIds?.Count > 0)
+            {
+                sourceCurves = PreSelectedIds
+                    .Select(id => doc.GetElement(id))
+                    .OfType<ModelCurve>()
+                    .ToList();
+                Log($"Using {sourceCurves.Count} pre-selected curve(s).", "info");
+            }
+            else
+            {
+                sourceCurves = CeilingGridHelpers.GetModelCurvesInView(doc, view);
+                Log($"Found {sourceCurves.Count} ModelCurve(s) in active view.", "info");
+            }
+
+            if (sourceCurves.Count == 0)
+            {
+                Log("No source curves found.", "fail"); fail++; return;
+            }
+
+            // Ceilings
+            var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
+            if (ceilings.Count == 0)
+            {
+                Log("No ceiling elements in active view.", "fail"); fail++; return;
+            }
+
+            var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
+            if (faces.Count == 0)
+            {
+                Log("Could not extract soffit faces.", "fail"); fail++; return;
+            }
+            Log($"Found {ceilings.Count} ceiling(s), {faces.Count} face(s).", "info");
+
+            using (var tx = new Transaction(doc, "Reproject Ceiling Grids"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                // Capture geometry first
+                var sourceGeom = sourceCurves
+                    .Select(mc => (Id: mc.Id, Curve: mc.GeometryCurve))
+                    .Where(g => g.Curve != null)
+                    .ToList();
+
+                // Project all, then delete
+                var projected = new List<Curve>();
+                int noMatch   = 0;
+                int total     = sourceGeom.Count;
+                int done      = 0;
+
+                foreach (var (_, src) in sourceGeom)
+                {
+                    var projs = CeilingGridHelpers.ProjectCurveOntoCeilings(src, faces);
+                    if (projs.Count == 0) noMatch++;
+                    else projected.AddRange(projs);
+                    done++;
+                    Progress((int)(done * 60.0 / total), pass, fail, noMatch);
+                }
+
+                // Delete originals
+                doc.Delete(sourceGeom.Select(g => g.Id).ToList());
+
+                // Create new curves
+                var cache = new Dictionary<double, SketchPlane>();
+                total = projected.Count;
+                done  = 0;
+
+                foreach (var proj in projected)
+                {
+                    try
+                    {
+                        CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
+                        pass++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Curve creation failed: {ex.Message}", "fail");
+                        fail++;
+                    }
+                    done++;
+                    Progress(60 + (int)(done * 30.0 / Math.Max(total, 1)), pass, fail, noMatch);
+                }
+
+                skip += noMatch;
+                tx.Commit();
+
+                Log($"Complete — {pass} curve(s) created across {cache.Count} elevation(s).", "pass");
+                if (noMatch > 0)
+                    Log($"{noMatch} curve(s) had no ceiling overlap and were skipped.", "info");
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // DWG helpers
+        // ═════════════════════════════════════════════════════════════════════
+        private ElementId ImportDwg(Document doc, View view)
+        {
+            try
+            {
+                var opts = new DWGImportOptions
+                {
+                    Placement    = ImportPlacement.Origin,
+                    Unit         = ImportUnit.Default,
+                    ColorMode    = ImportColorMode.Preserved,
+                    ThisViewOnly = true,
+                };
+                bool ok = doc.Import(DwgPath, opts, view, out ElementId id);
+                if (ok) { Log($"DWG imported: {System.IO.Path.GetFileName(DwgPath)}", "info"); return id; }
+                Log("DWG import returned false — check the file path.", "fail");
+                return ElementId.InvalidElementId;
+            }
+            catch (Exception ex)
+            {
+                Log($"DWG import error: {ex.Message}", "fail");
+                return ElementId.InvalidElementId;
+            }
+        }
+
+        private static IList<Curve> ExtractCadCurves(Document doc, ElementId importId)
+        {
+            var curves   = new List<Curve>();
+            var instance = doc.GetElement(importId) as ImportInstance;
+            if (instance == null) return curves;
+            var geom = instance.get_Geometry(new Options { ComputeReferences = false });
+            if (geom != null) CollectCurves(geom, Transform.Identity, curves);
+            return curves;
+        }
+
+        private static void CollectCurves(GeometryElement geom, Transform t, List<Curve> curves)
+        {
+            foreach (GeometryObject obj in geom)
+            {
+                switch (obj)
+                {
+                    case GeometryInstance gi:
+                        CollectCurves(gi.GetInstanceGeometry(t), t, curves);
+                        break;
+                    case Line line:
+                        curves.Add(line.CreateTransformed(t) as Curve ?? line); break;
+                    case Arc arc:
+                        curves.Add(arc.CreateTransformed(t) as Curve ?? arc); break;
+                    case NurbSpline sp:
+                        curves.Add(sp.CreateTransformed(t) as Curve ?? sp); break;
+                    case PolyLine poly:
+                        var pts = poly.GetCoordinates();
+                        for (int i = 0; i < pts.Count - 1; i++)
+                        {
+                            XYZ p0 = t.OfPoint(pts[i]), p1 = t.OfPoint(pts[i + 1]);
+                            if (!p0.IsAlmostEqualTo(p1)) curves.Add(Line.CreateBound(p0, p1));
+                        }
+                        break;
+                }
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Helpers
+        // ═════════════════════════════════════════════════════════════════════
+        private static void ConfigureFailures(Transaction tx)
+        {
+            var opts = tx.GetFailureHandlingOptions();
+            opts.SetClearAfterRollback(true);
+            opts.SetDelayedMiniWarnings(true);
+            tx.SetFailureHandlingOptions(opts);
+        }
+
+        // Invoke callbacks — safe to call from Execute() because the viewmodel
+        // passes Dispatcher.Invoke-wrapped lambdas.
+        private void Log(string text, string status) => PushLog?.Invoke(text, status);
+        private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
+        private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
+    }
+}

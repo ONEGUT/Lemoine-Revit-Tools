@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>LemoineTools</AssemblyName>
+    <RootNamespace>LemoineTools</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>8.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RevitDir>C:\Program Files\Autodesk\Revit 2024</RevitDir>
+  </PropertyGroup>
+
+  <!--
+    SDK-style project — all .cs files under Source\ compile automatically.
+    Folder structure:
+      Source\App.cs
+      Source\Commands\OpenSettingsCommand.cs
+      Source\Commands\AutoFilters\        — Auto Filters commands (ns: LemoineTools.Commands)
+      Source\Commands\Ceilings\           — Ceiling Grids + Ceiling Heatmap commands (ns: LemoineTools.Commands)
+      Source\Commands\LinkViews\          — Link Views + Replicate Dependent Views commands (ns: LemoineTools.Commands)
+      Source\Commands\ModifyElements\     — Split/Extend wall commands (ns: LemoineTools.Commands)
+      Source\Commands\Debuggers\          — Debug tool commands (ns: LemoineTools.Commands)
+      Source\Commands\Testing\            — In-progress/experimental tool commands (ns: LemoineTools.Commands)
+      Source\Tools\AutoFilters\           — Auto Filters view-models + settings (ns: LemoineTools.Tools.AutoFilters)
+      Source\Tools\Ceilings\             — Ceiling Grids + Ceiling Heatmap view-models (ns: LemoineTools.Tools.Ceilings)
+      Source\Tools\LinkViews\            — Link Views view-models + settings (ns: LemoineTools.Tools.LinkViews)
+      Source\Tools\ModifyElements\       — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
+      Source\Tools\Debuggers\            — Debug view-models (ns: LemoineTools.Tools.Debuggers)
+      Source\Tools\Testing\CoordSet\     — Coordination Drawing Set (ns: LemoineTools.Tools.Testing)
+      Source\Tools\Testing\LegendCreator\ — Legend Creator (ns: LemoineTools.Tools.Testing)
+      Source\Lemoine\                    — library (StepFlowWindow, GlobalSettingsWindow, controls)
+      Source\Lemoine\AutoFilters\        — GlobalSettingsWindow partial for Auto Filters tab
+      Source\Lemoine\Ceilings\           — GlobalSettingsWindow partial for Ceilings tab
+      Source\Lemoine\LinkViews\          — GlobalSettingsWindow partial for Link Views tab
+      Source\Lemoine\Testing\            — GlobalSettingsWindow partial for Testing tab
+      Source\Helpers\                    — shared utilities (MepColorMap)
+      Source\Resources\                  — embedded resources
+
+    *** NEW TOOL POLICY ***
+    All new tools must be created in Source\Commands\Testing\ and Source\Tools\Testing\
+    FIRST for development and review. Once stable and approved, they graduate to their
+    own named folder under Commands\ and Tools\ with a descriptive namespace.
+  -->
+
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitDir)\RevitAPIUI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
+  <ItemGroup>
+    <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />
+  </ItemGroup>
+
+</Project>
