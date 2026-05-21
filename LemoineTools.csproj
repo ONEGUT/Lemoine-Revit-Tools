@@ -12,7 +12,7 @@
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RevitDir>C:\Program Files\Autodesk\Revit 2024</RevitDir>
-    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\LemoineTools\</DeployDir>
+    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\</DeployDir>
     <OutputPath>$(DeployDir)</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
