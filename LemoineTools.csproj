@@ -12,6 +12,10 @@
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RevitDir>C:\Program Files\Autodesk\Revit 2024</RevitDir>
+    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\LemoineTools\</DeployDir>
+    <OutputPath>$(DeployDir)</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
   <!--
@@ -55,6 +59,12 @@
       <HintPath>$(RevitDir)\RevitAPIUI.dll</HintPath>
       <Private>False</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="LemoineTools.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
