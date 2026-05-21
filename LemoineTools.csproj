@@ -72,4 +72,9 @@
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />
   </ItemGroup>
 
+  <!-- IcoMoon Free icon font — embedded as a WPF pack resource -->
+  <ItemGroup>
+    <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
+  </ItemGroup>
+
 </Project>

@@ -61,9 +61,11 @@ namespace LemoineTools.Lemoine
 
         // ── Fonts ─────────────────────────────────────────────────────────
         /// <summary>Monospaced font family used for code or coordinate display (typically Consolas).</summary>
-        public FontFamily MonoFont { get; set; } = null!;
+        public FontFamily MonoFont  { get; set; } = null!;
         /// <summary>General UI font family used throughout dialogs and controls (typically Segoe UI).</summary>
-        public FontFamily UiFont   { get; set; } = null!;
+        public FontFamily UiFont    { get; set; } = null!;
+        /// <summary>IcoMoon Free icon font — shared across all themes.</summary>
+        public FontFamily IconFont  { get; set; } = LemoineTheme._iconFont;
 
         // ── Toggle knob ───────────────────────────────────────────────────
         /// <summary>Toggle-switch knob colour when the switch is ON (rendered over the <see cref="Accent"/> track).</summary>
@@ -107,11 +109,19 @@ namespace LemoineTools.Lemoine
             resources["LemoineGreenDim"] = GreenDim;
             resources["LemoineRed"]      = Red;
             resources["LemoineRedDim"]   = RedDim;
-            resources["LemoineMonoFont"] = MonoFont;
-            resources["LemoineUiFont"]   = UiFont;
+            resources["LemoineMonoFont"]  = MonoFont;
+            resources["LemoineUiFont"]    = UiFont;
+            resources["LemoineIconFont"]  = IconFont;
             resources["LemoineKnobOn"]   = KnobOn;
             resources["LemoineKnobOff"]  = KnobOff;
         }
+
+        // ─────────────────────────────────────────────────────────────────
+        // Shared icon font — same for every theme
+        // ─────────────────────────────────────────────────────────────────
+        private static readonly FontFamily _iconFont = new FontFamily(
+            new Uri("pack://application:,,,/LemoineTools;component/"),
+            "./Source/Resources/Fonts/IcoMoonFree.ttf#IcoMoon-Free");
 
         // ─────────────────────────────────────────────────────────────────
         // Convenience: parse a hex string to a frozen SolidColorBrush
