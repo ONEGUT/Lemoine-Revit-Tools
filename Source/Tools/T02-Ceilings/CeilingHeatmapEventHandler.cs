@@ -1,0 +1,707 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+
+namespace LemoineTools.Tools.Ceilings
+{
+    public class CeilingHeatmapEventHandler : IExternalEventHandler
+    {
+        // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
+        public List<ElementId>          SelectedViewIds { get; set; } = new List<ElementId>();
+        public bool                     DeleteExisting  { get; set; } = true;
+        public bool                     IncludeLinks    { get; set; } = false;
+        public bool                     PlaceTags       { get; set; } = false;
+        public double                   ElevTolerance   { get; set; } = 1.0 / 96.0; // 1/8 in → ft
+        public Autodesk.Revit.DB.Color  ColorLow        { get; set; } = new Autodesk.Revit.DB.Color(0,   0,   255);
+        public Autodesk.Revit.DB.Color  ColorMid        { get; set; } = new Autodesk.Revit.DB.Color(0,   255, 0);
+        public Autodesk.Revit.DB.Color  ColorHigh       { get; set; } = new Autodesk.Revit.DB.Color(255, 0,   0);
+
+        // ── Callbacks (BeginInvoke-wrapped by StepFlowWindow) ─────────────────
+        public Action<string, string>?     PushLog    { get; set; }
+        public Action<int, int, int, int>? OnProgress { get; set; }
+        public Action<int, int, int>?      OnComplete { get; set; }
+
+        public string GetName() => "LemoineTools.Tools.Ceilings.CeilingHeatmapEventHandler";
+
+        public void Execute(UIApplication app)
+        {
+            var doc  = app.ActiveUIDocument.Document;
+            int pass = 0, fail = 0, skip = 0;
+
+            try
+            {
+                RunHeatmap(doc, ref pass, ref fail, ref skip);
+            }
+            catch (Exception ex)
+            {
+                Log($"Fatal error: {ex.Message}", "fail");
+                fail++;
+            }
+
+            Progress(100, pass, fail, skip);
+            Complete(pass, fail, skip);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        private void RunHeatmap(Document doc, ref int pass, ref int fail, ref int skip)
+        {
+            if (SelectedViewIds == null || SelectedViewIds.Count == 0)
+            {
+                Log("No views selected.", "fail"); fail++; return;
+            }
+
+            // ── Phase 1: Scan ceiling height offsets (0–20%) ─────────────────────
+            Log("Scanning ceiling height offsets from level…", "info");
+
+            var heightBuckets = new List<double>();
+
+            int viewCount = SelectedViewIds.Count;
+            for (int vi = 0; vi < viewCount; vi++)
+            {
+                var viewId = SelectedViewIds[vi];
+                var vp     = doc.GetElement(viewId) as ViewPlan;
+                if (vp == null) { skip++; continue; }
+
+                foreach (Element el in new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(Ceiling))
+                    .WhereElementIsNotElementType())
+                {
+                    double heightAbove = el.get_Parameter(
+                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
+                    AddBucket(heightBuckets, heightAbove);
+                }
+
+                if (IncludeLinks)
+                    ScanLinkedCeilings(doc, vp, heightBuckets);
+
+                Progress((int)((vi + 1) * 20.0 / viewCount), pass, fail, skip);
+            }
+
+            if (heightBuckets.Count == 0)
+            {
+                Log("No ceiling height offsets found in the selected views.", "fail");
+                fail++; return;
+            }
+
+            heightBuckets.Sort();
+            Log($"Found {heightBuckets.Count} distinct height offset bucket{(heightBuckets.Count == 1 ? "" : "s")}.", "info");
+
+            // ── Phase 2: Resolve Revit parameters (20–30%) ───────────────────────
+            ElementId ceilingCatId  = new ElementId(BuiltInCategory.OST_Ceilings);
+            ElementId heightParamId = GetCeilingHeightParamId(doc);
+            if (heightParamId == null || heightParamId == ElementId.InvalidElementId)
+            {
+                Log("Could not resolve the ceiling height parameter.", "fail"); fail++; return;
+            }
+
+            ElementId solidFillId = GetSolidFillPatternId(doc);
+            if (solidFillId == ElementId.InvalidElementId)
+                Log("Solid fill pattern not found — color overrides will be applied without fill pattern.", "info");
+
+            var rampColors = BuildHeatmapRamp(heightBuckets.Count);
+            Progress(30, pass, fail, skip);
+
+            // ── Phase 3: Delete existing heatmap filters (30–40%) ────────────────
+            if (DeleteExisting)
+                DeleteHeatmapFilters(doc, ref fail);
+
+            Progress(40, pass, fail, skip);
+
+            // ── Phase 4: Create/reuse filters, apply overrides (40–95%) ──────────
+            Log("Creating and applying view filters…", "info");
+
+            var existingFilters = new FilteredElementCollector(doc)
+                .OfClass(typeof(ParameterFilterElement))
+                .Cast<ParameterFilterElement>()
+                .ToDictionary(f => f.Name);
+
+            int created = 0, reused = 0;
+
+            using (var tx = new Transaction(doc, "Ceiling Height Offset Heatmap"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                int total = heightBuckets.Count;
+                for (int i = 0; i < total; i++)
+                {
+                    double heightOffset = heightBuckets[i];
+                    Autodesk.Revit.DB.Color color = rampColors[i];
+
+                    double heightFt    = UnitUtils.ConvertFromInternalUnits(heightOffset, UnitTypeId.Feet);
+                    string filterName  = $"Ceiling Heatmap — {FormatFtIn(heightFt)} AFF";
+
+                    ParameterFilterElement? pfe;
+                    if (existingFilters.TryGetValue(filterName, out pfe))
+                    {
+                        reused++;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            FilterRule rule = ParameterFilterRuleFactory.CreateEqualsRule(
+                                heightParamId, heightOffset, ElevTolerance);
+                            var epf = new ElementParameterFilter(rule);
+                            pfe = ParameterFilterElement.Create(
+                                doc, filterName,
+                                new List<ElementId> { ceilingCatId },
+                                epf);
+                            existingFilters[filterName] = pfe;
+                            created++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error creating filter '{filterName}': {ex.Message}", "fail");
+                            fail++; continue;
+                        }
+                    }
+
+                    var ogs = new OverrideGraphicSettings();
+                    if (solidFillId != ElementId.InvalidElementId)
+                    {
+                        ogs.SetSurfaceForegroundPatternId(solidFillId);
+                        ogs.SetSurfaceForegroundPatternColor(color);
+                        ogs.SetSurfaceForegroundPatternVisible(true);
+                        ogs.SetCutForegroundPatternId(solidFillId);
+                        ogs.SetCutForegroundPatternColor(color);
+                        ogs.SetCutForegroundPatternVisible(true);
+                    }
+
+                    foreach (ElementId viewId in SelectedViewIds)
+                    {
+                        var vp = doc.GetElement(viewId) as ViewPlan;
+                        if (vp == null) continue;
+                        try
+                        {
+                            var existing = new HashSet<long>(vp.GetFilters().Select(id => id.Value));
+                            if (!existing.Contains(pfe.Id.Value))
+                                vp.AddFilter(pfe.Id);
+                            vp.SetFilterVisibility(pfe.Id, true);
+                            vp.SetFilterOverrides(pfe.Id, ogs);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error applying filter to view: {ex.Message}", "fail");
+                        }
+                    }
+
+                    pass++;
+                    Progress(40 + (int)((i + 1) * 50.0 / total), pass, fail, skip);
+                }
+
+                tx.Commit();
+            }
+
+            // ── Phase 5: Place ceiling tags (90–98%) ──────────────────────────────
+            if (PlaceTags)
+                PlaceCeilingTags(doc, ref pass, ref fail, ref skip);
+
+            // ── Summary ───────────────────────────────────────────────────────────
+            double lowFt  = UnitUtils.ConvertFromInternalUnits(heightBuckets[0],       UnitTypeId.Feet);
+            double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last(),    UnitTypeId.Feet);
+
+            Log($"Complete — {created} filter(s) created, {reused} reused.", "pass");
+            Log($"Height offset range: {FormatFtIn(lowFt)} AFF (low) → {FormatFtIn(highFt)} AFF (high).", "info");
+            Log($"Applied to {SelectedViewIds.Count} view{(SelectedViewIds.Count == 1 ? "" : "s")}.", "info");
+        }
+
+        // ── Phase 5: Place ceiling tags ───────────────────────────────────────────
+        private void PlaceCeilingTags(Document doc, ref int pass, ref int fail, ref int skip)
+        {
+            Log("Placing ceiling tags…", "info");
+
+            FamilySymbol? tagSymbol = GetOrLoadTagSymbol(doc);
+            if (tagSymbol == null)
+            {
+                Log("Ceiling tag family not found and could not be loaded — skipping tag placement.", "fail");
+                fail++; return;
+            }
+
+            if (!tagSymbol.IsActive)
+            {
+                using (var txActivate = new Transaction(doc, "Activate Ceiling Tag Symbol"))
+                {
+                    ConfigureFailures(txActivate);
+                    txActivate.Start();
+                    tagSymbol.Activate();
+                    txActivate.Commit();
+                }
+            }
+
+            int viewCount  = SelectedViewIds.Count;
+            int tagPlaced  = 0;
+            int tagDeleted = 0;
+
+            var ceilingTagCatId = new ElementId(BuiltInCategory.OST_CeilingTags);
+
+            using (var tx = new Transaction(doc, "Place Ceiling Tags"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                for (int vi = 0; vi < viewCount; vi++)
+                {
+                    var viewId = SelectedViewIds[vi];
+                    var vp     = doc.GetElement(viewId) as ViewPlan;
+                    if (vp == null) { skip++; continue; }
+
+                    foreach (var staleId in new FilteredElementCollector(doc, viewId)
+                        .OfClass(typeof(IndependentTag))
+                        .Cast<IndependentTag>()
+                        .Where(t => t.Category?.Id == ceilingTagCatId)
+                        .Select(t => t.Id)
+                        .ToList())
+                    {
+                        try { doc.Delete(staleId); tagDeleted++; }
+                        catch { /* protected or already gone */ }
+                    }
+
+                    foreach (Element el in new FilteredElementCollector(doc, viewId)
+                        .OfClass(typeof(Ceiling))
+                        .WhereElementIsNotElementType())
+                    {
+                        try
+                        {
+                            XYZ tagPt = GetTagPoint(el as Ceiling, doc);
+                            IndependentTag.Create(
+                                doc, viewId, new Reference(el),
+                                false, TagMode.TM_ADDBY_CATEGORY,
+                                TagOrientation.Horizontal, tagPt);
+                            tagPlaced++; pass++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Could not place tag on host ceiling {el.Id}: {ex.Message}", "fail");
+                            fail++;
+                        }
+                    }
+
+                    var linkInstances = new FilteredElementCollector(doc, viewId)
+                        .OfClass(typeof(RevitLinkInstance))
+                        .Cast<RevitLinkInstance>()
+                        .Where(li => li.GetLinkDocument() != null)
+                        .ToList();
+
+                    foreach (RevitLinkInstance link in linkInstances)
+                    {
+                        Document  linkDoc  = link.GetLinkDocument();
+                        Transform xform    = link.GetTotalTransform();
+                        var bbFilter = GetViewBoundsFilter(vp, xform.Inverse);
+
+                        foreach (Element el in new FilteredElementCollector(linkDoc)
+                            .OfClass(typeof(Ceiling))
+                            .WherePasses(bbFilter)
+                            .WhereElementIsNotElementType())
+                        {
+                            try
+                            {
+                                Reference linkedRef = new Reference(el).CreateLinkReference(link);
+                                XYZ tagPt = xform.OfPoint(GetTagPoint(el as Ceiling, linkDoc));
+
+                                IndependentTag.Create(
+                                    doc, viewId, linkedRef,
+                                    false, TagMode.TM_ADDBY_CATEGORY,
+                                    TagOrientation.Horizontal, tagPt);
+                                tagPlaced++; pass++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"Could not place tag on linked ceiling {el.Id}: {ex.Message}", "fail");
+                                fail++;
+                            }
+                        }
+                    }
+
+                    Progress(90 + (int)((vi + 1) * 8.0 / viewCount), pass, fail, skip);
+                }
+
+                tx.Commit();
+            }
+
+            if (tagDeleted > 0)
+                Log($"Tags placed: {tagPlaced} ({tagDeleted} existing removed and replaced, " +
+                    $"{Math.Max(0, tagPlaced - tagDeleted)} net new).", "pass");
+            else
+                Log($"Tags placed: {tagPlaced} (none previously existed).", "pass");
+        }
+
+        private FamilySymbol? GetOrLoadTagSymbol(Document doc)
+        {
+            const string FamilyName   = "Ceiling Tag";
+            const string ResourceName = "LemoineTools.Source.Resources.RevitFamilys.Ceiling Tag.rfa";
+
+            Family? existing = new FilteredElementCollector(doc)
+                .OfClass(typeof(Family))
+                .Cast<Family>()
+                .FirstOrDefault(f => f.Name.Equals(FamilyName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+                return existing.GetFamilySymbolIds()
+                    .Select(id => doc.GetElement(id) as FamilySymbol)
+                    .FirstOrDefault(s => s != null);
+
+            string tempPath = Path.Combine(Path.GetTempPath(), "Ceiling Tag.rfa");
+            try
+            {
+                using (Stream? stream = System.Reflection.Assembly
+                           .GetExecutingAssembly()
+                           .GetManifestResourceStream(ResourceName))
+                {
+                    if (stream == null)
+                    {
+                        Log($"Embedded resource '{ResourceName}' not found in assembly. " +
+                             "Verify the .rfa is marked as EmbeddedResource in the .csproj.", "fail");
+                        return null;
+                    }
+                    using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+                        stream.CopyTo(fs);
+                }
+
+                Family? loaded;
+                using (var tx = new Transaction(doc, "Load Ceiling Tag Family"))
+                {
+                    ConfigureFailures(tx);
+                    tx.Start();
+                    doc.LoadFamily(tempPath, out loaded);
+                    tx.Commit();
+                }
+
+                return loaded?.GetFamilySymbolIds()
+                    .Select(id => doc.GetElement(id) as FamilySymbol)
+                    .FirstOrDefault(s => s != null);
+            }
+            catch (Exception ex)
+            {
+                Log($"Failed to load ceiling tag family from embedded resource: {ex.Message}", "fail");
+                return null;
+            }
+            finally
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            }
+        }
+
+        private static XYZ GetTagPoint(Ceiling? ceiling, Document doc)
+        {
+            if (ceiling == null) return XYZ.Zero;
+
+            var opts = new Options { ComputeReferences = false, IncludeNonVisibleObjects = false };
+            GeometryElement? geom = ceiling.get_Geometry(opts);
+
+            Face? bottomFace = null;
+            if (geom != null)
+            {
+                foreach (GeometryObject obj in geom)
+                {
+                    var solid = obj as Solid;
+                    if (solid == null || solid.Volume <= 1e-9) continue;
+                    foreach (Face face in solid.Faces)
+                    {
+                        try
+                        {
+                            BoundingBoxUV fbb = face.GetBoundingBox();
+                            UV mid = new UV(
+                                (fbb.Min.U + fbb.Max.U) * 0.5,
+                                (fbb.Min.V + fbb.Max.V) * 0.5);
+                            XYZ n = face.ComputeNormal(mid);
+                            if (n.Z < -0.9) { bottomFace = face; break; }
+                        }
+                        catch { /* malformed face — skip */ }
+                    }
+                    if (bottomFace != null) break;
+                }
+            }
+
+            if (bottomFace != null)
+            {
+                BoundingBoxUV uvBox = bottomFace.GetBoundingBox();
+
+                UV uvMid = new UV(
+                    (uvBox.Min.U + uvBox.Max.U) * 0.5,
+                    (uvBox.Min.V + uvBox.Max.V) * 0.5);
+                if (bottomFace.IsInside(uvMid))
+                    return bottomFace.Evaluate(uvMid);
+
+                UV? uvCentroid = ComputeOuterLoopCentroidUV(bottomFace);
+                if (uvCentroid != null && bottomFace.IsInside(uvCentroid))
+                    return bottomFace.Evaluate(uvCentroid);
+
+                const int N = 7;
+                for (int ui = 1; ui < N; ui++)
+                for (int vi = 1; vi < N; vi++)
+                {
+                    var uv = new UV(
+                        uvBox.Min.U + (uvBox.Max.U - uvBox.Min.U) * ui / N,
+                        uvBox.Min.V + (uvBox.Max.V - uvBox.Min.V) * vi / N);
+                    if (bottomFace.IsInside(uv))
+                        return bottomFace.Evaluate(uv);
+                }
+            }
+
+            BoundingBoxXYZ? bb = ceiling.get_BoundingBox(null);
+            if (bb != null)
+                return new XYZ(
+                    (bb.Min.X + bb.Max.X) * 0.5,
+                    (bb.Min.Y + bb.Max.Y) * 0.5,
+                     bb.Min.Z);
+            return XYZ.Zero;
+        }
+
+        private static UV? ComputeOuterLoopCentroidUV(Face face)
+        {
+            try
+            {
+                EdgeArrayArray loops = face.EdgeLoops;
+                if (loops.Size == 0) return null;
+                EdgeArray outerLoop = loops.get_Item(0);
+
+                double uSum = 0, vSum = 0;
+                int    count = 0;
+
+                foreach (Edge edge in outerLoop)
+                {
+                    foreach (XYZ pt in edge.Tessellate())
+                    {
+                        IntersectionResult? ir = face.Project(pt);
+                        if (ir == null) continue;
+                        uSum  += ir.UVPoint.U;
+                        vSum  += ir.UVPoint.V;
+                        count++;
+                    }
+                }
+                return count > 0 ? new UV(uSum / count, vSum / count) : null;
+            }
+            catch { return null; }
+        }
+
+        private static BoundingBoxIntersectsFilter GetViewBoundsFilter(
+            ViewPlan view, Transform invLinkXform)
+        {
+            double levelElev = view.GenLevel?.Elevation ?? 0.0;
+            double zMaxWorld = levelElev + 30.0;
+            try
+            {
+                Level? nextLevel = new FilteredElementCollector(view.Document)
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .Where(l => l.Elevation > levelElev + 1.0)
+                    .OrderBy(l => l.Elevation)
+                    .FirstOrDefault();
+                if (nextLevel != null)
+                    zMaxWorld = nextLevel.Elevation;
+            }
+            catch { }
+
+            double zMin = invLinkXform.OfPoint(new XYZ(0, 0, levelElev - 1.0)).Z;
+            double zMax = invLinkXform.OfPoint(new XYZ(0, 0, zMaxWorld)).Z;
+            if (zMin > zMax) { double tmp = zMin; zMin = zMax; zMax = tmp; }
+
+            if (!view.CropBoxActive)
+            {
+                return new BoundingBoxIntersectsFilter(new Outline(
+                    new XYZ(-1e6, -1e6, zMin),
+                    new XYZ( 1e6,  1e6, zMax)));
+            }
+
+            double minX = double.MaxValue, minY = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue;
+            bool   got  = false;
+            try
+            {
+                foreach (CurveLoop loop in view.GetCropRegionShapeManager().GetCropShape())
+                    foreach (Curve curve in loop)
+                        foreach (XYZ pt in curve.Tessellate())
+                        {
+                            if (pt.X < minX) minX = pt.X;
+                            if (pt.Y < minY) minY = pt.Y;
+                            if (pt.X > maxX) maxX = pt.X;
+                            if (pt.Y > maxY) maxY = pt.Y;
+                            got = true;
+                        }
+            }
+            catch { }
+
+            if (!got)
+            {
+                BoundingBoxXYZ cb = view.CropBox;
+                Transform      t  = cb.Transform;
+                foreach (XYZ local in new[]
+                {
+                    new XYZ(cb.Min.X, cb.Min.Y, 0),
+                    new XYZ(cb.Max.X, cb.Min.Y, 0),
+                    new XYZ(cb.Max.X, cb.Max.Y, 0),
+                    new XYZ(cb.Min.X, cb.Max.Y, 0),
+                })
+                {
+                    XYZ w = t.OfPoint(local);
+                    if (w.X < minX) minX = w.X;
+                    if (w.Y < minY) minY = w.Y;
+                    if (w.X > maxX) maxX = w.X;
+                    if (w.Y > maxY) maxY = w.Y;
+                }
+            }
+
+            XYZ p1 = invLinkXform.OfPoint(new XYZ(minX, minY, 0));
+            XYZ p2 = invLinkXform.OfPoint(new XYZ(maxX, maxY, 0));
+
+            return new BoundingBoxIntersectsFilter(new Outline(
+                new XYZ(Math.Min(p1.X, p2.X), Math.Min(p1.Y, p2.Y), zMin),
+                new XYZ(Math.Max(p1.X, p2.X), Math.Max(p1.Y, p2.Y), zMax)));
+        }
+
+        private void DeleteHeatmapFilters(Document doc, ref int fail)
+        {
+            var heatmapFilters = new FilteredElementCollector(doc)
+                .OfClass(typeof(ParameterFilterElement))
+                .Cast<ParameterFilterElement>()
+                .Where(f => f.Name.StartsWith("Ceiling Heatmap — "))
+                .ToList();
+
+            if (heatmapFilters.Count == 0)
+            {
+                Log("No existing heatmap filters found.", "info");
+                return;
+            }
+
+            Log($"Removing {heatmapFilters.Count} existing heatmap filter(s)…", "info");
+
+            var allViews = new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => !v.IsTemplate)
+                .ToList();
+
+            using (var tx = new Transaction(doc, "Delete Ceiling Heatmap Filters"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                foreach (var pfe in heatmapFilters)
+                {
+                    foreach (View v in allViews)
+                    {
+                        try
+                        {
+                            if (v.GetFilters().Contains(pfe.Id))
+                                v.RemoveFilter(pfe.Id);
+                        }
+                        catch { /* view type may not support filters */ }
+                    }
+
+                    try   { doc.Delete(pfe.Id); }
+                    catch (Exception ex)
+                    {
+                        Log($"Could not delete filter '{pfe.Name}': {ex.Message}", "fail");
+                        fail++;
+                    }
+                }
+
+                tx.Commit();
+            }
+        }
+
+        private void AddBucket(List<double> buckets, double heightOffset)
+        {
+            foreach (double b in buckets)
+                if (Math.Abs(b - heightOffset) <= ElevTolerance) return;
+            buckets.Add(heightOffset);
+        }
+
+        private void ScanLinkedCeilings(
+            Document hostDoc, ViewPlan view,
+            List<double> buckets)
+        {
+            var links = new FilteredElementCollector(hostDoc, view.Id)
+                .OfClass(typeof(RevitLinkInstance))
+                .Cast<RevitLinkInstance>()
+                .Where(li => li.GetLinkDocument() != null)
+                .ToList();
+
+            foreach (RevitLinkInstance link in links)
+            {
+                Document?  linkDoc   = link.GetLinkDocument();
+                if (linkDoc == null) continue;
+
+                Transform linkXform = link.GetTotalTransform();
+                var bbFilter = GetViewBoundsFilter(view, linkXform.Inverse);
+
+                foreach (Element el in new FilteredElementCollector(linkDoc)
+                    .OfClass(typeof(Ceiling))
+                    .WherePasses(bbFilter)
+                    .WhereElementIsNotElementType())
+                {
+                    double heightAbove = el.get_Parameter(
+                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
+                    AddBucket(buckets, heightAbove);
+                }
+            }
+        }
+
+        private static ElementId GetCeilingHeightParamId(Document doc)
+        {
+            var bipId = new ElementId(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+            Element? sample = new FilteredElementCollector(doc)
+                .OfClass(typeof(Ceiling))
+                .WhereElementIsNotElementType()
+                .FirstOrDefault();
+            if (sample?.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM) != null)
+                return bipId;
+            return ElementId.InvalidElementId;
+        }
+
+        private static ElementId GetSolidFillPatternId(Document doc)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(FillPatternElement))
+                .Cast<FillPatternElement>()
+                .FirstOrDefault(fp => fp.GetFillPattern().IsSolidFill)
+                ?.Id ?? ElementId.InvalidElementId;
+        }
+
+        private static string FormatFtIn(double valueFt)
+        {
+            int totalInches = (int)Math.Round(valueFt * 12.0);
+            int ft          = totalInches / 12;
+            int inches      = Math.Abs(totalInches % 12);
+            return $"{ft}'-{inches}\"";
+        }
+
+        private List<Autodesk.Revit.DB.Color> BuildHeatmapRamp(int count)
+        {
+            if (count == 1)
+                return new List<Autodesk.Revit.DB.Color> { ColorLow };
+
+            var colors = new List<Autodesk.Revit.DB.Color>(count);
+            for (int i = 0; i < count; i++)
+            {
+                double t = (double)i / (count - 1);
+                Autodesk.Revit.DB.Color from, to;
+                double seg;
+                if (t <= 0.5) { from = ColorLow; to = ColorMid;  seg = t * 2.0; }
+                else          { from = ColorMid;  to = ColorHigh; seg = (t - 0.5) * 2.0; }
+
+                byte r = (byte)Math.Round(from.Red   + seg * (to.Red   - from.Red));
+                byte g = (byte)Math.Round(from.Green + seg * (to.Green - from.Green));
+                byte b = (byte)Math.Round(from.Blue  + seg * (to.Blue  - from.Blue));
+                colors.Add(new Autodesk.Revit.DB.Color(r, g, b));
+            }
+            return colors;
+        }
+
+        private static void ConfigureFailures(Transaction tx)
+        {
+            var opts = tx.GetFailureHandlingOptions();
+            opts.SetClearAfterRollback(true);
+            opts.SetDelayedMiniWarnings(true);
+            tx.SetFailureHandlingOptions(opts);
+        }
+
+        private void Log(string t, string s)      => PushLog?.Invoke(t, s);
+        private void Progress(int p, int pa, int f, int s) => OnProgress?.Invoke(p, pa, f, s);
+        private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
+    }
+}
