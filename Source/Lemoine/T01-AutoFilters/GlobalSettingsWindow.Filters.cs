@@ -2156,6 +2156,7 @@ namespace LemoineTools.Lemoine
                     Cursor       = disabled ? Cursors.Arrow : Cursors.Hand,
                     Opacity      = disabled ? 0.45 : 1.0,
                     IsHitTestVisible = !disabled,
+                    Background   = Brushes.Transparent,
                 };
 
                 var iconTb = new TextBlock
@@ -2191,7 +2192,7 @@ namespace LemoineTools.Lemoine
                     row.MouseEnter += (s, e) =>
                         row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
                     row.MouseLeave += (s, e) =>
-                        row.ClearValue(Border.BackgroundProperty);
+                        row.Background = Brushes.Transparent;
                     row.MouseLeftButtonUp += (s, e) =>
                     {
                         e.Handled = true;
@@ -2400,6 +2401,7 @@ namespace LemoineTools.Lemoine
                     CornerRadius = new CornerRadius(3),
                     Cursor       = Cursors.Hand,
                     Margin       = new Thickness(0, 0, 0, 0),
+                    Background   = Brushes.Transparent,
                 };
 
                 var icon = new TextBlock
@@ -2433,7 +2435,7 @@ namespace LemoineTools.Lemoine
                 btn.MouseEnter += (s, e) =>
                     btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
                 btn.MouseLeave += (s, e) =>
-                    btn.ClearValue(Border.BackgroundProperty);
+                    btn.Background = Brushes.Transparent;
                 btn.MouseLeftButtonUp += (s, e) =>
                 {
                     e.Handled = true;
@@ -2472,6 +2474,7 @@ namespace LemoineTools.Lemoine
                 CornerRadius = new CornerRadius(3),
                 Margin       = new Thickness(4, 0, 4, 0),
                 Cursor       = Cursors.Hand,
+                Background   = Brushes.Transparent,
             };
             var restoreRowContent = new StackPanel { Orientation = Orientation.Horizontal };
             var restoreIcon = new TextBlock
@@ -2502,7 +2505,7 @@ namespace LemoineTools.Lemoine
             restoreRow.MouseEnter += (s, e) =>
                 restoreRow.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
             restoreRow.MouseLeave += (s, e) =>
-                restoreRow.ClearValue(Border.BackgroundProperty);
+                restoreRow.Background = Brushes.Transparent;
             restoreRow.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
