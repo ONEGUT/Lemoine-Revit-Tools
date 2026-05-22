@@ -5,5 +5,18 @@
       "Bash(git commit *)",
       "Bash(git push *)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"This is the Lemoine Revit Tools repo. For any WPF UI task — building, modifying, or debugging WPF windows or UserControls for a Revit or Navisworks plugin — always invoke the /revit-navisworks-ui skill before writing any code.\"}}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
