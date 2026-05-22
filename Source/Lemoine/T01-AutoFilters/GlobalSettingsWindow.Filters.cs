@@ -86,7 +86,61 @@ namespace LemoineTools.Lemoine
             leftDock.Children.Add(addRuleOuter);
 
             // Rule list (fills remaining)
-            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0) };
+            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0), AllowDrop = true };
+
+            // Handle drops that land in the gaps between pills (not on any rowBorder).
+            _fRuleListPanel.DragOver += (s, e) =>
+            {
+                if (!(e.Data.GetData(DataFormats.StringFormat) is string d) || !d.StartsWith("RULE:")) return;
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+                if (_dragSourceBorder == null) return;
+                var children = _fRuleListPanel.Children;
+                int srcIdx = children.IndexOf(_dragSourceBorder);
+                if (srcIdx < 0) return;
+                // Find the insert position from the cursor Y within the panel
+                double curY = e.GetPosition(_fRuleListPanel).Y;
+                int insertIdx = children.Count;
+                double runY = 0;
+                for (int i = 0; i < children.Count; i++)
+                {
+                    if (children[i] is FrameworkElement fe)
+                    {
+                        if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                        runY += fe.ActualHeight + fe.Margin.Bottom;
+                    }
+                }
+                insertIdx = Math.Max(0, Math.Min(insertIdx, children.Count - 1));
+                if (srcIdx < insertIdx) insertIdx--;
+                if (insertIdx == srcIdx) return;
+                children.RemoveAt(srcIdx);
+                children.Insert(insertIdx, _dragSourceBorder);
+            };
+            _fRuleListPanel.Drop += (s, e) =>
+            {
+                e.Handled = true;
+                if (!(e.Data.GetData(DataFormats.StringFormat) is string srcData) || !srcData.StartsWith("RULE:")) return;
+                var activeTrade = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
+                if (activeTrade == null) return;
+                var newOrderIds = _fRuleListPanel.Children
+                    .OfType<FrameworkElement>()
+                    .Select(el => el.Tag as string)
+                    .Where(id => id != null)
+                    .ToList();
+                var reordered = newOrderIds
+                    .Select(id => activeTrade.Rules.FirstOrDefault(r => r.Id == id))
+                    .Where(r => r != null)
+                    .ToList();
+                if (reordered.Count == activeTrade.Rules.Count)
+                {
+                    activeTrade.Rules.Clear();
+                    foreach (var r in reordered) activeTrade.Rules.Add(r!);
+                }
+                _dragSourceBorder = null;
+                _dragRuleId       = null;
+                FRefreshRuleList();
+            };
+
             var ruleScroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
@@ -401,15 +455,25 @@ namespace LemoineTools.Lemoine
                 popup.IsOpen = true;
             };
 
-            // Row: [pill dropdown] [trade ID] [edit btn] — all left-aligned
-            var headerRow = new StackPanel
+            // Row: [pill dropdown] [trade ID] [edit btn] — left, [Templates ˅] — right
+            var tbTemplates = FlatSmBtn("Templates  ˅");
+            tbTemplates.VerticalAlignment = VerticalAlignment.Center;
+            tbTemplates.Click += (s, e) => ShowTemplatesPopup(tbTemplates);
+
+            var leftRow = new StackPanel
             {
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            headerRow.Children.Add(pillBorder);
-            headerRow.Children.Add(tradeIdLbl);
-            headerRow.Children.Add(editBtn);
+            leftRow.Children.Add(pillBorder);
+            leftRow.Children.Add(tradeIdLbl);
+            leftRow.Children.Add(editBtn);
+
+            var headerRow = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(tbTemplates, Dock.Right);
+            headerRow.Children.Add(tbTemplates);
+            headerRow.Children.Add(leftRow);
+
             _fTradeSwitcherBorder.Child = headerRow;
         }
 
@@ -726,7 +790,7 @@ namespace LemoineTools.Lemoine
                 // Build ghost from rule data instead of snapshotting the element.
                 // Element snapshots fail for non-active rows because their background
                 // is Brushes.Transparent, producing an invisible bitmap.
-                ShowDragGhost(rule.Name, BuildSubtext(), rule.SurfColor ?? trade.Color);
+                ShowDragGhost(rule.Name, BuildSubtext(), rule.SurfColor ?? trade.Color, rule.Enabled);
                 rowBorder.Opacity = 0;
                 // IsHitTestVisible intentionally left true so the invisible (Opacity=0)
                 // source pill can still receive Drop when the user releases in the gap.
