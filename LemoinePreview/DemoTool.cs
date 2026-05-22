@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
@@ -17,10 +16,10 @@ namespace LemoineTools.Preview
     {
         private readonly PreviewState _state;
 
-        private string                      _filePath       = "";
-        private IReadOnlyCollection<string> _levels         = Array.Empty<string>();
-        private int                         _tagOffset      = 25;
-        private Dictionary<string, bool>    _toggles        = new Dictionary<string, bool>();
+        private string                      _filePath  = "";
+        private IReadOnlyCollection<string> _levels    = Array.Empty<string>();
+        private int                         _tagOffset = 25;
+        private Dictionary<string, bool>    _toggles   = new Dictionary<string, bool>();
 
         public DemoTool(PreviewState state)
         {
@@ -31,7 +30,7 @@ namespace LemoineTools.Preview
             _toggles   = PreviewState.ParseToggles(state.DemoToggles);
         }
 
-        // ── ILemoineTool identity ──────────────────────────────────────────────
+        // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Room Tagger  —  Preview Demo";
         public string RunLabel => "Tag Rooms →";
 
@@ -44,24 +43,21 @@ namespace LemoineTools.Preview
 
         public event EventHandler? ValidationChanged;
 
-        // ── Step content ──────────────────────────────────────────────────────
         public FrameworkElement? GetStepContent(string stepId)
         {
             switch (stepId)
             {
-                case "file": return BuildFileStep();
-                case "levels": return BuildLevelsStep();
+                case "file":    return BuildFileStep();
+                case "levels":  return BuildLevelsStep();
                 case "options": return BuildOptionsStep();
-                default: return null;
+                default:        return null;
             }
         }
 
         private FrameworkElement BuildFileStep()
         {
             var stack = new StackPanel();
-
-            var hint = MakeHint("Provide a .xlsx or .csv with at least a 'Room Name' column. Leave blank to use existing Revit room names.");
-            stack.Children.Add(hint);
+            stack.Children.Add(MakeHint("Provide a .xlsx or .csv with a 'Room Name' column. Leave blank to use existing Revit room names."));
 
             var fb = new LemoineFileBrowser
             {
@@ -78,22 +74,19 @@ namespace LemoineTools.Preview
                 ValidationChanged?.Invoke(this, EventArgs.Empty);
             };
             stack.Children.Add(fb);
-
             return stack;
         }
 
         private FrameworkElement BuildLevelsStep()
         {
             var stack = new StackPanel();
-
-            var hint = MakeHint("Choose which floor levels to tag. All rooms on selected levels will receive tags.");
-            stack.Children.Add(hint);
+            stack.Children.Add(MakeHint("Choose which floor levels to tag. All rooms on selected levels will receive tags."));
 
             var groups = new Dictionary<string, List<string>>
             {
-                ["Above Grade"]  = new List<string> { "Level 1", "Level 2", "Level 3", "Level 4", "Roof Plant" },
-                ["Below Grade"]  = new List<string> { "B1 Basement", "B2 Sub-Basement" },
-                ["Mezzanines"]   = new List<string> { "Mezzanine A", "Mezzanine B" },
+                ["Above Grade"] = new List<string> { "Level 1", "Level 2", "Level 3", "Level 4", "Roof Plant" },
+                ["Below Grade"] = new List<string> { "B1 Basement", "B2 Sub-Basement" },
+                ["Mezzanines"]  = new List<string> { "Mezzanine A", "Mezzanine B" },
             };
 
             var mt = new LemoineMultiSelectTabs();
@@ -106,7 +99,6 @@ namespace LemoineTools.Preview
                 ValidationChanged?.Invoke(this, EventArgs.Empty);
             };
             stack.Children.Add(mt);
-
             return stack;
         }
 
@@ -114,7 +106,6 @@ namespace LemoineTools.Preview
         {
             var stack = new StackPanel();
 
-            // ── Tag offset stepper ────────────────────────────────────────────
             var offsetLabel = MakeHint("Offset from wall face (mm)");
             offsetLabel.Margin = new Thickness(0, 0, 0, 4);
             stack.Children.Add(offsetLabel);
@@ -127,7 +118,7 @@ namespace LemoineTools.Preview
                 Step     = 5,
                 Margin   = new Thickness(0, 0, 0, 16),
             };
-            stepper.ValueChanged += v =>
+            stepper.ValueChanged += (_, v) =>
             {
                 _tagOffset = v;
                 _state.DemoTagOffset = v;
@@ -135,16 +126,16 @@ namespace LemoineTools.Preview
             };
             stack.Children.Add(stepper);
 
-            // ── Toggle switches ───────────────────────────────────────────────
-            var toggles = new LemoineToggleSwitches();
-            var items = new[]
+            var toggleItems = new List<ToggleItem>
             {
-                new LemoineToggleSwitches.ToggleItem { Id = "tag_room_name", Label = "Room name",   Desc = "Include the room name on each tag",        DefaultOn = true  },
-                new LemoineToggleSwitches.ToggleItem { Id = "tag_area",      Label = "Area (m²)",   Desc = "Include the calculated gross room area",    DefaultOn = true  },
-                new LemoineToggleSwitches.ToggleItem { Id = "tag_number",    Label = "Room number",  Desc = "Include the room number parameter",         DefaultOn = false },
-                new LemoineToggleSwitches.ToggleItem { Id = "tag_level",     Label = "Level name",   Desc = "Append the level name beneath each tag",    DefaultOn = false },
+                new ToggleItem { Id = "tag_room_name", Label = "Room name",    Desc = "Include the room name on each tag",      DefaultOn = true  },
+                new ToggleItem { Id = "tag_area",      Label = "Area (m²)",    Desc = "Include the calculated gross room area",  DefaultOn = true  },
+                new ToggleItem { Id = "tag_number",    Label = "Room number",   Desc = "Include the room number parameter",       DefaultOn = false },
+                new ToggleItem { Id = "tag_level",     Label = "Level name",    Desc = "Append the level name beneath each tag",  DefaultOn = false },
             };
-            toggles.SetItems(items, _toggles);
+
+            var toggles = new LemoineToggleSwitches();
+            toggles.SetItems(toggleItems, _toggles);
             toggles.StateChanged += s =>
             {
                 _toggles = new Dictionary<string, bool>(s);
@@ -152,14 +143,13 @@ namespace LemoineTools.Preview
                 _state.Save();
             };
             stack.Children.Add(toggles);
-
             return stack;
         }
 
         // ── Validation + summary ──────────────────────────────────────────────
         public bool IsValid(string stepId) => stepId switch
         {
-            "file"   => true, // optional — blank means use Revit room names
+            "file"   => true,
             "levels" => _levels.Count > 0,
             _        => true,
         };
@@ -176,7 +166,7 @@ namespace LemoineTools.Preview
             _         => "",
         };
 
-        // ── Run (simulated — no Revit API) ────────────────────────────────────
+        // ── Simulated run ─────────────────────────────────────────────────────
         public void Run(
             Action<string, string>     pushLog,
             Action<int, int, int, int> onProgress,
@@ -185,25 +175,20 @@ namespace LemoineTools.Preview
             var levels = _levels.ToList();
 
             if (!string.IsNullOrWhiteSpace(_filePath))
-                pushLog($"Loaded spreadsheet: {System.IO.Path.GetFileName(_filePath)}", "info");
+                pushLog($"Loaded: {System.IO.Path.GetFileName(_filePath)}", "info");
             else
                 pushLog("No spreadsheet — using existing Revit room names", "info");
 
-            int totalRooms = levels.Count * 4; // simulate 4 rooms per level
             int pass = 0;
-
             for (int i = 0; i < levels.Count; i++)
             {
                 pushLog($"Processing {levels[i]}…", "info");
-
-                int roomsOnLevel = 4;
-                pass += roomsOnLevel;
-
+                pass += 4;
                 onProgress((i + 1) * 100 / levels.Count, pass, 0, 0);
-                pushLog($"  Tagged {roomsOnLevel} rooms on {levels[i]}", "pass");
+                pushLog($"  Tagged 4 rooms on {levels[i]}", "pass");
             }
 
-            if (_toggles.TryGetValue("tag_area", out var area) && area)
+            if (_toggles.TryGetValue("tag_area", out var tagArea) && tagArea)
                 pushLog("Area values included on all tags", "pass");
 
             onComplete(pass, 0, 0);
@@ -258,17 +243,6 @@ namespace LemoineTools.Preview
                                 Items = new List<string> { "Name", "Room Name", "Description", "Comments", "Mark" },
                             },
                         },
-                        new LemoineSettingDef
-                        {
-                            Id      = "number_param",
-                            Label   = "Room number parameter",
-                            Kind    = "search",
-                            Default = "Number",
-                            Options = new SearchOpts
-                            {
-                                Items = new List<string> { "Number", "Room Number", "Mark", "ID" },
-                            },
-                        },
                     },
                 },
             },
@@ -284,15 +258,9 @@ namespace LemoineTools.Preview
             }
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
         private static TextBlock MakeHint(string text)
         {
-            var tb = new TextBlock
-            {
-                Text         = text,
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 0, 0, 10),
-            };
+            var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");

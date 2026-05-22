@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Shell;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
+using LemoineTools.Lemoine.Controls.Input;
 
 namespace LemoineTools.Preview
 {
@@ -24,9 +26,9 @@ namespace LemoineTools.Preview
         private Border _contentHost = null!;
 
         // Theme bar handles — updated on theme/scale change
-        private readonly List<(Border swatch, LemoineTheme theme)> _swatches  = new();
-        private readonly List<(Border pill,   LemoineUiSize size)> _sizePills = new();
-        private readonly Dictionary<string, Border> _tabPills = new();
+        private readonly List<(Border swatch, LemoineTheme theme)> _swatches  = new List<(Border, LemoineTheme)>();
+        private readonly List<(Border pill,   LemoineUiSize size)> _sizePills = new List<(Border, LemoineUiSize)>();
+        private readonly Dictionary<string, Border> _tabPills = new Dictionary<string, Border>();
 
         // The icon font must point to THIS assembly, not LemoineTools
         private static readonly FontFamily _iconFont = new FontFamily(
@@ -48,9 +50,9 @@ namespace LemoineTools.Preview
 
             WindowChrome.SetWindowChrome(this, new WindowChrome
             {
-                CaptionHeight        = 0,
+                CaptionHeight         = 0,
                 ResizeBorderThickness = new Thickness(4),
-                GlassFrameThickness  = new Thickness(0),
+                GlassFrameThickness   = new Thickness(0),
                 UseAeroCaptionButtons = false,
             });
 
@@ -122,14 +124,14 @@ namespace LemoineTools.Preview
             header.MouseLeftButtonDown += (_, e) => { if (e.ClickCount >= 1) DragMove(); };
 
             // Close
-            var closeBtn = LemoineControlStyles.BuildSmallButton("✕", LemoineButtonVariant.Ghost);
+            var closeBtn = LemoineControlStyles.BuildSmallButton("✕", LemoineControlStyles.LemoineButtonVariant.Ghost);
             closeBtn.VerticalAlignment = VerticalAlignment.Center;
             closeBtn.Click += (_, _) => Close();
             DockPanel.SetDock(closeBtn, Dock.Right);
             dp.Children.Add(closeBtn);
 
             // Minimise
-            var minBtn = LemoineControlStyles.BuildSmallButton("─", LemoineButtonVariant.Ghost);
+            var minBtn = LemoineControlStyles.BuildSmallButton("─", LemoineControlStyles.LemoineButtonVariant.Ghost);
             minBtn.VerticalAlignment = VerticalAlignment.Center;
             minBtn.Click += (_, _) => WindowState = WindowState.Minimized;
             DockPanel.SetDock(minBtn, Dock.Right);
@@ -261,8 +263,8 @@ namespace LemoineTools.Preview
                 ("icons",    "Icons",            LemoineIcon.StarFull),
             })
             {
-                var tabId     = id;
-                var tabPill   = BuildTabPill(label, icon);
+                var tabId   = id;
+                var tabPill = BuildTabPill(label, icon);
                 tabPill.MouseLeftButtonUp += (_, _) => ShowTab(tabId);
                 _tabPills[id] = tabPill;
                 row.Children.Add(tabPill);
@@ -302,26 +304,26 @@ namespace LemoineTools.Preview
             _activeTabId = tabId;
 
             // Update tab pill highlights
-            foreach (var (id, pill) in _tabPills)
+            foreach (var pair in _tabPills)
             {
-                var isActive = id == tabId;
-                pill.BorderThickness = isActive ? new Thickness(0, 0, 0, 2) : new Thickness(0);
+                var isActive = pair.Key == tabId;
+                pair.Value.BorderThickness = isActive ? new Thickness(0, 0, 0, 2) : new Thickness(0);
                 if (isActive)
-                    pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    pair.Value.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
                 else
-                    pill.BorderBrush = null;
+                    pair.Value.BorderBrush = null;
 
-                var label = ((StackPanel)pill.Child).Children.OfType<TextBlock>().FirstOrDefault();
-                if (label != null)
-                    label.SetResourceReference(TextBlock.ForegroundProperty,
+                var labelTb = ((StackPanel)pair.Value.Child).Children.OfType<TextBlock>().FirstOrDefault();
+                if (labelTb != null)
+                    labelTb.SetResourceReference(TextBlock.ForegroundProperty,
                         isActive ? "LemoineText" : "LemoineTextSub");
             }
 
             _contentHost.Child = tabId switch
             {
-                "demo"   => GetDemoContent(),
-                "icons"  => GetIconsContent(),
-                _        => GetControlsContent(),
+                "demo"  => GetDemoContent(),
+                "icons" => GetIconsContent(),
+                _       => GetControlsContent(),
             };
         }
 
@@ -360,35 +362,33 @@ namespace LemoineTools.Preview
         // ── Buttons ───────────────────────────────────────────────────────────
         private UIElement BuildButtonsSection()
         {
-            var content = new StackPanel { Spacing = 8 };
+            var content = new StackPanel();
 
-            var normalRow = new StackPanel { Orientation = Orientation.Horizontal };
-            normalRow.Spacing = 8;
-
+            var normalRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             foreach (var (label, variant) in new[]
             {
-                ("Ghost",   LemoineButtonVariant.Ghost),
-                ("Primary", LemoineButtonVariant.Primary),
-                ("Danger",  LemoineButtonVariant.Danger),
+                ("Ghost",   LemoineControlStyles.LemoineButtonVariant.Ghost),
+                ("Primary", LemoineControlStyles.LemoineButtonVariant.Primary),
+                ("Danger",  LemoineControlStyles.LemoineButtonVariant.Danger),
             })
             {
                 var btn = LemoineControlStyles.BuildButton(label, variant);
+                btn.Margin = new Thickness(0, 0, 8, 0);
                 normalRow.Children.Add(btn);
             }
             content.Children.Add(MakeSubLabel("Normal"));
             content.Children.Add(normalRow);
 
             var smallRow = new StackPanel { Orientation = Orientation.Horizontal };
-            smallRow.Spacing = 8;
-
             foreach (var (label, variant) in new[]
             {
-                ("Ghost",   LemoineButtonVariant.Ghost),
-                ("Primary", LemoineButtonVariant.Primary),
-                ("Danger",  LemoineButtonVariant.Danger),
+                ("Ghost",   LemoineControlStyles.LemoineButtonVariant.Ghost),
+                ("Primary", LemoineControlStyles.LemoineButtonVariant.Primary),
+                ("Danger",  LemoineControlStyles.LemoineButtonVariant.Danger),
             })
             {
                 var btn = LemoineControlStyles.BuildSmallButton(label, variant);
+                btn.Margin = new Thickness(0, 0, 8, 0);
                 smallRow.Children.Add(btn);
             }
             content.Children.Add(MakeSubLabel("Small"));
@@ -400,15 +400,15 @@ namespace LemoineTools.Preview
         // ── Inline Edit ───────────────────────────────────────────────────────
         private UIElement BuildInlineEditSection()
         {
-            var content  = new StackPanel();
-            var valueTb  = MakeValueLabel($"Committed: \"{_state.InlineText}\"");
+            var content = new StackPanel();
+            var valueTb = MakeValueLabel($"Committed: \"{_state.InlineText}\"");
 
             var edit = new LemoineInlineEdit
             {
                 Text        = _state.InlineText,
                 Placeholder = "Click to edit, press Enter to commit…",
             };
-            edit.TextCommitted += newText =>
+            edit.TextCommitted += (_, newText) =>
             {
                 _state.InlineText = newText;
                 _state.Save();
@@ -426,10 +426,11 @@ namespace LemoineTools.Preview
             var disciplines = new List<string>
                 { "Mechanical", "Plumbing", "Electrical", "Structural", "Civil", "Landscape", "Interiors" };
 
-            var content = new StackPanel { Spacing = 12 };
+            var content = new StackPanel();
 
             // Single select
             var ssValue = MakeValueLabel($"Selected: {_state.SingleSelect}");
+            ssValue.Margin = new Thickness(0, 6, 0, 12);
             var ss = new LemoineSingleSelect
             {
                 Label        = "Discipline",
@@ -478,7 +479,7 @@ namespace LemoineTools.Preview
         // ── Multi-Select + Tag Input ──────────────────────────────────────────
         private UIElement BuildMultiAndTagsSection()
         {
-            var content = new StackPanel { Spacing = 14 };
+            var content = new StackPanel();
 
             // Multi-select tabs
             var groups = new Dictionary<string, List<string>>
@@ -489,6 +490,7 @@ namespace LemoineTools.Preview
             };
 
             var mtValue = MakeValueLabel();
+            mtValue.Margin = new Thickness(0, 6, 0, 14);
             var mt = new LemoineMultiSelectTabs();
             mt.SetGroups(groups, _state.SelectedMultiList);
             mt.SelectionChanged += sel =>
@@ -513,10 +515,10 @@ namespace LemoineTools.Preview
             var chipValue = MakeValueLabel($"Tags: {_state.SelectedTags}");
             var chips = new LemoineTagChipInput
             {
-                ItemsSource    = availableTags,
-                SelectedItems  = _state.SelectedTagList,
-                AllowFreeText  = true,
-                Placeholder    = "Add discipline tags…",
+                ItemsSource   = availableTags,
+                SelectedItems = new ObservableCollection<string>(_state.SelectedTagList),
+                AllowFreeText = true,
+                Placeholder   = "Add discipline tags…",
             };
             chips.Changed += (_, _) =>
             {
@@ -536,10 +538,11 @@ namespace LemoineTools.Preview
         // ── Numbers ───────────────────────────────────────────────────────────
         private UIElement BuildNumbersSection()
         {
-            var content = new StackPanel { Spacing = 12 };
+            var content = new StackPanel();
 
             // Number stepper
             var stepperValue = MakeValueLabel($"Value: {_state.StepperValue}");
+            stepperValue.Margin = new Thickness(0, 6, 0, 12);
             var stepper = new LemoineNumberStepper
             {
                 Value    = _state.StepperValue,
@@ -547,7 +550,7 @@ namespace LemoineTools.Preview
                 MaxValue = 20,
                 Step     = 1,
             };
-            stepper.ValueChanged += v =>
+            stepper.ValueChanged += (_, v) =>
             {
                 _state.StepperValue = v;
                 _state.Save();
@@ -586,7 +589,7 @@ namespace LemoineTools.Preview
         // ── Date Picker ───────────────────────────────────────────────────────
         private UIElement BuildDateSection()
         {
-            var content   = new StackPanel { Spacing = 4 };
+            var content   = new StackPanel();
             var dateValue = MakeValueLabel(_state.DateFrom.Length > 0
                 ? $"From: {_state.DateFrom}  To: {_state.DateTo}"
                 : "No dates set");
@@ -613,15 +616,15 @@ namespace LemoineTools.Preview
         // ── Toggle Switches ───────────────────────────────────────────────────
         private UIElement BuildTogglesSection()
         {
-            var content = new StackPanel { Spacing = 4 };
+            var content     = new StackPanel();
             var toggleValue = MakeValueLabel();
 
-            var items = new[]
+            var items = new List<ToggleItem>
             {
-                new LemoineToggleSwitches.ToggleItem { Id = "show_dims",  Label = "Show dimensions",   Desc = "Display dimension annotations on selected elements", DefaultOn = true  },
-                new LemoineToggleSwitches.ToggleItem { Id = "show_tags",  Label = "Show element tags",  Desc = "Render identity tags on all tagged elements",         DefaultOn = false },
-                new LemoineToggleSwitches.ToggleItem { Id = "halftone",   Label = "Halftone linked",    Desc = "Apply halftone overrides to all linked models",       DefaultOn = true  },
-                new LemoineToggleSwitches.ToggleItem { Id = "hide_grids", Label = "Hide grids in view", Desc = "Suppress grid lines in the current view",             DefaultOn = false },
+                new ToggleItem { Id = "show_dims",  Label = "Show dimensions",   Desc = "Display dimension annotations on selected elements", DefaultOn = true  },
+                new ToggleItem { Id = "show_tags",  Label = "Show element tags",  Desc = "Render identity tags on all tagged elements",         DefaultOn = false },
+                new ToggleItem { Id = "halftone",   Label = "Halftone linked",    Desc = "Apply halftone overrides to all linked models",       DefaultOn = true  },
+                new ToggleItem { Id = "hide_grids", Label = "Hide grids in view", Desc = "Suppress grid lines in the current view",             DefaultOn = false },
             };
 
             var toggles = new LemoineToggleSwitches();
@@ -645,8 +648,8 @@ namespace LemoineTools.Preview
         // ── File Browser ──────────────────────────────────────────────────────
         private UIElement BuildFileBrowserSection()
         {
-            var content  = new StackPanel { Spacing = 4 };
-            var fbValue  = MakeValueLabel(_state.FilePath.Length > 0 ? _state.FilePath : "No file selected");
+            var content = new StackPanel();
+            var fbValue = MakeValueLabel(_state.FilePath.Length > 0 ? _state.FilePath : "No file selected");
 
             var fb = new LemoineFileBrowser
             {
@@ -670,19 +673,19 @@ namespace LemoineTools.Preview
         // ── Color Section ─────────────────────────────────────────────────────
         private UIElement BuildColorSection()
         {
-            var content    = new StackPanel { Spacing = 14 };
+            var content    = new StackPanel();
             var colorValue = MakeValueLabel($"Selected: {_state.ColorHex}");
+            colorValue.Margin = new Thickness(0, 6, 0, 14);
 
             var initial = BrushHelper.ColorFromHex(_state.ColorHex, Colors.CornflowerBlue);
-            var picker  = new LemoineColorPickerPanel(initial);
-            picker.LoadPersisted();
-            picker.ColorChanged += c =>
+            var picker  = new LemoineColorPickerPanel();
+            picker.SelectedColor = initial;
+            picker.ColorChanged += (_, c) =>
             {
                 _state.ColorHex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 _state.Save();
                 colorValue.Text = $"Selected: {_state.ColorHex}";
                 picker.AddToRecent(c);
-                picker.SavePersisted();
             };
             content.Children.Add(MakeSubLabel("Color Picker Panel"));
             content.Children.Add(picker);
@@ -692,12 +695,12 @@ namespace LemoineTools.Preview
             var swatchValue = MakeValueLabel($"Kind: {_state.SwatchKind}  Fill: {_state.SwatchFill}");
             var sp = new LemoineSwatchPicker
             {
-                Kind          = _state.SwatchKind,
-                Fill          = _state.SwatchFill,
-                Title         = "Legend swatch style",
+                Kind           = _state.SwatchKind,
+                Fill           = _state.SwatchFill,
+                Title          = "Legend swatch style",
                 AllowColorPick = false,
             };
-            sp.SelectionChanged += e =>
+            sp.SelectionChanged += (_, e) =>
             {
                 _state.SwatchKind = e.Kind;
                 _state.SwatchFill = e.Fill;
@@ -714,7 +717,7 @@ namespace LemoineTools.Preview
         // ── Matrix Input ──────────────────────────────────────────────────────
         private UIElement BuildMatrixSection()
         {
-            var content = new StackPanel { Spacing = 4 };
+            var content = new StackPanel();
             var mxValue = MakeValueLabel();
 
             var rows = new List<string> { "Foundation", "Framing", "Enclosure" };
@@ -737,12 +740,13 @@ namespace LemoineTools.Preview
         // ── Chips + Warn Banner ───────────────────────────────────────────────
         private UIElement BuildChipsAndBannerSection()
         {
-            var content = new StackPanel { Spacing = 12 };
+            var content = new StackPanel();
 
             // Category chips
             content.Children.Add(MakeSubLabel("Category Chips"));
             var chipRow = new WrapPanel { Orientation = Orientation.Horizontal };
             chipRow.HorizontalAlignment = HorizontalAlignment.Left;
+            chipRow.Margin = new Thickness(0, 0, 0, 12);
 
             foreach (var (label, active) in new[]
             {
@@ -757,7 +761,7 @@ namespace LemoineTools.Preview
                     ShowChev = false,
                     Margin   = new Thickness(0, 0, 6, 6),
                 };
-                chip.Clicked += () => chip.Active = !chip.Active;
+                chip.Clicked += (_, _) => chip.Active = !chip.Active;
                 chipRow.Children.Add(chip);
             }
             content.Children.Add(chipRow);
@@ -835,7 +839,7 @@ namespace LemoineTools.Preview
             var actionArea = new Border { Padding = new Thickness(32, 24, 32, 32) };
             outer.Children.Add(actionArea);
 
-            var actionStack = new StackPanel { Spacing = 12 };
+            var actionStack = new StackPanel();
             actionArea.Child = actionStack;
 
             // Info row
@@ -861,7 +865,7 @@ namespace LemoineTools.Preview
                 actionStack.Children.Add(row);
             }
 
-            var openBtn = LemoineControlStyles.BuildButton("Open Tool Window →", LemoineButtonVariant.Primary);
+            var openBtn = LemoineControlStyles.BuildButton("Open Tool Window →", LemoineControlStyles.LemoineButtonVariant.Primary);
             openBtn.Margin              = new Thickness(0, 12, 0, 0);
             openBtn.HorizontalAlignment = HorizontalAlignment.Left;
             openBtn.Click += (_, _) =>
@@ -920,7 +924,6 @@ namespace LemoineTools.Preview
             subTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(subTb);
 
-            // Group icons by category using the regions from the enum
             var categories = new[]
             {
                 ("Navigation / Layout",
@@ -1007,13 +1010,13 @@ namespace LemoineTools.Preview
             {
                 var card = new Border
                 {
-                    Width   = 80,
-                    Height  = 68,
-                    Margin  = new Thickness(0, 0, 6, 6),
-                    Padding = new Thickness(6, 10, 6, 8),
+                    Width        = 80,
+                    Height       = 68,
+                    Margin       = new Thickness(0, 0, 6, 6),
+                    Padding      = new Thickness(6, 10, 6, 8),
                     CornerRadius = new CornerRadius(4),
-                    Cursor  = Cursors.Hand,
-                    ToolTip = icon.ToString(),
+                    Cursor       = Cursors.Hand,
+                    ToolTip      = icon.ToString(),
                 };
                 card.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
 
@@ -1028,9 +1031,9 @@ namespace LemoineTools.Preview
 
                 var nameTb = new TextBlock
                 {
-                    Text              = icon.ToString(),
-                    TextWrapping      = TextWrapping.Wrap,
-                    TextAlignment     = TextAlignment.Center,
+                    Text                = icon.ToString(),
+                    TextWrapping        = TextWrapping.Wrap,
+                    TextAlignment       = TextAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
                 };
                 nameTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
