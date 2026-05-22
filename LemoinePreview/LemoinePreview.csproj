@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>LemoinePreview</AssemblyName>
     <!-- Keep the same root namespace so XAML x:Class attributes resolve -->
     <RootNamespace>LemoineTools</RootNamespace>
@@ -84,6 +83,11 @@
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorSettings.cs" />
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorTabContent.cs" />
     <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackSettings.cs" />
+  </ItemGroup>
+
+  <!-- ── Framework assemblies ────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
 
   <!-- ── Icon font ─────────────────────────────────────────────────────────── -->
