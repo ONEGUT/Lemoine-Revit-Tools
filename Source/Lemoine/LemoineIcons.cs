@@ -126,6 +126,12 @@ namespace LemoineTools.Lemoine
         IndentIncrease  = 0xe9e7,
         IndentDecrease  = 0xe9e8,
 
+        // ── Tools / settings ─────────────────────────────────────────────
+        Wrench          = 0xe991,
+        Equalizer       = 0xe992,
+        Cog             = 0xe994,
+        Cogs            = 0xe995,
+
         // ── Misc ──────────────────────────────────────────────────────────
         Newspaper       = 0xe904,
         Droplet         = 0xe90b,
