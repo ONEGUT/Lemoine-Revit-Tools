@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>LemoinePreview</AssemblyName>
     <!-- Keep the same root namespace so XAML x:Class attributes resolve -->
     <RootNamespace>LemoineTools</RootNamespace>
@@ -58,11 +59,31 @@
     <Compile Include="..\Source\Lemoine\Controls\Layout\*.cs" />
   </ItemGroup>
 
+  <!-- ── Controls: Legend ────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\Legend\*.xaml"
+             Link="Lemoine\Controls\Legend\%(Filename)%(Extension)" />
+    <Compile Include="..\Source\Lemoine\Controls\Legend\*.cs" />
+  </ItemGroup>
+
   <!-- ── Category chip ────────────────────────────────────────────────────── -->
   <ItemGroup>
     <Page    Include="..\Source\Lemoine\Controls\LemoineCategoryChip.xaml"
              Link="Lemoine\Controls\LemoineCategoryChip.xaml" />
     <Compile Include="..\Source\Lemoine\Controls\LemoineCategoryChip.xaml.cs" />
+  </ItemGroup>
+
+  <!-- ── Tool settings singletons (Revit-free) ────────────────────────────── -->
+  <ItemGroup>
+    <Compile Include="..\Source\Tools\T01-AutoFilters\AutoFiltersSettings.cs" />
+    <Compile Include="..\Source\Tools\T02-Ceilings\CeilingHeatmapSettings.cs" />
+    <Compile Include="..\Source\Tools\T03-LinkViews\LinkViewsLevelSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\BatchDimension\BatchDimensionSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\BatchExport\BatchExportSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\CreateSheets\CreateSheetsSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorTabContent.cs" />
+    <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackSettings.cs" />
   </ItemGroup>
 
   <!-- ── Icon font ─────────────────────────────────────────────────────────── -->

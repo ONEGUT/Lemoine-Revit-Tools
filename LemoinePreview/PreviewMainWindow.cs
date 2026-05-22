@@ -11,6 +11,11 @@ using System.Windows.Shell;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Lemoine.Controls.Input;
+using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Tools.Ceilings;
+using LemoineTools.Tools.LinkViews;
+using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Preview
 {
@@ -1054,11 +1059,18 @@ namespace LemoineTools.Preview
             Grid.SetColumn(_settingsContentBorder, 1);
             grid.Children.Add(_settingsContentBorder);
 
-            // Rail entries
+            // Rail entries — mirrors GlobalSettingsWindow._railDefs exactly
             var railDefs = new[]
             {
-                ("general",     LemoineIcon.Cog,    "General",     "Theme & UI size"),
-                ("room-tagger", LemoineIcon.Office,  "Room Tagger", "Tag offset & field defaults"),
+                ("general",  LemoineIcon.Cog,           "General",          "Theme & UI size"),
+                ("filters",  LemoineIcon.Filter,         "Filters / Color",  "Auto Filter color rules"),
+                ("t03",      LemoineIcon.Lab,             "Ceiling Heatmap",  "Color ramp & detection"),
+                ("t04",      LemoineIcon.Link,            "Link Views",       "Buffer & cluster settings"),
+                ("t08",      LemoineIcon.Newspaper,       "Legend Creator",   "Filter legend layout"),
+                ("tx",       LemoineIcon.FilePdf,         "Batch Export",     "Filename patterns & format defaults"),
+                ("ty",       LemoineIcon.ListNumbered,    "Batch Dimension",  "Dimension style & reference plane defaults"),
+                ("tz",       LemoineIcon.List,            "Create Sheets",    "Title block & naming defaults"),
+                ("tw",       LemoineIcon.Table,           "Sheet Pack",       "Parameter mapping & export defaults"),
             };
 
             _settingsRailBtns.Clear();
@@ -1162,9 +1174,16 @@ namespace LemoineTools.Preview
             UIElement content;
             switch (tabId)
             {
-                case "general":     content = BuildGeneralContent();     break;
-                case "room-tagger": content = BuildRoomTaggerContent();  break;
-                default:            content = BuildGeneralContent();     break;
+                case "general":  content = BuildGeneralContent();                                              break;
+                case "filters":  content = BuildFiltersPlaceholder();                                         break;
+                case "t03":      content = BuildSpecContent(BuildCeilingHeatmapProxy(), "Ceiling Heatmap");   break;
+                case "t04":      content = BuildSpecContent(BuildLinkViewsProxy(),      "Link Views");        break;
+                case "t08":      content = LegendCreatorTabContent.BuildContent(this);                        break;
+                case "tx":       content = BuildSpecContent(BuildBatchExportProxy(),    "Batch Export");      break;
+                case "ty":       content = BuildSpecContent(BuildBatchDimensionProxy(), "Batch Dimension");   break;
+                case "tz":       content = BuildSpecContent(BuildCreateSheetsProxy(),   "Create Sheets");     break;
+                case "tw":       content = BuildSpecContent(BuildSheetPackProxy(),      "Sheet Pack");        break;
+                default:         content = BuildGeneralContent();                                             break;
             }
 
             if (_settingsContentBorder != null)
@@ -1336,80 +1355,435 @@ namespace LemoineTools.Preview
         }
 
         // ── Room Tagger settings tab ──────────────────────────────────────────
-        private UIElement BuildRoomTaggerContent()
+        // ── Shared spec renderer (mirrors GlobalSettingsWindow.CeilingHeatmap.cs) ─
+        private UIElement BuildSpecContent(ILemoineToolSettings? vm, string tabLabel)
         {
-            var tool = GetDemoTool();
-            var spec = tool.GetSettingsSpec();
-
             var scroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             };
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
+            panel.Children.Add(GContentHeader(tabLabel));
 
-            panel.Children.Add(GContentHeader(spec?.Label ?? "Room Tagger"));
-
-            if (spec?.Groups != null && spec.Groups.Count > 0)
+            var spec = vm?.GetSettingsSpec();
+            if (spec?.Groups == null || spec.Groups.Count == 0)
             {
-                foreach (var group in spec.Groups)
-                {
+                panel.Children.Add(GNoSettings());
+                scroll.Content = panel;
+                return scroll;
+            }
+
+            foreach (var group in spec.Groups)
+            {
+                if (!string.IsNullOrEmpty(group.Title))
                     panel.Children.Add(GSubLabel(group.Title));
 
-                    if (!string.IsNullOrEmpty(group.Hint))
-                    {
-                        var hint = new TextBlock
-                        {
-                            Text         = group.Hint,
-                            TextWrapping = TextWrapping.Wrap,
-                            Margin       = new Thickness(0, 0, 0, 8),
-                        };
-                        hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                        hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                        hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                        panel.Children.Add(hint);
-                    }
+                if (!string.IsNullOrEmpty(group.Hint))
+                {
+                    var hint = new TextBlock { Text = group.Hint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+                    hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                    hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                    panel.Children.Add(hint);
+                }
 
-                    foreach (var setting in group.Settings)
+                foreach (var setting in group.Settings)
+                {
+                    if (!string.IsNullOrEmpty(setting.Label))
                     {
-                        var lbl = new TextBlock
-                        {
-                            Text         = setting.Label,
-                            TextWrapping = TextWrapping.Wrap,
-                            Margin       = new Thickness(0, 0, 0, 4),
-                        };
+                        var lbl = new TextBlock { Text = setting.Label, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
                         lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
                         lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                         lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                         panel.Children.Add(lbl);
-
-                        if (!string.IsNullOrEmpty(setting.Hint))
-                        {
-                            var sh = new TextBlock
-                            {
-                                Text         = setting.Hint,
-                                TextWrapping = TextWrapping.Wrap,
-                                Margin       = new Thickness(0, 0, 0, 4),
-                            };
-                            sh.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                            sh.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                            sh.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                            panel.Children.Add(sh);
-                        }
-
-                        var ctrl = BuildSettingControl(setting, group.Id, tool);
-                        if (ctrl != null)
-                            panel.Children.Add(ctrl);
-
-                        panel.Children.Add(new Rectangle { Height = 12 });
                     }
 
-                    panel.Children.Add(GHSep(8));
+                    if (!string.IsNullOrEmpty(setting.Hint))
+                    {
+                        var sh = new TextBlock { Text = setting.Hint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+                        sh.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                        sh.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                        sh.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                        panel.Children.Add(sh);
+                    }
+
+                    var ctrl = BuildSettingControl(setting, group.Id, vm!);
+                    if (ctrl != null) panel.Children.Add(ctrl);
+                    panel.Children.Add(new Rectangle { Height = 10 });
                 }
+
+                panel.Children.Add(GHSep(8));
             }
 
             scroll.Content = panel;
             return scroll;
+        }
+
+        private UIElement BuildFiltersPlaceholder()
+        {
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            };
+            var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
+            panel.Children.Add(GContentHeader("Filters / Color"));
+
+            var info = new TextBlock
+            {
+                Text         = "The Filters / Color tab hosts a full drag-and-drop trade → rule editor " +
+                               "that is tightly coupled to the live Revit document (category IDs, " +
+                               "fill-pattern names, etc.). It is not renderable in the standalone preview.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 12),
+                FontStyle    = FontStyles.Italic,
+            };
+            info.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            info.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            info.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            panel.Children.Add(info);
+
+            scroll.Content = panel;
+            return scroll;
+        }
+
+        // ── Proxy builders: replicate each ViewModel's GetSettingsSpec + ApplySettings ─
+
+        private ILemoineToolSettings BuildCeilingHeatmapProxy()
+        {
+            var s = CeilingHeatmapSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "T03", Label = "Ceiling Heatmap", Icon = "03",
+                    Description = "Color ramp, elevation tolerance, and tag settings.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "Color Ramp", OpenByDefault = true,
+                            Hint = "Three-stop gradient from lowest to highest ceiling elevation offset.",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="colorLow",  Kind="color", Label="Low color",  Default=s.ColorLow  },
+                                new LemoineSettingDef { Id="colorMid",  Kind="color", Label="Mid color",  Default=s.ColorMid  },
+                                new LemoineSettingDef { Id="colorHigh", Kind="color", Label="High color", Default=s.ColorHigh },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G2", Title = "Detection",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="elevTolerance", Kind="number", Label="Elevation tolerance",
+                                    Hint="Ceilings within this tolerance (inches) share one filter bucket.",
+                                    Options=new NumberOpts { Unit="in", Min=0.01, Max=12.0, Step=0.01 },
+                                    Default=Math.Round(s.ElevTolerance * 12.0, 4) },
+                                new LemoineSettingDef { Id="includeLinks", Kind="toggle", Label="Include linked ceilings",
+                                    Hint="Scan Revit link instances visible in each selected view.", Default=s.IncludeLinks },
+                                new LemoineSettingDef { Id="placeTags", Kind="toggle", Label="Place ceiling tags",
+                                    Hint="Place a Ceiling Tag at the centroid of each ceiling.", Default=s.PlaceTags },
+                            }
+                        },
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    if (groupId == "G1")
+                    {
+                        if (sid == "colorLow")  s.ColorLow  = val as string ?? s.ColorLow;
+                        if (sid == "colorMid")  s.ColorMid  = val as string ?? s.ColorMid;
+                        if (sid == "colorHigh") s.ColorHigh = val as string ?? s.ColorHigh;
+                    }
+                    else if (groupId == "G2")
+                    {
+                        if (sid == "elevTolerance" && val is double tol) s.ElevTolerance = tol / 12.0;
+                        if (sid == "includeLinks"  && val is bool links) s.IncludeLinks  = links;
+                        if (sid == "placeTags"     && val is bool tags)  s.PlaceTags     = tags;
+                    }
+                    s.Save();
+                });
+        }
+
+        private ILemoineToolSettings BuildLinkViewsProxy()
+        {
+            var s = LinkViewsLevelSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "T04a", Label = "Link Views — Level", Icon = "04",
+                    Description = "Clustering and view geometry settings.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "View Geometry", OpenByDefault = true,
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="bufferXY", Kind="number", Label="XY buffer",
+                                    Hint="Margin added around each cluster crop box (feet).",
+                                    Options=new NumberOpts { Unit="ft", Min=0, Max=200, Step=1 }, Default=s.BufferXY },
+                                new LemoineSettingDef { Id="clusterThreshold", Kind="number", Label="Cluster threshold",
+                                    Hint="Maximum gap for union-find cluster merging (feet).",
+                                    Options=new NumberOpts { Unit="ft", Min=0, Max=500, Step=1 }, Default=s.ClusterThreshold },
+                                new LemoineSettingDef { Id="cutOffset", Kind="number", Label="Cut plane offset",
+                                    Hint="Height above level elevation for the cut plane (feet).",
+                                    Options=new NumberOpts { Unit="ft", Min=0, Max=30, Step=0.5 }, Default=s.CutOffset },
+                            }
+                        }
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    if (groupId == "G1")
+                    {
+                        if (sid == "bufferXY"         && val is double bxy) s.BufferXY         = bxy;
+                        if (sid == "clusterThreshold" && val is double ct)  s.ClusterThreshold = ct;
+                        if (sid == "cutOffset"        && val is double co)  s.CutOffset        = co;
+                    }
+                    s.Save();
+                });
+        }
+
+        private ILemoineToolSettings BuildBatchExportProxy()
+        {
+            var s = BatchExportSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "tx", Label = "Batch Export", Icon = "Tx",
+                    Description = "Export sheets and views to PDF and DWG with parametric filenames.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "Output", OpenByDefault = true,
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="outdir", Kind="file", Label="Default output folder",
+                                    Options=new FileOpts { Placeholder=@"C:\Projects\Exports\" }, Default=s.OutputFolder },
+                                new LemoineSettingDef { Id="splitformat", Kind="toggle", Label="Split output by file format",
+                                    Hint="Creates PDF\\, DWG\\ subfolders automatically.", Default=s.SplitByFormat },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G2", Title = "Filename",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="pattern", Kind="text", Label="Default filename pattern",
+                                    Hint="Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day}",
+                                    Options=new TextOpts { Mono=true, Placeholder="{SheetNumber}-{SheetName}" },
+                                    Default=s.FilenamePattern },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G3", Title = "Default Formats",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="defpdf", Kind="toggle", Label="PDF on by default", Default=s.ExportPdf },
+                                new LemoineSettingDef { Id="defdwg", Kind="toggle", Label="DWG on by default", Default=s.ExportDwg },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G4", Title = "PDF Options",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="combinepdf", Kind="toggle", Label="Combine into single PDF by default", Default=s.CombinePdf },
+                                new LemoineSettingDef { Id="placement", Kind="single", Label="Paper placement",
+                                    Options=new SingleSelectOpts { Items=new List<string> { "Center", "Offset from Corner" } },
+                                    Default=s.PdfPaperPlacement },
+                                new LemoineSettingDef { Id="hiddenlines", Kind="single", Label="Hidden line views",
+                                    Options=new SingleSelectOpts { Items=new List<string> { "Vector Processing", "Raster Processing" } },
+                                    Default=s.HiddenLinesVector ? "Vector Processing" : "Raster Processing" },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G5", Title = "DWG Options",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="dwgsetup", Kind="text", Label="Default DWG export setup name",
+                                    Hint="Must match a setup created in Revit via File → Export → DWG.",
+                                    Options=new TextOpts { Placeholder="Standard DWG" }, Default=s.DwgExportSetupName },
+                            }
+                        },
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    switch (sid)
+                    {
+                        case "outdir":      s.OutputFolder      = val as string ?? "";             break;
+                        case "splitformat": s.SplitByFormat     = val is bool b1 && b1;            break;
+                        case "pattern":     s.FilenamePattern   = val as string ?? "";             break;
+                        case "defpdf":      s.ExportPdf         = val is bool b2 && b2;            break;
+                        case "defdwg":      s.ExportDwg         = val is bool b3 && b3;            break;
+                        case "combinepdf":  s.CombinePdf        = val is bool b4 && b4;            break;
+                        case "placement":   s.PdfPaperPlacement = val as string ?? "Center";       break;
+                        case "hiddenlines": s.HiddenLinesVector = val as string == "Vector Processing"; break;
+                        case "dwgsetup":    s.DwgExportSetupName = val as string ?? "";            break;
+                    }
+                    s.Save();
+                });
+        }
+
+        private ILemoineToolSettings BuildBatchDimensionProxy()
+        {
+            var s = BatchDimensionSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "ty", Label = "Batch Dimension", Icon = "Ty",
+                    Description = "Place dimension strings across multiple views by element category.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "Defaults", OpenByDefault = true,
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="dimstyle", Kind="text", Label="Default dimension style name",
+                                    Options=new TextOpts { Placeholder="Linear Dimension Style" }, Default=s.DefaultDimStyleName },
+                                new LemoineSettingDef { Id="refplane", Kind="single", Label="Default reference plane (Walls)",
+                                    Options=new SingleSelectOpts { Items=new List<string>
+                                        { "Face of Core Exterior", "Face of Core Interior", "Center of Wall",
+                                          "Face of Finish Exterior", "Face of Finish Interior" } },
+                                    Default=s.DefaultReferencePlane },
+                                new LemoineSettingDef { Id="tiecond", Kind="single", Label="Default tie condition",
+                                    Options=new SingleSelectOpts { Items=new List<string> { "Tie to Nearest Grid", "None" } },
+                                    Default=s.DefaultTieCondition },
+                                new LemoineSettingDef { Id="offset", Kind="number", Label="Default string offset",
+                                    Options=new NumberOpts { Unit="mm", Min=0, Max=500, Step=1 }, Default=s.DefaultOffset },
+                            }
+                        }
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    switch (sid)
+                    {
+                        case "dimstyle": s.DefaultDimStyleName   = val as string ?? ""; break;
+                        case "refplane": s.DefaultReferencePlane = val as string ?? ""; break;
+                        case "tiecond":  s.DefaultTieCondition   = val as string ?? ""; break;
+                        case "offset":   if (val is double dv) s.DefaultOffset = dv;    break;
+                    }
+                    s.Save();
+                });
+        }
+
+        private ILemoineToolSettings BuildCreateSheetsProxy()
+        {
+            var s = CreateSheetsSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "tz", Label = "Create Sheets", Icon = "",
+                    Description = "Title block, naming scheme, and starting number defaults.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "Create Sheets Defaults", OpenByDefault = true,
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="titleblock", Kind="text", Label="Default Title Block",
+                                    Hint="Pre-selected title block family when opening the tool.",
+                                    Options=new TextOpts { Placeholder="Family : Type" }, Default=s.DefaultTitleblockName },
+                                new LemoineSettingDef { Id="namingScheme", Kind="text", Label="Default Naming Scheme",
+                                    Hint="Token pattern used to name sheets, e.g. {LevelName}.",
+                                    Options=new TextOpts { Placeholder="{LevelName}", Mono=true }, Default=s.DefaultNamingScheme },
+                                new LemoineSettingDef { Id="startingNumber", Kind="number", Label="Default Starting Number",
+                                    Hint="Sheet numbering begins at this value.",
+                                    Options=new NumberOpts { Min=1, Max=9999, Step=1 }, Default=(double)s.DefaultStartingNumber },
+                            }
+                        }
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    switch (sid)
+                    {
+                        case "titleblock":    s.DefaultTitleblockName = val?.ToString() ?? ""; break;
+                        case "namingScheme":  s.DefaultNamingScheme   = val?.ToString() ?? ""; break;
+                        case "startingNumber":
+                            if (int.TryParse(val?.ToString(), out int n) && n >= 1) s.DefaultStartingNumber = n;
+                            break;
+                    }
+                    s.Save();
+                });
+        }
+
+        private ILemoineToolSettings BuildSheetPackProxy()
+        {
+            var s = SheetPackSettings.Instance;
+            return new SpecProxy(
+                new LemoineToolSettingsSpec
+                {
+                    Id = "tw", Label = "Sheet Pack", Icon = "",
+                    Description = "Parameter names and default export folder.",
+                    Groups = new List<LemoineSettingsGroup>
+                    {
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G1", Title = "Parameter Mapping", OpenByDefault = true,
+                            Hint = "Names of the Revit parameters to write pack metadata into.",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="packNameParam", Kind="text", Label="Pack Name Parameter",
+                                    Hint="Revit parameter name on ViewSheet to receive the pack name.",
+                                    Options=new TextOpts { Placeholder="Issue Set" }, Default=s.PackNameParameter },
+                                new LemoineSettingDef { Id="purposeParam", Kind="text", Label="Issue Purpose Parameter",
+                                    Hint="Revit parameter name on ViewSheet to receive the issue purpose.",
+                                    Options=new TextOpts { Placeholder="Issue Purpose" }, Default=s.IssuePurposeParameter },
+                            }
+                        },
+                        new LemoineSettingsGroup
+                        {
+                            Id = "G2", Title = "Export Defaults",
+                            Settings = new List<LemoineSettingDef>
+                            {
+                                new LemoineSettingDef { Id="exportFolder", Kind="file", Label="Default Export Folder",
+                                    Hint="Pre-filled output folder path for PDF export.",
+                                    Options=new FileOpts { Placeholder="Select folder…" }, Default=s.DefaultExportFolder },
+                            }
+                        }
+                    }
+                },
+                (groupId, sid, val) =>
+                {
+                    switch (sid)
+                    {
+                        case "packNameParam":  s.PackNameParameter   = val?.ToString() ?? ""; break;
+                        case "purposeParam":   s.IssuePurposeParameter = val?.ToString() ?? ""; break;
+                        case "exportFolder":   s.DefaultExportFolder = val?.ToString() ?? ""; break;
+                    }
+                    s.Save();
+                });
+        }
+
+        // ── SpecProxy: thin ILemoineToolSettings wrapper around a pre-built spec ─
+        private sealed class SpecProxy : ILemoineToolSettings
+        {
+            private readonly LemoineToolSettingsSpec       _spec;
+            private readonly Action<string, string, object>? _apply;
+            public SpecProxy(LemoineToolSettingsSpec spec, Action<string, string, object>? apply = null)
+            { _spec = spec; _apply = apply; }
+            public LemoineToolSettingsSpec? GetSettingsSpec() => _spec;
+            public void ApplySettings(string groupId, string settingId, object value) => _apply?.Invoke(groupId, settingId, value);
+        }
+
+        // ── Shared helpers for spec rendering ────────────────────────────────────
+        private static UIElement GNoSettings()
+        {
+            var tb = new TextBlock { Text = "No settings for this tool.", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 2) };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return tb;
         }
 
         // ── General tab shared helpers (mirror GlobalSettingsWindow.General.cs) ─
@@ -1564,6 +1938,92 @@ namespace LemoineTools.Preview
                     if (setting.Default is string def) sel.SelectedItem = def;
                     sel.SelectionChanged += v => ts.ApplySettings(groupId, sid, v);
                     return sel;
+                }
+
+                case "color":
+                {
+                    string currentHex = setting.Default as string ?? "#569cd6";
+                    return LemoineColorPickerWindow.BuildColorPickerSwatch(
+                        getHex: () => currentHex,
+                        setHex: h =>
+                        {
+                            currentHex = h;
+                            ts.ApplySettings(groupId, sid, h);
+                        });
+                }
+
+                case "text":
+                {
+                    var opts = setting.Options as TextOpts;
+                    var tb   = new TextBox
+                    {
+                        Width = 260,
+                        Text  = setting.Default?.ToString() ?? "",
+                    };
+                    if (!string.IsNullOrEmpty(opts?.Placeholder))
+                        tb.Tag = opts.Placeholder;
+                    tb.SetResourceReference(TextBox.HeightProperty,     "LemoineH_Input");
+                    tb.SetResourceReference(TextBox.PaddingProperty,    "LemoineTh_InputPad");
+                    tb.SetResourceReference(TextBox.BackgroundProperty, "LemoineSelectBg");
+                    tb.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
+                    tb.SetResourceReference(TextBox.FontSizeProperty,   "LemoineFS_MD");
+                    tb.SetResourceReference(TextBox.FontFamilyProperty, (opts?.Mono == true) ? "LemoineMonoFont" : "LemoineUiFont");
+                    tb.LostFocus += (_, _) => ts.ApplySettings(groupId, sid, tb.Text);
+                    return tb;
+                }
+
+                case "file":
+                {
+                    var opts = setting.Options as FileOpts;
+                    var row  = new StackPanel { Orientation = Orientation.Horizontal };
+
+                    var tb = new TextBox
+                    {
+                        Width = 200,
+                        Text  = setting.Default?.ToString() ?? "",
+                    };
+                    tb.SetResourceReference(TextBox.HeightProperty,     "LemoineH_Input");
+                    tb.SetResourceReference(TextBox.PaddingProperty,    "LemoineTh_InputPad");
+                    tb.SetResourceReference(TextBox.BackgroundProperty, "LemoineSelectBg");
+                    tb.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
+                    tb.SetResourceReference(TextBox.FontSizeProperty,   "LemoineFS_SM");
+                    tb.SetResourceReference(TextBox.FontFamilyProperty, "LemoineMonoFont");
+                    tb.LostFocus += (_, _) => ts.ApplySettings(groupId, sid, tb.Text);
+
+                    var browse = LemoineControlStyles.BuildSmallButton("…", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    browse.Margin = new Thickness(4, 0, 0, 0);
+                    browse.Click += (_, _) =>
+                    {
+                        var dlg = new System.Windows.Forms.FolderBrowserDialog
+                        {
+                            Description         = opts?.Placeholder ?? "Select folder",
+                            SelectedPath        = tb.Text,
+                            ShowNewFolderButton = true,
+                        };
+                        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                        {
+                            tb.Text = dlg.SelectedPath;
+                            ts.ApplySettings(groupId, sid, tb.Text);
+                        }
+                    };
+                    row.Children.Add(tb);
+                    row.Children.Add(browse);
+                    return row;
+                }
+
+                case "info":
+                {
+                    var opts = setting.Options as InfoOpts;
+                    var tb   = new TextBlock
+                    {
+                        Text         = opts?.Text ?? "",
+                        TextWrapping = TextWrapping.Wrap,
+                        FontStyle    = FontStyles.Italic,
+                    };
+                    tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                    tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                    return tb;
                 }
 
                 default:
