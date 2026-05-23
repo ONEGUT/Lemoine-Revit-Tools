@@ -21,7 +21,7 @@
     </shell:WindowChrome.WindowChrome>
 
     <!-- Outer border gives the chromeless window a visible 1px edge -->
-    <Border x:Name="_outerBorder" BorderThickness="1">
+    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True">
         <Grid x:Name="_root">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38" />   <!-- Toolbar       -->

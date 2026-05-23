@@ -76,7 +76,7 @@ namespace LemoineTools.Lemoine.Controls
 
             // Toggle pill
             var trackBg = new Border();
-            trackBg.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_LG");
+            trackBg.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(7.5));
             trackBg.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
             trackBg.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
             trackBg.SetResourceReference(Border.BackgroundProperty, on ? "LemoineAccent" : "LemoineBorder");

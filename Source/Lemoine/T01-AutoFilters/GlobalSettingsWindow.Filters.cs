@@ -182,7 +182,7 @@ namespace LemoineTools.Lemoine
                 Cursor            = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Left,
             };
-            pillBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Pill");
+            pillBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
             pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
 
@@ -463,7 +463,7 @@ namespace LemoineTools.Lemoine
                 Cursor            = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Pill");
+            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             templatesPill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
             templatesPill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
 
@@ -595,7 +595,7 @@ namespace LemoineTools.Lemoine
                 Cursor          = Cursors.Hand,
                 Tag             = rule.Id,   // used by Drop handler to read visual order
             };
-            rowBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            rowBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             if (isActive)
             {
                 rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
@@ -2133,7 +2133,7 @@ namespace LemoineTools.Lemoine
         private static Border BuildRuleToggle(bool isOn, Action<bool> onChange)
         {
             var trackBg = new Border();
-            trackBg.SetResourceReference(Border.CornerRadiusProperty,     "LemoineRadius_LG");
+            trackBg.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(7.5));
             trackBg.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
             trackBg.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
             trackBg.SetResourceReference(Border.BackgroundProperty, isOn ? "LemoineAccent" : "LemoineBorder");

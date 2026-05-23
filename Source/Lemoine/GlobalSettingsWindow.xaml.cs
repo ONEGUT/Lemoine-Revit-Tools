@@ -116,8 +116,7 @@ namespace LemoineTools.Lemoine
             Background = LemoineSettings.Instance.ActiveTheme.PageBg;
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _outerBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
-            _outerBorder.ClipToBounds = true;
+            _outerBorder.CornerRadius = new CornerRadius(8); // matches Windows 11 DWM rounding
 
             UpdateRowHeights();
             BuildToolbar();

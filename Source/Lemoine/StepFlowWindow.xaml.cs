@@ -135,8 +135,7 @@ namespace LemoineTools.Lemoine
         {
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _outerBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
-            _outerBorder.ClipToBounds = true;
+            _outerBorder.CornerRadius = new CornerRadius(8); // matches Windows 11 DWM rounding
         }
 
         /// <summary>
@@ -277,7 +276,7 @@ namespace LemoineTools.Lemoine
                 BorderThickness = new Thickness(1),
                 Margin          = new Thickness(0, 0, 0, 8),
             };
-            row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             var ig  = new Grid();
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2) });
@@ -300,7 +299,7 @@ namespace LemoineTools.Lemoine
                 VerticalAlignment = VerticalAlignment.Center,   // center with single-line title
                 Margin = new Thickness(0, 0, 8, 0),
             };
-            circle.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Circle");
+            circle.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(9));
             circle.SetResourceReference(Border.WidthProperty,  "LemoineH_Circle");
             circle.SetResourceReference(Border.HeightProperty, "LemoineH_Circle");
 
