@@ -28,7 +28,7 @@
             </Grid.RowDefinitions>
 
             <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
-            <Border x:Name="_pillNavBorder" Grid.Row="1" Padding="12,6,12,6" />
+            <Border x:Name="_pillNavBorder" Grid.Row="1" Padding="0" />
             <Border x:Name="_contentBorder" Grid.Row="2" />
             <Border x:Name="_footerBorder"  Grid.Row="3" ClipToBounds="True" />
         </Grid>
