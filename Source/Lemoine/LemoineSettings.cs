@@ -147,6 +147,8 @@ namespace LemoineTools.Lemoine
             r["LemoineH_Knob"]     = Math.Round(11 * sc, 1);
             r["LemoineH_Sep"]      = 1.0;
             r["LemoineH_LogArea"]  = Math.Round(90 * sc);
+            r["LemoineW_NumInput"] = Math.Round(90  * sc);
+            r["LemoineW_TextInput"]= Math.Round(240 * sc);
 
             // ── Corner radii (design constants — not scaled) ──────────────────
             r["LemoineRadius_SM"]     = new System.Windows.CornerRadius(3);

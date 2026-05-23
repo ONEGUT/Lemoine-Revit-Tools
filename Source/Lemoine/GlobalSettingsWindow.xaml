@@ -13,7 +13,7 @@
     ShowInTaskbar="True">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="4"
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="8"
                             GlassFrameThickness="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 

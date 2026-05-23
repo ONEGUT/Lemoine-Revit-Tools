@@ -178,11 +178,11 @@ namespace LemoineTools.Lemoine
             var pillBorder = new Border
             {
                 BorderThickness   = new Thickness(1),
-                CornerRadius      = new CornerRadius(5),
                 Padding           = new Thickness(10, 5, 10, 5),
                 Cursor            = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Left,
             };
+            pillBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Pill");
             pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
             pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
 
@@ -456,9 +456,35 @@ namespace LemoineTools.Lemoine
             };
 
             // Row: [pill dropdown] [trade ID] [edit btn] — left, [Templates ˅] — right
-            var tbTemplates = FlatSmBtn("Templates  ˅");
-            tbTemplates.VerticalAlignment = VerticalAlignment.Center;
-            tbTemplates.Click += (s, e) => ShowTemplatesPopup(tbTemplates);
+            var templatesPill = new Border
+            {
+                BorderThickness   = new Thickness(1),
+                Padding           = new Thickness(10, 5, 10, 5),
+                Cursor            = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Pill");
+            templatesPill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            templatesPill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+
+            var templatesInner = new StackPanel { Orientation = Orientation.Horizontal };
+            var templatesLabel = new TextBlock { Text = "Templates", VerticalAlignment = VerticalAlignment.Center };
+            templatesLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            templatesLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            templatesLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var templatesCaret = new TextBlock { Text = "˅", Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            templatesCaret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            templatesCaret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            templatesCaret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            templatesInner.Children.Add(templatesLabel);
+            templatesInner.Children.Add(templatesCaret);
+            templatesPill.Child = templatesInner;
+
+            templatesPill.MouseEnter += (s, e) =>
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            templatesPill.MouseLeave += (s, e) =>
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            templatesPill.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowTemplatesPopup(templatesPill); };
 
             var leftRow = new StackPanel
             {
@@ -470,8 +496,8 @@ namespace LemoineTools.Lemoine
             leftRow.Children.Add(editBtn);
 
             var headerRow = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
-            DockPanel.SetDock(tbTemplates, Dock.Right);
-            headerRow.Children.Add(tbTemplates);
+            DockPanel.SetDock(templatesPill, Dock.Right);
+            headerRow.Children.Add(templatesPill);
             headerRow.Children.Add(leftRow);
 
             _fTradeSwitcherBorder.Child = headerRow;
@@ -563,13 +589,13 @@ namespace LemoineTools.Lemoine
             {
                 Padding         = new Thickness(10, 8, 8, 8),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
                 Margin          = new Thickness(0, 0, 0, 4),
                 AllowDrop       = true,
                 Opacity         = rule.Enabled ? 1.0 : 0.55,
                 Cursor          = Cursors.Hand,
                 Tag             = rule.Id,   // used by Drop handler to read visual order
             };
+            rowBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
             if (isActive)
             {
                 rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
@@ -657,7 +683,7 @@ namespace LemoineTools.Lemoine
             };
 
             // ── Row content ───────────────────────────────────────────────────
-            var outerRow = new Grid();
+            var outerRow = new Grid { AllowDrop = true };
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // dot
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name+sub
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // toggle
@@ -826,7 +852,6 @@ namespace LemoineTools.Lemoine
             // ── Row click — select rule ───────────────────────────────────────
             rowBorder.PreviewMouseLeftButtonDown += (s, e) =>
             {
-                _dragGhostClickOffset = e.GetPosition(rowBorder); // capture for ghost offset
                 if (e.OriginalSource is FrameworkElement src)
                 {
                     var hitEl = src;
@@ -840,6 +865,8 @@ namespace LemoineTools.Lemoine
                         hitEl = VisualTreeHelper.GetParent(hitEl) as FrameworkElement;
                     }
                 }
+                // Only capture drag offset when the click is on a draggable part of the row
+                _dragGhostClickOffset = e.GetPosition(rowBorder);
                 if (rule.Id != _fActiveRuleId)
                     SelectRuleInPlace(rowBorder, rule.Id, nameTb);
             };
@@ -886,6 +913,7 @@ namespace LemoineTools.Lemoine
                     Padding = new Thickness(0, 0, 4, 0),
                 };
                 scroll.Content = scrollContent;
+                LemoineControlStyles.WireBubblingScroll(scroll);
 
                 _fEditorBorder.Child = scroll;
             }
@@ -2115,7 +2143,8 @@ namespace LemoineTools.Lemoine
 
             var knob = new Ellipse();
             knob.SetResourceReference(Ellipse.FillProperty, isOn ? "LemoineKnobOn" : "LemoineKnobOff");
-            knob.Margin = new Thickness(isOn ? 15 : 2, 2, 0, 2);
+            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
+            knob.Margin = new Thickness(isOn ? onPos : 2, 2, 0, 2);
             knob.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Knob");
             knob.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Knob");
 
@@ -2132,7 +2161,7 @@ namespace LemoineTools.Lemoine
                 bool newOn = state;
                 var anim = new ThicknessAnimation
                 {
-                    To             = new Thickness(newOn ? 15 : 2, 2, 0, 2),
+                    To             = new Thickness(newOn ? onPos : 2, 2, 0, 2),
                     Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast),
                     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 };

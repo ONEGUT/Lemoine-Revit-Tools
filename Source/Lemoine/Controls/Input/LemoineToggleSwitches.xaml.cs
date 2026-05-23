@@ -83,7 +83,8 @@ namespace LemoineTools.Lemoine.Controls
 
             var knob = new Ellipse();
             knob.SetResourceReference(Ellipse.FillProperty, on ? "LemoineKnobOn" : "LemoineKnobOff");
-            knob.Margin = new Thickness(on ? 15 : 2, 2, 0, 2);
+            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
+            knob.Margin = new Thickness(on ? onPos : 2, 2, 0, 2);
             knob.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Knob");
             knob.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Knob");
             var trackCanvas = new Canvas { ClipToBounds = true };
@@ -174,9 +175,10 @@ namespace LemoineTools.Lemoine.Controls
             knob.SetResourceReference(Ellipse.FillProperty, newOn ? "LemoineKnobOn" : "LemoineKnobOff");
 
             // Animate knob position
+            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
             var anim = new ThicknessAnimation
             {
-                To       = new Thickness(newOn ? 15 : 2, 2, 0, 2),
+                To       = new Thickness(newOn ? onPos : 2, 2, 0, 2),
                 Duration = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast),
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
             };
