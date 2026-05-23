@@ -6,7 +6,7 @@ using System.Xml.Serialization;
 namespace LemoineTools.Lemoine
 {
     /// <summary>Discrete UI scale presets available to the user.</summary>
-    public enum LemoineUiSize { Small, Medium, Large }
+    public enum LemoineUiSize { Small, Medium, Large, ExtraLarge }
 
     /// <summary>Persisted UI settings DTO — written to %AppData%\LemoineTools\UISettings.xml.</summary>
     [XmlRoot("LemoineUISettings")]
@@ -59,12 +59,13 @@ namespace LemoineTools.Lemoine
             SaveToDisk();
         }
 
-        /// <summary>Multiplier: Small=0.85, Medium=1.0, Large=1.2</summary>
+        /// <summary>Multiplier: Small=0.85, Medium=1.0, Large=1.2, ExtraLarge=1.40</summary>
         public double Scale => UiSize switch
         {
-            LemoineUiSize.Small => 0.85,
-            LemoineUiSize.Large => 1.20,
-            _                   => 1.00,
+            LemoineUiSize.Small      => 0.85,
+            LemoineUiSize.Large      => 1.20,
+            LemoineUiSize.ExtraLarge => 1.40,
+            _                        => 1.00,
         };
 
         // ── Animation durations (ms) — type-safe for TimeSpan.FromMilliseconds() ──

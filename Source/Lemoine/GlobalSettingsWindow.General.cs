@@ -92,8 +92,9 @@ namespace LemoineTools.Lemoine
                     name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                     var desc = new TextBlock
                     {
-                        Text = size == LemoineUiSize.Small ? "Small — Compact" :
-                               size == LemoineUiSize.Large ? "Large — Comfortable" : "Medium — Default",
+                        Text = size == LemoineUiSize.Small       ? "Small — Compact"         :
+                               size == LemoineUiSize.Large       ? "Large — Comfortable"     :
+                               size == LemoineUiSize.ExtraLarge  ? "Extra Large — Spacious"  : "Medium — Default",
                         FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 0),
                     };
                     desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");

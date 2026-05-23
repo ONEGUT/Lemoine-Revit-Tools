@@ -188,10 +188,12 @@ namespace LemoineTools.Preview
             DockPanel.SetDock(scaleRow, Dock.Right);
             scaleRow.Children.Add(MakeBarLabel("Scale:"));
 
-            foreach (var sz in new[] { LemoineUiSize.Small, LemoineUiSize.Medium, LemoineUiSize.Large })
+            foreach (var sz in new[] { LemoineUiSize.Small, LemoineUiSize.Medium, LemoineUiSize.Large, LemoineUiSize.ExtraLarge })
             {
                 var captured = sz;
-                var label    = sz == LemoineUiSize.Small ? "S" : sz == LemoineUiSize.Medium ? "M" : "L";
+                var label    = sz == LemoineUiSize.Small       ? "S"  :
+                               sz == LemoineUiSize.Medium      ? "M"  :
+                               sz == LemoineUiSize.Large       ? "L"  : "XL";
                 var pill     = MakePill(label);
                 pill.Margin  = new Thickness(3, 0, 0, 0);
                 pill.Cursor  = Cursors.Hand;
@@ -1329,8 +1331,9 @@ namespace LemoineTools.Preview
 
             var desc = new TextBlock
             {
-                Text      = size == LemoineUiSize.Small  ? "Small — Compact"      :
-                            size == LemoineUiSize.Large  ? "Large — Comfortable"  : "Medium — Default",
+                Text      = size == LemoineUiSize.Small       ? "Small — Compact"        :
+                            size == LemoineUiSize.Large       ? "Large — Comfortable"    :
+                            size == LemoineUiSize.ExtraLarge  ? "Extra Large — Spacious" : "Medium — Default",
                 FontStyle = FontStyles.Italic,
                 Margin    = new Thickness(0, 2, 0, 0),
             };
