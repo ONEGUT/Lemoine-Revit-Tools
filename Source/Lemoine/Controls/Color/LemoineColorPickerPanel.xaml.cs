@@ -843,8 +843,7 @@ namespace LemoineTools.Lemoine.Controls
                         {
                             Child              = popupBorder,
                             PlacementTarget    = (UIElement)s,
-                            Placement          = PlacementMode.Bottom,
-                            VerticalOffset     = 2,
+                            Placement          = PlacementMode.Center,
                             StaysOpen          = false,
                             AllowsTransparency = true,
                         };
