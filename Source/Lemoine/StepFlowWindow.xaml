@@ -31,7 +31,7 @@
                 <RowDefinition Height="42" />   <!-- Footer        -->
             </Grid.RowDefinitions>
 
-            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0,0,0,1" />
+            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0" />
             <StackPanel x:Name="_progressStrip" Grid.Row="1" Margin="12,8,12,0" />
             <ScrollViewer Grid.Row="2" Margin="12,8,12,8"
                           VerticalScrollBarVisibility="Auto"
