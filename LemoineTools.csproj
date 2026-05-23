@@ -50,6 +50,16 @@
     own named folder under Commands\ and Tools\ with a descriptive namespace.
   -->
 
+  <!-- Exclude the LemoinePreview sub-project from this project's SDK wildcard globs.
+       Without this, MSBuild sweeps LemoinePreview\obj\ and picks up its XAML-generated
+       *.g.cs / *.g.i.cs files, causing CS0102/CS0111/CS0579/CS8646 duplicate definitions. -->
+  <ItemGroup>
+    <Compile          Remove="LemoinePreview\**\*" />
+    <Page             Remove="LemoinePreview\**\*" />
+    <None             Remove="LemoinePreview\**\*" />
+    <EmbeddedResource Remove="LemoinePreview\**\*" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
