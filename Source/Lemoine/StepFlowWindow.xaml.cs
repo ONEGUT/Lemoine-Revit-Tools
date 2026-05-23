@@ -52,6 +52,13 @@ namespace LemoineTools.Lemoine
         private Button       _resetBtn  = null!;
         private Button       _closeBtn  = null!;
 
+        // Log resize drag state
+        private bool   _isResizingLog   = false;
+        private double _logDragStartY   = 0;
+        private double _logDragStartH   = 0;
+        private const double _logMinH   = 60;
+        private const double _logMaxH   = 600;
+
         public StepFlowWindow(ILemoineTool tool)
         {
             InitializeComponent();
@@ -465,7 +472,7 @@ namespace LemoineTools.Lemoine
                 Padding = new Thickness(8, 6, 8, 6),
             };
             _logStack = new StackPanel();
-            _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
+            _logScroll.Height  = Math.Round(90 * LemoineSettings.Instance.Scale);
             _logScroll.Content = _logStack;
             logBrd.Child = _logScroll;
 
@@ -510,12 +517,74 @@ namespace LemoineTools.Lemoine
             _tabContentHost.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _logAreaContainer.Children.Add(_tabContentHost);
 
+            // ── Resize handle ─────────────────────────────────────────────────
+            _logAreaContainer.Children.Add(BuildLogResizeHandle());
+
             // Build tab buttons and wire up content
             foreach (var tab in _logTabs)
                 _tabButtonBar.Children.Add(BuildTabButton(tab.id, tab.label));
 
             // Show the first tab
             ActivateLogTab(_activeLogTab);
+        }
+
+        private Border BuildLogResizeHandle()
+        {
+            var handle = new Border
+            {
+                Height              = 12,
+                Cursor              = Cursors.SizeNS,
+                Background          = Brushes.Transparent,
+                VerticalAlignment   = VerticalAlignment.Top,
+            };
+
+            // ── Grip indicator: three short horizontal bars ───────────────────
+            var grip = new StackPanel
+            {
+                Orientation         = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+            };
+            for (int i = 0; i < 3; i++)
+            {
+                var bar = new Rectangle { Width = 24, Height = 2, RadiusX = 1, RadiusY = 1,
+                    Margin = new Thickness(0, i > 0 ? 2 : 0, 0, 0) };
+                bar.SetResourceReference(Rectangle.FillProperty, "LemoineBorderMid");
+                grip.Children.Add(bar);
+            }
+            handle.Child = grip;
+
+            handle.MouseEnter += (s, e) =>
+                handle.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            handle.MouseLeave += (s, e) =>
+            {
+                if (!_isResizingLog) handle.Background = Brushes.Transparent;
+            };
+
+            handle.MouseLeftButtonDown += (s, e) =>
+            {
+                _isResizingLog = true;
+                _logDragStartY = e.GetPosition(this).Y;
+                _logDragStartH = _logScroll.ActualHeight > 0
+                    ? _logScroll.ActualHeight : _logScroll.Height;
+                handle.CaptureMouse();
+                e.Handled = true;
+            };
+            handle.MouseMove += (s, e) =>
+            {
+                if (!_isResizingLog) return;
+                double delta = e.GetPosition(this).Y - _logDragStartY;
+                _logScroll.Height = Math.Max(_logMinH, Math.Min(_logMaxH, _logDragStartH + delta));
+            };
+            handle.MouseLeftButtonUp += (s, e) =>
+            {
+                _isResizingLog = false;
+                handle.Background = Brushes.Transparent;
+                handle.ReleaseMouseCapture();
+                e.Handled = true;
+            };
+
+            return handle;
         }
 
         private Border BuildTabButton(string id, string label)
