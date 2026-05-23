@@ -585,7 +585,6 @@ namespace LemoineTools.Lemoine
     </Setter.Value>
   </Setter>
 </Style>";
-    }
 
     // ── Scroll bubbling ───────────────────────────────────────────────────────
     /// <summary>
@@ -613,4 +612,5 @@ namespace LemoineTools.Lemoine
             (inner.Parent as UIElement)?.RaiseEvent(relay);
         };
     }
+}
 }
