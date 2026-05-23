@@ -54,10 +54,10 @@ namespace LemoineTools.Preview
         // ── Constructor ───────────────────────────────────────────────────────
         public PreviewMainWindow()
         {
-            Width  = 1060;
-            Height = 780;
-            MinWidth  = 820;
-            MinHeight = 580;
+            Width  = 1280;
+            Height = 720;
+            MinWidth  = 960;
+            MinHeight = 540;
             WindowStyle = WindowStyle.None;
             ResizeMode  = ResizeMode.CanResizeWithGrip;
             AllowsTransparency = false;
