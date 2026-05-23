@@ -35,7 +35,9 @@ namespace LemoineTools.Lemoine.Controls
     {
         // ── Config ───────────────────────────────────────────────────────────
         public static int MaxProjectColors { get; set; } = 6;
-        private const  int MaxRecentColors = 8;
+        private const  int MaxRecentColors  = 8;
+        private const  int ProjectSwatchSize = 30;
+        private const  int RecentSwatchSize  = 22;
 
         private static readonly string PersistPath =
             IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -465,27 +467,9 @@ namespace LemoineTools.Lemoine.Controls
             right.Children.Add(sep);
 
             // ── Project Colors ────────────────────────────────────────────────
-            var projHeader = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            projHeader.ColumnDefinitions.Add(new ColumnDefinition());
-            projHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var projLbl = MakeLabel("Project Colors");
-            Grid.SetColumn(projLbl, 0);
-            projHeader.Children.Add(projLbl);
-
-            var addBtn = new TextBlock
-            {
-                Text = "+",
-                FontSize = 14,
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand,
-            };
-            addBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            addBtn.MouseLeftButtonUp += (s, e) => AddProjectColor();
-            Grid.SetColumn(addBtn, 1);
-            projHeader.Children.Add(addBtn);
-
-            right.Children.Add(projHeader);
+            var projLbl = MakeLabel("Project");
+            projLbl.Margin = new Thickness(0, 0, 0, 6);
+            right.Children.Add(projLbl);
 
             _projectSwatchRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 0) };
             right.Children.Add(_projectSwatchRow);
@@ -493,9 +477,28 @@ namespace LemoineTools.Lemoine.Controls
             right.Children.Add(new Border { Height = 14 });
 
             // ── Recent Colors ─────────────────────────────────────────────────
-            var recentLbl = MakeLabel("Recent Colors");
-            recentLbl.Margin = new Thickness(0, 0, 0, 6);
-            right.Children.Add(recentLbl);
+            var recentHeader = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            recentHeader.ColumnDefinitions.Add(new ColumnDefinition());
+            recentHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var recentLbl = MakeLabel("Recent");
+            Grid.SetColumn(recentLbl, 0);
+            recentHeader.Children.Add(recentLbl);
+
+            var clearBtn = new TextBlock
+            {
+                Text = "Clear",
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+            };
+            clearBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            clearBtn.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            clearBtn.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            clearBtn.MouseLeftButtonUp += (s, e) => ClearRecentColors();
+            Grid.SetColumn(clearBtn, 1);
+            recentHeader.Children.Add(clearBtn);
+
+            right.Children.Add(recentHeader);
 
             _recentSwatchRow = new WrapPanel();
             right.Children.Add(_recentSwatchRow);
@@ -788,6 +791,13 @@ namespace LemoineTools.Lemoine.Controls
             RefreshProjectSwatches();
         }
 
+        private void ClearRecentColors()
+        {
+            _recentColors.Clear();
+            SavePersisted();
+            RefreshRecentSwatches();
+        }
+
         private void RefreshProjectSwatches()
         {
             if (_projectSwatchRow == null) return;
@@ -795,22 +805,24 @@ namespace LemoineTools.Lemoine.Controls
 
             foreach (var c in _projectColors.ToList())
             {
-                var swatch = MakeColorSwatch(c);
+                var swatch = MakeColorSwatch(c, ProjectSwatchSize);
+                swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 var captured = c;
-                swatch.MouseLeftButtonUp  += (s, e) => { FromColor(captured); PushOut(); };
-                swatch.MouseRightButtonUp += (s, e) =>
-                {
-                    _projectColors.Remove(captured);
-                    SavePersisted();
-                    RefreshProjectSwatches();
-                    e.Handled = true;
-                };
+                swatch.MouseLeftButtonUp += (s, e) => { FromColor(captured); PushOut(); };
+
+                var menu = new ContextMenu();
+                var copyItem   = new MenuItem { Header = "Copy hex" };
+                var removeItem = new MenuItem { Header = "Remove from project" };
+                copyItem.Click   += (s2, e2) => Clipboard.SetText($"#{captured.R:X2}{captured.G:X2}{captured.B:X2}");
+                removeItem.Click += (s2, e2) => { _projectColors.Remove(captured); SavePersisted(); RefreshProjectSwatches(); };
+                menu.Items.Add(copyItem);
+                menu.Items.Add(removeItem);
+                swatch.ContextMenu = menu;
+
                 _projectSwatchRow.Children.Add(swatch);
             }
 
-            // Empty "+" slots
-            int slots = MaxProjectColors - _projectColors.Count;
-            for (int i = 0; i < slots; i++)
+            if (_projectColors.Count < MaxProjectColors)
                 _projectSwatchRow.Children.Add(MakeAddSwatch());
         }
 
@@ -821,21 +833,22 @@ namespace LemoineTools.Lemoine.Controls
 
             foreach (var c in _recentColors)
             {
-                var swatch = MakeColorSwatch(c);
+                var swatch = MakeColorSwatch(c, RecentSwatchSize);
+                swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 var captured = c;
                 swatch.MouseLeftButtonUp += (s, e) => { FromColor(captured); PushOut(); };
                 _recentSwatchRow.Children.Add(swatch);
             }
         }
 
-        private static Border MakeColorSwatch(Color c)
+        private static Border MakeColorSwatch(Color c, int size = 30)
         {
             var b = new Border
             {
-                Width  = 30,
-                Height = 30,
-                CornerRadius    = new CornerRadius(6),
-                Margin          = new Thickness(0, 0, 5, 5),
+                Width  = size,
+                Height = size,
+                CornerRadius    = new CornerRadius(size <= 24 ? 4 : 6),
+                Margin          = new Thickness(0, 0, 4, 4),
                 Background      = new SolidColorBrush(c),
                 BorderThickness = new Thickness(1),
                 Cursor          = Cursors.Hand,
@@ -849,10 +862,10 @@ namespace LemoineTools.Lemoine.Controls
         {
             var b = new Border
             {
-                Width  = 30,
-                Height = 30,
+                Width  = ProjectSwatchSize,
+                Height = ProjectSwatchSize,
                 CornerRadius    = new CornerRadius(6),
-                Margin          = new Thickness(0, 0, 5, 5),
+                Margin          = new Thickness(0, 0, 4, 4),
                 BorderThickness = new Thickness(1),
                 Cursor          = Cursors.Hand,
                 SnapsToDevicePixels = true,
