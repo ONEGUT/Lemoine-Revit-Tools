@@ -107,11 +107,13 @@ namespace LemoineTools.Lemoine
         {
             BuildToolbar();
             BuildProgressStrip();
+            BuildLogArea();        // creates _logScroll/_logStack before BuildStepAccordion needs them
             BuildStepAccordion();
-            BuildLogArea();
             BuildFooter();
             InjectControlStyles();        // ← themed scrollbars, ComboBox, CheckBox
             ApplyContainerStyles();
+            // Defer tab-bar rendering until after callers can RegisterLogTab()
+            Loaded += (s, e) => BuildTabBar();
             ActivateStep(0);
         }
 
@@ -419,6 +421,15 @@ namespace LemoineTools.Lemoine
                 btnGrid.Children.Add(backBtn);
             }
             cs.Children.Add(btnGrid);
+
+            // Last step: embed the log area below the run button
+            if (idx == _tool.Steps.Length - 1)
+            {
+                cs.Children.Add(HSep(8));
+                _logAreaContainer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+                cs.Children.Add(_logAreaContainer);
+            }
+
             cb.Child = cs;
             _contentBorders[idx] = cb;
             main.Children.Add(cb);
@@ -429,9 +440,10 @@ namespace LemoineTools.Lemoine
         // Tab framework — add future tabs via RegisterLogTab() before Show()
         private readonly List<(string id, string label, FrameworkElement content)> _logTabs
             = new List<(string, string, FrameworkElement)>();
-        private string      _activeLogTab   = "log";
-        private StackPanel  _tabButtonBar   = null!;
-        private Border      _tabContentHost = null!;
+        private string      _activeLogTab    = "log";
+        private StackPanel  _tabButtonBar    = null!;
+        private Border      _tabContentHost  = null!;
+        private StackPanel  _logAreaContainer = null!;  // injected into the last step's content
 
         /// <summary>
         /// Register an additional tab in the log area.
@@ -460,36 +472,43 @@ namespace LemoineTools.Lemoine
             // Seed with the default tab — extra tabs added via RegisterLogTab()
             _logTabs.Insert(0, ("log", "Output Log", logBrd));
 
-            // Tab bar — rendered after RegisterLogTab() calls, so defer to first layout
-            _logArea.Loaded += (s, e) => BuildTabBar();
-
-            // Log is hidden until the run starts
+            // _logArea (XAML Grid.Row 3) is unused — log lives inside the last step
             _logArea.Visibility = Visibility.Collapsed;
+
+            PushLog("Ready.", "info");
         }
 
         private void BuildTabBar()
         {
-            _logArea.Children.Clear();
+            _logAreaContainer.Children.Clear();
 
-            // ── Tab bar border ────────────────────────────────────────────────
-            var tabBarBorder = new Border { BorderThickness = new Thickness(0) };
-
-            _tabButtonBar = new StackPanel
+            // ── Tab bar (only rendered when there are multiple tabs) ───────────
+            if (_logTabs.Count > 1)
             {
-                Orientation = Orientation.Horizontal,
-                Margin      = new Thickness(4, 0, 0, 0),
-            };
-            tabBarBorder.Child = _tabButtonBar;
-            _logArea.Children.Add(tabBarBorder);
+                var tabBarBorder = new Border { BorderThickness = new Thickness(0) };
+                _tabButtonBar = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin      = new Thickness(4, 0, 0, 0),
+                };
+                tabBarBorder.Child = _tabButtonBar;
+                _logAreaContainer.Children.Add(tabBarBorder);
+            }
+            else
+            {
+                _tabButtonBar = new StackPanel();  // inert placeholder
+            }
 
             // ── Tab content host ──────────────────────────────────────────────
             _tabContentHost = new Border
             {
-                BorderThickness = new Thickness(0, 0, 0, 0),
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
                 Margin          = new Thickness(0),
             };
-            _tabContentHost.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-            _logArea.Children.Add(_tabContentHost);
+            _tabContentHost.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            _tabContentHost.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _logAreaContainer.Children.Add(_tabContentHost);
 
             // Build tab buttons and wire up content
             foreach (var tab in _logTabs)
@@ -622,7 +641,7 @@ namespace LemoineTools.Lemoine
 
         private void AnimateContent(Border b, bool expand)
         {
-            var a = new DoubleAnimation { To = expand ? 600 : 0, Duration = TimeSpan.FromMilliseconds(expand ? LemoineSettings.Instance.AnimExpand : LemoineSettings.Instance.AnimMed), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+            var a = new DoubleAnimation { To = expand ? 1200 : 0, Duration = TimeSpan.FromMilliseconds(expand ? LemoineSettings.Instance.AnimExpand : LemoineSettings.Instance.AnimMed), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
             b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
         }
 
@@ -634,7 +653,6 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
             _resetBtn.IsEnabled = false;
-            _logArea.Visibility = Visibility.Visible;
             _logStack.Children.Clear(); PushLog("Starting…", "info");
             _tool.Run(
                 // BeginInvoke (non-blocking) — lets Execute() keep running while
@@ -673,7 +691,7 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
             _resetBtn.IsEnabled = true;
-            _logStack.Children.Clear(); _logArea.Visibility = Visibility.Collapsed;
+            _logStack.Children.Clear(); PushLog("Ready.", "info");
             SetStatus("● Configuring…"); SetCounts(0, 0, 0); SetProgress(0);
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
