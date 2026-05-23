@@ -4,8 +4,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
     Title="Lemoine Tools"
-    Width="500" Height="720"
-    MinWidth="420" MinHeight="560"
+    Width="540" Height="960"
+    MinWidth="360" MinHeight="640"
     WindowStartupLocation="CenterScreen"
     WindowStyle="None"
     ResizeMode="CanResizeWithGrip"
@@ -31,15 +31,13 @@
                 <RowDefinition Height="42" />   <!-- Footer        -->
             </Grid.RowDefinitions>
 
-            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0,0,0,1" />
+            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0" />
             <StackPanel x:Name="_progressStrip" Grid.Row="1" Margin="12,8,12,0" />
-            <Border x:Name="_stepListBorder" Grid.Row="2" Margin="12,0"
-                    BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_MD}" ClipToBounds="True">
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="_stepStack" />
-                </ScrollViewer>
-            </Border>
+            <ScrollViewer Grid.Row="2" Margin="12,8,12,8"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="_stepStack" />
+            </ScrollViewer>
             <StackPanel x:Name="_logArea" Grid.Row="3" />
             <Border x:Name="_footerBorder" Grid.Row="4" Padding="{DynamicResource LemoineTh_FooterPad}" />
         </Grid>

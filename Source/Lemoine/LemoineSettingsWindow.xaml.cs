@@ -114,7 +114,7 @@ namespace LemoineTools.Lemoine
                     Width           = 160,
                     Margin          = new Thickness(0, 0, 8, 8),
                     BorderThickness = new Thickness(2),
-                    CornerRadius    = new CornerRadius(4),
+                    CornerRadius    = new CornerRadius(8),
                     Padding         = new Thickness(10, 10, 10, 10),
                     Cursor          = Cursors.Hand,
                     Background      = theme.Raised,
@@ -123,33 +123,35 @@ namespace LemoineTools.Lemoine
 
                 // Mini preview strip
                 var preview = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Surface, Margin = new Thickness(0, 0, 0, 3) });
-                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Raised,  Margin = new Thickness(0, 0, 0, 3) });
+                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(3), Background = theme.Surface, Margin = new Thickness(0, 0, 0, 3) });
+                preview.Children.Add(new Border { Height = 6, CornerRadius = new CornerRadius(3), Background = theme.Raised,  Margin = new Thickness(0, 0, 0, 3) });
                 var accentStrip = new StackPanel { Orientation = Orientation.Horizontal };
-                accentStrip.Children.Add(new Border { Width = 20, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Accent, Margin = new Thickness(0, 0, 3, 0) });
-                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Green,  Margin = new Thickness(0, 0, 3, 0) });
-                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(2), Background = theme.Red });
+                accentStrip.Children.Add(new Border { Width = 20, Height = 6, CornerRadius = new CornerRadius(3), Background = theme.Accent, Margin = new Thickness(0, 0, 3, 0) });
+                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(3), Background = theme.Green,  Margin = new Thickness(0, 0, 3, 0) });
+                accentStrip.Children.Add(new Border { Width = 12, Height = 6, CornerRadius = new CornerRadius(3), Background = theme.Red });
                 preview.Children.Add(accentStrip);
 
                 // Theme name
                 var nameText = new TextBlock
                 {
                     Text       = theme.Name,
-                    FontSize   = 11,
                     FontWeight = FontWeights.Medium,
                     Foreground = theme.Text,
                     FontFamily = theme.UiFont,
                 };
+                nameText.SetResourceReference(TextBlock.FontSizeProperty, "LemoineFS_SM");
 
                 var activeTag = new Border
                 {
-                    Visibility  = isActive ? Visibility.Visible : Visibility.Collapsed,
-                    Padding     = new Thickness(5, 1, 5, 1),
-                    CornerRadius= new CornerRadius(2),
-                    Margin      = new Thickness(0, 3, 0, 0),
-                    Background  = theme.AccentDim,
+                    Visibility      = isActive ? Visibility.Visible : Visibility.Collapsed,
+                    Padding         = new Thickness(6, 2, 6, 2),
+                    CornerRadius    = new CornerRadius(999),
+                    Margin          = new Thickness(0, 4, 0, 0),
+                    Background      = System.Windows.Media.Brushes.Transparent,
+                    BorderThickness = new System.Windows.Thickness(1),
+                    BorderBrush     = theme.Accent,
                 };
-                var activeText = new TextBlock { Text = "Active", Foreground = theme.Accent, FontFamily = theme.MonoFont };
+                var activeText = new TextBlock { Text = "Active", Foreground = theme.Accent, FontFamily = theme.UiFont };
                 activeTag.Child = activeText;
 
                 var inner = new StackPanel();
@@ -185,9 +187,13 @@ namespace LemoineTools.Lemoine
                 bool active = t == _currentTheme;
                 card.BorderBrush = active ? t.Accent : t.Border;
 
-                // Refresh the active tag visibility
+                // Refresh the active tag visibility and border colour
                 if (card.Child is StackPanel sp && sp.Children.Count >= 3 && sp.Children[2] is Border tag)
-                    tag.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+                {
+                    tag.Visibility   = active ? Visibility.Visible : Visibility.Collapsed;
+                    tag.BorderBrush  = t.Accent;
+                    if (tag.Child is TextBlock tagTb) tagTb.Foreground = t.Accent;
+                }
             }
         }
 
@@ -219,9 +225,6 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private void BuildFooter()
         {
-            _footerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
             var closeBtn = LemoineControlStyles.BuildButton("Close", LemoineControlStyles.LemoineButtonVariant.Primary);
             closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
             closeBtn.Click += (s, e) => Close();
