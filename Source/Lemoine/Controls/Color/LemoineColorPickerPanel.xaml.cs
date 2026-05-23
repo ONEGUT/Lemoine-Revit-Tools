@@ -92,6 +92,8 @@ namespace LemoineTools.Lemoine.Controls
         private TextBox?    _newSetNameBox;
         private bool        _popupJustClosed;
         private bool        _internalUpdate;
+        private Border?     _saveBtn;
+        private TextBlock?  _saveBtnLabel;
 
         // ── Data state ────────────────────────────────────────────────────────
         private List<ColorSet> _colorSets    = new List<ColorSet>();
@@ -481,8 +483,18 @@ namespace LemoineTools.Lemoine.Controls
             sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
             right.Children.Add(sep);
 
-            // Set-selector dropdown
-            right.Children.Add(BuildSetDropdownButton());
+            // Set-selector dropdown + Save button
+            var setRow = new Grid();
+            setRow.ColumnDefinitions.Add(new ColumnDefinition());                           // * — dropdown fills remaining
+            setRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Auto — save button
+            var dropdown = BuildSetDropdownButton();
+            Grid.SetColumn(dropdown, 0);
+            setRow.Children.Add(dropdown);
+            _saveBtn        = BuildSaveButton();
+            _saveBtn.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(_saveBtn, 1);
+            setRow.Children.Add(_saveBtn);
+            right.Children.Add(setRow);
             right.Children.Add(new Border { Height = 6 });
 
             // 6-column × 2-row project swatch grid
@@ -577,6 +589,29 @@ namespace LemoineTools.Lemoine.Controls
             btn.Child    = inner;
             _dropdownBtn = btn;
             btn.MouseLeftButtonUp += (s, e) => OnDropdownButtonClick();
+            return btn;
+        }
+
+        private Border BuildSaveButton()
+        {
+            var btn = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(8, 5, 8, 5),
+                Cursor          = Cursors.Hand,
+                ToolTip         = "Save current color to palette",
+            };
+            btn.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            _saveBtnLabel = new TextBlock { Text = "+" };
+            _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            _saveBtnLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            _saveBtnLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            btn.Child = _saveBtnLabel;
+
+            btn.MouseLeftButtonUp += (s, e) => SaveCurrentColorToProject();
             return btn;
         }
 
@@ -792,6 +827,31 @@ namespace LemoineTools.Lemoine.Controls
                 _dropdownBtnLabel.Text = _colorSets[_activeSetIdx].Name;
         }
 
+        private void SaveCurrentColorToProject()
+        {
+            var activeSet = _colorSets.Count > 0 ? _colorSets[_activeSetIdx] : null;
+            if (activeSet == null) return;
+            int slot = activeSet.Colors.IndexOf(null);
+            if (slot == -1) return;
+            activeSet.Colors[slot] = SelectedColor;
+            SavePersisted();
+            RefreshProjectGrid();
+        }
+
+        private void RefreshSaveButtonState()
+        {
+            if (_saveBtn == null || _saveBtnLabel == null) return;
+            var activeSet = _colorSets.Count > 0 ? _colorSets[_activeSetIdx] : null;
+            bool isFull   = activeSet == null || activeSet.Colors.All(c => c.HasValue);
+            _saveBtn.IsHitTestVisible = !isFull;
+            _saveBtn.Cursor           = isFull ? Cursors.Arrow : Cursors.Hand;
+            _saveBtn.ToolTip          = isFull
+                ? "Palette full – right-click a swatch to remove it"
+                : "Save current color to palette";
+            if (isFull) _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            else        _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         // Project swatch grid (6 × 2)
         // ─────────────────────────────────────────────────────────────────────
@@ -807,37 +867,79 @@ namespace LemoineTools.Lemoine.Controls
                 var slotIdx = i;
                 var color   = (activeSet != null && activeSet.Colors.Count > i) ? activeSet.Colors[i] : null;
 
-                var swatch = color.HasValue ? MakeColorSwatch(color.Value, ProjectSwatchSize) : MakeEmptySwatch();
-                swatch.ToolTip = color.HasValue
-                    ? $"#{color.Value.R:X2}{color.Value.G:X2}{color.Value.B:X2}"
-                    : "Click to set color";
-
-                swatch.MouseLeftButtonUp += (s, e) =>
+                Border swatch;
+                if (color.HasValue)
                 {
-                    var owner   = Window.GetWindow(this);
-                    var initial = (activeSet != null && activeSet.Colors.Count > slotIdx
-                                   && activeSet.Colors[slotIdx].HasValue)
-                        ? activeSet.Colors[slotIdx]!.Value
-                        : Colors.White;
-                    var picked = LemoineColorPickerWindow.PickColor(owner, initial);
-                    if (picked.HasValue)
+                    var c  = color.Value;
+                    swatch = MakeColorSwatch(c, ProjectSwatchSize);
+                    swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+                    // Left-click: select this color (no picker)
+                    swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
+
+                    // Right-click: context menu to edit or remove
+                    var cm         = new ContextMenu();
+                    var editItem   = new MenuItem { Header = "Edit color" };
+                    var removeItem = new MenuItem { Header = "Remove" };
+
+                    editItem.Click += (ms, me) =>
                     {
-                        if (activeSet != null)
+                        var owner  = Window.GetWindow(this);
+                        var picked = LemoineColorPickerWindow.PickColor(owner, c);
+                        if (picked.HasValue && activeSet != null)
                         {
                             while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
                             activeSet.Colors[slotIdx] = picked.Value;
+                            SavePersisted();
+                            RefreshProjectGrid();
+                            FromColor(picked.Value);
+                            PushOut();
                         }
+                    };
+
+                    removeItem.Click += (ms, me) =>
+                    {
+                        if (activeSet != null && activeSet.Colors.Count > slotIdx)
+                            activeSet.Colors[slotIdx] = null;
                         SavePersisted();
                         RefreshProjectGrid();
-                        FromColor(picked.Value);
-                        PushOut();
-                    }
-                };
+                    };
+
+                    cm.Items.Add(editItem);
+                    cm.Items.Add(removeItem);
+                    swatch.ContextMenu = cm;
+                }
+                else
+                {
+                    swatch         = MakeEmptySwatch();
+                    swatch.ToolTip = "Click to add a color to this slot";
+
+                    // Left-click: open picker to fill this slot (unchanged)
+                    swatch.MouseLeftButtonUp += (s, e) =>
+                    {
+                        var owner  = Window.GetWindow(this);
+                        var picked = LemoineColorPickerWindow.PickColor(owner, Colors.White);
+                        if (picked.HasValue)
+                        {
+                            if (activeSet != null)
+                            {
+                                while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
+                                activeSet.Colors[slotIdx] = picked.Value;
+                            }
+                            SavePersisted();
+                            RefreshProjectGrid();
+                            FromColor(picked.Value);
+                            PushOut();
+                        }
+                    };
+                }
 
                 Grid.SetRow(swatch, i / 6);
                 Grid.SetColumn(swatch, i % 6);
                 _projectGrid.Children.Add(swatch);
             }
+
+            RefreshSaveButtonState();
         }
 
         // ─────────────────────────────────────────────────────────────────────
