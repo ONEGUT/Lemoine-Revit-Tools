@@ -54,7 +54,6 @@ namespace LemoineTools.Lemoine
         private Border?      _fEditorBorder;      // right-panel 280px editor host
         private Border?      _fTradeSwitcherBorder; // trade header (dot+label+chevron+gear)
         private TextBlock?   _fStatusText;        // footer status label
-        private StackPanel?  _filterToolbarBtns;  // shown only when Filters tab is active
 
         // ── Selected rule row border (kept to avoid full list rebuild on selection) ──
         private Border?     _fActiveRowBorder;   // the currently highlighted rule row
@@ -147,30 +146,12 @@ namespace LemoineTools.Lemoine
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
 
-            // Filter-tab-only buttons — shown/hidden by SwitchTab()
-            _filterToolbarBtns = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-                Visibility = Visibility.Collapsed,
-            };
-
-            // Single "Templates ˅" button replaces the old Import / Export / Restore trio.
-            // The dropdown popup is built in ShowTemplatesPopup() on the Filters partial class.
-            var tbTemplates = FlatSmBtn("Templates  ˅");
-            tbTemplates.Margin = new Thickness(0, 0, 6, 0);
-            tbTemplates.Click += (s, e) => ShowTemplatesPopup(tbTemplates);
-            _filterToolbarBtns.Children.Add(tbTemplates);
-            DockPanel.SetDock(_filterToolbarBtns, Dock.Right);
-
-            // Right slot: filter-tab buttons (shown/hidden per tab) + close button
+            // Right slot: close button only — Templates button now lives in the trade bar
             var rightPanel = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            rightPanel.Children.Add(_filterToolbarBtns);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
@@ -366,11 +347,6 @@ namespace LemoineTools.Lemoine
                     else        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 }
             }
-
-            // Show filter toolbar buttons only on the filters tab
-            if (_filterToolbarBtns != null)
-                _filterToolbarBtns.Visibility = tabId == "filters"
-                    ? Visibility.Visible : Visibility.Collapsed;
 
             // Build content for the selected tab
             UIElement content;
@@ -603,7 +579,7 @@ namespace LemoineTools.Lemoine
             return new Point(physX, physY);
         }
 
-        private void ShowDragGhost(string label, string subtext, string colorHex)
+        private void ShowDragGhost(string label, string subtext, string colorHex, bool enabled = true)
         {
             // Resolve theme resources from a live element.
             // Popup children have no logical parent, so SetResourceReference never
@@ -616,53 +592,130 @@ namespace LemoineTools.Lemoine
             FontFamily FontRes(string key)
                 => res.TryFindResource(key) as FontFamily ?? new FontFamily("Segoe UI");
 
+            // ── Full pill layout matching BuildRuleListRow ────────────────────
+            var outerRow = new Grid();
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                          // dot
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });    // name+sub
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                          // toggle
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                          // pencil
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                          // trash
+
             var dot = new Ellipse
             {
-                Width             = 14, Height = 14,
+                Width             = 16, Height = 16,
                 Fill              = BrushFromHex(colorHex),
                 Stroke            = BrushRes("LemoineBorder", Brushes.Gray),
-                StrokeThickness   = 1,
+                StrokeThickness   = 1.5,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 9, 0),
+                Margin            = new Thickness(4, 0, 10, 0),
             };
+            Grid.SetColumn(dot, 0);
+            outerRow.Children.Add(dot);
 
-            var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            var lbl = new TextBlock
+            var nameTb = new TextBlock
             {
                 Text       = label,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = BrushRes("LemoineText",   Brushes.Black),
                 FontSize   = DoubleRes("LemoineFS_SM", 12),
                 FontFamily = FontRes("LemoineUiFont"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
             };
-            nameStack.Children.Add(lbl);
+            var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            nameStack.Children.Add(nameTb);
             if (!string.IsNullOrEmpty(subtext))
             {
                 var sub = new TextBlock
                 {
                     Text         = subtext,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxWidth     = 200,
                     Foreground   = BrushRes("LemoineTextDim",  Brushes.Gray),
                     FontSize     = DoubleRes("LemoineFS_XS",   11),
                     FontFamily   = FontRes("LemoineMonoFont"),
+                    Margin       = new Thickness(0, 2, 0, 0),
                 };
                 nameStack.Children.Add(sub);
             }
+            Grid.SetColumn(nameStack, 1);
+            outerRow.Children.Add(nameStack);
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(dot);
-            row.Children.Add(nameStack);
+            // Toggle indicator — pill toggle matching BuildRuleToggle
+            double pillW  = res.TryFindResource("LemoineH_Pill_W") is double pw ? pw : 32;
+            double pillH  = res.TryFindResource("LemoineH_Pill_H") is double ph ? ph : 18;
+            double knobSz = res.TryFindResource("LemoineH_Knob")   is double ks ? ks : 14;
+            var togglePill = new Border
+            {
+                Width             = pillW,
+                Height            = pillH,
+                CornerRadius      = new CornerRadius(pillH / 2),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(8, 0, 4, 0),
+                ClipToBounds      = true,
+                Background        = enabled ? BrushRes("LemoineAccent", Brushes.CornflowerBlue)
+                                            : BrushRes("LemoineBorder",  Brushes.Gray),
+            };
+            var knob = new Ellipse
+            {
+                Width  = knobSz,
+                Height = knobSz,
+                Fill   = BrushRes(enabled ? "LemoineKnobOn" : "LemoineKnobOff", Brushes.White),
+            };
+            var knobCanvas = new Canvas { Width = pillW, Height = pillH, ClipToBounds = true };
+            Canvas.SetLeft(knob, enabled ? pillW - knobSz - 2 : 2);
+            Canvas.SetTop(knob,  (pillH - knobSz) / 2);
+            knobCanvas.Children.Add(knob);
+            togglePill.Child = knobCanvas;
+            Grid.SetColumn(togglePill, 2);
+            outerRow.Children.Add(togglePill);
+
+            // Pencil placeholder
+            var pencilTb = new TextBlock
+            {
+                Text              = "✎",
+                FontSize          = DoubleRes("LemoineFS_SM", 12),
+                FontFamily        = FontRes("LemoineUiFont"),
+                Foreground        = BrushRes("LemoineTextDim", Brushes.Gray),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(6, 0, 2, 0),
+            };
+            Grid.SetColumn(pencilTb, 3);
+            outerRow.Children.Add(pencilTb);
+
+            // Trash placeholder
+            var trashTb = new TextBlock
+            {
+                Text              = "",
+                FontSize          = DoubleRes("LemoineFS_SM", 12),
+                FontFamily        = new FontFamily("Segoe MDL2 Assets"),
+                Foreground        = BrushRes("LemoineTextDim", Brushes.Gray),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(4, 0, 0, 0),
+            };
+            Grid.SetColumn(trashTb, 4);
+            outerRow.Children.Add(trashTb);
+
+            // Match the actual pill width from the rule list panel
+            double ghostWidth = _fRuleListPanel != null && _fRuleListPanel.ActualWidth > 40
+                ? _fRuleListPanel.ActualWidth - _fRuleListPanel.Margin.Left - _fRuleListPanel.Margin.Right
+                : 240;
+
             var ghost = new Border
             {
-                Child           = row,
-                Padding         = new Thickness(10, 7, 14, 7),
+                Child           = outerRow,
+                Width           = ghostWidth,
+                Padding         = new Thickness(10, 8, 8, 8),
                 CornerRadius    = new CornerRadius(6),
                 BorderThickness = new Thickness(1),
                 Opacity         = 0.92,
                 Background      = BrushRes("LemoineSurface", Brushes.White),
                 BorderBrush     = BrushRes("LemoineAccent",  Brushes.CornflowerBlue),
+                Effect          = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 12, Opacity = 0.35, ShadowDepth = 4, Direction = 270,
+                },
             };
+
             HideDragGhost();
             GetCursorPos(out var pt);
             var lpt = ToLogicalPoint(pt.X, pt.Y);
@@ -671,8 +724,8 @@ namespace LemoineTools.Lemoine
                 AllowsTransparency = true,
                 IsHitTestVisible   = false,
                 Placement          = PlacementMode.AbsolutePoint,
-                HorizontalOffset   = lpt.X + 14,
-                VerticalOffset     = lpt.Y + 14,
+                HorizontalOffset   = lpt.X - _dragGhostClickOffset.X,
+                VerticalOffset     = lpt.Y - _dragGhostClickOffset.Y,
                 StaysOpen          = true,
                 Child              = ghost,
             };
