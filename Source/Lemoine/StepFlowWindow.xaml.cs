@@ -25,7 +25,7 @@ namespace LemoineTools.Lemoine
         // Named XAML elements — _outerBorder is declared by x:Name in XAML
 
         private Border[]    _stepRows        = Array.Empty<Border>();
-        private Rectangle[] _accentBars      = Array.Empty<Rectangle>();
+        private Border[]    _accentBars      = Array.Empty<Border>();
         private Border[]    _stepCircles     = Array.Empty<Border>();
         private TextBlock[] _circleTexts     = Array.Empty<TextBlock>();
         private TextBlock[] _stepTitles      = Array.Empty<TextBlock>();
@@ -213,10 +213,11 @@ namespace LemoineTools.Lemoine
                 CornerRadius = new CornerRadius(2),
                 Margin = new Thickness(10, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,  // center with status text
+                ClipToBounds = true,
             };
             _progressTrack.SetResourceReference(Border.HeightProperty,     "LemoineH_ProgBar");
             _progressTrack.SetResourceReference(Border.BackgroundProperty,  "LemoineBorder");
-            _progressFill = new Rectangle { HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
+            _progressFill = new Rectangle { HorizontalAlignment = HorizontalAlignment.Left, Width = 0, RadiusX = 2, RadiusY = 2 };
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
             _progressFill.SetResourceReference(Rectangle.HeightProperty, "LemoineH_ProgBar");
             var fg = new Grid(); fg.Children.Add(_progressFill);
@@ -243,7 +244,7 @@ namespace LemoineTools.Lemoine
         private void BuildStepAccordion()
         {
             var steps = _tool.Steps;
-            _stepRows = new Border[steps.Length]; _accentBars = new Rectangle[steps.Length];
+            _stepRows = new Border[steps.Length]; _accentBars = new Border[steps.Length];
             _stepCircles = new Border[steps.Length]; _circleTexts = new TextBlock[steps.Length];
             _stepTitles = new TextBlock[steps.Length]; _summaryTexts = new TextBlock[steps.Length];
             _waitingTexts = new TextBlock[steps.Length]; _runningTexts = new TextBlock[steps.Length];
@@ -270,7 +271,8 @@ namespace LemoineTools.Lemoine
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2) });
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var bar = new Rectangle(); _accentBars[idx] = bar;
+            // CornerRadius(8,0,0,8) matches the left-side curve of the outer step pill.
+            var bar = new Border { CornerRadius = new CornerRadius(8, 0, 0, 8) }; _accentBars[idx] = bar;
             Grid.SetColumn(bar, 0); ig.Children.Add(bar);
 
             var main = new StackPanel(); Grid.SetColumn(main, 1); ig.Children.Add(main);
@@ -587,7 +589,7 @@ namespace LemoineTools.Lemoine
             {
                 bool isActive = i == index, isDone = i < index, isFuture = i > index;
                 _stepRows[i].Background = Brushes.Transparent;
-                _accentBars[i].SetResourceReference(Rectangle.FillProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
+                _accentBars[i].SetResourceReference(Border.BackgroundProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
                 _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "LemoineBorder");
                 _stepCircles[i].SetResourceReference(Border.BackgroundProperty,  isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
                 _circleTexts[i].Text = isDone ? "✓" : (i + 1).ToString();

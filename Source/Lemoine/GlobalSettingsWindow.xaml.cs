@@ -231,12 +231,19 @@ namespace LemoineTools.Lemoine
                 Cursor          = Cursors.Hand,
                 CornerRadius    = new CornerRadius(999),
                 BorderThickness = new Thickness(1),
-                Background      = Brushes.Transparent,
                 Margin          = new Thickness(0, 0, 6, 0),
             };
             pill.SetResourceReference(Border.PaddingProperty, "LemoineTh_NavPillPad");
-            if (active) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            else        pill.BorderBrush = Brushes.Transparent;
+            if (active)
+            {
+                pill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
+                pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            }
+            else
+            {
+                pill.Background = Brushes.Transparent;
+                pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }
 
             var lbl = new TextBlock
             {
@@ -244,8 +251,9 @@ namespace LemoineTools.Lemoine
                 FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal,
             };
             lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineText");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            if (active) lbl.Foreground = Brushes.White;
+            else        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             pill.Child = lbl;
 
             pill.MouseLeftButtonDown += (s, e) => SwitchTab(tabId);
@@ -257,7 +265,7 @@ namespace LemoineTools.Lemoine
             pill.MouseLeave += (s, e) =>
             {
                 if (tabId != _activeTabId)
-                    pill.BorderBrush = Brushes.Transparent;
+                    pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             };
             return pill;
         }
@@ -340,14 +348,22 @@ namespace LemoineTools.Lemoine
             {
                 if (!_navPills.TryGetValue(id, out var pill)) continue;
                 bool active = id == tabId;
-                if (active) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                else        pill.BorderBrush = Brushes.Transparent;
+                if (active)
+                {
+                    pill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
+                    pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                }
+                else
+                {
+                    pill.Background = Brushes.Transparent;
+                    pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                }
 
                 if (pill.Child is TextBlock lbl)
                 {
                     lbl.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
-                    lbl.SetResourceReference(TextBlock.ForegroundProperty,
-                        active ? "LemoineAccent" : "LemoineText");
+                    if (active) lbl.Foreground = Brushes.White;
+                    else        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 }
             }
 
