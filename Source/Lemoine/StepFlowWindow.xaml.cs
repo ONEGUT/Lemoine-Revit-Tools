@@ -132,9 +132,6 @@ namespace LemoineTools.Lemoine
         {
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            // _toolbarBorder background/border are now managed by the LemoineTitleBar child control.
-            _stepListBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            _stepListBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
         }
 
         /// <summary>
@@ -659,18 +656,18 @@ namespace LemoineTools.Lemoine
             {
                 _stepRows[i] = BuildStepRow(i, steps[i], _tool.GetStepContent(steps[i].Id) ?? new Grid());
                 _stepStack.Children.Add(_stepRows[i]);
-                if (i < steps.Length - 1)
-                {
-                    var sep = new Rectangle { Height = 1 };
-                    sep.SetResourceReference(Rectangle.FillProperty, "LemoineBorder");
-                    _stepStack.Children.Add(sep);
-                }
             }
         }
 
         private Border BuildStepRow(int idx, StepDefinition step, FrameworkElement content)
         {
-            var row = new Border();
+            var row = new Border
+            {
+                CornerRadius    = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                Margin          = new Thickness(0, 0, 0, 8),
+            };
+            row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             var ig  = new Grid();
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2) });
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -876,7 +873,6 @@ namespace LemoineTools.Lemoine
             // ── Tab bar border ────────────────────────────────────────────────
             var tabBarBorder = new Border { BorderThickness = new Thickness(0, 1, 0, 0) };
             tabBarBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            tabBarBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
 
             _tabButtonBar = new StackPanel
             {
@@ -963,10 +959,7 @@ namespace LemoineTools.Lemoine
         // ─────────────────── Footer ────────────────────────────────────────────
         private void BuildFooter()
         {
-            _footerBorder.SetResourceReference(Border.PaddingProperty,    "LemoineTh_FooterPad");
-            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _footerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            _footerBorder.BorderThickness = new Thickness(0, 1, 0, 0);
+            _footerBorder.SetResourceReference(Border.PaddingProperty, "LemoineTh_FooterPad");
 
             var dp = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
 
@@ -995,13 +988,17 @@ namespace LemoineTools.Lemoine
             for (int i = 0; i < steps.Length; i++)
             {
                 bool isActive = i == index, isDone = i < index, isFuture = i > index;
-                _stepRows[i].SetResourceReference(Border.BackgroundProperty, isActive ? "LemoineAccentDim" : "Transparent");
+                _stepRows[i].Background = Brushes.Transparent;
                 _accentBars[i].SetResourceReference(Rectangle.FillProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
                 _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "LemoineBorder");
-                _stepCircles[i].SetResourceReference(Border.BackgroundProperty,  isDone ? "LemoineGreenDim" : isActive ? "LemoineAccentDim" : "Transparent");
+                _stepCircles[i].SetResourceReference(Border.BackgroundProperty,  isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
                 _circleTexts[i].Text = isDone ? "✓" : (i + 1).ToString();
-                _circleTexts[i].SetResourceReference(TextBlock.ForegroundProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "LemoineTextDim");
-                _stepTitles[i].SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                if (isDone || isActive)
+                    _circleTexts[i].Foreground = Brushes.White;
+                else
+                    _circleTexts[i].SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                _stepTitles[i].FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Normal;
+                _stepTitles[i].SetResourceReference(TextBlock.ForegroundProperty, isActive ? "LemoineAccent" : "LemoineText");
                 _summaryTexts[i].Visibility = isDone ? Visibility.Visible : Visibility.Collapsed;
                 if (isDone) _summaryTexts[i].Text = _tool.SummaryFor(steps[i].Id);
                 _waitingTexts[i].Visibility = isFuture ? Visibility.Visible : Visibility.Collapsed;

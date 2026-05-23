@@ -28,13 +28,13 @@
                 <RowDefinition Height="48" />
             </Grid.RowDefinitions>
 
-            <Border x:Name="_toolbarBorder"  Grid.Row="0" BorderThickness="0,0,0,1" />
+            <Border x:Name="_toolbarBorder"  Grid.Row="0" />
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           Padding="12,8,12,8">
                 <StackPanel x:Name="_settingsStack" />
             </ScrollViewer>
-            <Border x:Name="_footerBorder" Grid.Row="2" BorderThickness="0,1,0,0" Padding="{DynamicResource LemoineTh_FooterPad}" />
+            <Border x:Name="_footerBorder" Grid.Row="2" Padding="{DynamicResource LemoineTh_FooterPad}" />
         </Grid>
     </Border>
 </Window>

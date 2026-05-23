@@ -21,28 +21,16 @@
     <Border x:Name="_outerBorder" BorderThickness="1">
         <Grid x:Name="_root">
             <Grid.RowDefinitions>
-                <RowDefinition Height="38" />
-                <RowDefinition Height="*"  />
-                <RowDefinition Height="42" />
+                <RowDefinition Height="38"   />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*"    />
+                <RowDefinition Height="42"   />
             </Grid.RowDefinitions>
 
-            <Border x:Name="_toolbarBorder" Grid.Row="0" BorderThickness="0,0,0,1" ClipToBounds="True" />
-
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="190" />
-                    <ColumnDefinition Width="*"   />
-                </Grid.ColumnDefinitions>
-                <Border x:Name="_railBorder" Grid.Column="0" BorderThickness="0,0,1,0">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="_railPanel" />
-                    </ScrollViewer>
-                </Border>
-                <Border x:Name="_contentBorder" Grid.Column="1" />
-            </Grid>
-
-            <Border x:Name="_footerBorder" Grid.Row="2" BorderThickness="0,1,0,0" ClipToBounds="True" />
+            <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
+            <Border x:Name="_pillNavBorder" Grid.Row="1" Padding="12,6,12,6" />
+            <Border x:Name="_contentBorder" Grid.Row="2" />
+            <Border x:Name="_footerBorder"  Grid.Row="3" ClipToBounds="True" />
         </Grid>
     </Border>
 </Window>

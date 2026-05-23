@@ -1033,119 +1033,167 @@ namespace LemoineTools.Preview
 
         private UIElement BuildSettingsPanel()
         {
-            // Two-column layout: 190px rail | * content  (matches GlobalSettingsWindow.xaml)
+            // Vertical layout: pill nav row on top, content below
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            // Left: navigation rail
-            var railBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0) };
-            railBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            railBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            // Top: pill navigation row
+            var pillNavBorder = new Border { Padding = new Thickness(12, 6, 12, 6) };
+            Grid.SetRow(pillNavBorder, 0);
+            grid.Children.Add(pillNavBorder);
 
-            var railScroll = new ScrollViewer
-            {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            };
-            var railPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
-            railScroll.Content = railPanel;
-            railBorder.Child   = railScroll;
-            Grid.SetColumn(railBorder, 0);
-            grid.Children.Add(railBorder);
-
-            // Right: content host
+            // Bottom: content host
             _settingsContentBorder = new Border();
-            Grid.SetColumn(_settingsContentBorder, 1);
+            Grid.SetRow(_settingsContentBorder, 1);
             grid.Children.Add(_settingsContentBorder);
 
-            // Rail entries — mirrors GlobalSettingsWindow._railDefs exactly
-            var railDefs = new[]
+            // Nav defs — mirrors GlobalSettingsWindow._navDefs
+            var navDefs = new[]
             {
-                ("general",  LemoineIcon.Cog,           "General",          "Theme & UI size"),
-                ("filters",  LemoineIcon.Filter,         "Filters / Color",  "Auto Filter color rules"),
-                ("t03",      LemoineIcon.Lab,             "Ceiling Heatmap",  "Color ramp & detection"),
-                ("t04",      LemoineIcon.Link,            "Link Views",       "Buffer & cluster settings"),
-                ("t08",      LemoineIcon.Newspaper,       "Legend Creator",   "Filter legend layout"),
-                ("tx",       LemoineIcon.FilePdf,         "Batch Export",     "Filename patterns & format defaults"),
-                ("ty",       LemoineIcon.ListNumbered,    "Batch Dimension",  "Dimension style & reference plane defaults"),
-                ("tz",       LemoineIcon.List,            "Create Sheets",    "Title block & naming defaults"),
-                ("tw",       LemoineIcon.Table,           "Sheet Pack",       "Parameter mapping & export defaults"),
+                ("general", "General"),
+                ("filters", "Filters / Color"),
+                ("t03",     "Ceiling Heatmap"),
+                ("t04",     "Link Views"),
+                ("t08",     "Legend Creator"),
+                ("tx",      "Batch Export"),
+                ("ty",      "Batch Dimension"),
+                ("tz",      "Create Sheets"),
+                ("tw",      "Sheet Pack"),
             };
+            const int pillNavVisible = 6;
 
+            var pillPanel = new StackPanel { Orientation = Orientation.Horizontal };
             _settingsRailBtns.Clear();
-            foreach (var (id, icon, label, desc) in railDefs)
+
+            int vis = Math.Min(pillNavVisible, navDefs.Length);
+            for (int i = 0; i < vis; i++)
             {
-                var tabId = id;
-                var btn   = BuildSettingsRailButton(id, icon, label, desc);
-                btn.MouseLeftButtonDown += (_, _) => SwitchSettingsTab(tabId);
-                _settingsRailBtns[id] = btn;
-                railPanel.Children.Add(btn);
+                var (id, label) = navDefs[i];
+                var pill = BuildSettingsNavPill(id, label);
+                _settingsRailBtns[id] = pill;
+                pillPanel.Children.Add(pill);
             }
+
+            if (navDefs.Length > vis)
+            {
+                int overflow = navDefs.Length - vis;
+                var morePill = BuildSettingsMorePill($"More +{overflow} ▾", navDefs, pillNavVisible);
+                pillPanel.Children.Add(morePill);
+            }
+
+            pillNavBorder.Child = pillPanel;
 
             SwitchSettingsTab(_settingsActiveTabId);
             return grid;
         }
 
-        private Border BuildSettingsRailButton(string tabId, LemoineIcon icon, string label, string desc)
+        private Border BuildSettingsNavPill(string tabId, string label)
         {
             bool active = tabId == _settingsActiveTabId;
 
-            var btn = new Border
+            var pill = new Border
             {
-                Padding         = new Thickness(12, 10, 12, 10),
                 Cursor          = Cursors.Hand,
-                CornerRadius    = new CornerRadius(5),
-                BorderThickness = new Thickness(2, 0, 0, 0),
+                CornerRadius    = new CornerRadius(999),
+                BorderThickness = new Thickness(1),
+                Background      = Brushes.Transparent,
+                Margin          = new Thickness(0, 0, 6, 0),
             };
-            if (active) btn.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            else        btn.Background = Brushes.Transparent;
-            if (active) btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            else        btn.BorderBrush = Brushes.Transparent;
+            pill.SetResourceReference(Border.PaddingProperty, "LemoineTh_NavPillPad");
+            if (active) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            else        pill.BorderBrush = Brushes.Transparent;
 
-            var iconTb = LemoineIcons.Build(icon, "LemoineFS_LG", active ? "LemoineAccent" : "LemoineText");
-            iconTb.VerticalAlignment = VerticalAlignment.Top;
-            iconTb.Margin            = new Thickness(0, 2, 10, 0);
-
-            var labelTb = new TextBlock
+            var lbl = new TextBlock
             {
                 Text       = label,
                 FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal,
             };
-            labelTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            labelTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            labelTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            pill.Child = lbl;
 
-            var descTb = new TextBlock
-            {
-                Text         = desc,
-                Margin       = new Thickness(0, 2, 0, 0),
-                TextWrapping = TextWrapping.Wrap,
-            };
-            descTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            descTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            descTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var textStack = new StackPanel();
-            textStack.Children.Add(labelTb);
-            textStack.Children.Add(descTb);
-
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(iconTb);
-            row.Children.Add(textStack);
-            btn.Child = row;
-
-            btn.MouseEnter += (_, _) =>
+            pill.MouseLeftButtonDown += (_, _) => SwitchSettingsTab(tabId);
+            pill.MouseEnter += (_, _) =>
             {
                 if (tabId != _settingsActiveTabId)
-                    btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
             };
-            btn.MouseLeave += (_, _) =>
+            pill.MouseLeave += (_, _) =>
             {
                 if (tabId != _settingsActiveTabId)
-                    btn.Background = Brushes.Transparent;
+                    pill.BorderBrush = Brushes.Transparent;
             };
-            return btn;
+            return pill;
+        }
+
+        private Border BuildSettingsMorePill(string label,
+            (string Id, string Label)[] navDefs, int pillNavVisible)
+        {
+            var pill = new Border
+            {
+                Cursor          = Cursors.Hand,
+                CornerRadius    = new CornerRadius(999),
+                BorderThickness = new Thickness(1),
+                Background      = Brushes.Transparent,
+                Margin          = new Thickness(0, 0, 6, 0),
+            };
+            pill.SetResourceReference(Border.PaddingProperty,     "LemoineTh_NavPillPad");
+            pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var lbl = new TextBlock { Text = label };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            pill.Child = lbl;
+
+            pill.MouseLeftButtonDown += (_, _) =>
+            {
+                var popup = new System.Windows.Controls.Primitives.Popup
+                {
+                    PlacementTarget    = pill,
+                    Placement          = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                    StaysOpen          = false,
+                    AllowsTransparency = false,
+                };
+                var outer = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius    = new CornerRadius(8),
+                    Padding         = new Thickness(4),
+                    Margin          = new Thickness(0, 2, 0, 0),
+                };
+                outer.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+                outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                var stack = new StackPanel();
+                for (int i = pillNavVisible; i < navDefs.Length; i++)
+                {
+                    var (tabId, tabLabel) = navDefs[i];
+                    var captId = tabId;
+                    var item = new Border
+                    {
+                        Cursor       = Cursors.Hand,
+                        CornerRadius = new CornerRadius(4),
+                        Padding      = new Thickness(12, 6, 12, 6),
+                        Background   = Brushes.Transparent,
+                    };
+                    var itemLbl = new TextBlock { Text = tabLabel };
+                    itemLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+                    itemLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                    itemLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                    item.Child = itemLbl;
+                    item.MouseLeftButtonDown += (s2, e2) => { popup.IsOpen = false; SwitchSettingsTab(captId); };
+                    item.MouseEnter += (s2, e2) => item.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    item.MouseLeave += (s2, e2) => item.Background = Brushes.Transparent;
+                    stack.Children.Add(item);
+                }
+                outer.Child = stack;
+                popup.Child = outer;
+                popup.IsOpen = true;
+            };
+            return pill;
         }
 
         private void SwitchSettingsTab(string tabId)
@@ -1155,19 +1203,15 @@ namespace LemoineTools.Preview
             foreach (var pair in _settingsRailBtns)
             {
                 bool active = pair.Key == tabId;
-                var btn = pair.Value;
-                if (active) btn.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-                else        btn.Background = Brushes.Transparent;
-                if (active) btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                else        btn.BorderBrush = Brushes.Transparent;
+                var pill = pair.Value;
+                if (active) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                else        pill.BorderBrush = Brushes.Transparent;
 
-                if (btn.Child is StackPanel row)
+                if (pill.Child is TextBlock lbl)
                 {
-                    if (row.Children[0] is TextBlock iconTb)
-                        iconTb.SetResourceReference(TextBlock.ForegroundProperty,
-                            active ? "LemoineAccent" : "LemoineText");
-                    if (row.Children[1] is StackPanel ts && ts.Children[0] is TextBlock lblTb)
-                        lblTb.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                    lbl.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty,
+                        active ? "LemoineAccent" : "LemoineText");
                 }
             }
 
