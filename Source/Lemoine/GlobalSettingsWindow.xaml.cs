@@ -210,11 +210,12 @@ namespace LemoineTools.Lemoine
             var pill = new Border
             {
                 Cursor          = Cursors.Hand,
-                CornerRadius    = new CornerRadius(999),
+                CornerRadius    = new CornerRadius(10),
                 BorderThickness = new Thickness(1),
+                Padding         = new Thickness(8, 4, 8, 4),
                 Margin          = new Thickness(0, 0, 6, 0),
             };
-            pill.SetResourceReference(Border.PaddingProperty, "LemoineTh_NavPillPad");
+            pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             if (active)
             {
                 pill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
@@ -222,8 +223,7 @@ namespace LemoineTools.Lemoine
             }
             else
             {
-                pill.Background = Brushes.Transparent;
-                pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                pill.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
             }
 
             var lbl = new TextBlock
@@ -231,9 +231,9 @@ namespace LemoineTools.Lemoine
                 Text       = label,
                 FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal,
             };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            if (active) lbl.Foreground = Brushes.White;
+            if (active) lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineBg");
             else        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             pill.Child = lbl;
 
@@ -256,16 +256,16 @@ namespace LemoineTools.Lemoine
             var pill = new Border
             {
                 Cursor          = Cursors.Hand,
-                CornerRadius    = new CornerRadius(999),
+                CornerRadius    = new CornerRadius(10),
                 BorderThickness = new Thickness(1),
-                Background      = Brushes.Transparent,
+                Padding         = new Thickness(8, 4, 8, 4),
                 Margin          = new Thickness(0, 0, 6, 0),
             };
-            pill.SetResourceReference(Border.PaddingProperty,     "LemoineTh_NavPillPad");
+            pill.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
             pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var lbl = new TextBlock { Text = label };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             pill.Child = lbl;
@@ -336,14 +336,14 @@ namespace LemoineTools.Lemoine
                 }
                 else
                 {
-                    pill.Background = Brushes.Transparent;
+                    pill.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
                     pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 }
 
                 if (pill.Child is TextBlock lbl)
                 {
                     lbl.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
-                    if (active) lbl.Foreground = Brushes.White;
+                    if (active) lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineBg");
                     else        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 }
             }
