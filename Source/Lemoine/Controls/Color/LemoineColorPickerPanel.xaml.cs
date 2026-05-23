@@ -92,8 +92,6 @@ namespace LemoineTools.Lemoine.Controls
         private TextBox?    _newSetNameBox;
         private bool        _popupJustClosed;
         private bool        _internalUpdate;
-        private Border?     _saveBtn;
-        private TextBlock?  _saveBtnLabel;
 
         // ── Data state ────────────────────────────────────────────────────────
         private List<ColorSet> _colorSets    = new List<ColorSet>();
@@ -483,18 +481,8 @@ namespace LemoineTools.Lemoine.Controls
             sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
             right.Children.Add(sep);
 
-            // Set-selector dropdown + Save button
-            var setRow = new Grid();
-            setRow.ColumnDefinitions.Add(new ColumnDefinition());                           // * — dropdown fills remaining
-            setRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Auto — save button
-            var dropdown = BuildSetDropdownButton();
-            Grid.SetColumn(dropdown, 0);
-            setRow.Children.Add(dropdown);
-            _saveBtn        = BuildSaveButton();
-            _saveBtn.Margin = new Thickness(6, 0, 0, 0);
-            Grid.SetColumn(_saveBtn, 1);
-            setRow.Children.Add(_saveBtn);
-            right.Children.Add(setRow);
+            // Set-selector dropdown
+            right.Children.Add(BuildSetDropdownButton());
             right.Children.Add(new Border { Height = 6 });
 
             // 6-column × 2-row project swatch grid
@@ -589,29 +577,6 @@ namespace LemoineTools.Lemoine.Controls
             btn.Child    = inner;
             _dropdownBtn = btn;
             btn.MouseLeftButtonUp += (s, e) => OnDropdownButtonClick();
-            return btn;
-        }
-
-        private Border BuildSaveButton()
-        {
-            var btn = new Border
-            {
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(8, 5, 8, 5),
-                Cursor          = Cursors.Hand,
-                ToolTip         = "Save current color to palette",
-            };
-            btn.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
-            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            _saveBtnLabel = new TextBlock { Text = "+" };
-            _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            _saveBtnLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            _saveBtnLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            btn.Child = _saveBtnLabel;
-
-            btn.MouseLeftButtonUp += (s, e) => SaveCurrentColorToProject();
             return btn;
         }
 
@@ -827,31 +792,6 @@ namespace LemoineTools.Lemoine.Controls
                 _dropdownBtnLabel.Text = _colorSets[_activeSetIdx].Name;
         }
 
-        private void SaveCurrentColorToProject()
-        {
-            var activeSet = _colorSets.Count > 0 ? _colorSets[_activeSetIdx] : null;
-            if (activeSet == null) return;
-            int slot = activeSet.Colors.IndexOf(null);
-            if (slot == -1) return;
-            activeSet.Colors[slot] = SelectedColor;
-            SavePersisted();
-            RefreshProjectGrid();
-        }
-
-        private void RefreshSaveButtonState()
-        {
-            if (_saveBtn == null || _saveBtnLabel == null) return;
-            var activeSet = _colorSets.Count > 0 ? _colorSets[_activeSetIdx] : null;
-            bool isFull   = activeSet == null || activeSet.Colors.All(c => c.HasValue);
-            _saveBtn.IsHitTestVisible = !isFull;
-            _saveBtn.Cursor           = isFull ? Cursors.Arrow : Cursors.Hand;
-            _saveBtn.ToolTip          = isFull
-                ? "Palette full – right-click a swatch to remove it"
-                : "Save current color to palette";
-            if (isFull) _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            else        _saveBtnLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-        }
-
         // ─────────────────────────────────────────────────────────────────────
         // Project swatch grid (6 × 2)
         // ─────────────────────────────────────────────────────────────────────
@@ -872,65 +812,71 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     var c  = color.Value;
                     swatch = MakeColorSwatch(c, ProjectSwatchSize);
-                    swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                    swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2} · Right-click to remove";
 
-                    // Left-click: select this color (no picker)
+                    // Left-click: load this color into the picker
                     swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
 
-                    // Right-click: context menu to edit or remove
-                    var cm         = new ContextMenu();
-                    var editItem   = new MenuItem { Header = "Edit color" };
-                    var removeItem = new MenuItem { Header = "Remove" };
-
-                    editItem.Click += (ms, me) =>
+                    // Right-click: small inline popup to delete the slot
+                    swatch.MouseRightButtonUp += (s, e) =>
                     {
-                        var owner  = Window.GetWindow(this);
-                        var picked = LemoineColorPickerWindow.PickColor(owner, c);
-                        if (picked.HasValue && activeSet != null)
+                        var removeLbl = new TextBlock
                         {
-                            while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
-                            activeSet.Colors[slotIdx] = picked.Value;
+                            Text   = "Remove",
+                            Cursor = Cursors.Hand,
+                            Margin = new Thickness(10, 6, 10, 6),
+                        };
+                        removeLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                        removeLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                        removeLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+                        var popupBorder = new Border
+                        {
+                            BorderThickness = new Thickness(1),
+                            CornerRadius    = new CornerRadius(6),
+                            Child           = removeLbl,
+                        };
+                        popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                        popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        var popup = new Popup
+                        {
+                            Child              = popupBorder,
+                            PlacementTarget    = (UIElement)s,
+                            Placement          = PlacementMode.Bottom,
+                            VerticalOffset     = 2,
+                            StaysOpen          = false,
+                            AllowsTransparency = true,
+                        };
+
+                        removeLbl.MouseLeftButtonUp += (rs, re) =>
+                        {
+                            if (activeSet != null && activeSet.Colors.Count > slotIdx)
+                                activeSet.Colors[slotIdx] = null;
                             SavePersisted();
                             RefreshProjectGrid();
-                            FromColor(picked.Value);
-                            PushOut();
-                        }
-                    };
+                            popup.IsOpen = false;
+                        };
 
-                    removeItem.Click += (ms, me) =>
-                    {
-                        if (activeSet != null && activeSet.Colors.Count > slotIdx)
-                            activeSet.Colors[slotIdx] = null;
-                        SavePersisted();
-                        RefreshProjectGrid();
+                        popup.IsOpen = true;
+                        e.Handled    = true;
                     };
-
-                    cm.Items.Add(editItem);
-                    cm.Items.Add(removeItem);
-                    swatch.ContextMenu = cm;
                 }
                 else
                 {
                     swatch         = MakeEmptySwatch();
-                    swatch.ToolTip = "Click to add a color to this slot";
+                    swatch.ToolTip = "Click to save current color here";
 
-                    // Left-click: open picker to fill this slot (unchanged)
+                    // Left-click: fill this slot with the current color immediately
                     swatch.MouseLeftButtonUp += (s, e) =>
                     {
-                        var owner  = Window.GetWindow(this);
-                        var picked = LemoineColorPickerWindow.PickColor(owner, Colors.White);
-                        if (picked.HasValue)
+                        if (activeSet != null)
                         {
-                            if (activeSet != null)
-                            {
-                                while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
-                                activeSet.Colors[slotIdx] = picked.Value;
-                            }
-                            SavePersisted();
-                            RefreshProjectGrid();
-                            FromColor(picked.Value);
-                            PushOut();
+                            while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
+                            activeSet.Colors[slotIdx] = SelectedColor;
                         }
+                        SavePersisted();
+                        RefreshProjectGrid();
                     };
                 }
 
@@ -938,8 +884,6 @@ namespace LemoineTools.Lemoine.Controls
                 Grid.SetColumn(swatch, i % 6);
                 _projectGrid.Children.Add(swatch);
             }
-
-            RefreshSaveButtonState();
         }
 
         // ─────────────────────────────────────────────────────────────────────
