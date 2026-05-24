@@ -59,6 +59,11 @@ namespace LemoineTools.Lemoine
         private Border?     _fActiveRowBorder;   // the currently highlighted rule row
         private TextBlock?  _fActiveNameTb;      // name label in the active row (updated in-place by editor)
 
+        // ── Multi-select / batch-edit state ──────────────────────────────────
+        private readonly HashSet<string>              _fSelectedRuleIds   = new HashSet<string>();
+        private readonly HashSet<string>              _fBatchDirtyFields  = new HashSet<string>();
+        private readonly Dictionary<string, Border>   _fMultiSelectBorders = new Dictionary<string, Border>();
+
         // ── Active drag state (rule reorder) ─────────────────────────────────
         private string?  _dragRuleId;
         private Border?  _dragSourceBorder;   // the pill being dragged
@@ -171,9 +176,9 @@ namespace LemoineTools.Lemoine
         {
             ("general", "General"),
             ("filters", "Filters / Color"),
+            ("t08",     "Legend Creator"),
             ("t03",     "Ceiling Heatmap"),
             ("t04",     "Link Views"),
-            ("t08",     "Legend Creator"),
             ("tx",      "Batch Export"),
             ("ty",      "Batch Dimension"),
             ("tz",      "Create Sheets"),
@@ -757,8 +762,10 @@ namespace LemoineTools.Lemoine
             {
                 Text              = "",
                 FontFamily        = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
-                VerticalAlignment = VerticalAlignment.Center,
-                IsHitTestVisible  = false,
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment       = TextAlignment.Center,
+                IsHitTestVisible    = false,
             };
             icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
