@@ -118,8 +118,10 @@ namespace LemoineTools.Lemoine.Controls
 
         private void SetTabStyle(Border tab, bool active)
         {
-            tab.SetResourceReference(Border.BackgroundProperty,  active ? "LemoineAccentDim" : "Transparent");
-            tab.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent"    : "Transparent");
+            if (active) tab.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            else        tab.Background = Brushes.Transparent;
+            if (active) tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            else        tab.BorderBrush = Brushes.Transparent;
             if (tab.Tag is object[] arr && arr[0] is TextBlock lbl)
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
         }
