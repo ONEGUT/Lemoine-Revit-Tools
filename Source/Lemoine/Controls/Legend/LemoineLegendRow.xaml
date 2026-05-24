@@ -9,7 +9,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Border x:Name="_rowSplitTop"    Grid.Row="0" Height="5" AllowDrop="True" />
-        <Border x:Name="_rowBorder"      Grid.Row="1" BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_Card}" Padding="6" />
+        <Border x:Name="_rowBorder"      Grid.Row="1" BorderThickness="1" CornerRadius="{DynamicResource LemoineRadius_Chip}" Padding="6" />
         <Border x:Name="_rowSplitBottom" Grid.Row="2" Height="5" AllowDrop="True" />
     </Grid>
 </UserControl>

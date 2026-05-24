@@ -77,7 +77,7 @@ namespace LemoineTools.Lemoine.Controls
                 Visibility = Visibility.Visible,
                 Tag        = "badge",
             };
-            badgeBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_LG");
+            badgeBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             badgeBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             badgeBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 

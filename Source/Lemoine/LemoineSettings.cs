@@ -6,7 +6,7 @@ using System.Xml.Serialization;
 namespace LemoineTools.Lemoine
 {
     /// <summary>Discrete UI scale presets available to the user.</summary>
-    public enum LemoineUiSize { Small, Medium, Large }
+    public enum LemoineUiSize { Small, Medium, Large, ExtraLarge }
 
     /// <summary>Persisted UI settings DTO — written to %AppData%\LemoineTools\UISettings.xml.</summary>
     [XmlRoot("LemoineUISettings")]
@@ -59,12 +59,13 @@ namespace LemoineTools.Lemoine
             SaveToDisk();
         }
 
-        /// <summary>Multiplier: Small=0.85, Medium=1.0, Large=1.2</summary>
+        /// <summary>Multiplier: Small=0.85, Medium=1.0, Large=1.2, ExtraLarge=1.40</summary>
         public double Scale => UiSize switch
         {
-            LemoineUiSize.Small => 0.85,
-            LemoineUiSize.Large => 1.20,
-            _                   => 1.00,
+            LemoineUiSize.Small      => 0.85,
+            LemoineUiSize.Large      => 1.20,
+            LemoineUiSize.ExtraLarge => 1.40,
+            _                        => 1.00,
         };
 
         // ── Animation durations (ms) — type-safe for TimeSpan.FromMilliseconds() ──
@@ -146,13 +147,13 @@ namespace LemoineTools.Lemoine
             r["LemoineH_Knob"]     = Math.Round(11 * sc, 1);
             r["LemoineH_Sep"]      = 1.0;
             r["LemoineH_LogArea"]  = Math.Round(90 * sc);
+            r["LemoineW_NumInput"] = Math.Round(90  * sc);
+            r["LemoineW_TextInput"]= Math.Round(240 * sc);
 
             // ── Corner radii (design constants — not scaled) ──────────────────
-            r["LemoineRadius_SM"]     = new System.Windows.CornerRadius(3);
-            r["LemoineRadius_MD"]     = new System.Windows.CornerRadius(4);
-            r["LemoineRadius_Card"]   = new System.Windows.CornerRadius(6);
-            r["LemoineRadius_LG"]     = new System.Windows.CornerRadius(8);
-            r["LemoineRadius_Circle"] = new System.Windows.CornerRadius(9);
+            r["LemoineRadius_SM"]   = new System.Windows.CornerRadius(3);
+            r["LemoineRadius_MD"]   = new System.Windows.CornerRadius(4);
+            r["LemoineRadius_Chip"] = new System.Windows.CornerRadius(10);
 
             // ── Thickness resources ───────────────────────────────────────────
             r["LemoineTh_ToolbarMar"]   = Th(14, 0, 14, 0);
@@ -176,6 +177,7 @@ namespace LemoineTools.Lemoine
             r["LemoineTh_ProgCountMar"] = Th(10, 0, 10,  0);
             r["LemoineTh_CircleMar"]    = Th( 0, 0,  8,  0);
             r["LemoineTh_GearMar"]      = Th( 0, 0, 10,  0);
+            r["LemoineTh_NavPillPad"]   = Th(12, 6, 12,  6);
         }
 
         // ── Disk persistence ─────────────────────────────────────────────────
