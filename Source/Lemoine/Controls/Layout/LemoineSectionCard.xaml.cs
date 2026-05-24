@@ -51,19 +51,19 @@ namespace LemoineTools.Lemoine.Controls
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             // Card chrome — matches LemoineSettingsWindow.AddSection() geometry
-            _card.CornerRadius = new CornerRadius(4);
+            _card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
             _card.Padding      = new Thickness(12);
             _card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             _card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            // Section header — 11pt TextSub (Rec 4 values baked in)
+            // Section header — TextSub style, size driven by LemoineFS_SM resource key
             _headerText = new TextBlock
             {
                 Text       = Header?.ToUpperInvariant() ?? string.Empty,
-                FontSize   = 11,
                 FontWeight = FontWeights.Medium,
-                Margin     = new Thickness(0, 4, 0, 10),  // +4px top breathing room (Rec 4)
+                Margin     = new Thickness(0, 4, 0, 10),
             };
+            _headerText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             _headerText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             _headerText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 

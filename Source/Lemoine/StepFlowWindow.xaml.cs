@@ -474,14 +474,14 @@ namespace LemoineTools.Lemoine
                 Padding = new Thickness(8, 6, 8, 6),
             };
             _logStack = new StackPanel();
-            _logScroll.Height  = Math.Round(90 * LemoineSettings.Instance.Scale);
+            _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
             _logScroll.Content = _logStack;
             LemoineControlStyles.WireBubblingScroll(_logScroll);
 
-            // Handle is placed at the top of logBrd so it appears inside the log box
+            // Handle is docked to the bottom so dragging is natural (pull down = taller)
             var logDp = new DockPanel { LastChildFill = true };
             var handle = BuildLogResizeHandle();
-            DockPanel.SetDock(handle, Dock.Top);
+            DockPanel.SetDock(handle, Dock.Bottom);
             logDp.Children.Add(handle);
             logDp.Children.Add(_logScroll);
             logBrd.Child = logDp;
@@ -605,9 +605,9 @@ namespace LemoineTools.Lemoine
                 BorderThickness = new Thickness(0, 0, 0, 2),
                 Tag = id,
             };
-            btn.SetResourceReference(Border.BorderBrushProperty,
-                isActive ? "LemoineAccent" : "Transparent");
-            btn.SetResourceReference(Border.BackgroundProperty, "Transparent");
+            if (isActive) btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            else          btn.BorderBrush = Brushes.Transparent;
+            btn.Background = Brushes.Transparent;
             btn.SetResourceReference(Border.HeightProperty,     "LemoineH_BtnMin");
 
             var lbl = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
@@ -639,8 +639,8 @@ namespace LemoineTools.Lemoine
             foreach (Border btn in _tabButtonBar.Children)
             {
                 bool active = (string)btn.Tag == id;
-                btn.SetResourceReference(Border.BorderBrushProperty,
-                    active ? "LemoineAccent" : "Transparent");
+                if (active) btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                else        btn.BorderBrush = Brushes.Transparent;
                 if (btn.Child is TextBlock lbl)
                     lbl.SetResourceReference(TextBlock.ForegroundProperty,
                         active ? "LemoineText" : "LemoineTextDim");
@@ -686,12 +686,18 @@ namespace LemoineTools.Lemoine
             {
                 bool isActive = i == index, isDone = i < index, isFuture = i > index;
                 _stepRows[i].Background = Brushes.Transparent;
-                _accentBars[i].SetResourceReference(Border.BackgroundProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
-                _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "LemoineBorder");
-                _stepCircles[i].SetResourceReference(Border.BackgroundProperty,  isDone ? "LemoineGreen" : isActive ? "LemoineAccent" : "Transparent");
+                if (isDone)        _accentBars[i].SetResourceReference(Border.BackgroundProperty, "LemoineGreen");
+                else if (isActive) _accentBars[i].SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+                else               _accentBars[i].Background = Brushes.Transparent;
+                if (isDone)        _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, "LemoineGreen");
+                else if (isActive) _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                else               _stepCircles[i].SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                if (isDone)        _stepCircles[i].SetResourceReference(Border.BackgroundProperty, "LemoineGreen");
+                else if (isActive) _stepCircles[i].SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+                else               _stepCircles[i].Background = Brushes.Transparent;
                 _circleTexts[i].Text = isDone ? "✓" : (i + 1).ToString();
                 if (isDone || isActive)
-                    _circleTexts[i].Foreground = Brushes.White;
+                    _circleTexts[i].SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
                 else
                     _circleTexts[i].SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 _stepTitles[i].FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Normal;
