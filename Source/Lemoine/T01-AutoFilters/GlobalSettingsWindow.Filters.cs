@@ -2861,7 +2861,8 @@ namespace LemoineTools.Lemoine
         {
             int count = _fSelectedRuleIds.Count;
 
-            Action<string> markDirty = key => ApplyBatchField(trade, rule, key);
+            Action<string> markDirty = key =>
+                Dispatcher.BeginInvoke(new Action(() => ApplyBatchField(trade, rule, key)));
 
             var scrollContent = new StackPanel();
             scrollContent.Children.Add(BuildBatchHeader(count));
