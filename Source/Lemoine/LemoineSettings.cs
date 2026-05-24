@@ -147,14 +147,13 @@ namespace LemoineTools.Lemoine
             r["LemoineH_Knob"]     = Math.Round(11 * sc, 1);
             r["LemoineH_Sep"]      = 1.0;
             r["LemoineH_LogArea"]  = Math.Round(90 * sc);
+            r["LemoineW_NumInput"] = Math.Round(90  * sc);
+            r["LemoineW_TextInput"]= Math.Round(240 * sc);
 
             // ── Corner radii (design constants — not scaled) ──────────────────
-            r["LemoineRadius_SM"]     = new System.Windows.CornerRadius(3);
-            r["LemoineRadius_MD"]     = new System.Windows.CornerRadius(4);
-            r["LemoineRadius_Card"]   = new System.Windows.CornerRadius(8);
-            r["LemoineRadius_LG"]     = new System.Windows.CornerRadius(8);
-            r["LemoineRadius_Circle"] = new System.Windows.CornerRadius(9);
-            r["LemoineRadius_Pill"]   = new System.Windows.CornerRadius(999);
+            r["LemoineRadius_SM"]   = new System.Windows.CornerRadius(3);
+            r["LemoineRadius_MD"]   = new System.Windows.CornerRadius(4);
+            r["LemoineRadius_Chip"] = new System.Windows.CornerRadius(10);
 
             // ── Thickness resources ───────────────────────────────────────────
             r["LemoineTh_ToolbarMar"]   = Th(14, 0, 14, 0);

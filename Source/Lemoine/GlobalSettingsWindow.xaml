@@ -13,12 +13,12 @@
     ShowInTaskbar="True">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="4"
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="8"
                             GlassFrameThickness="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 
 
-    <Border x:Name="_outerBorder" BorderThickness="1">
+    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True">
         <Grid x:Name="_root">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38"   />

@@ -103,6 +103,7 @@ namespace LemoineTools.Lemoine
             LemoineSettings.Instance.UiSizeChanged += _ => Dispatcher.Invoke(() =>
             {
                 LemoineSettings.Instance.ApplyScaleTo(Resources);
+                LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 UpdateRowHeights();
                 RefreshSizeRows();
             });
@@ -115,6 +116,7 @@ namespace LemoineTools.Lemoine
             Background = LemoineSettings.Instance.ActiveTheme.PageBg;
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _outerBorder.CornerRadius = new CornerRadius(8); // matches Windows 11 DWM rounding
 
             UpdateRowHeights();
             BuildToolbar();
@@ -294,6 +296,8 @@ namespace LemoineTools.Lemoine
         private void BuildFooter()
         {
             _footerBorder.SetResourceReference(Border.PaddingProperty, "LemoineTh_FooterPad");
+            _footerBorder.BorderThickness = new Thickness(0, 1, 0, 0);
+            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             _fStatusText = new TextBlock
             {

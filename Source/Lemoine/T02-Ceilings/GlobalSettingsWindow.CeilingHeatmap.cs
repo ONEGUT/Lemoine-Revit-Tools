@@ -123,7 +123,8 @@ namespace LemoineTools.Lemoine
                         {
                             var opts = setting.Options as NumberOpts;
                             var row = new StackPanel { Orientation = Orientation.Horizontal };
-                            var tb = new TextBox { Width = 90, Text = setting.Default?.ToString() ?? "", TextAlignment = TextAlignment.Right };
+                            var tb = new TextBox { Text = setting.Default?.ToString() ?? "", TextAlignment = TextAlignment.Right };
+                            tb.SetResourceReference(TextBox.WidthProperty, "LemoineW_NumInput");
                             tb.SetResourceReference(TextBox.HeightProperty,     "LemoineH_Input");
                             tb.SetResourceReference(TextBox.PaddingProperty,    "LemoineTh_InputPad");
                             tb.SetResourceReference(TextBox.BackgroundProperty, "LemoineSelectBg");
@@ -156,7 +157,8 @@ namespace LemoineTools.Lemoine
                         case "text":
                         {
                             var opts = setting.Options as TextOpts;
-                            var tb = new TextBox { Width = 240, Text = setting.Default?.ToString() ?? "" };
+                            var tb = new TextBox { Text = setting.Default?.ToString() ?? "" };
+                            tb.SetResourceReference(TextBox.WidthProperty, "LemoineW_TextInput");
                             tb.SetResourceReference(TextBox.HeightProperty,     "LemoineH_Input");
                             tb.SetResourceReference(TextBox.PaddingProperty,    "LemoineTh_InputPad");
                             tb.SetResourceReference(TextBox.BackgroundProperty, "LemoineSelectBg");

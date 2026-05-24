@@ -95,6 +95,7 @@ namespace LemoineTools.Lemoine
             Dispatcher.Invoke(() =>
             {
                 LemoineSettings.Instance.ApplyScaleTo(Resources);
+                LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 5);
                 UpdateRowHeights();
                 // Re-measure progress fill width since track may have changed
                 _progressTrack?.UpdateLayout();
@@ -134,6 +135,7 @@ namespace LemoineTools.Lemoine
         {
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _outerBorder.CornerRadius = new CornerRadius(8); // matches Windows 11 DWM rounding
         }
 
         /// <summary>
@@ -157,7 +159,7 @@ namespace LemoineTools.Lemoine
             var cBorder = new Border
             {
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(6, 1, 6, 1), Margin = new Thickness(6, 0, 0, 0),
             };
             cBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_SM");
             cBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
@@ -170,13 +172,13 @@ namespace LemoineTools.Lemoine
                 Content = "×",
                 Cursor  = Cursors.Hand,
                 BorderThickness = new Thickness(1),
-                Margin  = new Thickness(8, 0, 0, 0),
+                Margin  = new Thickness(6, 0, 0, 0),
                 Template = FlatBtnTemplate(),
                 ToolTip  = "Close",
             };
-            closeBtn.SetResourceReference(Button.MinHeightProperty,  "LemoineH_BtnMin");
-            closeBtn.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnPad");
-            closeBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_MD");
+            closeBtn.SetResourceReference(Button.HeightProperty,     "LemoineH_BtnSm");
+            closeBtn.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnSmPad");
+            closeBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_SM");
             closeBtn.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
             // Neutral ghost styling — red is reserved for destructive actions only
             closeBtn.Background = Brushes.Transparent;
@@ -271,10 +273,10 @@ namespace LemoineTools.Lemoine
         {
             var row = new Border
             {
-                CornerRadius    = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
                 Margin          = new Thickness(0, 0, 0, 8),
             };
+            row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             var ig  = new Grid();
             ig.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2) });
@@ -297,7 +299,7 @@ namespace LemoineTools.Lemoine
                 VerticalAlignment = VerticalAlignment.Center,   // center with single-line title
                 Margin = new Thickness(0, 0, 8, 0),
             };
-            circle.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Circle");
+            circle.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(9));
             circle.SetResourceReference(Border.WidthProperty,  "LemoineH_Circle");
             circle.SetResourceReference(Border.HeightProperty, "LemoineH_Circle");
 
@@ -474,7 +476,15 @@ namespace LemoineTools.Lemoine
             _logStack = new StackPanel();
             _logScroll.Height  = Math.Round(90 * LemoineSettings.Instance.Scale);
             _logScroll.Content = _logStack;
-            logBrd.Child = _logScroll;
+            LemoineControlStyles.WireBubblingScroll(_logScroll);
+
+            // Handle is placed at the top of logBrd so it appears inside the log box
+            var logDp = new DockPanel { LastChildFill = true };
+            var handle = BuildLogResizeHandle();
+            DockPanel.SetDock(handle, Dock.Top);
+            logDp.Children.Add(handle);
+            logDp.Children.Add(_logScroll);
+            logBrd.Child = logDp;
 
             // Seed with the default tab — extra tabs added via RegisterLogTab()
             _logTabs.Insert(0, ("log", "Output Log", logBrd));
@@ -516,9 +526,6 @@ namespace LemoineTools.Lemoine
             _tabContentHost.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             _tabContentHost.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _logAreaContainer.Children.Add(_tabContentHost);
-
-            // ── Resize handle ─────────────────────────────────────────────────
-            _logAreaContainer.Children.Add(BuildLogResizeHandle());
 
             // Build tab buttons and wire up content
             foreach (var tab in _logTabs)
@@ -647,6 +654,8 @@ namespace LemoineTools.Lemoine
         // ─────────────────── Footer ────────────────────────────────────────────
         private void BuildFooter()
         {
+            _footerBorder.BorderThickness = new Thickness(0, 1, 0, 0);
+            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _footerBorder.SetResourceReference(Border.PaddingProperty, "LemoineTh_FooterPad");
 
             var dp = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
