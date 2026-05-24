@@ -6,6 +6,7 @@ using System.Linq;
 using IOPath = System.IO.Path;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -14,36 +15,34 @@ using System.Xml.Linq;
 
 namespace LemoineTools.Lemoine.Controls
 {
-    /// <summary>
-    /// Reusable color-picker control matching the Lemoine design screenshot.
-    ///
-    /// Layout:
-    ///   ┌──────────────────────────┐  ┌──────────────┐
-    ///   │  SV gradient map         │  │ HEX [......] │
-    ///   │                          │  │ R  G  B  A   │
-    ///   │                          │  │ Project Colors│
-    ///   │                          │  │ Recent Colors │
-    ///   ├──────────────────────────┤  └──────────────┘
-    ///   │ ● [==hue rainbow======]  │
-    ///   │   [==alpha gradient===]  │
-    ///   └──────────────────────────┘
-    ///
-    /// State is stored internally as HSV + alpha.
-    /// <see cref="SelectedColor"/> is the dependency property the host binds to.
-    /// </summary>
     public partial class LemoineColorPickerPanel : UserControl
     {
-        // ── Config ───────────────────────────────────────────────────────────
-        public static int MaxProjectColors { get; set; } = 6;
-        private const  int MaxRecentColors  = 8;
-        private const  int ProjectSwatchSize = 30;
-        private const  int RecentSwatchSize  = 22;
+        // ── Config ────────────────────────────────────────────────────────────
+        public static int MaxProjectColors { get; set; } = 12; // kept for public compat
+        private const int SetSlotCount      = 12;   // 6 cols × 2 rows
+        private const int MaxRecentColors   = 8;
+        private const int ProjectSwatchSize = 30;
+        private const int RecentSwatchSize  = 22;
+        private const int RightColWidth     = 204;  // 6 × (30px swatch + 4px margin)
 
         private static readonly string PersistPath =
             IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                            "LemoineTools", "colorpicker.xml");
 
-        // ── DPs ─────────────────────────────────────────────────────────────
+        // ── ColorSet model ────────────────────────────────────────────────────
+        private class ColorSet
+        {
+            public string       Name;
+            public List<Color?> Colors;
+
+            public ColorSet(string name)
+            {
+                Name   = name;
+                Colors = Enumerable.Repeat<Color?>(null, SetSlotCount).ToList();
+            }
+        }
+
+        // ── DPs ───────────────────────────────────────────────────────────────
         public static readonly DependencyProperty SelectedColorProperty =
             DependencyProperty.Register(nameof(SelectedColor), typeof(Color), typeof(LemoineColorPickerPanel),
                 new FrameworkPropertyMetadata(Colors.Red,
@@ -55,52 +54,53 @@ namespace LemoineTools.Lemoine.Controls
             set => SetValue(SelectedColorProperty, value);
         }
 
-        /// <summary>Raised after the user changes the color via any control.</summary>
         public event EventHandler<Color>? ColorChanged;
 
-        // ── HSV + Alpha state ────────────────────────────────────────────────
-        private double _h = 0;    // 0..360
-        private double _s = 1.0;  // 0..1
-        private double _v = 1.0;  // 0..1
-        private double _a = 1.0;  // 0..1
+        // ── HSV + Alpha state ─────────────────────────────────────────────────
+        private double _h = 0;
+        private double _s = 1.0;
+        private double _v = 1.0;
+        private double _a = 1.0;
 
-        // ── Dimensions ───────────────────────────────────────────────────────
-        private const int SvW     = 280;
-        private const int SvH     = 220;
-        private const int SliderH = 16;
-        private const int PreviewD = 34; // diameter of preview circle
+        // ── Dimensions ────────────────────────────────────────────────────────
+        private const int SvW      = 280;
+        private const int SvH      = 220;
+        private const int SliderH  = 16;
+        private const int PreviewD = 34;
 
-        // ── UI references ────────────────────────────────────────────────────
+        // ── UI refs ───────────────────────────────────────────────────────────
         private Image?   _svImg;
         private Canvas?  _svOverlay;
         private Ellipse? _svCursor;
-
         private Grid?    _hueHost;
         private Image?   _hueImg;
         private Canvas?  _hueOverlay;
         private Ellipse? _hueCursor;
-
         private Grid?    _alphaHost;
         private Image?   _alphaImg;
         private Canvas?  _alphaOverlay;
         private Ellipse? _alphaCursor;
-
         private Ellipse? _previewCircle;
         private TextBox? _hexBox;
-        private TextBox? _rBox;
-        private TextBox? _gBox;
-        private TextBox? _bBox;
-        private TextBox? _aBox;
+        private TextBox? _rBox, _gBox, _bBox, _aBox;
+        private WrapPanel?  _recentSwatchRow;
+        private Grid?       _projectGrid;
+        private Border?     _dropdownBtn;
+        private TextBlock?  _dropdownBtnLabel;
+        private Popup?      _setPopup;
+        private StackPanel? _setPopupStack;
+        private TextBox?    _newSetNameBox;
+        private bool        _popupJustClosed;
+        private bool        _internalUpdate;
 
-        private WrapPanel? _projectSwatchRow;
-        private WrapPanel? _recentSwatchRow;
+        // ── Data state ────────────────────────────────────────────────────────
+        private List<ColorSet> _colorSets    = new List<ColorSet>();
+        private int            _activeSetIdx = 0;
+        private List<Color>    _recentColors = new List<Color>();
 
-        private bool _internalUpdate;
-
-        // ── Persistence state ────────────────────────────────────────────────
-        private List<Color> _projectColors = new List<Color>();
-        private List<Color> _recentColors  = new List<Color>();
-
+        // ─────────────────────────────────────────────────────────────────────
+        // Constructor
+        // ─────────────────────────────────────────────────────────────────────
         public LemoineColorPickerPanel()
         {
             InitializeComponent();
@@ -130,17 +130,32 @@ namespace LemoineTools.Lemoine.Controls
             try
             {
                 if (!File.Exists(PersistPath)) return;
-                var doc = XDocument.Load(PersistPath);
+                var doc  = XDocument.Load(PersistPath);
+                var root = doc.Root;
+                if (root == null) return;
 
-                _projectColors = doc.Root?.Element("ProjectColors")?
-                    .Elements("Color")
-                    .Select(el => TryParseHexColor(el.Value))
-                    .Where(c => c.HasValue)
-                    .Select(c => c!.Value)
-                    .Take(MaxProjectColors)
-                    .ToList() ?? new List<Color>();
+                var setsEl = root.Element("ColorSets");
+                if (setsEl != null)
+                {
+                    int activeIdx = 0;
+                    int.TryParse(setsEl.Attribute("activeIndex")?.Value, out activeIdx);
 
-                _recentColors = doc.Root?.Element("RecentColors")?
+                    foreach (var setEl in setsEl.Elements("Set"))
+                    {
+                        var name  = setEl.Attribute("name")?.Value ?? "Set";
+                        var cs    = new ColorSet(name);
+                        var slots = setEl.Elements("Slot").ToList();
+                        for (int i = 0; i < Math.Min(slots.Count, SetSlotCount); i++)
+                            cs.Colors[i] = string.IsNullOrEmpty(slots[i].Value)
+                                ? (Color?)null
+                                : TryParseHexColor(slots[i].Value);
+                        _colorSets.Add(cs);
+                    }
+
+                    _activeSetIdx = Math.Max(0, Math.Min(activeIdx, _colorSets.Count - 1));
+                }
+
+                _recentColors = root.Element("RecentColors")?
                     .Elements("Color")
                     .Select(el => TryParseHexColor(el.Value))
                     .Where(c => c.HasValue)
@@ -148,7 +163,10 @@ namespace LemoineTools.Lemoine.Controls
                     .Take(MaxRecentColors)
                     .ToList() ?? new List<Color>();
             }
-            catch { /* silently ignore corrupt data */ }
+            catch { }
+
+            if (_colorSets.Count == 0)
+                _colorSets.Add(new ColorSet("Set 1"));
         }
 
         private void SavePersisted()
@@ -158,8 +176,13 @@ namespace LemoineTools.Lemoine.Controls
                 Directory.CreateDirectory(IOPath.GetDirectoryName(PersistPath)!);
                 var doc = new XDocument(
                     new XElement("LemoineColorPicker",
-                        new XElement("ProjectColors",
-                            _projectColors.Select(c => new XElement("Color", ColorToHex(c)))),
+                        new XElement("ColorSets",
+                            new XAttribute("activeIndex", _activeSetIdx),
+                            _colorSets.Select(cs =>
+                                new XElement("Set",
+                                    new XAttribute("name", cs.Name),
+                                    cs.Colors.Select(c =>
+                                        new XElement("Slot", c.HasValue ? ColorToHex(c.Value) : ""))))),
                         new XElement("RecentColors",
                             _recentColors.Select(c => new XElement("Color", ColorToHex(c))))));
                 doc.Save(PersistPath);
@@ -177,10 +200,9 @@ namespace LemoineTools.Lemoine.Controls
         private static string ColorToHex(Color c) =>
             $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
 
-        /// <summary>
-        /// Add the given color to the Recent Colors list and persist.
-        /// Call this when the user confirms a selection (Apply Color).
-        /// </summary>
+        // ─────────────────────────────────────────────────────────────────────
+        // Recent
+        // ─────────────────────────────────────────────────────────────────────
         public void AddToRecent(Color c)
         {
             _recentColors.RemoveAll(x => x == c);
@@ -192,7 +214,7 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Build UI
+        // Build
         // ─────────────────────────────────────────────────────────────────────
         private void Build()
         {
@@ -200,14 +222,15 @@ namespace LemoineTools.Lemoine.Controls
             _root.RowDefinitions.Clear();
             _root.ColumnDefinitions.Clear();
 
-            // Two-column layout: [left: SV+sliders] [gap] [right: inputs+swatches]
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });     // 0 – left
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });  // 1 – gap
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) }); // 2 – right
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                // 0 – left
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });              // 1 – gap
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(RightColWidth) });   // 2 – right (204px)
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                      // 0 – main
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                      // 1 – recent
 
             BuildLeftColumn();
             BuildRightColumn();
+            BuildRecentRow();
         }
 
         // ── Left column ───────────────────────────────────────────────────────
@@ -215,28 +238,24 @@ namespace LemoineTools.Lemoine.Controls
         {
             var left = new StackPanel { Width = SvW };
             Grid.SetColumn(left, 0);
+            Grid.SetRow(left, 0);
             _root.Children.Add(left);
 
             // SV map
             var svHost = new Grid { Width = SvW, Height = SvH, ClipToBounds = true, Cursor = Cursors.Cross };
-            _svImg = new Image { Width = SvW, Height = SvH, Stretch = Stretch.Fill, SnapsToDevicePixels = true };
+            _svImg     = new Image { Width = SvW, Height = SvH, Stretch = Stretch.Fill, SnapsToDevicePixels = true };
             svHost.Children.Add(_svImg);
             _svOverlay = new Canvas { IsHitTestVisible = false };
-            _svCursor = new Ellipse
-            {
-                Width = 14, Height = 14,
-                Stroke = Brushes.White,
-                StrokeThickness = 2,
-            };
+            _svCursor  = new Ellipse { Width = 14, Height = 14, Stroke = Brushes.White, StrokeThickness = 2 };
             _svOverlay.Children.Add(_svCursor);
             svHost.Children.Add(_svOverlay);
 
             var svBorder = new Border
             {
-                Child = svHost,
+                Child           = svHost,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                ClipToBounds = true,
+                CornerRadius    = new CornerRadius(6),
+                ClipToBounds    = true,
             };
             svBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
             svHost.MouseLeftButtonDown += SvMouseDown;
@@ -246,16 +265,16 @@ namespace LemoineTools.Lemoine.Controls
 
             left.Children.Add(new Border { Height = 10 });
 
-            // Preview circle + Hue slider row
+            // Preview + Hue slider row
             var sliderRow = new Grid();
-            sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // preview
+            sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-            sliderRow.ColumnDefinitions.Add(new ColumnDefinition());                            // hue slider
+            sliderRow.ColumnDefinitions.Add(new ColumnDefinition());
 
             _previewCircle = new Ellipse
             {
-                Width  = PreviewD,
-                Height = PreviewD,
+                Width             = PreviewD,
+                Height            = PreviewD,
                 VerticalAlignment = VerticalAlignment.Center,
             };
             Grid.SetColumn(_previewCircle, 0);
@@ -269,7 +288,7 @@ namespace LemoineTools.Lemoine.Controls
             left.Children.Add(sliderRow);
             left.Children.Add(new Border { Height = 8 });
 
-            // Alpha slider row (indented to align with hue slider)
+            // Alpha slider row
             var alphaRow = new Grid();
             alphaRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(PreviewD + 10) });
             alphaRow.ColumnDefinitions.Add(new ColumnDefinition());
@@ -281,7 +300,6 @@ namespace LemoineTools.Lemoine.Controls
 
             left.Children.Add(alphaRow);
 
-            // Render bitmaps now that refs are assigned
             RenderSvBitmap();
             RenderHueBitmap();
             RenderAlphaBitmap();
@@ -295,9 +313,9 @@ namespace LemoineTools.Lemoine.Controls
             _hueOverlay = new Canvas { IsHitTestVisible = false };
             _hueCursor  = new Ellipse
             {
-                Width  = SliderH + 4,
-                Height = SliderH + 4,
-                Stroke = Brushes.White,
+                Width           = SliderH + 4,
+                Height          = SliderH + 4,
+                Stroke          = Brushes.White,
                 StrokeThickness = 2,
             };
             _hueOverlay.Children.Add(_hueCursor);
@@ -308,10 +326,10 @@ namespace LemoineTools.Lemoine.Controls
 
             var border = new Border
             {
-                Child = _hueHost,
+                Child           = _hueHost,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(SliderH / 2.0),
-                ClipToBounds = true,
+                CornerRadius    = new CornerRadius(SliderH / 2.0),
+                ClipToBounds    = true,
             };
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
             return border;
@@ -321,20 +339,18 @@ namespace LemoineTools.Lemoine.Controls
         {
             _alphaHost = new Grid { Height = SliderH, ClipToBounds = true, Cursor = Cursors.Hand };
 
-            // Checkered underlay
             var checker = new Rectangle { Fill = MakeCheckerBrush() };
             _alphaHost.Children.Add(checker);
 
-            // Color-to-transparent gradient overlay
             _alphaImg = new Image { Stretch = Stretch.Fill, SnapsToDevicePixels = true };
             _alphaHost.Children.Add(_alphaImg);
 
             _alphaOverlay = new Canvas { IsHitTestVisible = false };
             _alphaCursor  = new Ellipse
             {
-                Width  = SliderH + 4,
-                Height = SliderH + 4,
-                Stroke = Brushes.White,
+                Width           = SliderH + 4,
+                Height          = SliderH + 4,
+                Stroke          = Brushes.White,
                 StrokeThickness = 2,
             };
             _alphaOverlay.Children.Add(_alphaCursor);
@@ -346,10 +362,10 @@ namespace LemoineTools.Lemoine.Controls
 
             var border = new Border
             {
-                Child = _alphaHost,
+                Child           = _alphaHost,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(SliderH / 2.0),
-                ClipToBounds = true,
+                CornerRadius    = new CornerRadius(SliderH / 2.0),
+                ClipToBounds    = true,
             };
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
             return border;
@@ -358,19 +374,19 @@ namespace LemoineTools.Lemoine.Controls
         private static DrawingBrush MakeCheckerBrush()
         {
             var drawing = new DrawingGroup();
-            var light = new SolidColorBrush(Colors.White);              light.Freeze();
-            var dark  = new SolidColorBrush(Color.FromRgb(200,200,200)); dark.Freeze();
+            var light = new SolidColorBrush(Colors.White);               light.Freeze();
+            var dark  = new SolidColorBrush(Color.FromRgb(200, 200, 200)); dark.Freeze();
             drawing.Children.Add(new GeometryDrawing(light, null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
             drawing.Children.Add(new GeometryDrawing(dark,  null, new RectangleGeometry(new Rect(0, 0, 4, 4))));
             drawing.Children.Add(new GeometryDrawing(dark,  null, new RectangleGeometry(new Rect(4, 4, 4, 4))));
             drawing.Freeze();
             return new DrawingBrush
             {
-                Drawing        = drawing,
-                TileMode       = TileMode.Tile,
-                Viewport       = new Rect(0, 0, 8, 8),
-                ViewportUnits  = BrushMappingMode.Absolute,
-                Stretch        = Stretch.None,
+                Drawing       = drawing,
+                TileMode      = TileMode.Tile,
+                Viewport      = new Rect(0, 0, 8, 8),
+                ViewportUnits = BrushMappingMode.Absolute,
+                Stretch       = Stretch.None,
             };
         }
 
@@ -379,14 +395,14 @@ namespace LemoineTools.Lemoine.Controls
         {
             var right = new StackPanel();
             Grid.SetColumn(right, 2);
+            Grid.SetRow(right, 0);
             _root.Children.Add(right);
 
-            // ── HEX ──────────────────────────────────────────────────────────
+            // HEX
             var hexLbl = MakeLabel("HEX");
             hexLbl.Margin = new Thickness(0, 0, 0, 5);
             right.Children.Add(hexLbl);
 
-            // Rounded box: [# label][text input]
             var hexBox = new Border
             {
                 BorderThickness = new Thickness(1),
@@ -397,16 +413,16 @@ namespace LemoineTools.Lemoine.Controls
             hexBox.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var hexInner = new StackPanel { Orientation = Orientation.Horizontal };
-            var hashLbl = MakeLabel("#");
-            hashLbl.Margin = new Thickness(8, 0, 2, 0);
+            var hashLbl  = MakeLabel("#");
+            hashLbl.Margin            = new Thickness(8, 0, 2, 0);
             hashLbl.VerticalAlignment = VerticalAlignment.Center;
             _hexBox = new TextBox
             {
-                BorderThickness = new Thickness(0),
-                Background = Brushes.Transparent,
-                Padding = new Thickness(0, 7, 8, 7),
+                BorderThickness          = new Thickness(0),
+                Background               = Brushes.Transparent,
+                Padding                  = new Thickness(0, 7, 8, 7),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                MaxLength = 8,
+                MaxLength                = 8,
             };
             _hexBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
             _hexBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
@@ -421,27 +437,26 @@ namespace LemoineTools.Lemoine.Controls
 
             right.Children.Add(new Border { Height = 12 });
 
-            // ── RGBA inputs ───────────────────────────────────────────────────
+            // RGBA — * columns are safe: right StackPanel is inside 204px fixed Grid column
             var rgbaGrid = new Grid();
-            // 4 equal columns + 3 small gaps
             for (int i = 0; i < 4; i++)
             {
-                rgbaGrid.ColumnDefinitions.Add(new ColumnDefinition());
+                rgbaGrid.ColumnDefinitions.Add(new ColumnDefinition()); // ← * col, constrained by 204px column
                 if (i < 3)
                     rgbaGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
             }
-            rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // labels
+            rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(4) });
-            rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // inputs
+            rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             string[] rgbaLabels = { "R", "G", "B", "A" };
-            int[] labelCols = { 0, 2, 4, 6 };
+            int[]    labelCols  = { 0, 2, 4, 6 };
 
-            foreach (var (lbl, col) in rgbaLabels.Zip(labelCols, (lbl2, col2) => (lbl2, col2)))
+            for (int i = 0; i < rgbaLabels.Length; i++)
             {
-                var tb = MakeLabel(lbl);
+                var tb = MakeLabel(rgbaLabels[i]);
                 tb.HorizontalAlignment = HorizontalAlignment.Center;
-                Grid.SetColumn(tb, col);
+                Grid.SetColumn(tb, labelCols[i]);
                 Grid.SetRow(tb, 0);
                 rgbaGrid.Children.Add(tb);
             }
@@ -456,28 +471,46 @@ namespace LemoineTools.Lemoine.Controls
                 rgbaGrid.Children.Add(boxes[i]);
             }
 
-            foreach (var b in boxes) { b.LostFocus += (s, e) => CommitRgba(); }
-            foreach (var b in boxes) { b.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitRgba(); e.Handled = true; } }; }
+            foreach (var b in boxes) b.LostFocus += (s, e) => CommitRgba();
+            foreach (var b in boxes) b.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitRgba(); e.Handled = true; } };
 
             right.Children.Add(rgbaGrid);
 
-            // ── Separator ─────────────────────────────────────────────────────
+            // Separator
             var sep = new Border { Height = 1, Margin = new Thickness(0, 16, 0, 14) };
             sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
             right.Children.Add(sep);
 
-            // ── Project Colors ────────────────────────────────────────────────
-            var projLbl = MakeLabel("Project");
-            projLbl.Margin = new Thickness(0, 0, 0, 6);
-            right.Children.Add(projLbl);
+            // Set-selector dropdown
+            right.Children.Add(BuildSetDropdownButton());
+            right.Children.Add(new Border { Height = 6 });
 
-            _projectSwatchRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 0) };
-            right.Children.Add(_projectSwatchRow);
+            // 6-column × 2-row project swatch grid
+            _projectGrid = new Grid();
+            for (int col = 0; col < 6; col++)
+                _projectGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            for (int row = 0; row < 2; row++)
+                _projectGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            right.Children.Add(_projectGrid);
+            RefreshProjectGrid();
+        }
 
-            right.Children.Add(new Border { Height = 14 });
+        // ── Recent row — full width below both columns ────────────────────────
+        private void BuildRecentRow()
+        {
+            var recentContainer = new StackPanel();
+            Grid.SetRow(recentContainer, 1);
+            Grid.SetColumn(recentContainer, 0);
+            Grid.SetColumnSpan(recentContainer, 3); // spans left + gap + right
+            _root.Children.Add(recentContainer);
 
-            // ── Recent Colors ─────────────────────────────────────────────────
-            var recentHeader = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            var sep = new Border { Height = 1, Margin = new Thickness(0, 12, 0, 0) };
+            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
+            recentContainer.Children.Add(sep);
+
+            recentContainer.Children.Add(new Border { Height = 10 });
+
+            var recentHeader = new Grid();
             recentHeader.ColumnDefinitions.Add(new ColumnDefinition());
             recentHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -487,9 +520,9 @@ namespace LemoineTools.Lemoine.Controls
 
             var clearBtn = new TextBlock
             {
-                Text = "Clear",
+                Text              = "Clear",
                 VerticalAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand,
+                Cursor            = Cursors.Hand,
             };
             clearBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             clearBtn.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -498,13 +531,382 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(clearBtn, 1);
             recentHeader.Children.Add(clearBtn);
 
-            right.Children.Add(recentHeader);
+            recentContainer.Children.Add(recentHeader);
+            recentContainer.Children.Add(new Border { Height = 8 });
 
             _recentSwatchRow = new WrapPanel();
-            right.Children.Add(_recentSwatchRow);
+            recentContainer.Children.Add(_recentSwatchRow);
 
-            // Populate swatch rows
-            RefreshProjectSwatches();
+            RefreshRecentSwatches();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Set dropdown
+        // ─────────────────────────────────────────────────────────────────────
+        private FrameworkElement BuildSetDropdownButton()
+        {
+            var btn = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(8, 5, 8, 5),
+                Cursor          = Cursors.Hand,
+            };
+            btn.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var inner = new Grid();
+            inner.ColumnDefinitions.Add(new ColumnDefinition());
+            inner.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            _dropdownBtnLabel = MakeLabel(_colorSets[_activeSetIdx].Name);
+            Grid.SetColumn(_dropdownBtnLabel, 0);
+            inner.Children.Add(_dropdownBtnLabel);
+
+            var chevron = new TextBlock
+            {
+                Text              = "▾",
+                Margin            = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            chevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            chevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            Grid.SetColumn(chevron, 1);
+            inner.Children.Add(chevron);
+
+            btn.Child    = inner;
+            _dropdownBtn = btn;
+            btn.MouseLeftButtonUp += (s, e) => OnDropdownButtonClick();
+            return btn;
+        }
+
+        private void OnDropdownButtonClick()
+        {
+            // Guard: StaysOpen=false closes popup on PreviewMouseDown (before MouseLeftButtonUp fires).
+            // The Closed handler sets _popupJustClosed so we skip re-opening here. // ⚠
+            if (_popupJustClosed) { _popupJustClosed = false; return; }
+            if (_setPopup == null) BuildSetPopup();
+            RefreshPopupContent();
+            _setPopup!.IsOpen = true;
+        }
+
+        private void BuildSetPopup()
+        {
+            _setPopupStack = new StackPanel { MinWidth = RightColWidth };
+
+            var popupBorder = new Border
+            {
+                Child           = _setPopupStack,
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(4),
+            };
+            popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            _setPopup = new Popup
+            {
+                Child              = popupBorder,
+                PlacementTarget    = _dropdownBtn,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = false,
+                AllowsTransparency = true,
+                VerticalOffset     = 2,
+            };
+            _setPopup.Closed += (s, e) => { _popupJustClosed = true; };
+        }
+
+        private void RefreshPopupContent()
+        {
+            if (_setPopupStack == null) return;
+            _setPopupStack.Children.Clear();
+
+            int setIndex = 0;
+            foreach (var cs in _colorSets)
+            {
+                var capturedIdx = setIndex;
+
+                var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var nameTb = MakeLabel(cs.Name);
+                nameTb.Margin = new Thickness(4, 4, 4, 4);
+                nameTb.Cursor = Cursors.Hand;
+                nameTb.MouseLeftButtonUp += (s, e) =>
+                {
+                    SwitchToSet(capturedIdx);
+                    if (_setPopup != null) _setPopup.IsOpen = false;
+                };
+                Grid.SetColumn(nameTb, 0);
+                row.Children.Add(nameTb);
+
+                if (_colorSets.Count > 1)
+                {
+                    var trashBtn = new TextBlock
+                    {
+                        Text              = "×",
+                        Margin            = new Thickness(0, 0, 4, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Cursor            = Cursors.Hand,
+                    };
+                    trashBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+                    trashBtn.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    trashBtn.MouseLeftButtonUp += (s, e) =>
+                    {
+                        DeleteSet(capturedIdx);
+                        e.Handled = true;
+                    };
+                    Grid.SetColumn(trashBtn, 1);
+                    row.Children.Add(trashBtn);
+                }
+
+                var rowBorder = new Border { Child = row, CornerRadius = new CornerRadius(4), Padding = new Thickness(0) };
+                if (setIndex == _activeSetIdx)
+                    rowBorder.SetResourceReference(Border.BackgroundProperty, "LemoineSelectBg");
+                else
+                    rowBorder.Background = Brushes.Transparent;
+
+                _setPopupStack.Children.Add(rowBorder);
+                setIndex++;
+            }
+
+            var sep2 = new Border { Height = 1, Margin = new Thickness(2, 4, 2, 4) };
+            sep2.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
+            _setPopupStack.Children.Add(sep2);
+
+            BuildNewSetRow();
+        }
+
+        private void BuildNewSetRow()
+        {
+            if (_setPopupStack == null) return;
+
+            var addLabel = new TextBlock
+            {
+                Text   = "+ New Set",
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(8, 4, 8, 4),
+            };
+            addLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            addLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            addLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            var entryRow = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(4, 2, 4, 2) };
+            entryRow.ColumnDefinitions.Add(new ColumnDefinition());
+            entryRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            _newSetNameBox = new TextBox
+            {
+                Padding         = new Thickness(6, 4, 6, 4),
+                BorderThickness = new Thickness(1),
+                MaxLength       = 32,
+            };
+            _newSetNameBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+            _newSetNameBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+            _newSetNameBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+            _newSetNameBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
+            _newSetNameBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
+            _newSetNameBox.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            Grid.SetColumn(_newSetNameBox, 0);
+            entryRow.Children.Add(_newSetNameBox);
+
+            var confirmBorder = new Border
+            {
+                Padding      = new Thickness(8, 4, 8, 4),
+                CornerRadius = new CornerRadius(4),
+                Margin       = new Thickness(4, 0, 0, 0),
+                Cursor       = Cursors.Hand,
+            };
+            confirmBorder.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            var confirmTb = new TextBlock { Text = "Add" };
+            confirmTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            confirmTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            confirmTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            confirmBorder.Child = confirmTb;
+            Grid.SetColumn(confirmBorder, 1);
+            entryRow.Children.Add(confirmBorder);
+
+            Action confirmCreate = () =>
+            {
+                var name = _newSetNameBox?.Text?.Trim() ?? "";
+                if (string.IsNullOrEmpty(name)) name = $"Set {_colorSets.Count + 1}";
+                CreateNewSet(name);
+                if (_setPopup != null) _setPopup.IsOpen = false;
+            };
+
+            addLabel.MouseLeftButtonUp += (s, e) =>
+            {
+                addLabel.Visibility  = Visibility.Collapsed;
+                entryRow.Visibility  = Visibility.Visible;
+                _newSetNameBox?.Focus();
+            };
+
+            confirmBorder.MouseLeftButtonUp += (s, e) => confirmCreate();
+            _newSetNameBox.KeyDown += (s, e) =>
+            {
+                if      (e.Key == Key.Enter)  { confirmCreate(); e.Handled = true; }
+                else if (e.Key == Key.Escape) { if (_setPopup != null) _setPopup.IsOpen = false; e.Handled = true; }
+            };
+
+            var container = new StackPanel();
+            container.Children.Add(addLabel);
+            container.Children.Add(entryRow);
+            _setPopupStack.Children.Add(container);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Set management
+        // ─────────────────────────────────────────────────────────────────────
+        private void SwitchToSet(int idx)
+        {
+            _activeSetIdx = Math.Max(0, Math.Min(idx, _colorSets.Count - 1));
+            SavePersisted();
+            RefreshProjectGrid();
+            RefreshDropdownLabel();
+        }
+
+        private void CreateNewSet(string name)
+        {
+            _colorSets.Add(new ColorSet(name));
+            _activeSetIdx = _colorSets.Count - 1;
+            SavePersisted();
+            RefreshProjectGrid();
+            RefreshDropdownLabel();
+        }
+
+        private void DeleteSet(int idx)
+        {
+            if (_colorSets.Count <= 1) return; // keep at least one set
+            _colorSets.RemoveAt(idx);
+            _activeSetIdx = Math.Max(0, Math.Min(_activeSetIdx, _colorSets.Count - 1));
+            SavePersisted();
+            RefreshProjectGrid();
+            RefreshDropdownLabel();
+            RefreshPopupContent();
+        }
+
+        private void RefreshDropdownLabel()
+        {
+            if (_dropdownBtnLabel != null && _colorSets.Count > 0)
+                _dropdownBtnLabel.Text = _colorSets[_activeSetIdx].Name;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Project swatch grid (6 × 2)
+        // ─────────────────────────────────────────────────────────────────────
+        private void RefreshProjectGrid()
+        {
+            if (_projectGrid == null) return;
+            _projectGrid.Children.Clear();
+
+            var activeSet = _colorSets.Count > 0 ? _colorSets[_activeSetIdx] : null;
+
+            for (int i = 0; i < SetSlotCount; i++)
+            {
+                var slotIdx = i;
+                var color   = (activeSet != null && activeSet.Colors.Count > i) ? activeSet.Colors[i] : null;
+
+                Border swatch;
+                if (color.HasValue)
+                {
+                    var c  = color.Value;
+                    swatch = MakeColorSwatch(c, ProjectSwatchSize);
+                    swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2} · Right-click to remove";
+
+                    // Left-click: load this color into the picker
+                    swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
+
+                    // Right-click: small inline popup to delete the slot
+                    swatch.MouseRightButtonUp += (s, e) =>
+                    {
+                        var removeLbl = new TextBlock
+                        {
+                            Text   = "Remove",
+                            Cursor = Cursors.Hand,
+                            Margin = new Thickness(10, 6, 10, 6),
+                        };
+                        removeLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                        removeLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                        removeLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+                        var popupBorder = new Border
+                        {
+                            BorderThickness = new Thickness(1),
+                            CornerRadius    = new CornerRadius(6),
+                            Child           = removeLbl,
+                        };
+                        popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                        popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        var popup = new Popup
+                        {
+                            Child              = popupBorder,
+                            PlacementTarget    = (UIElement)s,
+                            Placement          = PlacementMode.Center,
+                            StaysOpen          = false,
+                            AllowsTransparency = true,
+                        };
+
+                        removeLbl.MouseLeftButtonUp += (rs, re) =>
+                        {
+                            if (activeSet != null && activeSet.Colors.Count > slotIdx)
+                                activeSet.Colors[slotIdx] = null;
+                            SavePersisted();
+                            RefreshProjectGrid();
+                            popup.IsOpen = false;
+                        };
+
+                        popup.IsOpen = true;
+                        e.Handled    = true;
+                    };
+                }
+                else
+                {
+                    swatch         = MakeEmptySwatch();
+                    swatch.ToolTip = "Click to save current color here";
+
+                    // Left-click: fill this slot with the current color immediately
+                    swatch.MouseLeftButtonUp += (s, e) =>
+                    {
+                        if (activeSet != null)
+                        {
+                            while (activeSet.Colors.Count <= slotIdx) activeSet.Colors.Add(null);
+                            activeSet.Colors[slotIdx] = SelectedColor;
+                        }
+                        SavePersisted();
+                        RefreshProjectGrid();
+                    };
+                }
+
+                Grid.SetRow(swatch, i / 6);
+                Grid.SetColumn(swatch, i % 6);
+                _projectGrid.Children.Add(swatch);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Recent swatches
+        // ─────────────────────────────────────────────────────────────────────
+        private void RefreshRecentSwatches()
+        {
+            if (_recentSwatchRow == null) return;
+            _recentSwatchRow.Children.Clear();
+
+            foreach (var c in _recentColors)
+            {
+                var swatch = MakeColorSwatch(c, RecentSwatchSize);
+                swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                var captured = c;
+                swatch.MouseLeftButtonUp += (s, e) => { FromColor(captured); PushOut(); };
+                _recentSwatchRow.Children.Add(swatch);
+            }
+        }
+
+        private void ClearRecentColors()
+        {
+            _recentColors.Clear();
+            SavePersisted();
             RefreshRecentSwatches();
         }
 
@@ -514,7 +916,7 @@ namespace LemoineTools.Lemoine.Controls
         private void RenderSvBitmap()
         {
             const int w = SvW, h = SvH;
-            var wb = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+            var wb     = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
             int stride = w * 4;
             byte[] data = new byte[stride * h];
             for (int y = 0; y < h; y++)
@@ -523,8 +925,8 @@ namespace LemoineTools.Lemoine.Controls
                 for (int x = 0; x < w; x++)
                 {
                     double s = x / (double)(w - 1);
-                    var c = HsvToRgb(_h, s, v);
-                    int i = y * stride + x * 4;
+                    var c    = HsvToRgb(_h, s, v);
+                    int i    = y * stride + x * 4;
                     data[i + 0] = c.B;
                     data[i + 1] = c.G;
                     data[i + 2] = c.R;
@@ -537,16 +939,15 @@ namespace LemoineTools.Lemoine.Controls
 
         private void RenderHueBitmap()
         {
-            // 1-pixel-tall horizontal rainbow; Image will stretch to fill.
             const int w = 360, h = 1;
-            var wb = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+            var wb     = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
             int stride = w * 4;
             byte[] data = new byte[stride * h];
             for (int x = 0; x < w; x++)
             {
                 double hue = x * 360.0 / (w - 1);
-                var c = HsvToRgb(hue, 1.0, 1.0);
-                int i = x * 4;
+                var c      = HsvToRgb(hue, 1.0, 1.0);
+                int i      = x * 4;
                 data[i + 0] = c.B;
                 data[i + 1] = c.G;
                 data[i + 2] = c.R;
@@ -558,16 +959,15 @@ namespace LemoineTools.Lemoine.Controls
 
         private void RenderAlphaBitmap()
         {
-            // Horizontal gradient: transparent current-hue-color → opaque.
             const int w = 256, h = 1;
-            var rgb = HsvToRgb(_h, _s, _v);
-            var wb  = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
+            var rgb    = HsvToRgb(_h, _s, _v);
+            var wb     = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgra32, null);
             int stride = w * 4;
             byte[] data = new byte[stride * h];
             for (int x = 0; x < w; x++)
             {
                 double t = x / (double)(w - 1);
-                int i = x * 4;
+                int i    = x * 4;
                 data[i + 0] = rgb.B;
                 data[i + 1] = rgb.G;
                 data[i + 2] = rgb.R;
@@ -672,7 +1072,6 @@ namespace LemoineTools.Lemoine.Controls
             try
             {
                 var c = (Color)ColorConverter.ConvertFromString(text);
-                // Preserve alpha if user typed 6-char hex (no alpha in string)
                 if (text.Length == 7) c = Color.FromArgb((byte)Math.Round(_a * 255), c.R, c.G, c.B);
                 FromColor(c);
                 PushOut();
@@ -682,10 +1081,9 @@ namespace LemoineTools.Lemoine.Controls
 
         private void CommitRgba()
         {
-            byte r = ParseByte(_rBox?.Text, SelectedColor.R);
-            byte g = ParseByte(_gBox?.Text, SelectedColor.G);
-            byte b = ParseByte(_bBox?.Text, SelectedColor.B);
-            // A box is 0-100 percentage
+            byte r     = ParseByte(_rBox?.Text, SelectedColor.R);
+            byte g     = ParseByte(_gBox?.Text, SelectedColor.G);
+            byte b     = ParseByte(_bBox?.Text, SelectedColor.B);
             double aPct = 100.0;
             if (int.TryParse(_aBox?.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int aRaw))
                 aPct = Math.Max(0, Math.Min(100, aRaw));
@@ -728,33 +1126,27 @@ namespace LemoineTools.Lemoine.Controls
             var rgb = HsvToRgb(_h, _s, _v);
             var c   = Color.FromArgb((byte)Math.Round(_a * 255), rgb.R, rgb.G, rgb.B);
 
-            // SV cursor (14×14, offset by half to centre on the point)
             if (_svCursor != null)
             {
                 _svCursor.SetValue(Canvas.LeftProperty, _s * (SvW - 1) - 7.0);
                 _svCursor.SetValue(Canvas.TopProperty,  (1.0 - _v) * (SvH - 1) - 7.0);
             }
 
-            // Hue + Alpha cursors — need actual rendered width, defer to Render priority
             Dispatcher.BeginInvoke(new Action(PositionSliderCursors),
                 System.Windows.Threading.DispatcherPriority.Render);
 
-            // Preview circle
             if (_previewCircle != null)
             {
                 var brush = new SolidColorBrush(c); brush.Freeze();
                 _previewCircle.Fill = brush;
             }
 
-            // HEX (6-char RRGGBB, # shown as static label)
             if (_hexBox != null && !_hexBox.IsFocused)
                 _hexBox.Text = $"{c.R:X2}{c.G:X2}{c.B:X2}";
 
-            // RGB
             if (_rBox != null && !_rBox.IsFocused) _rBox.Text = c.R.ToString(CultureInfo.InvariantCulture);
             if (_gBox != null && !_gBox.IsFocused) _gBox.Text = c.G.ToString(CultureInfo.InvariantCulture);
             if (_bBox != null && !_bBox.IsFocused) _bBox.Text = c.B.ToString(CultureInfo.InvariantCulture);
-            // A as 0-100 percent
             if (_aBox != null && !_aBox.IsFocused)
                 _aBox.Text = ((int)Math.Round(_a * 100)).ToString(CultureInfo.InvariantCulture);
         }
@@ -763,16 +1155,14 @@ namespace LemoineTools.Lemoine.Controls
         {
             double halfCursor = (SliderH + 4) / 2.0;
 
-            if (_hueHost != null && _hueOverlay != null && _hueCursor != null
-                && _hueHost.ActualWidth > 0)
+            if (_hueHost != null && _hueOverlay != null && _hueCursor != null && _hueHost.ActualWidth > 0)
             {
                 double hx = (_h / 360.0) * _hueHost.ActualWidth - halfCursor;
                 _hueCursor.SetValue(Canvas.LeftProperty, hx);
                 _hueCursor.SetValue(Canvas.TopProperty,  -(_hueCursor.Height - SliderH) / 2.0);
             }
 
-            if (_alphaHost != null && _alphaOverlay != null && _alphaCursor != null
-                && _alphaHost.ActualWidth > 0)
+            if (_alphaHost != null && _alphaOverlay != null && _alphaCursor != null && _alphaHost.ActualWidth > 0)
             {
                 double ax = _a * _alphaHost.ActualWidth - halfCursor;
                 _alphaCursor.SetValue(Canvas.LeftProperty, ax);
@@ -781,112 +1171,7 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Swatch management
-        // ─────────────────────────────────────────────────────────────────────
-        private void AddProjectColor()
-        {
-            if (_projectColors.Count >= MaxProjectColors) return;
-            _projectColors.Add(SelectedColor);
-            SavePersisted();
-            RefreshProjectSwatches();
-        }
-
-        private void ClearRecentColors()
-        {
-            _recentColors.Clear();
-            SavePersisted();
-            RefreshRecentSwatches();
-        }
-
-        private void RefreshProjectSwatches()
-        {
-            if (_projectSwatchRow == null) return;
-            _projectSwatchRow.Children.Clear();
-
-            foreach (var c in _projectColors.ToList())
-            {
-                var swatch = MakeColorSwatch(c, ProjectSwatchSize);
-                swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-                var captured = c;
-                swatch.MouseLeftButtonUp += (s, e) => { FromColor(captured); PushOut(); };
-
-                var menu = new ContextMenu();
-                var copyItem   = new MenuItem { Header = "Copy hex" };
-                var removeItem = new MenuItem { Header = "Remove from project" };
-                copyItem.Click   += (s2, e2) => Clipboard.SetText($"#{captured.R:X2}{captured.G:X2}{captured.B:X2}");
-                removeItem.Click += (s2, e2) => { _projectColors.Remove(captured); SavePersisted(); RefreshProjectSwatches(); };
-                menu.Items.Add(copyItem);
-                menu.Items.Add(removeItem);
-                swatch.ContextMenu = menu;
-
-                _projectSwatchRow.Children.Add(swatch);
-            }
-
-            if (_projectColors.Count < MaxProjectColors)
-                _projectSwatchRow.Children.Add(MakeAddSwatch());
-        }
-
-        private void RefreshRecentSwatches()
-        {
-            if (_recentSwatchRow == null) return;
-            _recentSwatchRow.Children.Clear();
-
-            foreach (var c in _recentColors)
-            {
-                var swatch = MakeColorSwatch(c, RecentSwatchSize);
-                swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-                var captured = c;
-                swatch.MouseLeftButtonUp += (s, e) => { FromColor(captured); PushOut(); };
-                _recentSwatchRow.Children.Add(swatch);
-            }
-        }
-
-        private static Border MakeColorSwatch(Color c, int size = 30)
-        {
-            var b = new Border
-            {
-                Width  = size,
-                Height = size,
-                CornerRadius    = new CornerRadius(size <= 24 ? 4 : 6),
-                Margin          = new Thickness(0, 0, 4, 4),
-                Background      = new SolidColorBrush(c),
-                BorderThickness = new Thickness(1),
-                Cursor          = Cursors.Hand,
-                SnapsToDevicePixels = true,
-            };
-            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-            return b;
-        }
-
-        private Border MakeAddSwatch()
-        {
-            var b = new Border
-            {
-                Width  = ProjectSwatchSize,
-                Height = ProjectSwatchSize,
-                CornerRadius    = new CornerRadius(6),
-                Margin          = new Thickness(0, 0, 4, 4),
-                BorderThickness = new Thickness(1),
-                Cursor          = Cursors.Hand,
-                SnapsToDevicePixels = true,
-            };
-            b.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-            var plus = new TextBlock
-            {
-                Text = "+",
-                FontSize = 14,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center,
-            };
-            plus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            b.Child = plus;
-            b.MouseLeftButtonUp += (s, e) => AddProjectColor();
-            return b;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Color math (unchanged)
+        // Color math
         // ─────────────────────────────────────────────────────────────────────
         internal static Color HsvToRgb(double h, double s, double v)
         {
@@ -912,7 +1197,7 @@ namespace LemoineTools.Lemoine.Controls
 
         internal static void RgbToHsv(Color c, out double h, out double s, out double v)
         {
-            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double r   = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
             double max = Math.Max(r, Math.Max(g, b));
             double min = Math.Min(r, Math.Min(g, b));
             double d   = max - min;
@@ -926,15 +1211,11 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Small helpers
+        // Helpers
         // ─────────────────────────────────────────────────────────────────────
         private static TextBlock MakeLabel(string text)
         {
-            var tb = new TextBlock
-            {
-                Text = text,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var tb = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -945,11 +1226,11 @@ namespace LemoineTools.Lemoine.Controls
         {
             var b = new TextBox
             {
-                Padding  = new Thickness(4, 6, 4, 6),
-                BorderThickness = new Thickness(1),
+                Padding                  = new Thickness(4, 6, 4, 6),
+                BorderThickness          = new Thickness(1),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                MaxLength = 3,
+                TextAlignment            = TextAlignment.Center,
+                MaxLength                = 3,
             };
             b.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
             b.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
@@ -957,6 +1238,49 @@ namespace LemoineTools.Lemoine.Controls
             b.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
             b.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
             b.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            return b;
+        }
+
+        private static Border MakeColorSwatch(Color c, int size = 30)
+        {
+            var b = new Border
+            {
+                Width               = size,
+                Height              = size,
+                CornerRadius        = new CornerRadius(size <= 24 ? 4 : 6),
+                Margin              = new Thickness(0, 0, 4, 4),
+                Background          = new SolidColorBrush(c),
+                BorderThickness     = new Thickness(1),
+                Cursor              = Cursors.Hand,
+                SnapsToDevicePixels = true,
+            };
+            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+            return b;
+        }
+
+        private Border MakeEmptySwatch()
+        {
+            var b = new Border
+            {
+                Width               = ProjectSwatchSize,
+                Height              = ProjectSwatchSize,
+                CornerRadius        = new CornerRadius(6),
+                Margin              = new Thickness(0, 0, 4, 4),
+                BorderThickness     = new Thickness(1),
+                Cursor              = Cursors.Hand,
+                SnapsToDevicePixels = true,
+            };
+            b.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+            var plus = new TextBlock
+            {
+                Text                = "+",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+            };
+            plus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            plus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            b.Child = plus;
             return b;
         }
     }
