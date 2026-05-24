@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -334,6 +335,33 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         /// <param name="layout">The layout configuration to clone.</param>
         /// <returns>An independent clone of <paramref name="layout"/>.</returns>
         public static LegendLayoutConfig DeepCopy(LegendLayoutConfig layout) => layout.Clone();
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Template store
+        // ─────────────────────────────────────────────────────────────────────
+        public static void ExportTo(string path, LegendCreatorSettings data)
+        {
+            var xs = new XmlSerializer(typeof(LegendCreatorSettings));
+            using (var w = new StreamWriter(path)) xs.Serialize(w, data);
+        }
+
+        public static LegendCreatorSettings? TryLoad(string path)
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(LegendCreatorSettings));
+                using (var r = new StreamReader(path))
+                    return (LegendCreatorSettings)xs.Deserialize(r)!;
+            }
+            catch { return null; }
+        }
+
+        private static LemoineTemplateStore<LegendCreatorSettings>? _templateStore;
+        public static LemoineTemplateStore<LegendCreatorSettings> Templates =>
+            _templateStore ?? (_templateStore = new LemoineTemplateStore<LegendCreatorSettings>(
+                toolId:      "LegendCreator",
+                serialize:   (data, path) => ExportTo(path, data),
+                deserialize: path => TryLoad(path)));
     }
 
     // =========================================================================
