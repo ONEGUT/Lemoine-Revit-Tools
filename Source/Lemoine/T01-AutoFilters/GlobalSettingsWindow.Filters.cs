@@ -100,7 +100,8 @@ namespace LemoineTools.Lemoine
             leftDock.Children.Add(addRuleOuter);
 
             // Rule list (fills remaining)
-            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0), AllowDrop = true };
+            // Background = Transparent (not null) so inter-row gaps are hit-testable during drag-drop.
+            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0), AllowDrop = true, Background = Brushes.Transparent };
 
             // Handle drops that land in the gaps between pills (not on any rowBorder).
             _fRuleListPanel.DragOver += (s, e) =>
@@ -159,7 +160,8 @@ namespace LemoineTools.Lemoine
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = _fRuleListPanel,
+                AllowDrop                     = true,
+                Content                       = _fRuleListPanel,
             };
             leftDock.Children.Add(ruleScroll);
             FRefreshRuleList();
@@ -888,7 +890,7 @@ namespace LemoineTools.Lemoine
                 _dragRuleId = null;
             };
 
-            // ── Row click — select rule (Ctrl+click for multi-select) ────────
+            // ── Row click — select rule (Shift/Ctrl for range/toggle multi-select) ──
             rowBorder.PreviewMouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is FrameworkElement src)
@@ -905,7 +907,25 @@ namespace LemoineTools.Lemoine
                 }
                 _dragGhostClickOffset = e.GetPosition(rowBorder);
 
-                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    e.Handled = true;
+                    string anchorId    = _fShiftAnchorRuleId ?? _fActiveRuleId ?? rule.Id;
+                    int    anchorIdx   = trade.Rules.FindIndex(r => r.Id == anchorId);
+                    int    clickedIdx  = trade.Rules.FindIndex(r => r.Id == rule.Id);
+                    if (anchorIdx < 0) anchorIdx = clickedIdx;
+                    int lo = Math.Min(anchorIdx, clickedIdx);
+                    int hi = Math.Max(anchorIdx, clickedIdx);
+
+                    ClearMultiSelection();
+                    for (int i = lo; i <= hi; i++)
+                        _fSelectedRuleIds.Add(trade.Rules[i].Id);
+
+                    _fActiveRuleId = anchorId; // editor sources from anchor
+                    FRefreshRuleList();
+                    FRefreshRuleEditor();
+                }
+                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
                 {
                     e.Handled = true; // suppress drag initiation on Ctrl+click
                     bool wasInBatch = _fSelectedRuleIds.Count >= 2;
@@ -934,14 +954,12 @@ namespace LemoineTools.Lemoine
 
                     bool isInBatch = _fSelectedRuleIds.Count >= 2;
                     if (wasInBatch && !isInBatch)
-                    {
-                        // Exiting batch mode: restore all remaining multi-select visuals
                         ClearMultiSelection();
-                    }
                     FRefreshRuleEditor();
                 }
                 else
                 {
+                    _fShiftAnchorRuleId = rule.Id; // anchor updates on plain click
                     if (_fSelectedRuleIds.Count > 0) ClearMultiSelection();
                     if (rule.Id != _fActiveRuleId)
                         SelectRuleInPlace(rowBorder, rule.Id, nameTb);

@@ -61,6 +61,7 @@ namespace LemoineTools.Lemoine
 
         // ── Multi-select / batch-edit state ──────────────────────────────────
         private readonly HashSet<string>              _fSelectedRuleIds   = new HashSet<string>();
+        private          string?                      _fShiftAnchorRuleId;
         private readonly Dictionary<string, Border>   _fMultiSelectBorders = new Dictionary<string, Border>();
 
         // ── Active drag state (rule reorder) ─────────────────────────────────
