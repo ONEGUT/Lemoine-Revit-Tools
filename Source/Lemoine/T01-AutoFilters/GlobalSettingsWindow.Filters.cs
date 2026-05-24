@@ -2429,20 +2429,35 @@ namespace LemoineTools.Lemoine
                     // Capture for lambda closure
                     var t = tmpl;
 
-                    var rowGrid = new Grid
+                    // Pill chip wrapper
+                    var pillBorder = new Border
                     {
-                        Margin = new Thickness(4, 0, 4, 0),
-                        Cursor = Cursors.Hand,
+                        CornerRadius    = new CornerRadius(12),
+                        BorderThickness = new Thickness(1),
+                        Margin          = new Thickness(4, 2, 4, 2),
+                        Cursor          = Cursors.Hand,
+                        ClipToBounds    = true,
                     };
+                    pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                    pillBorder.MouseEnter += (s, e) =>
+                    {
+                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    };
+                    pillBorder.MouseLeave += (s, e) =>
+                    {
+                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    };
+
+                    var rowGrid = new Grid();
                     rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                    // Load area (icon + name + date)
-                    var loadBorder = new Border
-                    {
-                        Padding      = new Thickness(12, 6, 6, 6),
-                        CornerRadius = new CornerRadius(3),
-                    };
+                    // Load area (name + date)
+                    var loadBorder = new Border { Padding = new Thickness(10, 4, 6, 4) };
                     Grid.SetColumn(loadBorder, 0);
 
                     var nameStack = new StackPanel();
@@ -2463,11 +2478,6 @@ namespace LemoineTools.Lemoine
                     nameStack.Children.Add(nameTb);
                     nameStack.Children.Add(dateTb);
                     loadBorder.Child = nameStack;
-
-                    rowGrid.MouseEnter += (s, e) =>
-                        rowGrid.SetResourceReference(Panel.BackgroundProperty, "LemoineRaised");
-                    rowGrid.MouseLeave += (s, e) =>
-                        rowGrid.ClearValue(Panel.BackgroundProperty);
 
                     loadBorder.MouseLeftButtonUp += (s, e) =>
                     {
@@ -2511,7 +2521,8 @@ namespace LemoineTools.Lemoine
                     Grid.SetColumn((UIElement)delBtn, 1);
                     rowGrid.Children.Add((UIElement)delBtn);
 
-                    templateListPanel.Children.Add(rowGrid);
+                    pillBorder.Child = rowGrid;
+                    templateListPanel.Children.Add(pillBorder);
                 }
             }
 
@@ -2592,12 +2603,14 @@ namespace LemoineTools.Lemoine
             {
                 var btn = new Border
                 {
-                    Padding      = new Thickness(12, 7, 12, 7),
-                    CornerRadius = new CornerRadius(3),
-                    Cursor       = Cursors.Hand,
-                    Margin       = new Thickness(0, 0, 0, 0),
-                    Background   = Brushes.Transparent,
+                    Padding         = new Thickness(10, 4, 12, 4),
+                    CornerRadius    = new CornerRadius(12),
+                    BorderThickness = new Thickness(1),
+                    Cursor          = Cursors.Hand,
+                    Margin          = new Thickness(4, 2, 4, 2),
                 };
+                btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
                 var icon = new TextBlock
                 {
@@ -2628,9 +2641,15 @@ namespace LemoineTools.Lemoine
                 btn.Child = row;
 
                 btn.MouseEnter += (s, e) =>
-                    btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                {
+                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                };
                 btn.MouseLeave += (s, e) =>
-                    btn.Background = Brushes.Transparent;
+                {
+                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                };
                 btn.MouseLeftButtonUp += (s, e) =>
                 {
                     e.Handled = true;
@@ -2665,12 +2684,14 @@ namespace LemoineTools.Lemoine
             // Restore shows an inline confirmation instead of closing the popup.
             var restoreRow = new Border
             {
-                Padding      = new Thickness(12, 7, 12, 7),
-                CornerRadius = new CornerRadius(3),
-                Margin       = new Thickness(4, 0, 4, 0),
-                Cursor       = Cursors.Hand,
-                Background   = Brushes.Transparent,
+                Padding         = new Thickness(10, 4, 12, 4),
+                CornerRadius    = new CornerRadius(12),
+                BorderThickness = new Thickness(1),
+                Margin          = new Thickness(4, 2, 4, 2),
+                Cursor          = Cursors.Hand,
             };
+            restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
             var restoreRowContent = new StackPanel { Orientation = Orientation.Horizontal };
             var restoreIcon = new TextBlock
             {
@@ -2698,9 +2719,15 @@ namespace LemoineTools.Lemoine
             restoreRow.Child = restoreRowContent;
 
             restoreRow.MouseEnter += (s, e) =>
-                restoreRow.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            {
+                restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
+            };
             restoreRow.MouseLeave += (s, e) =>
-                restoreRow.Background = Brushes.Transparent;
+            {
+                restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
+            };
             restoreRow.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
