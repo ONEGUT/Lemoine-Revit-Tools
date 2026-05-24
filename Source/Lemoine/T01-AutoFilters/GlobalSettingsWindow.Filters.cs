@@ -723,17 +723,22 @@ namespace LemoineTools.Lemoine
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // pencil
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // trash
 
-            // Color swatch (rounded square)
+            // Color swatch — square, height driven by the name+subtext stack
             var colorDot = new Border
             {
-                Width             = 14, Height = 14,
                 Background        = BrushFromHex(rule.SurfColor ?? trade.Color),
                 BorderThickness   = new Thickness(1.5),
                 CornerRadius      = new CornerRadius(3),
                 Margin            = new Thickness(4, 0, 10, 0),
-                VerticalAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Stretch,
             };
             colorDot.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            // Keep square: width tracks actual height after layout
+            colorDot.SizeChanged += (s, e) =>
+            {
+                double h = e.NewSize.Height;
+                if (h > 0 && colorDot.Width != h) colorDot.Width = h;
+            };
             Grid.SetColumn(colorDot, 0);
             outerRow.Children.Add(colorDot);
 
