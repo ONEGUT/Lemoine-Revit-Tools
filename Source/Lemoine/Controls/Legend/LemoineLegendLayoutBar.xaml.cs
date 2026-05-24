@@ -1,19 +1,22 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
-    /// Top ribbon of the Legend Creator. Two rows:
-    ///   Row 1 — [LEGEND ▸]   [TITLE input]   [SUBTITLE input]
-    ///   Row 2 — [LAYOUT ▸]   SWATCH W×H   FONT pt   GAP px
+    /// Top ribbon of the Legend Creator. Single row:
+    ///   [ Legend pill (title, accent-bordered) ] [ ✎ edit btn ] ── spacer ── [ Preview btn ] [ Templates ˅ pill ]
     /// </summary>
     public partial class LemoineLegendLayoutBar : UserControl
     {
         public event EventHandler? Changed;
+        public event EventHandler? PreviewRequested;
+        public event EventHandler? TemplatesRequested;
 
         private LegendLayoutConfig _layout = new LegendLayoutConfig();
         public LegendLayoutConfig Layout
@@ -38,172 +41,220 @@ namespace LemoineTools.Lemoine.Controls
             _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             _root.Children.Clear();
-            _root.Children.Add(BuildTopRow());
-            var sep = new Border { Height = 1 };
-            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
-            _root.Children.Add(sep);
-            _root.Children.Add(BuildBottomRow());
+
+            // Single grid: [Auto legend pill] [Auto edit btn] [* spacer] [Auto Preview btn] [Auto Templates pill]
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 legend pill
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 edit btn
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 spacer
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 preview btn
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 templates pill
+
+            // ── Legend pill ──────────────────────────────────────────────────
+            var pill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 5, 10, 5),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0),
+            };
+            pill.SetResourceReference(Border.CornerRadiusProperty,  "LemoineRadius_Chip");
+            pill.SetResourceReference(Border.BorderBrushProperty,   "LemoineAccent");
+            pill.SetResourceReference(Border.BackgroundProperty,    "LemoineAccentDim");
+
+            var pillLabel = new TextBlock
+            {
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            pillLabel.Text = _layout.Title ?? "Legend";
+            pillLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
+            pillLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            pillLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            pill.Child = pillLabel;
+            Grid.SetColumn(pill, 0);
+            grid.Children.Add(pill);
+
+            // ── Edit button (✎) ──────────────────────────────────────────────
+            var editBtn = new Border
+            {
+                CornerRadius = new CornerRadius(3),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(5),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0),
+            };
+            editBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            editBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            var editGlyph = new TextBlock { Text = "✎", VerticalAlignment = VerticalAlignment.Center };
+            editGlyph.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            editGlyph.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            editGlyph.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            editBtn.Child = editGlyph;
+
+            editBtn.MouseEnter += (s, e) =>
+            {
+                editBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                editBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            };
+            editBtn.MouseLeave += (s, e) =>
+            {
+                editBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                editBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            };
+            editBtn.MouseLeftButtonUp += (s, e) => ShowEditPopup(editBtn, pillLabel);
+
+            Grid.SetColumn(editBtn, 1);
+            grid.Children.Add(editBtn);
+
+            // col 2 is the star spacer — no child needed
+
+            // ── Preview button ───────────────────────────────────────────────
+            var previewBtn = LemoineControlStyles.BuildButton("Preview", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            previewBtn.VerticalAlignment = VerticalAlignment.Center;
+            previewBtn.Margin = new Thickness(0, 0, 4, 0);
+            previewBtn.Click += (s, e) => PreviewRequested?.Invoke(this, EventArgs.Empty);
+            Grid.SetColumn(previewBtn, 3);
+            grid.Children.Add(previewBtn);
+
+            // ── Templates pill ───────────────────────────────────────────────
+            var templatesPill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 5, 10, 5),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            templatesPill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            templatesPill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+
+            var templatesInner = new StackPanel { Orientation = Orientation.Horizontal };
+            var templatesLabel = new TextBlock
+            {
+                Text = "Templates",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            templatesLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            templatesLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            templatesLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+
+            var templatesChevron = new TextBlock
+            {
+                Text = " ˅",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            templatesChevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            templatesChevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            templatesChevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+
+            templatesInner.Children.Add(templatesLabel);
+            templatesInner.Children.Add(templatesChevron);
+            templatesPill.Child = templatesInner;
+
+            templatesPill.MouseEnter += (s, e) =>
+            {
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            };
+            templatesPill.MouseLeave += (s, e) =>
+            {
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            };
+            templatesPill.MouseLeftButtonUp += (s, e) => TemplatesRequested?.Invoke(this, EventArgs.Empty);
+
+            Grid.SetColumn(templatesPill, 4);
+            grid.Children.Add(templatesPill);
+
+            _root.Children.Add(grid);
         }
 
-        private UIElement BuildTopRow()
+        // ─────────────────────────────────────────────────────────────────────
+        // Edit popup
+        // ─────────────────────────────────────────────────────────────────────
+        private void ShowEditPopup(UIElement anchor, TextBlock pillLabel)
         {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Margin = new Thickness(8),
+                MinWidth = 200,
+            };
 
-            // Brand
-            var brand = MakeBrand("LEGEND");
-            Grid.SetColumn(brand, 0);
-            grid.Children.Add(brand);
+            var titleLabel = new TextBlock { Text = "Title", Margin = new Thickness(0, 0, 0, 2) };
+            titleLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            titleLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            titleLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            panel.Children.Add(titleLabel);
 
-            // TITLE cell
-            var titleEdit = new LemoineInlineEdit
+            var titleBox = new TextBox
             {
                 Text = _layout.Title ?? "",
-                Bold = true,
-                FontSizeKey = "LemoineFS_LG",
-                Placeholder = "Filter Legend",
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 140,
+                Margin = new Thickness(0, 0, 0, 8),
+                Padding = new Thickness(6, 4, 6, 4),
+                BorderThickness = new Thickness(1),
             };
-            titleEdit.TextCommitted += (s, t) => { _layout.Title = t; Changed?.Invoke(this, EventArgs.Empty); };
-            var titleCell = MakeCell("TITLE", titleEdit);
-            Grid.SetColumn(titleCell, 1);
-            grid.Children.Add(titleCell);
+            titleBox.SetResourceReference(TextBox.ForegroundProperty,    "LemoineText");
+            titleBox.SetResourceReference(TextBox.FontFamilyProperty,    "LemoineUiFont");
+            titleBox.SetResourceReference(TextBox.FontSizeProperty,      "LemoineFS_MD");
+            titleBox.SetResourceReference(TextBox.BorderBrushProperty,   "LemoineBorder");
+            titleBox.SetResourceReference(TextBox.BackgroundProperty,    "LemoineSelectBg");
+            titleBox.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
+            panel.Children.Add(titleBox);
 
-            // SUBTITLE cell
-            var subEdit = new LemoineInlineEdit
+            var subLabel = new TextBlock { Text = "Subtitle", Margin = new Thickness(0, 0, 0, 2) };
+            subLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            subLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            subLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            panel.Children.Add(subLabel);
+
+            var subBox = new TextBox
             {
                 Text = _layout.Subtitle ?? "",
-                FontSizeKey = "LemoineFS_MD",
-                Placeholder = "(optional)",
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 80,
+                Margin = new Thickness(0, 0, 0, 10),
+                Padding = new Thickness(6, 4, 6, 4),
+                BorderThickness = new Thickness(1),
             };
-            subEdit.TextCommitted += (s, t) => { _layout.Subtitle = t; Changed?.Invoke(this, EventArgs.Empty); };
-            var subCell = MakeCell("SUBTITLE", subEdit);
-            Grid.SetColumn(subCell, 2);
-            grid.Children.Add(subCell);
+            subBox.SetResourceReference(TextBox.ForegroundProperty,    "LemoineText");
+            subBox.SetResourceReference(TextBox.FontFamilyProperty,    "LemoineUiFont");
+            subBox.SetResourceReference(TextBox.FontSizeProperty,      "LemoineFS_MD");
+            subBox.SetResourceReference(TextBox.BorderBrushProperty,   "LemoineBorder");
+            subBox.SetResourceReference(TextBox.BackgroundProperty,    "LemoineSelectBg");
+            subBox.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
+            panel.Children.Add(subBox);
 
-            return grid;
-        }
-
-        private UIElement BuildBottomRow()
-        {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var brand = MakeBrand("LAYOUT");
-            Grid.SetColumn(brand, 0);
-            grid.Children.Add(brand);
-
-            // SWATCH W × H
-            var wStep = new LemoineNumberStepper { Value = _layout.SwatchW, MinValue = 10, MaxValue = 48, Step = 2 };
-            wStep.ValueChanged += (s, v) => { _layout.SwatchW = v; Changed?.Invoke(this, EventArgs.Empty); };
-            var times = new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center };
-            times.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            times.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            times.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            var hStep = new LemoineNumberStepper { Value = _layout.SwatchH, MinValue = 6, MaxValue = 28, Step = 1 };
-            hStep.ValueChanged += (s, v) => { _layout.SwatchH = v; Changed?.Invoke(this, EventArgs.Empty); };
-            var swatchInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            swatchInner.Children.Add(wStep);
-            swatchInner.Children.Add(times);
-            swatchInner.Children.Add(hStep);
-            swatchInner.Children.Add(MakeUnit("px"));
-            var swatchCell = MakeCell("SWATCH", swatchInner);
-            Grid.SetColumn(swatchCell, 1);
-            grid.Children.Add(swatchCell);
-
-            // FONT
-            var fontStep = new LemoineNumberStepper { Value = _layout.FontPt, MinValue = 7, MaxValue = 16, Step = 1 };
-            fontStep.ValueChanged += (s, v) => { _layout.FontPt = v; Changed?.Invoke(this, EventArgs.Empty); };
-            var fontInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            fontInner.Children.Add(fontStep);
-            fontInner.Children.Add(MakeUnit("pt"));
-            var fontCell = MakeCell("FONT", fontInner);
-            Grid.SetColumn(fontCell, 2);
-            grid.Children.Add(fontCell);
-
-            // GAP
-            var gapStep = new LemoineNumberStepper { Value = _layout.Gap, MinValue = 0, MaxValue = 20, Step = 1 };
-            gapStep.ValueChanged += (s, v) => { _layout.Gap = v; Changed?.Invoke(this, EventArgs.Empty); };
-            var gapInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            gapInner.Children.Add(gapStep);
-            gapInner.Children.Add(MakeUnit("px"));
-            var gapCell = MakeCell("GAP", gapInner);
-            Grid.SetColumn(gapCell, 3);
-            grid.Children.Add(gapCell);
-
-            return grid;
-        }
-
-        // ── Helpers ─────────────────────────────────────────────────────────
-        private static Border MakeBrand(string text)
-        {
-            var tb = new TextBlock
+            var popup = new Popup
             {
-                Text = text + " ▸",
-                VerticalAlignment = VerticalAlignment.Center,
-                FontWeight = FontWeights.SemiBold,
+                PlacementTarget    = anchor,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = false,
+                AllowsTransparency = false,
             };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            var b = new Border
-            {
-                Padding = new Thickness(12, 6, 12, 6),
-                BorderThickness = new Thickness(0, 0, 1, 0),
-                MinWidth = 96,
-                Child = tb,
-            };
-            b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-            b.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            return b;
-        }
 
-        /// <summary>Cell = right-bordered Border containing a horizontal stack [label, content].</summary>
-        private static Border MakeCell(string label, UIElement content)
-        {
-            var inner = new StackPanel
+            var saveBtn = LemoineControlStyles.BuildButton("Save", LemoineControlStyles.LemoineButtonVariant.Primary);
+            saveBtn.Click += (s, e) =>
             {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
+                _layout.Title    = titleBox.Text.Trim();
+                _layout.Subtitle = subBox.Text.Trim();
+                pillLabel.Text   = _layout.Title;
+                popup.IsOpen     = false;
+                Changed?.Invoke(this, EventArgs.Empty);
             };
-            var lbl = new TextBlock
-            {
-                Text = label,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            inner.Children.Add(lbl);
-            inner.Children.Add(content);
+            panel.Children.Add(saveBtn);
 
-            var cell = new Border
+            var outerBorder = new Border
             {
-                Padding = new Thickness(12, 6, 12, 6),
-                BorderThickness = new Thickness(0, 0, 1, 0),
-                Child = inner,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Child = panel,
             };
-            cell.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-            return cell;
-        }
+            outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
-        private static TextBlock MakeUnit(string text)
-        {
-            var tb = new TextBlock { Text = " " + text, VerticalAlignment = VerticalAlignment.Center };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            return tb;
+            popup.Child = outerBorder;
+            popup.IsOpen = true;
         }
     }
 }

@@ -33,9 +33,14 @@ namespace LemoineTools.Lemoine.Controls
         /// <summary>(payload, droppedAtBlockIndex) — index = group.Blocks.Count to append.</summary>
         public event EventHandler<BlockDropArgs>? BlockDropRequested;
         public event EventHandler<MouseEventArgs>? GroupDragInitiated;
+        public event Action<string, bool, bool>? BlockClickedOnCanvas; // blockId, ctrl, shift
 
         private Point _dragStart;
         private bool  _mouseDown;
+
+        // ── Selection context ────────────────────────────────────────────────
+        private HashSet<string> _selectionContext = new HashSet<string>();
+        private string? _activeContext;
 
         public LemoineLegendGroupCard()
         {
@@ -49,12 +54,18 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionContext(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext = activeId;
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         private void BuildAll()
         {
             var tradeColor = ResolveTradeColor();
 
-            _outer.SetResourceReference(Border.BackgroundProperty, "LemoineSurface");
+            _outer.Background = Brushes.Transparent;
             _outer.ClipToBounds = true;
 
             BuildHeader(tradeColor);
@@ -227,8 +238,15 @@ namespace LemoineTools.Lemoine.Controls
                 for (int i = 0; i < n; i++)
                 {
                     var row = new LemoineLegendBlockRow();
-                    row.Bind(Group.Blocks![i]);
                     int capturedI = i;
+                    row.SetSelectionContext(
+                        _selectionContext,
+                        _activeContext);
+                    row.Bind(Group.Blocks![i]);
+                    row.BlockClicked += (bId, ctrl, shift) => BlockClickedOnCanvas?.Invoke(bId, ctrl, shift);
+                    bool bIsActive = Group.Blocks![capturedI].Id == _activeContext;
+                    bool bIsMulti  = !bIsActive && _selectionContext.Contains(Group.Blocks![capturedI].Id);
+                    if (bIsActive || bIsMulti) row.SetSelectionState(bIsActive, bIsMulti);
                     row.Changed         += (s, e) => { Changed?.Invoke(this, EventArgs.Empty); /* count refresh */ BuildHeader(ResolveTradeColor()); };
                     row.DeleteRequested += (s, e) =>
                     {

@@ -13,7 +13,7 @@ namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
     /// Single legend entry tile. Composition:
-    ///   [grip]  [eye]  [color chip ▣]  [shape picker]  [name (inline edit)]  [CUST]  [✕]
+    ///   [eye]  [color chip ▣]  [shape picker]  [name (inline edit)]  [CUST]  [missing⚠]  [✕]
     /// </summary>
     public partial class LemoineLegendBlockRow : UserControl
     {
@@ -22,6 +22,7 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? Changed;        // any block field changed
         public event EventHandler? DeleteRequested;
         public event EventHandler<MouseEventArgs>? DragInitiated;
+        public event Action<string, bool, bool>? BlockClicked; // blockId, ctrl, shift
 
         // ── State for click-vs-drag detection ──────────────────────────────
         private Point _dragStart;
@@ -39,6 +40,25 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionState(bool isActive, bool isMulti)
+        {
+            if (isActive)
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            }
+            else if (isMulti)
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }
+            else
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         private void BuildAll()
         {
@@ -48,24 +68,15 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.ColumnDefinitions.Clear();
 
-            // Columns: grip · eye · shape (also color) · name (*) · CUST · missing · delete
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 grip
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 eye
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 2 shape (popup also picks color)
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 3 name
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 CUST tag
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 missing indicator
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 6 delete
+            // Columns: eye · shape (also color) · name (*) · CUST · missing · delete
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 eye
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 shape (popup also picks color)
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 name
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 CUST tag
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 missing indicator
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 delete
 
-            // ── 0: Grip (drag handle visual) ───────────────────────────────
-            var grip = MakeGlyphLabel("⋮⋮", "LemoineTextDim");
-            grip.Margin = new Thickness(0, 0, 6, 0);
-            grip.Cursor = Cursors.SizeAll;
-            grip.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(grip, 0);
-            _root.Children.Add(grip);
-
-            // ── 1: Eye toggle ──────────────────────────────────────────────
+            // ── 0: Eye toggle ──────────────────────────────────────────────
             var eyeBtn = MakeIconHostButton(
                 child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
                 tooltip: Block.Visible ? "Hide" : "Show");
@@ -76,10 +87,10 @@ namespace LemoineTools.Lemoine.Controls
                 Changed?.Invoke(this, EventArgs.Empty);
                 BuildAll();
             };
-            Grid.SetColumn(eyeBtn, 1);
+            Grid.SetColumn(eyeBtn, 0);
             _root.Children.Add(eyeBtn);
 
-            // ── 2: Shape + color picker (single popup) ─────────────────────
+            // ── 1: Shape + color picker (single popup) ─────────────────────
             var resolvedColor = ResolveColor();
             var shapePreview = new LemoineSwatchGlyph
             {
@@ -91,10 +102,10 @@ namespace LemoineTools.Lemoine.Controls
             };
             var shapeBtn = MakeIconHostButton(shapePreview, "Pick shape, fill, and color");
             shapeBtn.Click += (s, e) => OpenShapePopup(shapeBtn, resolvedColor);
-            Grid.SetColumn(shapeBtn, 2);
+            Grid.SetColumn(shapeBtn, 1);
             _root.Children.Add(shapeBtn);
 
-            // ── 3: Name (inline edit) ──────────────────────────────────────
+            // ── 2: Name (inline edit) ──────────────────────────────────────
             var name = new LemoineInlineEdit
             {
                 Text = ResolveName(),
@@ -109,10 +120,10 @@ namespace LemoineTools.Lemoine.Controls
                 Block.NameOverride = !Block.Custom && t != (LookupRule()?.Name ?? "");
                 Changed?.Invoke(this, EventArgs.Empty);
             };
-            Grid.SetColumn(name, 3);
+            Grid.SetColumn(name, 2);
             _root.Children.Add(name);
 
-            // ── 4: CUST tag ───────────────────────────────────────────────
+            // ── 3: CUST tag ───────────────────────────────────────────────
             if (Block.Custom)
             {
                 var cust = new Border
@@ -130,11 +141,11 @@ namespace LemoineTools.Lemoine.Controls
                 custLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
                 custLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 cust.Child = custLbl;
-                Grid.SetColumn(cust, 4);
+                Grid.SetColumn(cust, 3);
                 _root.Children.Add(cust);
             }
 
-            // ── 5: Missing-source indicator ────────────────────────────────
+            // ── 4: Missing-source indicator ────────────────────────────────
             if (!Block.Custom && string.IsNullOrEmpty(Block.SourceRuleId) == false)
             {
                 if (LookupRule() == null)
@@ -143,17 +154,27 @@ namespace LemoineTools.Lemoine.Controls
                     miss.ToolTip = "Source rule missing — value frozen at last seen.";
                     miss.Margin = new Thickness(4, 0, 4, 0);
                     miss.VerticalAlignment = VerticalAlignment.Center;
-                    Grid.SetColumn(miss, 5);
+                    Grid.SetColumn(miss, 4);
                     _root.Children.Add(miss);
                 }
             }
 
-            // ── 6: Delete ──────────────────────────────────────────────────
+            // ── 5: Delete ──────────────────────────────────────────────────
             var del = MakeIconButton("✕", "Delete");
             del.SetResourceReference(Control.ForegroundProperty, "LemoineTextDim");
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
-            Grid.SetColumn(del, 6);
+            Grid.SetColumn(del, 5);
             _root.Children.Add(del);
+
+            // ── Click-selection handler (fires before drag detection) ─────
+            _outer.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
+                bool ctrl  = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                BlockClicked?.Invoke(Block.Id, ctrl, shift);
+                // Do NOT set e.Handled — drag detection still needs the event
+            };
 
             // ── Drag-source wiring (whole row is grabbable) ───────────────
             _outer.MouseLeftButtonDown += OnRowMouseDown;
