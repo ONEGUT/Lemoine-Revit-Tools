@@ -849,6 +849,7 @@ namespace LemoineTools.Lemoine
             rowBorder.PreviewMouseMove += (s, e) =>
             {
                 if (e.LeftButton != MouseButtonState.Pressed || _dragRuleId != null) return;
+                if (_dragReadyBorder != rowBorder) return; // only drag when this press armed it
 
                 // Only start drag once the pointer has moved beyond the system drag threshold
                 // so that single clicks on toggle/pencil/trash still fire normally.
@@ -889,6 +890,7 @@ namespace LemoineTools.Lemoine
                     DragDropEffects.Move);
                 rowBorder.QueryContinueDrag -= ghostHandler;
                 HideDragGhost();
+                _dragReadyBorder = null;
 
                 if (_dragSourceBorder != null) // Drop never fired — drag was cancelled
                 {
@@ -913,6 +915,8 @@ namespace LemoineTools.Lemoine
             // ── Row click — select rule (Shift/Ctrl for range/toggle multi-select) ──
             rowBorder.PreviewMouseLeftButtonDown += (s, e) =>
             {
+                _dragReadyBorder = null; // reset — buttons and modifier-clicks must never arm drag
+
                 if (e.OriginalSource is FrameworkElement src)
                 {
                     var hitEl = src;
@@ -921,7 +925,7 @@ namespace LemoineTools.Lemoine
                         if (hitEl == (FrameworkElement)toggle  ||
                             hitEl == (FrameworkElement)pencilBtn ||
                             hitEl == (FrameworkElement)trashBtn)
-                            return;
+                            return; // button hit — _dragReadyBorder stays null
                         hitEl = VisualTreeHelper.GetParent(hitEl) as FrameworkElement;
                     }
                 }
@@ -980,9 +984,14 @@ namespace LemoineTools.Lemoine
                 else
                 {
                     _fShiftAnchorRuleId = rule.Id; // anchor updates on plain click
+                    bool wasAlreadyActive = rule.Id == _fActiveRuleId || _fSelectedRuleIds.Contains(rule.Id);
                     if (_fSelectedRuleIds.Count > 0) ClearMultiSelection();
                     if (rule.Id != _fActiveRuleId)
                         SelectRuleInPlace(rowBorder, rule.Id, nameTb);
+                    // Only arm drag if the rule was already selected before this click;
+                    // the first click selects, a subsequent press can drag.
+                    if (wasAlreadyActive)
+                        _dragReadyBorder = rowBorder;
                 }
             };
 

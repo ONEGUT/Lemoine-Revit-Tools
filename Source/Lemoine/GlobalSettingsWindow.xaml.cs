@@ -70,6 +70,7 @@ namespace LemoineTools.Lemoine
         private Border?  _dragSourceBorder;   // the pill being dragged
         private int      _dragSourceOrigIdx;  // its original index in _fRuleListPanel
         private Point    _dragGhostClickOffset; // where inside the pill the user clicked
+        private Border?  _dragReadyBorder;      // set only when drag is permitted for the current press
 
         // ── Editor re-entry guard ─────────────────────────────────────────────
         // Prevents chip Changed events fired during FRefreshRuleEditor from
