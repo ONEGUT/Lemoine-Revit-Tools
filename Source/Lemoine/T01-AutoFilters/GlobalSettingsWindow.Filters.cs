@@ -9,7 +9,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
@@ -2283,47 +2282,35 @@ namespace LemoineTools.Lemoine
         // ── Standalone toggle switch for rule list rows ───────────────────────
         private static Border BuildRuleToggle(bool isOn, Action<bool> onChange)
         {
-            var trackBg = new Border();
-            trackBg.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(7.5));
-            trackBg.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
-            trackBg.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
-            trackBg.SetResourceReference(Border.BackgroundProperty, isOn ? "LemoineAccent" : "LemoineBorder");
-            trackBg.Cursor = Cursors.Hand;
-            trackBg.VerticalAlignment   = VerticalAlignment.Center;
-            trackBg.HorizontalAlignment = HorizontalAlignment.Center;
-
-            var knob = new Ellipse();
-            knob.SetResourceReference(Ellipse.FillProperty, isOn ? "LemoineKnobOn" : "LemoineKnobOff");
-            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
-            knob.Margin = new Thickness(isOn ? onPos : 2, 2, 0, 2);
-            knob.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Knob");
-            knob.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Knob");
-
-            var canvas = new Canvas { ClipToBounds = true };
-            canvas.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
-            canvas.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
-            canvas.Children.Add(knob);
-            trackBg.Child = canvas;
-
             bool state = isOn;
-            trackBg.MouseLeftButtonDown += (s, e) =>
+
+            var btn = new Border
+            {
+                CornerRadius        = new CornerRadius(3),
+                BorderThickness     = new Thickness(1),
+                Padding             = new Thickness(5),
+                Cursor              = Cursors.Hand,
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background          = Brushes.Transparent,
+                Child               = LemoineEyeGlyph.Make(state, size: 16),
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            btn.MouseEnter += (s, e) =>
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            btn.MouseLeave += (s, e) =>
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            btn.MouseLeftButtonDown += (s, e) =>
             {
                 state = !state;
-                bool newOn = state;
-                var anim = new ThicknessAnimation
-                {
-                    To             = new Thickness(newOn ? onPos : 2, 2, 0, 2),
-                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                };
-                knob.BeginAnimation(FrameworkElement.MarginProperty, anim);
-                knob.SetResourceReference(Ellipse.FillProperty,           newOn ? "LemoineKnobOn" : "LemoineKnobOff");
-                trackBg.SetResourceReference(Border.BackgroundProperty,   newOn ? "LemoineAccent" : "LemoineBorder");
-                onChange(newOn);
+                btn.Child = LemoineEyeGlyph.Make(state, size: 16);
+                onChange(state);
                 e.Handled = true; // prevent row selection on toggle click
             };
 
-            return trackBg;
+            return btn;
         }
 
         // ═════════════════════════════════════════════════════════════════════
