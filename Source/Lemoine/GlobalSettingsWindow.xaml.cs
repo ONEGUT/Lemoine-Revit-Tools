@@ -769,12 +769,6 @@ namespace LemoineTools.Lemoine
             };
             icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            // Force line-height to match LemoineUiFont (Segoe UI) so button height equals the pencil button
-            icon.Loaded += (s2, e2) =>
-            {
-                if (icon.TryFindResource("LemoineFS_SM") is double sm)
-                    icon.LineHeight = Math.Ceiling(sm * 1.35);
-            };
             btn.Child = icon;
 
             btn.MouseEnter += (s, e) =>
