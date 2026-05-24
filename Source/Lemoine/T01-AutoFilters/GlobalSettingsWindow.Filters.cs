@@ -2855,14 +2855,13 @@ namespace LemoineTools.Lemoine
             }
             _fMultiSelectBorders.Clear();
             _fSelectedRuleIds.Clear();
-            _fBatchDirtyFields.Clear();
         }
 
         private UIElement BuildBatchRuleEditor(FilterTradeConfig trade, FilterRuleConfig rule)
         {
             int count = _fSelectedRuleIds.Count;
 
-            Action<string> markDirty = key => _fBatchDirtyFields.Add(key);
+            Action<string> markDirty = key => ApplyBatchField(trade, rule, key);
 
             var scrollContent = new StackPanel();
             scrollContent.Children.Add(BuildBatchHeader(count));
@@ -2879,13 +2878,7 @@ namespace LemoineTools.Lemoine
             scroll.Content = scrollContent;
             LemoineControlStyles.WireBubblingScroll(scroll);
 
-            var applyBar = BuildBatchApplyBar(trade, rule, count);
-
-            var dock = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(applyBar, Dock.Bottom);
-            dock.Children.Add(applyBar);
-            dock.Children.Add(scroll);
-            return dock;
+            return scroll;
         }
 
         private UIElement BuildBatchHeader(int count)
@@ -2912,7 +2905,7 @@ namespace LemoineTools.Lemoine
 
             var descTb = new TextBlock
             {
-                Text      = $"Editing {count} rules — name is read-only. Only fields you change will be applied.",
+                Text      = $"Editing {count} rules — name is read-only. Changes apply to all selected rules immediately.",
                 FontStyle = FontStyles.Italic,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -2925,78 +2918,38 @@ namespace LemoineTools.Lemoine
             return outer;
         }
 
-        private UIElement BuildBatchApplyBar(FilterTradeConfig trade, FilterRuleConfig sourceRule, int count)
+        private void ApplyBatchField(FilterTradeConfig trade, FilterRuleConfig source, string key)
         {
-            var bar = new Border
-            {
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Padding         = new Thickness(10, 8, 10, 8),
-            };
-            bar.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            bar.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var applyBtn = LemoineControlStyles.BuildButton($"Apply to {count} rules",
-                LemoineControlStyles.LemoineButtonVariant.Primary);
-            applyBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            applyBtn.Click += (s, e) =>
-            {
-                ApplyBatchEdit(trade, sourceRule);
-                ClearMultiSelection();
-                FRefreshRuleList();
-                FRefreshRuleEditor();
-            };
-
-            bar.Child = applyBtn;
-            return bar;
-        }
-
-        private void ApplyBatchEdit(FilterTradeConfig trade, FilterRuleConfig source)
-        {
-            foreach (var ruleId in _fSelectedRuleIds.Where(id => id != _fActiveRuleId).ToList())
+            foreach (var ruleId in _fSelectedRuleIds.Where(id => id != source.Id).ToList())
             {
                 var target = trade.Rules.FirstOrDefault(r => r.Id == ruleId);
                 if (target == null) continue;
 
-                if (_fBatchDirtyFields.Contains("logic.categories"))
-                    target.BuiltInCategories = source.BuiltInCategories.ToList();
-                if (_fBatchDirtyFields.Contains("logic.parameter"))
-                    target.Parameter = source.Parameter;
-                if (_fBatchDirtyFields.Contains("logic.match"))
-                    target.Match = source.Match.ToList();
-                if (_fBatchDirtyFields.Contains("logic.matchtype"))
-                    target.MatchType = source.MatchType;
+                switch (key)
+                {
+                    case "logic.categories": target.BuiltInCategories = source.BuiltInCategories.ToList(); break;
+                    case "logic.parameter":  target.Parameter = source.Parameter; break;
+                    case "logic.match":      target.Match = source.Match.ToList(); break;
+                    case "logic.matchtype":  target.MatchType = source.MatchType; break;
 
-                if (_fBatchDirtyFields.Contains("style.surf.enabled"))
-                    target.OverrideSurf = source.OverrideSurf;
-                if (_fBatchDirtyFields.Contains("style.surf.color"))
-                    target.SurfColor = source.SurfColor;
-                if (_fBatchDirtyFields.Contains("style.surf.pattern"))
-                    target.SurfPattern = source.SurfPattern;
+                    case "style.surf.enabled": target.OverrideSurf = source.OverrideSurf; break;
+                    case "style.surf.color":   target.SurfColor    = source.SurfColor;    break;
+                    case "style.surf.pattern": target.SurfPattern  = source.SurfPattern;  break;
 
-                if (_fBatchDirtyFields.Contains("style.cut.enabled"))
-                    target.OverrideCut = source.OverrideCut;
-                if (_fBatchDirtyFields.Contains("style.cut.color"))
-                    target.CutColor = source.CutColor;
-                if (_fBatchDirtyFields.Contains("style.cut.pattern"))
-                    target.CutPattern = source.CutPattern;
+                    case "style.cut.enabled":  target.OverrideCut  = source.OverrideCut;  break;
+                    case "style.cut.color":    target.CutColor     = source.CutColor;     break;
+                    case "style.cut.pattern":  target.CutPattern   = source.CutPattern;   break;
 
-                if (_fBatchDirtyFields.Contains("style.line.enabled"))
-                    target.OverrideLine = source.OverrideLine;
-                if (_fBatchDirtyFields.Contains("style.line.color"))
-                    target.LineColor = source.LineColor;
-                if (_fBatchDirtyFields.Contains("style.line.pattern"))
-                    target.LinePattern = source.LinePattern;
-                if (_fBatchDirtyFields.Contains("style.line.weight"))
-                    target.LineWeight = source.LineWeight;
+                    case "style.line.enabled": target.OverrideLine = source.OverrideLine; break;
+                    case "style.line.color":   target.LineColor    = source.LineColor;    break;
+                    case "style.line.pattern": target.LinePattern  = source.LinePattern;  break;
+                    case "style.line.weight":  target.LineWeight   = source.LineWeight;   break;
 
-                if (_fBatchDirtyFields.Contains("appearance.halftone"))
-                    target.Halftone = source.Halftone;
-                if (_fBatchDirtyFields.Contains("appearance.transparency"))
-                    target.Transparency = source.Transparency;
-                if (_fBatchDirtyFields.Contains("appearance.visible"))
-                    target.Visible = source.Visible;
-                if (_fBatchDirtyFields.Contains("appearance.filteron"))
-                    target.FilterOn = source.FilterOn;
+                    case "appearance.halftone":     target.Halftone     = source.Halftone;     break;
+                    case "appearance.transparency": target.Transparency = source.Transparency; break;
+                    case "appearance.visible":      target.Visible      = source.Visible;      break;
+                    case "appearance.filteron":     target.FilterOn     = source.FilterOn;     break;
+                }
             }
         }
     }
