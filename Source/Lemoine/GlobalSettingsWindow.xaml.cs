@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -82,9 +83,13 @@ namespace LemoineTools.Lemoine
         // ── Drag ghost popup ──────────────────────────────────────────────────
         private Popup?   _dragGhost;
 
-        // P/Invoke for cursor position (used by drag ghost)
+        // P/Invoke for cursor position and ghost hit-test transparency
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out NativePoint pt);
+        [DllImport("user32.dll")] private static extern int  GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")] private static extern int  SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        private const int GWL_EXSTYLE      = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
         [StructLayout(LayoutKind.Sequential)]
         private struct NativePoint { public int X; public int Y; }
         // ── Double-click rename timing ───────────────────────────────────────────
@@ -659,6 +664,7 @@ namespace LemoineTools.Lemoine
                 StaysOpen          = true,
                 Child              = ghost,
             };
+            _dragGhost.Opened += MakeGhostHwndTransparent;
             _dragGhost.IsOpen = true;
         }
 
@@ -726,12 +732,26 @@ namespace LemoineTools.Lemoine
                 StaysOpen          = true,
                 Child              = ghost,
             };
+            _dragGhost.Opened += MakeGhostHwndTransparent;
             _dragGhost.IsOpen = true;
         }
 
         private void HideDragGhost()
         {
             if (_dragGhost != null) { _dragGhost.IsOpen = false; _dragGhost = null; }
+        }
+
+        // The ghost Popup's HWND is opaque at Win32 level and would intercept every OLE
+        // DragOver hit-test, returning DROPEFFECT_NONE since it has no IDropTarget.
+        // WS_EX_TRANSPARENT makes WindowFromPoint skip it so OLE reaches the main window.
+        private void MakeGhostHwndTransparent(object sender, EventArgs e)
+        {
+            if (_dragGhost?.Child != null &&
+                PresentationSource.FromVisual(_dragGhost.Child) is HwndSource hs)
+            {
+                int ex = GetWindowLong(hs.Handle, GWL_EXSTYLE);
+                SetWindowLong(hs.Handle, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
+            }
         }
 
         private void UpdateDragGhostPos()

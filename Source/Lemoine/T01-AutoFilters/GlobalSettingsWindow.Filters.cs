@@ -788,11 +788,20 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(nameStack, 1);
             outerRow.Children.Add(nameStack);
 
-            // Enable toggle
+            // Enable toggle — applies to all selected rules when in multi-select
             var toggle = BuildRuleToggle(rule.Enabled, on =>
             {
                 rule.Enabled      = on;
                 rowBorder.Opacity = on ? 1.0 : 0.55;
+                if (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                {
+                    foreach (var selId in _fSelectedRuleIds.Where(id => id != rule.Id))
+                    {
+                        var selRule = trade.Rules.FirstOrDefault(r => r.Id == selId);
+                        if (selRule != null) selRule.Enabled = on;
+                    }
+                    FRefreshRuleList(); // update opacity on all affected rows
+                }
             });
             toggle.Margin            = new Thickness(8, 0, 4, 0);
             toggle.VerticalAlignment = VerticalAlignment.Center;
@@ -804,12 +813,23 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(pencilBtn, 3);
             outerRow.Children.Add(pencilBtn);
 
-            // Trash
+            // Trash — deletes all selected rules when in multi-select
             var trashBtn = BuildTrashConfirmButton("Delete Rule", () =>
             {
-                trade.Rules.Remove(rule);
-                if (_fActiveRuleId == rule.Id)
+                if (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                {
+                    var toDelete = _fSelectedRuleIds.ToList();
+                    ClearMultiSelection();
+                    foreach (var id in toDelete)
+                        trade.Rules.RemoveAll(r => r.Id == id);
                     _fActiveRuleId = trade.Rules.FirstOrDefault()?.Id;
+                }
+                else
+                {
+                    trade.Rules.Remove(rule);
+                    if (_fActiveRuleId == rule.Id)
+                        _fActiveRuleId = trade.Rules.FirstOrDefault()?.Id;
+                }
                 FRefreshRuleList();
                 FRefreshRuleEditor();
             });
@@ -1786,13 +1806,16 @@ namespace LemoineTools.Lemoine
             btn.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                var popup = BuildTradeDestPopup(trade, rule, btn);
+                var rulesToMove = (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                    ? trade.Rules.Where(r => _fSelectedRuleIds.Contains(r.Id)).ToList()
+                    : new List<FilterRuleConfig> { rule };
+                var popup = BuildTradeDestPopup(trade, rulesToMove, btn);
                 popup.IsOpen = true;
             };
             return btn;
         }
 
-        private Popup BuildTradeDestPopup(FilterTradeConfig srcTrade, FilterRuleConfig rule, UIElement anchor)
+        private Popup BuildTradeDestPopup(FilterTradeConfig srcTrade, List<FilterRuleConfig> rules, UIElement anchor)
         {
             var popup = new Popup
             {
@@ -1893,31 +1916,38 @@ namespace LemoineTools.Lemoine
                             popup.IsOpen = false;
                             if (!isCopyMode)
                             {
-                                // Move
-                                srcTrade.Rules.Remove(rule);
+                                // Move all rules to dest trade
+                                foreach (var r in rules) srcTrade.Rules.Remove(r);
                                 var dest = _filterTrades?.FirstOrDefault(x => x.Id == destId);
-                                dest?.Rules.Add(rule);
+                                if (dest != null) foreach (var r in rules) dest.Rules.Add(r);
+                                ClearMultiSelection();
                                 _fActiveTradeId = destId;
-                                _fActiveRuleId  = rule.Id;
+                                _fActiveRuleId  = rules[0].Id;
                                 FRefreshTradeSwitcher();
                                 FRefreshRuleList();
                                 FRefreshRuleEditor();
                             }
                             else
                             {
-                                // Copy
-                                var clone = FilterRuleConfig.NewBlank();
-                                clone.Name = rule.Name + " (copy)"; clone.Enabled = rule.Enabled;
-                                clone.CutColor = rule.CutColor; clone.SurfColor = rule.SurfColor;
-                                clone.LineColor = rule.LineColor; clone.LinePattern = rule.LinePattern;
-                                clone.LineWeight = rule.LineWeight; clone.Halftone = rule.Halftone;
-                                clone.Transparency = rule.Transparency; clone.Visible = rule.Visible;
-                                clone.FilterOn = rule.FilterOn; clone.Notes = rule.Notes;
-                                clone.Match = new List<string>(rule.Match);
-                                clone.BuiltInCategories = new List<string>(rule.BuiltInCategories);
-                                clone.Parameter = rule.Parameter;
+                                // Copy all rules to dest trade
                                 var dest = _filterTrades?.FirstOrDefault(x => x.Id == destId);
-                                dest?.Rules.Add(clone);
+                                if (dest != null)
+                                {
+                                    foreach (var rule in rules)
+                                    {
+                                        var clone = FilterRuleConfig.NewBlank();
+                                        clone.Name = rule.Name + " (copy)"; clone.Enabled = rule.Enabled;
+                                        clone.CutColor = rule.CutColor; clone.SurfColor = rule.SurfColor;
+                                        clone.LineColor = rule.LineColor; clone.LinePattern = rule.LinePattern;
+                                        clone.LineWeight = rule.LineWeight; clone.Halftone = rule.Halftone;
+                                        clone.Transparency = rule.Transparency; clone.Visible = rule.Visible;
+                                        clone.FilterOn = rule.FilterOn; clone.Notes = rule.Notes;
+                                        clone.Match = new List<string>(rule.Match);
+                                        clone.BuiltInCategories = new List<string>(rule.BuiltInCategories);
+                                        clone.Parameter = rule.Parameter;
+                                        dest.Rules.Add(clone);
+                                    }
+                                }
                             }
                             e.Handled = true;
                         };
