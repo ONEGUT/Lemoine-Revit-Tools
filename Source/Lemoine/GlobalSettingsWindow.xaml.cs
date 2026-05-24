@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -59,11 +60,17 @@ namespace LemoineTools.Lemoine
         private Border?     _fActiveRowBorder;   // the currently highlighted rule row
         private TextBlock?  _fActiveNameTb;      // name label in the active row (updated in-place by editor)
 
+        // ── Multi-select / batch-edit state ──────────────────────────────────
+        private readonly HashSet<string>              _fSelectedRuleIds   = new HashSet<string>();
+        private          string?                      _fShiftAnchorRuleId;
+        private readonly Dictionary<string, Border>   _fMultiSelectBorders = new Dictionary<string, Border>();
+
         // ── Active drag state (rule reorder) ─────────────────────────────────
         private string?  _dragRuleId;
         private Border?  _dragSourceBorder;   // the pill being dragged
         private int      _dragSourceOrigIdx;  // its original index in _fRuleListPanel
         private Point    _dragGhostClickOffset; // where inside the pill the user clicked
+        private Border?  _dragReadyBorder;      // set only when drag is permitted for the current press
 
         // ── Editor re-entry guard ─────────────────────────────────────────────
         // Prevents chip Changed events fired during FRefreshRuleEditor from
@@ -77,9 +84,13 @@ namespace LemoineTools.Lemoine
         // ── Drag ghost popup ──────────────────────────────────────────────────
         private Popup?   _dragGhost;
 
-        // P/Invoke for cursor position (used by drag ghost)
+        // P/Invoke for cursor position and ghost hit-test transparency
         [DllImport("user32.dll")]
         private static extern bool GetCursorPos(out NativePoint pt);
+        [DllImport("user32.dll")] private static extern int  GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")] private static extern int  SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        private const int GWL_EXSTYLE      = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
         [StructLayout(LayoutKind.Sequential)]
         private struct NativePoint { public int X; public int Y; }
         // ── Double-click rename timing ───────────────────────────────────────────
@@ -171,9 +182,9 @@ namespace LemoineTools.Lemoine
         {
             ("general", "General"),
             ("filters", "Filters / Color"),
+            ("t08",     "Legend Creator"),
             ("t03",     "Ceiling Heatmap"),
             ("t04",     "Link Views"),
-            ("t08",     "Legend Creator"),
             ("tx",      "Batch Export"),
             ("ty",      "Batch Dimension"),
             ("tz",      "Create Sheets"),
@@ -654,6 +665,7 @@ namespace LemoineTools.Lemoine
                 StaysOpen          = true,
                 Child              = ghost,
             };
+            _dragGhost.Opened += MakeGhostHwndTransparent;
             _dragGhost.IsOpen = true;
         }
 
@@ -721,12 +733,26 @@ namespace LemoineTools.Lemoine
                 StaysOpen          = true,
                 Child              = ghost,
             };
+            _dragGhost.Opened += MakeGhostHwndTransparent;
             _dragGhost.IsOpen = true;
         }
 
         private void HideDragGhost()
         {
             if (_dragGhost != null) { _dragGhost.IsOpen = false; _dragGhost = null; }
+        }
+
+        // The ghost Popup's HWND is opaque at Win32 level and would intercept every OLE
+        // DragOver hit-test, returning DROPEFFECT_NONE since it has no IDropTarget.
+        // WS_EX_TRANSPARENT makes WindowFromPoint skip it so OLE reaches the main window.
+        private void MakeGhostHwndTransparent(object sender, EventArgs e)
+        {
+            if (_dragGhost?.Child != null &&
+                PresentationSource.FromVisual(_dragGhost.Child) is HwndSource hs)
+            {
+                int ex = GetWindowLong(hs.Handle, GWL_EXSTYLE);
+                SetWindowLong(hs.Handle, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
+            }
         }
 
         private void UpdateDragGhostPos()
@@ -757,17 +783,13 @@ namespace LemoineTools.Lemoine
             {
                 Text              = "",
                 FontFamily        = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
-                VerticalAlignment = VerticalAlignment.Center,
-                IsHitTestVisible  = false,
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment       = TextAlignment.Center,
+                IsHitTestVisible    = false,
             };
             icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            // Force line-height to match LemoineUiFont (Segoe UI) so button height equals the pencil button
-            icon.Loaded += (s2, e2) =>
-            {
-                if (icon.TryFindResource("LemoineFS_SM") is double sm)
-                    icon.LineHeight = Math.Ceiling(sm * 1.35);
-            };
             btn.Child = icon;
 
             btn.MouseEnter += (s, e) =>
