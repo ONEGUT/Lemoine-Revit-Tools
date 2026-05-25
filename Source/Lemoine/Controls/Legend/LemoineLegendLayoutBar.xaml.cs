@@ -16,6 +16,7 @@ namespace LemoineTools.Lemoine.Controls
     {
         public event EventHandler? Changed;
         public event EventHandler? PreviewRequested;
+        public event EventHandler? CreateRequested;
         public event EventHandler? TemplatesRequested;
 
         private LegendLayoutConfig _layout = new LegendLayoutConfig();
@@ -48,7 +49,8 @@ namespace LemoineTools.Lemoine.Controls
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 edit btn
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 spacer
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 preview btn
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 templates pill
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 create btn
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 templates pill
 
             // ── Legend pill ──────────────────────────────────────────────────
             var pill = new Border
@@ -120,6 +122,14 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(previewBtn, 3);
             grid.Children.Add(previewBtn);
 
+            // ── Create button ────────────────────────────────────────────────
+            var createBtn = LemoineControlStyles.BuildButton("Create ▶", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            createBtn.VerticalAlignment = VerticalAlignment.Center;
+            createBtn.Margin = new Thickness(0, 0, 4, 0);
+            createBtn.Click += (s, e) => CreateRequested?.Invoke(this, EventArgs.Empty);
+            Grid.SetColumn(createBtn, 4);
+            grid.Children.Add(createBtn);
+
             // ── Templates pill ───────────────────────────────────────────────
             var templatesPill = new Border
             {
@@ -165,7 +175,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             templatesPill.MouseLeftButtonUp += (s, e) => TemplatesRequested?.Invoke(this, EventArgs.Empty);
 
-            Grid.SetColumn(templatesPill, 4);
+            Grid.SetColumn(templatesPill, 5);
             grid.Children.Add(templatesPill);
 
             _root.Children.Add(grid);

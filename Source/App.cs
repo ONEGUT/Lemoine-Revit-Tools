@@ -6,6 +6,7 @@ using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.Testing.CoordSet;
+using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 
 namespace LemoineTools
@@ -66,6 +67,10 @@ namespace LemoineTools
         // ── Testing — Sheet Pack ────────────────────────────────────────────────────
         internal static SheetPackEventHandler?     SheetPackHandler     { get; private set; }
         internal static ExternalEvent?             SheetPackEvent       { get; private set; }
+
+        // ── Legend Creator (T08) ─────────────────────────────────────────────────────
+        internal static LegendCreatorEventHandler? LegendCreatorHandler { get; private set; }
+        internal static ExternalEvent?             LegendCreatorEvent   { get; private set; }
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler? SplitByLevelHandler { get; private set; }
@@ -131,6 +136,9 @@ namespace LemoineTools
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             SheetPackHandler     = new SheetPackEventHandler();
             SheetPackEvent       = ExternalEvent.Create(SheetPackHandler);
+
+            LegendCreatorHandler = new LegendCreatorEventHandler();
+            LegendCreatorEvent   = ExternalEvent.Create(LegendCreatorHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler = new SplitByLevelEventHandler();
