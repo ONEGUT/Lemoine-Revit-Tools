@@ -14,9 +14,8 @@ namespace LemoineTools.Tools.Ceilings
 
         public MakeCeilingGridsSettings() { }
 
-        public string NamingPattern { get; set; } = "{Level}_CeilingGrid";
-        public string OutputFolder  { get; set; } = "";
-        public bool   SplitByLevel  { get; set; } = false;
+        public string OutputFolder             { get; set; } = "";
+        public bool   UseCeilingGridsSubfolder { get; set; } = false;
 
         private static string FilePath
         {

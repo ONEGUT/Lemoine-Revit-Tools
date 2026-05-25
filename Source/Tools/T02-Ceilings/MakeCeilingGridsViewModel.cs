@@ -31,7 +31,6 @@ namespace LemoineTools.Tools.Ceilings
         {
             new StepDefinition("docs",    "Select Documents",    required: true),
             new StepDefinition("filter",  "Filter Ceiling Types", required: false),
-            new StepDefinition("naming",  "View & File Naming",   required: false),
             new StepDefinition("export",  "Export Location",      required: true),
             new StepDefinition("run",     "Review & Run",         required: false),
         };
@@ -40,34 +39,20 @@ namespace LemoineTools.Tools.Ceilings
         private readonly List<DocEntry>            _availableDocs;
         private readonly Dictionary<string, DocEntry> _docByLabel;
 
-        private List<string>           _selectedDocLabels  = new List<string>();
-        private List<CeilingTypeEntry> _ceilingTypes       = new List<CeilingTypeEntry>();
-        private HashSet<string>        _excludedTypeKeys   = new HashSet<string>(StringComparer.Ordinal);
-        private bool                   _scanning           = false;
-        private bool                   _scanDone           = false;
+        private List<string>           _selectedDocLabels        = new List<string>();
+        private List<CeilingTypeEntry> _ceilingTypes             = new List<CeilingTypeEntry>();
+        private HashSet<string>        _excludedTypeKeys         = new HashSet<string>(StringComparer.Ordinal);
+        private bool                   _scanning                 = false;
+        private bool                   _scanDone                 = false;
 
-        private string _namingPattern = MakeCeilingGridsSettings.Instance.NamingPattern;
-        private string _outputFolder  = MakeCeilingGridsSettings.Instance.OutputFolder;
-        private bool   _splitByLevel  = MakeCeilingGridsSettings.Instance.SplitByLevel;
+        private string _outputFolder             = MakeCeilingGridsSettings.Instance.OutputFolder;
+        private bool   _useCeilingGridsSubfolder = MakeCeilingGridsSettings.Instance.UseCeilingGridsSubfolder;
 
         // Live UI handles
-        private StackPanel?  _filterContainer;
-        private Dispatcher?  _filterDispatcher;
-        private WpfTextBox?  _filterFamilyBox;
-        private WpfTextBox?  _filterTypeBox;
-        private LemoineTokenInput? _tokenInput;
-        private TextBlock?   _previewText;
-
-        // Naming tokens for ceiling grids
-        private static readonly (string Label, string Token)[] CeilingTokens =
-        {
-            ("Level",          "{Level}"),
-            ("Project Number", "{ProjectNumber}"),
-            ("Project Name",   "{ProjectName}"),
-            ("Year",           "{Year}"),
-            ("Month",          "{Month}"),
-            ("Day",            "{Day}"),
-        };
+        private StackPanel? _filterContainer;
+        private Dispatcher? _filterDispatcher;
+        private WpfTextBox? _filterFamilyBox;
+        private WpfTextBox? _filterTypeBox;
 
         // ── ExternalEvent wiring ───────────────────────────────────────────
         private readonly MakeCeilingGridsPhase1Handler? _phase1Handler;
@@ -105,7 +90,6 @@ namespace LemoineTools.Tools.Ceilings
             {
                 case "docs":   return BuildDocsStep();
                 case "filter": return BuildFilterStep();
-                case "naming": return BuildNamingStep();
                 case "export": return BuildExportStep();
                 case "run":    return BuildRunStep();
                 default:       return null;
@@ -245,21 +229,30 @@ namespace LemoineTools.Tools.Ceilings
             if (_filterContainer == null) return;
             _filterContainer.Children.Clear();
 
-            var searchRow = new WpfGrid { Margin = new Thickness(0, 0, 0, 6) };
-            searchRow.ColumnDefinitions.Add(new ColumnDefinition());
-            searchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-            searchRow.ColumnDefinitions.Add(new ColumnDefinition());
+            var searchGrid = new WpfGrid { Margin = new Thickness(0, 0, 0, 8) };
+            searchGrid.ColumnDefinitions.Add(new ColumnDefinition());
+            searchGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            searchGrid.ColumnDefinitions.Add(new ColumnDefinition());
+            searchGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            searchGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            _filterFamilyBox = BuildSearchBox("Filter by family name…");
-            _filterTypeBox   = BuildSearchBox("Filter by type name…");
+            var familyLbl = MakeFilterLabel("Family name");
+            var typeLbl   = MakeFilterLabel("Type name");
+            WpfGrid.SetRow(familyLbl, 0); WpfGrid.SetColumn(familyLbl, 0);
+            WpfGrid.SetRow(typeLbl,   0); WpfGrid.SetColumn(typeLbl,   2);
+            searchGrid.Children.Add(familyLbl);
+            searchGrid.Children.Add(typeLbl);
+
+            _filterFamilyBox = BuildSearchBox("Family name…");
+            _filterTypeBox   = BuildSearchBox("Type name…");
             _filterFamilyBox.TextChanged += (s, e) => RefreshTypeRows();
             _filterTypeBox.TextChanged   += (s, e) => RefreshTypeRows();
 
-            WpfGrid.SetColumn(_filterFamilyBox, 0);
-            WpfGrid.SetColumn(_filterTypeBox,   2);
-            searchRow.Children.Add(_filterFamilyBox);
-            searchRow.Children.Add(_filterTypeBox);
-            _filterContainer.Children.Add(searchRow);
+            WpfGrid.SetRow(_filterFamilyBox, 1); WpfGrid.SetColumn(_filterFamilyBox, 0);
+            WpfGrid.SetRow(_filterTypeBox,   1); WpfGrid.SetColumn(_filterTypeBox,   2);
+            searchGrid.Children.Add(_filterFamilyBox);
+            searchGrid.Children.Add(_filterTypeBox);
+            _filterContainer.Children.Add(searchGrid);
 
             var scroll = new ScrollViewer
             {
@@ -337,6 +330,15 @@ namespace LemoineTools.Tools.Ceilings
             }
         }
 
+        private static TextBlock MakeFilterLabel(string text)
+        {
+            var tb = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 3) };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return tb;
+        }
+
         private static WpfTextBox BuildSearchBox(string placeholder)
         {
             var tb = new WpfTextBox
@@ -354,67 +356,7 @@ namespace LemoineTools.Tools.Ceilings
             return tb;
         }
 
-        // ── Step 3: View & File Naming ─────────────────────────────────────
-        private FrameworkElement BuildNamingStep()
-        {
-            var outer = new StackPanel();
-
-            var desc = new TextBlock
-            {
-                Text         = "Pattern used for both view names and exported DWG filenames. " +
-                               "Use {Level} to create one file per level.",
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 0, 0, 10),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            _tokenInput = new LemoineTokenInput(CeilingTokens, "{Level}_CeilingGrid");
-            _tokenInput.Text = _namingPattern;
-            _tokenInput.TextChanged += (s, e) =>
-            {
-                _namingPattern = _tokenInput.Text;
-                UpdateNamingPreview();
-                OnValidationChanged();
-            };
-            outer.Children.Add(_tokenInput);
-
-            // Live preview
-            var previewLabel = new TextBlock { Text = "PREVIEW", Margin = new Thickness(0, 12, 0, 3) };
-            previewLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            previewLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            previewLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            outer.Children.Add(previewLabel);
-
-            _previewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            _previewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            _previewText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            _previewText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            outer.Children.Add(_previewText);
-
-            UpdateNamingPreview();
-            return outer;
-        }
-
-        private void UpdateNamingPreview()
-        {
-            if (_previewText == null) return;
-            var now = DateTime.Now;
-            var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                { "{Level}",         "Level 1" },
-                { "{ProjectNumber}", "2024-001" },
-                { "{ProjectName}",   "Example Project" },
-                { "{Year}",          now.Year.ToString() },
-                { "{Month}",         now.Month.ToString("D2") },
-                { "{Day}",           now.Day.ToString("D2") },
-            };
-            _previewText.Text = LemoineTokenInput.Resolve(_namingPattern, tokens) + ".dwg";
-        }
-
-        // ── Step 4: Export Location ────────────────────────────────────────
+        // ── Step 3: Export Location ───────────────────────────────────────
         private FrameworkElement BuildExportStep()
         {
             var outer = new StackPanel();
@@ -464,10 +406,10 @@ namespace LemoineTools.Tools.Ceilings
             {
                 new ToggleItem
                 {
-                    Id        = "split",
-                    Label     = "Organise into subfolders by level",
-                    Desc      = "Each level's DWG is placed in its own subfolder. Leave off to put all files in one folder.",
-                    DefaultOn = _splitByLevel,
+                    Id        = "subfolder",
+                    Label     = "Place in a 'Ceiling Grids' subfolder",
+                    Desc      = "Creates a 'Ceiling Grids' folder inside the selected location. Off = files go directly into the selected folder.",
+                    DefaultOn = _useCeilingGridsSubfolder,
                 },
             };
             var toggleSwitch = new LemoineToggleSwitches();
@@ -475,8 +417,8 @@ namespace LemoineTools.Tools.Ceilings
             toggleSwitch.SetItems(toggleItems);
             toggleSwitch.StateChanged += state =>
             {
-                if (state.TryGetValue("split", out bool on))
-                    _splitByLevel = on;
+                if (state.TryGetValue("subfolder", out bool on))
+                    _useCeilingGridsSubfolder = on;
             };
             outer.Children.Add(toggleSwitch);
 
@@ -503,27 +445,23 @@ namespace LemoineTools.Tools.Ceilings
                     return total == 0 ? "Scan pending" : $"{total - excluded} / {total} included";
                 }, 0, 0);
 
-            AddReviewCard(grid, "Naming Pattern",
-                () => string.IsNullOrEmpty(_namingPattern) ? "—" : _namingPattern,
-                0, 1);
-
             AddReviewCard(grid, "Output Folder",
                 () => string.IsNullOrEmpty(_outputFolder) ? "—"
                     : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
-                1, 0);
+                0, 1);
 
             AddReviewCard(grid, "Subfolder Mode",
-                () => _splitByLevel ? "By level" : "Single folder",
-                1, 1);
+                () => _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
+                1, 0);
 
             AddReviewCard(grid, "DWG Version",
                 () => "DWG 2018",
-                2, 0);
+                1, 1);
 
             AddReviewCard(grid, "Documents",
                 () => _selectedDocLabels.Count == 0 ? "None"
                     : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
-                2, 1);
+                2, 0);
 
             outer.Children.Add(grid);
             return outer;
@@ -596,8 +534,6 @@ namespace LemoineTools.Tools.Ceilings
                     int excluded = _excludedTypeKeys.Count;
                     return excluded == 0 ? $"All {_ceilingTypes.Count} type(s) included"
                         : $"{_ceilingTypes.Count - excluded}/{_ceilingTypes.Count} included";
-                case "naming":
-                    return string.IsNullOrEmpty(_namingPattern) ? "—" : _namingPattern;
                 case "export":
                     return string.IsNullOrEmpty(_outputFolder) ? "—"
                         : System.IO.Path.GetFileName(_outputFolder.TrimEnd('\\', '/'));
@@ -624,9 +560,8 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             // Save settings
-            MakeCeilingGridsSettings.Instance.NamingPattern = _namingPattern;
-            MakeCeilingGridsSettings.Instance.OutputFolder  = _outputFolder;
-            MakeCeilingGridsSettings.Instance.SplitByLevel  = _splitByLevel;
+            MakeCeilingGridsSettings.Instance.OutputFolder             = _outputFolder;
+            MakeCeilingGridsSettings.Instance.UseCeilingGridsSubfolder = _useCeilingGridsSubfolder;
             MakeCeilingGridsSettings.Instance.Save();
 
             // Build included types list
@@ -643,13 +578,12 @@ namespace LemoineTools.Tools.Ceilings
                 else              linkInstIds.Add(entry.LinkInstId);
             }
 
-            _runHandler.IncludeHost   = includeHost;
-            _runHandler.LinkInstIds   = linkInstIds;
-            _runHandler.IncludedTypes = includedTypes;
-            _runHandler.NamingPattern = _namingPattern;
-            _runHandler.OutputFolder  = _outputFolder;
-            _runHandler.SplitByLevel  = _splitByLevel;
-            _runHandler.PushLog       = pushLog;
+            _runHandler.IncludeHost             = includeHost;
+            _runHandler.LinkInstIds             = linkInstIds;
+            _runHandler.IncludedTypes           = includedTypes;
+            _runHandler.OutputFolder            = _outputFolder;
+            _runHandler.UseCeilingGridsSubfolder = _useCeilingGridsSubfolder;
+            _runHandler.PushLog                 = pushLog;
             _runHandler.OnProgress    = onProgress;
             _runHandler.OnComplete    = onComplete;
 

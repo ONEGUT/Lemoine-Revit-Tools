@@ -13,9 +13,8 @@ namespace LemoineTools.Tools.Ceilings
         public bool                   IncludeHost   { get; set; } = true;
         public List<ElementId>        LinkInstIds   { get; set; } = new List<ElementId>();
         public List<CeilingTypeEntry> IncludedTypes { get; set; } = new List<CeilingTypeEntry>();
-        public string                 NamingPattern { get; set; } = "{Level}_CeilingGrid";
-        public string                 OutputFolder  { get; set; } = "";
-        public bool                   SplitByLevel  { get; set; } = false;
+        public string                 OutputFolder             { get; set; } = "";
+        public bool                   UseCeilingGridsSubfolder { get; set; } = false;
 
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -31,10 +30,6 @@ namespace LemoineTools.Tools.Ceilings
 
             try
             {
-                var projInfo   = doc.ProjectInformation;
-                string projNum = projInfo?.get_Parameter(BuiltInParameter.PROJECT_NUMBER)?.AsString() ?? "";
-                string projName= projInfo?.get_Parameter(BuiltInParameter.PROJECT_NAME)?.AsString()   ?? doc.Title;
-
                 var levels = new FilteredElementCollector(doc)
                     .OfClass(typeof(Level))
                     .Cast<Level>()
@@ -77,7 +72,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     try
                     {
-                        string viewName = Sanitize(ResolveTokens(NamingPattern, level.Name, projNum, projName));
+                        string viewName = Sanitize(level.Name) + "_CeilingGrid";
 
                         // ── T1: find or create the RCP view ──────────────────────
                         ViewPlan? view = null;
@@ -113,8 +108,8 @@ namespace LemoineTools.Tools.Ceilings
                         // ── DWG export (no transaction needed) ────────────────────
                         if (!string.IsNullOrWhiteSpace(OutputFolder))
                         {
-                            string outDir = SplitByLevel
-                                ? EnsureDir(Path.Combine(OutputFolder, Sanitize(level.Name)))
+                            string outDir = UseCeilingGridsSubfolder
+                                ? EnsureDir(Path.Combine(OutputFolder, "Ceiling Grids"))
                                 : OutputFolder;
                             EnsureDir(outDir);
                             ExportDwg(doc, view, viewName, outDir);
@@ -190,19 +185,6 @@ namespace LemoineTools.Tools.Ceilings
                 MergedViews = true,
             };
             doc.Export(outDir, baseName, new List<ElementId> { view.Id }, opts);
-        }
-
-        // ── Token resolution ───────────────────────────────────────────────────
-        private static string ResolveTokens(string pattern, string level, string projNum, string projName)
-        {
-            var now = DateTime.Now;
-            return pattern
-                .Replace("{Level}",         level)
-                .Replace("{ProjectNumber}", projNum)
-                .Replace("{ProjectName}",   projName)
-                .Replace("{Year}",          now.Year.ToString())
-                .Replace("{Month}",         now.Month.ToString("D2"))
-                .Replace("{Day}",           now.Day.ToString("D2"));
         }
 
         private static string Sanitize(string name)
