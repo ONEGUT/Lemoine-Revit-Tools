@@ -17,15 +17,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     /// </summary>
     public sealed class LegendCreatorEventHandler : IExternalEventHandler
     {
-        // ── Baseline scaling constants ──────────────────────────────────────
-        // Default pixel sizes → equivalent Revit feet (matching CoordSet defaults)
-        private const double BasePxW    = 22.0;
-        private const double BasePxH    = 14.0;
-        private const double BasePxGap  =  6.0;
-        private const double BaseSwatchW = 0.75;
-        private const double BaseSwatchH = 0.30;
-        private const double BaseGap     = 0.20;
-
         private const double SwatchNudge = 0.06;
         private const double HdrPad      = 0.40;   // header → first block spacing
         private const double GroupGap    = 0.60;   // horizontal gap between columns
@@ -75,10 +66,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             var layout   = settings.Layout ?? new LegendLayoutConfig();
             var rows     = settings.Rows   ?? new List<LegendRowConfig>();
 
-            // Pixel → feet scaling
-            double swatchW = layout.SwatchW / BasePxW  * BaseSwatchW;
-            double swatchH = layout.SwatchH / BasePxH  * BaseSwatchH;
-            double gapFt   = layout.Gap     / BasePxGap * BaseGap;
+            // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
+            double scale   = layout.ViewScale > 0 ? (double)layout.ViewScale : 48.0;
+            double swatchW = layout.SwatchW / 12.0 * scale;
+            double swatchH = layout.SwatchH / 12.0 * scale;
+            double gapFt   = layout.Gap     / 12.0 * scale;
             double entryH  = swatchH + 0.05;                         // vertical step per block
             double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
 
@@ -240,6 +232,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         .ToElementIds().ToList();
                     foreach (var id in toDelete)
                         try { doc.Delete(id); } catch { }
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
                 }
                 else
                 {
@@ -247,6 +240,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     dv = doc.GetElement(newLegendId) as View;
                     if (dv == null) { fail++; tx.Commit(); return; }
                     dv.Name = legendName;
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
                 }
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
