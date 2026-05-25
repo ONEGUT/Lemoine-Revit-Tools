@@ -50,6 +50,9 @@ namespace LemoineTools.Lemoine.Controls
         private string?                _dragBlockId;
         private int                    _dragBlockOrigIdx;
 
+        // ── Cross-group live-snap placeholder ────────────────────────────────
+        private Border? _crossInsertPlaceholder;
+
         // ── Ghost drag (mirrors GlobalSettingsWindow pattern) ────────────────
         private Popup? _dragGhost;
         private Point  _dragGhostClickOffset;
@@ -272,8 +275,18 @@ namespace LemoineTools.Lemoine.Controls
             else
             {
                 // Live-snap reorder on the panel (handles gaps between rows)
-                _blockStack.DragOver += OnBlockStackDragOver;
-                _blockStack.Drop     += OnBlockStackDrop;
+                _blockStack.DragOver  += OnBlockStackDragOver;
+                _blockStack.Drop      += OnBlockStackDrop;
+                // Remove cross-group placeholder only when cursor truly leaves the panel.
+                // DragLeave bubbles from children, so check bounds to avoid false fires.
+                _blockStack.DragLeave += (s, e) =>
+                {
+                    if (_crossInsertPlaceholder == null) return;
+                    var pos  = e.GetPosition(_blockStack);
+                    var size = _blockStack.RenderSize;
+                    if (pos.X < 0 || pos.Y < 0 || pos.X > size.Width || pos.Y > size.Height)
+                        RemoveCrossInsertPlaceholder();
+                };
 
                 for (int i = 0; i < n; i++)
                 {
@@ -380,7 +393,9 @@ namespace LemoineTools.Lemoine.Controls
             {
                 e.Effects = DragDropEffects.Move;
                 e.Handled = true;
-                LiveSnapBlock(e.GetPosition((IInputElement)sender));
+                var pos = e.GetPosition(_blockStack);
+                if (_dragBlockRow != null) LiveSnapBlock(pos);
+                else                       LiveSnapCrossGroup(pos);
                 return;
             }
             // Allow palette drops to pass through to the Drop handler
@@ -400,7 +415,9 @@ namespace LemoineTools.Lemoine.Controls
             e.Effects = DragDropEffects.Move;
             e.Handled = true;
             if (_blockStack == null) return;
-            LiveSnapBlock(e.GetPosition(_blockStack));
+            var pos = e.GetPosition(_blockStack);
+            if (_dragBlockRow != null) LiveSnapBlock(pos);
+            else                       LiveSnapCrossGroup(pos);
         }
 
         private void LiveSnapBlock(Point cursorInStack)
@@ -410,21 +427,71 @@ namespace LemoineTools.Lemoine.Controls
             int srcIdx = children.IndexOf(_dragBlockRow);
             if (srcIdx < 0) return;
             double curY      = cursorInStack.Y;
-            int    insertIdx = children.Count;
+            int    insertIdx = children.Count; // default = append after last
             double runY      = 0;
             for (int i = 0; i < children.Count; i++)
             {
+                if (children[i] == _crossInsertPlaceholder) continue; // ignore placeholder
                 if (children[i] is FrameworkElement fe)
                 {
                     if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
                     runY += fe.ActualHeight + fe.Margin.Bottom;
                 }
             }
-            insertIdx = Math.Max(0, Math.Min(insertIdx, children.Count - 1));
+            // No upper clamp — insertIdx == children.Count means append at end, which is valid.
+            insertIdx = Math.Max(0, insertIdx);
             if (srcIdx < insertIdx) insertIdx--;
             if (insertIdx == srcIdx) return;
             children.RemoveAt(srcIdx);
-            children.Insert(insertIdx, _dragBlockRow);
+            children.Insert(Math.Min(insertIdx, children.Count), _dragBlockRow);
+        }
+
+        private void LiveSnapCrossGroup(Point cursorInStack)
+        {
+            if (_blockStack == null) return;
+            EnsureCrossInsertPlaceholder();
+            var children = _blockStack.Children;
+            double curY      = cursorInStack.Y;
+            int    insertIdx = children.Count; // default = append after last
+            double runY      = 0;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] == _crossInsertPlaceholder) continue;
+                if (children[i] is FrameworkElement fe)
+                {
+                    if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                    runY += fe.ActualHeight + fe.Margin.Bottom;
+                }
+            }
+            insertIdx = Math.Max(0, insertIdx);
+            // Remove placeholder and re-insert at new position
+            int curIdx = children.IndexOf(_crossInsertPlaceholder);
+            if (curIdx >= 0)
+            {
+                if (curIdx == insertIdx) return; // already in right spot
+                children.RemoveAt(curIdx);
+                if (curIdx < insertIdx) insertIdx--;
+            }
+            children.Insert(Math.Min(insertIdx, children.Count), _crossInsertPlaceholder!);
+        }
+
+        private void EnsureCrossInsertPlaceholder()
+        {
+            if (_crossInsertPlaceholder != null) return;
+            _crossInsertPlaceholder = new Border
+            {
+                Height           = 3,
+                Margin           = new Thickness(4, 1, 4, 1),
+                IsHitTestVisible = false, // cursor passes through to the StackPanel
+            };
+            _crossInsertPlaceholder.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+        }
+
+        private void RemoveCrossInsertPlaceholder()
+        {
+            if (_crossInsertPlaceholder == null || _blockStack == null) return;
+            _blockStack.Children.Remove(_crossInsertPlaceholder);
+            _crossInsertPlaceholder = null;
         }
 
         private void OnBlockStackDrop(object sender, DragEventArgs e)
@@ -458,7 +525,23 @@ namespace LemoineTools.Lemoine.Controls
         {
             var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
             if (payload?.What != LegendDragPayload.Kind.Block) return;
-            BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, Group.Blocks?.Count ?? 0));
+            // Capture placeholder position before removing it — counts only block rows before it.
+            int dropIdx = Group.Blocks?.Count ?? 0; // default = append
+            if (_crossInsertPlaceholder != null && _blockStack != null)
+            {
+                int placeholderPos = _blockStack.Children.IndexOf(_crossInsertPlaceholder);
+                if (placeholderPos >= 0)
+                {
+                    // Count only LemoineLegendBlockRow children before the placeholder
+                    dropIdx = _blockStack.Children
+                        .Cast<UIElement>()
+                        .Take(placeholderPos)
+                        .OfType<LemoineLegendBlockRow>()
+                        .Count();
+                }
+            }
+            RemoveCrossInsertPlaceholder();
+            BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, dropIdx));
         }
 
         private void CommitBlockReorder()
