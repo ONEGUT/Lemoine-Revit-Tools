@@ -248,30 +248,40 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     if (dv == null) { fail++; tx.Commit(); return; }
                     dv.Name = legendName;
                     try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
+                    // Clear any content carried over from the template legend before drawing.
+                    var templateElems = new FilteredElementCollector(doc, dv.Id)
+                        .WherePasses(new LogicalOrFilter(
+                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
+                            new ElementClassFilter(typeof(TextNote))))
+                        .ToElementIds().ToList();
+                    foreach (var id in templateElems) try { doc.Delete(id); } catch { }
                 }
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
 
-                // Use a conservative safe range instead of calling GetMinimumWidthLimit /
-                // GetMaximumWidthLimit which are not present in all API reference versions.
-                const double MinTNW = 0.01;   // ~3 mm — well below any real minimum
-                const double MaxTNW = 9999.0; // well above any real maximum
-                double tnNarrow = Math.Min(Math.Max(LabelWidth,     MinTNW), MaxTNW);
-                double tnWide   = Math.Min(Math.Max(LabelWidth * 4, MinTNW), MaxTNW);
+                // Query Revit's own width limits for the chosen TextNoteType.
+                double minTNW = TextNote.GetMinimumWidthLimit(doc, textTypeId);
+                double maxTNW = TextNote.GetMaximumWidthLimit(doc, textTypeId);
+
+                // Title/subtitle: span the full legend content width.
+                int    maxGroupsInRow = rows.Count > 0 ? rows.Max(r => r.Groups?.Count ?? 0) : 1;
+                double tnTitle  = Math.Min(Math.Max(maxGroupsInRow * colW, minTNW), maxTNW);
+                // Labels and headers: as narrow as the font allows — no artificial padding.
+                double tnNarrow = Math.Min(Math.Max(LabelWidth, minTNW), maxTNW);
 
                 double cy = 0.0;
 
                 // ── Title / Subtitle above first row ──────────────────────────
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnWide, layout.Title.Trim(), opts); }
+                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnTitle, layout.Title.Trim(), opts); }
                     catch (Exception ex) { logMsgs.Add($"Title note: {ex.Message}"); }
                     cy -= 0.50;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnWide, layout.Subtitle.Trim(), opts); }
+                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnTitle, layout.Subtitle.Trim(), opts); }
                     catch (Exception ex) { logMsgs.Add($"Subtitle note: {ex.Message}"); }
                     cy -= 0.35;
                 }
