@@ -5,9 +5,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using WpfTextBox = System.Windows.Controls.TextBox;
-using WpfGrid    = System.Windows.Controls.Grid;
-using WpfPoint   = System.Windows.Point;
+using WpfTextBox  = System.Windows.Controls.TextBox;
+using WpfGrid     = System.Windows.Controls.Grid;
+using WpfPoint    = System.Windows.Point;
+using WpfRectangle = System.Windows.Shapes.Rectangle;
+using WpfComboBox  = System.Windows.Controls.ComboBox;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
@@ -42,8 +44,8 @@ namespace LemoineTools.Tools.Ceilings
                 deserialize: path => CeilingColorRamp.LoadFrom(path));
 
         // Live-update handles for S_RAMP step
-        private Rectangle? _gradientRect;
-        private ComboBox?  _rampCombo;
+        private WpfRectangle? _gradientRect;
+        private WpfComboBox?  _rampCombo;
 
         // ── Run options state ────────────────────────────────────────────────────
         private bool   _deleteExisting = true;
@@ -171,12 +173,12 @@ namespace LemoineTools.Tools.Ceilings
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             DockPanel.SetDock(loadBtn, Dock.Right);
 
-            _rampCombo = new ComboBox { IsEditable = false };
-            _rampCombo.SetResourceReference(ComboBox.BackgroundProperty,  "LemoineSelectBg");
-            _rampCombo.SetResourceReference(ComboBox.ForegroundProperty,  "LemoineText");
-            _rampCombo.SetResourceReference(ComboBox.FontSizeProperty,    "LemoineFS_SM");
-            _rampCombo.SetResourceReference(ComboBox.FontFamilyProperty,  "LemoineMonoFont");
-            _rampCombo.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorderMid");
+            _rampCombo = new WpfComboBox { IsEditable = false };
+            _rampCombo.SetResourceReference(WpfComboBox.BackgroundProperty,  "LemoineSelectBg");
+            _rampCombo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
+            _rampCombo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_SM");
+            _rampCombo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineMonoFont");
+            _rampCombo.SetResourceReference(WpfComboBox.BorderBrushProperty, "LemoineBorderMid");
             RefreshRampCombo();
 
             loadRow.Children.Add(deleteBtn);
@@ -309,7 +311,7 @@ namespace LemoineTools.Tools.Ceilings
             };
             previewBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            _gradientRect = new Rectangle();
+            _gradientRect = new WpfRectangle();
             previewBorder.Child = _gradientRect;
             UpdateGradientPreview();
             outer.Children.Add(previewBorder);
