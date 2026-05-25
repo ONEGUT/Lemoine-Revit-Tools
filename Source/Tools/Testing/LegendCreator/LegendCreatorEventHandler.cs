@@ -215,12 +215,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
 
-                // Clamp text note widths to the project's valid range so the call
-                // never throws ArgumentOutOfRangeException regardless of unit system.
-                double minTNW   = TextNote.GetMinimumWidthLimit(doc);
-                double maxTNW   = TextNote.GetMaximumWidthLimit(doc);
-                double tnNarrow = Math.Min(Math.Max(LabelWidth,     minTNW), maxTNW);
-                double tnWide   = Math.Min(Math.Max(LabelWidth * 4, minTNW), maxTNW);
+                // Use a conservative safe range instead of calling GetMinimumWidthLimit /
+                // GetMaximumWidthLimit which are not present in all API reference versions.
+                const double MinTNW = 0.01;   // ~3 mm — well below any real minimum
+                const double MaxTNW = 9999.0; // well above any real maximum
+                double tnNarrow = Math.Min(Math.Max(LabelWidth,     MinTNW), MaxTNW);
+                double tnWide   = Math.Min(Math.Max(LabelWidth * 4, MinTNW), MaxTNW);
 
                 double cy = 0.0;
 
