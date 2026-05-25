@@ -25,6 +25,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             _builder = new LemoineLegendBuilder();
             _builder.LoadFrom(LegendCreatorSettings.Instance);
             _builder.CreateRequested += (s, e) => CreateLegendInRevit();
+            _builder.UpdateRequested += (s, e) => UpdateLegendInRevit();
             return _builder;
         }
 
@@ -40,8 +41,17 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         public static void CreateLegendInRevit()
         {
-            Apply();  // flush editing buffer → singleton → disk first
-            if (App.LegendCreatorEvent == null) return;
+            Apply();
+            if (App.LegendCreatorEvent == null || App.LegendCreatorHandler == null) return;
+            App.LegendCreatorHandler.UpdateMode = false;
+            App.LegendCreatorEvent.Raise();
+        }
+
+        public static void UpdateLegendInRevit()
+        {
+            Apply();
+            if (App.LegendCreatorEvent == null || App.LegendCreatorHandler == null) return;
+            App.LegendCreatorHandler.UpdateMode = true;
             App.LegendCreatorEvent.Raise();
         }
 

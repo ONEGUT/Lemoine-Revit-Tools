@@ -16,6 +16,8 @@ namespace LemoineTools.Lemoine.Controls
     {
         public event EventHandler? Changed;
         public event EventHandler? PreviewRequested;
+        public event EventHandler? CreateRequested;
+        public event EventHandler? UpdateRequested;
         public event EventHandler? TemplatesRequested;
 
         private LegendLayoutConfig _layout = new LegendLayoutConfig();
@@ -42,12 +44,14 @@ namespace LemoineTools.Lemoine.Controls
 
             _root.Children.Clear();
 
-            // Single grid: [Auto legend pill] [Auto edit btn] [* spacer (preview centered here)] [Auto templates pill]
+            // Single grid: [Auto legend pill] [Auto edit btn] [* spacer (preview centered here)] [Auto create] [Auto update] [Auto templates pill]
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 legend pill
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 edit btn
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 spacer (preview centered here)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 templates pill
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 create btn
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 update btn
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 templates pill
 
             // ── Legend pill ──────────────────────────────────────────────────
             var pill = new Border
@@ -111,14 +115,30 @@ namespace LemoineTools.Lemoine.Controls
 
             // col 2 is the star spacer — no child needed
 
-            // ── Preview button ───────────────────────────────────────────────
+            // ── Preview button (centered in the star spacer) ─────────────────
             var previewBtn = LemoineControlStyles.BuildButton("Preview", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            previewBtn.VerticalAlignment = VerticalAlignment.Center;
-            previewBtn.Margin = new Thickness(0, 0, 4, 0);
-            previewBtn.Click += (s, e) => PreviewRequested?.Invoke(this, EventArgs.Empty);
+            previewBtn.VerticalAlignment   = VerticalAlignment.Center;
             previewBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            previewBtn.Margin              = new Thickness(0, 0, 4, 0);
+            previewBtn.Click += (s, e) => PreviewRequested?.Invoke(this, EventArgs.Empty);
             Grid.SetColumn(previewBtn, 2);
             grid.Children.Add(previewBtn);
+
+            // ── Create ▶ button ──────────────────────────────────────────────
+            var createBtn = LemoineControlStyles.BuildButton("Create ▶", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            createBtn.VerticalAlignment = VerticalAlignment.Center;
+            createBtn.Margin            = new Thickness(0, 0, 4, 0);
+            createBtn.Click += (s, e) => CreateRequested?.Invoke(this, EventArgs.Empty);
+            Grid.SetColumn(createBtn, 3);
+            grid.Children.Add(createBtn);
+
+            // ── Update ▶ button ──────────────────────────────────────────────
+            var updateBtn = LemoineControlStyles.BuildButton("Update ▶", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            updateBtn.VerticalAlignment = VerticalAlignment.Center;
+            updateBtn.Margin            = new Thickness(0, 0, 4, 0);
+            updateBtn.Click += (s, e) => UpdateRequested?.Invoke(this, EventArgs.Empty);
+            Grid.SetColumn(updateBtn, 4);
+            grid.Children.Add(updateBtn);
 
             // ── Templates pill ───────────────────────────────────────────────
             var templatesPill = new Border
@@ -165,7 +185,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             templatesPill.MouseLeftButtonUp += (s, e) => TemplatesRequested?.Invoke(this, EventArgs.Empty);
 
-            Grid.SetColumn(templatesPill, 3);
+            Grid.SetColumn(templatesPill, 5);
             grid.Children.Add(templatesPill);
 
             _root.Children.Add(grid);

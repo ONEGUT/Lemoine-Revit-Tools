@@ -41,6 +41,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // Null → fall back to the first legend view found in the project.
         public ElementId? TemplateLegendId { get; set; }
 
+        /// <summary>
+        /// False (default) → duplicate a template legend and create a new view.
+        /// True            → find the existing view whose name matches Layout.Title,
+        ///                   clear its FilledRegions and TextNotes, then redraw in place.
+        /// </summary>
+        public bool UpdateMode { get; set; }
+
         public string GetName() => "LemoineTools.Tools.Testing.LegendCreator.LegendCreatorEventHandler";
 
         public void Execute(UIApplication app)
@@ -75,20 +82,22 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             double entryH  = swatchH + 0.05;                         // vertical step per block
             double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
 
-            // ── Find existing legend view to duplicate ────────────────────────
+            // ── Find template legend (Create mode only) ───────────────────────
             View? existingLegend = null;
-            if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
-                existingLegend = doc.GetElement(TemplateLegendId) as View;
-            if (existingLegend?.ViewType != ViewType.Legend)
-                existingLegend = new FilteredElementCollector(doc)
-                    .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                    .FirstOrDefault(v => v.ViewType == ViewType.Legend);
-
-            if (existingLegend == null)
+            if (!UpdateMode)
             {
-                Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
-                fail++;
-                return;
+                if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
+                    existingLegend = doc.GetElement(TemplateLegendId) as View;
+                if (existingLegend?.ViewType != ViewType.Legend)
+                    existingLegend = new FilteredElementCollector(doc)
+                        .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                        .FirstOrDefault(v => v.ViewType == ViewType.Legend);
+                if (existingLegend == null)
+                {
+                    Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
+                    fail++;
+                    return;
+                }
             }
 
             // ── Required project types ────────────────────────────────────────
@@ -145,16 +154,19 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                             neededFrts.Add((ToHex(rgb.Value), blk.Fill ?? "solid"));
                     }
 
-            // ── Generate unique legend view name ──────────────────────────────
+            // ── Generate unique legend view name (Create mode only) ───────────
             string baseTitle  = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
-            var existingNames = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                .Where(v => v.ViewType == ViewType.Legend)
-                .Select(v => v.Name).ToHashSet();
             string legendName = baseTitle;
-            int nameIdx = 1;
-            while (existingNames.Contains(legendName))
-                legendName = $"{baseTitle} ({++nameIdx})";
+            if (!UpdateMode)
+            {
+                var existingNames = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                    .Where(v => v.ViewType == ViewType.Legend)
+                    .Select(v => v.Name).ToHashSet();
+                int nameIdx = 1;
+                while (existingNames.Contains(legendName))
+                    legendName = $"{baseTitle} ({++nameIdx})";
+            }
 
             Progress(40, pass, fail, skip);
 
@@ -166,7 +178,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
             var logMsgs = new List<string>();
 
-            using (var tx = new Transaction(doc, "Legend Creator — Create Legend"))
+            using (var tx = new Transaction(doc,
+                UpdateMode ? "Legend Creator — Update Legend" : "Legend Creator — Create Legend"))
             {
                 var fho = tx.GetFailureHandlingOptions();
                 fho.SetClearAfterRollback(true);
@@ -206,11 +219,35 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 Progress(60, pass, fail, skip);
 
-                // ── Duplicate legend view ─────────────────────────────────────
-                ElementId newLegendId = existingLegend.Duplicate(ViewDuplicateOption.Duplicate);
-                View? dv = doc.GetElement(newLegendId) as View;
-                if (dv == null) { fail++; tx.Commit(); return; }
-                dv.Name = legendName;
+                // ── Find/create the target legend view ───────────────────────
+                View? dv;
+                if (UpdateMode)
+                {
+                    dv = new FilteredElementCollector(doc)
+                        .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                        .FirstOrDefault(v => v.ViewType == ViewType.Legend && v.Name == baseTitle);
+                    if (dv == null)
+                    {
+                        Log($"No legend view named '{baseTitle}' found. Use Create ▶ to make a new one.", "fail");
+                        fail++;
+                        tx.Commit();
+                        return;
+                    }
+                    var toDelete = new FilteredElementCollector(doc, dv.Id)
+                        .WherePasses(new LogicalOrFilter(
+                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
+                            new ElementClassFilter(typeof(TextNote))))
+                        .ToElementIds().ToList();
+                    foreach (var id in toDelete)
+                        try { doc.Delete(id); } catch { }
+                }
+                else
+                {
+                    ElementId newLegendId = existingLegend!.Duplicate(ViewDuplicateOption.Duplicate);
+                    dv = doc.GetElement(newLegendId) as View;
+                    if (dv == null) { fail++; tx.Commit(); return; }
+                    dv.Name = legendName;
+                }
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
@@ -312,7 +349,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
 
             foreach (var l in logMsgs) Log(l, "info");
-            Log($"Created legend view '{legendName}'.", "pass");
+            Log(UpdateMode
+                ? $"Updated legend view '{baseTitle}'."
+                : $"Created legend view '{legendName}'.", "pass");
         }
 
         // ── Shape helpers ─────────────────────────────────────────────────────
