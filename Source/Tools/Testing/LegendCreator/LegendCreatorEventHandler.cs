@@ -215,17 +215,26 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
 
+                // Clamp text note widths to the project's valid range so the call
+                // never throws ArgumentOutOfRangeException regardless of unit system.
+                double minTNW   = TextNote.GetMinimumWidthLimit(doc);
+                double maxTNW   = TextNote.GetMaximumWidthLimit(doc);
+                double tnNarrow = Math.Min(Math.Max(LabelWidth,     minTNW), maxTNW);
+                double tnWide   = Math.Min(Math.Max(LabelWidth * 4, minTNW), maxTNW);
+
                 double cy = 0.0;
 
                 // ── Title / Subtitle above first row ──────────────────────────
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), LabelWidth * 4, layout.Title.Trim(), opts);
+                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnWide, layout.Title.Trim(), opts); }
+                    catch (Exception ex) { logMsgs.Add($"Title note: {ex.Message}"); }
                     cy -= 0.50;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), LabelWidth * 4, layout.Subtitle.Trim(), opts);
+                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnWide, layout.Subtitle.Trim(), opts); }
+                    catch (Exception ex) { logMsgs.Add($"Subtitle note: {ex.Message}"); }
                     cy -= 0.35;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Title) || !string.IsNullOrWhiteSpace(layout.Subtitle))
@@ -247,7 +256,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         // Group header
                         string header = string.IsNullOrWhiteSpace(grp.Title)
                             ? "—" : grp.Title.ToUpperInvariant();
-                        TextNote.Create(doc, dv.Id, new XYZ(cx, cy, 0), LabelWidth, header, opts);
+                        try { TextNote.Create(doc, dv.Id, new XYZ(cx, cy, 0), tnNarrow, header, opts); }
+                        catch (Exception ex) { logMsgs.Add($"Header note '{header}': {ex.Message}"); }
 
                         double blockY   = cy - HdrPad;
                         int    visCount = 0;
@@ -275,8 +285,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                             // Label
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
-                            TextNote.Create(doc, dv.Id,
-                                new XYZ(cx + swatchW + gapFt, blockY, 0), LabelWidth, label, opts);
+                            try
+                            {
+                                TextNote.Create(doc, dv.Id,
+                                    new XYZ(cx + swatchW + gapFt, blockY, 0), tnNarrow, label, opts);
+                            }
+                            catch (Exception ex) { logMsgs.Add($"Label note '{label}': {ex.Message}"); }
 
                             blockY -= entryH;
                             visCount++;
