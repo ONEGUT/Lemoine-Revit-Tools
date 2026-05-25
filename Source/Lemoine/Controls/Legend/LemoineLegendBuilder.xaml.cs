@@ -782,16 +782,10 @@ namespace LemoineTools.Lemoine.Controls
         private void RefreshSelectionVisuals()
         {
             if (_rowsStack == null) return;
+            // Update selection state on existing block rows in-place — no rebuild,
+            // so _mouseDown and DragInitiated wiring on block rows are preserved.
             foreach (var child in _rowsStack.Children.OfType<LemoineLegendRow>())
-                child.SetSelectionContext(_lSelectedBlockIds, _lActiveBlockId);
-
-            // Trigger a deferred light rebuild so block rows pick up the new context
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (_rowsStack == null) return;
-                foreach (var child in _rowsStack.Children.OfType<LemoineLegendRow>())
-                    child.Bind(child.Row);
-            }), System.Windows.Threading.DispatcherPriority.Render);
+                child.RefreshBlockSelection(_lSelectedBlockIds, _lActiveBlockId);
         }
 
         private void RefreshRightPanel()

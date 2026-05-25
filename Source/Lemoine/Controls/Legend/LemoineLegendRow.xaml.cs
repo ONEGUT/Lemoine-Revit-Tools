@@ -45,6 +45,19 @@ namespace LemoineTools.Lemoine.Controls
             _activeContext = activeId;
         }
 
+        /// <summary>
+        /// Propagates selection state to existing group cards and block rows in-place,
+        /// without rebuilding the visual tree. Use instead of Bind() for selection-only updates.
+        /// </summary>
+        public void RefreshBlockSelection(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext    = activeId;
+            if (_rowBorder?.Child is Grid rowGrid)
+                foreach (var card in rowGrid.Children.OfType<LemoineLegendGroupCard>())
+                    card.RefreshBlockSelection(selectedIds, activeId);
+        }
+
         private void BuildAll()
         {
             _rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");

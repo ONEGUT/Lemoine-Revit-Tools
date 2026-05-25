@@ -66,6 +66,23 @@ namespace LemoineTools.Lemoine.Controls
             _activeContext = activeId;
         }
 
+        /// <summary>
+        /// Updates block row selection visuals in-place without rebuilding the body.
+        /// Call instead of Bind() when only selection state changes.
+        /// </summary>
+        public void RefreshBlockSelection(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext    = activeId;
+            if (_blockStack == null) return;
+            foreach (var row in _blockStack.Children.OfType<LemoineLegendBlockRow>())
+            {
+                bool isActive = row.Block.Id == activeId;
+                bool isMulti  = !isActive && selectedIds.Contains(row.Block.Id);
+                row.SetSelectionState(isActive, isMulti);
+            }
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         private void BuildAll()
         {
