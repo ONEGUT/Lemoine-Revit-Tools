@@ -38,8 +38,9 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? CreateRequested;
 
         // ── Editing buffer ─────────────────────────────────────────────────────
-        public LegendLayoutConfig    Layout { get; private set; } = new LegendLayoutConfig();
-        public List<LegendRowConfig> Rows   { get; private set; } = new List<LegendRowConfig>();
+        public LegendLayoutConfig    Layout         { get; private set; } = new LegendLayoutConfig();
+        public List<LegendRowConfig> Rows           { get; private set; } = new List<LegendRowConfig>();
+        public bool                  PreviewVisible => _previewVisible;
 
         // ── Child references ───────────────────────────────────────────────────
         private LemoineLegendLayoutBar? _layoutBar;

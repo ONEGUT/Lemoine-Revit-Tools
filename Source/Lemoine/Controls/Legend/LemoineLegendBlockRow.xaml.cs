@@ -40,6 +40,11 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionContext(HashSet<string> selectedIds, string? activeId)
+        {
+            // Context stored for use by the caller; SetSelectionState applies the visual.
+        }
+
         public void SetSelectionState(bool isActive, bool isMulti)
         {
             if (isActive)
