@@ -1,0 +1,60 @@
+using System;
+using System.IO;
+using System.Xml.Serialization;
+
+namespace LemoineTools.Tools.Ceilings
+{
+    [XmlRoot("MakeCeilingGridsSettings")]
+    public sealed class MakeCeilingGridsSettings
+    {
+        private static readonly Lazy<MakeCeilingGridsSettings> _lazy =
+            new Lazy<MakeCeilingGridsSettings>(Load);
+
+        public static MakeCeilingGridsSettings Instance => _lazy.Value;
+
+        public MakeCeilingGridsSettings() { }
+
+        public string NamingPattern { get; set; } = "{Level}_CeilingGrid";
+        public string OutputFolder  { get; set; } = "";
+        public bool   SplitByLevel  { get; set; } = false;
+
+        private static string FilePath
+        {
+            get
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "LemoineTools");
+                try { Directory.CreateDirectory(dir); } catch { }
+                return Path.Combine(dir, "MakeCeilingGridsSettings.xml");
+            }
+        }
+
+        public void Save()
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(MakeCeilingGridsSettings));
+                using (var w = new StreamWriter(FilePath))
+                    xs.Serialize(w, this);
+            }
+            catch { }
+        }
+
+        private static MakeCeilingGridsSettings Load()
+        {
+            try
+            {
+                string path = FilePath;
+                if (File.Exists(path))
+                {
+                    var xs = new XmlSerializer(typeof(MakeCeilingGridsSettings));
+                    using (var r = new StreamReader(path))
+                        return (MakeCeilingGridsSettings)xs.Deserialize(r)!;
+                }
+            }
+            catch { }
+            return new MakeCeilingGridsSettings();
+        }
+    }
+}

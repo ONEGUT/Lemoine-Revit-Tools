@@ -183,7 +183,6 @@ namespace LemoineTools.Lemoine
             ("general", "General"),
             ("filters", "Filters / Color"),
             ("t08",     "Legend Creator"),
-            ("t03",     "Ceiling Heatmap"),
             ("t04",     "Link Views"),
             ("tx",      "Batch Export"),
             ("ty",      "Batch Dimension"),
@@ -288,7 +287,6 @@ namespace LemoineTools.Lemoine
             {
                 case "general":  content = BuildGeneralContent();  break;
                 case "filters":  content = BuildFiltersContent();  break;
-                case "t03":      content = BuildSpecContent(new CeilingHeatmapViewModel(null, null), "Ceiling Heatmap"); break;
                 case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
                 case "tx":       content = BuildSpecContent(new BatchExportViewModel(null, null, null), "Batch Export"); break;
