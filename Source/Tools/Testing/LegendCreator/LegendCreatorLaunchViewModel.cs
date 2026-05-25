@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -11,29 +12,29 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 {
     /// <summary>
     /// ILemoineTool for the Legend Creation ribbon button step-flow.
-    /// Step S1 lets the user pick which existing legend view to duplicate,
-    /// then displays a summary of the current Legend Creator settings.
+    /// Step S1 lets the user toggle Create/Update mode, pick a template or target
+    /// legend view, then displays a summary of the current Legend Creator settings.
     /// </summary>
     public sealed class LegendCreatorLaunchViewModel : ILemoineTool
     {
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Legend Creation";
-        public string RunLabel => "Create Legend →";
+        public string RunLabel => _updateMode ? "Update Legend →" : "Create Legend →";
 
         public StepDefinition[] Steps => new[]
         {
             new StepDefinition("S1", "Select Template", required: false),
         };
 
-#pragma warning disable CS0067
         public event EventHandler? ValidationChanged;
-#pragma warning restore CS0067
 
         // ── Data ──────────────────────────────────────────────────────────────
         private readonly List<(ElementId Id, string Name)> _legendViews;
         private readonly LegendCreatorEventHandler         _handler;
         private readonly Autodesk.Revit.UI.ExternalEvent   _event;
-        private int _selectedIndex = 0;
+        private bool _updateMode        = false;
+        private int  _createTemplateIdx = 0;   // Create mode: which view to duplicate as template
+        private int  _updateTargetIdx   = 0;   // Update mode: which view to overwrite
 
         public LegendCreatorLaunchViewModel(
             List<(ElementId Id, string Name)> legendViews,
@@ -63,36 +64,102 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
             var outer = new StackPanel();
 
-            // ── Legend view picker ─────────────────────────────────────────────
-            var pickerLabel = new TextBlock
+            // ── Mode toggle ────────────────────────────────────────────────────
+            var modeHeader = new TextBlock
             {
-                Text   = "BASE LEGEND VIEW",
-                Margin = new Thickness(0, 0, 0, 4),
+                Text   = "MODE",
+                Margin = new Thickness(0, 0, 0, 6),
             };
+            modeHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            modeHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            modeHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(modeHeader);
+
+            var pillRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin      = new Thickness(0, 0, 0, 14),
+            };
+
+            var createPill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(3, 0, 0, 3),
+                Padding         = new Thickness(10, 5, 10, 5),
+                Cursor          = Cursors.Hand,
+                Child           = MakePillText("Create New"),
+            };
+            var updatePill = new Border
+            {
+                BorderThickness = new Thickness(1, 1, 1, 1),
+                CornerRadius    = new CornerRadius(0, 3, 3, 0),
+                Padding         = new Thickness(10, 5, 10, 5),
+                Cursor          = Cursors.Hand,
+                Child           = MakePillText("Update Existing"),
+            };
+
+            // Label and picker that change with mode
+            var pickerLabel = new TextBlock { Margin = new Thickness(0, 0, 0, 4) };
             pickerLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             pickerLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             pickerLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            outer.Children.Add(pickerLabel);
 
-            var combo = new ComboBox
+            var picker = new ComboBox
             {
                 IsEditable = false,
-                Margin     = new Thickness(0, 0, 0, 12),
+                Margin     = new Thickness(0, 0, 0, 16),
             };
-            combo.SetResourceReference(FrameworkElement.HeightProperty,   "LemoineH_Input");
-            combo.SetResourceReference(ComboBox.FontFamilyProperty,        "LemoineMonoFont");
-            combo.SetResourceReference(ComboBox.FontSizeProperty,          "LemoineFS_SM");
-
+            picker.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            picker.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            picker.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
             foreach (var (_, name) in _legendViews)
-                combo.Items.Add(name);
+                picker.Items.Add(name);
 
-            combo.SelectedIndex = _selectedIndex;
-            combo.SelectionChanged += (s, e) =>
+            // Apply current mode visuals and sync picker index
+            void ApplyMode()
             {
-                if (combo.SelectedIndex >= 0)
-                    _selectedIndex = combo.SelectedIndex;
+                pickerLabel.Text = _updateMode ? "LEGEND TO UPDATE" : "BASE LEGEND VIEW";
+                picker.SelectedIndex = _updateMode ? _updateTargetIdx : _createTemplateIdx;
+
+                if (!_updateMode)
+                {
+                    createPill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    createPill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                    updatePill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    updatePill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                }
+                else
+                {
+                    createPill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    createPill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    updatePill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    updatePill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                }
+            }
+
+            createPill.MouseLeftButtonUp += (s, e) =>
+            {
+                if (_updateMode) { _updateMode = false; ApplyMode(); ValidationChanged?.Invoke(this, EventArgs.Empty); }
             };
-            outer.Children.Add(combo);
+            updatePill.MouseLeftButtonUp += (s, e) =>
+            {
+                if (!_updateMode) { _updateMode = true; ApplyMode(); ValidationChanged?.Invoke(this, EventArgs.Empty); }
+            };
+
+            picker.SelectionChanged += (s, e) =>
+            {
+                if (picker.SelectedIndex < 0) return;
+                if (_updateMode) _updateTargetIdx   = picker.SelectedIndex;
+                else             _createTemplateIdx = picker.SelectedIndex;
+            };
+
+            pillRow.Children.Add(createPill);
+            pillRow.Children.Add(updatePill);
+            outer.Children.Add(pillRow);
+            outer.Children.Add(pickerLabel);
+            outer.Children.Add(picker);
+
+            ApplyMode(); // set initial state
 
             // ── Current Legend Creator settings summary ────────────────────────
             var settings = LegendCreatorSettings.Instance;
@@ -162,20 +229,35 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ═══════════════════════════════════════════════════════════════════════
         public bool IsValid(string stepId) => _legendViews.Count > 0;
 
-        public string SummaryFor(string stepId) =>
-            stepId == "S1" && _selectedIndex >= 0 && _selectedIndex < _legendViews.Count
-                ? _legendViews[_selectedIndex].Name
-                : "—";
+        public string SummaryFor(string stepId)
+        {
+            if (stepId != "S1") return "—";
+            int idx = _updateMode ? _updateTargetIdx : _createTemplateIdx;
+            if (idx < 0 || idx >= _legendViews.Count) return "—";
+            return (_updateMode ? "Update: " : "Template: ") + _legendViews[idx].Name;
+        }
 
         public void Run(
             Action<string, string>     pushLog,
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _handler.TemplateLegendId =
-                _selectedIndex >= 0 && _selectedIndex < _legendViews.Count
-                    ? _legendViews[_selectedIndex].Id
-                    : null;
+            _handler.UpdateMode = _updateMode;
+
+            if (_updateMode)
+            {
+                _handler.TargetLegendId   =
+                    _updateTargetIdx >= 0 && _updateTargetIdx < _legendViews.Count
+                        ? _legendViews[_updateTargetIdx].Id : null;
+                _handler.TemplateLegendId = null;
+            }
+            else
+            {
+                _handler.TemplateLegendId =
+                    _createTemplateIdx >= 0 && _createTemplateIdx < _legendViews.Count
+                        ? _legendViews[_createTemplateIdx].Id : null;
+                _handler.TargetLegendId   = null;
+            }
 
             _handler.PushLog    = pushLog;
             _handler.OnProgress = onProgress;
@@ -183,6 +265,19 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
             pushLog("Raising Revit ExternalEvent…", "info");
             _event.Raise();
+        }
+
+        private static TextBlock MakePillText(string text)
+        {
+            var tb = new TextBlock
+            {
+                Text              = text,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return tb;
         }
     }
 }

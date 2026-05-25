@@ -175,14 +175,8 @@ namespace LemoineTools
 
             filtersPanel.AddItem(Btn(
                 "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
-                "Generate a Legend view from the current Legend Creator settings.",
+                "Create or update a Legend view from the current Legend Creator settings.",
                 "\uE8FD"));  // Segoe MDL2: ColorSolid (color swatch)
-
-            filtersPanel.AddStackedItems(
-                Btn("LT_LegendCreate", "Create\nLegend", "LegendCreatorCreateCommand",
-                    "Create a new legend view in the active document from the current Legend Creator settings."),
-                Btn("LT_LegendUpdate", "Update\nLegend", "LegendCreatorUpdateCommand",
-                    "Update an existing legend view with the current Legend Creator settings."));
 
             var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions");
             var split = (SplitButton)filtersPanel.AddItem(splitData);

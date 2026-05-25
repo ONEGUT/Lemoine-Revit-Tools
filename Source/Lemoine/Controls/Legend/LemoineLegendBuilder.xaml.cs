@@ -269,11 +269,37 @@ namespace LemoineTools.Lemoine.Controls
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             panel.Children.Add(header);
 
-            // SCALE
-            var scaleWrap = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 20, 0) };
-            scaleWrap.Children.Add(MakeSizingBarLabel("SCALE  1:"));
-            scaleWrap.Children.Add(BuildInlineStepper(Layout.ViewScale, 1, 400, 1,
-                v => { Layout.ViewScale = v; OnEdited(); }));
+            // SCALE — dropdown of standard architectural (imperial) scales
+            var scaleWrap = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                Margin            = new Thickness(0, 0, 20, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            scaleWrap.Children.Add(MakeSizingBarLabel("SCALE"));
+
+            var scaleCombo = new ComboBox { IsEditable = false };
+            scaleCombo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            scaleCombo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            scaleCombo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+            foreach (var entry in StandardScales)
+                scaleCombo.Items.Add(entry);
+            int bestScaleIdx = 0, bestDiff = int.MaxValue;
+            for (int i = 0; i < StandardScales.Length; i++)
+            {
+                int diff = Math.Abs(StandardScales[i].Value - Layout.ViewScale);
+                if (diff < bestDiff) { bestDiff = diff; bestScaleIdx = i; }
+            }
+            scaleCombo.SelectedIndex = bestScaleIdx;
+            scaleCombo.SelectionChanged += (s, e) =>
+            {
+                if (scaleCombo.SelectedItem is ScaleEntry se)
+                {
+                    Layout.ViewScale = se.Value;
+                    OnEdited();
+                }
+            };
+            scaleWrap.Children.Add(scaleCombo);
             panel.Children.Add(scaleWrap);
 
             // SWATCH
@@ -301,6 +327,31 @@ namespace LemoineTools.Lemoine.Controls
             border.Child = panel;
             return border;
         }
+
+        // Standard architectural (imperial) view scales — label maps to Revit 1:N denominator.
+        private struct ScaleEntry
+        {
+            public string Label;
+            public int    Value;
+            public ScaleEntry(string label, int value) { Label = label; Value = value; }
+            public override string ToString() => Label;
+        }
+
+        private static readonly ScaleEntry[] StandardScales =
+        {
+            new ScaleEntry("3\" = 1'-0\"",    4),
+            new ScaleEntry("1½\" = 1'-0\"",   8),
+            new ScaleEntry("1\" = 1'-0\"",   12),
+            new ScaleEntry("¾\" = 1'-0\"",   16),
+            new ScaleEntry("½\" = 1'-0\"",   24),
+            new ScaleEntry("⅜\" = 1'-0\"",   32),
+            new ScaleEntry("¼\" = 1'-0\"",   48),
+            new ScaleEntry("3/16\" = 1'-0\"", 64),
+            new ScaleEntry("⅛\" = 1'-0\"",   96),
+            new ScaleEntry("3/32\" = 1'-0\"",128),
+            new ScaleEntry("1/16\" = 1'-0\"",192),
+            new ScaleEntry("3/64\" = 1'-0\"",256),
+        };
 
         private static TextBlock MakeSizingBarLabel(string text)
         {
