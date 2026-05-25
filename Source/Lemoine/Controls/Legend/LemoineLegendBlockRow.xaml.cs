@@ -73,29 +73,15 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.ColumnDefinitions.Clear();
 
-            // Columns: eye · shape (also color) · name (*) · CUST · missing · delete
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 eye
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 shape (popup also picks color)
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 name
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 CUST tag
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 missing indicator
+            // Columns: shape (also color) · name (*) · CUST · missing · eye · delete
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 shape (popup also picks color)
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 1 name
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 2 CUST tag
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 missing indicator
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 eye
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 delete
 
-            // ── 0: Eye toggle ──────────────────────────────────────────────
-            var eyeBtn = MakeIconHostButton(
-                child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
-                tooltip: Block.Visible ? "Hide" : "Show");
-            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
-            eyeBtn.Click += (s, e) =>
-            {
-                Block.Visible = !Block.Visible;
-                Changed?.Invoke(this, EventArgs.Empty);
-                BuildAll();
-            };
-            Grid.SetColumn(eyeBtn, 0);
-            _root.Children.Add(eyeBtn);
-
-            // ── 1: Shape + color picker (single popup) ─────────────────────
+            // ── 0: Shape + color picker (single popup) ─────────────────────
             var resolvedColor = ResolveColor();
             var shapePreview = new LemoineSwatchGlyph
             {
@@ -107,10 +93,10 @@ namespace LemoineTools.Lemoine.Controls
             };
             var shapeBtn = MakeIconHostButton(shapePreview, "Pick shape, fill, and color");
             shapeBtn.Click += (s, e) => OpenShapePopup(shapeBtn, resolvedColor);
-            Grid.SetColumn(shapeBtn, 1);
+            Grid.SetColumn(shapeBtn, 0);
             _root.Children.Add(shapeBtn);
 
-            // ── 2: Name (inline edit) ──────────────────────────────────────
+            // ── 1: Name (inline edit) ──────────────────────────────────────
             var name = new LemoineInlineEdit
             {
                 Text = ResolveName(),
@@ -125,10 +111,10 @@ namespace LemoineTools.Lemoine.Controls
                 Block.NameOverride = !Block.Custom && t != (LookupRule()?.Name ?? "");
                 Changed?.Invoke(this, EventArgs.Empty);
             };
-            Grid.SetColumn(name, 2);
+            Grid.SetColumn(name, 1);
             _root.Children.Add(name);
 
-            // ── 3: CUST tag ───────────────────────────────────────────────
+            // ── 2: CUST tag ───────────────────────────────────────────────
             if (Block.Custom)
             {
                 var cust = new Border
@@ -146,11 +132,11 @@ namespace LemoineTools.Lemoine.Controls
                 custLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
                 custLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 cust.Child = custLbl;
-                Grid.SetColumn(cust, 3);
+                Grid.SetColumn(cust, 2);
                 _root.Children.Add(cust);
             }
 
-            // ── 4: Missing-source indicator ────────────────────────────────
+            // ── 3: Missing-source indicator ────────────────────────────────
             if (!Block.Custom && string.IsNullOrEmpty(Block.SourceRuleId) == false)
             {
                 if (LookupRule() == null)
@@ -159,10 +145,24 @@ namespace LemoineTools.Lemoine.Controls
                     miss.ToolTip = "Source rule missing — value frozen at last seen.";
                     miss.Margin = new Thickness(4, 0, 4, 0);
                     miss.VerticalAlignment = VerticalAlignment.Center;
-                    Grid.SetColumn(miss, 4);
+                    Grid.SetColumn(miss, 3);
                     _root.Children.Add(miss);
                 }
             }
+
+            // ── 4: Eye toggle ──────────────────────────────────────────────
+            var eyeBtn = MakeIconHostButton(
+                child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
+                tooltip: Block.Visible ? "Hide" : "Show");
+            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
+            eyeBtn.Click += (s, e) =>
+            {
+                Block.Visible = !Block.Visible;
+                Changed?.Invoke(this, EventArgs.Empty);
+                BuildAll();
+            };
+            Grid.SetColumn(eyeBtn, 4);
+            _root.Children.Add(eyeBtn);
 
             // ── 5: Delete ──────────────────────────────────────────────────
             var del = MakeIconButton("✕", "Delete");
