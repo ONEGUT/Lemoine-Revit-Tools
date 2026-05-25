@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
+using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Commands
 {
@@ -29,7 +30,7 @@ namespace LemoineTools.Commands
             LemoineSettings.Instance.ApplyTo(Resources);
             LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 5);
 
-            var root = new Grid();
+            var root = new WpfGrid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });     // prompt
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) }); // list
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });     // buttons
@@ -46,7 +47,7 @@ namespace LemoineTools.Commands
             prompt.SetResourceReference(TextBlock.ForegroundProperty,  "LemoineText");
             prompt.SetResourceReference(TextBlock.FontFamilyProperty,  "LemoineUiFont");
             prompt.SetResourceReference(TextBlock.FontSizeProperty,    "LemoineFS_MD");
-            Grid.SetRow(prompt, 0);
+            WpfGrid.SetRow(prompt, 0);
             root.Children.Add(prompt);
 
             // List box
@@ -63,28 +64,28 @@ namespace LemoineTools.Commands
             }
             if (_listBox.Items.Count > 0) _listBox.SelectedIndex = 0;
             _listBox.MouseDoubleClick += (s, e) => Confirm();
-            Grid.SetRow(_listBox, 1);
+            WpfGrid.SetRow(_listBox, 1);
             root.Children.Add(_listBox);
 
             // Button row: [Cancel] [*] [Update]
-            var btnRow = new Grid();
+            var btnRow = new WpfGrid();
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetRow(btnRow, 2);
+            WpfGrid.SetRow(btnRow, 2);
             root.Children.Add(btnRow);
 
             var cancelBtn = LemoineControlStyles.BuildButton("Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelBtn.IsCancel = true;
             cancelBtn.Click += (s, e) => { SelectedLegendId = null; DialogResult = false; };
-            Grid.SetColumn(cancelBtn, 0);
+            WpfGrid.SetColumn(cancelBtn, 0);
             btnRow.Children.Add(cancelBtn);
 
             var updateBtn = LemoineControlStyles.BuildButton("Update", LemoineControlStyles.LemoineButtonVariant.Primary);
             updateBtn.IsDefault = true;
             updateBtn.HorizontalAlignment = HorizontalAlignment.Right;
             updateBtn.Click += (s, e) => Confirm();
-            Grid.SetColumn(updateBtn, 2);
+            WpfGrid.SetColumn(updateBtn, 2);
             btnRow.Children.Add(updateBtn);
 
             // Set background
