@@ -32,10 +32,14 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // Null → fall back to the first legend view found in the project.
         public ElementId? TemplateLegendId { get; set; }
 
+        // Set by LegendCreatorUpdateCommand after the user picks a legend view.
+        // Null → fall back to matching by Layout.Title name.
+        public ElementId? TargetLegendId { get; set; }
+
         /// <summary>
         /// False (default) → duplicate a template legend and create a new view.
-        /// True            → find the existing view whose name matches Layout.Title,
-        ///                   clear its FilledRegions and TextNotes, then redraw in place.
+        /// True            → update the view specified by TargetLegendId (or the first view
+        ///                   whose name matches Layout.Title), clearing and redrawing in place.
         /// </summary>
         public bool UpdateMode { get; set; }
 
@@ -215,12 +219,15 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 View? dv;
                 if (UpdateMode)
                 {
-                    dv = new FilteredElementCollector(doc)
-                        .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                        .FirstOrDefault(v => v.ViewType == ViewType.Legend && v.Name == baseTitle);
-                    if (dv == null)
+                    if (TargetLegendId != null && TargetLegendId != ElementId.InvalidElementId)
+                        dv = doc.GetElement(TargetLegendId) as View;
+                    else
+                        dv = new FilteredElementCollector(doc)
+                            .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                            .FirstOrDefault(v => v.ViewType == ViewType.Legend && v.Name == baseTitle);
+                    if (dv == null || dv.ViewType != ViewType.Legend)
                     {
-                        Log($"No legend view named '{baseTitle}' found. Use Create ▶ to make a new one.", "fail");
+                        Log("Target legend view not found. Use 'Create Legend' to create a new one.", "fail");
                         fail++;
                         tx.Commit();
                         return;

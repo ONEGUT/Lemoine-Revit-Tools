@@ -13,8 +13,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     ///     Apply() can read its editing buffer back out.
     ///   - Apply(): the global Apply button calls this. We push the editing
     ///     buffer into the singleton and save.
-    ///   - CreateLegendInRevit(): flushes the editing buffer then raises the
-    ///     Revit ExternalEvent that writes the legend into the active document.
+    ///
+    /// Legend creation / update is handled by ribbon buttons
+    /// (LegendCreatorCreateCommand / LegendCreatorUpdateCommand) which read the
+    /// saved singleton and raise App.LegendCreatorEvent on the Revit main thread.
     /// </summary>
     public static class LegendCreatorTabContent
     {
@@ -24,8 +26,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         {
             _builder = new LemoineLegendBuilder();
             _builder.LoadFrom(LegendCreatorSettings.Instance);
-            _builder.CreateRequested += (s, e) => CreateLegendInRevit();
-            _builder.UpdateRequested += (s, e) => UpdateLegendInRevit();
             return _builder;
         }
 
@@ -37,22 +37,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             s.Rows           = _builder.Rows;
             s.PreviewVisible = _builder.PreviewVisible;
             s.Save();
-        }
-
-        public static void CreateLegendInRevit()
-        {
-            Apply();
-            if (App.LegendCreatorEvent == null || App.LegendCreatorHandler == null) return;
-            App.LegendCreatorHandler.UpdateMode = false;
-            App.LegendCreatorEvent.Raise();
-        }
-
-        public static void UpdateLegendInRevit()
-        {
-            Apply();
-            if (App.LegendCreatorEvent == null || App.LegendCreatorHandler == null) return;
-            App.LegendCreatorHandler.UpdateMode = true;
-            App.LegendCreatorEvent.Raise();
         }
 
         public static void DiscardEdits()

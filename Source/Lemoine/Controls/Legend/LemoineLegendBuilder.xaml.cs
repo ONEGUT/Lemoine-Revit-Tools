@@ -34,10 +34,6 @@ namespace LemoineTools.Lemoine.Controls
     /// </summary>
     public partial class LemoineLegendBuilder : UserControl
     {
-        // ── Public events ──────────────────────────────────────────────────────
-        public event EventHandler? CreateRequested;
-        public event EventHandler? UpdateRequested;
-
         // ── Editing buffer ─────────────────────────────────────────────────────
         public LegendLayoutConfig    Layout         { get; private set; } = new LegendLayoutConfig();
         public List<LegendRowConfig> Rows           { get; private set; } = new List<LegendRowConfig>();
@@ -105,8 +101,6 @@ namespace LemoineTools.Lemoine.Controls
             _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
             _layoutBar.Changed            += (s, e) => OnEdited();
             _layoutBar.PreviewRequested   += (s, e) => TogglePreview();
-            _layoutBar.CreateRequested    += (s, e) => CreateRequested?.Invoke(this, EventArgs.Empty);
-            _layoutBar.UpdateRequested    += (s, e) => UpdateRequested?.Invoke(this, EventArgs.Empty);
             _layoutBar.TemplatesRequested += (s, e) => ShowLegendTemplatesPopup(s as UIElement ?? _layoutBar);
             Grid.SetRow(_layoutBar, 0);
             _root.Children.Add(_layoutBar);
