@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
+using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -101,7 +102,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             int blocks   = rows.SelectMany(r => r.Groups ?? new List<LegendGroupConfig>())
                                .Sum(g => g.Blocks?.Count ?? 0);
 
-            var grid = new Grid();
+            var grid = new WpfGrid();
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -147,8 +148,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 sp.Children.Add(valTb);
                 card.Child = sp;
 
-                Grid.SetRow(card, c.Row);
-                Grid.SetColumn(card, c.Col);
+                WpfGrid.SetRow(card, c.Row);
+                WpfGrid.SetColumn(card, c.Col);
                 grid.Children.Add(card);
             }
             outer.Children.Add(grid);
