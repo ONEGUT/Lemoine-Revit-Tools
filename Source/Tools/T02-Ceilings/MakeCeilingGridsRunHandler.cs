@@ -162,7 +162,7 @@ namespace LemoineTools.Tools.Ceilings
             foreach (Category cat in doc.Settings.Categories)
             {
                 if (cat.CategoryType != CategoryType.Model) continue;
-                if (!cat.AllowsVisibilityControl(view)) continue;
+                if (!cat.AllowsVisibilityControl[view]) continue;
                 bool keep = cat.Id.Value == (int)BuiltInCategory.OST_Ceilings;
                 try { view.SetCategoryHidden(cat.Id, !keep); } catch { }
             }
