@@ -207,7 +207,7 @@ namespace LemoineTools.Lemoine.Controls
                 VerticalAlignment = VerticalAlignment.Center,
             };
             tradePillChevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tradePillChevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            tradePillChevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             tradePillChevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
 
             tradePillInner.Children.Add(tradePillLabel);
@@ -304,6 +304,35 @@ namespace LemoineTools.Lemoine.Controls
                     BuildScopeRow();
                     BuildFilterList();
                 };
+
+                // Drag detection — drag from dropdown to add as new canvas group
+                var itemDragStart = new Point();
+                bool itemDragArmed = false;
+
+                item.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    itemDragArmed = true;
+                    itemDragStart = e.GetPosition(item);
+                };
+                item.PreviewMouseMove += (s, e) =>
+                {
+                    if (!itemDragArmed || e.LeftButton != MouseButtonState.Pressed) { itemDragArmed = false; return; }
+                    var pos = e.GetPosition(item);
+                    if (Math.Abs(pos.X - itemDragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(pos.Y - itemDragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    {
+                        itemDragArmed = false;
+                        popup.IsOpen = false;
+                        var payload = new LegendDragPayload
+                        {
+                            What          = LegendDragPayload.Kind.PaletteCategory,
+                            SourceTradeId = capturedId,
+                        };
+                        StartDrag(this, payload);
+                        e.Handled = true;
+                    }
+                };
+                item.PreviewMouseLeftButtonUp += (s, e) => itemDragArmed = false;
 
                 listPanel.Children.Add(item);
             }

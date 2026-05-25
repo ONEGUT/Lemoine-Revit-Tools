@@ -171,45 +171,31 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(del, 5);
             _root.Children.Add(del);
 
-            // ── Click-selection handler (fires before drag detection) ─────
+            // ── Click-selection + drag arming ─────────────────────────────
             _outer.PreviewMouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
                 bool ctrl  = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
                 bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
                 BlockClicked?.Invoke(Block.Id, ctrl, shift);
+                _mouseDown = true;
+                _dragStart = e.GetPosition(this);
                 // Do NOT set e.Handled — drag detection still needs the event
             };
-
-            // ── Drag-source wiring (whole row is grabbable) ───────────────
-            _outer.MouseLeftButtonDown += OnRowMouseDown;
-            _outer.MouseMove           += OnRowMouseMove;
-            _outer.MouseLeftButtonUp   += OnRowMouseUp;
-            _outer.MouseLeave          += (s, e) => _mouseDown = false;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Drag detection
-        // ─────────────────────────────────────────────────────────────────────
-        private void OnRowMouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
-            _mouseDown = true;
-            _dragStart = e.GetPosition(this);
-        }
-        private void OnRowMouseMove(object sender, MouseEventArgs e)
-        {
-            if (!_mouseDown) return;
-            var p = e.GetPosition(this);
-            if (Math.Abs(p.X - _dragStart.X) > 6 || Math.Abs(p.Y - _dragStart.Y) > 6)
+            _outer.PreviewMouseMove += (s, e) =>
             {
-                _mouseDown = false;
-                DragInitiated?.Invoke(this, e);
-            }
-        }
-        private void OnRowMouseUp(object sender, MouseButtonEventArgs e)
-        {
-            _mouseDown = false;
+                if (!_mouseDown || e.LeftButton != MouseButtonState.Pressed) { _mouseDown = false; return; }
+                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
+                var p = e.GetPosition(this);
+                if (Math.Abs(p.X - _dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(p.Y - _dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    _mouseDown = false;
+                    DragInitiated?.Invoke(this, e);
+                }
+            };
+            _outer.PreviewMouseLeftButtonUp += (s, e) => _mouseDown = false;
+            _outer.MouseLeave               += (s, e) => _mouseDown = false;
         }
 
         /// <summary>Don't start a drag if the user clicks an interactive child (button, textbox, etc.).</summary>

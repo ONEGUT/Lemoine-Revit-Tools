@@ -103,7 +103,6 @@ namespace LemoineTools.Lemoine.Controls
             _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
             _layoutBar.Changed            += (s, e) => OnEdited();
             _layoutBar.PreviewRequested   += (s, e) => TogglePreview();
-            _layoutBar.CreateRequested    += (s, e) => CreateRequested?.Invoke(this, e);
             _layoutBar.TemplatesRequested += (s, e) => ShowLegendTemplatesPopup(s as UIElement ?? _layoutBar);
             Grid.SetRow(_layoutBar, 0);
             _root.Children.Add(_layoutBar);
@@ -247,7 +246,7 @@ namespace LemoineTools.Lemoine.Controls
             var sizingBorder = new Border
             {
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding         = new Thickness(10, 8, 10, 8),
+                Padding         = new Thickness(10, 4, 10, 8),
             };
             sizingBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             DockPanel.SetDock(sizingBorder, Dock.Top);
@@ -274,20 +273,16 @@ namespace LemoineTools.Lemoine.Controls
             sizingGrid.Children.Add(swatchRow);
 
             // Row 1: FONT
-            var fontStep = new LemoineNumberStepper { Value = Layout.FontPt, MinValue = 7, MaxValue = 16, Step = 1 };
-            fontStep.ValueChanged += (s, v) => { Layout.FontPt = v; OnEdited(); };
             var fontInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            fontInner.Children.Add(fontStep);
+            fontInner.Children.Add(BuildInlineStepper(Layout.FontPt, 7, 16, 1, v => { Layout.FontPt = v; OnEdited(); }));
             fontInner.Children.Add(MakeSizingUnit("pt"));
             var fontRow = BuildSizingRow("FONT", fontInner);
             Grid.SetRow(fontRow, 1);
             sizingGrid.Children.Add(fontRow);
 
             // Row 2: GAP
-            var gapStep = new LemoineNumberStepper { Value = Layout.Gap, MinValue = 0, MaxValue = 20, Step = 1 };
-            gapStep.ValueChanged += (s, v) => { Layout.Gap = v; OnEdited(); };
             var gapInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            gapInner.Children.Add(gapStep);
+            gapInner.Children.Add(BuildInlineStepper(Layout.Gap, 0, 20, 1, v => { Layout.Gap = v; OnEdited(); }));
             gapInner.Children.Add(MakeSizingUnit("px"));
             var gapRow = BuildSizingRow("GAP", gapInner);
             Grid.SetRow(gapRow, 2);
@@ -309,19 +304,16 @@ namespace LemoineTools.Lemoine.Controls
 
         private StackPanel BuildSwatchSteppers()
         {
-            var wStep = new LemoineNumberStepper { Value = Layout.SwatchW, MinValue = 10, MaxValue = 48, Step = 2 };
-            wStep.ValueChanged += (s, v) => { Layout.SwatchW = v; OnEdited(); };
+            var wStep = BuildInlineStepper(Layout.SwatchW, 10, 48, 2, v => { Layout.SwatchW = v; OnEdited(); });
             var times = new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center };
             times.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             times.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             times.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            var hStep = new LemoineNumberStepper { Value = Layout.SwatchH, MinValue = 6, MaxValue = 28, Step = 1 };
-            hStep.ValueChanged += (s, v) => { Layout.SwatchH = v; OnEdited(); };
+            var hStep = BuildInlineStepper(Layout.SwatchH, 6, 28, 1, v => { Layout.SwatchH = v; OnEdited(); });
             var inner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             inner.Children.Add(wStep);
             inner.Children.Add(times);
             inner.Children.Add(hStep);
-            inner.Children.Add(MakeSizingUnit("px"));
             return inner;
         }
 
@@ -355,6 +347,87 @@ namespace LemoineTools.Lemoine.Controls
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             return tb;
+        }
+
+        private static Border BuildInlineStepper(int initialValue, int min, int max, int step, Action<int> onChange)
+        {
+            var outer = new Border
+            {
+                BorderThickness   = new Thickness(1),
+                CornerRadius      = new CornerRadius(4),
+                ClipToBounds      = true,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            outer.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var panel = new StackPanel { Orientation = Orientation.Horizontal };
+
+            Border MakeBtn(string text)
+            {
+                var b = new Border
+                {
+                    Padding           = new Thickness(7, 0, 7, 0),
+                    Cursor            = Cursors.Hand,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                };
+                b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                var tb = new TextBlock
+                {
+                    Text              = text,
+                    TextAlignment     = TextAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsHitTestVisible  = false,
+                };
+                tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                b.Child = tb;
+                b.MouseEnter += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                b.MouseLeave += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                return b;
+            }
+
+            var minus = MakeBtn("−");
+            var sepL  = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
+            sepL.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+
+            int current = initialValue;
+            var valueTb = new TextBlock
+            {
+                Text              = current.ToString(),
+                Width             = 28,
+                TextAlignment     = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            valueTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            valueTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            valueTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var sepR = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
+            sepR.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+
+            var plus = MakeBtn("+");
+
+            panel.Children.Add(minus);
+            panel.Children.Add(sepL);
+            panel.Children.Add(valueTb);
+            panel.Children.Add(sepR);
+            panel.Children.Add(plus);
+            outer.Child = panel;
+
+            minus.MouseLeftButtonUp += (s, e) =>
+            {
+                if (current > min) { current -= step; valueTb.Text = current.ToString(); onChange(current); }
+                e.Handled = true;
+            };
+            plus.MouseLeftButtonUp += (s, e) =>
+            {
+                if (current < max) { current += step; valueTb.Text = current.ToString(); onChange(current); }
+                e.Handled = true;
+            };
+
+            return outer;
         }
 
         // ─────────────────────────────────────────────────────────────────────
