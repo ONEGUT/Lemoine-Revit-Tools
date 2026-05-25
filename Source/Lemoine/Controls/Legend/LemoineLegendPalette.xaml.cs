@@ -220,6 +220,44 @@ namespace LemoineTools.Lemoine.Controls
                 OpenTradeDropdown(tradePill, trades);
             };
 
+            // When a specific trade is selected, the pill is also a drag source:
+            // drag it onto the canvas to add that trade's filters as a new group.
+            if (tradeActive)
+            {
+                tradePill.ToolTip = "Click to change trade  ·  Drag to add as new group";
+
+                var dragStart  = new Point();
+                bool dragArmed = false;
+
+                tradePill.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    dragArmed = true;
+                    dragStart = e.GetPosition(tradePill);
+                };
+                tradePill.PreviewMouseMove += (s, e) =>
+                {
+                    if (!dragArmed || e.LeftButton != MouseButtonState.Pressed)
+                    {
+                        dragArmed = false;
+                        return;
+                    }
+                    var pos = e.GetPosition(tradePill);
+                    if (Math.Abs(pos.X - dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(pos.Y - dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    {
+                        dragArmed = false;
+                        var payload = new LegendDragPayload
+                        {
+                            What          = LegendDragPayload.Kind.PaletteCategory,
+                            SourceTradeId = _scope,
+                        };
+                        StartDrag(tradePill, payload);
+                        e.Handled = true;
+                    }
+                };
+                tradePill.PreviewMouseLeftButtonUp += (s, e) => dragArmed = false;
+            }
+
             _scopeRow.Children.Add(tradePill);
         }
 
