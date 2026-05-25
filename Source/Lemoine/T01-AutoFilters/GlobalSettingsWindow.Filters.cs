@@ -719,7 +719,8 @@ namespace LemoineTools.Lemoine
             // ── Row content ───────────────────────────────────────────────────
             var outerRow = new Grid { AllowDrop = true };
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // dot
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name+sub
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // name+sub (auto — only as wide as text)
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // spacer
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // toggle
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // pencil
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // trash
@@ -804,12 +805,12 @@ namespace LemoineTools.Lemoine
             });
             toggle.Margin            = new Thickness(8, 0, 4, 0);
             toggle.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(toggle, 2);
+            Grid.SetColumn(toggle, 3);
             outerRow.Children.Add(toggle);
 
             // Pencil (move/copy)
             var pencilBtn = BuildMoveCopyButton(trade, rule);
-            Grid.SetColumn(pencilBtn, 3);
+            Grid.SetColumn(pencilBtn, 4);
             outerRow.Children.Add(pencilBtn);
 
             // Trash — deletes all selected rules when in multi-select
@@ -834,7 +835,7 @@ namespace LemoineTools.Lemoine
             });
             ((FrameworkElement)trashBtn).Margin            = new Thickness(2, 0, 0, 0);
             ((FrameworkElement)trashBtn).VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn((UIElement)trashBtn, 4);
+            Grid.SetColumn((UIElement)trashBtn, 5);
             outerRow.Children.Add((UIElement)trashBtn);
 
             rowBorder.Child = outerRow;
