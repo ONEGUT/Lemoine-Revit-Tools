@@ -174,7 +174,7 @@ namespace LemoineTools
                 ""));  // Segoe MDL2: Filter (funnel)
 
             filtersPanel.AddItem(Btn(
-                "LT_AutoFiltersLegend", "Filter\nLegend", "AutoFiltersLegendLaunchCommand",
+                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
                 "Generate a Legend view from the current Legend Creator settings.",
                 "\uE8FD"));  // Segoe MDL2: ColorSolid (color swatch)
 

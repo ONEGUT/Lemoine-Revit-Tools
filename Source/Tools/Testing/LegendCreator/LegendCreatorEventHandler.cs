@@ -37,6 +37,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
 
+        // Set by the step-flow launcher to pin which legend view is duplicated.
+        // Null → fall back to the first legend view found in the project.
+        public ElementId? TemplateLegendId { get; set; }
+
         public string GetName() => "LemoineTools.Tools.Testing.LegendCreator.LegendCreatorEventHandler";
 
         public void Execute(UIApplication app)
@@ -72,9 +76,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
 
             // ── Find existing legend view to duplicate ────────────────────────
-            View? existingLegend = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                .FirstOrDefault(v => v.ViewType == ViewType.Legend);
+            View? existingLegend = null;
+            if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
+                existingLegend = doc.GetElement(TemplateLegendId) as View;
+            if (existingLegend?.ViewType != ViewType.Legend)
+                existingLegend = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.Legend);
 
             if (existingLegend == null)
             {

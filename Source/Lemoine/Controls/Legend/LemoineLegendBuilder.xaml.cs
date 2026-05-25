@@ -95,9 +95,10 @@ namespace LemoineTools.Lemoine.Controls
             _root.ColumnDefinitions.Clear();
             _root.Children.Clear();
 
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                    // row 0: layout bar
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: main content
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                    // row 2: footer
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 0: layout bar
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 1: sizing bar
+            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 2: main content
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 3: footer
 
             // ── Row 0: Layout bar ──────────────────────────────────────────────
             _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
@@ -143,11 +144,18 @@ namespace LemoineTools.Lemoine.Controls
             Panel.SetZIndex(_previewOverlay, 10);
             mainGrid.Children.Add(_previewOverlay);
 
-            Grid.SetRow(mainGrid, 1);
+            // ── Row 1: Sizing bar ─────────────────────────────────────────────
+            var sizingBar = BuildSizingBar();
+            Grid.SetRow(sizingBar, 1);
+            _root.Children.Add(sizingBar);
+
+            Grid.SetRow(mainGrid, 2);
             _root.Children.Add(mainGrid);
 
-            // ── Row 2: Footer ──────────────────────────────────────────────────
-            _root.Children.Add(BuildFooter());
+            // ── Row 3: Footer ──────────────────────────────────────────────────
+            var footer = BuildFooter();
+            Grid.SetRow(footer, 3);
+            _root.Children.Add(footer);
 
             // ── Subscribe to filter saves so palette refreshes ─────────────────
             AutoFiltersSettings.Saved += OnFiltersSaved;
@@ -236,70 +244,79 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Right panel
+        // Sizing bar (full-width, row 1 of _root)
         // ─────────────────────────────────────────────────────────────────────
-        private DockPanel BuildRightPanel()
+        private UIElement BuildSizingBar()
         {
-            var dock = new DockPanel { LastChildFill = true };
-
-            // ── Top-pinned sizing section ──────────────────────────────────────
-            var sizingBorder = new Border
+            var border = new Border
             {
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding         = new Thickness(10, 4, 10, 8),
+                Padding         = new Thickness(10, 5, 10, 5),
             };
-            sizingBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            DockPanel.SetDock(sizingBorder, Dock.Top);
+            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var sizingStack = new StackPanel();
+            var panel = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
 
-            var sizingLabel = new TextBlock { Text = "SIZING" };
-            sizingLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            sizingLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            sizingLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            sizingLabel.Margin = new Thickness(0, 0, 0, 6);
-            sizingStack.Children.Add(sizingLabel);
+            var header = new TextBlock
+            {
+                Text              = "SIZING",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 16, 0),
+            };
+            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            panel.Children.Add(header);
 
-            var sizingGrid = new Grid { Margin = new Thickness(0, 0, 0, 0) };
-            sizingGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            sizingGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            sizingGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            // SWATCH
+            panel.Children.Add(MakeSizingBarLabel("SWATCH"));
+            panel.Children.Add(BuildSwatchSteppers());
 
-            // Row 0: SWATCH w × h
-            var swatchRow = BuildSizingRow(
-                "SWATCH",
-                BuildSwatchSteppers());
-            Grid.SetRow(swatchRow, 0);
-            sizingGrid.Children.Add(swatchRow);
+            // FONT
+            var fontWrap = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0) };
+            fontWrap.Children.Add(MakeSizingBarLabel("FONT"));
+            fontWrap.Children.Add(BuildInlineStepper(Layout.FontPt, 7, 16, 1, v => { Layout.FontPt = v; OnEdited(); }));
+            fontWrap.Children.Add(MakeSizingUnit("pt"));
+            panel.Children.Add(fontWrap);
 
-            // Row 1: FONT
-            var fontInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            fontInner.Children.Add(BuildInlineStepper(Layout.FontPt, 7, 16, 1, v => { Layout.FontPt = v; OnEdited(); }));
-            fontInner.Children.Add(MakeSizingUnit("pt"));
-            var fontRow = BuildSizingRow("FONT", fontInner);
-            Grid.SetRow(fontRow, 1);
-            sizingGrid.Children.Add(fontRow);
+            // GAP
+            var gapWrap = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0) };
+            gapWrap.Children.Add(MakeSizingBarLabel("GAP"));
+            gapWrap.Children.Add(BuildInlineStepper(Layout.Gap, 0, 20, 1, v => { Layout.Gap = v; OnEdited(); }));
+            gapWrap.Children.Add(MakeSizingUnit("px"));
+            panel.Children.Add(gapWrap);
 
-            // Row 2: GAP
-            var gapInner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            gapInner.Children.Add(BuildInlineStepper(Layout.Gap, 0, 20, 1, v => { Layout.Gap = v; OnEdited(); }));
-            gapInner.Children.Add(MakeSizingUnit("px"));
-            var gapRow = BuildSizingRow("GAP", gapInner);
-            Grid.SetRow(gapRow, 2);
-            sizingGrid.Children.Add(gapRow);
+            border.Child = panel;
+            return border;
+        }
 
-            sizingStack.Children.Add(sizingGrid);
-            sizingBorder.Child = sizingStack;
-            dock.Children.Add(sizingBorder);
+        private static TextBlock MakeSizingBarLabel(string text)
+        {
+            var tb = new TextBlock
+            {
+                Text              = text,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return tb;
+        }
 
-            // ── Last child (fills): right panel content (palette or bulk editor) ─
+        // ─────────────────────────────────────────────────────────────────────
+        // Right panel (palette / bulk editor only — sizing moved to top bar)
+        // ─────────────────────────────────────────────────────────────────────
+        private UIElement BuildRightPanel()
+        {
             _palette = new LemoineLegendPalette();
-
             _rightPanelContent = new Border { Padding = new Thickness(0) };
             _rightPanelContent.Child = _palette;
-            dock.Children.Add(_rightPanelContent);
-
-            return dock;
+            return _rightPanelContent;
         }
 
         private StackPanel BuildSwatchSteppers()
@@ -449,14 +466,6 @@ namespace LemoineTools.Lemoine.Controls
             };
             overlay.Children.Add(_preview);
 
-            // Close button (top-right)
-            var closeBtn = LemoineControlStyles.BuildButton("✕", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
-            closeBtn.VerticalAlignment   = VerticalAlignment.Top;
-            closeBtn.Margin              = new Thickness(0, 4, 4, 0);
-            closeBtn.Click += (s, e) => ClosePreview();
-            overlay.Children.Add(closeBtn);
-
             return overlay;
         }
 
@@ -480,7 +489,6 @@ namespace LemoineTools.Lemoine.Controls
             _countsTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
 
             border.Child = _countsTb;
-            Grid.SetRow(border, 2);
             return border;
         }
 
