@@ -516,9 +516,17 @@ namespace LemoineTools.Lemoine.Controls
         {
             e.Handled = true;
             var d = e.Data.GetData(DataFormats.StringFormat) as string;
-            if (d == null || !d.StartsWith("BLOCK:")) return;
-            if (_dragBlockRow != null) CommitBlockReorder();
-            else                       HandleCrossGroupBlockDrop(e);
+            if (d != null && d.StartsWith("BLOCK:"))
+            {
+                if (_dragBlockRow != null) CommitBlockReorder();
+                else                       HandleCrossGroupBlockDrop(e);
+                return;
+            }
+            // Palette item dropped on a block row — append to group
+            var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (payload != null && (payload.What == LegendDragPayload.Kind.PaletteFilter ||
+                                    payload.What == LegendDragPayload.Kind.PaletteCustom))
+                BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, Group.Blocks?.Count ?? 0));
         }
 
         private void HandleCrossGroupBlockDrop(DragEventArgs e)
