@@ -42,6 +42,12 @@ namespace LemoineTools.Lemoine.Controls
         private HashSet<string> _selectionContext = new HashSet<string>();
         private string? _activeContext;
 
+        // ── Block reorder drag state ─────────────────────────────────────────
+        private StackPanel?            _blockStack;
+        private LemoineLegendBlockRow? _dragBlockRow;
+        private string?                _dragBlockId;
+        private int                    _dragBlockOrigIdx;
+
         public LemoineLegendGroupCard()
         {
             InitializeComponent();
@@ -222,86 +228,195 @@ namespace LemoineTools.Lemoine.Controls
             }
             _body.Visibility = Visibility.Visible;
 
-            var stack = new StackPanel();
+            if (_dragBlockId != null) return; // don't rebuild during an active block drag
+
+            _blockStack = new StackPanel { AllowDrop = true, Background = Brushes.Transparent };
 
             int n = Group.Blocks?.Count ?? 0;
             if (n == 0)
             {
-                // Empty body — single big drop zone
-                stack.Children.Add(MakeBlockIntoDrop());
+                // Empty body — big drop zone for palette drops
+                _blockStack.Children.Add(MakeBlockIntoDrop());
             }
             else
             {
-                // Drop zone at top (before first block)
-                stack.Children.Add(MakeBlockDrop(0));
+                // Live-snap reorder on the panel (handles gaps between rows)
+                _blockStack.DragOver += OnBlockStackDragOver;
+                _blockStack.Drop     += OnBlockStackDrop;
 
                 for (int i = 0; i < n; i++)
                 {
-                    var row = new LemoineLegendBlockRow();
-                    int capturedI = i;
-                    row.SetSelectionContext(
-                        _selectionContext,
-                        _activeContext);
-                    row.Bind(Group.Blocks![i]);
+                    var block = Group.Blocks![i];
+                    var row   = new LemoineLegendBlockRow();
+                    row.Tag       = block.Id; // read by CommitBlockReorder
+                    row.AllowDrop = true;
+
+                    row.SetSelectionContext(_selectionContext, _activeContext);
+                    row.Bind(block);
                     row.BlockClicked += (bId, ctrl, shift) => BlockClickedOnCanvas?.Invoke(bId, ctrl, shift);
-                    bool bIsActive = Group.Blocks![capturedI].Id == _activeContext;
-                    bool bIsMulti  = !bIsActive && _selectionContext.Contains(Group.Blocks![capturedI].Id);
+
+                    bool bIsActive = block.Id == _activeContext;
+                    bool bIsMulti  = !bIsActive && _selectionContext.Contains(block.Id);
                     if (bIsActive || bIsMulti) row.SetSelectionState(bIsActive, bIsMulti);
-                    row.Changed         += (s, e) => { Changed?.Invoke(this, EventArgs.Empty); /* count refresh */ BuildHeader(ResolveTradeColor()); };
+
+                    row.Changed += (s, e) =>
+                    {
+                        Changed?.Invoke(this, EventArgs.Empty);
+                        BuildHeader(ResolveTradeColor());
+                    };
+
+                    var blockId = block.Id; // stable capture independent of list order
                     row.DeleteRequested += (s, e) =>
                     {
-                        Group.Blocks!.RemoveAt(capturedI);
+                        Group.Blocks!.RemoveAll(b => b.Id == blockId);
                         Changed?.Invoke(this, EventArgs.Empty);
                         Dispatcher.BeginInvoke(new System.Action(BuildAll),
                             System.Windows.Threading.DispatcherPriority.Background);
                     };
+
+                    // Reorder drag: simple string drag, no LegendDragSession
                     row.DragInitiated += (s, e) =>
                     {
-                        var payload = new LegendDragPayload
+                        if (_dragBlockRow != null) return; // already dragging
+                        _dragBlockRow     = row;
+                        _dragBlockId      = blockId;
+                        _dragBlockOrigIdx = _blockStack?.Children.IndexOf(row) ?? -1;
+                        if (_dragBlockOrigIdx < 0) { _dragBlockRow = null; _dragBlockId = null; return; }
+
+                        row.Opacity = 0.35;
+                        DragDrop.DoDragDrop(row,
+                            new DataObject(DataFormats.StringFormat, "BLOCK:" + blockId),
+                            DragDropEffects.Move);
+
+                        // Drop never fired (drag cancelled) — restore visual order
+                        if (_dragBlockRow != null && _blockStack != null)
                         {
-                            What    = LegendDragPayload.Kind.Block,
-                            BlockId = Group.Blocks![capturedI].Id,
-                            GroupId = Group.Id,
-                        };
-                        try
-                        {
-                            LegendDragSession.Begin(payload);
-                            DragDrop.DoDragDrop(row, new DataObject(LemoineLegendPalette.DragFormat, payload),
-                                DragDropEffects.Move | DragDropEffects.Copy);
+                            int cur = _blockStack.Children.IndexOf(row);
+                            if (cur >= 0 && cur != _dragBlockOrigIdx)
+                            {
+                                _blockStack.Children.RemoveAt(cur);
+                                _blockStack.Children.Insert(
+                                    Math.Min(_dragBlockOrigIdx, _blockStack.Children.Count), row);
+                            }
+                            row.Opacity   = 1.0;
+                            _dragBlockRow = null;
                         }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[GroupCard] block drag fail: {ex.Message}");
-                        }
-                        finally { LegendDragSession.End(); }
+                        _dragBlockId = null;
                     };
-                    stack.Children.Add(row);
-                    // Between / after this block
-                    stack.Children.Add(MakeBlockDrop(i + 1));
+
+                    // Live-snap when cursor is directly over this row
+                    row.DragOver += OnBlockRowDragOver;
+                    row.Drop     += OnBlockRowDrop;
+
+                    _blockStack.Children.Add(row);
                 }
             }
 
-            _body.Child = stack;
+            _body.Child = _blockStack;
+        }
+
+        // ── Block live-snap helpers ──────────────────────────────────────────
+        private void OnBlockStackDragOver(object sender, DragEventArgs e)
+        {
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d != null && d.StartsWith("BLOCK:"))
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+                LiveSnapBlock(e.GetPosition((IInputElement)sender));
+                return;
+            }
+            // Allow palette drops to pass through to the Drop handler
+            var pal = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (pal != null && (pal.What == LegendDragPayload.Kind.PaletteFilter ||
+                                pal.What == LegendDragPayload.Kind.PaletteCustom))
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+            }
+        }
+
+        private void OnBlockRowDragOver(object sender, DragEventArgs e)
+        {
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d == null || !d.StartsWith("BLOCK:")) return;
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            if (_blockStack == null) return;
+            LiveSnapBlock(e.GetPosition(_blockStack));
+        }
+
+        private void LiveSnapBlock(Point cursorInStack)
+        {
+            if (_dragBlockRow == null || _blockStack == null) return;
+            var children = _blockStack.Children;
+            int srcIdx = children.IndexOf(_dragBlockRow);
+            if (srcIdx < 0) return;
+            double curY      = cursorInStack.Y;
+            int    insertIdx = children.Count;
+            double runY      = 0;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] is FrameworkElement fe)
+                {
+                    if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                    runY += fe.ActualHeight + fe.Margin.Bottom;
+                }
+            }
+            insertIdx = Math.Max(0, Math.Min(insertIdx, children.Count - 1));
+            if (srcIdx < insertIdx) insertIdx--;
+            if (insertIdx == srcIdx) return;
+            children.RemoveAt(srcIdx);
+            children.Insert(insertIdx, _dragBlockRow);
+        }
+
+        private void OnBlockStackDrop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d != null && d.StartsWith("BLOCK:")) { CommitBlockReorder(); return; }
+            // Palette drop on non-empty group → append at end
+            var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (payload != null && (payload.What == LegendDragPayload.Kind.PaletteFilter ||
+                                    payload.What == LegendDragPayload.Kind.PaletteCustom))
+                BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, Group.Blocks?.Count ?? 0));
+        }
+
+        private void OnBlockRowDrop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d == null || !d.StartsWith("BLOCK:")) return;
+            CommitBlockReorder();
+        }
+
+        private void CommitBlockReorder()
+        {
+            if (_dragBlockRow != null) _dragBlockRow.Opacity = 1.0;
+            _dragBlockRow = null;
+            if (_blockStack == null) { _dragBlockId = null; return; }
+
+            var newOrderIds = _blockStack.Children
+                .OfType<FrameworkElement>()
+                .Select(el => el.Tag as string)
+                .Where(id => id != null)
+                .ToList();
+            var reordered = newOrderIds
+                .Select(id => Group.Blocks?.FirstOrDefault(b => b.Id == id))
+                .Where(b => b != null)
+                .ToList();
+            if (Group.Blocks != null && reordered.Count == Group.Blocks.Count)
+            {
+                Group.Blocks.Clear();
+                foreach (var b in reordered) Group.Blocks.Add(b!);
+            }
+            _dragBlockId = null;
+            Changed?.Invoke(this, EventArgs.Empty);
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // Drop targets
         // ─────────────────────────────────────────────────────────────────────
-        private Border MakeBlockDrop(int targetIndex)
-        {
-            var border = new Border
-            {
-                Height = 6,
-                Margin = new Thickness(0, 0, 0, 0),
-                CornerRadius = new CornerRadius(2),
-                Background = Brushes.Transparent,
-                AllowDrop = true,
-                SnapsToDevicePixels = true,
-            };
-            WireDropTarget(border, targetIndex, slim: true);
-            return border;
-        }
-
         private Border MakeBlockIntoDrop()
         {
             var border = new Border
