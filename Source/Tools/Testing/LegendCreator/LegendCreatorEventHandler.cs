@@ -60,18 +60,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ─────────────────────────────────────────────────────────────────────
         private void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            var settings = LegendCreatorSettings.Instance;
-            var layout   = settings.Layout ?? new LegendLayoutConfig();
-            var rows     = settings.Rows   ?? new List<LegendRowConfig>();
-
-            // Pixel → feet scaling
-            double swatchW = layout.SwatchW / BasePxW  * BaseSwatchW;
-            double swatchH = layout.SwatchH / BasePxH  * BaseSwatchH;
-            double gapFt   = layout.Gap     / BasePxGap * BaseGap;
-            double entryH  = swatchH + 0.05;                         // vertical step per block
-            double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
-
-            // ── Find existing legend view to duplicate ────────────────────────
+            // ── Guard: must have an existing legend view to duplicate ─────────
             View? existingLegend = new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
                 .FirstOrDefault(v => v.ViewType == ViewType.Legend);
@@ -82,6 +71,17 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 fail++;
                 return;
             }
+
+            var settings = LegendCreatorSettings.Instance;
+            var layout   = settings.Layout ?? new LegendLayoutConfig();
+            var rows     = settings.Rows   ?? new List<LegendRowConfig>();
+
+            // Pixel → feet scaling
+            double swatchW = layout.SwatchW / BasePxW  * BaseSwatchW;
+            double swatchH = layout.SwatchH / BasePxH  * BaseSwatchH;
+            double gapFt   = layout.Gap     / BasePxGap * BaseGap;
+            double entryH  = swatchH + 0.05;                         // vertical step per block
+            double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
 
             // ── Required project types ────────────────────────────────────────
             FilledRegionType? baseFRT = new FilteredElementCollector(doc)
