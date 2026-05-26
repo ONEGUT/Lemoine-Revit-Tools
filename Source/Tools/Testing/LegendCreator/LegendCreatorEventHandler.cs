@@ -17,11 +17,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     /// </summary>
     public sealed class LegendCreatorEventHandler : IExternalEventHandler
     {
-        private const double SwatchNudge = 0.06;
-        private const double HdrPad      = 0.40;   // header → first block spacing
-        private const double GroupGap    = 0.60;   // horizontal gap between columns
-        private const double RowGap      = 0.80;   // vertical gap between rows
-        private const double LabelWidth  = 4.00;   // TextNote width (feet)
+        private const double GroupGap   = 0.60;   // horizontal gap between columns
+        private const double RowGap     = 0.80;   // vertical gap between rows
+        private const double LabelWidth = 4.00;   // proven-safe TextNote width ceiling (feet)
 
         // ── Callbacks ───────────────────────────────────────────────────────
         public Action<string, string>?    PushLog    { get; set; }
@@ -42,6 +40,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         ///                   whose name matches Layout.Title), clearing and redrawing in place.
         /// </summary>
         public bool UpdateMode { get; set; }
+
+        // Per-role TextNoteType element IDs set by the step-flow launcher.
+        // Null → fall back to the first TextNoteType found in the document.
+        public ElementId? TitleTypeId       { get; set; }
+        public ElementId? SubtitleTypeId    { get; set; }
+        public ElementId? GroupHeaderTypeId { get; set; }
+        public ElementId? LabelTypeId       { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Testing.LegendCreator.LegendCreatorEventHandler";
 
@@ -75,7 +80,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             double swatchW = layout.SwatchW / 12.0 * scale;
             double swatchH = layout.SwatchH / 12.0 * scale;
             double gapFt   = layout.Gap     / 12.0 * scale;
-            double entryH  = swatchH + 0.05;                         // vertical step per block
             double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
 
             // ── Find template legend (Create mode only) ───────────────────────
@@ -257,46 +261,62 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     foreach (var id in templateElems) try { doc.Delete(id); } catch { }
                 }
 
-                var opts = new TextNoteOptions { TypeId = textTypeId };
-                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                // ── Resolve per-role TextNoteType IDs ────────────────────────
+                ElementId titleTid  = ResolveTypeId(TitleTypeId,       textTypeId);
+                ElementId subTid    = ResolveTypeId(SubtitleTypeId,    textTypeId);
+                ElementId headerTid = ResolveTypeId(GroupHeaderTypeId, textTypeId);
+                ElementId labelTid  = ResolveTypeId(LabelTypeId,       textTypeId);
 
-                // Model-space text height = paper-space pt size × scale / 72 / 12.
-                // Per-note width is estimated from character count so bounding boxes
-                // fit their content.  LabelWidth (4 ft) is the proven-safe upper bound
-                // that never triggers a Revit TextNote width validation error.
-                double fontHModel = layout.FontPt / 72.0 / 12.0 * scale;
+                // Model-space font heights from each TextNoteType's registered size.
+                // TEXT_SIZE is stored in Revit internal units (feet, paper-space).
+                // Multiply by view scale to get model-space height.
+                double titleFontH  = ModelFontH(doc, titleTid,  scale, layout.FontPt);
+                double subFontH    = ModelFontH(doc, subTid,    scale, layout.FontPt);
+                double headerFontH = ModelFontH(doc, headerTid, scale, layout.FontPt);
+                double labelFontH  = ModelFontH(doc, labelTid,  scale, layout.FontPt);
 
-                double NoteWidth(string text)
+                // entryH: vertical step per block — tall enough for both swatch and label.
+                double entryH = Math.Max(swatchH, labelFontH) + 0.05;
+                // hdrPad: space from group header top to first block center.
+                double hdrPad = headerFontH + 0.08;
+
+                // NoteWidth: estimate bounding-box width from character count.
+                // The aspect ratio 0.55 is conservative for most Revit fonts.
+                // LabelWidth is the proven-safe upper bound (never causes API error).
+                double NoteWidth(string text, double fontH)
                 {
                     if (string.IsNullOrEmpty(text)) return LabelWidth;
-                    double w = Math.Max(text.Length * fontHModel * 0.55, fontHModel * 2.0);
+                    double w = Math.Max(text.Length * fontH * 0.55, fontH * 2.0);
                     return Math.Min(w, LabelWidth);
                 }
 
-                void PlaceNote(ElementId viewId, XYZ origin, string text)
+                // PlaceNote: create with computed width; fall back to LabelWidth on error.
+                void PlaceNote(ElementId viewId, XYZ origin, string text, ElementId typeId, double fontH)
                 {
-                    double w = NoteWidth(text);
-                    try   { TextNote.Create(doc, viewId, origin, w,          text, opts); return; }
+                    if (string.IsNullOrEmpty(text)) return;
+                    var o = new TextNoteOptions { TypeId = typeId };
+                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                    double w = NoteWidth(text, fontH);
+                    try   { TextNote.Create(doc, viewId, origin, w,          text, o); return; }
                     catch { }
-                    try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, opts); }
+                    try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, o); }
                     catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
                 }
 
                 double cy = 0.0;
 
                 // ── Title / Subtitle above first row ──────────────────────────
+                // TextNote origin is the top-left corner; place so text sits above grid.
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Title.Trim());
-                    cy -= 0.50;
+                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Title.Trim(), titleTid, titleFontH);
+                    cy -= titleFontH + 0.08;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Subtitle.Trim());
-                    cy -= 0.35;
+                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Subtitle.Trim(), subTid, subFontH);
+                    cy -= subFontH + 0.12;
                 }
-                if (!string.IsNullOrWhiteSpace(layout.Title) || !string.IsNullOrWhiteSpace(layout.Subtitle))
-                    cy -= 0.25;
 
                 int totalBlocks = rows.Sum(r =>
                     r.Groups?.Sum(g => g.Blocks?.Count(b => b.Visible) ?? 0) ?? 0);
@@ -311,12 +331,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                     foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     {
-                        // Group header
+                        // Group header: origin at top-left (cy = top of header text).
                         string header = string.IsNullOrWhiteSpace(grp.Title)
                             ? "—" : grp.Title.ToUpperInvariant();
-                        PlaceNote(dv.Id, new XYZ(cx, cy, 0), header);
+                        PlaceNote(dv.Id, new XYZ(cx, cy, 0), header, headerTid, headerFontH);
 
-                        double blockY   = cy - HdrPad;
+                        // First block center is below the header by hdrPad.
+                        double blockY   = cy - hdrPad;
                         int    visCount = 0;
 
                         foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
@@ -327,11 +348,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                             string hex  = rgb.HasValue ? ToHex(rgb.Value) : "#888888";
                             string fill = blk.Fill ?? "solid";
 
-                            // Swatch
+                            // Swatch: centered at blockY (y0=top, y1=bottom).
                             if (rgb.HasValue && frtMap.TryGetValue((hex, fill), out ElementId frtId))
                             {
-                                double x0 = cx,           y0 = blockY - SwatchNudge;
-                                double x1 = cx + swatchW, y1 = blockY - SwatchNudge - swatchH;
+                                double x0 = cx,           y0 = blockY + swatchH / 2;
+                                double x1 = cx + swatchW, y1 = blockY - swatchH / 2;
                                 try
                                 {
                                     CurveLoop loop = MakeShapeLoop(blk.Kind ?? "square", x0, y0, x1, y1);
@@ -340,9 +361,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                 catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); }
                             }
 
-                            // Label
+                            // Label: origin shifted up so text is centered with the swatch.
+                            // TextNote origin = top-left, so Y = blockY + labelFontH/2.
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
-                            PlaceNote(dv.Id, new XYZ(cx + swatchW + gapFt, blockY, 0), label);
+                            PlaceNote(dv.Id,
+                                new XYZ(cx + swatchW + gapFt, blockY + labelFontH / 2, 0),
+                                label, labelTid, labelFontH);
 
                             blockY -= entryH;
                             visCount++;
@@ -351,7 +375,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                 pass, fail, skip);
                         }
 
-                        double groupDepth = visCount * entryH + HdrPad;
+                        double groupDepth = visCount * entryH + hdrPad;
                         if (groupDepth > rowMaxDepth) rowMaxDepth = groupDepth;
                         cx += colW;
                     }
@@ -486,6 +510,24 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             try { return el.Name; } catch { }
             try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch { }
             return null;
+        }
+
+        // Returns the candidate if it is a valid non-null ElementId, else the fallback.
+        private static ElementId ResolveTypeId(ElementId? candidate, ElementId fallback)
+            => (candidate != null && candidate != ElementId.InvalidElementId) ? candidate : fallback;
+
+        // Returns the model-space text height for a TextNoteType (feet).
+        // TEXT_SIZE is in Revit internal units (paper-space feet); multiply by view scale.
+        private static double ModelFontH(Document doc, ElementId typeId, double scale, int fallbackPt)
+        {
+            try
+            {
+                var tnt = doc.GetElement(typeId) as TextNoteType;
+                double h = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+                if (h > 0) return h * scale;
+            }
+            catch { }
+            return fallbackPt / 72.0 / 12.0 * scale;
         }
 
         private void Log(string t, string s)      => PushLog?.Invoke(t, s);

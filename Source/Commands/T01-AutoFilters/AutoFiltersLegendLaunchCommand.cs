@@ -63,8 +63,17 @@ namespace LemoineTools.Commands
                 return Result.Cancelled;
             }
 
+            // Query TextNoteTypes so the user can pick one per text role.
+            var textNoteTypes = new FilteredElementCollector(doc)
+                .OfClass(typeof(TextNoteType))
+                .Cast<TextNoteType>()
+                .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(t => (t.Id, t.Name))
+                .ToList();
+
             var vm = new LegendCreatorLaunchViewModel(
                 legendViews,
+                textNoteTypes,
                 App.LegendCreatorHandler!,
                 App.LegendCreatorEvent!);
 

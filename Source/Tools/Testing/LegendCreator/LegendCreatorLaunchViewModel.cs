@@ -12,8 +12,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 {
     /// <summary>
     /// ILemoineTool for the Legend Creation ribbon button step-flow.
-    /// Step S1 lets the user toggle Create/Update mode, pick a template or target
-    /// legend view, then displays a summary of the current Legend Creator settings.
+    /// S1: Create/Update mode + legend view picker + settings summary.
+    /// S2: Per-role text type selection (title / subtitle / group header / label).
     /// </summary>
     public sealed class LegendCreatorLaunchViewModel : ILemoineTool
     {
@@ -23,27 +23,47 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Template", required: false),
+            new StepDefinition("S1", "Legend View",  required: false),
+            new StepDefinition("S2", "Text Styles",  required: false),
         };
 
         public event EventHandler? ValidationChanged;
 
         // ── Data ──────────────────────────────────────────────────────────────
         private readonly List<(ElementId Id, string Name)> _legendViews;
+        private readonly List<(ElementId Id, string Name)> _textTypes;
         private readonly LegendCreatorEventHandler         _handler;
         private readonly Autodesk.Revit.UI.ExternalEvent   _event;
-        private bool _updateMode        = false;
-        private int  _createTemplateIdx = 0;   // Create mode: which view to duplicate as template
-        private int  _updateTargetIdx   = 0;   // Update mode: which view to overwrite
+
+        private bool     _updateMode        = false;
+        private int      _createTemplateIdx = 0;
+        private int      _updateTargetIdx   = 0;
+
+        // Per-role text type selections (null → handler uses its own default)
+        private ElementId? _titleTypeId;
+        private ElementId? _subtitleTypeId;
+        private ElementId? _groupHeaderTypeId;
+        private ElementId? _labelTypeId;
 
         public LegendCreatorLaunchViewModel(
             List<(ElementId Id, string Name)> legendViews,
+            List<(ElementId Id, string Name)> textTypes,
             LegendCreatorEventHandler         handler,
             Autodesk.Revit.UI.ExternalEvent   externalEvent)
         {
             _legendViews = legendViews;
+            _textTypes   = textTypes;
             _handler     = handler;
             _event       = externalEvent;
+
+            // Default all roles to the first text type in the list.
+            if (_textTypes.Count > 0)
+            {
+                _titleTypeId       = _textTypes[0].Id;
+                _subtitleTypeId    = _textTypes[0].Id;
+                _groupHeaderTypeId = _textTypes[0].Id;
+                _labelTypeId       = _textTypes[0].Id;
+            }
         }
 
         // ── CardDef struct ─────────────────────────────────────────────────────
@@ -60,11 +80,19 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ═══════════════════════════════════════════════════════════════════════
         public FrameworkElement? GetStepContent(string stepId)
         {
-            if (stepId != "S1") return null;
+            if (stepId == "S1") return BuildS1();
+            if (stepId == "S2") return BuildS2();
+            return null;
+        }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // S1 — Legend view picker + settings summary
+        // ─────────────────────────────────────────────────────────────────────
+        private FrameworkElement BuildS1()
+        {
             var outer = new StackPanel();
 
-            // ── Mode toggle ────────────────────────────────────────────────────
+            // ── Mode toggle ──────────────────────────────────────────────────
             var modeHeader = new TextBlock
             {
                 Text   = "MODE",
@@ -98,7 +126,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 Child           = MakePillText("Update Existing"),
             };
 
-            // Label and picker that change with mode
             var pickerLabel = new TextBlock { Margin = new Thickness(0, 0, 0, 4) };
             pickerLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             pickerLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -115,10 +142,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             foreach (var (_, name) in _legendViews)
                 picker.Items.Add(name);
 
-            // Apply current mode visuals and sync picker index
             void ApplyMode()
             {
-                pickerLabel.Text = _updateMode ? "LEGEND TO UPDATE" : "BASE LEGEND VIEW";
+                pickerLabel.Text     = _updateMode ? "LEGEND TO UPDATE" : "BASE LEGEND VIEW";
                 picker.SelectedIndex = _updateMode ? _updateTargetIdx : _createTemplateIdx;
 
                 if (!_updateMode)
@@ -159,9 +185,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             outer.Children.Add(pickerLabel);
             outer.Children.Add(picker);
 
-            ApplyMode(); // set initial state
+            ApplyMode();
 
-            // ── Current Legend Creator settings summary ────────────────────────
+            // ── Settings summary cards ────────────────────────────────────────
             var settings = LegendCreatorSettings.Instance;
             var layout   = settings.Layout ?? new LegendLayoutConfig();
             var rows     = settings.Rows   ?? new List<LegendRowConfig>();
@@ -224,6 +250,104 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return outer;
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // S2 — Text type picker (4 roles)
+        // ─────────────────────────────────────────────────────────────────────
+        private FrameworkElement BuildS2()
+        {
+            var outer = new StackPanel();
+
+            if (_textTypes.Count == 0)
+            {
+                var noTypes = new TextBlock { Text = "No TextNoteTypes found in project.", TextWrapping = TextWrapping.Wrap };
+                noTypes.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                noTypes.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                noTypes.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                outer.Children.Add(noTypes);
+                return outer;
+            }
+
+            // Section label
+            var sectionLbl = new TextBlock
+            {
+                Text   = "TEXT STYLES",
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+            sectionLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sectionLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            sectionLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(sectionLbl);
+
+            // 2-column grid: [Auto label | 8px gap | * picker]
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            AddTypeRow(grid, row: 0, label: "TITLE",        getIdx: () => IndexOf(_titleTypeId),       setId: id => _titleTypeId       = id);
+            AddTypeRow(grid, row: 1, label: "SUBTITLE",     getIdx: () => IndexOf(_subtitleTypeId),    setId: id => _subtitleTypeId    = id);
+            AddTypeRow(grid, row: 2, label: "GROUP HEADER", getIdx: () => IndexOf(_groupHeaderTypeId), setId: id => _groupHeaderTypeId = id);
+            AddTypeRow(grid, row: 3, label: "LABEL",        getIdx: () => IndexOf(_labelTypeId),       setId: id => _labelTypeId       = id);
+
+            outer.Children.Add(grid);
+            return outer;
+        }
+
+        private void AddTypeRow(
+            WpfGrid grid,
+            int     row,
+            string  label,
+            Func<int>            getIdx,
+            Action<ElementId?>   setId)
+        {
+            var lbl = new TextBlock
+            {
+                Text              = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, row == 0 ? 0 : 8, 0, 0),
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var combo = new ComboBox
+            {
+                IsEditable = false,
+                Margin     = new Thickness(0, row == 0 ? 0 : 8, 0, 0),
+            };
+            combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+
+            foreach (var (_, name) in _textTypes)
+                combo.Items.Add(name);
+
+            combo.SelectedIndex = Math.Max(0, getIdx());
+
+            combo.SelectionChanged += (s, e) =>
+            {
+                int idx = combo.SelectedIndex;
+                setId(idx >= 0 && idx < _textTypes.Count ? _textTypes[idx].Id : (ElementId?)null);
+            };
+
+            WpfGrid.SetRow(lbl,   row); WpfGrid.SetColumn(lbl,   0);
+            WpfGrid.SetRow(combo, row); WpfGrid.SetColumn(combo, 2);
+            grid.Children.Add(lbl);
+            grid.Children.Add(combo);
+        }
+
+        private int IndexOf(ElementId? id)
+        {
+            if (id == null) return 0;
+            for (int i = 0; i < _textTypes.Count; i++)
+                if (_textTypes[i].Id == id) return i;
+            return 0;
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
         // ═══════════════════════════════════════════════════════════════════════
@@ -231,10 +355,23 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         public string SummaryFor(string stepId)
         {
-            if (stepId != "S1") return "—";
-            int idx = _updateMode ? _updateTargetIdx : _createTemplateIdx;
-            if (idx < 0 || idx >= _legendViews.Count) return "—";
-            return (_updateMode ? "Update: " : "Template: ") + _legendViews[idx].Name;
+            if (stepId == "S1")
+            {
+                int idx = _updateMode ? _updateTargetIdx : _createTemplateIdx;
+                if (idx < 0 || idx >= _legendViews.Count) return "—";
+                return (_updateMode ? "Update: " : "Template: ") + _legendViews[idx].Name;
+            }
+            if (stepId == "S2")
+            {
+                string LookupName(ElementId? id)
+                {
+                    if (id == null) return "—";
+                    var t = _textTypes.FirstOrDefault(x => x.Id == id);
+                    return string.IsNullOrEmpty(t.Name) ? "—" : t.Name;
+                }
+                return $"Title: {LookupName(_titleTypeId)}  |  Label: {LookupName(_labelTypeId)}";
+            }
+            return "—";
         }
 
         public void Run(
@@ -258,6 +395,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         ? _legendViews[_createTemplateIdx].Id : null;
                 _handler.TargetLegendId   = null;
             }
+
+            _handler.TitleTypeId       = _titleTypeId;
+            _handler.SubtitleTypeId    = _subtitleTypeId;
+            _handler.GroupHeaderTypeId = _groupHeaderTypeId;
+            _handler.LabelTypeId       = _labelTypeId;
 
             _handler.PushLog    = pushLog;
             _handler.OnProgress = onProgress;
