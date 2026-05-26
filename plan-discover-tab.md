@@ -17,6 +17,7 @@ Add a **Discover** tab to `GlobalSettingsWindow` that scans selected Revit links
 | Color memory location | `%AppData%\LemoineTools\ColorMemory.xml` (XML, consistent with other settings) |
 | Duplicate detection | Flag results where a rule with the same name already exists in the matched trade |
 | Re-scan | Show everything; flag duplicates |
+| Scan By source | **Dynamic** — pre-scan the selected links + categories to discover which parameters actually have data; list updates whenever link/category selection changes |
 
 ---
 
@@ -94,15 +95,18 @@ public class DiscoveredRuleRow : INotifyPropertyChanged {
 
 ```csharp
 public class DiscoverViewModel : INotifyPropertyChanged {
-    public ObservableCollection<LinkEntry>          Links          { get; }
-    public List<CategoryGroupEntry>                 CategoryGroups { get; }  // static, hardcoded
-    public string                                   SelectedParameter { get; set; } // default "System Classification"
-    public ObservableCollection<DiscoveredRuleRow>  Results        { get; }
-    public bool                                     IsScanning     { get; set; }
-    public string                                   StatusText     { get; set; }
+    public ObservableCollection<LinkEntry>          Links               { get; }
+    public List<CategoryGroupEntry>                 CategoryGroups      { get; }  // static, hardcoded
+    public ObservableCollection<string>             AvailableParameters { get; }  // populated by pre-scan
+    public string?                                  SelectedParameter   { get; set; }
+    public ObservableCollection<DiscoveredRuleRow>  Results             { get; }
+    public bool                                     IsPreScanning       { get; set; }
+    public bool                                     IsScanning          { get; set; }
+    public string                                   StatusText          { get; set; }
 
     public void SetLinks(IEnumerable<(ElementId id, string label)> links) { ... }
-    public void SetResults(IEnumerable<DiscoveredRuleRow> rows) { ... }  // called by handler
+    public void SetAvailableParameters(IEnumerable<string> names) { ... }  // called by pre-scan handler
+    public void SetResults(IEnumerable<DiscoveredRuleRow> rows) { ... }    // called by main scan handler
     public void CommitSelected() { ... }  // adds rules to AutoFiltersSettings + saves ColorMemory
 }
 ```
@@ -134,16 +138,6 @@ public class DiscoverViewModel : INotifyPropertyChanged {
 
 These are grouped under: **MEP** (Ducts → Plumbing Fixtures), **Architectural** (Walls → Stairs), **Structural** (Structural Framing, Structural Columns), **Other** (Generic Models).
 
-**Scannable parameters:**
-
-```
-"System Classification"  → BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM
-"Type Name"              → element.Name (type element lookup)
-"Family Name"            → (FamilySymbol)typeEl).FamilyName
-"Level"                  → BuiltInParameter.FAMILY_LEVEL_PARAM
-"Comments"               → BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS
-```
-
 **`CommitSelected()` logic:**
 1. For each `DiscoveredRuleRow` where `IsIncluded == true`:
    - Find existing `FilterTradeConfig` in `AutoFiltersSettings.Instance.Trades` where `Label == row.TradeName`, or create one with a new 4-char hex ID.
@@ -158,39 +152,78 @@ These are grouped under: **MEP** (Ducts → Plumbing Fixtures), **Architectural*
 
 ### 3. `Source/Tools/T01-AutoFilters/DiscoverEventHandler.cs`
 
-`IExternalEventHandler`. Triggered when the user clicks Scan.
+Single `IExternalEventHandler` with two modes. One event registration in `App.cs` covers both phases.
 
-**Input (set on handler before Raise):**
 ```csharp
-public List<ElementId>         SelectedLinkIds       { get; set; }
-public List<BuiltInCategory>   SelectedCategories    { get; set; }
-public string                  ParameterName         { get; set; }
-public DiscoverViewModel       TargetVm              { get; set; }
+public enum DiscoverMode { PreScan, MainScan }
+
+public class DiscoverEventHandler : IExternalEventHandler
+{
+    public DiscoverMode            Mode               { get; set; }
+    public List<ElementId>         SelectedLinkIds    { get; set; }
+    public List<BuiltInCategory>   SelectedCategories { get; set; }
+    public string?                 ParameterName      { get; set; }  // MainScan only
+    public DiscoverViewModel       TargetVm           { get; set; }
+}
 ```
 
-**`Execute(UIApplication app)` logic:**
-1. Get `doc = app.ActiveUIDocument.Document`.
-2. For each `linkId`:
-   - `var li = doc.GetElement(linkId) as RevitLinkInstance;`
-   - `var linkedDoc = li?.GetLinkDocument();` — skip if null.
-   - `var tradeName = Path.GetFileNameWithoutExtension(linkedDoc.Title ?? li.Name);`
-3. For each `selectedCategory`:
-   - `new FilteredElementCollector(linkedDoc).OfCategory(category).WhereElementIsNotElementType()`
-   - For each element: read the parameter value using a helper `ReadParameterValue(Element el, string paramName, Document linkedDoc)`.
-   - Skip null/empty values.
-4. Group by `(linkId, tradeName, paramValue)` → count.
-5. For each group, build `DiscoveredRuleRow`:
-   - `ParameterValue = paramValue`
-   - `RuleName = paramValue`
-   - `HexColor = ColorMemory.Instance.TryGetColor(paramValue, out var h) ? h : NextAutoColor()`
-   - `ElementCount = group.Count`
-   - `IsDuplicate = AutoFiltersSettings.Instance.Trades.Any(t => t.Label == tradeName && t.Rules.Any(r => r.Name == paramValue))`
-   - `TradeName = tradeName`
-   - `LinkId = linkId`
-6. Sort by: tradeName asc, elementCount desc.
-7. Dispatch to UI: `TargetVm.Dispatcher.Invoke(() => TargetVm.SetResults(rows))`.
+---
 
-**Auto-colour picker:** Cycle through a curated 20-colour palette (distinct hues, readable on dark/light) in order of first encounter. Not random — deterministic based on insertion order so re-scans assign the same colour to the same value when ColorMemory has no entry.
+#### PreScan mode
+
+Triggered automatically (via 300 ms debounce on a `DispatcherTimer`) whenever the user changes link or category selection. Fires `App.DiscoverEvent.Raise()` with `Mode = PreScan`.
+
+**Execute logic:**
+1. For each selected link → get `linkedDoc`.
+2. For each selected category → `FilteredElementCollector(linkedDoc).OfCategory(cat).WhereElementIsNotElementType()`.
+3. Sample up to **200 elements per category per link** (take first 200 from collector, no full enumeration).
+4. For each sampled element, iterate `element.Parameters`:
+   - Include if: `StorageType == StorageType.String` AND value is non-empty AND `p.Definition.Name` is not in a blocklist of noisy system params (e.g. `"Image"`, `"Edited by"`, `"URL"`).
+5. Also always add two synthetic entries: `"Type Name"` and `"Family Name"` (derived, not a raw parameter — flagged so `ReadParameterValue` knows to use special lookup).
+6. Collect the union of all parameter names across all sampled elements. Sort alphabetically, with `"Type Name"` and `"Family Name"` pinned to the top.
+7. Dispatch: `TargetVm.SetAvailableParameters(names)`.
+8. If `TargetVm.SelectedParameter` is no longer in the new list, reset it to the first item.
+
+---
+
+#### MainScan mode
+
+Triggered when the user clicks **Scan**.
+
+**Execute logic:**
+1. For each selected link → `tradeName = Path.GetFileNameWithoutExtension(linkedDoc.Title ?? li.Name)`.
+2. For each selected category → full `FilteredElementCollector` (no sampling).
+3. For each element: `ReadParameterValue(el, ParameterName, linkedDoc)` — returns a string or null.
+4. Skip null/empty values.
+5. Group by `(tradeName, paramValue)` → count.
+6. For each group, build `DiscoveredRuleRow`:
+   - `HexColor`: `ColorMemory.Instance.TryGetColor(paramValue, out h) ? h : NextPaletteColor(paramValue)`
+   - `IsDuplicate`: check `AutoFiltersSettings.Instance.Trades` for a trade + rule name match
+7. Sort: tradeName A→Z, then elementCount desc.
+8. Dispatch: `TargetVm.SetResults(rows)`.
+
+---
+
+#### `ReadParameterValue` helper
+
+```csharp
+private static string? ReadParameterValue(Element el, string paramName, Document linkedDoc)
+{
+    if (paramName == "Type Name")
+        return (linkedDoc.GetElement(el.GetTypeId()) as ElementType)?.Name;
+    if (paramName == "Family Name")
+        return (linkedDoc.GetElement(el.GetTypeId()) as FamilySymbol)?.FamilyName;
+
+    var p = el.LookupParameter(paramName);
+    return p?.StorageType == StorageType.String ? p.AsString() : null;
+}
+```
+
+---
+
+#### Auto-colour palette
+
+Cycle through 20 distinct hues (readable on both dark/light themes) in insertion order. Deterministic — same value always gets the same palette slot on re-scan when not in ColorMemory.
 
 ---
 
@@ -201,28 +234,31 @@ Partial class of `GlobalSettingsWindow`. Single method: `BuildDiscoverContent()`
 **UI layout (all programmatic WPF, no XAML):**
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ SCAN SETUP (LemoineSectionCard-style)                        │
-│                                                              │
-│  Links to Scan              Categories        Parameter      │
-│  ─────────────────          ─────────────     ───────────    │
-│  ☑ MECH.rvt                 ▼ MEP             ● Sys. Class. │
-│  ☑ ARCH.rvt                   ☑ Ducts         ○ Type Name   │
-│  □  STRUCT.rvt                ☑ Pipes         ○ Family Name │
-│                               □ Cable Tray    ○ Level       │
-│                             ▶ Architectural   ○ Comments    │
-│                             ▶ Structural                    │
-│                                               [  Scan  ]    │
-├──────────────────────────────────────────────────────────────┤
-│ RESULTS  "23 values discovered"        [Add Selected Rules]  │
-│                                                              │
-│  ☑ [■] Supply Air          MECH   512   (auto: blue)        │
-│  ☑ [■] Return Air          MECH   248                       │
-│  □ [■] Exhaust             MECH    89                       │
-│  ☑ [■] Supply Air          ARCH     3   ⚠ duplicate         │
-│  ...                                                         │
-└──────────────────────────────────────────────────────────────┘
+┌─ Left panel 300px ─────────┬─ Right panel fills ──────────────────────────────┐
+│                             │                                                  │
+│  LINKS TO SCAN              │  CATEGORIES                        [▶ Scan]      │
+│  ─────────────────          │  ┌─[MEP]──[Architectural]──[Structural]──[Other]┐│
+│  ☑ MECH.rvt                 │  │ ☑ Ducts  ☑ Pipes  □ Cable Tray  □ Conduit  ││
+│  ☑ ARCH.rvt                 │  │ □ Mech Equip  □ Elec Equip  ...            ││
+│  □ STRUCT.rvt               │  └─────────────────────────────────────────────┘│
+│  (scrollable)               │                                                  │
+│                             │  RESULTS  23 values found  [☑ All] [Add 18 ▶]  │
+│  SCAN BY                    │  ─────────────────────────────────────────────── │
+│  ─────────────────          │   col:  [■] Name ─────────────── Trade   #  ⚠   │
+│  (populated after pre-scan) │  ─────────────────────────────────────────────── │
+│  ● Type Name          ←top  │  ☑ [■] Supply Air ___________  [MECH] 512       │
+│  ● Family Name        ←top  │  ☑ [■] Return Air ___________  [MECH] 248       │
+│  ○ System Classification    │  □ [■] Exhaust _______________  [MECH]  89       │
+│  ○ Comments                 │  ☑ [■] Supply Air ___________  [ARCH]   3   ⚠   │
+│  ○ Zone                     │  ...  (scrollable)                               │
+│  ○ Discipline               │                                                  │
+│    (dynamic list)           │                                                  │
+│                             │                                                  │
+│  [spinner while pre-scan]   │                                                  │
+└─────────────────────────────┴──────────────────────────────────────────────────┘
 ```
+
+**Scan By control:** `LemoineSingleSelect` populated dynamically. Shows `"Select links and categories first"` placeholder when `AvailableParameters` is empty. A small `[⟳]` spinner replaces the label text while `IsPreScanning == true`. Pre-scan fires automatically (300 ms debounce) whenever any link or category checkbox changes.
 
 **Results row detail:**
 - Checkbox (`CheckBox`)
@@ -242,7 +278,7 @@ Results are in a `ScrollViewer` > `StackPanel` (same pattern as filter rule list
 
 ### `Source/App.cs`
 
-Add after the Auto Filters suite section:
+One handler covers both PreScan and MainScan modes. Add after the Auto Filters suite section:
 
 ```csharp
 // ── Discover ──────────────────────────────────────────────────────────────
