@@ -42,7 +42,7 @@ namespace LemoineTools.Lemoine.Controls
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var closeX = LemoineControlStyles.BuildButton("✕", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            closeX.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
+            closeX.Click += (s, e) => { Result = null; Close(); };
             closeX.ToolTip = "Cancel";
 
             _toolbarBorder.BorderThickness = new Thickness(0);
@@ -61,14 +61,13 @@ namespace LemoineTools.Lemoine.Controls
 
             var cancelBtn = LemoineControlStyles.BuildButton("Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelBtn.Margin = new Thickness(0, 0, 6, 0);
-            cancelBtn.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
+            cancelBtn.Click += (s, e) => { Result = null; Close(); };
 
             var okBtn = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
             okBtn.Click += (s, e) =>
             {
                 Result = _panel.SelectedColor;
                 _panel.AddToRecent(_panel.SelectedColor);
-                DialogResult = true;
                 Close();
             };
 
@@ -98,9 +97,7 @@ namespace LemoineTools.Lemoine.Controls
                     resCopy.Add((key, owner.Resources[key]));
 
             Color? result = null;
-            // ⚠ exitWhenRequestedProcessed:false — frame exits only when we set Continue=false,
-            //   not when the WPF dispatcher has processed all pending items.
-            var frame = new DispatcherFrame(false);
+            var done = new ManualResetEventSlim(false);
 
             var thread = new Thread(() =>
             {
@@ -110,8 +107,8 @@ namespace LemoineTools.Lemoine.Controls
 
                 w.Closed += (s, e) =>
                 {
-                    result = w.Result;
-                    frame.Continue = false; // wake the calling dispatcher frame
+                    result = w.Result; // write before Set() — Set() acts as memory release fence
+                    done.Set();
                     Dispatcher.CurrentDispatcher.InvokeShutdown();
                 };
                 w.Show();
@@ -121,8 +118,9 @@ namespace LemoineTools.Lemoine.Controls
             thread.IsBackground = true;
             thread.Start();
 
-            // Pump the calling thread's WPF dispatcher — keeps GlobalSettingsWindow responsive.
-            Dispatcher.PushFrame(frame);
+            // Block until the color picker closes.  No nested dispatcher loop —
+            // avoids any interaction with Revit's message pump.
+            done.Wait(); // ⚠ caller's UI appears frozen while picker is open (acceptable for modal color pick)
             return result;
         }
 
