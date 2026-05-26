@@ -601,7 +601,7 @@ namespace LemoineTools.Lemoine.Controls
 
         private FrameworkElement BuildSetDropdownPanel()
         {
-            _setDropdownStack = new StackPanel { MinWidth = RightColWidth };
+            _setDropdownStack = new StackPanel();
 
             var panelBorder = new Border
             {
