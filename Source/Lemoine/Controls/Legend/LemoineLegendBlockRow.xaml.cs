@@ -96,7 +96,6 @@ namespace LemoineTools.Lemoine.Controls
             };
             colorSwatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             var colorBtn = MakeIconHostButton(colorSwatch, "Pick color");
-            colorBtn.VerticalAlignment = VerticalAlignment.Center;
             colorBtn.Click += (s, e) => OpenColorPickerInline(colorBtn, resolvedColor);
             Grid.SetColumn(colorBtn, 0);
             _root.Children.Add(colorBtn);
@@ -159,8 +158,7 @@ namespace LemoineTools.Lemoine.Controls
             var eyeBtn = MakeIconHostButton(
                 child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
                 tooltip: Block.Visible ? "Hide" : "Show");
-            eyeBtn.BorderThickness  = new Thickness(0); // no chip outline; eye is enough
-            eyeBtn.VerticalAlignment = VerticalAlignment.Center;
+            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
             eyeBtn.Click += (s, e) =>
             {
                 Block.Visible = !Block.Visible;
@@ -173,7 +171,6 @@ namespace LemoineTools.Lemoine.Controls
             // ── 5: Delete ──────────────────────────────────────────────────
             var del = MakeIconButton("✕", "Delete");
             del.SetResourceReference(Control.ForegroundProperty, "LemoineTextDim");
-            del.VerticalAlignment = VerticalAlignment.Center;
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
             Grid.SetColumn(del, 5);
             _root.Children.Add(del);

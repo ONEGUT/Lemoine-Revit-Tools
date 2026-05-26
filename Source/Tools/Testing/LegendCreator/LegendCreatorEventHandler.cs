@@ -361,11 +361,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                 catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); }
                             }
 
-                            // Label: origin shifted up so text is centered with the swatch.
-                            // TextNote origin = top-left, so Y = blockY + labelFontH/2.
+                            // Label: origin at blockY — Revit TextNote Y is the baseline,
+                            // so cap height sits above blockY, visually centered with swatch.
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
                             PlaceNote(dv.Id,
-                                new XYZ(cx + swatchW + gapFt, blockY + labelFontH / 2, 0),
+                                new XYZ(cx + swatchW + gapFt, blockY, 0),
                                 label, labelTid, labelFontH);
 
                             blockY -= entryH;
