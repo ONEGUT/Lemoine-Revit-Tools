@@ -350,9 +350,10 @@ namespace LemoineTools.Lemoine
                     {
                         bool isActive = t.Id == _fActiveTradeId;
 
-                        // Row grid: [dot+label (star)] [delete btn (auto)]
+                        // Row grid: [dot+label (star)] [dup btn (auto)] [delete btn (auto)]
                         var rowGrid = new Grid { Cursor = isActive ? Cursors.Arrow : Cursors.Hand };
                         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                         // Background goes on rowGrid so the highlight spans both columns (label + delete)
@@ -431,7 +432,62 @@ namespace LemoineTools.Lemoine
                         ((FrameworkElement)delBtn).Tag = "deleteBtn";
                         ((FrameworkElement)delBtn).Margin = new Thickness(0, 0, 6, 0);
                         ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
-                        Grid.SetColumn((UIElement)delBtn, 1);
+                        // Inline duplicate button (column 1, before delete)
+                        string dupId = t.Id;
+                        var dupIcon = new TextBlock
+                        {
+                            Text                = "",
+                            FontFamily          = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                            VerticalAlignment   = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            TextAlignment       = TextAlignment.Center,
+                            IsHitTestVisible    = false,
+                        };
+                        dupIcon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                        dupIcon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+                        var dupBtn = new Border
+                        {
+                            Cursor              = Cursors.Hand,
+                            Padding             = new Thickness(5, 5, 5, 5),
+                            BorderThickness     = new Thickness(1),
+                            CornerRadius        = new CornerRadius(3),
+                            VerticalAlignment   = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Background          = Brushes.Transparent,
+                            Margin              = new Thickness(0, 0, 4, 0),
+                            Tag                 = "deleteBtn",
+                            Child               = dupIcon,
+                        };
+                        dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        dupBtn.MouseEnter += (is2, ie) =>
+                            dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                        dupBtn.MouseLeave += (is2, ie) =>
+                            dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        dupBtn.MouseLeftButtonUp += (is2, ie) =>
+                        {
+                            ie.Handled = true;
+                            var orig = _filterTrades?.FirstOrDefault(x => x.Id == dupId);
+                            if (orig == null) return;
+                            var copies = AutoFiltersSettings.DeepCopy(new List<FilterTradeConfig> { orig });
+                            var copy   = copies[0];
+                            copy.Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3);
+                            copy.Label = orig.Label + " (copy)";
+                            int idx    = _filterTrades!.IndexOf(orig);
+                            _filterTrades.Insert(idx + 1, copy);
+                            _fActiveTradeId = copy.Id;
+                            _fActiveRuleId  = copy.Rules.FirstOrDefault()?.Id;
+                            popup.IsOpen    = false;
+                            FRefreshTradeSwitcher();
+                            FRefreshRuleList();
+                            FRefreshRuleEditor();
+                        };
+                        Grid.SetColumn(dupBtn, 1);
+                        rowGrid.Children.Add(dupBtn);
+
+                        Grid.SetColumn((UIElement)delBtn, 2);
                         rowGrid.Children.Add((UIElement)delBtn);
 
                         stack.Children.Add(rowGrid);
@@ -2187,72 +2243,16 @@ namespace LemoineTools.Lemoine
             swatchRow.Children.Add(hexLbl);
             panel.Children.Add(swatchRow);
 
-            // ── Inline collapsible LemoineColorPickerPanel ────────────────────
-            var pickerPanel = new LemoineColorPickerPanel
-            {
-                SelectedColor = HexToMediaColor(newTradeColor),
-            };
-
-            var pickerSep = new Border
-            {
-                Height = 1,
-                Margin = new Thickness(-14, 4, -14, 10),
-            };
-            pickerSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            var applyColorBtn  = LemoineControlStyles.BuildButton("Apply Color",
-                LemoineControlStyles.LemoineButtonVariant.Primary);
-            var cancelColorBtn = LemoineControlStyles.BuildButton("Cancel",
-                LemoineControlStyles.LemoineButtonVariant.Ghost);
-            cancelColorBtn.Margin = new Thickness(0, 0, 6, 0);
-
-            var pickerBtnRow = new StackPanel
-            {
-                Orientation         = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin              = new Thickness(0, 8, 0, 0),
-            };
-            pickerBtnRow.Children.Add(cancelColorBtn);
-            pickerBtnRow.Children.Add(applyColorBtn);
-
-            var pickerSection = new StackPanel
-            {
-                Visibility = Visibility.Collapsed,
-                Margin     = new Thickness(0, 0, 0, 10),
-            };
-            pickerSection.Children.Add(pickerSep);
-            pickerSection.Children.Add(pickerPanel);
-            pickerSection.Children.Add(pickerBtnRow);
-            panel.Children.Add(pickerSection);
-
-            // Swatch click: toggle picker open/closed
+            // Swatch click: open modal color picker
             swatch.MouseLeftButtonUp += (s, e) =>
             {
-                if (pickerSection.Visibility == Visibility.Visible)
+                var picked = LemoineColorPickerWindow.PickColor(this, HexToMediaColor(newTradeColor));
+                if (picked.HasValue)
                 {
-                    pickerSection.Visibility = Visibility.Collapsed;
+                    newTradeColor     = $"#{picked.Value.R:X2}{picked.Value.G:X2}{picked.Value.B:X2}";
+                    swatch.Background = new SolidColorBrush(picked.Value);
+                    hexLbl.Text       = newTradeColor;
                 }
-                else
-                {
-                    pickerPanel.SelectedColor = HexToMediaColor(newTradeColor);
-                    pickerSection.Visibility  = Visibility.Visible;
-                }
-            };
-
-            cancelColorBtn.Click += (s, e) =>
-            {
-                pickerSection.Visibility = Visibility.Collapsed;
-            };
-
-            applyColorBtn.Click += (s, e) =>
-            {
-                var c   = pickerPanel.SelectedColor;
-                string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-                newTradeColor      = hex;
-                swatch.Background  = new SolidColorBrush(c);
-                hexLbl.Text        = hex;
-                pickerPanel.AddToRecent(c);
-                pickerSection.Visibility = Visibility.Collapsed;
             };
 
             // ── Add Trade button ──────────────────────────────────────────────
