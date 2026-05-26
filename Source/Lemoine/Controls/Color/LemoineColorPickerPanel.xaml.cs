@@ -6,6 +6,7 @@ using System.Linq;
 using IOPath = System.IO.Path;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -89,6 +90,7 @@ namespace LemoineTools.Lemoine.Controls
         private Border?     _setDropdownPanel;
         private StackPanel? _setDropdownStack;
         private TextBox?    _newSetNameBox;
+        private Popup?      _removePopup;
         private bool        _internalUpdate;
 
         // ── Data state ────────────────────────────────────────────────────────
@@ -219,6 +221,10 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.RowDefinitions.Clear();
             _root.ColumnDefinitions.Clear();
+            _root.PreviewMouseDown += (s, e) =>
+            {
+                if (_removePopup?.IsOpen == true) _removePopup.IsOpen = false;
+            };
 
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                // 0 – left
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });              // 1 – gap
@@ -713,21 +719,12 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(_newSetNameBox, 0);
             entryRow.Children.Add(_newSetNameBox);
 
-            var confirmBorder = new Border
-            {
-                Padding      = new Thickness(8, 4, 8, 4),
-                CornerRadius = new CornerRadius(4),
-                Margin       = new Thickness(4, 0, 0, 0),
-                Cursor       = Cursors.Hand,
-            };
-            confirmBorder.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
-            var confirmTb = new TextBlock { Text = "Add" };
-            confirmTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            confirmTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            confirmTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            confirmBorder.Child = confirmTb;
-            Grid.SetColumn(confirmBorder, 1);
-            entryRow.Children.Add(confirmBorder);
+            var confirmBtn = LemoineControlStyles.BuildSmallButton(
+                "Add", LemoineControlStyles.LemoineButtonVariant.Primary);
+            confirmBtn.Margin           = new Thickness(4, 0, 0, 0);
+            confirmBtn.VerticalAlignment = VerticalAlignment.Stretch;
+            Grid.SetColumn(confirmBtn, 1);
+            entryRow.Children.Add(confirmBtn);
 
             Action confirmCreate = () =>
             {
@@ -743,7 +740,7 @@ namespace LemoineTools.Lemoine.Controls
                 _newSetNameBox?.Focus();
             };
 
-            confirmBorder.MouseLeftButtonUp += (s, e) => confirmCreate();
+            confirmBtn.Click += (s, e) => confirmCreate();
             _newSetNameBox.KeyDown += (s, e) =>
             {
                 if      (e.Key == Key.Enter)  { confirmCreate(); e.Handled = true; }
@@ -820,16 +817,44 @@ namespace LemoineTools.Lemoine.Controls
                     // Left-click: load this color into the picker
                     swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
 
-                    // Right-click: context menu to remove the slot (ContextMenu is Revit-safe)
-                    var removeItem = new MenuItem { Header = "Remove" };
-                    removeItem.Click += (ms, me) =>
+                    // Right-click: themed popup centered on the swatch (StaysOpen=true — Revit-safe)
+                    swatch.MouseRightButtonUp += (s, e) =>
                     {
-                        if (activeSet != null && activeSet.Colors.Count > slotIdx)
-                            activeSet.Colors[slotIdx] = null;
-                        SavePersisted();
-                        RefreshProjectGrid();
+                        if (_removePopup?.IsOpen == true) _removePopup.IsOpen = false;
+
+                        var removeBtn = LemoineControlStyles.BuildSmallButton(
+                            "Remove", LemoineControlStyles.LemoineButtonVariant.Danger);
+
+                        removeBtn.Click += (bs, be) =>
+                        {
+                            if (activeSet != null && activeSet.Colors.Count > slotIdx)
+                                activeSet.Colors[slotIdx] = null;
+                            SavePersisted();
+                            RefreshProjectGrid();
+                            if (_removePopup != null) _removePopup.IsOpen = false;
+                        };
+
+                        var popupBorder = new Border
+                        {
+                            Child           = removeBtn,
+                            BorderThickness = new Thickness(1),
+                            CornerRadius    = new CornerRadius(6),
+                            Padding         = new Thickness(6),
+                        };
+                        popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                        popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        _removePopup = new Popup // ⚠ StaysOpen=true intentional — avoids ComponentDispatcher hook
+                        {
+                            Child              = popupBorder,
+                            PlacementTarget    = (UIElement)s,
+                            Placement          = PlacementMode.Center,
+                            StaysOpen          = true,
+                            AllowsTransparency = true,
+                        };
+                        _removePopup.IsOpen = true;
+                        e.Handled = true;
                     };
-                    swatch.ContextMenu = new ContextMenu { Items = { removeItem } };
                 }
                 else
                 {
