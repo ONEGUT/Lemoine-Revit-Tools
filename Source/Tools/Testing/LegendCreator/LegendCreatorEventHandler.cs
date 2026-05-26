@@ -260,42 +260,39 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
 
-                // Derive safe TextNote width limits from the font size stored on the type.
-                // TEXT_SIZE is in Revit internal units (paper-space feet); multiply by view
-                // scale to get model-space feet.  The character aspect ratio ~0.6 converts
-                // text height → character width.
-                double minTNW = 0.10;
-                double maxTNW = 50.0;
-                try
-                {
-                    var tnt = doc.GetElement(textTypeId) as TextNoteType;
-                    double textHPaper = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)
-                                            ?.AsDouble() ?? (9.0 / 72.0 / 12.0);
-                    double charW = textHPaper * scale * 0.6; // model-feet per character
-                    minTNW = Math.Max(charW * 3,  0.01);     // ≥ 3 chars wide
-                    maxTNW = Math.Max(charW * 200, LabelWidth * 10); // generous upper bound
-                }
-                catch { }
+                // Model-space text height = paper-space pt size × scale / 72 / 12.
+                // Per-note width is estimated from character count so bounding boxes
+                // fit their content.  LabelWidth (4 ft) is the proven-safe upper bound
+                // that never triggers a Revit TextNote width validation error.
+                double fontHModel = layout.FontPt / 72.0 / 12.0 * scale;
 
-                // Title/subtitle: span the full legend content width.
-                int    maxGroupsInRow = rows.Count > 0 ? rows.Max(r => r.Groups?.Count ?? 0) : 1;
-                double tnTitle  = Math.Min(Math.Max(maxGroupsInRow * colW, minTNW), maxTNW);
-                // Labels and headers: clamp to the derived valid range.
-                double tnNarrow = Math.Min(Math.Max(LabelWidth, minTNW), maxTNW);
+                double NoteWidth(string text)
+                {
+                    if (string.IsNullOrEmpty(text)) return LabelWidth;
+                    double w = Math.Max(text.Length * fontHModel * 0.55, fontHModel * 2.0);
+                    return Math.Min(w, LabelWidth);
+                }
+
+                void PlaceNote(ElementId viewId, XYZ origin, string text)
+                {
+                    double w = NoteWidth(text);
+                    try   { TextNote.Create(doc, viewId, origin, w,          text, opts); return; }
+                    catch { }
+                    try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, opts); }
+                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
+                }
 
                 double cy = 0.0;
 
                 // ── Title / Subtitle above first row ──────────────────────────
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnTitle, layout.Title.Trim(), opts); }
-                    catch (Exception ex) { logMsgs.Add($"Title note: {ex.Message}"); }
+                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Title.Trim());
                     cy -= 0.50;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    try { TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), tnTitle, layout.Subtitle.Trim(), opts); }
-                    catch (Exception ex) { logMsgs.Add($"Subtitle note: {ex.Message}"); }
+                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Subtitle.Trim());
                     cy -= 0.35;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Title) || !string.IsNullOrWhiteSpace(layout.Subtitle))
@@ -317,8 +314,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         // Group header
                         string header = string.IsNullOrWhiteSpace(grp.Title)
                             ? "—" : grp.Title.ToUpperInvariant();
-                        try { TextNote.Create(doc, dv.Id, new XYZ(cx, cy, 0), tnNarrow, header, opts); }
-                        catch (Exception ex) { logMsgs.Add($"Header note '{header}': {ex.Message}"); }
+                        PlaceNote(dv.Id, new XYZ(cx, cy, 0), header);
 
                         double blockY   = cy - HdrPad;
                         int    visCount = 0;
@@ -346,12 +342,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                             // Label
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
-                            try
-                            {
-                                TextNote.Create(doc, dv.Id,
-                                    new XYZ(cx + swatchW + gapFt, blockY, 0), tnNarrow, label, opts);
-                            }
-                            catch (Exception ex) { logMsgs.Add($"Label note '{label}': {ex.Message}"); }
+                            PlaceNote(dv.Id, new XYZ(cx + swatchW + gapFt, blockY, 0), label);
 
                             blockY -= entryH;
                             visCount++;
