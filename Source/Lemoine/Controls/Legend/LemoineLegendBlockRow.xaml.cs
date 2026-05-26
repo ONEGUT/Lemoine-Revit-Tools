@@ -81,20 +81,25 @@ namespace LemoineTools.Lemoine.Controls
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 eye
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 delete
 
-            // ── 0: Shape + color picker (single popup) ─────────────────────
+            // ── 0: Color swatch — click to open inline color picker ────────
             var resolvedColor = ResolveColor();
-            var shapePreview = new LemoineSwatchGlyph
+            var colorSwatch = new Border
             {
-                Kind        = Block.Kind ?? "square",
-                Fill        = Block.Fill ?? "solid",
-                SwatchColor = resolvedColor,
-                GlyphWidth  = 22, GlyphHeight = 14,
-                Margin      = new Thickness(2, 0, 2, 0),
+                Width               = 22,
+                Height              = 14,
+                CornerRadius        = new CornerRadius(2),
+                BorderThickness     = new Thickness(1),
+                Background          = new SolidColorBrush(resolvedColor),
+                SnapsToDevicePixels = true,
+                Margin              = new Thickness(2, 0, 2, 0),
+                VerticalAlignment   = VerticalAlignment.Center,
             };
-            var shapeBtn = MakeIconHostButton(shapePreview, "Pick shape, fill, and color");
-            shapeBtn.Click += (s, e) => OpenShapePopup(shapeBtn, resolvedColor);
-            Grid.SetColumn(shapeBtn, 0);
-            _root.Children.Add(shapeBtn);
+            colorSwatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            var colorBtn = MakeIconHostButton(colorSwatch, "Pick color");
+            colorBtn.VerticalAlignment = VerticalAlignment.Center;
+            colorBtn.Click += (s, e) => OpenColorPickerInline(colorBtn, resolvedColor);
+            Grid.SetColumn(colorBtn, 0);
+            _root.Children.Add(colorBtn);
 
             // ── 1: Name (inline edit) ──────────────────────────────────────
             var name = new LemoineInlineEdit
@@ -154,7 +159,8 @@ namespace LemoineTools.Lemoine.Controls
             var eyeBtn = MakeIconHostButton(
                 child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
                 tooltip: Block.Visible ? "Hide" : "Show");
-            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
+            eyeBtn.BorderThickness  = new Thickness(0); // no chip outline; eye is enough
+            eyeBtn.VerticalAlignment = VerticalAlignment.Center;
             eyeBtn.Click += (s, e) =>
             {
                 Block.Visible = !Block.Visible;
@@ -167,6 +173,7 @@ namespace LemoineTools.Lemoine.Controls
             // ── 5: Delete ──────────────────────────────────────────────────
             var del = MakeIconButton("✕", "Delete");
             del.SetResourceReference(Control.ForegroundProperty, "LemoineTextDim");
+            del.VerticalAlignment = VerticalAlignment.Center;
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
             Grid.SetColumn(del, 5);
             _root.Children.Add(del);
@@ -210,55 +217,66 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Color picker invocation
+        // Inline color picker (LemoineColorPickerPanel inside a Popup)
         // ─────────────────────────────────────────────────────────────────────
-        private void OpenColorPicker(Color initial)
+        private void OpenColorPickerInline(FrameworkElement anchor, Color initial)
         {
-            var owner = Window.GetWindow(this);
-            var picked = LemoineColorPickerWindow.PickColor(owner, initial);
-            if (picked == null) return;
-            var c = picked.Value;
-            Block.Color = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-            Block.ColorOverride = true;
-            Changed?.Invoke(this, EventArgs.Empty);
-            BuildAll();
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Shape popup
-        // ─────────────────────────────────────────────────────────────────────
-        private void OpenShapePopup(FrameworkElement anchor, Color resolvedColor)
-        {
-            var picker = new LemoineSwatchPicker
+            var container = new Border
             {
-                Kind = Block.Kind ?? "square",
-                Fill = Block.Fill ?? "solid",
-                SwatchColor = resolvedColor,
-                Title = "BLOCK",
-                AllowColorPick = true,
+                Padding         = new Thickness(12),
+                BorderThickness = new Thickness(1),
             };
+            container.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            container.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            // Copy window resources into the container so SetResourceReference
+            // calls inside LemoineColorPickerPanel resolve when Loaded fires.
+            var win = Window.GetWindow(this);
+            if (win != null)
+                foreach (var key in win.Resources.Keys)
+                    container.Resources[key] = win.Resources[key];
+
+            var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
+
+            var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
+            cancelBtn.Margin = new Thickness(0, 0, 6, 0);
+
+            var btnRow = new StackPanel
+            {
+                Orientation         = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin              = new Thickness(0, 8, 0, 0),
+            };
+            btnRow.Children.Add(cancelBtn);
+            btnRow.Children.Add(applyBtn);
+
+            var content = new StackPanel();
+            content.Children.Add(pickerPanel);
+            content.Children.Add(btnRow);
+            container.Child = content;
+
             var popup = new Popup
             {
                 PlacementTarget    = anchor,
                 Placement          = PlacementMode.Bottom,
                 StaysOpen          = false,
                 AllowsTransparency = false,
-                Child              = picker,
+                Child              = container,
             };
-            picker.SelectionChanged += (s, args) =>
+
+            applyBtn.Click += (s, e) =>
             {
-                Block.Kind = args.Kind;
-                Block.Fill = args.Fill;
+                var c = pickerPanel.SelectedColor;
+                Block.Color         = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                Block.ColorOverride = true;
+                pickerPanel.AddToRecent(c);
+                popup.IsOpen = false;
                 Changed?.Invoke(this, EventArgs.Empty);
                 BuildAll();
-                popup.IsOpen = false;
             };
-            picker.ColorRequested += (s, args) =>
-            {
-                // Close the popup first so the modal color picker takes focus.
-                popup.IsOpen = false;
-                OpenColorPicker(resolvedColor);
-            };
+            cancelBtn.Click += (s, e) => popup.IsOpen = false;
+
             popup.IsOpen = true;
         }
 

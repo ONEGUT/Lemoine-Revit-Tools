@@ -1031,65 +1031,6 @@ namespace LemoineTools.Lemoine.Controls
             // Get all selected blocks for reading current state
             var selectedBlocks = AllSelectedBlocks().ToList();
 
-            // SHAPE — swatch picker button
-            {
-                string firstKind = selectedBlocks.FirstOrDefault()?.Kind ?? "square";
-                string firstFill = selectedBlocks.FirstOrDefault()?.Fill ?? "solid";
-                var shapeRow = new StackPanel
-                {
-                    Orientation       = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin            = new Thickness(0, 3, 0, 3),
-                };
-                var shapeLabel = MakeBulkRowLabel("SHAPE");
-                var shapeBtn   = new Button
-                {
-                    Content         = "▣  " + firstKind + " / " + firstFill,
-                    Padding         = new Thickness(8, 3, 8, 3),
-                    Cursor          = Cursors.Hand,
-                    BorderThickness = new Thickness(1),
-                    FocusVisualStyle = null,
-                };
-                shapeBtn.SetResourceReference(Control.ForegroundProperty,   "LemoineText");
-                shapeBtn.SetResourceReference(Control.FontFamilyProperty,    "LemoineMonoFont");
-                shapeBtn.SetResourceReference(Control.FontSizeProperty,      "LemoineFS_SM");
-                shapeBtn.SetResourceReference(Control.BackgroundProperty,    "LemoineRaised");
-                shapeBtn.SetResourceReference(Control.BorderBrushProperty,   "LemoineBorder");
-                shapeBtn.Template = LemoineControlStyles.BuildFlatButtonTemplate();
-                shapeBtn.Click += (s, e) =>
-                {
-                    var picker = new LemoineSwatchPicker
-                    {
-                        Kind  = firstKind,
-                        Fill  = firstFill,
-                        Title = "BATCH",
-                    };
-                    var popup = new Popup
-                    {
-                        PlacementTarget    = shapeBtn,
-                        Placement          = PlacementMode.Bottom,
-                        StaysOpen          = false,
-                        AllowsTransparency = true,
-                        PopupAnimation     = PopupAnimation.Fade,
-                        Child              = picker,
-                    };
-                    picker.SelectionChanged += (ps, args) =>
-                    {
-                        foreach (var b in AllSelectedBlocks())
-                        {
-                            b.Kind = args.Kind;
-                            b.Fill = args.Fill;
-                        }
-                        popup.IsOpen = false;
-                        OnEdited();
-                    };
-                    popup.IsOpen = true;
-                };
-                shapeRow.Children.Add(shapeLabel);
-                shapeRow.Children.Add(shapeBtn);
-                stack.Children.Add(shapeRow);
-            }
-
             // COLOR
             {
                 string firstColor = selectedBlocks.FirstOrDefault()?.Color ?? "#888888";
@@ -1099,36 +1040,87 @@ namespace LemoineTools.Lemoine.Controls
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin            = new Thickness(0, 3, 0, 3),
                 };
-                var colorLabel = MakeBulkRowLabel("COLOR");
+                var colorLabel   = MakeBulkRowLabel("COLOR");
                 var swatchBorder = new Border
                 {
-                    Width           = 22,
-                    Height          = 14,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(2),
-                    Background      = new SolidColorBrush(BrushHelper.ColorFromHex(firstColor, LemoineTheme.FallbackGrey)),
-                    Cursor          = Cursors.Hand,
-                    Margin          = new Thickness(4, 0, 0, 0),
+                    Width               = 22,
+                    Height              = 14,
+                    BorderThickness     = new Thickness(1),
+                    CornerRadius        = new CornerRadius(2),
+                    Background          = new SolidColorBrush(BrushHelper.ColorFromHex(firstColor, LemoineTheme.FallbackGrey)),
+                    Cursor              = Cursors.Hand,
+                    Margin              = new Thickness(4, 0, 0, 0),
+                    VerticalAlignment   = VerticalAlignment.Center,
                 };
                 swatchBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 swatchBorder.MouseLeftButtonUp += (s, e) =>
                 {
-                    var win     = Window.GetWindow(this);
                     var initial = BrushHelper.ColorFromHex(
                         AllSelectedBlocks().FirstOrDefault()?.Color ?? "#888888",
                         LemoineTheme.FallbackGrey);
-                    var picked = LemoineColorPickerWindow.PickColor(win, initial);
-                    if (picked.HasValue)
+
+                    // Inline color picker popup — no blocking wait on main thread.
+                    var container = new Border
                     {
-                        string hex = $"#{picked.Value.R:X2}{picked.Value.G:X2}{picked.Value.B:X2}";
+                        Padding         = new Thickness(12),
+                        BorderThickness = new Thickness(1),
+                    };
+                    container.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                    container.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                    // Copy window resources before creating the panel so
+                    // SetResourceReference calls inside it resolve on Loaded.
+                    var win = Window.GetWindow(this);
+                    if (win != null)
+                        foreach (var key in win.Resources.Keys)
+                            container.Resources[key] = win.Resources[key];
+
+                    var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
+
+                    var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
+                    var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    cancelBtn.Margin = new Thickness(0, 0, 6, 0);
+
+                    var btnRow = new StackPanel
+                    {
+                        Orientation         = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Margin              = new Thickness(0, 8, 0, 0),
+                    };
+                    btnRow.Children.Add(cancelBtn);
+                    btnRow.Children.Add(applyBtn);
+
+                    var content = new StackPanel();
+                    content.Children.Add(pickerPanel);
+                    content.Children.Add(btnRow);
+                    container.Child = content;
+
+                    var popup = new Popup
+                    {
+                        PlacementTarget    = swatchBorder,
+                        Placement          = PlacementMode.Bottom,
+                        StaysOpen          = false,
+                        AllowsTransparency = false,
+                        Child              = container,
+                    };
+
+                    applyBtn.Click += (as2, ae) =>
+                    {
+                        var c   = pickerPanel.SelectedColor;
+                        string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                         foreach (var b in AllSelectedBlocks())
                         {
                             b.Color         = hex;
                             b.ColorOverride = true;
                         }
-                        swatchBorder.Background = new SolidColorBrush(picked.Value);
+                        pickerPanel.AddToRecent(c);
+                        swatchBorder.Background = new SolidColorBrush(c);
+                        popup.IsOpen = false;
                         OnEdited();
-                    }
+                    };
+                    cancelBtn.Click += (cs2, ce) => popup.IsOpen = false;
+
+                    popup.IsOpen = true;
                 };
                 colorRow.Children.Add(colorLabel);
                 colorRow.Children.Add(swatchBorder);
