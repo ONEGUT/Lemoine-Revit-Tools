@@ -40,10 +40,24 @@ namespace LemoineTools.Lemoine
             if (_fActiveRuleId == null || activeTrade?.Rules.All(r => r.Id != _fActiveRuleId) == true)
                 _fActiveRuleId = activeTrade?.Rules.FirstOrDefault()?.Id;
 
-            // ── Root: two-column split ────────────────────────────────────────
+            // ── Root: three-column split (left | splitter | right) ───────────
             var root = new Grid();
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280), MinWidth = 280 });
+
+            var splitter = new GridSplitter
+            {
+                Width               = 5,
+                VerticalAlignment   = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ResizeDirection     = GridResizeDirection.Columns,
+                ResizeBehavior      = GridResizeBehavior.PreviousAndNext,
+                Background          = Brushes.Transparent,
+                Cursor              = Cursors.SizeWE,
+            };
+            Grid.SetColumn(splitter, 1);
+            root.Children.Add(splitter);
 
             // ── Left panel ───────────────────────────────────────────────────
             var leftDock = new DockPanel { LastChildFill = true };
@@ -86,12 +100,68 @@ namespace LemoineTools.Lemoine
             leftDock.Children.Add(addRuleOuter);
 
             // Rule list (fills remaining)
-            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0) };
+            // Background = Transparent (not null) so inter-row gaps are hit-testable during drag-drop.
+            _fRuleListPanel = new StackPanel { Margin = new Thickness(6, 6, 6, 0), AllowDrop = true, Background = Brushes.Transparent };
+
+            // Handle drops that land in the gaps between pills (not on any rowBorder).
+            _fRuleListPanel.DragOver += (s, e) =>
+            {
+                if (!(e.Data.GetData(DataFormats.StringFormat) is string d) || !d.StartsWith("RULE:")) return;
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+                if (_dragSourceBorder == null) return;
+                var children = _fRuleListPanel.Children;
+                int srcIdx = children.IndexOf(_dragSourceBorder);
+                if (srcIdx < 0) return;
+                // Find the insert position from the cursor Y within the panel
+                double curY = e.GetPosition(_fRuleListPanel).Y;
+                int insertIdx = children.Count;
+                double runY = 0;
+                for (int i = 0; i < children.Count; i++)
+                {
+                    if (children[i] is FrameworkElement fe)
+                    {
+                        if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                        runY += fe.ActualHeight + fe.Margin.Bottom;
+                    }
+                }
+                insertIdx = Math.Max(0, Math.Min(insertIdx, children.Count - 1));
+                if (srcIdx < insertIdx) insertIdx--;
+                if (insertIdx == srcIdx) return;
+                children.RemoveAt(srcIdx);
+                children.Insert(insertIdx, _dragSourceBorder);
+            };
+            _fRuleListPanel.Drop += (s, e) =>
+            {
+                e.Handled = true;
+                if (!(e.Data.GetData(DataFormats.StringFormat) is string srcData) || !srcData.StartsWith("RULE:")) return;
+                var activeTrade = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
+                if (activeTrade == null) return;
+                var newOrderIds = _fRuleListPanel.Children
+                    .OfType<FrameworkElement>()
+                    .Select(el => el.Tag as string)
+                    .Where(id => id != null)
+                    .ToList();
+                var reordered = newOrderIds
+                    .Select(id => activeTrade.Rules.FirstOrDefault(r => r.Id == id))
+                    .Where(r => r != null)
+                    .ToList();
+                if (reordered.Count == activeTrade.Rules.Count)
+                {
+                    activeTrade.Rules.Clear();
+                    foreach (var r in reordered) activeTrade.Rules.Add(r!);
+                }
+                _dragSourceBorder = null;
+                _dragRuleId       = null;
+                FRefreshRuleList();
+            };
+
             var ruleScroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = _fRuleListPanel,
+                AllowDrop                     = true,
+                Content                       = _fRuleListPanel,
             };
             leftDock.Children.Add(ruleScroll);
             FRefreshRuleList();
@@ -99,7 +169,7 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(leftDock, 0);
             root.Children.Add(leftDock);
 
-            // ── Right panel (280px editor) ───────────────────────────────────
+            // ── Right panel (resizable editor, min 280px) ────────────────────
             _fEditorBorder = new Border
             {
                 BorderThickness = new Thickness(1, 0, 0, 0),
@@ -107,7 +177,7 @@ namespace LemoineTools.Lemoine
             _fEditorBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
             _fEditorBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             FRefreshRuleEditor();
-            Grid.SetColumn(_fEditorBorder, 1);
+            Grid.SetColumn(_fEditorBorder, 2);
             root.Children.Add(_fEditorBorder);
 
             return root;
@@ -124,11 +194,11 @@ namespace LemoineTools.Lemoine
             var pillBorder = new Border
             {
                 BorderThickness   = new Thickness(1),
-                CornerRadius      = new CornerRadius(5),
                 Padding           = new Thickness(10, 5, 10, 5),
                 Cursor            = Cursors.Hand,
                 HorizontalAlignment = HorizontalAlignment.Left,
             };
+            pillBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
             pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
 
@@ -139,14 +209,17 @@ namespace LemoineTools.Lemoine
 
             var pillRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            // Color dot
-            var dot = new Ellipse
+            // Color swatch (rounded square)
+            var dot = new Border
             {
-                Width  = 10, Height = 10,
-                Fill   = BrushFromHex(trade?.Color ?? "#888888"),
-                Margin = new Thickness(0, 0, 8, 0),
+                Width             = 10, Height = 10,
+                Background        = BrushFromHex(trade?.Color ?? "#888888"),
+                BorderThickness   = new Thickness(1),
+                CornerRadius      = new CornerRadius(2),
+                Margin            = new Thickness(0, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            dot.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             pillRow.Children.Add(dot);
 
             // Trade label
@@ -401,15 +474,51 @@ namespace LemoineTools.Lemoine
                 popup.IsOpen = true;
             };
 
-            // Row: [pill dropdown] [trade ID] [edit btn] — all left-aligned
-            var headerRow = new StackPanel
+            // Row: [pill dropdown] [trade ID] [edit btn] — left, [Templates ˅] — right
+            var templatesPill = new Border
+            {
+                BorderThickness   = new Thickness(1),
+                Padding           = new Thickness(10, 5, 10, 5),
+                Cursor            = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            templatesPill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            templatesPill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+
+            var templatesInner = new StackPanel { Orientation = Orientation.Horizontal };
+            var templatesLabel = new TextBlock { Text = "Templates", VerticalAlignment = VerticalAlignment.Center };
+            templatesLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            templatesLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            templatesLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var templatesCaret = new TextBlock { Text = "˅", Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            templatesCaret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            templatesCaret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            templatesCaret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            templatesInner.Children.Add(templatesLabel);
+            templatesInner.Children.Add(templatesCaret);
+            templatesPill.Child = templatesInner;
+
+            templatesPill.MouseEnter += (s, e) =>
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            templatesPill.MouseLeave += (s, e) =>
+                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            templatesPill.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowTemplatesPopup(templatesPill); };
+
+            var leftRow = new StackPanel
             {
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            headerRow.Children.Add(pillBorder);
-            headerRow.Children.Add(tradeIdLbl);
-            headerRow.Children.Add(editBtn);
+            leftRow.Children.Add(pillBorder);
+            leftRow.Children.Add(tradeIdLbl);
+            leftRow.Children.Add(editBtn);
+
+            var headerRow = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(templatesPill, Dock.Right);
+            headerRow.Children.Add(templatesPill);
+            headerRow.Children.Add(leftRow);
+
             _fTradeSwitcherBorder.Child = headerRow;
         }
 
@@ -450,8 +559,9 @@ namespace LemoineTools.Lemoine
             // constructing its controls — chip Changed events can fire during setup
             // and call back here, corrupting the panel mid-build.
             if (_isRefreshingEditor) return;
-            _fActiveRowBorder = null; // will be re-assigned when active row is rebuilt
-            _fActiveNameTb    = null; // will be re-assigned when active row is rebuilt
+            _fActiveRowBorder = null;
+            _fActiveNameTb    = null;
+            _fMultiSelectBorders.Clear(); // rows are being replaced; re-registered in BuildRuleListRow
             _fRuleListPanel.Children.Clear();
 
             var trade = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
@@ -493,24 +603,31 @@ namespace LemoineTools.Lemoine
 
         private UIElement BuildRuleListRow(FilterTradeConfig trade, FilterRuleConfig rule)
         {
-            bool isActive = rule.Id == _fActiveRuleId;
+            bool isActive        = rule.Id == _fActiveRuleId;
+            bool isMultiSelected = !isActive && _fSelectedRuleIds.Contains(rule.Id);
 
             var rowBorder = new Border
             {
                 Padding         = new Thickness(10, 8, 8, 8),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
                 Margin          = new Thickness(0, 0, 0, 4),
                 AllowDrop       = true,
                 Opacity         = rule.Enabled ? 1.0 : 0.55,
                 Cursor          = Cursors.Hand,
                 Tag             = rule.Id,   // used by Drop handler to read visual order
             };
+            rowBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             if (isActive)
             {
                 rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
                 rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                _fActiveRowBorder = rowBorder; // track without rebuilding on selection change
+                _fActiveRowBorder = rowBorder;
+            }
+            else if (isMultiSelected)
+            {
+                rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                _fMultiSelectBorders[rule.Id] = rowBorder;
             }
             else
             {
@@ -521,7 +638,7 @@ namespace LemoineTools.Lemoine
             // ── Hover ─────────────────────────────────────────────────────────
             rowBorder.MouseEnter += (s, e) =>
             {
-                if (_dragRuleId == null && rule.Id != _fActiveRuleId)
+                if (_dragRuleId == null && rule.Id != _fActiveRuleId && !_fSelectedRuleIds.Contains(rule.Id))
                 {
                     rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                     rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
@@ -531,8 +648,16 @@ namespace LemoineTools.Lemoine
             {
                 if (rule.Id != _fActiveRuleId)
                 {
-                    rowBorder.Background = Brushes.Transparent;
-                    rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    if (_fSelectedRuleIds.Contains(rule.Id))
+                    {
+                        rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                        rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    }
+                    else
+                    {
+                        rowBorder.Background = Brushes.Transparent;
+                        rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    }
                 }
             };
 
@@ -593,23 +718,29 @@ namespace LemoineTools.Lemoine
             };
 
             // ── Row content ───────────────────────────────────────────────────
-            var outerRow = new Grid();
+            var outerRow = new Grid { AllowDrop = true };
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // dot
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name+sub
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // toggle
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // pencil
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // trash
 
-            // Color dot swatch
-            var colorDot = new Ellipse
+            // Color swatch — square, height driven by the name+subtext stack
+            var colorDot = new Border
             {
-                Width           = 16, Height = 16,
-                Fill            = BrushFromHex(rule.SurfColor ?? trade.Color),
-                StrokeThickness = 1.5,
-                Margin          = new Thickness(4, 0, 10, 0),
-                VerticalAlignment = VerticalAlignment.Center,
+                Background        = BrushFromHex(rule.SurfColor ?? trade.Color),
+                BorderThickness   = new Thickness(1.5),
+                CornerRadius      = new CornerRadius(3),
+                Margin            = new Thickness(4, 0, 10, 0),
+                VerticalAlignment = VerticalAlignment.Stretch,
             };
-            colorDot.SetResourceReference(Ellipse.StrokeProperty, "LemoineBorder");
+            colorDot.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            // Keep square: width tracks actual height after layout
+            colorDot.SizeChanged += (s, e) =>
+            {
+                double h = e.NewSize.Height;
+                if (h > 0 && colorDot.Width != h) colorDot.Width = h;
+            };
             Grid.SetColumn(colorDot, 0);
             outerRow.Children.Add(colorDot);
 
@@ -657,11 +788,20 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(nameStack, 1);
             outerRow.Children.Add(nameStack);
 
-            // Enable toggle
+            // Enable toggle — applies to all selected rules when in multi-select
             var toggle = BuildRuleToggle(rule.Enabled, on =>
             {
                 rule.Enabled      = on;
                 rowBorder.Opacity = on ? 1.0 : 0.55;
+                if (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                {
+                    foreach (var selId in _fSelectedRuleIds.Where(id => id != rule.Id))
+                    {
+                        var selRule = trade.Rules.FirstOrDefault(r => r.Id == selId);
+                        if (selRule != null) selRule.Enabled = on;
+                    }
+                    FRefreshRuleList(); // update opacity on all affected rows
+                }
             });
             toggle.Margin            = new Thickness(8, 0, 4, 0);
             toggle.VerticalAlignment = VerticalAlignment.Center;
@@ -673,12 +813,23 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(pencilBtn, 3);
             outerRow.Children.Add(pencilBtn);
 
-            // Trash
+            // Trash — deletes all selected rules when in multi-select
             var trashBtn = BuildTrashConfirmButton("Delete Rule", () =>
             {
-                trade.Rules.Remove(rule);
-                if (_fActiveRuleId == rule.Id)
+                if (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                {
+                    var toDelete = _fSelectedRuleIds.ToList();
+                    ClearMultiSelection();
+                    foreach (var id in toDelete)
+                        trade.Rules.RemoveAll(r => r.Id == id);
                     _fActiveRuleId = trade.Rules.FirstOrDefault()?.Id;
+                }
+                else
+                {
+                    trade.Rules.Remove(rule);
+                    if (_fActiveRuleId == rule.Id)
+                        _fActiveRuleId = trade.Rules.FirstOrDefault()?.Id;
+                }
                 FRefreshRuleList();
                 FRefreshRuleEditor();
             });
@@ -698,6 +849,7 @@ namespace LemoineTools.Lemoine
             rowBorder.PreviewMouseMove += (s, e) =>
             {
                 if (e.LeftButton != MouseButtonState.Pressed || _dragRuleId != null) return;
+                if (_dragReadyBorder != rowBorder) return; // only drag when this press armed it
 
                 // Only start drag once the pointer has moved beyond the system drag threshold
                 // so that single clicks on toggle/pencil/trash still fire normally.
@@ -726,7 +878,7 @@ namespace LemoineTools.Lemoine
                 // Build ghost from rule data instead of snapshotting the element.
                 // Element snapshots fail for non-active rows because their background
                 // is Brushes.Transparent, producing an invisible bitmap.
-                ShowDragGhost(rule.Name, BuildSubtext(), rule.SurfColor ?? trade.Color);
+                ShowDragGhost(rule.Name, BuildSubtext(), rule.SurfColor ?? trade.Color, rule.Enabled);
                 rowBorder.Opacity = 0;
                 // IsHitTestVisible intentionally left true so the invisible (Opacity=0)
                 // source pill can still receive Drop when the user releases in the gap.
@@ -738,6 +890,7 @@ namespace LemoineTools.Lemoine
                     DragDropEffects.Move);
                 rowBorder.QueryContinueDrag -= ghostHandler;
                 HideDragGhost();
+                _dragReadyBorder = null;
 
                 if (_dragSourceBorder != null) // Drop never fired — drag was cancelled
                 {
@@ -759,25 +912,87 @@ namespace LemoineTools.Lemoine
                 _dragRuleId = null;
             };
 
-            // ── Row click — select rule ───────────────────────────────────────
+            // ── Row click — select rule (Shift/Ctrl for range/toggle multi-select) ──
             rowBorder.PreviewMouseLeftButtonDown += (s, e) =>
             {
-                _dragGhostClickOffset = e.GetPosition(rowBorder); // capture for ghost offset
+                _dragReadyBorder = null; // reset — buttons and modifier-clicks must never arm drag
+
                 if (e.OriginalSource is FrameworkElement src)
                 {
                     var hitEl = src;
                     while (hitEl != null && hitEl != rowBorder)
                     {
-                        // Interactive controls: let them handle their own events
                         if (hitEl == (FrameworkElement)toggle  ||
                             hitEl == (FrameworkElement)pencilBtn ||
                             hitEl == (FrameworkElement)trashBtn)
-                            return;
+                            return; // button hit — _dragReadyBorder stays null
                         hitEl = VisualTreeHelper.GetParent(hitEl) as FrameworkElement;
                     }
                 }
-                if (rule.Id != _fActiveRuleId)
-                    SelectRuleInPlace(rowBorder, rule.Id, nameTb);
+                _dragGhostClickOffset = e.GetPosition(rowBorder);
+
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    e.Handled = true;
+                    string anchorId    = _fShiftAnchorRuleId ?? _fActiveRuleId ?? rule.Id;
+                    int    anchorIdx   = trade.Rules.FindIndex(r => r.Id == anchorId);
+                    int    clickedIdx  = trade.Rules.FindIndex(r => r.Id == rule.Id);
+                    if (anchorIdx < 0) anchorIdx = clickedIdx;
+                    int lo = Math.Min(anchorIdx, clickedIdx);
+                    int hi = Math.Max(anchorIdx, clickedIdx);
+
+                    ClearMultiSelection();
+                    for (int i = lo; i <= hi; i++)
+                        _fSelectedRuleIds.Add(trade.Rules[i].Id);
+
+                    _fActiveRuleId = anchorId; // editor sources from anchor
+                    FRefreshRuleList();
+                    FRefreshRuleEditor();
+                }
+                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    e.Handled = true; // suppress drag initiation on Ctrl+click
+                    bool wasInBatch = _fSelectedRuleIds.Count >= 2;
+
+                    if (_fSelectedRuleIds.Contains(rule.Id))
+                    {
+                        _fSelectedRuleIds.Remove(rule.Id);
+                        _fMultiSelectBorders.Remove(rule.Id);
+                        if (rule.Id != _fActiveRuleId)
+                        {
+                            rowBorder.Background = Brushes.Transparent;
+                            rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                        }
+                    }
+                    else
+                    {
+                        if (_fActiveRuleId != null) _fSelectedRuleIds.Add(_fActiveRuleId);
+                        _fSelectedRuleIds.Add(rule.Id);
+                        if (rule.Id != _fActiveRuleId)
+                        {
+                            _fMultiSelectBorders[rule.Id] = rowBorder;
+                            rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                            rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                        }
+                    }
+
+                    bool isInBatch = _fSelectedRuleIds.Count >= 2;
+                    if (wasInBatch && !isInBatch)
+                        ClearMultiSelection();
+                    FRefreshRuleEditor();
+                }
+                else
+                {
+                    _fShiftAnchorRuleId = rule.Id; // anchor updates on plain click
+                    bool wasAlreadyActive = rule.Id == _fActiveRuleId || _fSelectedRuleIds.Contains(rule.Id);
+                    if (_fSelectedRuleIds.Count > 0) ClearMultiSelection();
+                    if (rule.Id != _fActiveRuleId)
+                        SelectRuleInPlace(rowBorder, rule.Id, nameTb);
+                    // Only arm drag if the rule was already selected before this click;
+                    // the first click selects, a subsequent press can drag.
+                    if (wasAlreadyActive)
+                        _dragReadyBorder = rowBorder;
+                }
             };
 
             return rowBorder;
@@ -810,6 +1025,12 @@ namespace LemoineTools.Lemoine
                     return;
                 }
 
+                if (_fSelectedRuleIds.Count >= 2)
+                {
+                    _fEditorBorder.Child = BuildBatchRuleEditor(trade, rule);
+                    return;
+                }
+
                 // Rule name scrolls together with filter logic
                 var scrollContent = new StackPanel();
                 scrollContent.Children.Add(BuildRuleIdentitySection(trade, rule));
@@ -822,6 +1043,7 @@ namespace LemoineTools.Lemoine
                     Padding = new Thickness(0, 0, 4, 0),
                 };
                 scroll.Content = scrollContent;
+                LemoineControlStyles.WireBubblingScroll(scroll);
 
                 _fEditorBorder.Child = scroll;
             }
@@ -952,7 +1174,8 @@ namespace LemoineTools.Lemoine
         }
 
         // ── Filter Logic section ──────────────────────────────────────────────
-        private UIElement BuildFilterLogicSection(FilterTradeConfig trade, FilterRuleConfig rule)
+        private UIElement BuildFilterLogicSection(FilterTradeConfig trade, FilterRuleConfig rule,
+                                                   Action<string>? markDirty = null)
         {
             var outer = new StackPanel { Margin = new Thickness(0) };
 
@@ -1008,11 +1231,11 @@ namespace LemoineTools.Lemoine
             };
             catChip.Changed += (s, e) =>
             {
+                markDirty?.Invoke("logic.categories");
                 rule.BuiltInCategories = catDisplayNames
                     .Select(name =>
                         AutoFiltersSettings.KnownCategoryMap.TryGetValue(name, out var ost) ? ost : name)
                     .ToList();
-                // Refresh parameter options when categories change
                 RefreshParameterChip(rule, paramChip!);
             };
 
@@ -1025,6 +1248,7 @@ namespace LemoineTools.Lemoine
             };
             paramChip.Changed += (s, e) =>
             {
+                markDirty?.Invoke("logic.parameter");
                 rule.Parameter = paramSelected.FirstOrDefault() ?? "";
             };
 
@@ -1039,8 +1263,8 @@ namespace LemoineTools.Lemoine
             };
             valChip.Changed += (s, e) =>
             {
+                markDirty?.Invoke("logic.match");
                 rule.Match = valSelected.ToList();
-                // Refresh subtext in rule list
                 FRefreshRuleList();
             };
 
@@ -1069,7 +1293,11 @@ namespace LemoineTools.Lemoine
             matchDd.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorder");
             matchDd.SelectionChanged += (s, e) =>
             {
-                if (matchDd.SelectedItem is string sel) rule.MatchType = sel;
+                if (matchDd.SelectedItem is string sel)
+                {
+                    markDirty?.Invoke("logic.matchtype");
+                    rule.MatchType = sel;
+                }
             };
 
             void AddRow(string label, UIElement ctrl, UIElement? extra = null)
@@ -1102,7 +1330,7 @@ namespace LemoineTools.Lemoine
         }
 
         // ── Override Style section ────────────────────────────────────────────
-        private UIElement BuildOverrideStyleSection(FilterRuleConfig rule)
+        private UIElement BuildOverrideStyleSection(FilterRuleConfig rule, Action<string>? markDirty = null)
         {
             var outer = new StackPanel();
 
@@ -1156,7 +1384,7 @@ namespace LemoineTools.Lemoine
 
             // Adds a single color-override row directly into the shared Grid.
             // All interactive elements share LemoineH_Input height for consistent alignment.
-            void AddColorRow(int rowIdx, string label,
+            void AddColorRow(int rowIdx, string label, string fieldPrefix,
                 Func<bool>   getEnabled, Action<bool>   setEnabled,
                 Func<string> getColor,   Action<string> setColor,
                 string[]     patterns,
@@ -1215,6 +1443,7 @@ namespace LemoineTools.Lemoine
                     if (picked.HasValue)
                     {
                         string hex = $"#{picked.Value.R:X2}{picked.Value.G:X2}{picked.Value.B:X2}";
+                        markDirty?.Invoke($"{fieldPrefix}.color");
                         setColor(hex);
                         swatchBorder.Background = BrushFromHex(hex);
                     }
@@ -1225,7 +1454,8 @@ namespace LemoineTools.Lemoine
 
                 // ── Pattern dropdown ──────────────────────────────────────────
                 // Surface/Cut: span cols 2+3 so right edge aligns with Lines stepper
-                var patternDd = BuildAutoCompleteBox(patterns, getPattern(), setPattern, double.NaN);
+                Action<string> setPatternWithDirty = p => { setPattern(p); markDirty?.Invoke($"{fieldPrefix}.pattern"); };
+                var patternDd = BuildAutoCompleteBox(patterns, getPattern(), setPatternWithDirty, double.NaN);
                 ((FrameworkElement)patternDd).Margin            = new Thickness(0, 0, showWeight ? 4 : 0, rowIdx < 2 ? 6 : 0);
                 ((FrameworkElement)patternDd).VerticalAlignment = VerticalAlignment.Center;
                 Grid.SetRow((UIElement)patternDd, rowIdx);
@@ -1354,25 +1584,27 @@ namespace LemoineTools.Lemoine
                 toggleBtn.MouseLeftButtonUp += (s, e) =>
                 {
                     bool next = !getEnabled();
+                    markDirty?.Invoke($"{fieldPrefix}.enabled");
                     setEnabled(next);
                     ApplyState(next);
                     e.Handled = true;
                 };
             }
 
-            AddColorRow(0, "Surface",
+            AddColorRow(0, "Surface", "style.surf",
                 () => rule.OverrideSurf, v => rule.OverrideSurf = v,
                 () => rule.SurfColor,    h => rule.SurfColor    = h,
                 fillList, () => rule.SurfPattern ?? "", p => rule.SurfPattern = p);
-            AddColorRow(1, "Cut",
+            AddColorRow(1, "Cut", "style.cut",
                 () => rule.OverrideCut,  v => rule.OverrideCut  = v,
                 () => rule.CutColor,     h => rule.CutColor     = h,
                 fillList, () => rule.CutPattern ?? "", p => rule.CutPattern = p);
-            AddColorRow(2, "Lines",
+            AddColorRow(2, "Lines", "style.line",
                 () => rule.OverrideLine, v => rule.OverrideLine = v,
                 () => rule.LineColor,    h => rule.LineColor    = h,
                 lineList, () => rule.LinePattern ?? "Solid", p => rule.LinePattern = p,
-                showWeight: true, getWeight: () => rule.LineWeight, setWeight: w => rule.LineWeight = w);
+                showWeight: true, getWeight: () => rule.LineWeight,
+                setWeight: w => { markDirty?.Invoke("style.line.weight"); rule.LineWeight = w; });
 
             cardStack.Children.Add(colorGrid);
             card.Child = cardStack;
@@ -1381,7 +1613,7 @@ namespace LemoineTools.Lemoine
         }
 
         // ── Appearance & Visibility section ───────────────────────────────────
-        private UIElement BuildAppearanceSection(FilterRuleConfig rule)
+        private UIElement BuildAppearanceSection(FilterRuleConfig rule, Action<string>? markDirty = null)
         {
             var outer = new StackPanel();
 
@@ -1482,7 +1714,7 @@ namespace LemoineTools.Lemoine
 
             // Halftone toggle
             cardStack.Children.Add(MakeAppToggle("Halftone", "Halftone", rule.Halftone,
-                v => rule.Halftone = v));
+                v => { markDirty?.Invoke("appearance.halftone"); rule.Halftone = v; }));
 
             // Transparency slider
             var transpLbl = MiniLabel("Transparency");
@@ -1521,6 +1753,7 @@ namespace LemoineTools.Lemoine
 
             transpSlider.ValueChanged += (s, e) =>
             {
+                markDirty?.Invoke("appearance.transparency");
                 rule.Transparency = (int)transpSlider.Value;
                 transpVal.Text    = rule.Transparency + "%";
             };
@@ -1529,12 +1762,12 @@ namespace LemoineTools.Lemoine
             // Elements visible toggle
             cardStack.Children.Add(MakeAppToggle("Visible",
                 "Elements visible — when off, matching elements are hidden in the view.",
-                rule.Visible, v => rule.Visible = v));
+                rule.Visible, v => { markDirty?.Invoke("appearance.visible"); rule.Visible = v; }));
 
             // Apply filter to view toggle
             cardStack.Children.Add(MakeAppToggle("Apply",
                 "Apply filter to view by default — when off, the filter is created but not applied.",
-                rule.FilterOn, v => rule.FilterOn = v));
+                rule.FilterOn, v => { markDirty?.Invoke("appearance.filteron"); rule.FilterOn = v; }));
 
             card.Child = cardStack;
             outer.Children.Add(card);
@@ -1582,13 +1815,16 @@ namespace LemoineTools.Lemoine
             btn.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                var popup = BuildTradeDestPopup(trade, rule, btn);
+                var rulesToMove = (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
+                    ? trade.Rules.Where(r => _fSelectedRuleIds.Contains(r.Id)).ToList()
+                    : new List<FilterRuleConfig> { rule };
+                var popup = BuildTradeDestPopup(trade, rulesToMove, btn);
                 popup.IsOpen = true;
             };
             return btn;
         }
 
-        private Popup BuildTradeDestPopup(FilterTradeConfig srcTrade, FilterRuleConfig rule, UIElement anchor)
+        private Popup BuildTradeDestPopup(FilterTradeConfig srcTrade, List<FilterRuleConfig> rules, UIElement anchor)
         {
             var popup = new Popup
             {
@@ -1689,31 +1925,38 @@ namespace LemoineTools.Lemoine
                             popup.IsOpen = false;
                             if (!isCopyMode)
                             {
-                                // Move
-                                srcTrade.Rules.Remove(rule);
+                                // Move all rules to dest trade
+                                foreach (var r in rules) srcTrade.Rules.Remove(r);
                                 var dest = _filterTrades?.FirstOrDefault(x => x.Id == destId);
-                                dest?.Rules.Add(rule);
+                                if (dest != null) foreach (var r in rules) dest.Rules.Add(r);
+                                ClearMultiSelection();
                                 _fActiveTradeId = destId;
-                                _fActiveRuleId  = rule.Id;
+                                _fActiveRuleId  = rules[0].Id;
                                 FRefreshTradeSwitcher();
                                 FRefreshRuleList();
                                 FRefreshRuleEditor();
                             }
                             else
                             {
-                                // Copy
-                                var clone = FilterRuleConfig.NewBlank();
-                                clone.Name = rule.Name + " (copy)"; clone.Enabled = rule.Enabled;
-                                clone.CutColor = rule.CutColor; clone.SurfColor = rule.SurfColor;
-                                clone.LineColor = rule.LineColor; clone.LinePattern = rule.LinePattern;
-                                clone.LineWeight = rule.LineWeight; clone.Halftone = rule.Halftone;
-                                clone.Transparency = rule.Transparency; clone.Visible = rule.Visible;
-                                clone.FilterOn = rule.FilterOn; clone.Notes = rule.Notes;
-                                clone.Match = new List<string>(rule.Match);
-                                clone.BuiltInCategories = new List<string>(rule.BuiltInCategories);
-                                clone.Parameter = rule.Parameter;
+                                // Copy all rules to dest trade
                                 var dest = _filterTrades?.FirstOrDefault(x => x.Id == destId);
-                                dest?.Rules.Add(clone);
+                                if (dest != null)
+                                {
+                                    foreach (var rule in rules)
+                                    {
+                                        var clone = FilterRuleConfig.NewBlank();
+                                        clone.Name = rule.Name + " (copy)"; clone.Enabled = rule.Enabled;
+                                        clone.CutColor = rule.CutColor; clone.SurfColor = rule.SurfColor;
+                                        clone.LineColor = rule.LineColor; clone.LinePattern = rule.LinePattern;
+                                        clone.LineWeight = rule.LineWeight; clone.Halftone = rule.Halftone;
+                                        clone.Transparency = rule.Transparency; clone.Visible = rule.Visible;
+                                        clone.FilterOn = rule.FilterOn; clone.Notes = rule.Notes;
+                                        clone.Match = new List<string>(rule.Match);
+                                        clone.BuiltInCategories = new List<string>(rule.BuiltInCategories);
+                                        clone.Parameter = rule.Parameter;
+                                        dest.Rules.Add(clone);
+                                    }
+                                }
                             }
                             e.Handled = true;
                         };
@@ -2041,7 +2284,7 @@ namespace LemoineTools.Lemoine
         private static Border BuildRuleToggle(bool isOn, Action<bool> onChange)
         {
             var trackBg = new Border();
-            trackBg.SetResourceReference(Border.CornerRadiusProperty,     "LemoineRadius_LG");
+            trackBg.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(7.5));
             trackBg.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
             trackBg.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
             trackBg.SetResourceReference(Border.BackgroundProperty, isOn ? "LemoineAccent" : "LemoineBorder");
@@ -2051,7 +2294,8 @@ namespace LemoineTools.Lemoine
 
             var knob = new Ellipse();
             knob.SetResourceReference(Ellipse.FillProperty, isOn ? "LemoineKnobOn" : "LemoineKnobOff");
-            knob.Margin = new Thickness(isOn ? 15 : 2, 2, 0, 2);
+            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
+            knob.Margin = new Thickness(isOn ? onPos : 2, 2, 0, 2);
             knob.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Knob");
             knob.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Knob");
 
@@ -2068,7 +2312,7 @@ namespace LemoineTools.Lemoine
                 bool newOn = state;
                 var anim = new ThicknessAnimation
                 {
-                    To             = new Thickness(newOn ? 15 : 2, 2, 0, 2),
+                    To             = new Thickness(newOn ? onPos : 2, 2, 0, 2),
                     Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast),
                     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
                 };
@@ -2144,19 +2388,22 @@ namespace LemoineTools.Lemoine
                 root.Children.Add(sep);
             }
 
-            // ── Helper: menu row (clickable item) ─────────────────────────────
+            // ── Helper: menu row (chip pill button) ───────────────────────────
             Border AddMenuRow(string icon, string label, Action onClick,
                               bool destructive = false, bool disabled = false)
             {
                 var row = new Border
                 {
-                    Padding      = new Thickness(12, 7, 12, 7),
-                    CornerRadius = new CornerRadius(3),
-                    Margin       = new Thickness(4, 0, 4, 0),
-                    Cursor       = disabled ? Cursors.Arrow : Cursors.Hand,
-                    Opacity      = disabled ? 0.45 : 1.0,
+                    Padding         = new Thickness(10, 4, 12, 4),
+                    CornerRadius    = new CornerRadius(12),
+                    BorderThickness = new Thickness(1),
+                    Margin          = new Thickness(4, 2, 4, 2),
+                    Cursor          = disabled ? Cursors.Arrow : Cursors.Hand,
+                    Opacity         = disabled ? 0.45 : 1.0,
                     IsHitTestVisible = !disabled,
                 };
+                row.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                row.SetResourceReference(Border.BorderBrushProperty, destructive ? "LemoineRed" : "LemoineBorder");
 
                 var iconTb = new TextBlock
                 {
@@ -2189,9 +2436,15 @@ namespace LemoineTools.Lemoine
                 if (!disabled)
                 {
                     row.MouseEnter += (s, e) =>
-                        row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    {
+                        row.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                        row.SetResourceReference(Border.BorderBrushProperty, destructive ? "LemoineRed" : "LemoineAccent");
+                    };
                     row.MouseLeave += (s, e) =>
-                        row.ClearValue(Border.BackgroundProperty);
+                    {
+                        row.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                        row.SetResourceReference(Border.BorderBrushProperty, destructive ? "LemoineRed" : "LemoineBorder");
+                    };
                     row.MouseLeftButtonUp += (s, e) =>
                     {
                         e.Handled = true;
@@ -2233,20 +2486,35 @@ namespace LemoineTools.Lemoine
                     // Capture for lambda closure
                     var t = tmpl;
 
-                    var rowGrid = new Grid
+                    // Pill chip wrapper
+                    var pillBorder = new Border
                     {
-                        Margin = new Thickness(4, 0, 4, 0),
-                        Cursor = Cursors.Hand,
+                        CornerRadius    = new CornerRadius(12),
+                        BorderThickness = new Thickness(1),
+                        Margin          = new Thickness(4, 2, 4, 2),
+                        Cursor          = Cursors.Hand,
+                        ClipToBounds    = true,
                     };
+                    pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                    pillBorder.MouseEnter += (s, e) =>
+                    {
+                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    };
+                    pillBorder.MouseLeave += (s, e) =>
+                    {
+                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    };
+
+                    var rowGrid = new Grid();
                     rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                    // Load area (icon + name + date)
-                    var loadBorder = new Border
-                    {
-                        Padding      = new Thickness(12, 6, 6, 6),
-                        CornerRadius = new CornerRadius(3),
-                    };
+                    // Load area (name + date)
+                    var loadBorder = new Border { Padding = new Thickness(10, 4, 6, 4) };
                     Grid.SetColumn(loadBorder, 0);
 
                     var nameStack = new StackPanel();
@@ -2267,11 +2535,6 @@ namespace LemoineTools.Lemoine
                     nameStack.Children.Add(nameTb);
                     nameStack.Children.Add(dateTb);
                     loadBorder.Child = nameStack;
-
-                    rowGrid.MouseEnter += (s, e) =>
-                        rowGrid.SetResourceReference(Panel.BackgroundProperty, "LemoineRaised");
-                    rowGrid.MouseLeave += (s, e) =>
-                        rowGrid.ClearValue(Panel.BackgroundProperty);
 
                     loadBorder.MouseLeftButtonUp += (s, e) =>
                     {
@@ -2315,7 +2578,8 @@ namespace LemoineTools.Lemoine
                     Grid.SetColumn((UIElement)delBtn, 1);
                     rowGrid.Children.Add((UIElement)delBtn);
 
-                    templateListPanel.Children.Add(rowGrid);
+                    pillBorder.Child = rowGrid;
+                    templateListPanel.Children.Add(pillBorder);
                 }
             }
 
@@ -2396,11 +2660,14 @@ namespace LemoineTools.Lemoine
             {
                 var btn = new Border
                 {
-                    Padding      = new Thickness(12, 7, 12, 7),
-                    CornerRadius = new CornerRadius(3),
-                    Cursor       = Cursors.Hand,
-                    Margin       = new Thickness(0, 0, 0, 0),
+                    Padding         = new Thickness(10, 4, 12, 4),
+                    CornerRadius    = new CornerRadius(12),
+                    BorderThickness = new Thickness(1),
+                    Cursor          = Cursors.Hand,
+                    Margin          = new Thickness(4, 2, 4, 2),
                 };
+                btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
                 var icon = new TextBlock
                 {
@@ -2431,9 +2698,15 @@ namespace LemoineTools.Lemoine
                 btn.Child = row;
 
                 btn.MouseEnter += (s, e) =>
-                    btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                {
+                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                };
                 btn.MouseLeave += (s, e) =>
-                    btn.ClearValue(Border.BackgroundProperty);
+                {
+                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                };
                 btn.MouseLeftButtonUp += (s, e) =>
                 {
                     e.Handled = true;
@@ -2468,11 +2741,14 @@ namespace LemoineTools.Lemoine
             // Restore shows an inline confirmation instead of closing the popup.
             var restoreRow = new Border
             {
-                Padding      = new Thickness(12, 7, 12, 7),
-                CornerRadius = new CornerRadius(3),
-                Margin       = new Thickness(4, 0, 4, 0),
-                Cursor       = Cursors.Hand,
+                Padding         = new Thickness(10, 4, 12, 4),
+                CornerRadius    = new CornerRadius(12),
+                BorderThickness = new Thickness(1),
+                Margin          = new Thickness(4, 2, 4, 2),
+                Cursor          = Cursors.Hand,
             };
+            restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
             var restoreRowContent = new StackPanel { Orientation = Orientation.Horizontal };
             var restoreIcon = new TextBlock
             {
@@ -2500,9 +2776,15 @@ namespace LemoineTools.Lemoine
             restoreRow.Child = restoreRowContent;
 
             restoreRow.MouseEnter += (s, e) =>
-                restoreRow.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+            {
+                restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
+            };
             restoreRow.MouseLeave += (s, e) =>
-                restoreRow.ClearValue(Border.BackgroundProperty);
+            {
+                restoreRow.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                restoreRow.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
+            };
             restoreRow.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
@@ -2611,6 +2893,121 @@ namespace LemoineTools.Lemoine
             {
                 MessageBox.Show("Export failed: " + ex.Message, "Export Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  MULTI-SELECT / BATCH EDIT
+        // ═════════════════════════════════════════════════════════════════════
+
+        private void ClearMultiSelection()
+        {
+            foreach (var kvp in _fMultiSelectBorders)
+            {
+                if (kvp.Key != _fActiveRuleId)
+                {
+                    kvp.Value.Background = Brushes.Transparent;
+                    kvp.Value.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                }
+            }
+            _fMultiSelectBorders.Clear();
+            _fSelectedRuleIds.Clear();
+        }
+
+        private UIElement BuildBatchRuleEditor(FilterTradeConfig trade, FilterRuleConfig rule)
+        {
+            int count = _fSelectedRuleIds.Count;
+
+            Action<string> markDirty = key =>
+                Dispatcher.BeginInvoke(new Action(() => ApplyBatchField(trade, rule, key)));
+
+            var scrollContent = new StackPanel();
+            scrollContent.Children.Add(BuildBatchHeader(count));
+            scrollContent.Children.Add(BuildFilterLogicSection(trade, rule, markDirty));
+            scrollContent.Children.Add(BuildOverrideStyleSection(rule, markDirty));
+            scrollContent.Children.Add(BuildAppearanceSection(rule, markDirty));
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Padding = new Thickness(0, 0, 4, 0),
+            };
+            scroll.Content = scrollContent;
+            LemoineControlStyles.WireBubblingScroll(scroll);
+
+            return scroll;
+        }
+
+        private UIElement BuildBatchHeader(int count)
+        {
+            var outer = new StackPanel();
+
+            var sectionLbl = new Border { Padding = new Thickness(12, 10, 12, 4) };
+            var sectionTb  = new TextBlock { Text = "BATCH EDIT" };
+            sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            sectionLbl.Child = sectionTb;
+            outer.Children.Add(sectionLbl);
+
+            var card = new Border
+            {
+                Margin          = new Thickness(10, 0, 10, 10),
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(10, 8, 10, 8),
+            };
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var descTb = new TextBlock
+            {
+                Text      = $"Editing {count} rules — name is read-only. Changes apply to all selected rules immediately.",
+                FontStyle = FontStyles.Italic,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            descTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            descTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            descTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            card.Child = descTb;
+            outer.Children.Add(card);
+            return outer;
+        }
+
+        private void ApplyBatchField(FilterTradeConfig trade, FilterRuleConfig source, string key)
+        {
+            foreach (var ruleId in _fSelectedRuleIds.Where(id => id != source.Id).ToList())
+            {
+                var target = trade.Rules.FirstOrDefault(r => r.Id == ruleId);
+                if (target == null) continue;
+
+                switch (key)
+                {
+                    case "logic.categories": target.BuiltInCategories = source.BuiltInCategories.ToList(); break;
+                    case "logic.parameter":  target.Parameter = source.Parameter; break;
+                    case "logic.match":      target.Match = source.Match.ToList(); break;
+                    case "logic.matchtype":  target.MatchType = source.MatchType; break;
+
+                    case "style.surf.enabled": target.OverrideSurf = source.OverrideSurf; break;
+                    case "style.surf.color":   target.SurfColor    = source.SurfColor;    break;
+                    case "style.surf.pattern": target.SurfPattern  = source.SurfPattern;  break;
+
+                    case "style.cut.enabled":  target.OverrideCut  = source.OverrideCut;  break;
+                    case "style.cut.color":    target.CutColor     = source.CutColor;     break;
+                    case "style.cut.pattern":  target.CutPattern   = source.CutPattern;   break;
+
+                    case "style.line.enabled": target.OverrideLine = source.OverrideLine; break;
+                    case "style.line.color":   target.LineColor    = source.LineColor;    break;
+                    case "style.line.pattern": target.LinePattern  = source.LinePattern;  break;
+                    case "style.line.weight":  target.LineWeight   = source.LineWeight;   break;
+
+                    case "appearance.halftone":     target.Halftone     = source.Halftone;     break;
+                    case "appearance.transparency": target.Transparency = source.Transparency; break;
+                    case "appearance.visible":      target.Visible      = source.Visible;      break;
+                    case "appearance.filteron":     target.FilterOn     = source.FilterOn;     break;
+                }
             }
         }
     }

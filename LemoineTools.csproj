@@ -5,13 +5,17 @@
     <AssemblyName>LemoineTools</AssemblyName>
     <RootNamespace>LemoineTools</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
-    <LangVersion>8.0</LangVersion>
+    <LangVersion>9.0</LangVersion>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RevitDir>C:\Program Files\Autodesk\Revit 2024</RevitDir>
+    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\</DeployDir>
+    <OutputPath>$(DeployDir)</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
   <!--
@@ -46,6 +50,16 @@
     own named folder under Commands\ and Tools\ with a descriptive namespace.
   -->
 
+  <!-- Exclude the LemoinePreview sub-project from this project's SDK wildcard globs.
+       Without this, MSBuild sweeps LemoinePreview\obj\ and picks up its XAML-generated
+       *.g.cs / *.g.i.cs files, causing CS0102/CS0111/CS0579/CS8646 duplicate definitions. -->
+  <ItemGroup>
+    <Compile          Remove="LemoinePreview\**\*" />
+    <Page             Remove="LemoinePreview\**\*" />
+    <None             Remove="LemoinePreview\**\*" />
+    <EmbeddedResource Remove="LemoinePreview\**\*" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
@@ -57,9 +71,20 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="LemoineTools.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />
+  </ItemGroup>
+
+  <!-- IcoMoon Free icon font — embedded as a WPF pack resource -->
+  <ItemGroup>
+    <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
 </Project>

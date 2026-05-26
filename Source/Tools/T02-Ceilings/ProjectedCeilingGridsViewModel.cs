@@ -1,48 +1,41 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
+using WpfTextBox = System.Windows.Controls.TextBox;
+using WpfGrid    = System.Windows.Controls.Grid;
+
 namespace LemoineTools.Tools.Ceilings
 {
-    // =========================================================================
-    // ProjectedCeilingGridsViewModel
-    //
-    // THIS IS THE TEMPLATE for new Revit tool functions.
-    //
-    // To add a new tool:
-    //   1. Copy this file to Tools/YourFeature/YourFeatureViewModel.cs
-    //   2. Update Title, RunLabel, Steps
-    //   3. Rewrite GetStepContent(), IsValid(), SummaryFor(), Run()
-    //   4. Add a ribbon button in App.cs → new StepFlowWindow(new YourViewModel())
-    //
-    // You never touch StepFlowWindow, the controls, or themes.
-    // =========================================================================
     public class ProjectedCeilingGridsViewModel : ILemoineTool
     {
         // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => "Projected Ceiling Grids";
+        public string Title    => "Project Ceiling Grids";
         public string RunLabel => "Run in Revit →";
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "DWG Source File",  required: true),
-            new StepDefinition("S2", "Review & Run",     required: false),
+            new StepDefinition("S1", "DWG Source",   required: true),
+            new StepDefinition("S2", "Review & Run", required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
-        private string _dwgPath = "";
+        private bool   _batchMode  = false;
+        private string _dwgPath    = "";
+        private string _folderPath = "";
 
-        // ── Validation change notification ─────────────────────────────────
+        // Dynamic picker host — replaced when mode changes
+        private Border? _pickerHost;
+
         public event EventHandler? ValidationChanged;
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── ExternalEvent wiring ───────────────────────────────────────────
-        // The handler and event are created in App.cs at startup and stored
-        // as static references — safe because only one instance of each tool
-        // window can be open at a time.
         private readonly CeilingGridEventHandler _handler;
         private readonly Autodesk.Revit.UI.ExternalEvent _event;
 
@@ -55,61 +48,115 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // GetStepContent — return the WPF control(s) for each step
+        // GetStepContent
         // ═════════════════════════════════════════════════════════════════════
         public FrameworkElement? GetStepContent(string stepId)
         {
-            if (stepId == "S1")
+            if (stepId == "S1") return BuildS1();
+            if (stepId == "S2") return BuildReviewPanel();
+            return null;
+        }
+
+        private FrameworkElement BuildS1()
+        {
+            var outer = new StackPanel();
+
+            // Mode selector
+            var modeSelect = new LemoineSingleSelect { Label = "Import mode" };
+            modeSelect.Items = new List<string> { "Single file", "Batch from folder" };
+            modeSelect.SelectedItem = _batchMode ? "Batch from folder" : "Single file";
+            modeSelect.SelectionChanged += val =>
+            {
+                _batchMode = val == "Batch from folder";
+                RefreshPickerHost();
+                OnValidationChanged();
+            };
+            outer.Children.Add(modeSelect);
+
+            // Dynamic picker area
+            _pickerHost = new Border { Margin = new Thickness(0, 10, 0, 0) };
+            RefreshPickerHost();
+            outer.Children.Add(_pickerHost);
+
+            return outer;
+        }
+
+        private void RefreshPickerHost()
+        {
+            if (_pickerHost == null) return;
+
+            if (_batchMode)
+            {
+                var inner = new StackPanel();
+
+                var desc = new TextBlock
+                {
+                    Text         = "Select the folder containing DWG ceiling plan exports from Make Ceiling Grids. " +
+                                   "Each DWG filename (without extension) must match a ceiling plan view name in the project.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin       = new Thickness(0, 0, 0, 8),
+                    FontStyle    = FontStyles.Italic,
+                };
+                desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+                desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                inner.Children.Add(desc);
+
+                var pathBox = new WpfTextBox
+                {
+                    Text            = _folderPath,
+                    Padding         = new Thickness(8, 4, 8, 4),
+                    BorderThickness = new Thickness(1),
+                };
+                pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
+                pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+                pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+                pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
+                pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+                pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
+                pathBox.TextChanged += (s, e) => { _folderPath = pathBox.Text; OnValidationChanged(); };
+                inner.Children.Add(pathBox);
+
+                var browseBtn = LemoineControlStyles.BuildButton("Browse…");
+                browseBtn.Margin = new Thickness(0, 4, 0, 0);
+                browseBtn.Click += (s, e) =>
+                {
+                    var dlg = new System.Windows.Forms.FolderBrowserDialog
+                    {
+                        Description         = "Select DWG Export Folder",
+                        SelectedPath        = _folderPath,
+                        ShowNewFolderButton = false,
+                    };
+                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    {
+                        pathBox.Text  = dlg.SelectedPath;
+                        _folderPath   = dlg.SelectedPath;
+                        OnValidationChanged();
+                    }
+                };
+                inner.Children.Add(browseBtn);
+
+                _pickerHost.Child = inner;
+            }
+            else
             {
                 var browser = new LemoineFileBrowser
                 {
                     Label       = "Select the ceiling plan DWG to project onto ceiling soffit faces in the active view.",
                     Filter      = "AutoCAD DWG|*.dwg|All files|*.*",
                     DialogTitle = "Select Ceiling Plan DWG",
-                    Recents     = new List<string>
-                    {
-                        @"C:\Projects\PROJ-001\CAD\Ceiling-Plan.dwg",
-                        @"C:\Projects\PROJ-002\CAD\Ceiling-Plan.dwg",
-                    },
+                    Path        = _dwgPath,
                 };
                 browser.PathChanged += path =>
                 {
                     _dwgPath = path ?? "";
                     OnValidationChanged();
                 };
-                return browser;
+                _pickerHost.Child = browser;
             }
-
-            if (stepId == "S2")
-                return BuildReviewPanel();
-
-            return null;
         }
 
-        private FrameworkElement BuildReviewPanel()
-        {
-            // A simple two-column grid of summary cards — mirrors the HTML Review step
-            var outer = new StackPanel();
-
-            var infoPanel = BuildInfoPanel();
-            outer.Children.Add(infoPanel);
-
-            var desc = new TextBlock
-            {
-                Text         = "The DWG will be imported into the active view at origin, all curves extracted, " +
-                               "then the import deleted. Each curve is projected vertically onto matching ceiling " +
-                               "soffit faces and recreated as a model curve at the correct elevation.",
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
-        }
-
-        // Helper struct avoids the mixed-type implicit array inference error in net48 C#8
+        // ─────────────────────────────────────────────────────────────────────
         private struct CardDef
         {
             public string       Label;
@@ -120,9 +167,53 @@ namespace LemoineTools.Tools.Ceilings
             { Label = label; Val = val; Row = row; Col = col; }
         }
 
-        private Grid BuildInfoPanel()
+        private FrameworkElement BuildReviewPanel()
         {
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 0) };
+            var outer = new StackPanel();
+            outer.Children.Add(BuildInfoPanel());
+
+            var desc = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 8, 0, 0),
+            };
+            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            if (_batchMode)
+            {
+                desc.Text = "Each DWG in the selected folder will be matched to a ceiling plan view " +
+                            "by filename (without extension). Matched pairs will be projected; " +
+                            "unmatched DWGs will be logged and skipped.";
+
+                int dwgCount = 0;
+                if (Directory.Exists(_folderPath))
+                    dwgCount = Directory.GetFiles(_folderPath, "*.dwg", SearchOption.TopDirectoryOnly).Length;
+
+                var countNote = new TextBlock
+                {
+                    Text   = dwgCount > 0 ? $"{dwgCount} DWG file(s) found in folder." : "No DWG files found in folder.",
+                    Margin = new Thickness(0, 6, 0, 0),
+                };
+                countNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                countNote.SetResourceReference(TextBlock.ForegroundProperty, dwgCount > 0 ? "LemoineGreen" : "LemoineRed");
+                countNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                outer.Children.Add(countNote);
+            }
+            else
+            {
+                desc.Text = "The DWG will be imported into the active view at origin, all curves extracted, " +
+                            "then the import deleted. Each curve is projected vertically onto matching ceiling " +
+                            "soffit faces and recreated as a model curve at the correct elevation.";
+            }
+
+            outer.Children.Add(desc);
+            return outer;
+        }
+
+        private WpfGrid BuildInfoPanel()
+        {
+            var grid = new WpfGrid();
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -130,10 +221,12 @@ namespace LemoineTools.Tools.Ceilings
 
             var cards = new[]
             {
-                new CardDef("DWG File",    () => string.IsNullOrEmpty(_dwgPath) ? "—" : System.IO.Path.GetFileName(_dwgPath), 0, 0),
-                new CardDef("Target View", () => "Active view",        0, 1),
-                new CardDef("Operation",   () => "Project → soffit",   1, 0),
-                new CardDef("Output",      () => "Model curves",        1, 1),
+                new CardDef("Source",      () => _batchMode
+                    ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
+                    : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)), 0, 0),
+                new CardDef("Mode",        () => _batchMode ? "Batch — folder"   : "Single file",  0, 1),
+                new CardDef("Target View", () => _batchMode ? "Per DWG filename" : "Active view",  1, 0),
+                new CardDef("Output",      () => "Model curves",                                    1, 1),
             };
 
             foreach (var c in cards)
@@ -145,28 +238,24 @@ namespace LemoineTools.Tools.Ceilings
                     CornerRadius    = new CornerRadius(3),
                     Padding         = new Thickness(10, 7, 10, 7),
                 };
-                card.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-                var lbl = new TextBlock
-                {
-                    Text = c.Label.ToUpper(),
-                    Margin   = new Thickness(0, 0, 0, 2),
-                };
+                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
                 lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty,  "LemoineUiFont");
+                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
                 var capturedVal = c.Val;
                 var valText = new TextBlock
                 {
                     Text         = capturedVal(),
-                    FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap,
+                    FontWeight   = FontWeights.Medium,
+                    TextWrapping = TextWrapping.Wrap,
                 };
                 valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
                 valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty,  "LemoineMonoFont");
-
+                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
                 ValidationChanged += (s, e) => valText.Text = capturedVal();
 
                 var sp = new StackPanel();
@@ -174,8 +263,8 @@ namespace LemoineTools.Tools.Ceilings
                 sp.Children.Add(valText);
                 card.Child = sp;
 
-                Grid.SetRow(card, c.Row);
-                Grid.SetColumn(card, c.Col);
+                WpfGrid.SetRow(card, c.Row);
+                WpfGrid.SetColumn(card, c.Col);
                 grid.Children.Add(card);
             }
 
@@ -183,40 +272,58 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // IsValid — gate the Confirm button on required steps
+        // IsValid
         // ═════════════════════════════════════════════════════════════════════
         public bool IsValid(string stepId)
         {
-            if (stepId == "S1") return !string.IsNullOrWhiteSpace(_dwgPath);
+            if (stepId == "S1")
+                return _batchMode
+                    ? !string.IsNullOrWhiteSpace(_folderPath) && Directory.Exists(_folderPath)
+                    : !string.IsNullOrWhiteSpace(_dwgPath);
             return true;
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // SummaryFor — one-line collapsed summary per step
+        // SummaryFor
         // ═════════════════════════════════════════════════════════════════════
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1")
+            {
+                if (_batchMode)
+                    return string.IsNullOrEmpty(_folderPath) ? "—"
+                        : System.IO.Path.GetFileName(_folderPath.TrimEnd('\\', '/'));
                 return string.IsNullOrEmpty(_dwgPath) ? "—"
                     : System.IO.Path.GetFileName(_dwgPath);
+            }
             if (stepId == "S2") return "Ready to run";
             return "—";
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Run — fires the ExternalEvent; Revit calls back via the callbacks
+        // Run
         // ═════════════════════════════════════════════════════════════════════
         public void Run(
             Action<string, string>     pushLog,
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            // Store parameters in the handler (main-thread access at Execute time)
-            _handler.DwgPath    = _dwgPath;
-            _handler.PushLog    = pushLog;
-            _handler.OnProgress = onProgress;
-            _handler.OnComplete = onComplete;
-            _handler.Mode       = CeilingGridEventHandler.ToolMode.Project;
+            _handler.Mode           = CeilingGridEventHandler.ToolMode.Project;
+            _handler.SelectedViewIds = new List<ElementId>();
+            _handler.PushLog        = pushLog;
+            _handler.OnProgress     = onProgress;
+            _handler.OnComplete     = onComplete;
+
+            if (_batchMode)
+            {
+                _handler.BatchDwgFolder = _folderPath;
+                _handler.DwgPath        = "";
+            }
+            else
+            {
+                _handler.DwgPath        = _dwgPath;
+                _handler.BatchDwgFolder = "";
+            }
 
             pushLog("Raising Revit ExternalEvent…", "info");
             _event.Raise();

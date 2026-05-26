@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>LemoinePreview</AssemblyName>
+    <!-- Keep the same root namespace so XAML x:Class attributes resolve -->
+    <RootNamespace>LemoineTools</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+
+  <!-- ── Core Lemoine layer (zero Revit API deps) ─────────────────────────── -->
+  <ItemGroup>
+    <Compile Include="..\Source\Lemoine\BrushHelper.cs" />
+    <Compile Include="..\Source\Lemoine\ILemoineTool.cs" />
+    <Compile Include="..\Source\Lemoine\ILemoineToolSettings.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineControlStyles.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineIcons.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineSettings.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineTheme.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineToolSettingsSpec.cs" />
+    <Compile Include="..\Source\Lemoine\RelayCommand.cs" />
+    <Compile Include="..\Source\Lemoine\Templates\LemoineTemplateStore.cs" />
+  </ItemGroup>
+
+  <!-- ── Windows (XAML + code-behind) ─────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\StepFlowWindow.xaml"
+             Link="Lemoine\StepFlowWindow.xaml" />
+    <Compile Include="..\Source\Lemoine\StepFlowWindow.xaml.cs" />
+
+    <Page    Include="..\Source\Lemoine\LemoineSettingsWindow.xaml"
+             Link="Lemoine\LemoineSettingsWindow.xaml" />
+    <Compile Include="..\Source\Lemoine\LemoineSettingsWindow.xaml.cs" />
+  </ItemGroup>
+
+  <!-- ── Controls: Input ──────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\Input\*.xaml"
+             Link="Lemoine\Controls\Input\%(Filename)%(Extension)" />
+    <Compile Include="..\Source\Lemoine\Controls\Input\*.cs" />
+  </ItemGroup>
+
+  <!-- ── Controls: Color ──────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\Color\*.xaml"
+             Link="Lemoine\Controls\Color\%(Filename)%(Extension)" />
+    <Compile Include="..\Source\Lemoine\Controls\Color\*.cs" />
+  </ItemGroup>
+
+  <!-- ── Controls: Layout ─────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\Layout\*.xaml"
+             Link="Lemoine\Controls\Layout\%(Filename)%(Extension)" />
+    <Compile Include="..\Source\Lemoine\Controls\Layout\*.cs" />
+  </ItemGroup>
+
+  <!-- ── Controls: Legend ────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\Legend\*.xaml"
+             Link="Lemoine\Controls\Legend\%(Filename)%(Extension)" />
+    <Compile Include="..\Source\Lemoine\Controls\Legend\*.cs" />
+  </ItemGroup>
+
+  <!-- ── Category chip ────────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Page    Include="..\Source\Lemoine\Controls\LemoineCategoryChip.xaml"
+             Link="Lemoine\Controls\LemoineCategoryChip.xaml" />
+    <Compile Include="..\Source\Lemoine\Controls\LemoineCategoryChip.xaml.cs" />
+  </ItemGroup>
+
+  <!-- ── Tool settings singletons (Revit-free) ────────────────────────────── -->
+  <ItemGroup>
+    <Compile Include="..\Source\Tools\T01-AutoFilters\AutoFiltersSettings.cs" />
+    <Compile Include="..\Source\Tools\T02-Ceilings\CeilingHeatmapSettings.cs" />
+    <Compile Include="..\Source\Tools\T03-LinkViews\LinkViewsLevelSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\BatchDimension\BatchDimensionSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\BatchExport\BatchExportSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\CreateSheets\CreateSheetsSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorSettings.cs" />
+    <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorTabContent.cs" />
+    <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackLayout.cs" />
+    <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackSettings.cs" />
+  </ItemGroup>
+
+  <!-- ── Framework assemblies ────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <!-- ── Icon font ─────────────────────────────────────────────────────────── -->
+  <ItemGroup>
+    <Resource Include="..\Source\Resources\Fonts\IcoMoonFree.ttf"
+              Link="Source\Resources\Fonts\IcoMoonFree.ttf" />
+  </ItemGroup>
+
+</Project>

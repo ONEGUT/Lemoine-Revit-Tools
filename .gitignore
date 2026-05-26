@@ -1,0 +1,23 @@
+# Build output
+obj/
+bin/
+*.user
+*.suo
+
+# Visual Studio cache / solution index
+.vs/
+*.vsidx
+*.vspscc
+*.vssscc
+*.slnx
+*.sqlite
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+packages/
+
+# Revit deploy target (local only)
+*.addin.bak

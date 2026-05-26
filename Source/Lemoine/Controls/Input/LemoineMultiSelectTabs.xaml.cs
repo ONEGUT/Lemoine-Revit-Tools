@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Shapes;
 
 namespace LemoineTools.Lemoine.Controls
@@ -77,7 +78,7 @@ namespace LemoineTools.Lemoine.Controls
                 Visibility = Visibility.Visible,
                 Tag        = "badge",
             };
-            badgeBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_LG");
+            badgeBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
             badgeBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             badgeBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
@@ -118,8 +119,10 @@ namespace LemoineTools.Lemoine.Controls
 
         private void SetTabStyle(Border tab, bool active)
         {
-            tab.SetResourceReference(Border.BackgroundProperty,  active ? "LemoineAccentDim" : "Transparent");
-            tab.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent"    : "Transparent");
+            if (active) tab.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            else        tab.Background = Brushes.Transparent;
+            if (active) tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            else        tab.BorderBrush = Brushes.Transparent;
             if (tab.Tag is object[] arr && arr[0] is TextBlock lbl)
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
         }

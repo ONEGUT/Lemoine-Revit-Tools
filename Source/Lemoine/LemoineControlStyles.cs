@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -25,7 +26,8 @@ namespace LemoineTools.Lemoine
         /// <param name="scrollBarWidth">Scrollbar width in pixels. StepFlow = 5, Settings = 8.</param>
         public static void InjectInto(ResourceDictionary resources, int scrollBarWidth = 5)
         {
-            resources[typeof(ScrollBar)]    = ParseStyle(ScrollBarXaml(scrollBarWidth))!;
+            int scaledWidth = (int)Math.Round(scrollBarWidth * LemoineSettings.Instance.Scale);
+            resources[typeof(ScrollBar)]    = ParseStyle(ScrollBarXaml(scaledWidth))!;
             resources[typeof(ComboBox)]     = ParseStyle(ComboBoxXaml)!;
             resources[typeof(ComboBoxItem)] = ParseStyle(ComboBoxItemXaml)!;
             resources[typeof(TextBox)]      = MakeTextBoxStyle();
@@ -584,5 +586,32 @@ namespace LemoineTools.Lemoine
     </Setter.Value>
   </Setter>
 </Style>";
+
+    // ── Scroll bubbling ───────────────────────────────────────────────────────
+    /// <summary>
+    /// Wires up scroll bubbling on <paramref name="inner"/>: when the inner
+    /// ScrollViewer hits its top or bottom limit, the wheel event is re-raised
+    /// on the parent element so the nearest ancestor ScrollViewer continues scrolling.
+    /// </summary>
+    public static void WireBubblingScroll(ScrollViewer inner)
+    {
+        inner.PreviewMouseWheel += (s, e) =>
+        {
+            bool atTop    = inner.VerticalOffset <= 0;
+            bool atBottom = inner.VerticalOffset >= inner.ScrollableHeight - 0.5;
+            bool up   = e.Delta > 0;
+            bool down = e.Delta < 0;
+
+            if (!((atTop && up) || (atBottom && down))) return;
+
+            e.Handled = true;
+            var relay = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = inner,
+            };
+            (inner.Parent as UIElement)?.RaiseEvent(relay);
+        };
     }
+}
 }
