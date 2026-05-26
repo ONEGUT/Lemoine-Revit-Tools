@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
@@ -27,11 +30,7 @@ namespace LemoineTools.Lemoine.Controls
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Inherit theme resources from owner so dynamic refs resolve.
-            if (Owner != null)
-                foreach (var key in Owner.Resources.Keys)
-                    Resources[key] = Owner.Resources[key];
-
+            // Resources are pre-injected by PickColor() before the window is shown.
             ApplyChrome();
             BuildFooter();
         }
@@ -86,15 +85,45 @@ namespace LemoineTools.Lemoine.Controls
 
         // ─────────────────────────────────────────────────────────────────────
         /// <summary>
-        /// Convenience: show modal, return chosen Color or null on Cancel.
+        /// Show the color picker as a modal-like window on its own STA thread.
+        /// Safe to call from Revit's main thread (avoids ShowDialog + ComponentDispatcher.PushModal).
+        /// Pumps the calling dispatcher while waiting so the caller's UI stays responsive.
         /// </summary>
         public static Color? PickColor(Window? owner, Color initial)
         {
-            var w = new LemoineColorPickerWindow(initial)
+            // Snapshot resources on the calling thread before switching — avoids cross-thread access.
+            var resCopy = new List<(object Key, object Value)>();
+            if (owner != null)
+                foreach (var key in owner.Resources.Keys)
+                    resCopy.Add((key, owner.Resources[key]));
+
+            Color? result = null;
+            // ⚠ exitWhenRequestedProcessed:false — frame exits only when we set Continue=false,
+            //   not when the WPF dispatcher has processed all pending items.
+            var frame = new DispatcherFrame(false);
+
+            var thread = new Thread(() =>
             {
-                Owner = owner,
-            };
-            return w.ShowDialog() == true ? w.Result : null;
+                var w = new LemoineColorPickerWindow(initial);
+                foreach (var (k, v) in resCopy)
+                    w.Resources[k] = v;
+
+                w.Closed += (s, e) =>
+                {
+                    result = w.Result;
+                    frame.Continue = false; // wake the calling dispatcher frame
+                    Dispatcher.CurrentDispatcher.InvokeShutdown();
+                };
+                w.Show();
+                Dispatcher.Run();
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+
+            // Pump the calling thread's WPF dispatcher — keeps GlobalSettingsWindow responsive.
+            Dispatcher.PushFrame(frame);
+            return result;
         }
 
         // ─────────────────────────────────────────────────────────────────────

@@ -2243,16 +2243,83 @@ namespace LemoineTools.Lemoine
             swatchRow.Children.Add(hexLbl);
             panel.Children.Add(swatchRow);
 
-            // Swatch click: open modal color picker
+            // ── Inline collapsible color picker (lazy creation) ───────────────
+            // Separator + action buttons are built now; LemoineColorPickerPanel
+            // is created the first time the swatch is clicked (not at popup-open
+            // time) so heavy bitmap work doesn't run until actually needed.
+            var pickerSep = new Border
+            {
+                Height = 1,
+                Margin = new Thickness(-14, 4, -14, 10),
+            };
+            pickerSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+
+            var applyColorBtn  = LemoineControlStyles.BuildButton("Apply Color",
+                LemoineControlStyles.LemoineButtonVariant.Primary);
+            var cancelColorBtn = LemoineControlStyles.BuildButton("Cancel",
+                LemoineControlStyles.LemoineButtonVariant.Ghost);
+            cancelColorBtn.Margin = new Thickness(0, 0, 6, 0);
+
+            var pickerBtnRow = new StackPanel
+            {
+                Orientation         = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin              = new Thickness(0, 8, 0, 0),
+            };
+            pickerBtnRow.Children.Add(cancelColorBtn);
+            pickerBtnRow.Children.Add(applyColorBtn);
+
+            var pickerSection = new StackPanel
+            {
+                Visibility = Visibility.Collapsed,
+                Margin     = new Thickness(0, 0, 0, 10),
+            };
+            panel.Children.Add(pickerSection);
+
+            LemoineColorPickerPanel? pickerPanel = null;
+
             swatch.MouseLeftButtonUp += (s, e) =>
             {
-                var picked = LemoineColorPickerWindow.PickColor(this, HexToMediaColor(newTradeColor));
-                if (picked.HasValue)
+                if (pickerSection.Visibility == Visibility.Visible)
                 {
-                    newTradeColor     = $"#{picked.Value.R:X2}{picked.Value.G:X2}{picked.Value.B:X2}";
-                    swatch.Background = new SolidColorBrush(picked.Value);
-                    hexLbl.Text       = newTradeColor;
+                    pickerSection.Visibility = Visibility.Collapsed;
+                    return;
                 }
+
+                // Create the panel lazily on first open.
+                // Injecting resources here guarantees SetResourceReference resolves
+                // even though pickerSection lives inside a floating Popup.
+                if (pickerPanel == null)
+                {
+                    pickerPanel = new LemoineColorPickerPanel();
+
+                    foreach (var key in Resources.Keys)
+                        pickerSection.Resources[key] = Resources[key];
+
+                    pickerSection.Children.Add(pickerSep);
+                    pickerSection.Children.Add(pickerPanel);
+                    pickerSection.Children.Add(pickerBtnRow);
+                }
+
+                pickerPanel.SelectedColor = HexToMediaColor(newTradeColor);
+                pickerSection.Visibility  = Visibility.Visible;
+            };
+
+            cancelColorBtn.Click += (s, e) =>
+            {
+                pickerSection.Visibility = Visibility.Collapsed;
+            };
+
+            applyColorBtn.Click += (s, e) =>
+            {
+                if (pickerPanel == null) return;
+                var c   = pickerPanel.SelectedColor;
+                string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                newTradeColor      = hex;
+                swatch.Background  = new SolidColorBrush(c);
+                hexLbl.Text        = hex;
+                pickerPanel.AddToRecent(c);
+                pickerSection.Visibility = Visibility.Collapsed;
             };
 
             // ── Add Trade button ──────────────────────────────────────────────
