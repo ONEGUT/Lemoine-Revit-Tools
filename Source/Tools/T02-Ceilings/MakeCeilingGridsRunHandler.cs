@@ -154,36 +154,18 @@ namespace LemoineTools.Tools.Ceilings
 
         private static void SetCeilingOnlyVisibility(Document doc, View view)
         {
+            view.AreAnnotationCategoriesHidden      = true;
+            view.AreAnalyticalModelCategoriesHidden = true;
+            view.AreImportCategoriesHidden          = true;
+
+            // Model categories: hide everything except Ceilings
             foreach (Category cat in doc.Settings.Categories)
             {
+                if (cat.CategoryType != CategoryType.Model) continue;
                 if (!cat.get_AllowsVisibilityControl(view)) continue;
-
-                bool hide;
-                switch (cat.CategoryType)
-                {
-                    case CategoryType.Model:
-                        hide = cat.Id.Value != (int)BuiltInCategory.OST_Ceilings;
-                        break;
-                    case CategoryType.Annotation:
-                    case CategoryType.AnalyticalModel:
-                    case CategoryType.Invalid: // imported DWG layer categories
-                        hide = true;
-                        break;
-                    default:
-                        continue;
-                }
-
-                try { view.SetCategoryHidden(cat.Id, hide); } catch { }
+                bool keep = cat.Id.Value == (int)BuiltInCategory.OST_Ceilings;
+                try { view.SetCategoryHidden(cat.Id, !keep); } catch { }
             }
-
-            // Hide the imported-objects parent category (OST_ImportObjectStyles covers DWG imports not captured above)
-            try
-            {
-                var importCat = Category.GetCategory(doc, BuiltInCategory.OST_ImportObjectStyles);
-                if (importCat != null && importCat.get_AllowsVisibilityControl(view))
-                    view.SetCategoryHidden(importCat.Id, true);
-            }
-            catch { }
         }
 
         private static void HideExcludedCeilingTypes(Document doc, View view, HashSet<long> excludedTypeIds)
