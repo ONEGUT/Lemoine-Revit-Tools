@@ -651,22 +651,44 @@ namespace LemoineTools.Lemoine.Controls
 
                 if (_colorSets.Count > 1)
                 {
-                    var trashBtn = new TextBlock
+                    var deleteBtn = LemoineControlStyles.BuildSmallButton(
+                        "Delete", LemoineControlStyles.LemoineButtonVariant.Danger);
+                    deleteBtn.Margin = new Thickness(4, 2, 2, 2);
+                    deleteBtn.Click += (s, e) =>
                     {
-                        Text              = "×",
-                        Margin            = new Thickness(0, 0, 4, 0),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Cursor            = Cursors.Hand,
-                    };
-                    trashBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-                    trashBtn.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    trashBtn.MouseLeftButtonUp += (s, e) =>
-                    {
-                        DeleteSet(capturedIdx);
+                        if (_removePopup?.IsOpen == true) _removePopup.IsOpen = false;
+
+                        var confirmBtn = LemoineControlStyles.BuildSmallButton(
+                            "Delete Set", LemoineControlStyles.LemoineButtonVariant.Danger);
+                        confirmBtn.Click += (cs, ce) =>
+                        {
+                            if (_removePopup != null) _removePopup.IsOpen = false;
+                            DeleteSet(capturedIdx);
+                        };
+
+                        var popupBorder = new Border
+                        {
+                            Child           = confirmBtn,
+                            BorderThickness = new Thickness(1),
+                            CornerRadius    = new CornerRadius(6),
+                            Padding         = new Thickness(6),
+                        };
+                        popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                        popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        _removePopup = new Popup // ⚠ StaysOpen=true intentional — avoids ComponentDispatcher hook
+                        {
+                            Child              = popupBorder,
+                            PlacementTarget    = (UIElement)s,
+                            Placement          = PlacementMode.Center,
+                            StaysOpen          = true,
+                            AllowsTransparency = true,
+                        };
+                        _removePopup.IsOpen = true;
                         e.Handled = true;
                     };
-                    Grid.SetColumn(trashBtn, 1);
-                    row.Children.Add(trashBtn);
+                    Grid.SetColumn(deleteBtn, 1);
+                    row.Children.Add(deleteBtn);
                 }
 
                 var rowBorder = new Border { Child = row, CornerRadius = new CornerRadius(4), Padding = new Thickness(0) };
