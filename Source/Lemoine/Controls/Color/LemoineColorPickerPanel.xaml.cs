@@ -6,7 +6,6 @@ using System.Linq;
 using IOPath = System.IO.Path;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -87,10 +86,9 @@ namespace LemoineTools.Lemoine.Controls
         private Grid?       _projectGrid;
         private Border?     _dropdownBtn;
         private TextBlock?  _dropdownBtnLabel;
-        private Popup?      _setPopup;
-        private StackPanel? _setPopupStack;
+        private Border?     _setDropdownPanel;
+        private StackPanel? _setDropdownStack;
         private TextBox?    _newSetNameBox;
-        private bool        _popupJustClosed;
         private bool        _internalUpdate;
 
         // ── Data state ────────────────────────────────────────────────────────
@@ -483,6 +481,7 @@ namespace LemoineTools.Lemoine.Controls
 
             // Set-selector dropdown
             right.Children.Add(BuildSetDropdownButton());
+            right.Children.Add(BuildSetDropdownPanel());
             right.Children.Add(new Border { Height = 6 });
 
             // 6-column × 2-row project swatch grid
@@ -582,44 +581,48 @@ namespace LemoineTools.Lemoine.Controls
 
         private void OnDropdownButtonClick()
         {
-            // Guard: StaysOpen=false closes popup on PreviewMouseDown (before MouseLeftButtonUp fires).
-            // The Closed handler sets _popupJustClosed so we skip re-opening here. // ⚠
-            if (_popupJustClosed) { _popupJustClosed = false; return; }
-            if (_setPopup == null) BuildSetPopup();
-            RefreshPopupContent();
-            _setPopup!.IsOpen = true;
+            if (_setDropdownPanel == null) return;
+            if (_setDropdownPanel.Visibility == Visibility.Visible)
+            {
+                CollapseDropdown();
+            }
+            else
+            {
+                RefreshDropdownContent();
+                _setDropdownPanel.Visibility = Visibility.Visible;
+            }
         }
 
-        private void BuildSetPopup()
+        private FrameworkElement BuildSetDropdownPanel()
         {
-            _setPopupStack = new StackPanel { MinWidth = RightColWidth };
+            _setDropdownStack = new StackPanel { MinWidth = RightColWidth };
 
-            var popupBorder = new Border
+            var panelBorder = new Border
             {
-                Child           = _setPopupStack,
+                Child           = _setDropdownStack,
                 BorderThickness = new Thickness(1),
                 CornerRadius    = new CornerRadius(6),
                 Padding         = new Thickness(4),
+                Margin          = new Thickness(0, 2, 0, 0),
+                Visibility      = Visibility.Collapsed,
             };
-            popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            panelBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            panelBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            _setPopup = new Popup
-            {
-                Child              = popupBorder,
-                PlacementTarget    = _dropdownBtn,
-                Placement          = PlacementMode.Bottom,
-                StaysOpen          = false,
-                AllowsTransparency = true,
-                VerticalOffset     = 2,
-            };
-            _setPopup.Closed += (s, e) => { _popupJustClosed = true; };
+            _setDropdownPanel = panelBorder;
+            return panelBorder;
         }
 
-        private void RefreshPopupContent()
+        private void CollapseDropdown()
         {
-            if (_setPopupStack == null) return;
-            _setPopupStack.Children.Clear();
+            if (_setDropdownPanel != null)
+                _setDropdownPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void RefreshDropdownContent()
+        {
+            if (_setDropdownStack == null) return;
+            _setDropdownStack.Children.Clear();
 
             int setIndex = 0;
             foreach (var cs in _colorSets)
@@ -636,7 +639,6 @@ namespace LemoineTools.Lemoine.Controls
                 nameTb.MouseLeftButtonUp += (s, e) =>
                 {
                     SwitchToSet(capturedIdx);
-                    if (_setPopup != null) _setPopup.IsOpen = false;
                 };
                 Grid.SetColumn(nameTb, 0);
                 row.Children.Add(nameTb);
@@ -667,20 +669,20 @@ namespace LemoineTools.Lemoine.Controls
                 else
                     rowBorder.Background = Brushes.Transparent;
 
-                _setPopupStack.Children.Add(rowBorder);
+                _setDropdownStack.Children.Add(rowBorder);
                 setIndex++;
             }
 
             var sep2 = new Border { Height = 1, Margin = new Thickness(2, 4, 2, 4) };
             sep2.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
-            _setPopupStack.Children.Add(sep2);
+            _setDropdownStack.Children.Add(sep2);
 
             BuildNewSetRow();
         }
 
         private void BuildNewSetRow()
         {
-            if (_setPopupStack == null) return;
+            if (_setDropdownStack == null) return;
 
             var addLabel = new TextBlock
             {
@@ -732,7 +734,6 @@ namespace LemoineTools.Lemoine.Controls
                 var name = _newSetNameBox?.Text?.Trim() ?? "";
                 if (string.IsNullOrEmpty(name)) name = $"Set {_colorSets.Count + 1}";
                 CreateNewSet(name);
-                if (_setPopup != null) _setPopup.IsOpen = false;
             };
 
             addLabel.MouseLeftButtonUp += (s, e) =>
@@ -746,13 +747,13 @@ namespace LemoineTools.Lemoine.Controls
             _newSetNameBox.KeyDown += (s, e) =>
             {
                 if      (e.Key == Key.Enter)  { confirmCreate(); e.Handled = true; }
-                else if (e.Key == Key.Escape) { if (_setPopup != null) _setPopup.IsOpen = false; e.Handled = true; }
+                else if (e.Key == Key.Escape) { CollapseDropdown(); e.Handled = true; }
             };
 
             var container = new StackPanel();
             container.Children.Add(addLabel);
             container.Children.Add(entryRow);
-            _setPopupStack.Children.Add(container);
+            _setDropdownStack.Children.Add(container);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -761,6 +762,7 @@ namespace LemoineTools.Lemoine.Controls
         private void SwitchToSet(int idx)
         {
             _activeSetIdx = Math.Max(0, Math.Min(idx, _colorSets.Count - 1));
+            CollapseDropdown();
             SavePersisted();
             RefreshProjectGrid();
             RefreshDropdownLabel();
@@ -770,6 +772,7 @@ namespace LemoineTools.Lemoine.Controls
         {
             _colorSets.Add(new ColorSet(name));
             _activeSetIdx = _colorSets.Count - 1;
+            CollapseDropdown();
             SavePersisted();
             RefreshProjectGrid();
             RefreshDropdownLabel();
@@ -777,13 +780,13 @@ namespace LemoineTools.Lemoine.Controls
 
         private void DeleteSet(int idx)
         {
-            if (_colorSets.Count <= 1) return; // keep at least one set
+            if (_colorSets.Count <= 1) return;
             _colorSets.RemoveAt(idx);
             _activeSetIdx = Math.Max(0, Math.Min(_activeSetIdx, _colorSets.Count - 1));
             SavePersisted();
             RefreshProjectGrid();
             RefreshDropdownLabel();
-            RefreshPopupContent();
+            RefreshDropdownContent();
         }
 
         private void RefreshDropdownLabel()
@@ -817,49 +820,16 @@ namespace LemoineTools.Lemoine.Controls
                     // Left-click: load this color into the picker
                     swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
 
-                    // Right-click: small inline popup to delete the slot
-                    swatch.MouseRightButtonUp += (s, e) =>
+                    // Right-click: context menu to remove the slot (ContextMenu is Revit-safe)
+                    var removeItem = new MenuItem { Header = "Remove" };
+                    removeItem.Click += (ms, me) =>
                     {
-                        var removeLbl = new TextBlock
-                        {
-                            Text   = "Remove",
-                            Cursor = Cursors.Hand,
-                            Margin = new Thickness(10, 6, 10, 6),
-                        };
-                        removeLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                        removeLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                        removeLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-
-                        var popupBorder = new Border
-                        {
-                            BorderThickness = new Thickness(1),
-                            CornerRadius    = new CornerRadius(6),
-                            Child           = removeLbl,
-                        };
-                        popupBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-                        popupBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                        var popup = new Popup
-                        {
-                            Child              = popupBorder,
-                            PlacementTarget    = (UIElement)s,
-                            Placement          = PlacementMode.Center,
-                            StaysOpen          = false,
-                            AllowsTransparency = true,
-                        };
-
-                        removeLbl.MouseLeftButtonUp += (rs, re) =>
-                        {
-                            if (activeSet != null && activeSet.Colors.Count > slotIdx)
-                                activeSet.Colors[slotIdx] = null;
-                            SavePersisted();
-                            RefreshProjectGrid();
-                            popup.IsOpen = false;
-                        };
-
-                        popup.IsOpen = true;
-                        e.Handled    = true;
+                        if (activeSet != null && activeSet.Colors.Count > slotIdx)
+                            activeSet.Colors[slotIdx] = null;
+                        SavePersisted();
+                        RefreshProjectGrid();
                     };
+                    swatch.ContextMenu = new ContextMenu { Items = { removeItem } };
                 }
                 else
                 {
