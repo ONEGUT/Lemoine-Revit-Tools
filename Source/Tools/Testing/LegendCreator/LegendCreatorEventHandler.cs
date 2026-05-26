@@ -260,14 +260,27 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
 
-                // Query Revit's own width limits for the chosen TextNoteType.
-                double minTNW = TextNote.GetMinimumWidthLimit(doc, textTypeId);
-                double maxTNW = TextNote.GetMaximumWidthLimit(doc, textTypeId);
+                // Derive safe TextNote width limits from the font size stored on the type.
+                // TEXT_SIZE is in Revit internal units (paper-space feet); multiply by view
+                // scale to get model-space feet.  The character aspect ratio ~0.6 converts
+                // text height → character width.
+                double minTNW = 0.10;
+                double maxTNW = 50.0;
+                try
+                {
+                    var tnt = doc.GetElement(textTypeId) as TextNoteType;
+                    double textHPaper = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)
+                                            ?.AsDouble() ?? (9.0 / 72.0 / 12.0);
+                    double charW = textHPaper * scale * 0.6; // model-feet per character
+                    minTNW = Math.Max(charW * 3,  0.01);     // ≥ 3 chars wide
+                    maxTNW = Math.Max(charW * 200, LabelWidth * 10); // generous upper bound
+                }
+                catch { }
 
                 // Title/subtitle: span the full legend content width.
                 int    maxGroupsInRow = rows.Count > 0 ? rows.Max(r => r.Groups?.Count ?? 0) : 1;
                 double tnTitle  = Math.Min(Math.Max(maxGroupsInRow * colW, minTNW), maxTNW);
-                // Labels and headers: as narrow as the font allows — no artificial padding.
+                // Labels and headers: clamp to the derived valid range.
                 double tnNarrow = Math.Min(Math.Max(LabelWidth, minTNW), maxTNW);
 
                 double cy = 0.0;
