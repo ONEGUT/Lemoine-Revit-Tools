@@ -1,11 +1,8 @@
 using System;
-using System.Collections.Generic;
-using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Threading;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
@@ -30,7 +27,11 @@ namespace LemoineTools.Lemoine.Controls
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Resources are pre-injected by PickColor() before the window is shown.
+            // Inherit theme resources from owner so dynamic refs resolve.
+            if (Owner != null)
+                foreach (var key in Owner.Resources.Keys)
+                    Resources[key] = Owner.Resources[key];
+
             ApplyChrome();
             BuildFooter();
         }
@@ -42,7 +43,7 @@ namespace LemoineTools.Lemoine.Controls
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var closeX = LemoineControlStyles.BuildButton("✕", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            closeX.Click += (s, e) => { Result = null; Close(); };
+            closeX.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
             closeX.ToolTip = "Cancel";
 
             _toolbarBorder.BorderThickness = new Thickness(0);
@@ -61,13 +62,14 @@ namespace LemoineTools.Lemoine.Controls
 
             var cancelBtn = LemoineControlStyles.BuildButton("Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelBtn.Margin = new Thickness(0, 0, 6, 0);
-            cancelBtn.Click += (s, e) => { Result = null; Close(); };
+            cancelBtn.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
 
             var okBtn = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
             okBtn.Click += (s, e) =>
             {
                 Result = _panel.SelectedColor;
                 _panel.AddToRecent(_panel.SelectedColor);
+                DialogResult = true;
                 Close();
             };
 
@@ -84,44 +86,15 @@ namespace LemoineTools.Lemoine.Controls
 
         // ─────────────────────────────────────────────────────────────────────
         /// <summary>
-        /// Show the color picker as a modal-like window on its own STA thread.
-        /// Safe to call from Revit's main thread (avoids ShowDialog + ComponentDispatcher.PushModal).
-        /// Pumps the calling dispatcher while waiting so the caller's UI stays responsive.
+        /// Convenience: show modal, return chosen Color or null on Cancel.
         /// </summary>
         public static Color? PickColor(Window? owner, Color initial)
         {
-            // Snapshot resources on the calling thread before switching — avoids cross-thread access.
-            var resCopy = new List<(object Key, object Value)>();
-            if (owner != null)
-                foreach (var key in owner.Resources.Keys)
-                    resCopy.Add((key, owner.Resources[key]));
-
-            Color? result = null;
-            var done = new ManualResetEventSlim(false);
-
-            var thread = new Thread(() =>
+            var w = new LemoineColorPickerWindow(initial)
             {
-                var w = new LemoineColorPickerWindow(initial);
-                foreach (var (k, v) in resCopy)
-                    w.Resources[k] = v;
-
-                w.Closed += (s, e) =>
-                {
-                    result = w.Result; // write before Set() — Set() acts as memory release fence
-                    done.Set();
-                    Dispatcher.CurrentDispatcher.InvokeShutdown();
-                };
-                w.Show();
-                Dispatcher.Run();
-            });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.IsBackground = true;
-            thread.Start();
-
-            // Block until the color picker closes.  No nested dispatcher loop —
-            // avoids any interaction with Revit's message pump.
-            done.Wait(); // ⚠ caller's UI appears frozen while picker is open (acceptable for modal color pick)
-            return result;
+                Owner = owner,
+            };
+            return w.ShowDialog() == true ? w.Result : null;
         }
 
         // ─────────────────────────────────────────────────────────────────────

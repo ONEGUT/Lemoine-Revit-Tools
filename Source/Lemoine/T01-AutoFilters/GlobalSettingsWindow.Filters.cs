@@ -2243,10 +2243,12 @@ namespace LemoineTools.Lemoine
             swatchRow.Children.Add(hexLbl);
             panel.Children.Add(swatchRow);
 
-            // ── Inline collapsible color picker (lazy creation) ───────────────
-            // Separator + action buttons are built now; LemoineColorPickerPanel
-            // is created the first time the swatch is clicked (not at popup-open
-            // time) so heavy bitmap work doesn't run until actually needed.
+            // ── Inline collapsible LemoineColorPickerPanel ────────────────────
+            var pickerPanel = new LemoineColorPickerPanel
+            {
+                SelectedColor = HexToMediaColor(newTradeColor),
+            };
+
             var pickerSep = new Border
             {
                 Height = 1,
@@ -2274,35 +2276,23 @@ namespace LemoineTools.Lemoine
                 Visibility = Visibility.Collapsed,
                 Margin     = new Thickness(0, 0, 0, 10),
             };
+            pickerSection.Children.Add(pickerSep);
+            pickerSection.Children.Add(pickerPanel);
+            pickerSection.Children.Add(pickerBtnRow);
             panel.Children.Add(pickerSection);
 
-            LemoineColorPickerPanel? pickerPanel = null;
-
+            // Swatch click: toggle picker open/closed
             swatch.MouseLeftButtonUp += (s, e) =>
             {
                 if (pickerSection.Visibility == Visibility.Visible)
                 {
                     pickerSection.Visibility = Visibility.Collapsed;
-                    return;
                 }
-
-                // Create the panel lazily on first open.
-                // Injecting resources here guarantees SetResourceReference resolves
-                // even though pickerSection lives inside a floating Popup.
-                if (pickerPanel == null)
+                else
                 {
-                    pickerPanel = new LemoineColorPickerPanel();
-
-                    foreach (var key in Resources.Keys)
-                        pickerSection.Resources[key] = Resources[key];
-
-                    pickerSection.Children.Add(pickerSep);
-                    pickerSection.Children.Add(pickerPanel);
-                    pickerSection.Children.Add(pickerBtnRow);
+                    pickerPanel.SelectedColor = HexToMediaColor(newTradeColor);
+                    pickerSection.Visibility  = Visibility.Visible;
                 }
-
-                pickerPanel.SelectedColor = HexToMediaColor(newTradeColor);
-                pickerSection.Visibility  = Visibility.Visible;
             };
 
             cancelColorBtn.Click += (s, e) =>
@@ -2312,7 +2302,6 @@ namespace LemoineTools.Lemoine
 
             applyColorBtn.Click += (s, e) =>
             {
-                if (pickerPanel == null) return;
                 var c   = pickerPanel.SelectedColor;
                 string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 newTradeColor      = hex;
