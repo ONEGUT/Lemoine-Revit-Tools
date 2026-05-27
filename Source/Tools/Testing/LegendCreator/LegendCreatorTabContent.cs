@@ -1,5 +1,6 @@
 using System.Windows;
 using LemoineTools.Lemoine.Controls;
+using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -37,6 +38,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         public static void DiscardEdits()
         {
+            if (_builder != null)
+                AutoFiltersSettings.Saved -= _builder.OnFiltersSaved;
             _builder = null;
         }
     }

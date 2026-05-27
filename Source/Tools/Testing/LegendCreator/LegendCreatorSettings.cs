@@ -46,12 +46,16 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         /// <summary>Horizontal gap in pixels between the swatch and its label.</summary>
         [XmlAttribute] public int    Gap      { get; set; } = 6;
 
+        /// <summary>Legend view scale denominator (e.g. 48 = 1:48).</summary>
+        [XmlAttribute] public int    ViewScale { get; set; } = 48;
+
         /// <summary>Returns a shallow clone of this layout configuration.</summary>
         public LegendLayoutConfig Clone() => new LegendLayoutConfig
         {
             Title = Title, Subtitle = Subtitle,
             SwatchW = SwatchW, SwatchH = SwatchH,
             FontPt = FontPt, Gap = Gap,
+            ViewScale = ViewScale,
         };
     }
 

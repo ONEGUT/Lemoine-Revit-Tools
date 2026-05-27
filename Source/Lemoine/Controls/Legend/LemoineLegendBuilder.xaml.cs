@@ -137,6 +137,7 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Add(BuildFooter());
 
             // ── Subscribe to live filter changes so palette refreshes ─────
+            AutoFiltersSettings.Saved -= OnFiltersSaved;
             AutoFiltersSettings.Saved += OnFiltersSaved;
 
             // ── Populate ──────────────────────────────────────────────────
@@ -171,13 +172,7 @@ namespace LemoineTools.Lemoine.Controls
             _previewToggle = LemoineControlStyles.BuildButton(
                 PreviewVisible ? "Preview ☑" : "Preview ☐",
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
-            _previewToggle.Click += (s, e) =>
-            {
-                PreviewVisible = !PreviewVisible;
-                _previewToggle.Content = PreviewVisible ? "Preview ☑" : "Preview ☐";
-                ApplySidePanelLayout();
-                OnEdited();
-            };
+            _previewToggle.Click += OnPreviewToggleClick;
             Grid.SetColumn(_previewToggle, 1);
             grid.Children.Add(_previewToggle);
 
@@ -219,16 +214,24 @@ namespace LemoineTools.Lemoine.Controls
             AutoFiltersSettings.Saved -= OnFiltersSaved;
         }
 
-        private void OnFiltersSaved()
+        private void OnPreviewToggleClick(object sender, RoutedEventArgs e)
         {
-            // Marshal to UI thread
-            Dispatcher.Invoke(() =>
+            PreviewVisible = !PreviewVisible;
+            if (_previewToggle != null)
+                _previewToggle.Content = PreviewVisible ? "Preview ☑" : "Preview ☐";
+            ApplySidePanelLayout();
+            OnEdited();
+        }
+
+        internal void OnFiltersSaved()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 _palette?.Refresh();
                 RebuildRows();
                 UpdatePreview();
                 UpdateCounts();
-            });
+            }));
         }
 
         // ─────────────────────────────────────────────────────────────────────

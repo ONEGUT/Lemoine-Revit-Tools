@@ -7,6 +7,7 @@ using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.Testing.CoordSet;
 using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools
 {
@@ -36,6 +37,8 @@ namespace LemoineTools
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
         internal static AutoFiltersLegendEventHandler?        AutoFiltersLegendHandler        { get; private set; }
         internal static ExternalEvent?                        AutoFiltersLegendEvent          { get; private set; }
+        internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
+        internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
         internal static ApplyFiltersToViewsEventHandler?      ApplyFiltersToViewsHandler      { get; private set; }
@@ -117,6 +120,8 @@ namespace LemoineTools
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
             AutoFiltersLegendHandler        = new AutoFiltersLegendEventHandler();
             AutoFiltersLegendEvent          = ExternalEvent.Create(AutoFiltersLegendHandler);
+            LegendCreatorHandler            = new LegendCreatorEventHandler();
+            LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
             ApplyFiltersToViewsHandler      = new ApplyFiltersToViewsEventHandler();

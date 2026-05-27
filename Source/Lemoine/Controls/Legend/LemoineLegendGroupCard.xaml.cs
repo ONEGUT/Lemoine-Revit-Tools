@@ -190,10 +190,14 @@ namespace LemoineTools.Lemoine.Controls
             _header.Child = grid;
 
             // Drag source — header is the drag handle for the whole group
+            _header.MouseLeftButtonDown -= OnHeaderMouseDown;
             _header.MouseLeftButtonDown += OnHeaderMouseDown;
+            _header.MouseMove           -= OnHeaderMouseMove;
             _header.MouseMove           += OnHeaderMouseMove;
+            _header.MouseLeftButtonUp   -= OnHeaderMouseUp;
             _header.MouseLeftButtonUp   += OnHeaderMouseUp;
-            _header.MouseLeave          += (s, e) => _mouseDown = false;
+            _header.MouseLeave          -= OnHeaderMouseLeave;
+            _header.MouseLeave          += OnHeaderMouseLeave;
             _header.Cursor = Cursors.SizeAll;
         }
 
@@ -228,11 +232,12 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     var row = new LemoineLegendBlockRow();
                     row.Bind(Group.Blocks![i]);
-                    int capturedI = i;
+                    string capturedId = Group.Blocks![i].Id;
                     row.Changed         += (s, e) => { Changed?.Invoke(this, EventArgs.Empty); /* count refresh */ BuildHeader(ResolveTradeColor()); };
                     row.DeleteRequested += (s, e) =>
                     {
-                        Group.Blocks!.RemoveAt(capturedI);
+                        int idx = Group.Blocks!.FindIndex(b => b.Id == capturedId);
+                        if (idx >= 0) Group.Blocks!.RemoveAt(idx);
                         Changed?.Invoke(this, EventArgs.Empty);
                         Dispatcher.BeginInvoke(new System.Action(BuildAll),
                             System.Windows.Threading.DispatcherPriority.Background);
@@ -242,7 +247,7 @@ namespace LemoineTools.Lemoine.Controls
                         var payload = new LegendDragPayload
                         {
                             What    = LegendDragPayload.Kind.Block,
-                            BlockId = Group.Blocks![capturedI].Id,
+                            BlockId = capturedId,
                             GroupId = Group.Id,
                         };
                         try
@@ -465,6 +470,7 @@ namespace LemoineTools.Lemoine.Controls
             }
         }
         private void OnHeaderMouseUp(object sender, MouseButtonEventArgs e) { _mouseDown = false; }
+        private void OnHeaderMouseLeave(object sender, MouseEventArgs e)    { _mouseDown = false; }
 
         private static bool IsInsideInteractive(DependencyObject d)
         {

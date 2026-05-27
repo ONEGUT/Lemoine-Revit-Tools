@@ -156,10 +156,14 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Add(del);
 
             // ── Drag-source wiring (whole row is grabbable) ───────────────
+            _outer.MouseLeftButtonDown -= OnRowMouseDown;
             _outer.MouseLeftButtonDown += OnRowMouseDown;
+            _outer.MouseMove           -= OnRowMouseMove;
             _outer.MouseMove           += OnRowMouseMove;
+            _outer.MouseLeftButtonUp   -= OnRowMouseUp;
             _outer.MouseLeftButtonUp   += OnRowMouseUp;
-            _outer.MouseLeave          += (s, e) => _mouseDown = false;
+            _outer.MouseLeave          -= OnRowMouseLeave;
+            _outer.MouseLeave          += OnRowMouseLeave;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -181,10 +185,8 @@ namespace LemoineTools.Lemoine.Controls
                 DragInitiated?.Invoke(this, e);
             }
         }
-        private void OnRowMouseUp(object sender, MouseButtonEventArgs e)
-        {
-            _mouseDown = false;
-        }
+        private void OnRowMouseUp(object sender, MouseButtonEventArgs e)    { _mouseDown = false; }
+        private void OnRowMouseLeave(object sender, MouseEventArgs e)        { _mouseDown = false; }
 
         /// <summary>Don't start a drag if the user clicks an interactive child (button, textbox, etc.).</summary>
         private static bool IsInsideInteractive(DependencyObject d)

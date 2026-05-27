@@ -1,10 +1,12 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Commands
 {
@@ -20,7 +22,6 @@ namespace LemoineTools.Commands
             ref string          message,
             ElementSet          elements)
         {
-            // FIX: bring existing window to front via Dispatcher (STA-safe)
             if (_window != null)
             {
                 try
@@ -35,11 +36,31 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var vm = new AutoFiltersLegendViewModel(
-                App.AutoFiltersLegendHandler!,
-                App.AutoFiltersLegendEvent!);
+            var doc = commandData.Application.ActiveUIDocument.Document;
 
-            // FIX: open window on dedicated STA thread so real-time progress works
+            // Collect legend views on the Revit main thread
+            var legendViews = new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => v.ViewType == ViewType.Legend)
+                .Select(v => (Id: v.Id, Name: v.Name))
+                .OrderBy(v => v.Name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // Collect text note types on the Revit main thread
+            var textTypes = new FilteredElementCollector(doc)
+                .OfClass(typeof(TextNoteType))
+                .Cast<TextNoteType>()
+                .Select(t => (Id: t.Id, Name: t.Name))
+                .OrderBy(t => t.Name, System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var vm = new LegendCreatorLaunchViewModel(
+                legendViews,
+                textTypes,
+                App.LegendCreatorHandler!,
+                App.LegendCreatorEvent!);
+
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 

@@ -351,7 +351,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
         // ═══════════════════════════════════════════════════════════════════════
-        public bool IsValid(string stepId) => _legendViews.Count > 0;
+        public bool IsValid(string stepId)
+        {
+            if (_legendViews.Count == 0) return false;
+            var s = LegendCreatorSettings.Instance;
+            return s.Rows.Any(r => r.Groups?.Any(g => g.Blocks?.Count > 0) == true);
+        }
 
         public string SummaryFor(string stepId)
         {
