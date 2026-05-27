@@ -27,6 +27,10 @@ namespace LemoineTools
         internal static MakeCeilingGridsRunHandler?    MakeCeilingGridsRunHandler    { get; private set; }
         internal static ExternalEvent?                 MakeCeilingGridsRunEvent      { get; private set; }
 
+        // ── Discover Rules ──────────────────────────────────────────────────────────
+        internal static DiscoverEventHandler? DiscoverHandler { get; private set; }
+        internal static ExternalEvent?        DiscoverEvent   { get; private set; }
+
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
@@ -104,6 +108,10 @@ namespace LemoineTools
             MakeCeilingGridsRunHandler    = new MakeCeilingGridsRunHandler();
             MakeCeilingGridsRunEvent      = ExternalEvent.Create(MakeCeilingGridsRunHandler);
 
+            // ── Discover Rules ────────────────────────────────────────────────
+            DiscoverHandler = new DiscoverEventHandler();
+            DiscoverEvent   = ExternalEvent.Create(DiscoverHandler);
+
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
@@ -175,6 +183,12 @@ namespace LemoineTools
             filtersPanel.AddItem(Btn(
                 "LT_AutoFilters", "Auto\nFilters", "AutoFiltersLaunchCommand",
                 "Scan MEP elements and create view filters with automatic color overrides."));
+
+            filtersPanel.AddStackedItems(
+                Btn("LT_DiscoverRules",    "Discover\nRules",     "DiscoverLaunchCommand",
+                    "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules."),
+                Btn("LT_FiltersSettings",  "Filters\nSettings",   "OpenFiltersSettingsCommand",
+                    "Open the Filters / Color settings tab directly."));
 
             filtersPanel.AddStackedItems(
                 Btn("LT_AutoFiltersLegend",   "Filter Legend",  "AutoFiltersLegendLaunchCommand",

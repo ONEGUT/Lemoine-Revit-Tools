@@ -144,7 +144,20 @@ namespace LemoineTools.Lemoine
             _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
             _root.RowDefinitions[3].Height = new GridLength(LemoineSettings.Instance.FooterHeight);
         }        // ═════════════════════════════════════════════════════════════════════
-        // Activate filters tab (called externally from gear-icon button)
+        // ActivateTab — called externally (e.g. OpenFiltersSettingsCommand)
+        // ═════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Switches to the specified tab if it is not already active.
+        /// Safe to call before or after the window has loaded.
+        /// </summary>
+        /// <param name="tabId">One of the tab ids from _navDefs (e.g. "filters", "general").</param>
+        internal void ActivateTab(string tabId)
+        {
+            if (_activeTabId == tabId) return;
+            SwitchTab(tabId);
+        }
+
         // ═════════════════════════════════════════════════════════════════════
         // Toolbar
         // ═════════════════════════════════════════════════════════════════════
