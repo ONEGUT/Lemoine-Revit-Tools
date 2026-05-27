@@ -1,19 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    /// <summary>
-    /// Executes ceiling grid Revit API work on the main thread when
-    /// triggered by ExternalEvent.Raise() from a viewmodel's Run() call.
-    ///
-    /// All properties are set by the viewmodel before Raise() is called.
-    /// The Dispatcher callbacks (PushLog / OnProgress / OnComplete) are
-    /// invoked on the WPF thread via the Dispatcher — safe from Execute().
-    /// </summary>
     public class CeilingGridEventHandler : IExternalEventHandler
     {
         public enum ToolMode { Project, Reproject }
@@ -22,10 +15,13 @@ namespace LemoineTools.Tools.Ceilings
         public ToolMode Mode           { get; set; }
         public string   DwgPath        { get; set; } = null!;
         public string   ReprojectMode  { get; set; } = "all";   // "preselected" | "all"
+        public string   BatchDwgFolder { get; set; } = "";      // non-empty → batch project mode
 
-        // Pre-selected element IDs — set by ReprojectCeilingGridsCommand
-        // on the Revit main thread before the window opens.
+        // Pre-selected element IDs — legacy single-reproject support
         public IList<ElementId> PreSelectedIds { get; set; } = new List<ElementId>();
+
+        // Batch reproject — set by ReprojectCeilingGridsViewModel
+        public List<ElementId> SelectedViewIds { get; set; } = new List<ElementId>();
 
         // ── Callbacks — set by viewmodel, invoked on WPF thread ──────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -38,16 +34,18 @@ namespace LemoineTools.Tools.Ceilings
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
-            var view = doc.ActiveView;
-
             int pass = 0, fail = 0, skip = 0;
 
             try
             {
-                if (Mode == ToolMode.Project)
-                    RunProject(doc, view, ref pass, ref fail, ref skip);
+                if (SelectedViewIds.Count > 0)
+                    RunBatchReproject(doc, ref pass, ref fail, ref skip);
+                else if (!string.IsNullOrWhiteSpace(BatchDwgFolder))
+                    RunBatchProject(doc, ref pass, ref fail, ref skip);
+                else if (Mode == ToolMode.Project)
+                    RunProject(doc, doc.ActiveView, ref pass, ref fail, ref skip);
                 else
-                    RunReproject(doc, view, ref pass, ref fail, ref skip);
+                    RunReproject(doc, doc.ActiveView, ref pass, ref fail, ref skip);
             }
             catch (Exception ex)
             {
@@ -55,13 +53,93 @@ namespace LemoineTools.Tools.Ceilings
                 fail++;
             }
 
-            // Signal completion back to WPF — safe to call from Execute()
-            // because the callbacks dispatch to the WPF message pump.
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }
 
         public string GetName() => $"LemoineTools.CeilingGridEventHandler.{Mode}";
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Batch project — scans folder for DWGs, matches names to ceiling plan views
+        // ═════════════════════════════════════════════════════════════════════
+        private void RunBatchProject(Document doc, ref int pass, ref int fail, ref int skip)
+        {
+            if (!Directory.Exists(BatchDwgFolder))
+            {
+                Log($"Folder not found: {BatchDwgFolder}", "fail");
+                fail++;
+                return;
+            }
+
+            var dwgFiles = Directory.GetFiles(BatchDwgFolder, "*.dwg", SearchOption.TopDirectoryOnly);
+            if (dwgFiles.Length == 0)
+            {
+                Log($"No DWG files found in: {BatchDwgFolder}", "fail");
+                fail++;
+                return;
+            }
+
+            Log($"Found {dwgFiles.Length} DWG file(s) in folder.", "info");
+
+            var ceilingPlanViews = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewPlan))
+                .Cast<ViewPlan>()
+                .Where(v => v.ViewType == ViewType.CeilingPlan && !v.IsTemplate)
+                .ToDictionary(v => v.Name, v => (View)v, StringComparer.OrdinalIgnoreCase);
+
+            int total = dwgFiles.Length;
+            int done  = 0;
+
+            foreach (var dwgFile in dwgFiles)
+            {
+                string viewName = Path.GetFileNameWithoutExtension(dwgFile);
+                if (!ceilingPlanViews.TryGetValue(viewName, out var targetView))
+                {
+                    Log($"No ceiling plan view '{viewName}' — skipping {Path.GetFileName(dwgFile)}.", "info");
+                    skip++;
+                }
+                else
+                {
+                    Log($"Projecting {Path.GetFileName(dwgFile)} → '{targetView.Name}'", "info");
+                    DwgPath = dwgFile;
+                    RunProject(doc, targetView, ref pass, ref fail, ref skip);
+                }
+                done++;
+                Progress((int)(done * 90.0 / total), pass, fail, skip);
+            }
+
+            Log($"Batch complete — {pass} curve(s) created, {skip} DWG(s) skipped.", "pass");
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Batch reproject — iterates each selected view
+        // ═════════════════════════════════════════════════════════════════════
+        private void RunBatchReproject(Document doc, ref int pass, ref int fail, ref int skip)
+        {
+            Log($"Batch reprojecting {SelectedViewIds.Count} view(s).", "info");
+
+            int total = SelectedViewIds.Count;
+            int done  = 0;
+
+            foreach (var viewId in SelectedViewIds)
+            {
+                var view = doc.GetElement(viewId) as View;
+                if (view == null || view.IsTemplate)
+                {
+                    Log($"View {viewId.Value} not found or is a template — skipped.", "info");
+                    skip++;
+                }
+                else
+                {
+                    Log($"Reprojecting: {view.Name}", "info");
+                    RunReproject(doc, view, ref pass, ref fail, ref skip);
+                }
+                done++;
+                Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
+            }
+
+            Log($"Batch complete — {pass} curve(s) created across {total} view(s).", "pass");
+        }
 
         // ═════════════════════════════════════════════════════════════════════
         // Project
@@ -78,16 +156,14 @@ namespace LemoineTools.Tools.Ceilings
                 ConfigureFailures(tx);
                 tx.Start();
 
-                // Ceilings
                 var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
                 if (ceilings.Count == 0)
                 {
-                    Log("No ceiling elements in active view.", "fail");
+                    Log($"No ceiling elements in view '{view.Name}'.", "fail");
                     fail++; tx.RollBack(); return;
                 }
                 Log($"Found {ceilings.Count} ceiling(s).", "info");
 
-                // Soffit faces
                 var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
                 if (faces.Count == 0)
                 {
@@ -95,11 +171,9 @@ namespace LemoineTools.Tools.Ceilings
                     fail++; tx.RollBack(); return;
                 }
 
-                // Import DWG
                 var importId = ImportDwg(doc, view);
                 if (importId == ElementId.InvalidElementId) { fail++; tx.RollBack(); return; }
 
-                // Extract curves
                 var cadCurves = ExtractCadCurves(doc, importId);
                 if (cadCurves.Count == 0)
                 {
@@ -108,10 +182,8 @@ namespace LemoineTools.Tools.Ceilings
                 }
                 Log($"Extracted {cadCurves.Count} curve(s) from DWG.", "info");
 
-                // Delete import before curve creation
                 doc.Delete(importId);
 
-                // Project
                 var cache   = new Dictionary<double, SketchPlane>();
                 int noMatch = 0;
                 int total   = cadCurves.Count;
@@ -154,7 +226,6 @@ namespace LemoineTools.Tools.Ceilings
         // ═════════════════════════════════════════════════════════════════════
         private void RunReproject(Document doc, View view, ref int pass, ref int fail, ref int skip)
         {
-            // Resolve source curves
             IList<ModelCurve> sourceCurves;
             if (ReprojectMode == "preselected" && PreSelectedIds?.Count > 0)
             {
@@ -167,7 +238,7 @@ namespace LemoineTools.Tools.Ceilings
             else
             {
                 sourceCurves = CeilingGridHelpers.GetModelCurvesInView(doc, view);
-                Log($"Found {sourceCurves.Count} ModelCurve(s) in active view.", "info");
+                Log($"Found {sourceCurves.Count} ModelCurve(s) in view '{view.Name}'.", "info");
             }
 
             if (sourceCurves.Count == 0)
@@ -175,11 +246,10 @@ namespace LemoineTools.Tools.Ceilings
                 Log("No source curves found.", "fail"); fail++; return;
             }
 
-            // Ceilings
             var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
             if (ceilings.Count == 0)
             {
-                Log("No ceiling elements in active view.", "fail"); fail++; return;
+                Log($"No ceiling elements in view '{view.Name}'.", "fail"); fail++; return;
             }
 
             var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
@@ -194,13 +264,11 @@ namespace LemoineTools.Tools.Ceilings
                 ConfigureFailures(tx);
                 tx.Start();
 
-                // Capture geometry first
                 var sourceGeom = sourceCurves
                     .Select(mc => (Id: mc.Id, Curve: mc.GeometryCurve))
                     .Where(g => g.Curve != null)
                     .ToList();
 
-                // Project all, then delete
                 var projected = new List<Curve>();
                 int noMatch   = 0;
                 int total     = sourceGeom.Count;
@@ -215,10 +283,8 @@ namespace LemoineTools.Tools.Ceilings
                     Progress((int)(done * 60.0 / total), pass, fail, noMatch);
                 }
 
-                // Delete originals
                 doc.Delete(sourceGeom.Select(g => g.Id).ToList());
 
-                // Create new curves
                 var cache = new Dictionary<double, SketchPlane>();
                 total = projected.Count;
                 done  = 0;
@@ -263,7 +329,7 @@ namespace LemoineTools.Tools.Ceilings
                     ThisViewOnly = true,
                 };
                 bool ok = doc.Import(DwgPath, opts, view, out ElementId id);
-                if (ok) { Log($"DWG imported: {System.IO.Path.GetFileName(DwgPath)}", "info"); return id; }
+                if (ok) { Log($"DWG imported: {Path.GetFileName(DwgPath)}", "info"); return id; }
                 Log("DWG import returned false — check the file path.", "fail");
                 return ElementId.InvalidElementId;
             }
@@ -322,8 +388,6 @@ namespace LemoineTools.Tools.Ceilings
             tx.SetFailureHandlingOptions(opts);
         }
 
-        // Invoke callbacks — safe to call from Execute() because the viewmodel
-        // passes Dispatcher.Invoke-wrapped lambdas.
         private void Log(string text, string status) => PushLog?.Invoke(text, status);
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);

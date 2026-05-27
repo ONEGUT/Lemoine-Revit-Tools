@@ -22,6 +22,12 @@ namespace LemoineTools
         internal static CeilingHeatmapDebugHandler? CeilingHeatmapDebugHandler { get; private set; }
         internal static ExternalEvent?              CeilingHeatmapDebugEvent   { get; private set; }
 
+        // ── Make Ceiling Grids ──────────────────────────────────────────────────
+        internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
+        internal static ExternalEvent?                 MakeCeilingGridsPhase1Event   { get; private set; }
+        internal static MakeCeilingGridsRunHandler?    MakeCeilingGridsRunHandler    { get; private set; }
+        internal static ExternalEvent?                 MakeCeilingGridsRunEvent      { get; private set; }
+
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
@@ -96,6 +102,12 @@ namespace LemoineTools
             CeilingHeatmapDebugHandler = new CeilingHeatmapDebugHandler();
             CeilingHeatmapDebugEvent   = ExternalEvent.Create(CeilingHeatmapDebugHandler);
             CeilingHeatmapViewModel.RegisterDebugEvent(CeilingHeatmapDebugHandler, CeilingHeatmapDebugEvent);
+
+            // ── Make Ceiling Grids ────────────────────────────────────────────
+            MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();
+            MakeCeilingGridsPhase1Event   = ExternalEvent.Create(MakeCeilingGridsPhase1Handler);
+            MakeCeilingGridsRunHandler    = new MakeCeilingGridsRunHandler();
+            MakeCeilingGridsRunEvent      = ExternalEvent.Create(MakeCeilingGridsRunHandler);
 
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
@@ -195,18 +207,48 @@ namespace LemoineTools
 
             // ── T02 — Ceilings ────────────────────────────────────────────────
             // Large:   Ceiling Heatmap
-            // Stacked: Project Grids  |  Reproject Grids
+            // Pulldown: Ceiling Grids → Make / Project / Reproject
             var ceilingsPanel = application.CreateRibbonPanel("Lemoine Tools", "T02  Ceilings");
 
             ceilingsPanel.AddItem(Btn(
                 "LT_CeilingHeatmap", "Ceiling\nHeatmap", "CeilingHeatmapCommand",
                 "Color-code ceiling elevations by height using view filter overrides.", "\uE81D"));
 
-            ceilingsPanel.AddStackedItems(
-                Btn("LT_ProjectCeilingGrids",   "Project Grids",   "ProjectedCeilingGridsCommand",
-                    "Import a DWG ceiling plan and project its lines onto ceiling soffit faces."),
-                Btn("LT_ReprojectCeilingGrids", "Reproject Grids", "ReprojectCeilingGridsCommand",
-                    "Reproject existing ceiling grid ModelCurves to updated ceiling elevations."));
+            var ceilingGridsPulldown = new PulldownButtonData("LT_CeilingGrids", "Ceiling\nGrids")
+            {
+                ToolTip    = "Create, project, and reproject ceiling grid DWG exports.",
+                LargeImage = CreateGlyphBitmap(32, "\uE80A"),
+                Image      = CreateGlyphBitmap(16, "\uE80A"),
+            };
+
+            var ceilingGridsBtn = ceilingsPanel.AddItem(ceilingGridsPulldown) as PulldownButton;
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_MakeCeilingGrids", "Make Ceiling Grids", dll,
+                "LemoineTools.Commands.MakeCeilingGridsCommand")
+            {
+                ToolTip    = "Create RCP views for each level showing only ceilings and export them as DWG files.",
+                LargeImage = CreateGlyphBitmap(32, "\uE80A"),
+                Image      = CreateGlyphBitmap(16, "\uE80A"),
+            });
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_ProjectCeilingGrids", "Project Grids", dll,
+                "LemoineTools.Commands.ProjectedCeilingGridsCommand")
+            {
+                ToolTip    = "Import a DWG ceiling plan and project its lines onto ceiling soffit faces.",
+                LargeImage = CreateGlyphBitmap(32, "\uE896"),
+                Image      = CreateGlyphBitmap(16, "\uE896"),
+            });
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_ReprojectCeilingGrids", "Reproject Grids", dll,
+                "LemoineTools.Commands.ReprojectCeilingGridsCommand")
+            {
+                ToolTip    = "Reproject existing ceiling grid ModelCurves to updated ceiling elevations.",
+                LargeImage = CreateGlyphBitmap(32, "\uE895"),
+                Image      = CreateGlyphBitmap(16, "\uE895"),
+            });
 
             // ── T03 — Link Views ──────────────────────────────────────────────
             // Large:   Link Views by Level

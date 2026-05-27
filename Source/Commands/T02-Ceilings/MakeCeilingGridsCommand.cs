@@ -12,7 +12,7 @@ namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class ReprojectCeilingGridsCommand : IExternalCommand
+    public class MakeCeilingGridsCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -34,30 +34,41 @@ namespace LemoineTools.Commands
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 
-            // Collect all ceiling plan views with their associated level names — must happen on main thread
-            var levelMap = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToDictionary(l => l.Id, l => l.Name);
-
-            var viewEntries = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewPlan))
-                .Cast<ViewPlan>()
-                .Where(v => v.ViewType == ViewType.CeilingPlan && !v.IsTemplate)
-                .OrderBy(v => v.Name)
-                .Select(v =>
+            // Collect available documents on the Revit main thread
+            var availableDocs = new List<MakeCeilingGridsViewModel.DocEntry>
+            {
+                new MakeCeilingGridsViewModel.DocEntry
                 {
-                    string levelName = "";
-                    if (v.GenLevel != null && levelMap.TryGetValue(v.GenLevel.Id, out string? ln))
-                        levelName = ln;
-                    return new ReprojectCeilingGridsViewModel.CeilingPlanViewEntry(v.Id, v.Name, levelName);
-                })
-                .ToList();
+                    Label      = "(Host document)",
+                    IsHost     = true,
+                    LinkInstId = ElementId.InvalidElementId,
+                }
+            };
 
-            var vm = new ReprojectCeilingGridsViewModel(
-                App.ReprojectHandler!,
-                App.ReprojectEvent!,
-                viewEntries);
+            var seenDocIds = new System.Collections.Generic.HashSet<string>
+                { doc.PathName ?? doc.Title };
+
+            foreach (var li in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance))
+                .Cast<RevitLinkInstance>()
+                .Where(l => l.GetLinkDocument() != null))
+            {
+                var ld = li.GetLinkDocument();
+                string key = ld.PathName ?? ld.Title;
+                if (!seenDocIds.Add(key)) continue;
+
+                availableDocs.Add(new MakeCeilingGridsViewModel.DocEntry
+                {
+                    Label      = ld.Title ?? li.Name,
+                    IsHost     = false,
+                    LinkInstId = li.Id,
+                });
+            }
+
+            var vm = new MakeCeilingGridsViewModel(
+                App.MakeCeilingGridsPhase1Handler!, App.MakeCeilingGridsPhase1Event!,
+                App.MakeCeilingGridsRunHandler!,    App.MakeCeilingGridsRunEvent!,
+                availableDocs);
 
             var ready          = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
