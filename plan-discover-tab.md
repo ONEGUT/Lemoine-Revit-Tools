@@ -32,10 +32,38 @@ Discover slots in at the top of the chain. Auto Filters and Apply Filters to Vie
 | Scan By source | **Dynamic per category** — pre-scan in S3 discovers which parameters have data for each category independently |
 | Category grouping | Configured in S3: user assigns the same group name to multiple categories; grouped categories are scanned together and produce rules sharing the same `BuiltInCategories` list |
 | Whole-category mode | Per row in S3: toggle between "Per value" (scan a parameter) and "Whole category" (one rule for all elements, no parameter filter) |
+| Whole-category parameter | Discover always writes `Parameter = "Type Name"` for whole-category rules so Auto Filters' `ResolveParamId` succeeds; `MatchType = "all"` means the value is never tested |
 | Color memory key | Raw Revit parameter value (e.g. `"Supply Air"`) |
 | Color memory location | `%AppData%\LemoineTools\ColorMemory.xml` (XML, consistent with other settings) |
+| Color lookup priority | 1 — ColorMemory; 2 — existing `AutoFiltersSettings` rule whose `Match` list contains the value (self-healing after manual color edits in Filters/Color tab) |
 | Duplicate detection | Flag results where a rule with the same name already exists in the matched trade |
 | Re-scan | Show everything; flag duplicates |
+
+---
+
+## Known Limitations & Mitigations
+
+### 1. Whole-category rules need a parameter (🔴 fixed in plan)
+Auto Filters' `ResolveParamId` always requires a non-empty parameter name. For `MatchType = "all"` rules, Discover sets `Parameter = "Type Name"` (maps to `ALL_MODEL_TYPE_NAME` in the hardcoded `bipMap` — always resolvable). Auto Filters then creates a `HasValue` rule on Type Name, which matches every element of the category. No change needed in Auto Filters.
+
+### 2. Custom shared parameters may not resolve in Auto Filters (🟡 surfaced in UI)
+`ResolveParamId` falls back to scanning the host document for live elements. If all elements of a category live in linked files and none exist in the host, resolution fails and the rule is silently skipped. This only affects custom shared parameters — the five entries in the hardcoded `bipMap` (System Classification, Type Name, Family Name, Fabrication Service, Structural Material) always resolve.
+
+**Mitigation:** In S3, parameter dropdown rows whose parameter is not in the known-safe list display a small `ⓘ` tooltip: *"This parameter may not resolve if no elements of this category exist in the host document."* No change to Auto Filters.
+
+### 3. ColorMemory goes stale after manual edits (🟡 fixed in plan)
+ColorMemory is only written by Discover's commit. If a user later changes a color in the Filters/Color tab, ColorMemory retains the old value.
+
+**Fix:** The color lookup in `DiscoverEventHandler` checks two sources in order:
+1. ColorMemory (keyed by raw parameter value)
+2. Any existing `FilterRuleConfig` in `AutoFiltersSettings` whose `Match` list contains the parameter value (takes its `CutColor`)
+
+Source 2 always reflects the user's current configuration. ColorMemory remains the write target on commit.
+
+### 4. Existing Revit filter elements don't update when categories are added (🟢 documented only)
+Auto Filters defaults to `OverwriteFilterDefinition = false`. If Discover adds new `BuiltInCategories` to an existing rule (e.g. adding Pipes to a Supply Air rule that previously only covered Ducts) and the user re-runs Auto Filters, the existing `ParameterFilterElement` is reused without change. The user must tick **"Overwrite Filter Definitions"** in Auto Filters S3 to force a rebuild.
+
+**Mitigation:** The S5 Review summary in Discover includes a static note: *"After adding rules, run Auto Filters. Tick 'Overwrite Filter Definitions' if modifying existing filter categories."*
 
 ---
 
@@ -77,7 +105,7 @@ The most complex step. Shows a **per-row configuration table** — one row per s
 | Col | Width | Content |
 |---|---|---|
 | Category label | ~200 px | `TextBlock` (non-editable) |
-| Parameter | ~260 px | `LemoineSingleSelect` (dynamic, from pre-scan); disabled when mode = Whole category |
+| Parameter | ~260 px | `LemoineSingleSelect` (dynamic, from pre-scan); disabled when mode = Whole category. Rows whose selected parameter is not in the known-safe list show a `ⓘ` tooltip: *"This parameter may not resolve if no elements of this category exist in the host document."* |
 | Mode | ~200 px | Two `RadioButton`-style pills: **Per value** / **Whole category** |
 | Group | ~160 px | `LemoineInlineEdit` — optional free-text group name |
 
@@ -153,6 +181,7 @@ Each row is a `Grid` with fixed column widths:
 - `LemoineReviewSummary` grouping rules by trade (trade name → coloured rule chips).
 - Run button label: `"Add Rules to Filters →"`
 - `Run()` → `DiscoverMode.Commit` → commits rules + ColorMemory → calls `OnComplete`.
+- Static footer note (Gap 4 mitigation): *"After adding rules, run Auto Filters. If modifying existing filter categories, tick 'Overwrite Filter Definitions' in Auto Filters."*
 
 ---
 
@@ -261,6 +290,7 @@ public class DiscoveredRuleRow : INotifyPropertyChanged
      - `Parameter = row.ScanParameter ?? ""`
      - `Match = row.IsWholeCategory ? [] : [row.ParameterValue]`
      - `MatchType = row.IsWholeCategory ? "all" : "equals"`
+     - `Parameter = row.IsWholeCategory ? "Type Name" : row.ScanParameter`  ← **Gap 1 fix**: whole-category rules always use "Type Name" so `ResolveParamId` succeeds
      - `BuiltInCategories` from `row.BuiltInCategories` (OST_ strings)
      - `CutColor = SurfColor = LineColor = row.HexColor`
      - `Enabled = true`
@@ -313,7 +343,7 @@ For each `ScanConfigRow`:
 - One `DiscoveredRuleRow` per group.
 
 For all rows:
-- `HexColor`: `ColorMemory.TryGetColor(v, out h) ? h : _palette[...]`
+- `HexColor`: resolved via `ResolveColor(paramValue)` helper (see below)
 - `IsDuplicate`: check `AutoFiltersSettings.Instance`
 - `BuiltInCategories = row.Categories`
 - `ScanParameter = row.Parameter`
@@ -338,6 +368,42 @@ private static string? ReadParameterValue(Element el, string paramName, Document
     return p?.StorageType == StorageType.String ? p.AsString() : null;
 }
 ```
+
+#### `ResolveColor` helper  *(Gap 3 fix)*
+
+Two-source lookup so manually-edited colors in the Filters/Color tab are respected:
+
+```csharp
+private static string ResolveColor(string paramValue, int paletteIndex)
+{
+    // 1. ColorMemory — written by previous Discover commits
+    if (ColorMemory.Instance.TryGetColor(paramValue, out var memorised))
+        return memorised;
+
+    // 2. Existing AutoFiltersSettings rules — reflects manual edits in Filters/Color tab
+    foreach (var trade in AutoFiltersSettings.Instance.Trades)
+        foreach (var rule in trade.Rules)
+            if (rule.Match.Contains(paramValue, StringComparer.OrdinalIgnoreCase))
+                return rule.CutColor;
+
+    // 3. Auto-palette fallback
+    return _palette[paletteIndex % _palette.Length];
+}
+```
+
+#### Known-safe parameter list  *(Gap 2 mitigation)*
+
+Parameters that are always resolvable regardless of host document content (present in Auto Filters' hardcoded `bipMap`):
+
+```csharp
+private static readonly HashSet<string> _knownSafeParams = new(StringComparer.OrdinalIgnoreCase)
+{
+    "System Classification", "Fabrication Service",
+    "Type Name", "Family Name", "Structural Material",
+};
+```
+
+Used in S3 to decide whether to show the `ⓘ` warning tooltip on a parameter dropdown row.
 
 #### Auto-colour palette
 
