@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,7 +11,6 @@ namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
     /// One horizontal row of group cards. Carries:
-    ///   • Slim drop-zones above and below the row → emit "split into new row"
     ///   • A horizontal stack of group cards
     ///   • Drop-zones between groups → emit "insert group at index"
     /// </summary>
@@ -21,23 +21,17 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? Changed;
         public event EventHandler<BlockDropArgs>?  BlockDropRequested;
         public event EventHandler<GroupDropArgs>?  GroupDropInRowRequested;
-        public event EventHandler<RowSplitDropArgs>? RowSplitDropRequested;
         public event EventHandler<string>?         GroupDeleteRequested;
+        public event Action<string, bool, bool>?   BlockClickedOnCanvas; // blockId, ctrl, shift
+
+        // ── Selection context ────────────────────────────────────────────────
+        private HashSet<string> _selectionContext = new HashSet<string>();
+        private string? _activeContext;
 
         public LemoineLegendRow()
         {
             InitializeComponent();
             Loaded += (s, e) => BuildAll();
-        }
-
-        private static void ResetSplitZone(Border zone)
-        {
-            zone.Height          = 5;
-            zone.Margin          = new Thickness(0);
-            zone.Background      = Brushes.Transparent;
-            zone.BorderBrush     = null;
-            zone.BorderThickness = new Thickness(0);
-            zone.CornerRadius    = new CornerRadius(0);
         }
 
         public void Bind(LegendRowConfig row)
@@ -46,14 +40,29 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionContext(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext = activeId;
+        }
+
+        /// <summary>
+        /// Propagates selection state to existing group cards and block rows in-place,
+        /// without rebuilding the visual tree. Use instead of Bind() for selection-only updates.
+        /// </summary>
+        public void RefreshBlockSelection(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext    = activeId;
+            if (_rowBorder?.Child is Grid rowGrid)
+                foreach (var card in rowGrid.Children.OfType<LemoineLegendGroupCard>())
+                    card.RefreshBlockSelection(selectedIds, activeId);
+        }
+
         private void BuildAll()
         {
             _rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
             _rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            // Split drop zones
-            WireRowSplit(_rowSplitTop,    above: true);
-            WireRowSplit(_rowSplitBottom, above: false);
 
             int n = Row.Groups?.Count ?? 0;
 
@@ -81,9 +90,11 @@ namespace LemoineTools.Lemoine.Controls
             for (int i = 0; i < n; i++)
             {
                 var card = new LemoineLegendGroupCard();
+                card.SetSelectionContext(_selectionContext, _activeContext);
                 card.Bind(Row.Groups![i]);
                 int idx = i;
 
+                card.BlockClickedOnCanvas += (bId, ctrl, shift) => BlockClickedOnCanvas?.Invoke(bId, ctrl, shift);
                 card.Changed            += (s, e) => Changed?.Invoke(this, EventArgs.Empty);
                 card.DeleteRequested    += (s, e) => GroupDeleteRequested?.Invoke(this, Row.Groups[idx].Id);
                 card.BlockDropRequested += (s, args) => BlockDropRequested?.Invoke(this, args);
@@ -177,48 +188,6 @@ namespace LemoineTools.Lemoine.Controls
             return p.What == LegendDragPayload.Kind.Group ||
                    p.What == LegendDragPayload.Kind.PaletteCategory;
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Above-/below-row split drops → new row request.
-        // Only show on hover — no session-wide pre-lighting.
-        // ─────────────────────────────────────────────────────────────────────
-        private void WireRowSplit(Border zone, bool above)
-        {
-            zone.AllowDrop = true;
-            ResetSplitZone(zone);
-
-            zone.DragEnter += (s, e) =>
-            {
-                if (IsGroupAccepting(e))
-                {
-                    zone.Height = 14;
-                    zone.Margin = new Thickness(0, 2, 0, 2);
-                    zone.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                    zone.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                    zone.BorderThickness = new Thickness(1);
-                    zone.CornerRadius    = new CornerRadius(3);
-                    e.Effects = DragDropEffects.Move;
-                    e.Handled = true;
-                }
-                else e.Effects = DragDropEffects.None;
-            };
-            zone.DragOver += (s, e) =>
-            {
-                e.Effects = IsGroupAccepting(e) ? DragDropEffects.Move : DragDropEffects.None;
-                e.Handled = true;
-            };
-            zone.DragLeave += (s, e) => ResetSplitZone(zone);
-            zone.Drop += (s, e) =>
-            {
-                ResetSplitZone(zone);
-                var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
-                if (payload == null) return;
-                if (payload.What != LegendDragPayload.Kind.Group &&
-                    payload.What != LegendDragPayload.Kind.PaletteCategory) return;
-                RowSplitDropRequested?.Invoke(this, new RowSplitDropArgs(payload, Row.Id, above));
-                e.Handled = true;
-            };
-        }
     }
 
     public sealed class GroupDropArgs : EventArgs
@@ -228,14 +197,5 @@ namespace LemoineTools.Lemoine.Controls
         public int    TargetIndex        { get; }
         public GroupDropArgs(LegendDragPayload p, string rid, int i)
         { Payload = p; TargetRowId = rid; TargetIndex = i; }
-    }
-
-    public sealed class RowSplitDropArgs : EventArgs
-    {
-        public LegendDragPayload Payload { get; }
-        public string AnchorRowId        { get; }
-        public bool   Above              { get; }
-        public RowSplitDropArgs(LegendDragPayload p, string rid, bool above)
-        { Payload = p; AnchorRowId = rid; Above = above; }
     }
 }

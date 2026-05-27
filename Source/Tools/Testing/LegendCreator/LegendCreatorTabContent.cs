@@ -13,6 +13,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     ///     Apply() can read its editing buffer back out.
     ///   - Apply(): the global Apply button calls this. We push the editing
     ///     buffer into the singleton and save.
+    ///
+    /// Legend creation / update is handled by ribbon buttons
+    /// (LegendCreatorCreateCommand / LegendCreatorUpdateCommand) which read the
+    /// saved singleton and raise App.LegendCreatorEvent on the Revit main thread.
     /// </summary>
     public static class LegendCreatorTabContent
     {

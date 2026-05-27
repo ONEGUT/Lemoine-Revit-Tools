@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -34,22 +35,40 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         /// <summary>Optional secondary line shown beneath <see cref="Title"/>. Empty by default.</summary>
         [XmlAttribute] public string Subtitle { get; set; } = "";
 
-        /// <summary>Swatch rectangle width in pixels.</summary>
-        [XmlAttribute] public int    SwatchW  { get; set; } = 22;
+        /// <summary>Revit view scale denominator (1 : ViewScale). 48 = 1/4" = 1'-0".</summary>
+        [XmlAttribute] public int    ViewScale { get; set; } = 48;
 
-        /// <summary>Swatch rectangle height in pixels.</summary>
-        [XmlAttribute] public int    SwatchH  { get; set; } = 14;
+        /// <summary>Swatch rectangle width in inches (paper/sheet at the configured view scale).</summary>
+        [XmlAttribute] public double SwatchW  { get; set; } = 0.25;
+
+        /// <summary>Swatch rectangle height in inches (paper/sheet at the configured view scale).</summary>
+        [XmlAttribute] public double SwatchH  { get; set; } = 0.13;
 
         /// <summary>Label font size in points.</summary>
         [XmlAttribute] public int    FontPt   { get; set; } = 9;
 
-        /// <summary>Horizontal gap in pixels between the swatch and its label.</summary>
-        [XmlAttribute] public int    Gap      { get; set; } = 6;
+        /// <summary>Horizontal gap in inches between the swatch and its label.</summary>
+        [XmlAttribute] public double Gap      { get; set; } = 0.08;
+
+        /// <summary>
+        /// Migrates from old pixel-based values (SwatchW=22, SwatchH=14, Gap=6) to the
+        /// new inch-based system. Called by <see cref="LegendCreatorSettings"/> after
+        /// deserialising so existing save files silently reset to the new defaults.
+        /// </summary>
+        public void Normalize()
+        {
+            if (SwatchW > 5 || SwatchH > 5 || Gap > 3)
+            {
+                SwatchW = 0.25; SwatchH = 0.13; Gap = 0.08;
+            }
+            if (ViewScale <= 0) ViewScale = 48;
+        }
 
         /// <summary>Returns a shallow clone of this layout configuration.</summary>
         public LegendLayoutConfig Clone() => new LegendLayoutConfig
         {
             Title = Title, Subtitle = Subtitle,
+            ViewScale = ViewScale,
             SwatchW = SwatchW, SwatchH = SwatchH,
             FontPt = FontPt, Gap = Gap,
         };
@@ -245,7 +264,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 {
                     var xs = new XmlSerializer(typeof(LegendCreatorSettings));
                     using (var r = new StreamReader(path))
-                        return (LegendCreatorSettings)xs.Deserialize(r)!;
+                    {
+                        var result = (LegendCreatorSettings)xs.Deserialize(r)!;
+                        result.Layout?.Normalize(); // migrate old pixel-based values
+                        return result;
+                    }
                 }
             }
             catch (Exception ex)
@@ -267,7 +290,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             {
                 Title    = "Filter Legend",
                 Subtitle = "",
-                SwatchW  = 22, SwatchH = 14, FontPt = 9, Gap = 6,
+                ViewScale = 48,
+                SwatchW  = 0.25, SwatchH = 0.13, FontPt = 9, Gap = 0.08,
             },
             PreviewVisible = true,
             Rows = new List<LegendRowConfig>
@@ -334,6 +358,33 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         /// <param name="layout">The layout configuration to clone.</param>
         /// <returns>An independent clone of <paramref name="layout"/>.</returns>
         public static LegendLayoutConfig DeepCopy(LegendLayoutConfig layout) => layout.Clone();
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Template store
+        // ─────────────────────────────────────────────────────────────────────
+        public static void ExportTo(string path, LegendCreatorSettings data)
+        {
+            var xs = new XmlSerializer(typeof(LegendCreatorSettings));
+            using (var w = new StreamWriter(path)) xs.Serialize(w, data);
+        }
+
+        public static LegendCreatorSettings? TryLoad(string path)
+        {
+            try
+            {
+                var xs = new XmlSerializer(typeof(LegendCreatorSettings));
+                using (var r = new StreamReader(path))
+                    return (LegendCreatorSettings)xs.Deserialize(r)!;
+            }
+            catch { return null; }
+        }
+
+        private static LemoineTemplateStore<LegendCreatorSettings>? _templateStore;
+        public static LemoineTemplateStore<LegendCreatorSettings> Templates =>
+            _templateStore ?? (_templateStore = new LemoineTemplateStore<LegendCreatorSettings>(
+                toolId:      "LegendCreator",
+                serialize:   (data, path) => ExportTo(path, data),
+                deserialize: path => TryLoad(path)));
     }
 
     // =========================================================================

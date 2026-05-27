@@ -9,7 +9,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
@@ -351,9 +350,10 @@ namespace LemoineTools.Lemoine
                     {
                         bool isActive = t.Id == _fActiveTradeId;
 
-                        // Row grid: [dot+label (star)] [delete btn (auto)]
+                        // Row grid: [dot+label (star)] [dup btn (auto)] [delete btn (auto)]
                         var rowGrid = new Grid { Cursor = isActive ? Cursors.Arrow : Cursors.Hand };
                         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                         // Background goes on rowGrid so the highlight spans both columns (label + delete)
@@ -432,7 +432,62 @@ namespace LemoineTools.Lemoine
                         ((FrameworkElement)delBtn).Tag = "deleteBtn";
                         ((FrameworkElement)delBtn).Margin = new Thickness(0, 0, 6, 0);
                         ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
-                        Grid.SetColumn((UIElement)delBtn, 1);
+                        // Inline duplicate button (column 1, before delete)
+                        string dupId = t.Id;
+                        var dupIcon = new TextBlock
+                        {
+                            Text                = "",
+                            FontFamily          = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                            VerticalAlignment   = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            TextAlignment       = TextAlignment.Center,
+                            IsHitTestVisible    = false,
+                        };
+                        dupIcon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                        dupIcon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+                        var dupBtn = new Border
+                        {
+                            Cursor              = Cursors.Hand,
+                            Padding             = new Thickness(5, 5, 5, 5),
+                            BorderThickness     = new Thickness(1),
+                            CornerRadius        = new CornerRadius(3),
+                            VerticalAlignment   = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Background          = Brushes.Transparent,
+                            Margin              = new Thickness(0, 0, 4, 0),
+                            Tag                 = "deleteBtn",
+                            Child               = dupIcon,
+                        };
+                        dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        dupBtn.MouseEnter += (is2, ie) =>
+                            dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                        dupBtn.MouseLeave += (is2, ie) =>
+                            dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+                        dupBtn.MouseLeftButtonUp += (is2, ie) =>
+                        {
+                            ie.Handled = true;
+                            var orig = _filterTrades?.FirstOrDefault(x => x.Id == dupId);
+                            if (orig == null) return;
+                            var copies = AutoFiltersSettings.DeepCopy(new List<FilterTradeConfig> { orig });
+                            var copy   = copies[0];
+                            copy.Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3);
+                            copy.Label = orig.Label + " (copy)";
+                            int idx    = _filterTrades!.IndexOf(orig);
+                            _filterTrades.Insert(idx + 1, copy);
+                            _fActiveTradeId = copy.Id;
+                            _fActiveRuleId  = copy.Rules.FirstOrDefault()?.Id;
+                            popup.IsOpen    = false;
+                            FRefreshTradeSwitcher();
+                            FRefreshRuleList();
+                            FRefreshRuleEditor();
+                        };
+                        Grid.SetColumn(dupBtn, 1);
+                        rowGrid.Children.Add(dupBtn);
+
+                        Grid.SetColumn((UIElement)delBtn, 2);
                         rowGrid.Children.Add((UIElement)delBtn);
 
                         stack.Children.Add(rowGrid);
@@ -720,7 +775,8 @@ namespace LemoineTools.Lemoine
             // ── Row content ───────────────────────────────────────────────────
             var outerRow = new Grid { AllowDrop = true };
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // dot
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name+sub
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // name+sub (auto — only as wide as text)
+            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // spacer
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // toggle
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // pencil
             outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // trash
@@ -805,12 +861,12 @@ namespace LemoineTools.Lemoine
             });
             toggle.Margin            = new Thickness(8, 0, 4, 0);
             toggle.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(toggle, 2);
+            Grid.SetColumn(toggle, 3);
             outerRow.Children.Add(toggle);
 
             // Pencil (move/copy)
             var pencilBtn = BuildMoveCopyButton(trade, rule);
-            Grid.SetColumn(pencilBtn, 3);
+            Grid.SetColumn(pencilBtn, 4);
             outerRow.Children.Add(pencilBtn);
 
             // Trash — deletes all selected rules when in multi-select
@@ -835,7 +891,7 @@ namespace LemoineTools.Lemoine
             });
             ((FrameworkElement)trashBtn).Margin            = new Thickness(2, 0, 0, 0);
             ((FrameworkElement)trashBtn).VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn((UIElement)trashBtn, 4);
+            Grid.SetColumn((UIElement)trashBtn, 5);
             outerRow.Children.Add((UIElement)trashBtn);
 
             rowBorder.Child = outerRow;
@@ -2283,47 +2339,35 @@ namespace LemoineTools.Lemoine
         // ── Standalone toggle switch for rule list rows ───────────────────────
         private static Border BuildRuleToggle(bool isOn, Action<bool> onChange)
         {
-            var trackBg = new Border();
-            trackBg.CornerRadius = new CornerRadius(LemoineSettings.Instance.S(7.5));
-            trackBg.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
-            trackBg.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
-            trackBg.SetResourceReference(Border.BackgroundProperty, isOn ? "LemoineAccent" : "LemoineBorder");
-            trackBg.Cursor = Cursors.Hand;
-            trackBg.VerticalAlignment   = VerticalAlignment.Center;
-            trackBg.HorizontalAlignment = HorizontalAlignment.Center;
-
-            var knob = new Ellipse();
-            knob.SetResourceReference(Ellipse.FillProperty, isOn ? "LemoineKnobOn" : "LemoineKnobOff");
-            double onPos = Math.Round(LemoineSettings.Instance.S(28) - LemoineSettings.Instance.S(11) - 2);
-            knob.Margin = new Thickness(isOn ? onPos : 2, 2, 0, 2);
-            knob.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Knob");
-            knob.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Knob");
-
-            var canvas = new Canvas { ClipToBounds = true };
-            canvas.SetResourceReference(FrameworkElement.WidthProperty,  "LemoineH_Pill_W");
-            canvas.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Pill_H");
-            canvas.Children.Add(knob);
-            trackBg.Child = canvas;
-
             bool state = isOn;
-            trackBg.MouseLeftButtonDown += (s, e) =>
+
+            var btn = new Border
+            {
+                CornerRadius        = new CornerRadius(3),
+                BorderThickness     = new Thickness(1),
+                Padding             = new Thickness(5),
+                Cursor              = Cursors.Hand,
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background          = Brushes.Transparent,
+                Child               = LemoineEyeGlyph.Make(state, size: 16),
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            btn.MouseEnter += (s, e) =>
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            btn.MouseLeave += (s, e) =>
+                btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            btn.MouseLeftButtonDown += (s, e) =>
             {
                 state = !state;
-                bool newOn = state;
-                var anim = new ThicknessAnimation
-                {
-                    To             = new Thickness(newOn ? onPos : 2, 2, 0, 2),
-                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                };
-                knob.BeginAnimation(FrameworkElement.MarginProperty, anim);
-                knob.SetResourceReference(Ellipse.FillProperty,           newOn ? "LemoineKnobOn" : "LemoineKnobOff");
-                trackBg.SetResourceReference(Border.BackgroundProperty,   newOn ? "LemoineAccent" : "LemoineBorder");
-                onChange(newOn);
+                btn.Child = LemoineEyeGlyph.Make(state, size: 16);
+                onChange(state);
                 e.Handled = true; // prevent row selection on toggle click
             };
 
-            return trackBg;
+            return btn;
         }
 
         // ═════════════════════════════════════════════════════════════════════

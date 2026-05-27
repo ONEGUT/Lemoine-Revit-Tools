@@ -221,9 +221,9 @@ namespace LemoineTools.Lemoine
             var tab = new Border
             {
                 Cursor          = Cursors.Hand,
-                CornerRadius    = new CornerRadius(6, 6, 0, 0),
+                CornerRadius    = active ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6),
                 BorderThickness = active ? new Thickness(1, 1, 1, 0) : new Thickness(1, 1, 1, 1),
-                Margin          = active ? new Thickness(1, 2, 1, -1) : new Thickness(1, 4, 1, 0),
+                Margin          = active ? new Thickness(1, 2, 1, -1) : new Thickness(1, 4, 1, 2),
                 Padding         = new Thickness(6, 6, 6, 6),
             };
             tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
@@ -268,8 +268,9 @@ namespace LemoineTools.Lemoine
                 if (!_navTabs.TryGetValue(id, out var tab)) continue;
                 bool active = id == tabId;
 
+                tab.CornerRadius    = active ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6);
                 tab.BorderThickness = active ? new Thickness(1, 1, 1, 0) : new Thickness(1, 1, 1, 1);
-                tab.Margin          = active ? new Thickness(1, 2, 1, -1) : new Thickness(1, 4, 1, 0);
+                tab.Margin          = active ? new Thickness(1, 2, 1, -1) : new Thickness(1, 4, 1, 2);
                 tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 if (active) tab.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
                 else        tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");

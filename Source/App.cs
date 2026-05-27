@@ -6,6 +6,7 @@ using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.Testing.CoordSet;
+using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 
 namespace LemoineTools
@@ -72,6 +73,10 @@ namespace LemoineTools
         // ── Testing — Sheet Pack ────────────────────────────────────────────────────
         internal static SheetPackEventHandler?     SheetPackHandler     { get; private set; }
         internal static ExternalEvent?             SheetPackEvent       { get; private set; }
+
+        // ── Legend Creator (T08) ─────────────────────────────────────────────────────
+        internal static LegendCreatorEventHandler? LegendCreatorHandler { get; private set; }
+        internal static ExternalEvent?             LegendCreatorEvent   { get; private set; }
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler? SplitByLevelHandler { get; private set; }
@@ -144,6 +149,9 @@ namespace LemoineTools
             SheetPackHandler     = new SheetPackEventHandler();
             SheetPackEvent       = ExternalEvent.Create(SheetPackHandler);
 
+            LegendCreatorHandler = new LegendCreatorEventHandler();
+            LegendCreatorEvent   = ExternalEvent.Create(LegendCreatorHandler);
+
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler = new SplitByLevelEventHandler();
             SplitByLevelEvent   = ExternalEvent.Create(SplitByLevelHandler);
@@ -167,26 +175,35 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Large:   Auto Filters
-            // Stacked: Filter Legend  |  Apply to Views
-            // Stacked: Remove from View  |  Delete from Project
+            // Large: Auto Filters
+            // Large: Legend Creator
+            // Large SplitButton: Apply to Views | Remove from View | Delete from Project
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
 
             filtersPanel.AddItem(Btn(
                 "LT_AutoFilters", "Auto\nFilters", "AutoFiltersLaunchCommand",
-                "Scan MEP elements and create view filters with automatic color overrides."));
+                "Scan MEP elements and create view filters with automatic color overrides.",
+                ""));  // Segoe MDL2: Filter (funnel)
 
-            filtersPanel.AddStackedItems(
-                Btn("LT_AutoFiltersLegend",   "Filter Legend",  "AutoFiltersLegendLaunchCommand",
-                    "Generate a Legend view showing colored swatches for every filter on the active view."),
-                Btn("LT_ApplyFiltersToViews", "Apply to Views", "ApplyFiltersToViewsLaunchCommand",
-                    "Apply existing project filters to multiple views at once, with optional color overrides."));
+            filtersPanel.AddItem(Btn(
+                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
+                "Create or update a Legend view from the current Legend Creator settings.",
+                "\uE8FD"));  // Segoe MDL2: ColorSolid (color swatch)
 
-            filtersPanel.AddStackedItems(
-                Btn("LT_DeleteFiltersFromView",    "Remove from View",    "DeleteFiltersLaunchCommand",
-                    "Remove selected filters from the active view (filters are kept in the project)."),
-                Btn("LT_DeleteFiltersFromProject", "Delete from Project", "DeleteFiltersFromProjectLaunchCommand",
-                    "Permanently delete selected ParameterFilterElements from the project."));
+            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions");
+            var split = (SplitButton)filtersPanel.AddItem(splitData);
+            split.AddPushButton(Btn(
+                "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
+                "Apply existing project filters to multiple views at once, with optional color overrides.",
+                ""));  // Segoe MDL2: Add
+            split.AddPushButton(Btn(
+                "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
+                "Remove selected filters from the active view (filters are kept in the project).",
+                ""));  // Segoe MDL2: Remove
+            split.AddPushButton(Btn(
+                "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
+                "Permanently delete selected ParameterFilterElements from the project.",
+                ""));  // Segoe MDL2: Delete
 
             // ── T02 — Ceilings ────────────────────────────────────────────────
             // Large:   Ceiling Heatmap
