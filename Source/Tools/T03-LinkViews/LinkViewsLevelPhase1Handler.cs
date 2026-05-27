@@ -105,6 +105,22 @@ namespace LemoineTools.Tools.LinkViews
                     }
                 }
 
+                // Append fallback entries for host levels that have no rooms in any source doc
+                var coveredIds = new HashSet<long>(results.Select(r => r.LevelId.Value));
+                foreach (var lvl in allLevels.Where(l => !coveredIds.Contains(l.Id.Value)))
+                {
+                    results.Add(new LevelScanResult
+                    {
+                        LevelId      = lvl.Id,
+                        Name         = lvl.Name,
+                        ElevationFt  = Math.Round(UnitUtils.ConvertFromInternalUnits(
+                                           lvl.Elevation, UnitTypeId.Feet), 2),
+                        RoomCount    = 0,
+                        DocumentName = "(No rooms)",
+                        ModelName    = "",
+                    });
+                }
+
                 OnLevelsLoaded?.Invoke(results);
             }
             catch (Exception ex)

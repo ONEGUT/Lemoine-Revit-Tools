@@ -8,8 +8,9 @@ using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
-using WpfGrid  = System.Windows.Controls.Grid;
-using WpfPoint = System.Windows.Point;
+using WpfGrid    = System.Windows.Controls.Grid;
+using WpfPoint   = System.Windows.Point;
+using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -35,6 +36,7 @@ namespace LemoineTools.Tools.LinkViews
         // ── State ──────────────────────────────────────────────────────
         private readonly List<LinkEntry> _links;
         private readonly Dictionary<long, string> _assignments;
+        private string _subDisc = "";
 
         // ── ExternalEvent wiring ───────────────────────────────────────
         private readonly LinkViewsDisciplineRunHandler _runHandler;
@@ -116,6 +118,27 @@ namespace LemoineTools.Tools.LinkViews
 
             var wrapper = new StackPanel();
             wrapper.Children.Add(sv);
+
+            // ── Sub Discipline input ───────────────────────────────────
+            wrapper.Children.Add(new FrameworkElement { Height = 10 });
+            var subDiscHeader = new TextBlock { Text = "SUB DISCIPLINE",
+                                                Margin = new Thickness(0, 0, 0, 6) };
+            subDiscHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            subDiscHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            subDiscHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            wrapper.Children.Add(subDiscHeader);
+
+            var tb = new WpfTextBox { Text = _subDisc, Width = 200 };
+            tb.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
+            tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
+            tb.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            tb.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            tb.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+            tb.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+            tb.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorder");
+            tb.TextChanged += (s, e) => _subDisc = tb.Text;
+            wrapper.Children.Add(tb);
+
             return wrapper;
         }
 
@@ -321,6 +344,7 @@ namespace LemoineTools.Tools.LinkViews
                 .ToList();
 
             _runHandler.Assignments = assignments;
+            _runHandler.SubDisc     = _subDisc;
             _runHandler.PushLog     = pushLog;
             _runHandler.OnProgress  = onProgress;
             _runHandler.OnComplete  = onComplete;

@@ -46,11 +46,18 @@ namespace LemoineTools.Tools.LinkViews
         private List<LevelScanResult>_scannedLevels      = new List<LevelScanResult>();
         private Dictionary<string, ElementId> _levelKeyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
         private List<ElementId>      _selectedLevelIds   = new List<ElementId>();
-        private bool                 _create3D  = true;
-        private bool                 _createFP  = true;
-        private bool                 _createRCP = true;
-        private bool                 _scanning  = false;
-        private bool                 _scanDone  = false;
+        private bool                 _create3D       = true;
+        private bool                 _createFP       = true;
+        private bool                 _createRCP      = true;
+        private bool                 _scanning       = false;
+        private bool                 _scanDone       = false;
+        private bool                 _showAllLevels  = false;
+        private string               _subDisc3D      = "";
+        private string               _subDiscFP      = "";
+        private string               _subDiscRCP     = "";
+        private FrameworkElement     _subDiscRow3D;
+        private FrameworkElement     _subDiscRowFP;
+        private FrameworkElement     _subDiscRowRCP;
 
         // S3 naming state — Front/Center/End slots
         private string _namingFront        = "Host Level";
@@ -141,7 +148,7 @@ namespace LemoineTools.Tools.LinkViews
             }
             else if (_scanDone && _scannedLevels.Count == 0)
             {
-                ShowS2Message("No levels with placed rooms found in the selected documents.");
+                ShowS2Message("No levels found in the selected documents.");
             }
             else if (!_scanning)
             {
@@ -194,13 +201,14 @@ namespace LemoineTools.Tools.LinkViews
 
                     if (_scannedLevels.Count == 0)
                     {
-                        ShowS2Message("No levels with placed rooms found in the selected documents.");
+                        ShowS2Message("No levels found in the selected documents.");
                         OnValidationChanged();
                         return;
                     }
 
-                    // Pre-select all levels by default — PopulateS2 handles the key format
+                    // Pre-select only levels that have rooms; PopulateS2 handles key format
                     _selectedLevelIds = _scannedLevels
+                        .Where(l => l.RoomCount > 0)
                         .Select(l => l.LevelId)
                         .GroupBy(id => id.Value)
                         .Select(g => g.First())
@@ -233,52 +241,95 @@ namespace LemoineTools.Tools.LinkViews
         {
             _s2Container.Children.Clear();
             _levelKeyToId.Clear();
+            _subDiscRow3D  = null;
+            _subDiscRowFP  = null;
+            _subDiscRowRCP = null;
 
-            // Group scanned levels by source document, preserving elevation order within each group
-            var groups = _scannedLevels
-                .GroupBy(l => l.DocumentName ?? "(Unknown)")
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.OrderBy(l => l.ElevationFt)
-                          .Select(l =>
-                          {
-                              string key = $"{l.Name}   (Elev {l.ElevationFt:F2} ft · {l.RoomCount} room{(l.RoomCount != 1 ? "s" : "")})";
-                              // Include doc name in key to avoid collisions when same level appears in multiple docs
-                              string uniqueKey = $"[{l.DocumentName}] {key}";
-                              _levelKeyToId[uniqueKey] = l.LevelId;
-                              return uniqueKey;
-                          })
-                          .ToList());
+            // Filter levels based on showAllLevels toggle
+            var visibleLevels = _showAllLevels
+                ? _scannedLevels
+                : _scannedLevels.Where(l => l.RoomCount > 0).ToList();
 
-            // Rebuild pre-selected list from current _selectedLevelIds
-            var selectedIdSet = new HashSet<long>(_selectedLevelIds.Select(id => id.Value));
-            var preSelected   = _levelKeyToId
-                .Where(kv => selectedIdSet.Contains(kv.Value.Value))
-                .Select(kv => kv.Key)
-                .ToList();
-
-            if (preSelected.Count == 0)
-                preSelected = _levelKeyToId.Keys.ToList(); // fall back to all
-
-            var levelTabs = new LemoineMultiSelectTabs();
-            levelTabs.SelectionChanged += selected =>
+            if (visibleLevels.Count == 0)
             {
-                // Deduplicate: same level may appear under multiple documents
-                _selectedLevelIds = selected
-                    .Where(s => _levelKeyToId.ContainsKey(s))
-                    .Select(s => _levelKeyToId[s])
-                    .GroupBy(id => id.Value)
-                    .Select(g => g.First())
+                string hint = _showAllLevels
+                    ? "No levels found in the selected documents."
+                    : "No levels with placed rooms found. Enable \"Show all levels\" below to see all model levels.";
+                var msg = new TextBlock
+                {
+                    Text = hint, TextWrapping = TextWrapping.Wrap,
+                    FontStyle = FontStyles.Italic,
+                    Margin = new Thickness(0, 4, 0, 0),
+                };
+                msg.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                msg.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                _s2Container.Children.Add(msg);
+            }
+            else
+            {
+                // Group by source document, elevation order within each group
+                var groups = visibleLevels
+                    .GroupBy(l => l.DocumentName ?? "(Unknown)")
+                    .ToDictionary(
+                        g => g.Key,
+                        g => g.OrderBy(l => l.ElevationFt)
+                              .Select(l =>
+                              {
+                                  string key = l.RoomCount > 0
+                                      ? $"{l.Name}   (Elev {l.ElevationFt:F2} ft · {l.RoomCount} room{(l.RoomCount != 1 ? "s" : "")})"
+                                      : $"{l.Name}   (Elev {l.ElevationFt:F2} ft)";
+                                  string uniqueKey = $"[{l.DocumentName}] {key}";
+                                  _levelKeyToId[uniqueKey] = l.LevelId;
+                                  return uniqueKey;
+                              })
+                              .ToList());
+
+                var selectedIdSet = new HashSet<long>(_selectedLevelIds.Select(id => id.Value));
+                var preSelected   = _levelKeyToId
+                    .Where(kv => selectedIdSet.Contains(kv.Value.Value))
+                    .Select(kv => kv.Key)
                     .ToList();
+                if (preSelected.Count == 0)
+                    preSelected = _levelKeyToId.Keys.ToList();
+
+                var levelTabs = new LemoineMultiSelectTabs();
+                levelTabs.SelectionChanged += selected =>
+                {
+                    _selectedLevelIds = selected
+                        .Where(s => _levelKeyToId.ContainsKey(s))
+                        .Select(s => _levelKeyToId[s])
+                        .GroupBy(id => id.Value)
+                        .Select(g => g.First())
+                        .ToList();
+                    OnValidationChanged();
+                };
+                levelTabs.SetGroups(groups, preSelected);
+                _s2Container.Children.Add(levelTabs);
+            }
+
+            // ── Show All Levels toggle ─────────────────────────────────
+            _s2Container.Children.Add(new FrameworkElement { Height = 8 });
+            var showAllToggle = new LemoineToggleSwitches();
+            showAllToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "showAll", Label = "Show all levels",
+                                 Desc = "Include levels without placed rooms (fallback)",
+                                 DefaultOn = _showAllLevels },
+            });
+            showAllToggle.StateChanged += state =>
+            {
+                _showAllLevels = state.TryGetValue("showAll", out var v) && v;
+                PopulateS2();
                 OnValidationChanged();
             };
-            levelTabs.SetGroups(groups, preSelected);
-            _s2Container.Children.Add(levelTabs);
+            _s2Container.Children.Add(showAllToggle);
 
-            // Spacer
+            if (visibleLevels.Count == 0) return;
+
+            // ── View-type section ──────────────────────────────────────
             _s2Container.Children.Add(new FrameworkElement { Height = 12 });
 
-            // View-type section label
             var typeHeader = new TextBlock { Text = "VIEW TYPES TO CREATE",
                                              Margin = new Thickness(0, 0, 0, 6) };
             typeHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -290,20 +341,75 @@ namespace LemoineTools.Tools.LinkViews
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "3d",  Label = "3D Views",
-                                 Desc = "Isometric view with section box per cluster",        DefaultOn = _create3D  },
+                                 Desc = "Isometric view with section box per cluster",       DefaultOn = _create3D  },
                 new ToggleItem { Id = "fp",  Label = "Floor Plans",
-                                 Desc = "Plan view with crop box and view range per cluster",  DefaultOn = _createFP  },
+                                 Desc = "Plan view with crop box and view range per cluster", DefaultOn = _createFP  },
                 new ToggleItem { Id = "rcp", Label = "Ceiling Plans",
-                                 Desc = "RCP with crop box and view range per cluster",        DefaultOn = _createRCP },
+                                 Desc = "RCP with crop box and view range per cluster",       DefaultOn = _createRCP },
             });
+
+            // ── Sub Discipline section ─────────────────────────────────
+            var subDiscHeader = new TextBlock { Text = "SUB DISCIPLINE",
+                                                Margin = new Thickness(0, 10, 0, 6) };
+            subDiscHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            subDiscHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            subDiscHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            _subDiscRow3D  = BuildSubDiscRow("3D",  _subDisc3D,  v => _subDisc3D  = v, _create3D);
+            _subDiscRowFP  = BuildSubDiscRow("FP",  _subDiscFP,  v => _subDiscFP  = v, _createFP);
+            _subDiscRowRCP = BuildSubDiscRow("RCP", _subDiscRCP, v => _subDiscRCP = v, _createRCP);
+
             toggles.StateChanged += state =>
             {
                 _create3D  = state.TryGetValue("3d",  out var v3)  && v3;
                 _createFP  = state.TryGetValue("fp",  out var vf)  && vf;
                 _createRCP = state.TryGetValue("rcp", out var vr2) && vr2;
+                if (_subDiscRow3D  != null) _subDiscRow3D.Visibility  = _create3D  ? Visibility.Visible : Visibility.Collapsed;
+                if (_subDiscRowFP  != null) _subDiscRowFP.Visibility  = _createFP  ? Visibility.Visible : Visibility.Collapsed;
+                if (_subDiscRowRCP != null) _subDiscRowRCP.Visibility = _createRCP ? Visibility.Visible : Visibility.Collapsed;
                 OnValidationChanged();
             };
+
             _s2Container.Children.Add(toggles);
+            _s2Container.Children.Add(subDiscHeader);
+            _s2Container.Children.Add(_subDiscRow3D);
+            _s2Container.Children.Add(_subDiscRowFP);
+            _s2Container.Children.Add(_subDiscRowRCP);
+        }
+
+        private FrameworkElement BuildSubDiscRow(string typeLabel, string currentValue,
+                                                  Action<string> setter, bool visible)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin      = new Thickness(0, 0, 0, 4),
+                Visibility  = visible ? Visibility.Visible : Visibility.Collapsed,
+            };
+
+            var lbl = new TextBlock
+            {
+                Text              = typeLabel,
+                Width             = 40,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            row.Children.Add(lbl);
+
+            var tb = new WpfTextBox { Text = currentValue, Width = 180 };
+            tb.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
+            tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
+            tb.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            tb.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            tb.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+            tb.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+            tb.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorder");
+            tb.TextChanged += (s, e) => setter(tb.Text);
+            row.Children.Add(tb);
+
+            return row;
         }
 
         // ── S3: Review & Run ───────────────────────────────────────────
@@ -601,6 +707,9 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.NamingEnd          = _namingEnd;
             _runHandler.NamingEndCustom    = _namingEndCustom;
             _runHandler.LevelModelNames    = new Dictionary<long, string>(_levelModelNames);
+            _runHandler.SubDisc3D          = _subDisc3D;
+            _runHandler.SubDiscFP          = _subDiscFP;
+            _runHandler.SubDiscRCP         = _subDiscRCP;
             _runHandler.PushLog          = pushLog;
             _runHandler.OnProgress       = onProgress;
             _runHandler.OnComplete       = onComplete;
