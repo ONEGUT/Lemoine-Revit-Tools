@@ -142,16 +142,25 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             catch { }
 
-            // ── Collect needed (colorHex, fill) pairs for FRT pre-creation ───
-            var neededFrts = new HashSet<(string ColorHex, string Fill)>();
+            // ── Collect needed (colorHex, fill) pairs → display name for FRT ──
+            // First block with a given (color, fill) pair wins the name slot.
+            var neededFrts = new Dictionary<(string ColorHex, string Fill), string>();
             foreach (var row in rows)
                 foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
                     {
                         if (!blk.Visible) continue;
                         var rgb = ResolveColor(blk, ruleMap);
-                        if (rgb.HasValue)
-                            neededFrts.Add((ToHex(rgb.Value), blk.Fill ?? "solid"));
+                        if (!rgb.HasValue) continue;
+                        var key = (ToHex(rgb.Value), blk.Fill ?? "solid");
+                        if (neededFrts.ContainsKey(key)) continue;
+                        string displayName =
+                            (!string.IsNullOrEmpty(blk.SourceRuleId)
+                                && ruleMap.TryGetValue(blk.SourceRuleId, out var r)
+                                && !string.IsNullOrEmpty(r.Name))
+                            ? r.Name
+                            : (!string.IsNullOrEmpty(blk.Name) ? blk.Name : "Custom");
+                        neededFrts[key] = displayName;
                     }
 
             // ── Generate unique legend view name (Create mode only) ───────────
@@ -189,13 +198,17 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 // ── Build FRT map: (colorHex, fill) → ElementId ──────────────
                 var frtMap = new Dictionary<(string, string), ElementId>();
-                foreach (var (colorHex, fill) in neededFrts)
+                foreach (var kvp in neededFrts)
                 {
+                    string colorHex   = kvp.Key.ColorHex;
+                    string fill       = kvp.Key.Fill;
+                    string filterName = kvp.Value;
+
                     var rgb = TryParseHex(colorHex);
                     if (!rgb.HasValue) continue;
 
                     ElementId patId = FillPatternId(fill, solidFillId, hatchFillId, dotsFillId);
-                    string tname   = $"LegendCreator_{rgb.Value.R}_{rgb.Value.G}_{rgb.Value.B}_{fill}";
+                    string tname   = $"LegendCreator_{SanitizeName(filterName)}_{colorHex.TrimStart('#')}_{fill}";
 
                     if (frtByKey.TryGetValue(tname, out ElementId existing))
                     {
@@ -528,6 +541,20 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             catch { }
             return fallbackPt / 72.0 / 12.0 * scale;
+        }
+
+        private static string SanitizeName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "Custom";
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in name)
+            {
+                if (char.IsLetterOrDigit(c)) sb.Append(c);
+                else if (c == ' ' || c == '-') sb.Append('_');
+            }
+            string result = sb.ToString().Trim('_');
+            if (result.Length > 40) result = result.Substring(0, 40);
+            return result.Length == 0 ? "Custom" : result;
         }
 
         private void Log(string t, string s)      => PushLog?.Invoke(t, s);
