@@ -12,6 +12,7 @@ using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
+using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Lemoine
 {
