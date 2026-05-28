@@ -130,6 +130,7 @@ namespace LemoineTools.Tools.AutoFilters
         // Single-expand accordion: one open card at a time
         private readonly List<(Action Open, Action Close)> _cardActions
             = new List<(Action Open, Action Close)>();
+        private int _openCardIndex = 0;
 
         // Shared across all link cards — allocated once
         private static readonly Dictionary<string, List<string>> CategoryGroups =
@@ -334,6 +335,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (_s2CardsStack == null) return;
             _s2CardsStack.Children.Clear();
             _cardActions.Clear();
+            _openCardIndex = 0;
 
             var selectedLinks = _links.Where(l => l.IsSelected).ToList();
             if (selectedLinks.Count == 0)
@@ -375,6 +377,7 @@ namespace LemoineTools.Tools.AutoFilters
             header.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var headerGrid = new WpfGrid();
+            headerGrid.Background = Brushes.Transparent;  // ensure empty star-column area is hit-testable
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -421,6 +424,12 @@ namespace LemoineTools.Tools.AutoFilters
 
             var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
             catTabs.SetGroups(CategoryGroups);
+            // Wire scroll bubbling through catTabs' internal ScrollViewers once loaded
+            catTabs.Loaded += (s2, e2) =>
+            {
+                foreach (var innerSv in FindVisualChildren<ScrollViewer>(catTabs))
+                    LemoineControlStyles.WireBubblingScroll(innerSv);
+            };
 
             var configPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
             configPanel.Children.Add(MakeNote("Select categories above to configure the scan."));
@@ -465,8 +474,8 @@ namespace LemoineTools.Tools.AutoFilters
             // First card starts open; all others start closed
             if (myIndex == 0) open(); else close();
 
-            // Clicking anywhere on the header opens this card and closes all others
-            header.MouseLeftButtonUp += (s, e) => ExpandCard(myIndex);
+            // PreviewMouseLeftButtonDown tunnels before any child can consume it
+            header.PreviewMouseLeftButtonDown += (s, e) => ExpandCard(myIndex);
 
             stack.Children.Add(header);
             stack.Children.Add(body);
@@ -476,21 +485,39 @@ namespace LemoineTools.Tools.AutoFilters
 
         private void ExpandCard(int index)
         {
+            int target;
+            if (index == _openCardIndex)
+            {
+                // Clicking the currently open card: advance to next, or close all if it's the last
+                target = (index + 1 < _cardActions.Count) ? index + 1 : -1;
+            }
+            else
+            {
+                target = index;
+            }
+            _openCardIndex = target;
             for (int i = 0; i < _cardActions.Count; i++)
             {
-                if (i == index) _cardActions[i].Open();
-                else            _cardActions[i].Close();
+                if (i == target) _cardActions[i].Open();
+                else             _cardActions[i].Close();
             }
         }
 
         private void RebuildLinkConfigPanel(LinkEntry link, StackPanel configPanel)
         {
             configPanel.Children.Clear();
+
+            // Preserve existing rows so user's parameter selections survive category re-selection
+            var existingByLabel = link.ConfigRows.ToDictionary(r => r.CategoryLabel, r => r);
             link.ConfigRows.Clear();
 
             foreach (var catLabel in link.SelectedCategories)
-                if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
+            {
+                if (existingByLabel.TryGetValue(catLabel, out var existing))
+                    link.ConfigRows.Add(existing);
+                else if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
                     link.ConfigRows.Add(new ScanConfigRow(catLabel, ost));
+            }
 
             if (link.ConfigRows.Count == 0)
             {
@@ -1113,6 +1140,17 @@ namespace LemoineTools.Tools.AutoFilters
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             return tb;
+        }
+
+        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)
+            where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T t) yield return t;
+                foreach (var cc in FindVisualChildren<T>(child)) yield return cc;
+            }
         }
     }
 }

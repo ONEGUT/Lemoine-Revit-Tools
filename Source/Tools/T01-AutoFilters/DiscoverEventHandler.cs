@@ -141,78 +141,102 @@ namespace LemoineTools.Tools.AutoFilters
                     linkDocMap[li.Id.Value] = ld;
             }
 
+            // Group specs by link so we can log per-link progress
+            var specsByLink = ScanSpecs
+                .GroupBy(s => s.LinkId)
+                .Select(g => (TradeId: g.Key, TradeName: g.First().TradeName, Specs: g.ToList()))
+                .ToList();
+
             int total = ScanSpecs.Count;
             int done  = 0;
 
-            foreach (var spec in ScanSpecs)
+            // Log queued links upfront so user can see what will be scanned
+            foreach (var link in specsByLink)
             {
-                done++;
-                Progress((int)(5 + 90.0 * done / Math.Max(1, total)), pass, fail, skip);
+                int catCount = link.Specs.Count;
+                Log($"Queued  {link.TradeName}  ({catCount} categor{(catCount == 1 ? "y" : "ies")})", "info");
+            }
 
-                if (!Enum.TryParse<BuiltInCategory>(spec.OstCategory, false, out var bic))
+            foreach (var link in specsByLink)
+            {
+                Log($"→  Scanning {link.TradeName}…", "info");
+                int resultsBefore = results.Count;
+
+                foreach (var spec in link.Specs)
                 {
-                    Log($"[{spec.OstCategory}] Unknown category — skipped.", "info");
-                    skip++;
-                    continue;
-                }
+                    done++;
+                    Progress((int)(5 + 90.0 * done / Math.Max(1, total)), pass, fail, skip);
 
-                if (!linkDocMap.TryGetValue(spec.LinkId, out var scanDoc))
-                {
-                    Log($"Link {spec.LinkId} not found — skipped.", "info");
-                    skip++;
-                    continue;
-                }
+                    Log($"     {spec.OstCategory}", "info");
 
-                var catId     = new ElementId((long)(int)bic);
-                var collector = new FilteredElementCollector(scanDoc)
-                    .OfCategoryId(catId)
-                    .WhereElementIsNotElementType();
-
-                if (spec.Mode == "WholeCategory")
-                {
-                    int count = collector.GetElementCount();
-                    if (count == 0) { skip++; continue; }
-
-                    results.Add(new ScanResult
+                    if (!Enum.TryParse<BuiltInCategory>(spec.OstCategory, false, out var bic))
                     {
-                        IsWholeCategory = true,
-                        TradeName       = spec.TradeName,
-                        OstCategory     = spec.OstCategory,
-                        ParameterValue  = "",
-                        Parameter       = "Type Name",
-                        ElementCount    = count,
-                        HexColor        = ResolveColor(""),
-                    });
-                    pass++;
-                }
-                else // PerValue
-                {
-                    var valueCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                    foreach (Element el in collector)
-                    {
-                        string? val = ReadParameterValue(el, spec.Parameter);
-                        if (string.IsNullOrWhiteSpace(val)) continue;
-                        valueCounts.TryGetValue(val!, out int c);
-                        valueCounts[val!] = c + 1;
+                        Log($"     ✗ unknown category — skipped", "fail");
+                        skip++;
+                        continue;
                     }
 
-                    if (valueCounts.Count == 0) { skip++; continue; }
-
-                    foreach (var kvp in valueCounts.OrderByDescending(x => x.Value))
+                    if (!linkDocMap.TryGetValue(spec.LinkId, out var scanDoc))
                     {
+                        Log($"     ✗ link document not found — skipped", "fail");
+                        skip++;
+                        continue;
+                    }
+
+                    var catId     = new ElementId((long)(int)bic);
+                    var collector = new FilteredElementCollector(scanDoc)
+                        .OfCategoryId(catId)
+                        .WhereElementIsNotElementType();
+
+                    if (spec.Mode == "WholeCategory")
+                    {
+                        int count = collector.GetElementCount();
+                        if (count == 0) { skip++; continue; }
+
                         results.Add(new ScanResult
                         {
-                            IsWholeCategory = false,
+                            IsWholeCategory = true,
                             TradeName       = spec.TradeName,
                             OstCategory     = spec.OstCategory,
-                            ParameterValue  = kvp.Key,
-                            Parameter       = spec.Parameter,
-                            ElementCount    = kvp.Value,
-                            HexColor        = ResolveColor(kvp.Key),
+                            ParameterValue  = "",
+                            Parameter       = "Type Name",
+                            ElementCount    = count,
+                            HexColor        = ResolveColor(""),
                         });
                         pass++;
                     }
+                    else // PerValue
+                    {
+                        var valueCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                        foreach (Element el in collector)
+                        {
+                            string? val = ReadParameterValue(el, spec.Parameter);
+                            if (string.IsNullOrWhiteSpace(val)) continue;
+                            valueCounts.TryGetValue(val!, out int c);
+                            valueCounts[val!] = c + 1;
+                        }
+
+                        if (valueCounts.Count == 0) { skip++; continue; }
+
+                        foreach (var kvp in valueCounts.OrderByDescending(x => x.Value))
+                        {
+                            results.Add(new ScanResult
+                            {
+                                IsWholeCategory = false,
+                                TradeName       = spec.TradeName,
+                                OstCategory     = spec.OstCategory,
+                                ParameterValue  = kvp.Key,
+                                Parameter       = spec.Parameter,
+                                ElementCount    = kvp.Value,
+                                HexColor        = ResolveColor(kvp.Key),
+                            });
+                            pass++;
+                        }
+                    }
                 }
+
+                int linkRules = results.Count - resultsBefore;
+                Log($"   ✓  {link.TradeName} — {linkRules} rule(s) found", linkRules > 0 ? "pass" : "info");
             }
 
             ScanResults = results;
