@@ -35,7 +35,9 @@ namespace LemoineTools.Lemoine
         private string? _fActiveRuleId;
         private StackPanel?  _fRuleListPanel;
         private Border?      _fEditorBorder;
-        private Border?      _fTradeSwitcherBorder;
+        private Border?      _fTradesSidebar;
+        private StackPanel?  _fTradeListPanel;
+        private UIElement?   _fAddTradeAnchor;
         private TextBlock?   _fStatusText;
         private Border?     _fActiveRowBorder;
         private TextBlock?  _fActiveNameTb;
@@ -118,29 +120,44 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            var createBtn = BuildFlatButton("Create Filters");
-            createBtn.Margin = new Thickness(0, 0, 4, 0);
-            createBtn.Click += (s, e) => CreateFilters();
+            // Grid: [* | Auto | *]
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+            // Col 0–2: full-width title bar as drag handle / chrome
+            var titleBar = new Controls.LemoineTitleBar
+            {
+                Title     = "Auto Filters",
+                IconGlyph = "⚙",
+            };
+            Grid.SetColumn(titleBar, 0);
+            Grid.SetColumnSpan(titleBar, 3);
+            Grid.SetZIndex(titleBar, 0);
+            grid.Children.Add(titleBar);
+
+            // Col 1: "Create Filters" button, centred, overlays the title bar
+            var createBtn = BuildFlatButton("Create Filters");
+            createBtn.VerticalAlignment   = VerticalAlignment.Center;
+            createBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            createBtn.Click += (s, e) => CreateFilters();
+            Grid.SetColumn(createBtn, 1);
+            Grid.SetZIndex(createBtn, 1);
+            grid.Children.Add(createBtn);
+
+            // Col 2: "×" close button, right-aligned
             var closeBtn = BuildFlatButton("×");
-            closeBtn.Margin = new Thickness(4, 0, 0, 0);
+            closeBtn.Margin               = new Thickness(0, 0, 8, 0);
+            closeBtn.VerticalAlignment    = VerticalAlignment.Center;
+            closeBtn.HorizontalAlignment  = HorizontalAlignment.Right;
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
+            Grid.SetColumn(closeBtn, 2);
+            Grid.SetZIndex(closeBtn, 1);
+            grid.Children.Add(closeBtn);
 
-            var rightPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            rightPanel.Children.Add(createBtn);
-            rightPanel.Children.Add(closeBtn);
-
-            _toolbarBorder.Child = new Controls.LemoineTitleBar
-            {
-                Title        = "Auto Filters",
-                IconGlyph    = "⚙",
-                RightContent = rightPanel,
-            };
+            _toolbarBorder.Child = grid;
         }
 
         private void CreateFilters()
