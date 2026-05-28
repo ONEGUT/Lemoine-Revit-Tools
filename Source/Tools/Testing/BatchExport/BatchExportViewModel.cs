@@ -58,6 +58,9 @@ namespace LemoineTools.Tools.Testing
         private string                    _filenamePattern  = BatchExportSettings.Instance.FilenamePattern;
         private bool                      _pdfOn            = BatchExportSettings.Instance.ExportPdf;
         private bool                      _dwgOn            = BatchExportSettings.Instance.ExportDwg;
+        private bool                      _nwcOn            = BatchExportSettings.Instance.ExportNwc;
+        private bool                      _ifcOn            = BatchExportSettings.Instance.ExportIfc;
+        private string                    _ifcVersion       = BatchExportSettings.Instance.IfcVersion;
         private bool                      _combinePdf       = BatchExportSettings.Instance.CombinePdf;
         private string                    _pdfPlacement     = BatchExportSettings.Instance.PdfPaperPlacement;
         private string                    _hiddenLines      = BatchExportSettings.Instance.HiddenLinesVector
@@ -399,24 +402,18 @@ namespace LemoineTools.Tools.Testing
             var formatToggles = new LemoineToggleSwitches();
             formatToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "pdf", Label = "PDF",       Desc = "Vector PDF via Revit engine",       DefaultOn = _pdfOn  },
-                new ToggleItem { Id = "dwg", Label = "DWG",       Desc = "AutoCAD DWG via Revit export",      DefaultOn = _dwgOn  },
-                new ToggleItem { Id = "ifc", Label = "IFC",       Desc = "Coming soon — not yet active",     DefaultOn = false   },
-                new ToggleItem { Id = "nwc", Label = "NWC",       Desc = "Coming soon — not yet active",     DefaultOn = false   },
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = "Vector PDF via Revit engine",                DefaultOn = _pdfOn },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = "AutoCAD DWG via Revit export",               DefaultOn = _dwgOn },
+                new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC — 3D views only",             DefaultOn = _nwcOn },
+                new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine — 3D views only", DefaultOn = _ifcOn },
             });
-
-            // Dim out IFC/NWC rows
-            formatToggles.IsEnabled = true;
-            formatToggles.Loaded += (s, e) =>
-            {
-                // Disable IFC/NWC items visually after render — they show but don't toggle
-                // LemoineToggleSwitches doesn't expose per-item disable; handled by opacity
-            };
 
             formatToggles.StateChanged += state =>
             {
                 _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
                 _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
+                _nwcOn = state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
+                _ifcOn = state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
                 Fire();
             };
             outer.Children.Add(formatToggles);
@@ -437,13 +434,29 @@ namespace LemoineTools.Tools.Testing
             dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
             outer.Children.Add(dwgSection);
 
-            // Wire visibility to toggle state
+            // ── Section E: NWC Options ────────────────────────────────────────
+            var nwcSection = new StackPanel { Tag = "nwcSection" };
+            BuildNwcOptions(nwcSection);
+            nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            outer.Children.Add(nwcSection);
+
+            // ── Section F: IFC Options ────────────────────────────────────────
+            var ifcSection = new StackPanel { Tag = "ifcSection" };
+            BuildIfcOptions(ifcSection);
+            ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            outer.Children.Add(ifcSection);
+
+            // Wire all format option section visibility to toggle state
             formatToggles.StateChanged += state =>
             {
                 bool pdf = state.TryGetValue("pdf", out bool pv) && pv;
                 bool dwg = state.TryGetValue("dwg", out bool dv) && dv;
+                bool nwc = state.TryGetValue("nwc", out bool nv) && nv;
+                bool ifc = state.TryGetValue("ifc", out bool iv) && iv;
                 pdfSection.Visibility = pdf ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                 dwgSection.Visibility = dwg ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                nwcSection.Visibility = nwc ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                ifcSection.Visibility = ifc ? WpfVisibility.Visible : WpfVisibility.Collapsed;
             };
 
             return outer;
@@ -490,6 +503,45 @@ namespace LemoineTools.Tools.Testing
 
             AddLabeledComboBox(parent, "Export Setup", setupNames, initIdx,
                 val => { _dwgSetup = val; Fire(); });
+        }
+
+        private void BuildNwcOptions(StackPanel parent)
+        {
+            AddSectionLabel(parent, "NWC OPTIONS");
+
+            var note = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            // Update note text based on current export mode — re-evaluated on any state change
+            void UpdateNote() => note.Text = _exportMode == "Sheets"
+                ? "NWC is not available in Sheets mode — switch to Views in Step 1. Non-3D views are always skipped."
+                : "Exports each selected 3D view via Navisworks Manage. Non-3D views are skipped.";
+            UpdateNote();
+            ValidationChanged += (s, e) => UpdateNote();
+            parent.Children.Add(note);
+        }
+
+        private void BuildIfcOptions(StackPanel parent)
+        {
+            AddSectionLabel(parent, "IFC OPTIONS");
+
+            var note = new TextBlock
+            {
+                Text         = "Exports each selected 3D view via Revit's IFC engine. Non-3D views are skipped.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 4),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            parent.Children.Add(note);
+
+            AddLabeledComboBox(parent, "IFC Version",
+                new[] { "IFC2x3", "IFC4" },
+                _ifcVersion == "IFC4" ? 1 : 0,
+                val => { _ifcVersion = val; Fire(); });
         }
 
         private void UpdatePreview(TextBlock preview)
@@ -649,6 +701,8 @@ namespace LemoineTools.Tools.Testing
             var fmts = new List<string>();
             if (_pdfOn) fmts.Add("PDF");
             if (_dwgOn) fmts.Add("DWG");
+            if (_nwcOn) fmts.Add("NWC");
+            if (_ifcOn) fmts.Add("IFC");
             return fmts.Count > 0 ? string.Join(", ", fmts) : "—";
         }
 
@@ -720,7 +774,7 @@ namespace LemoineTools.Tools.Testing
             switch (stepId)
             {
                 case "S1": return _selectedNames.Count > 0;
-                case "S2": return _pdfOn || _dwgOn;
+                case "S2": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
                 case "S3": return !string.IsNullOrWhiteSpace(_outputFolder);
                 default:   return true;
             }
@@ -749,14 +803,17 @@ namespace LemoineTools.Tools.Testing
             if (_handler == null || _event == null) return;
 
             // Persist settings
-            BatchExportSettings.Instance.FilenamePattern  = _filenamePattern;
-            BatchExportSettings.Instance.OutputFolder     = _outputFolder;
-            BatchExportSettings.Instance.SplitByFormat    = _splitByFormat;
-            BatchExportSettings.Instance.ExportPdf        = _pdfOn;
-            BatchExportSettings.Instance.ExportDwg        = _dwgOn;
-            BatchExportSettings.Instance.CombinePdf       = _combinePdf;
-            BatchExportSettings.Instance.PdfPaperPlacement = _pdfPlacement;
-            BatchExportSettings.Instance.HiddenLinesVector = _hiddenLines == "Vector Processing";
+            BatchExportSettings.Instance.FilenamePattern    = _filenamePattern;
+            BatchExportSettings.Instance.OutputFolder       = _outputFolder;
+            BatchExportSettings.Instance.SplitByFormat      = _splitByFormat;
+            BatchExportSettings.Instance.ExportPdf          = _pdfOn;
+            BatchExportSettings.Instance.ExportDwg          = _dwgOn;
+            BatchExportSettings.Instance.ExportNwc          = _nwcOn;
+            BatchExportSettings.Instance.ExportIfc          = _ifcOn;
+            BatchExportSettings.Instance.IfcVersion         = _ifcVersion;
+            BatchExportSettings.Instance.CombinePdf         = _combinePdf;
+            BatchExportSettings.Instance.PdfPaperPlacement  = _pdfPlacement;
+            BatchExportSettings.Instance.HiddenLinesVector  = _hiddenLines == "Vector Processing";
             BatchExportSettings.Instance.DwgExportSetupName = _dwgSetup;
             BatchExportSettings.Instance.Save();
 
@@ -771,6 +828,9 @@ namespace LemoineTools.Tools.Testing
             _handler.SplitByFormat   = _splitByFormat;
             _handler.ExportPdf       = _pdfOn;
             _handler.ExportDwg       = _dwgOn;
+            _handler.ExportNwc       = _nwcOn;
+            _handler.ExportIfc       = _ifcOn;
+            _handler.IfcVersion      = _ifcVersion;
             _handler.CombinePdf      = _combinePdf;
             _handler.DwgSetupName    = _dwgSetup;
             _handler.PdfPlacement    = _pdfPlacement;
@@ -825,6 +885,8 @@ namespace LemoineTools.Tools.Testing
                         {
                             new LemoineSettingDef { Id = "defpdf", Kind = "toggle", Label = "PDF on by default", Default = s.ExportPdf },
                             new LemoineSettingDef { Id = "defdwg", Kind = "toggle", Label = "DWG on by default", Default = s.ExportDwg },
+                            new LemoineSettingDef { Id = "defnwc", Kind = "toggle", Label = "NWC on by default (Views mode only)", Default = s.ExportNwc },
+                            new LemoineSettingDef { Id = "defifc", Kind = "toggle", Label = "IFC on by default (Views mode only)", Default = s.ExportIfc },
                         }
                     },
                     new LemoineSettingsGroup
@@ -851,6 +913,16 @@ namespace LemoineTools.Tools.Testing
                                 Options = new TextOpts { Placeholder = "Standard DWG" }, Default = s.DwgExportSetupName },
                         }
                     },
+                    new LemoineSettingsGroup
+                    {
+                        Id = "G6", Title = "IFC Options",
+                        Settings = new List<LemoineSettingDef>
+                        {
+                            new LemoineSettingDef { Id = "ifcversion", Kind = "single", Label = "Default IFC version",
+                                Options = new SingleSelectOpts { Items = new List<string> { "IFC2x3", "IFC4" } },
+                                Default = s.IfcVersion },
+                        }
+                    },
                 }
             };
         }
@@ -865,6 +937,9 @@ namespace LemoineTools.Tools.Testing
                 case "pattern":     s.FilenamePattern       = value as string ?? "";   break;
                 case "defpdf":      s.ExportPdf             = value is bool b2 && b2;  break;
                 case "defdwg":      s.ExportDwg             = value is bool b3 && b3;  break;
+                case "defnwc":      s.ExportNwc             = value is bool b5 && b5;  break;
+                case "defifc":      s.ExportIfc             = value is bool b6 && b6;  break;
+                case "ifcversion":  s.IfcVersion            = value as string ?? "IFC2x3"; break;
                 case "combinepdf":  s.CombinePdf            = value is bool b4 && b4;  break;
                 case "placement":   s.PdfPaperPlacement     = value as string ?? "Center"; break;
                 case "hiddenlines": s.HiddenLinesVector     = value as string == "Vector Processing"; break;

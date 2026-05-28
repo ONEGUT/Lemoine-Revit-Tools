@@ -39,6 +39,13 @@ namespace LemoineTools.Tools.Testing
         // ── DWG options ───────────────────────────────────────────────────────
         public string DwgExportSetupName { get; set; } = "";
 
+        // ── NWC options ───────────────────────────────────────────────────────
+        public bool ExportNwc { get; set; } = false;
+
+        // ── IFC options ───────────────────────────────────────────────────────
+        public bool   ExportIfc  { get; set; } = false;
+        public string IfcVersion { get; set; } = "IFC2x3"; // "IFC2x3" | "IFC4"
+
         // ── Persistence ───────────────────────────────────────────────────────
         private static string FilePath
         {
