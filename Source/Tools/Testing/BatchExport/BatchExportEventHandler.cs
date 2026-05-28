@@ -74,13 +74,22 @@ namespace LemoineTools.Tools.Testing
 
             try
             {
+                // Guard: no active document
+                if (app.ActiveUIDocument == null)
+                {
+                    pushLog("No active Revit document — please open a project before exporting.", "fail");
+                    debug.Log("INIT-ERROR", "app.ActiveUIDocument is null");
+                    onComplete(0, 1, 0);
+                    return;
+                }
+
                 var doc = app.ActiveUIDocument.Document;
 
                 debug.Log("INIT", $"ExportMode={ExportMode}  PDF={ExportPdf}  DWG={ExportDwg}  NWC={ExportNwc}  IFC={ExportIfc}  IFCVersion={IfcVersion}");
                 debug.Log("INIT", $"OutputFolder={OutputFolder}  SplitByFormat={SplitByFormat}  SelectedCount={SelectedIds.Count}");
                 debug.Log("INIT", $"RevitDoc={doc.PathName}  Title={doc.Title}");
 
-                // Ensure output folder exists
+                // Guard: output folder
                 if (string.IsNullOrEmpty(OutputFolder))
                 {
                     pushLog("Output folder not specified.", "fail");
@@ -96,11 +105,18 @@ namespace LemoineTools.Tools.Testing
                     return;
                 }
 
-                // Collect elements
+                // Collect elements — log any that could not be resolved
                 var elements = SelectedIds
                     .Select(id => doc.GetElement(id))
                     .Where(e => e != null)
                     .ToList();
+
+                int dropped = SelectedIds.Count - elements.Count;
+                if (dropped > 0)
+                {
+                    pushLog($"Warning: {dropped} element(s) could not be resolved — they may have been deleted since the window was opened.", "warn");
+                    debug.Log("INIT", $"{dropped} element ID(s) dropped — GetElement returned null.");
+                }
 
                 if (elements.Count == 0)
                 {
@@ -109,8 +125,38 @@ namespace LemoineTools.Tools.Testing
                     return;
                 }
 
+                // ══ Pre-flight checks ═════════════════════════════════════════
+                // Run all format-level checks before the element loop so the user
+                // sees all problems up front and the progress bar stays accurate.
+
+                // ── DWG pre-flight ────────────────────────────────────────────
+                ExportDWGSettings? dwgSetup = null;
+                bool dwgEffective = ExportDwg;
+                if (ExportDwg)
+                {
+                    if (!string.IsNullOrEmpty(DwgSetupName))
+                    {
+                        foreach (var s in new FilteredElementCollector(doc)
+                            .OfClass(typeof(ExportDWGSettings))
+                            .Cast<ExportDWGSettings>())
+                        {
+                            if (s.Name == DwgSetupName) { dwgSetup = s; break; }
+                        }
+                        if (dwgSetup == null)
+                        {
+                            pushLog($"DWG: Export setup '{DwgSetupName}' not found — no DWG files will be exported. Create this setup via File → Export → DWG Settings.", "fail");
+                            debug.Log("DWG", $"Pre-flight: setup '{DwgSetupName}' not found — DWG export disabled for this run.");
+                            fail++;
+                            dwgEffective = false;
+                        }
+                    }
+                    else
+                    {
+                        debug.Log("DWG", "No export setup configured — will use Revit DWG defaults.");
+                    }
+                }
+
                 // ── NWC pre-flight ────────────────────────────────────────────
-                // Check Sheets mode block and Navisworks availability before touching the loop
                 bool nwcReady = false;
                 if (ExportNwc)
                 {
@@ -156,12 +202,21 @@ namespace LemoineTools.Tools.Testing
                     }
                 }
 
-                // Effective format flags — NWC/IFC only run in Views mode with NWC available
+                // ── IFC pre-flight ────────────────────────────────────────────
+                if (ExportIfc && ExportMode == "Sheets")
+                {
+                    pushLog("IFC: Skipped — IFC requires Views mode (3D views only). Switch to Views in Step 1.", "fail");
+                    debug.Log("IFC", "Export blocked — ExportMode is Sheets.");
+                }
+
+                // Effective flags — incorporate all pre-flight results
                 bool nwcEffective = ExportNwc && ExportMode != "Sheets" && nwcReady;
                 bool ifcEffective = ExportIfc && ExportMode != "Sheets";
 
+                // total must reflect only the formats that will actually attempt work
+                // so that done/total gives accurate progress
                 int total = elements.Count * (ExportPdf     ? 1 : 0)
-                          + elements.Count * (ExportDwg     ? 1 : 0)
+                          + elements.Count * (dwgEffective  ? 1 : 0)
                           + elements.Count * (nwcEffective  ? 1 : 0)
                           + elements.Count * (ifcEffective  ? 1 : 0);
                 int done  = 0;
@@ -221,37 +276,17 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     // ── DWG ───────────────────────────────────────────────────
-                    if (ExportDwg)
+                    // dwgEffective is false if the named setup was not found in pre-flight
+                    if (dwgEffective)
                     {
                         try
                         {
                             string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
-
-                            ExportDWGSettings? setup = null;
-                            if (!string.IsNullOrEmpty(DwgSetupName))
-                            {
-                                foreach (var s in new FilteredElementCollector(doc)
-                                    .OfClass(typeof(ExportDWGSettings))
-                                    .Cast<ExportDWGSettings>())
-                                {
-                                    if (s.Name == DwgSetupName) { setup = s; break; }
-                                }
-                            }
-
-                            if (setup == null && !string.IsNullOrEmpty(DwgSetupName))
-                            {
-                                pushLog($"DWG setup '{DwgSetupName}' not found — skipped {safeName}.", "fail");
-                                debug.Log("DWG", $"Setup '{DwgSetupName}' not found — skip {safeName}");
-                                skip++;
-                            }
-                            else
-                            {
-                                var dwgOpts = new DWGExportOptions { MergedViews = true };
-                                doc.Export(outDir, safeName, new List<ElementId> { element.Id }, dwgOpts);
-                                pass++;
-                                pushLog($"DWG: {safeName}.dwg", "pass");
-                                debug.Log("DWG", $"OK: {safeName}.dwg");
-                            }
+                            var dwgOpts   = new DWGExportOptions { MergedViews = true };
+                            doc.Export(outDir, safeName, new List<ElementId> { element.Id }, dwgOpts);
+                            pass++;
+                            pushLog($"DWG: {safeName}.dwg", "pass");
+                            debug.Log("DWG", $"OK: {safeName}.dwg");
                         }
                         catch (Exception ex)
                         {
@@ -264,7 +299,7 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     // ── NWC ───────────────────────────────────────────────────
-                    // 3D views only. Sheets mode and unavailable exporter are blocked above.
+                    // 3D views only. Sheets mode and unavailable exporter are blocked in pre-flight.
                     if (nwcEffective)
                     {
                         try
@@ -285,12 +320,10 @@ namespace LemoineTools.Tools.Testing
                                 opts.ExportScope              = NavisworksExportScope.View;
                                 opts.ViewId                   = view3d.Id;
 
-                                // Coordinates
                                 opts.Coordinates = NwcCoordinates == "Internal"
                                     ? NavisworksCoordinates.Internal
                                     : NavisworksCoordinates.Shared;
 
-                                // Parameters
                                 opts.Parameters = NwcParameters switch
                                 {
                                     "Elements" => NavisworksParameters.Elements,
@@ -310,12 +343,18 @@ namespace LemoineTools.Tools.Testing
                                 opts.ConvertLights            = NwcConvertLights;
                                 opts.FacetingFactor           = NwcFacetingFactor;
 
-                                // ConvertLinkedCADFormats was added mid-cycle — guard for older API versions
+                                // ConvertLinkedCADFormats was added mid-cycle — guard for older API versions.
+                                // Only warn the user if they actually had it enabled.
                                 // TEMPORARY DEBUG — remove try/catch once minimum API version confirmed
                                 try { opts.ConvertLinkedCADFormats = NwcConvertLinkedCad; }
-                                catch (Exception ex) { debug.Log("NWC", "ConvertLinkedCADFormats not available in this API build", ex.Message); }
+                                catch (Exception ex)
+                                {
+                                    debug.Log("NWC", "ConvertLinkedCADFormats not available in this API build", ex.Message);
+                                    if (NwcConvertLinkedCad)
+                                        pushLog("NWC: ConvertLinkedCADFormats is not supported by this Revit/Navisworks version — setting ignored.", "warn");
+                                }
 
-                                debug.Log("NWC", $"Calling doc.Export({outDir}, {safeName}, opts) [3-param NWC overload]  ViewId={view3d.Id}");
+                                debug.Log("NWC", $"Calling doc.Export({outDir}, {safeName}, opts) [3-param]  ViewId={view3d.Id}");
 
                                 // NWC export uses the 3-parameter overload — ViewId is set on the options object
                                 doc.Export(outDir, safeName, opts);
@@ -335,7 +374,7 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     // ── IFC ───────────────────────────────────────────────────
-                    // 3D views only. Sheets mode is blocked by ifcEffective.
+                    // 3D views only. Sheets mode is blocked in pre-flight.
                     if (ifcEffective)
                     {
                         try
@@ -391,7 +430,9 @@ namespace LemoineTools.Tools.Testing
         {
             foreach (char c in Path.GetInvalidFileNameChars())
                 name = name.Replace(c, '_');
-            return name.Trim();
+            name = name.Trim();
+            // Guard against an entirely-illegal pattern resolving to an empty string
+            return name.Length > 0 ? name : "export";
         }
 
         private static string EnsureSubfolder(string parent, string sub)
