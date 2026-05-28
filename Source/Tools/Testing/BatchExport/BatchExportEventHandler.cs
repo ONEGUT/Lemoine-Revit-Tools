@@ -122,7 +122,7 @@ namespace LemoineTools.Tools.Testing
             var sheetNumToId = elements.OfType<ViewSheet>()
                 .ToDictionary(s => s.SheetNumber, s => s.Id);
 
-            // Pre-build DWG options once (setup lookup is constant for all packs)
+            // Pre-build DWG options once — setup lookup is constant across packs
             DWGExportOptions? dwgOpts     = null;
             bool              dwgResolved = false;
 
@@ -142,10 +142,14 @@ namespace LemoineTools.Tools.Testing
                 {
                     pushLog($"Pack '{pack.PackName}': no matching sheets in selection — skipped.", "fail");
                     skip++;
+                    // Advance done for the pre-counted operations so progress stays accurate
+                    if (ExportPdf) done++;
+                    if (ExportDwg) done += pack.SheetNumbers.Count;
+                    onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                     continue;
                 }
 
-                // PDF: one combined export per pack, named after the pack
+                // PDF: one combined call per pack, named after the pack
                 if (ExportPdf)
                 {
                     try
@@ -153,9 +157,17 @@ namespace LemoineTools.Tools.Testing
                         string outDir   = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
                         string packName = SanitizeFilename(pack.PackName);
                         var opts        = BuildPdfOptions(packName, combine: true);
-                        doc.Export(outDir, packIds, opts);
-                        pass++;
-                        pushLog($"PDF (pack): {packName}.pdf [{packIds.Count} sheets]", "pass");
+                        bool ok         = doc.Export(outDir, packIds, opts);
+                        if (ok)
+                        {
+                            pass++;
+                            pushLog($"PDF (pack): {packName}.pdf [{packIds.Count} sheets]", "pass");
+                        }
+                        else
+                        {
+                            fail++;
+                            pushLog($"PDF failed — pack '{pack.PackName}': export returned false.", "fail");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -166,7 +178,7 @@ namespace LemoineTools.Tools.Testing
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                 }
 
-                // DWG: individual export per sheet
+                // DWG: individual export per sheet in the pack
                 if (ExportDwg)
                 {
                     if (!dwgResolved)
@@ -177,7 +189,7 @@ namespace LemoineTools.Tools.Testing
 
                     if (dwgOpts == null)
                     {
-                        // Log once per pack, advance counter for all sheets in this pack
+                        // Log once per pack — no point repeating per-sheet
                         pushLog($"DWG setup '{DwgSetupName}' not found — pack '{pack.PackName}' DWG skipped.", "fail");
                         skip += packIds.Count;
                         done += packIds.Count;
@@ -194,9 +206,17 @@ namespace LemoineTools.Tools.Testing
                             try
                             {
                                 string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
-                                doc.Export(outDir, safeName, new List<ElementId> { sheetId }, dwgOpts);
-                                pass++;
-                                pushLog($"DWG: {safeName}.dwg", "pass");
+                                bool ok = doc.Export(outDir, safeName, new List<ElementId> { sheetId }, dwgOpts);
+                                if (ok)
+                                {
+                                    pass++;
+                                    pushLog($"DWG: {safeName}.dwg", "pass");
+                                }
+                                else
+                                {
+                                    fail++;
+                                    pushLog($"DWG failed — {safeName}: export returned false.", "fail");
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -220,58 +240,122 @@ namespace LemoineTools.Tools.Testing
             Action<int, int, int, int> onProgress,
             ref int pass, ref int fail, ref int skip)
         {
-            int total = elements.Count * (ExportPdf ? 1 : 0) + elements.Count * (ExportDwg ? 1 : 0);
-            int done  = 0;
+            // When CombinePdf is on, all sheets go in one Export call → counts as 1 PDF op
+            int pdfOps = ExportPdf ? (CombinePdf ? 1 : elements.Count) : 0;
+            int dwgOps = ExportDwg ? elements.Count : 0;
+            int total  = pdfOps + dwgOps;
+            int done   = 0;
 
-            foreach (var element in elements)
+            // ── PDF ───────────────────────────────────────────────────────────
+            if (ExportPdf)
             {
-                var tokens  = BuildTokens(element, projNumber, projName);
-                string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
-
-                if (ExportPdf)
+                if (CombinePdf)
                 {
+                    // One combined call with all IDs; filename from first element's tokens
                     try
                     {
-                        string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
-                        var opts      = BuildPdfOptions(safeName, combine: CombinePdf);
-                        doc.Export(outDir, new List<ElementId> { element.Id }, opts);
-                        pass++;
-                        pushLog($"PDF: {safeName}.pdf", "pass");
+                        string outDir    = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
+                        var firstTokens  = BuildTokens(elements[0], projNumber, projName);
+                        string safeName  = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, firstTokens));
+                        var allIds       = elements.Select(e => e.Id).ToList();
+                        var opts         = BuildPdfOptions(safeName, combine: true);
+                        bool ok          = doc.Export(outDir, allIds, opts);
+                        if (ok)
+                        {
+                            pass++;
+                            pushLog($"PDF (combined): {safeName}.pdf [{allIds.Count} items]", "pass");
+                        }
+                        else
+                        {
+                            fail++;
+                            pushLog("PDF failed — combined export returned false.", "fail");
+                        }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog($"PDF failed — {safeName}: {ex.Message}", "fail");
+                        pushLog($"PDF failed — combined: {ex.Message}", "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                 }
-
-                if (ExportDwg)
+                else
                 {
-                    try
+                    // One call per element
+                    foreach (var element in elements)
                     {
-                        string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
-                        var dwgOpts   = BuildDwgOptions(doc);
-                        if (dwgOpts == null)
+                        var tokens  = BuildTokens(element, projNumber, projName);
+                        string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+
+                        try
                         {
-                            pushLog($"DWG setup '{DwgSetupName}' not found — skipped {safeName}.", "fail");
-                            skip++;
+                            string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
+                            var opts      = BuildPdfOptions(safeName, combine: false);
+                            bool ok       = doc.Export(outDir, new List<ElementId> { element.Id }, opts);
+                            if (ok)
+                            {
+                                pass++;
+                                pushLog($"PDF: {safeName}.pdf", "pass");
+                            }
+                            else
+                            {
+                                fail++;
+                                pushLog($"PDF failed — {safeName}: export returned false.", "fail");
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            doc.Export(outDir, safeName, new List<ElementId> { element.Id }, dwgOpts);
-                            pass++;
-                            pushLog($"DWG: {safeName}.dwg", "pass");
+                            fail++;
+                            pushLog($"PDF failed — {safeName}: {ex.Message}", "fail");
                         }
+                        done++;
+                        onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                     }
-                    catch (Exception ex)
-                    {
-                        fail++;
-                        pushLog($"DWG failed — {safeName}: {ex.Message}", "fail");
-                    }
-                    done++;
+                }
+            }
+
+            // ── DWG ───────────────────────────────────────────────────────────
+            if (ExportDwg)
+            {
+                var dwgOpts = BuildDwgOptions(doc);
+
+                if (dwgOpts == null)
+                {
+                    pushLog($"DWG setup '{DwgSetupName}' not found — all DWG exports skipped.", "fail");
+                    skip += elements.Count;
+                    done += elements.Count;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
+                }
+                else
+                {
+                    foreach (var element in elements)
+                    {
+                        var tokens  = BuildTokens(element, projNumber, projName);
+                        string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+
+                        try
+                        {
+                            string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
+                            bool ok = doc.Export(outDir, safeName, new List<ElementId> { element.Id }, dwgOpts);
+                            if (ok)
+                            {
+                                pass++;
+                                pushLog($"DWG: {safeName}.dwg", "pass");
+                            }
+                            else
+                            {
+                                fail++;
+                                pushLog($"DWG failed — {safeName}: export returned false.", "fail");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            fail++;
+                            pushLog($"DWG failed — {safeName}: {ex.Message}", "fail");
+                        }
+                        done++;
+                        onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
+                    }
                 }
             }
         }
