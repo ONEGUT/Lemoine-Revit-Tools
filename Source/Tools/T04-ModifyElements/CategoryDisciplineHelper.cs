@@ -30,7 +30,6 @@ namespace LemoineTools.Tools.ModifyElements
             { (int)BuiltInCategory.OST_Entourage,            "Architecture" },
             { (int)BuiltInCategory.OST_Planting,             "Architecture" },
             { (int)BuiltInCategory.OST_Mass,                 "Architecture" },
-            { (int)BuiltInCategory.OST_CurtainSystems,       "Architecture" },
             { (int)BuiltInCategory.OST_CurtainWallPanels,    "Architecture" },
             { (int)BuiltInCategory.OST_CurtainWallMullions,  "Architecture" },
             { (int)BuiltInCategory.OST_Parts,                "Architecture" },
@@ -43,7 +42,6 @@ namespace LemoineTools.Tools.ModifyElements
             { (int)BuiltInCategory.OST_StructuralFoundation, "Structure" },
             { (int)BuiltInCategory.OST_StructuralTruss,      "Structure" },
             { (int)BuiltInCategory.OST_StructuralStiffener,  "Structure" },
-            { (int)BuiltInCategory.OST_StructuralConnections,"Structure" },
             { (int)BuiltInCategory.OST_Rebar,                "Structure" },
             { (int)BuiltInCategory.OST_FabricReinforcement,  "Structure" },
             { (int)BuiltInCategory.OST_AreaRein,             "Structure" },
@@ -57,7 +55,6 @@ namespace LemoineTools.Tools.ModifyElements
             { (int)BuiltInCategory.OST_FlexDuctCurves,       "Mechanical" },
             { (int)BuiltInCategory.OST_DuctInsulations,      "Mechanical" },
             { (int)BuiltInCategory.OST_DuctLinings,          "Mechanical" },
-            { (int)BuiltInCategory.OST_AirTerminal,          "Mechanical" },
 
             // Electrical
             { (int)BuiltInCategory.OST_ElectricalEquipment,  "Electrical" },
