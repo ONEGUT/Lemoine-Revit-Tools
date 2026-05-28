@@ -280,7 +280,12 @@ namespace LemoineTools.Tools.ModifyElements
             if (rt == null)
                 throw new InvalidOperationException($"Roof {source.Id}: roof type not found.");
 
-            FootPrintRoof newRoof = FootPrintRoof.Create(doc, loops, level.Id, rt.Id);
+            var footprint = new CurveArray();
+            foreach (Curve c in loops[0])
+                footprint.Append(c);
+
+            ModelCurveArray unused;
+            FootPrintRoof newRoof = doc.Create.NewFootPrintRoof(footprint, level, rt, out unused);
 
             // Preserve vertical positioning
             double baseOffset = source.get_Parameter(BuiltInParameter.ROOF_LEVEL_OFFSET_PARAM)?.AsDouble() ?? 0.0;
