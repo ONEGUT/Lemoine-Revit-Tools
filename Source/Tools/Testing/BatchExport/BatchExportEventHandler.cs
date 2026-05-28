@@ -373,21 +373,18 @@ namespace LemoineTools.Tools.Testing
                                                    : PaperPlacementType.LowerLeft,
                 ColorDepth                   = MapColorDepth(ColorDepth),
                 RasterQuality                = MapRasterQuality(RasterQuality),
-                HiddenLineViews              = HiddenLines == "Raster Processing"
-                                                   ? HiddenLineViewsType.RasterProcessing
-                                                   : HiddenLineViewsType.VectorProcessing,
                 ViewLinksInBlue              = ViewLinksInBlue,
                 ReplaceHalftoneWithThinLines = ReplaceHalftoneWithThinLines,
             };
 
             if (ZoomSetting == "Scale %")
             {
-                opts.ZoomType = ZoomType.Zoom;
-                opts.Zoom     = ZoomPercent;
+                opts.ZoomType       = ZoomType.Zoom;
+                opts.ZoomPercentage = ZoomPercent;
             }
             else
             {
-                opts.ZoomType = ZoomType.FitPage;
+                opts.ZoomType = ZoomType.FitToPage;
             }
 
             return opts;
@@ -426,7 +423,7 @@ namespace LemoineTools.Tools.Testing
         {
             switch (value)
             {
-                case "Draft":        return RasterQualityType.Draft;
+                case "Draft":        return RasterQualityType.Low;   // Draft removed in Revit 2024; map to Low
                 case "Low":          return RasterQualityType.Low;
                 case "Medium":       return RasterQualityType.Medium;
                 case "Presentation": return RasterQualityType.Presentation;
