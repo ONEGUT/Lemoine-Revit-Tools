@@ -137,12 +137,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             try
             {
                 foreach (var trade in AutoFiltersSettings.Instance.Trades)
-                {
-                    if (trade.Rules == null) continue;
                     foreach (var rule in trade.Rules)
-                        if (!string.IsNullOrEmpty(rule.Id) && !ruleMap.ContainsKey(rule.Id))
-                            ruleMap[rule.Id] = rule;
-                }
+                        if (!ruleMap.ContainsKey(rule.Id)) ruleMap[rule.Id] = rule;
             }
             catch { }
 

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -10,7 +11,11 @@ using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Commands
 {
-    /// <summary>Thin launcher for the Filter Legend Creator step-flow window.</summary>
+    /// <summary>
+    /// Opens the Legend Creation step-flow. Queries existing Legend views from
+    /// the active document on the Revit main thread so the user can pick which
+    /// one to duplicate, then fires App.LegendCreatorEvent on confirmation.
+    /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
     public class AutoFiltersLegendLaunchCommand : IExternalCommand
@@ -22,6 +27,7 @@ namespace LemoineTools.Commands
             ref string          message,
             ElementSet          elements)
         {
+            // Bring existing window to front (STA-safe)
             if (_window != null)
             {
                 try
@@ -36,31 +42,42 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            // Query legend views on the Revit main thread (here)
+            var doc = commandData.Application.ActiveUIDocument?.Document;
+            if (doc == null) return Result.Failed;
 
-            // Collect legend views on the Revit main thread
             var legendViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
+                .OfCategory(BuiltInCategory.OST_Views)
                 .Cast<View>()
                 .Where(v => v.ViewType == ViewType.Legend)
-                .Select(v => (Id: v.Id, Name: v.Name))
-                .OrderBy(v => v.Name, System.StringComparer.OrdinalIgnoreCase)
+                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(v => (v.Id, v.Name))
                 .ToList();
 
-            // Collect text note types on the Revit main thread
-            var textTypes = new FilteredElementCollector(doc)
+            if (legendViews.Count == 0)
+            {
+                TaskDialog.Show("Legend Creation",
+                    "No Legend views found in this project.\n\n" +
+                    "Create a blank Legend view first via View → New Legend, " +
+                    "then run this command again.");
+                return Result.Cancelled;
+            }
+
+            // Query TextNoteTypes so the user can pick one per text role.
+            var textNoteTypes = new FilteredElementCollector(doc)
                 .OfClass(typeof(TextNoteType))
                 .Cast<TextNoteType>()
-                .Select(t => (Id: t.Id, Name: t.Name))
-                .OrderBy(t => t.Name, System.StringComparer.OrdinalIgnoreCase)
+                .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(t => (t.Id, t.Name))
                 .ToList();
 
             var vm = new LegendCreatorLaunchViewModel(
                 legendViews,
-                textTypes,
+                textNoteTypes,
                 App.LegendCreatorHandler!,
                 App.LegendCreatorEvent!);
 
+            // Open window on dedicated STA thread so real-time progress works
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 

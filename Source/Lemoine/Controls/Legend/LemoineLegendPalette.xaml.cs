@@ -16,12 +16,10 @@ namespace LemoineTools.Lemoine.Controls
     /// Live mirror of <see cref="AutoFiltersSettings.Trades"/>.
     ///
     /// Three sections, top-to-bottom:
-    ///   1. Search box (filters the rules below)
-    ///   2. CATEGORIES — one chip per Trade. Three visible + "more ▾" overflow.
-    ///      Click to filter / drag to spawn a populated group.
-    ///   3. FILTERS — list of every (enabled) Rule under the selected scope.
+    ///   1. Scope row — "All" pill + trade dropdown pill
+    ///   2. FILTERS — list of every (enabled) Rule under the selected scope.
     ///      Each row is draggable into a group.
-    ///   4. CUSTOM — empty-swatch tile draggable to create a Custom block.
+    ///   3. CUSTOM — empty-swatch tile draggable to create a Custom block.
     /// </summary>
     public partial class LemoineLegendPalette : UserControl
     {
@@ -29,13 +27,11 @@ namespace LemoineTools.Lemoine.Controls
         public const string DragFormat = "LemoineTools.LegendDragPayload";
 
         // ── State ───────────────────────────────────────────────────────────
-        private string _query = "";
         private string _scope = "All";   // "All" | Trade.Id
 
         // Built lazily on Loaded
-        private WrapPanel?  _chipRow;
+        private StackPanel? _scopeRow;
         private StackPanel? _filterList;
-        private TextBox?    _searchBox;
 
         public LemoineLegendPalette()
         {
@@ -47,7 +43,7 @@ namespace LemoineTools.Lemoine.Controls
         // External hook so a host can rebuild after AutoFiltersSettings.Save.
         public void Refresh()
         {
-            BuildChipRow();
+            BuildScopeRow();
             BuildFilterList();
         }
 
@@ -60,36 +56,24 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.Margin = new Thickness(10, 10, 10, 10);
 
+            // header=0, scope row=1, filters label=2, filters=3, custom label=4, custom tile=5
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // header
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // search
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // chips label
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // chips
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // scope row
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // filters label
             _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // filters
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // custom label
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // custom tile
 
             AddRow(0, MakeMonoLabel("PALETTE"));
-            AddRow(1, BuildSearchBox());
-            AddRow(2, MakeMonoLabel("CATEGORIES"));
 
-            _chipRow = new WrapPanel
+            _scopeRow = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Margin = new Thickness(0, 4, 0, 6),
             };
-            // Wrap the chip row in a horizontal-scroll-disabled ScrollViewer so the
-            // WrapPanel always receives a finite available width and wraps properly.
-            var chipScroll = new ScrollViewer
-            {
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
-                Content = _chipRow,
-            };
-            AddRow(3, chipScroll);
+            AddRow(1, _scopeRow);
 
-            AddRow(4, MakeMonoLabel("FILTERS — drag into a group"));
+            AddRow(2, MakeMonoLabel("FILTERS — drag into a group"));
 
             var sv = new ScrollViewer
             {
@@ -99,67 +83,16 @@ namespace LemoineTools.Lemoine.Controls
             };
             _filterList = new StackPanel();
             sv.Content = _filterList;
-            AddRow(5, sv);
+            AddRow(3, sv);
 
-            AddRow(6, MakeMonoLabel("CUSTOM"));
-            AddRow(7, BuildCustomTile());
+            AddRow(4, MakeMonoLabel("CUSTOM"));
+            AddRow(5, BuildCustomTile());
         }
 
         private void AddRow(int row, UIElement el)
         {
             Grid.SetRow(el, row);
             _root.Children.Add(el);
-        }
-
-        private UIElement BuildSearchBox()
-        {
-            var border = new Border
-            {
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(8, 3, 8, 3),
-                Margin          = new Thickness(0, 4, 0, 8),
-            };
-            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            border.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
-
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var icon = new TextBlock
-            {
-                Text = "⌕",
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0),
-            };
-            icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            icon.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            Grid.SetColumn(icon, 0);
-            grid.Children.Add(icon);
-
-            _searchBox = new TextBox
-            {
-                BorderThickness = new Thickness(0),
-                Background = Brushes.Transparent,
-                Padding = new Thickness(0),
-                VerticalContentAlignment = VerticalAlignment.Center,
-            };
-            _searchBox.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
-            _searchBox.SetResourceReference(TextBox.FontFamilyProperty, "LemoineUiFont");
-            _searchBox.SetResourceReference(TextBox.FontSizeProperty,   "LemoineFS_SM");
-            _searchBox.SetResourceReference(TextBox.CaretBrushProperty, "LemoineText");
-            _searchBox.TextChanged += (s, e) =>
-            {
-                _query = _searchBox.Text ?? "";
-                BuildFilterList();
-            };
-            Grid.SetColumn(_searchBox, 1);
-            grid.Children.Add(_searchBox);
-
-            border.Child = grid;
-            return border;
         }
 
         private UIElement BuildCustomTile()
@@ -207,56 +140,253 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Chip row — every Trade renders; WrapPanel handles overflow
+        // Scope row — "All" pill + trade dropdown pill
         // ─────────────────────────────────────────────────────────────────────
-        private void BuildChipRow()
+        private void BuildScopeRow()
         {
-            if (_chipRow == null) return;
-            _chipRow.Children.Clear();
+            if (_scopeRow == null) return;
+            _scopeRow.Children.Clear();
 
             var trades = AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>();
 
-            // "All" chip — non-draggable, click only
-            _chipRow.Children.Add(MakeChip("All", isAll: true, trade: null, active: _scope == "All"));
-
-            foreach (var trade in trades)
-                _chipRow.Children.Add(MakeChip(trade.Label, isAll: false, trade: trade, active: _scope == trade.Id));
-        }
-
-        private LemoineCategoryChip MakeChip(string label, bool isAll, FilterTradeConfig? trade, bool active)
-        {
-            var chip = new LemoineCategoryChip
+            // "All" pill
+            var allPill = MakeScopePill("All", _scope == "All");
+            allPill.MouseLeftButtonUp += (s, e) =>
             {
-                Label  = label,
-                Active = active,
-                AccentColor = isAll
-                    ? GetThemeAccent()
-                    : BrushHelper.ColorFromHex(trade!.Color, GetThemeAccent()),
-                Draggable = !isAll,
-                // Right + bottom margin so wrapped chips on row 2+ get vertical spacing.
-                Margin = new Thickness(0, 0, 4, 4),
-            };
-
-            chip.Clicked += (s, e) =>
-            {
-                _scope = isAll ? "All" : trade!.Id;
-                BuildChipRow();
+                _scope = "All";
+                BuildScopeRow();
                 BuildFilterList();
             };
+            _scopeRow.Children.Add(allPill);
 
-            if (!isAll)
+            // Trade dropdown pill
+            string tradeLabel = "All trades";
+            bool tradeActive = _scope != "All";
+            if (tradeActive)
             {
-                chip.DragInitiated += (s, e) =>
-                {
-                    var payload = new LegendDragPayload
-                    {
-                        What          = LegendDragPayload.Kind.PaletteCategory,
-                        SourceTradeId = trade!.Id,
-                    };
-                    StartDrag(chip, payload);
-                };
+                var found = trades.FirstOrDefault(t => t.Id == _scope);
+                if (found != null) tradeLabel = found.Label ?? found.Id;
             }
-            return chip;
+
+            var tradePill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 3, 6, 3),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 0, 0),
+            };
+            tradePill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            if (tradeActive)
+            {
+                tradePill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                tradePill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            }
+            else
+            {
+                tradePill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                tradePill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            }
+
+            var tradePillInner = new StackPanel { Orientation = Orientation.Horizontal };
+            var tradePillLabel = new TextBlock
+            {
+                Text = tradeLabel,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            if (tradeActive)
+                tradePillLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            else
+                tradePillLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tradePillLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tradePillLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            var tradePillChevron = new TextBlock
+            {
+                Text = " ˅",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            tradePillChevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tradePillChevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tradePillChevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            tradePillInner.Children.Add(tradePillLabel);
+            tradePillInner.Children.Add(tradePillChevron);
+            tradePill.Child = tradePillInner;
+
+            tradePill.MouseLeftButtonUp += (s, e) =>
+            {
+                if (trades.Count == 0) return;
+                OpenTradeDropdown(tradePill, trades);
+            };
+
+            // When a specific trade is selected, the pill is also a drag source:
+            // drag it onto the canvas to add that trade's filters as a new group.
+            if (tradeActive)
+            {
+                tradePill.ToolTip = "Click to change trade  ·  Drag to add as new group";
+
+                var dragStart  = new Point();
+                bool dragArmed = false;
+
+                tradePill.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    dragArmed = true;
+                    dragStart = e.GetPosition(tradePill);
+                };
+                tradePill.PreviewMouseMove += (s, e) =>
+                {
+                    if (!dragArmed || e.LeftButton != MouseButtonState.Pressed)
+                    {
+                        dragArmed = false;
+                        return;
+                    }
+                    var pos = e.GetPosition(tradePill);
+                    if (Math.Abs(pos.X - dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(pos.Y - dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    {
+                        dragArmed = false;
+                        var payload = new LegendDragPayload
+                        {
+                            What          = LegendDragPayload.Kind.PaletteCategory,
+                            SourceTradeId = _scope,
+                        };
+                        StartDrag(tradePill, payload);
+                        e.Handled = true;
+                    }
+                };
+                tradePill.PreviewMouseLeftButtonUp += (s, e) => dragArmed = false;
+            }
+
+            _scopeRow.Children.Add(tradePill);
+        }
+
+        private Border MakeScopePill(string label, bool active)
+        {
+            var pill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 3, 6, 3),
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            pill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            if (active)
+            {
+                pill.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                pill.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            }
+            else
+            {
+                pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                pill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            }
+
+            var tb = new TextBlock
+            {
+                Text = label,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            pill.Child = tb;
+            return pill;
+        }
+
+        private void OpenTradeDropdown(UIElement anchor, List<FilterTradeConfig> trades)
+        {
+            var listPanel = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Margin = new Thickness(4),
+            };
+
+            var popup = new Popup
+            {
+                PlacementTarget    = anchor,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = false,
+                AllowsTransparency = false,
+            };
+
+            foreach (var trade in trades)
+            {
+                string capturedId = trade.Id;
+                string capturedLabel = trade.Label ?? trade.Id;
+
+                var item = new Border
+                {
+                    Padding = new Thickness(8, 4, 8, 4),
+                    CornerRadius = new CornerRadius(3),
+                    Cursor = Cursors.Hand,
+                    Margin = new Thickness(0, 0, 0, 2),
+                };
+                item.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+
+                var itemLabel = new TextBlock { Text = capturedLabel };
+                itemLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                itemLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                itemLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                item.Child = itemLabel;
+
+                item.MouseEnter += (s, e) =>
+                    item.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                item.MouseLeave += (s, e) =>
+                    item.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+
+                item.MouseLeftButtonUp += (s, e) =>
+                {
+                    _scope = capturedId;
+                    popup.IsOpen = false;
+                    BuildScopeRow();
+                    BuildFilterList();
+                };
+
+                // Drag detection — drag from dropdown to add as new canvas group
+                var itemDragStart = new Point();
+                bool itemDragArmed = false;
+
+                item.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    itemDragArmed = true;
+                    itemDragStart = e.GetPosition(item);
+                };
+                item.PreviewMouseMove += (s, e) =>
+                {
+                    if (!itemDragArmed || e.LeftButton != MouseButtonState.Pressed) { itemDragArmed = false; return; }
+                    var pos = e.GetPosition(item);
+                    if (Math.Abs(pos.X - itemDragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(pos.Y - itemDragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    {
+                        itemDragArmed = false;
+                        popup.IsOpen = false;
+                        var payload = new LegendDragPayload
+                        {
+                            What          = LegendDragPayload.Kind.PaletteCategory,
+                            SourceTradeId = capturedId,
+                        };
+                        StartDrag(this, payload);
+                        e.Handled = true;
+                    }
+                };
+                item.PreviewMouseLeftButtonUp += (s, e) => itemDragArmed = false;
+
+                listPanel.Children.Add(item);
+            }
+
+            var outerBorder = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(2),
+                Child = listPanel,
+            };
+            outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            popup.Child = outerBorder;
+            popup.IsOpen = true;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -268,7 +398,6 @@ namespace LemoineTools.Lemoine.Controls
             _filterList.Children.Clear();
 
             var trades = AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>();
-            string q = (_query ?? "").Trim().ToLowerInvariant();
 
             // Flatten (Trade, Rule) with respect to scope filter.
             var rows = new List<(FilterTradeConfig trade, FilterRuleConfig rule)>();
@@ -278,10 +407,6 @@ namespace LemoineTools.Lemoine.Controls
                 if (t.Rules == null) continue;
                 foreach (var rule in t.Rules.Where(r => r.Enabled).OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
                 {
-                    if (!string.IsNullOrEmpty(q) &&
-                        !((rule.Name ?? "").ToLowerInvariant().Contains(q) ||
-                          (t.Label   ?? "").ToLowerInvariant().Contains(q)))
-                        continue;
                     rows.Add((t, rule));
                 }
             }

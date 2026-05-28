@@ -13,7 +13,7 @@ namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
     /// Single legend entry tile. Composition:
-    ///   [grip]  [eye]  [color chip ▣]  [shape picker]  [name (inline edit)]  [CUST]  [✕]
+    ///   [eye]  [color chip ▣]  [shape picker]  [name (inline edit)]  [CUST]  [missing⚠]  [✕]
     /// </summary>
     public partial class LemoineLegendBlockRow : UserControl
     {
@@ -22,6 +22,7 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? Changed;        // any block field changed
         public event EventHandler? DeleteRequested;
         public event EventHandler<MouseEventArgs>? DragInitiated;
+        public event Action<string, bool, bool>? BlockClicked; // blockId, ctrl, shift
 
         // ── State for click-vs-drag detection ──────────────────────────────
         private Point _dragStart;
@@ -39,6 +40,30 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionContext(HashSet<string> selectedIds, string? activeId)
+        {
+            // Context stored for use by the caller; SetSelectionState applies the visual.
+        }
+
+        public void SetSelectionState(bool isActive, bool isMulti)
+        {
+            if (isActive)
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            }
+            else if (isMulti)
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }
+            else
+            {
+                _outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                _outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         private void BuildAll()
         {
@@ -48,53 +73,34 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.ColumnDefinitions.Clear();
 
-            // Columns: grip · eye · shape (also color) · name (*) · CUST · missing · delete
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 grip
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 eye
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 2 shape (popup also picks color)
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 3 name
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 CUST tag
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 missing indicator
-            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 6 delete
+            // Columns: shape (also color) · name (*) · CUST · missing · eye · delete
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 shape (popup also picks color)
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 1 name
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 2 CUST tag
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 missing indicator
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4 eye
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5 delete
 
-            // ── 0: Grip (drag handle visual) ───────────────────────────────
-            var grip = MakeGlyphLabel("⋮⋮", "LemoineTextDim");
-            grip.Margin = new Thickness(0, 0, 6, 0);
-            grip.Cursor = Cursors.SizeAll;
-            grip.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(grip, 0);
-            _root.Children.Add(grip);
-
-            // ── 1: Eye toggle ──────────────────────────────────────────────
-            var eyeBtn = MakeIconHostButton(
-                child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
-                tooltip: Block.Visible ? "Hide" : "Show");
-            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
-            eyeBtn.Click += (s, e) =>
-            {
-                Block.Visible = !Block.Visible;
-                Changed?.Invoke(this, EventArgs.Empty);
-                BuildAll();
-            };
-            Grid.SetColumn(eyeBtn, 1);
-            _root.Children.Add(eyeBtn);
-
-            // ── 2: Shape + color picker (single popup) ─────────────────────
+            // ── 0: Color swatch — click to open inline color picker ────────
             var resolvedColor = ResolveColor();
-            var shapePreview = new LemoineSwatchGlyph
+            var colorSwatch = new Border
             {
-                Kind        = Block.Kind ?? "square",
-                Fill        = Block.Fill ?? "solid",
-                SwatchColor = resolvedColor,
-                GlyphWidth  = 22, GlyphHeight = 14,
-                Margin      = new Thickness(2, 0, 2, 0),
+                Width               = 22,
+                Height              = 14,
+                CornerRadius        = new CornerRadius(2),
+                BorderThickness     = new Thickness(1),
+                Background          = new SolidColorBrush(resolvedColor),
+                SnapsToDevicePixels = true,
+                Margin              = new Thickness(2, 0, 2, 0),
+                VerticalAlignment   = VerticalAlignment.Center,
             };
-            var shapeBtn = MakeIconHostButton(shapePreview, "Pick shape, fill, and color");
-            shapeBtn.Click += (s, e) => OpenShapePopup(shapeBtn, resolvedColor);
-            Grid.SetColumn(shapeBtn, 2);
-            _root.Children.Add(shapeBtn);
+            colorSwatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            var colorBtn = MakeIconHostButton(colorSwatch, "Pick color");
+            colorBtn.Click += (s, e) => OpenColorPickerInline(colorBtn, resolvedColor);
+            Grid.SetColumn(colorBtn, 0);
+            _root.Children.Add(colorBtn);
 
-            // ── 3: Name (inline edit) ──────────────────────────────────────
+            // ── 1: Name (inline edit) ──────────────────────────────────────
             var name = new LemoineInlineEdit
             {
                 Text = ResolveName(),
@@ -109,10 +115,10 @@ namespace LemoineTools.Lemoine.Controls
                 Block.NameOverride = !Block.Custom && t != (LookupRule()?.Name ?? "");
                 Changed?.Invoke(this, EventArgs.Empty);
             };
-            Grid.SetColumn(name, 3);
+            Grid.SetColumn(name, 1);
             _root.Children.Add(name);
 
-            // ── 4: CUST tag ───────────────────────────────────────────────
+            // ── 2: CUST tag ───────────────────────────────────────────────
             if (Block.Custom)
             {
                 var cust = new Border
@@ -130,11 +136,11 @@ namespace LemoineTools.Lemoine.Controls
                 custLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
                 custLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 cust.Child = custLbl;
-                Grid.SetColumn(cust, 4);
+                Grid.SetColumn(cust, 2);
                 _root.Children.Add(cust);
             }
 
-            // ── 5: Missing-source indicator ────────────────────────────────
+            // ── 3: Missing-source indicator ────────────────────────────────
             if (!Block.Custom && string.IsNullOrEmpty(Block.SourceRuleId) == false)
             {
                 if (LookupRule() == null)
@@ -143,50 +149,58 @@ namespace LemoineTools.Lemoine.Controls
                     miss.ToolTip = "Source rule missing — value frozen at last seen.";
                     miss.Margin = new Thickness(4, 0, 4, 0);
                     miss.VerticalAlignment = VerticalAlignment.Center;
-                    Grid.SetColumn(miss, 5);
+                    Grid.SetColumn(miss, 3);
                     _root.Children.Add(miss);
                 }
             }
 
-            // ── 6: Delete ──────────────────────────────────────────────────
+            // ── 4: Eye toggle ──────────────────────────────────────────────
+            var eyeBtn = MakeIconHostButton(
+                child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
+                tooltip: Block.Visible ? "Hide" : "Show");
+            eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
+            eyeBtn.Click += (s, e) =>
+            {
+                Block.Visible = !Block.Visible;
+                Changed?.Invoke(this, EventArgs.Empty);
+                BuildAll();
+            };
+            Grid.SetColumn(eyeBtn, 4);
+            _root.Children.Add(eyeBtn);
+
+            // ── 5: Delete ──────────────────────────────────────────────────
             var del = MakeIconButton("✕", "Delete");
             del.SetResourceReference(Control.ForegroundProperty, "LemoineTextDim");
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
-            Grid.SetColumn(del, 6);
+            Grid.SetColumn(del, 5);
             _root.Children.Add(del);
 
-            // ── Drag-source wiring (whole row is grabbable) ───────────────
-            _outer.MouseLeftButtonDown -= OnRowMouseDown;
-            _outer.MouseLeftButtonDown += OnRowMouseDown;
-            _outer.MouseMove           -= OnRowMouseMove;
-            _outer.MouseMove           += OnRowMouseMove;
-            _outer.MouseLeftButtonUp   -= OnRowMouseUp;
-            _outer.MouseLeftButtonUp   += OnRowMouseUp;
-            _outer.MouseLeave          -= OnRowMouseLeave;
-            _outer.MouseLeave          += OnRowMouseLeave;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Drag detection
-        // ─────────────────────────────────────────────────────────────────────
-        private void OnRowMouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
-            _mouseDown = true;
-            _dragStart = e.GetPosition(this);
-        }
-        private void OnRowMouseMove(object sender, MouseEventArgs e)
-        {
-            if (!_mouseDown) return;
-            var p = e.GetPosition(this);
-            if (Math.Abs(p.X - _dragStart.X) > 6 || Math.Abs(p.Y - _dragStart.Y) > 6)
+            // ── Click-selection + drag arming ─────────────────────────────
+            _outer.PreviewMouseLeftButtonDown += (s, e) =>
             {
-                _mouseDown = false;
-                DragInitiated?.Invoke(this, e);
-            }
+                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
+                bool ctrl  = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                BlockClicked?.Invoke(Block.Id, ctrl, shift);
+                _mouseDown = true;
+                _dragStart = e.GetPosition(this);
+                // Do NOT set e.Handled — drag detection still needs the event
+            };
+            _outer.PreviewMouseMove += (s, e) =>
+            {
+                if (!_mouseDown || e.LeftButton != MouseButtonState.Pressed) { _mouseDown = false; return; }
+                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
+                var p = e.GetPosition(this);
+                if (Math.Abs(p.X - _dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(p.Y - _dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    _mouseDown = false;
+                    DragInitiated?.Invoke(this, e);
+                }
+            };
+            _outer.PreviewMouseLeftButtonUp += (s, e) => _mouseDown = false;
+            _outer.MouseLeave               += (s, e) => _mouseDown = false;
         }
-        private void OnRowMouseUp(object sender, MouseButtonEventArgs e)    { _mouseDown = false; }
-        private void OnRowMouseLeave(object sender, MouseEventArgs e)        { _mouseDown = false; }
 
         /// <summary>Don't start a drag if the user clicks an interactive child (button, textbox, etc.).</summary>
         private static bool IsInsideInteractive(DependencyObject d)
@@ -200,55 +214,66 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Color picker invocation
+        // Inline color picker (LemoineColorPickerPanel inside a Popup)
         // ─────────────────────────────────────────────────────────────────────
-        private void OpenColorPicker(Color initial)
+        private void OpenColorPickerInline(FrameworkElement anchor, Color initial)
         {
-            var owner = Window.GetWindow(this);
-            var picked = LemoineColorPickerWindow.PickColor(owner, initial);
-            if (picked == null) return;
-            var c = picked.Value;
-            Block.Color = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-            Block.ColorOverride = true;
-            Changed?.Invoke(this, EventArgs.Empty);
-            BuildAll();
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Shape popup
-        // ─────────────────────────────────────────────────────────────────────
-        private void OpenShapePopup(FrameworkElement anchor, Color resolvedColor)
-        {
-            var picker = new LemoineSwatchPicker
+            var container = new Border
             {
-                Kind = Block.Kind ?? "square",
-                Fill = Block.Fill ?? "solid",
-                SwatchColor = resolvedColor,
-                Title = "BLOCK",
-                AllowColorPick = true,
+                Padding         = new Thickness(12),
+                BorderThickness = new Thickness(1),
             };
+            container.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            container.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            // Copy window resources into the container so SetResourceReference
+            // calls inside LemoineColorPickerPanel resolve when Loaded fires.
+            var win = Window.GetWindow(this);
+            if (win != null)
+                foreach (var key in win.Resources.Keys)
+                    container.Resources[key] = win.Resources[key];
+
+            var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
+
+            var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
+            cancelBtn.Margin = new Thickness(0, 0, 6, 0);
+
+            var btnRow = new StackPanel
+            {
+                Orientation         = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin              = new Thickness(0, 8, 0, 0),
+            };
+            btnRow.Children.Add(cancelBtn);
+            btnRow.Children.Add(applyBtn);
+
+            var content = new StackPanel();
+            content.Children.Add(pickerPanel);
+            content.Children.Add(btnRow);
+            container.Child = content;
+
             var popup = new Popup
             {
                 PlacementTarget    = anchor,
                 Placement          = PlacementMode.Bottom,
                 StaysOpen          = false,
                 AllowsTransparency = false,
-                Child              = picker,
+                Child              = container,
             };
-            picker.SelectionChanged += (s, args) =>
+
+            applyBtn.Click += (s, e) =>
             {
-                Block.Kind = args.Kind;
-                Block.Fill = args.Fill;
+                var c = pickerPanel.SelectedColor;
+                Block.Color         = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                Block.ColorOverride = true;
+                pickerPanel.AddToRecent(c);
+                popup.IsOpen = false;
                 Changed?.Invoke(this, EventArgs.Empty);
                 BuildAll();
-                popup.IsOpen = false;
             };
-            picker.ColorRequested += (s, args) =>
-            {
-                // Close the popup first so the modal color picker takes focus.
-                popup.IsOpen = false;
-                OpenColorPicker(resolvedColor);
-            };
+            cancelBtn.Click += (s, e) => popup.IsOpen = false;
+
             popup.IsOpen = true;
         }
 

@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
@@ -33,9 +35,35 @@ namespace LemoineTools.Lemoine.Controls
         /// <summary>(payload, droppedAtBlockIndex) — index = group.Blocks.Count to append.</summary>
         public event EventHandler<BlockDropArgs>? BlockDropRequested;
         public event EventHandler<MouseEventArgs>? GroupDragInitiated;
+        public event Action<string, bool, bool>? BlockClickedOnCanvas; // blockId, ctrl, shift
 
         private Point _dragStart;
         private bool  _mouseDown;
+
+        // ── Selection context ────────────────────────────────────────────────
+        private HashSet<string> _selectionContext = new HashSet<string>();
+        private string? _activeContext;
+
+        // ── Block reorder drag state ─────────────────────────────────────────
+        private StackPanel?            _blockStack;
+        private LemoineLegendBlockRow? _dragBlockRow;
+        private string?                _dragBlockId;
+        private int                    _dragBlockOrigIdx;
+
+        // ── Cross-group live-snap placeholder ────────────────────────────────
+        private Border? _crossInsertPlaceholder;
+
+        // ── Ghost drag (mirrors GlobalSettingsWindow pattern) ────────────────
+        private Popup? _dragGhost;
+        private Point  _dragGhostClickOffset;
+
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint pt);
+        [DllImport("user32.dll")] private static extern int  GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll")] private static extern int  SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        private const int GWL_EXSTYLE       = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint { public int X; public int Y; }
 
         public LemoineLegendGroupCard()
         {
@@ -49,12 +77,35 @@ namespace LemoineTools.Lemoine.Controls
             if (IsLoaded) BuildAll();
         }
 
+        public void SetSelectionContext(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext = activeId;
+        }
+
+        /// <summary>
+        /// Updates block row selection visuals in-place without rebuilding the body.
+        /// Call instead of Bind() when only selection state changes.
+        /// </summary>
+        public void RefreshBlockSelection(HashSet<string> selectedIds, string? activeId)
+        {
+            _selectionContext = selectedIds ?? new HashSet<string>();
+            _activeContext    = activeId;
+            if (_blockStack == null) return;
+            foreach (var row in _blockStack.Children.OfType<LemoineLegendBlockRow>())
+            {
+                bool isActive = row.Block.Id == activeId;
+                bool isMulti  = !isActive && selectedIds.Contains(row.Block.Id);
+                row.SetSelectionState(isActive, isMulti);
+            }
+        }
+
         // ─────────────────────────────────────────────────────────────────────
         private void BuildAll()
         {
             var tradeColor = ResolveTradeColor();
 
-            _outer.SetResourceReference(Border.BackgroundProperty, "LemoineSurface");
+            _outer.Background = Brushes.Transparent;
             _outer.ClipToBounds = true;
 
             BuildHeader(tradeColor);
@@ -190,14 +241,10 @@ namespace LemoineTools.Lemoine.Controls
             _header.Child = grid;
 
             // Drag source — header is the drag handle for the whole group
-            _header.MouseLeftButtonDown -= OnHeaderMouseDown;
             _header.MouseLeftButtonDown += OnHeaderMouseDown;
-            _header.MouseMove           -= OnHeaderMouseMove;
             _header.MouseMove           += OnHeaderMouseMove;
-            _header.MouseLeftButtonUp   -= OnHeaderMouseUp;
             _header.MouseLeftButtonUp   += OnHeaderMouseUp;
-            _header.MouseLeave          -= OnHeaderMouseLeave;
-            _header.MouseLeave          += OnHeaderMouseLeave;
+            _header.MouseLeave          += (s, e) => _mouseDown = false;
             _header.Cursor = Cursors.SizeAll;
         }
 
@@ -215,80 +262,450 @@ namespace LemoineTools.Lemoine.Controls
             }
             _body.Visibility = Visibility.Visible;
 
-            var stack = new StackPanel();
+            if (_dragBlockId != null) return; // don't rebuild during an active block drag
+
+            _blockStack = new StackPanel { AllowDrop = true, Background = Brushes.Transparent };
 
             int n = Group.Blocks?.Count ?? 0;
             if (n == 0)
             {
-                // Empty body — single big drop zone
-                stack.Children.Add(MakeBlockIntoDrop());
+                // Empty body — big drop zone for palette drops
+                _blockStack.Children.Add(MakeBlockIntoDrop());
             }
             else
             {
-                // Drop zone at top (before first block)
-                stack.Children.Add(MakeBlockDrop(0));
+                // Live-snap reorder on the panel (handles gaps between rows)
+                _blockStack.DragOver  += OnBlockStackDragOver;
+                _blockStack.Drop      += OnBlockStackDrop;
+                // Remove cross-group placeholder only when cursor truly leaves the panel.
+                // DragLeave bubbles from children, so check bounds to avoid false fires.
+                _blockStack.DragLeave += (s, e) =>
+                {
+                    if (_crossInsertPlaceholder == null) return;
+                    var pos  = e.GetPosition(_blockStack);
+                    var size = _blockStack.RenderSize;
+                    if (pos.X < 0 || pos.Y < 0 || pos.X > size.Width || pos.Y > size.Height)
+                        RemoveCrossInsertPlaceholder();
+                };
 
                 for (int i = 0; i < n; i++)
                 {
-                    var row = new LemoineLegendBlockRow();
-                    row.Bind(Group.Blocks![i]);
-                    string capturedId = Group.Blocks![i].Id;
-                    row.Changed         += (s, e) => { Changed?.Invoke(this, EventArgs.Empty); /* count refresh */ BuildHeader(ResolveTradeColor()); };
+                    var block = Group.Blocks![i];
+                    var row   = new LemoineLegendBlockRow();
+                    row.Tag       = block.Id; // read by CommitBlockReorder
+                    row.AllowDrop = true;
+
+                    row.SetSelectionContext(_selectionContext, _activeContext);
+                    row.Bind(block);
+                    row.BlockClicked += (bId, ctrl, shift) => BlockClickedOnCanvas?.Invoke(bId, ctrl, shift);
+
+                    bool bIsActive = block.Id == _activeContext;
+                    bool bIsMulti  = !bIsActive && _selectionContext.Contains(block.Id);
+                    if (bIsActive || bIsMulti) row.SetSelectionState(bIsActive, bIsMulti);
+
+                    row.Changed += (s, e) =>
+                    {
+                        Changed?.Invoke(this, EventArgs.Empty);
+                        BuildHeader(ResolveTradeColor());
+                    };
+
+                    var blockId = block.Id; // stable capture independent of list order
                     row.DeleteRequested += (s, e) =>
                     {
-                        int idx = Group.Blocks!.FindIndex(b => b.Id == capturedId);
-                        if (idx >= 0) Group.Blocks!.RemoveAt(idx);
+                        Group.Blocks!.RemoveAll(b => b.Id == blockId);
                         Changed?.Invoke(this, EventArgs.Empty);
                         Dispatcher.BeginInvoke(new System.Action(BuildAll),
                             System.Windows.Threading.DispatcherPriority.Background);
                     };
+
+                    // Reorder drag with ghost; also carries LegendDragPayload for cross-group drops
                     row.DragInitiated += (s, e) =>
                     {
-                        var payload = new LegendDragPayload
+                        if (_dragBlockRow != null) return; // already dragging
+                        _dragBlockRow     = row;
+                        _dragBlockId      = blockId;
+                        _dragBlockOrigIdx = _blockStack?.Children.IndexOf(row) ?? -1;
+                        if (_dragBlockOrigIdx < 0) { _dragBlockRow = null; _dragBlockId = null; return; }
+
+                        row.Opacity = 0; // invisible — ghost represents it
+                        ShowBlockDragGhost(block);
+
+                        // Dual payload: StringFormat for same-group live-snap,
+                        // LegendDragPayload for cross-group and session pre-lighting
+                        var blockPayload = new LegendDragPayload
                         {
                             What    = LegendDragPayload.Kind.Block,
-                            BlockId = capturedId,
+                            BlockId = blockId,
                             GroupId = Group.Id,
                         };
+                        var data = new DataObject();
+                        data.SetData(DataFormats.StringFormat, "BLOCK:" + blockId);
+                        data.SetData(LemoineLegendPalette.DragFormat, blockPayload);
+
+                        QueryContinueDragEventHandler ghostUpdater = (fs, fe) => UpdateDragGhostPos();
+                        row.QueryContinueDrag += ghostUpdater;
                         try
                         {
-                            LegendDragSession.Begin(payload);
-                            DragDrop.DoDragDrop(row, new DataObject(LemoineLegendPalette.DragFormat, payload),
-                                DragDropEffects.Move | DragDropEffects.Copy);
+                            LegendDragSession.Begin(blockPayload);
+                            DragDrop.DoDragDrop(row, data, DragDropEffects.Move);
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[GroupCard] block drag fail: {ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($"[BlockDrag] {ex.Message}");
                         }
                         finally { LegendDragSession.End(); }
+
+                        row.QueryContinueDrag -= ghostUpdater;
+                        HideDragGhost();
+
+                        // Drop never fired (drag cancelled) — restore visual order
+                        if (_dragBlockRow != null && _blockStack != null)
+                        {
+                            int cur = _blockStack.Children.IndexOf(row);
+                            if (cur >= 0 && cur != _dragBlockOrigIdx)
+                            {
+                                _blockStack.Children.RemoveAt(cur);
+                                _blockStack.Children.Insert(
+                                    Math.Min(_dragBlockOrigIdx, _blockStack.Children.Count), row);
+                            }
+                            row.Opacity   = 1.0;
+                            _dragBlockRow = null;
+                        }
+                        _dragBlockId = null;
                     };
-                    stack.Children.Add(row);
-                    // Between / after this block
-                    stack.Children.Add(MakeBlockDrop(i + 1));
+
+                    // Live-snap when cursor is directly over this row
+                    row.DragOver += OnBlockRowDragOver;
+                    row.Drop     += OnBlockRowDrop;
+
+                    _blockStack.Children.Add(row);
                 }
             }
 
-            _body.Child = stack;
+            _body.Child = _blockStack;
+        }
+
+        // ── Block live-snap helpers ──────────────────────────────────────────
+        private void OnBlockStackDragOver(object sender, DragEventArgs e)
+        {
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d != null && d.StartsWith("BLOCK:"))
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+                var pos = e.GetPosition(_blockStack);
+                if (_dragBlockRow != null) LiveSnapBlock(pos);
+                else                       LiveSnapCrossGroup(pos);
+                return;
+            }
+            // Allow palette drops to pass through to the Drop handler
+            var pal = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (pal != null && (pal.What == LegendDragPayload.Kind.PaletteFilter ||
+                                pal.What == LegendDragPayload.Kind.PaletteCustom))
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+            }
+        }
+
+        private void OnBlockRowDragOver(object sender, DragEventArgs e)
+        {
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d == null || !d.StartsWith("BLOCK:")) return;
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            if (_blockStack == null) return;
+            var pos = e.GetPosition(_blockStack);
+            if (_dragBlockRow != null) LiveSnapBlock(pos);
+            else                       LiveSnapCrossGroup(pos);
+        }
+
+        private void LiveSnapBlock(Point cursorInStack)
+        {
+            if (_dragBlockRow == null || _blockStack == null) return;
+            var children = _blockStack.Children;
+            int srcIdx = children.IndexOf(_dragBlockRow);
+            if (srcIdx < 0) return;
+            double curY      = cursorInStack.Y;
+            int    insertIdx = children.Count; // default = append after last
+            double runY      = 0;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] == _crossInsertPlaceholder) continue; // ignore placeholder
+                if (children[i] is FrameworkElement fe)
+                {
+                    if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                    runY += fe.ActualHeight + fe.Margin.Bottom;
+                }
+            }
+            // No upper clamp — insertIdx == children.Count means append at end, which is valid.
+            insertIdx = Math.Max(0, insertIdx);
+            if (srcIdx < insertIdx) insertIdx--;
+            if (insertIdx == srcIdx) return;
+            children.RemoveAt(srcIdx);
+            children.Insert(Math.Min(insertIdx, children.Count), _dragBlockRow);
+        }
+
+        private void LiveSnapCrossGroup(Point cursorInStack)
+        {
+            if (_blockStack == null) return;
+            EnsureCrossInsertPlaceholder();
+            var children = _blockStack.Children;
+            double curY      = cursorInStack.Y;
+            int    insertIdx = children.Count; // default = append after last
+            double runY      = 0;
+            for (int i = 0; i < children.Count; i++)
+            {
+                if (children[i] == _crossInsertPlaceholder) continue;
+                if (children[i] is FrameworkElement fe)
+                {
+                    if (curY < runY + fe.ActualHeight / 2.0) { insertIdx = i; break; }
+                    runY += fe.ActualHeight + fe.Margin.Bottom;
+                }
+            }
+            insertIdx = Math.Max(0, insertIdx);
+            // Remove placeholder and re-insert at new position
+            int curIdx = children.IndexOf(_crossInsertPlaceholder);
+            if (curIdx >= 0)
+            {
+                if (curIdx == insertIdx) return; // already in right spot
+                children.RemoveAt(curIdx);
+                if (curIdx < insertIdx) insertIdx--;
+            }
+            children.Insert(Math.Min(insertIdx, children.Count), _crossInsertPlaceholder!);
+        }
+
+        private void EnsureCrossInsertPlaceholder()
+        {
+            if (_crossInsertPlaceholder != null) return;
+            _crossInsertPlaceholder = new Border
+            {
+                Height           = 3,
+                Margin           = new Thickness(4, 1, 4, 1),
+                IsHitTestVisible = false, // cursor passes through to the StackPanel
+            };
+            _crossInsertPlaceholder.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+        }
+
+        private void RemoveCrossInsertPlaceholder()
+        {
+            if (_crossInsertPlaceholder == null || _blockStack == null) return;
+            _blockStack.Children.Remove(_crossInsertPlaceholder);
+            _crossInsertPlaceholder = null;
+        }
+
+        private void OnBlockStackDrop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d != null && d.StartsWith("BLOCK:"))
+            {
+                // _dragBlockRow set → same-group reorder; null → cross-group move
+                if (_dragBlockRow != null) CommitBlockReorder();
+                else                       HandleCrossGroupBlockDrop(e);
+                return;
+            }
+            // Palette drop on non-empty group → append at end
+            var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (payload != null && (payload.What == LegendDragPayload.Kind.PaletteFilter ||
+                                    payload.What == LegendDragPayload.Kind.PaletteCustom))
+                BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, Group.Blocks?.Count ?? 0));
+        }
+
+        private void OnBlockRowDrop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            var d = e.Data.GetData(DataFormats.StringFormat) as string;
+            if (d != null && d.StartsWith("BLOCK:"))
+            {
+                if (_dragBlockRow != null) CommitBlockReorder();
+                else                       HandleCrossGroupBlockDrop(e);
+                return;
+            }
+            // Palette item dropped on a block row — append to group
+            var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (payload != null && (payload.What == LegendDragPayload.Kind.PaletteFilter ||
+                                    payload.What == LegendDragPayload.Kind.PaletteCustom))
+                BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, Group.Blocks?.Count ?? 0));
+        }
+
+        private void HandleCrossGroupBlockDrop(DragEventArgs e)
+        {
+            var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
+            if (payload?.What != LegendDragPayload.Kind.Block) return;
+            // Capture placeholder position before removing it — counts only block rows before it.
+            int dropIdx = Group.Blocks?.Count ?? 0; // default = append
+            if (_crossInsertPlaceholder != null && _blockStack != null)
+            {
+                int placeholderPos = _blockStack.Children.IndexOf(_crossInsertPlaceholder);
+                if (placeholderPos >= 0)
+                {
+                    // Count only LemoineLegendBlockRow children before the placeholder
+                    dropIdx = _blockStack.Children
+                        .Cast<UIElement>()
+                        .Take(placeholderPos)
+                        .OfType<LemoineLegendBlockRow>()
+                        .Count();
+                }
+            }
+            RemoveCrossInsertPlaceholder();
+            BlockDropRequested?.Invoke(this, new BlockDropArgs(payload, Group.Id, dropIdx));
+        }
+
+        private void CommitBlockReorder()
+        {
+            if (_dragBlockRow != null) _dragBlockRow.Opacity = 1.0;
+            _dragBlockRow = null;
+            if (_blockStack == null) { _dragBlockId = null; return; }
+
+            var newOrderIds = _blockStack.Children
+                .OfType<FrameworkElement>()
+                .Select(el => el.Tag as string)
+                .Where(id => id != null)
+                .ToList();
+            var reordered = newOrderIds
+                .Select(id => Group.Blocks?.FirstOrDefault(b => b.Id == id))
+                .Where(b => b != null)
+                .ToList();
+            if (Group.Blocks != null && reordered.Count == Group.Blocks.Count)
+            {
+                Group.Blocks.Clear();
+                foreach (var b in reordered) Group.Blocks.Add(b!);
+            }
+            _dragBlockId = null;
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Ghost drag popup (mirrors GlobalSettingsWindow pattern)
+        // ─────────────────────────────────────────────────────────────────────
+        private void ShowBlockDragGhost(LegendBlockConfig block)
+        {
+            HideDragGhost();
+
+            // Resolve resources from a live tree element so TryFindResource works.
+            FrameworkElement res = _blockStack ?? (FrameworkElement)this;
+            Brush BrushRes(string key, Brush fallback)
+                => res.TryFindResource(key) as Brush ?? fallback;
+            double DoubleRes(string key, double fallback)
+                => res.TryFindResource(key) is double d ? d : fallback;
+            FontFamily FontRes(string key)
+                => res.TryFindResource(key) as FontFamily ?? new FontFamily("Segoe UI");
+
+            var color = ResolveBlockColorForGhost(block);
+
+            var inner = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            // Colored swatch square
+            var swatch = new Border
+            {
+                Width             = 14, Height = 10,
+                CornerRadius      = new CornerRadius(2),
+                Background        = new SolidColorBrush(color),
+                Margin            = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            inner.Children.Add(swatch);
+
+            var nameTb = new TextBlock
+            {
+                Text              = ResolveBlockNameForGhost(block),
+                FontWeight        = FontWeights.SemiBold,
+                Foreground        = BrushRes("LemoineText", Brushes.White),
+                FontSize          = DoubleRes("LemoineFS_SM", 12),
+                FontFamily        = FontRes("LemoineUiFont"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            inner.Children.Add(nameTb);
+
+            var pill = new Border
+            {
+                CornerRadius    = new CornerRadius(4),
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(8, 4, 8, 4),
+                Background      = BrushRes("LemoineRaised", new SolidColorBrush(Color.FromRgb(50, 50, 50))),
+                BorderBrush     = BrushRes("LemoineBorder", Brushes.Gray),
+                Child           = inner,
+            };
+
+            _dragGhostClickOffset = new Point(16, 8);
+            GetCursorPos(out var pt);
+            var lpt = ToLogicalPoint(pt.X, pt.Y);
+
+            _dragGhost = new Popup
+            {
+                AllowsTransparency = true,
+                IsHitTestVisible   = false,
+                Placement          = PlacementMode.AbsolutePoint,
+                HorizontalOffset   = lpt.X - _dragGhostClickOffset.X,
+                VerticalOffset     = lpt.Y - _dragGhostClickOffset.Y,
+                Child              = pill,
+            };
+            _dragGhost.Opened += MakeGhostHwndTransparent;
+            _dragGhost.IsOpen  = true;
+        }
+
+        private void HideDragGhost()
+        {
+            if (_dragGhost != null) { _dragGhost.IsOpen = false; _dragGhost = null; }
+        }
+
+        private void UpdateDragGhostPos()
+        {
+            if (_dragGhost == null) return;
+            GetCursorPos(out var pt);
+            var lpt = ToLogicalPoint(pt.X, pt.Y);
+            _dragGhost.HorizontalOffset = lpt.X - _dragGhostClickOffset.X;
+            _dragGhost.VerticalOffset   = lpt.Y - _dragGhostClickOffset.Y;
+        }
+
+        private void MakeGhostHwndTransparent(object sender, EventArgs e)
+        {
+            if (_dragGhost?.Child != null &&
+                PresentationSource.FromVisual(_dragGhost.Child) is HwndSource hs)
+            {
+                int ex = GetWindowLong(hs.Handle, GWL_EXSTYLE);
+                SetWindowLong(hs.Handle, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
+            }
+        }
+
+        // ⚠ PresentationSource.FromVisual requires this control to be in the live visual tree.
+        private Point ToLogicalPoint(int physX, int physY)
+        {
+            var source = PresentationSource.FromVisual(this);
+            if (source?.CompositionTarget != null)
+            {
+                var m = source.CompositionTarget.TransformFromDevice;
+                return new Point(physX * m.M11, physY * m.M22);
+            }
+            return new Point(physX, physY);
+        }
+
+        private string ResolveBlockNameForGhost(LegendBlockConfig block)
+        {
+            if (block.Custom) return block.Name ?? "Custom";
+            if (block.NameOverride && !string.IsNullOrEmpty(block.Name)) return block.Name;
+            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == block.SourceTradeId);
+            return trade?.Rules?.FirstOrDefault(r => r.Id == block.SourceRuleId)?.Name ?? block.Name ?? "Block";
+        }
+
+        private Color ResolveBlockColorForGhost(LegendBlockConfig block)
+        {
+            Color fallback = LemoineTheme.FallbackGrey;
+            if (block.ColorOverride) return BrushHelper.ColorFromHex(block.Color, fallback);
+            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == block.SourceTradeId);
+            var rule  = trade?.Rules?.FirstOrDefault(r => r.Id == block.SourceRuleId);
+            if (rule != null) return BrushHelper.ColorFromHex(rule.SurfColor, fallback);
+            return BrushHelper.ColorFromHex(block.Color, fallback);
         }
 
         // ─────────────────────────────────────────────────────────────────────
         // Drop targets
         // ─────────────────────────────────────────────────────────────────────
-        private Border MakeBlockDrop(int targetIndex)
-        {
-            var border = new Border
-            {
-                Height = 6,
-                Margin = new Thickness(0, 0, 0, 0),
-                CornerRadius = new CornerRadius(2),
-                Background = Brushes.Transparent,
-                AllowDrop = true,
-                SnapsToDevicePixels = true,
-            };
-            WireDropTarget(border, targetIndex, slim: true);
-            return border;
-        }
-
         private Border MakeBlockIntoDrop()
         {
             var border = new Border
@@ -470,7 +887,6 @@ namespace LemoineTools.Lemoine.Controls
             }
         }
         private void OnHeaderMouseUp(object sender, MouseButtonEventArgs e) { _mouseDown = false; }
-        private void OnHeaderMouseLeave(object sender, MouseEventArgs e)    { _mouseDown = false; }
 
         private static bool IsInsideInteractive(DependencyObject d)
         {
