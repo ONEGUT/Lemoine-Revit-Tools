@@ -65,6 +65,9 @@ namespace LemoineTools.Lemoine.Controls
             }
 
             ActivateGroup(groups.Keys.FirstOrDefault());
+            // Notify subscribers of the post-setup selection state so ViewModels that
+            // mirror selection into their own fields are always in sync after SetGroups.
+            SelectionChanged?.Invoke(SelectedItems);
         }
 
         private Border BuildTab(string groupName)
