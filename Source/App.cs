@@ -180,33 +180,20 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Pulldown: Filter Tools (Auto Filters | Discover Rules)
-            // Large:    Filters Settings
+            // Large:    Discover Rules
+            // Large:    Auto Filters
             // SplitButton: Apply to Views | Remove from View | Delete from Project
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
 
-            var filterToolsPulldown = new PulldownButtonData("LT_FilterTools", "Filter\nTools")
-            {
-                ToolTip    = "Auto Filters and Discover Rules tools.",
-                LargeImage = CreateGlyphBitmap(32, ""),
-                Image      = CreateGlyphBitmap(16, ""),
-            };
-            var filterToolsBtn = filtersPanel.AddItem(filterToolsPulldown) as PulldownButton;
-
-            filterToolsBtn?.AddPushButton(Btn(
-                "LT_AutoFilters", "Auto Filters", "AutoFiltersLaunchCommand",
-                "Scan MEP elements and create view filters with automatic color overrides.",
-                ""));
-
-            filterToolsBtn?.AddPushButton(Btn(
-                "LT_DiscoverRules", "Discover Rules", "DiscoverLaunchCommand",
+            filtersPanel.AddItem(Btn(
+                "LT_DiscoverRules", "Discover\nRules", "DiscoverLaunchCommand",
                 "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules.",
-                ""));  // Segoe MDL2: Search
+                "\uE773"));  // Segoe MDL2: Search
 
             filtersPanel.AddItem(Btn(
-                "LT_FiltersSettings", "Filters\nSettings", "OpenFiltersSettingsCommand",
-                "Open the Filters / Color settings window.",
-                ""));
+                "LT_AutoFilters", "Auto\nFilters", "OpenFiltersSettingsCommand",
+                "Open the Auto Filters window to configure and create view filters.",
+                "\uE713"));  // Segoe MDL2: Settings gear
 
             var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions")
             {
@@ -217,15 +204,15 @@ namespace LemoineTools
             split.AddPushButton(Btn(
                 "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
                 "Apply existing project filters to multiple views at once, with optional color overrides.",
-                ""));  // Segoe MDL2: Add/Plus
+                "\uE710"));  // Segoe MDL2: Add/Plus
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
                 "Remove selected filters from the active view (filters are kept in the project).",
-                ""));  // Segoe MDL2: Remove
+                "\uE738"));  // Segoe MDL2: Remove
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
                 "Permanently delete selected ParameterFilterElements from the project.",
-                ""));  // Segoe MDL2: Delete
+                "\uE74d"));  // Segoe MDL2: Delete
 
             // ── T01B — Legend ─────────────────────────────────────────────────
             // Large: Legend Creation

@@ -9,16 +9,22 @@ using RevitColor = Autodesk.Revit.DB.Color;
 namespace LemoineTools.Tools.AutoFilters
 {
     /// <summary>
-    /// Executes the Auto Filters scan + filter-creation cycle on the Revit main thread.
+    /// Executes the Auto Filters filter-creation cycle on the Revit main thread.
     ///
-    /// AutoFiltersViewModel.Run() sets all properties then calls Raise().
-    /// Revit calls Execute() at the next idle moment on the main thread.
+    /// Set all properties then call Raise(). Revit calls Execute() at the next idle moment.
     /// </summary>
     public class AutoFiltersEventHandler : IExternalEventHandler
     {
-        // ── Set by ViewModel before Raise() ───────────────────────────────────
+        // ── Set by caller before Raise() ──────────────────────────────────────
         public IList<string> SelectedLinkTitles   { get; set; } = new List<string>();
         public IList<string> SelectedDisciplines  { get; set; } = new List<string>();
+
+        /// <summary>
+        /// When true, only create/update ParameterFilterElement definitions — do not apply
+        /// filters to any view and do not set graphic overrides. OverwriteFilterDefinition
+        /// is treated as true in this mode.
+        /// </summary>
+        public bool CreateOnly { get; set; } = false;
 
         /// <summary>
         /// When true, graphic overrides are NOT re-applied to filters that already exist on the view.
@@ -73,7 +79,10 @@ namespace LemoineTools.Tools.AutoFilters
         private void Run(UIApplication app, Document doc, View view,
             ref int pass, ref int fail, ref int skip)
         {
-            if (!view.AreGraphicsOverridesAllowed())
+            bool createOnly   = CreateOnly;
+            bool overwriteDef = createOnly || OverwriteFilterDefinition;
+
+            if (!createOnly && !view.AreGraphicsOverridesAllowed())
             {
                 Log($"Active view '{view.Name}' does not support graphic overrides.", "fail");
                 fail++; return;
@@ -144,12 +153,14 @@ namespace LemoineTools.Tools.AutoFilters
                 .Cast<ParameterFilterElement>()
                 .ToDictionary(f => f.Name);
 
-            var existingViewFilterIds = new HashSet<long>(
-                view.GetFilters().Select(id => id.Value));
+            var existingViewFilterIds = createOnly
+                ? new HashSet<long>()
+                : new HashSet<long>(view.GetFilters().Select(id => id.Value));
 
             int reused = 0;
 
-            using (var tx = new Transaction(doc, "Auto Filters — Create & Color"))
+            string txName = createOnly ? "Auto Filters — Create" : "Auto Filters — Create & Color";
+            using (var tx = new Transaction(doc, txName))
             {
                 ConfigureFailures(tx);
                 tx.Start();
@@ -172,6 +183,7 @@ namespace LemoineTools.Tools.AutoFilters
                         ProcessRule(doc, view, trade, rule, bipMap, matMap,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
+                            createOnly, overwriteDef,
                             ref pass, ref fail, ref skip, ref reused, ref rulesDone, totalRules);
                     }
                 }
@@ -193,6 +205,7 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> linePatternMap,
             Dictionary<string, ParameterFilterElement> existingFilters,
             HashSet<long> existingViewFilterIds,
+            bool createOnly, bool overwriteDef,
             ref int pass, ref int fail, ref int skip, ref int reused,
             ref int rulesDone, int totalRules)
         {
@@ -239,15 +252,15 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 ParameterFilterElement? pfe = null;
 
-                // Optionally delete and recreate if definition has changed
-                if (OverwriteFilterDefinition && existingFilters.TryGetValue(filterName, out var oldPfe))
+                // Delete and recreate if definition has changed (or in CreateOnly mode)
+                if (overwriteDef && existingFilters.TryGetValue(filterName, out var oldPfe))
                 {
                     doc.Delete(oldPfe.Id);
                     existingFilters.Remove(filterName);
                     existingViewFilterIds.Remove(oldPfe.Id.Value);
                 }
 
-                if (!OverwriteFilterDefinition && existingFilters.TryGetValue(filterName, out pfe))
+                if (!overwriteDef && existingFilters.TryGetValue(filterName, out pfe))
                 {
                     reused++;
 
@@ -277,15 +290,17 @@ namespace LemoineTools.Tools.AutoFilters
                     pass++;
                 }
 
-                if (!existingViewFilterIds.Contains(pfe!.Id.Value))
+                if (!createOnly)
                 {
-                    view.AddFilter(pfe.Id);
-                    existingViewFilterIds.Add(pfe.Id.Value);
-                }
+                    if (!existingViewFilterIds.Contains(pfe!.Id.Value))
+                    {
+                        view.AddFilter(pfe.Id);
+                        existingViewFilterIds.Add(pfe.Id.Value);
+                    }
 
-                // Apply graphic overrides (colors, line style, halftone, transparency)
-                // Visibility (show/hide elements) is applied inside ApplyRuleOverride via rule.Visible.
-                ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                    // Apply graphic overrides (colors, line style, halftone, transparency)
+                    ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                }
             }
             catch (Exception ex)
             {

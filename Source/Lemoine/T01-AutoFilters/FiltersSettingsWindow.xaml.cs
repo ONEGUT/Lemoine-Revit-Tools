@@ -118,8 +118,12 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
+            var createBtn = BuildFlatButton("Create Filters");
+            createBtn.Margin = new Thickness(0, 0, 4, 0);
+            createBtn.Click += (s, e) => CreateFilters();
+
             var closeBtn = BuildFlatButton("×");
-            closeBtn.Margin = new Thickness(8, 0, 0, 0);
+            closeBtn.Margin = new Thickness(4, 0, 0, 0);
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
 
@@ -128,14 +132,57 @@ namespace LemoineTools.Lemoine
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            rightPanel.Children.Add(createBtn);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
             {
-                Title        = "Filters / Color Settings",
+                Title        = "Auto Filters",
                 IconGlyph    = "⚙",
                 RightContent = rightPanel,
             };
+        }
+
+        private void CreateFilters()
+        {
+            // Save current edits to settings before firing the event
+            if (_filterTrades != null)
+            {
+                AutoFiltersSettings.Instance.Trades = _filterTrades;
+                AutoFiltersSettings.Instance.Save();
+            }
+
+            var handler = App.AutoFiltersHandler;
+            var evt     = App.AutoFiltersEvent;
+            if (handler == null || evt == null)
+            {
+                FlashStatus("Event handler unavailable.");
+                return;
+            }
+
+            handler.CreateOnly          = true;
+            handler.SelectedDisciplines = new List<string>();
+            handler.SelectedLinkTitles  = new List<string>();
+            handler.PushLog             = null;
+            handler.OnProgress          = null;
+
+            // ⚠ OnComplete is invoked on Revit's main thread — marshal back to this STA dispatcher.
+            var windowDispatcher = Dispatcher;
+            handler.OnComplete = (pass, fail, skip) =>
+                windowDispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (fail == 0 && pass > 0)
+                        FlashStatus($"{pass} filter(s) created.");
+                    else if (fail == 0)
+                        FlashStatus("Filters up to date.");
+                    else if (pass > 0)
+                        FlashStatus($"{pass} created, {fail} failed.");
+                    else
+                        FlashStatus("Failed — check Revit journal.");
+                }));
+
+            evt.Raise();
+            FlashStatus("Creating filters…");
         }
 
         // ── Footer ────────────────────────────────────────────────────────────
