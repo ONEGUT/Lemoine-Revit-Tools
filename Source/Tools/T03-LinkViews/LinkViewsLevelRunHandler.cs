@@ -110,6 +110,13 @@ namespace LemoineTools.Tools.LinkViews
         /// <summary>View template applied to ceiling plans before crop is set. InvalidElementId = none.</summary>
         public ElementId TemplateRCP { get; set; } = ElementId.InvalidElementId;
 
+        /// <summary>When true, adds created views to named print sets. Default false (opt-in per run).</summary>
+        public bool   CreatePrintSets { get; set; } = false;
+        /// <summary>Label prefix for multi-cluster building names (e.g. "Bldg" → "Bldg A"). Default "Bldg".</summary>
+        public string BuildingLabel   { get; set; } = "Bldg";
+        /// <summary>When true, the view-type token (3D/FP/RCP) is appended as the final name segment.</summary>
+        public bool   AppendViewType  { get; set; } = true;
+
         // ── Callbacks ─────────────────────────────────────────────────
 
         /// <summary>
@@ -236,7 +243,7 @@ namespace LemoineTools.Tools.LinkViews
                         for (int bi = 0; bi < clusters.Count; bi++)
                         {
                             string baseName = clusters.Count > 1
-                                ? $"L{lname} - Bldg {BldgLetter(bi)}"
+                                ? $"L{lname} - {BuildingLabel} {BldgLetter(bi)}"
                                 : $"L{lname}";
 
                             (double x0, double y0, double x1, double y1) =
@@ -378,9 +385,12 @@ namespace LemoineTools.Tools.LinkViews
                     }
                 }
 
-                if (created3d.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - 3D Views",     created3d,  txLog);
-                if (createdFP.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - Floor Plans",   createdFP,  txLog);
-                if (createdRCP.Count > 0) GetOrCreateViewSheetSet(doc, "Coordination - Ceiling Plans", createdRCP, txLog);
+                if (CreatePrintSets)
+                {
+                    if (created3d.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - 3D Views",     created3d,  txLog);
+                    if (createdFP.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - Floor Plans",   createdFP,  txLog);
+                    if (createdRCP.Count > 0) GetOrCreateViewSheetSet(doc, "Coordination - Ceiling Plans", createdRCP, txLog);
+                }
 
                 tx.Commit();
             }
@@ -432,7 +442,7 @@ namespace LemoineTools.Tools.LinkViews
         /// <summary>
         /// Assembles the final view name from the three naming slots.
         /// baseName is the cluster descriptor (e.g. "L2 - Bldg A").
-        /// typeLabel (3D/FP/RCP) is always appended last.
+        /// typeLabel (3D/FP/RCP) is appended only when <see cref="AppendViewType"/> is true.
         /// </summary>
         private string BuildViewName(string baseName, string typeLabel, ElementId levelId)
         {
@@ -459,7 +469,11 @@ namespace LemoineTools.Tools.LinkViews
                   .Where(s => !string.IsNullOrEmpty(s)).ToList()
                 : new List<string> { baseName };
 
-            parts.Add(typeLabel);
+            if (AppendViewType) parts.Add(typeLabel);
+
+            // Safety: nothing resolved (all Custom slots blank, type off) → baseName + typeLabel
+            if (parts.Count == 0) { parts.Add(baseName); parts.Add(typeLabel); }
+
             return string.Join(" - ", parts);
         }
 

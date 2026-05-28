@@ -250,21 +250,20 @@ namespace LemoineTools
                 Image      = CreateGlyphBitmap(16, "\uE895"),
             });
 
-            // ── T03 — Link Views ──────────────────────────────────────────────
-            // Large:   Link Views by Level
-            // Stacked: By Discipline  |  Replicate Dep. Views
-            var linkViewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T03  Link Views");
+            // ── T03 — Bulk Views ──────────────────────────────────────────────
+            // Large: Bulk Views by Level
+            // Large: Replicate Dep. Views
+            var linkViewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T03  Bulk Views");
 
             linkViewsPanel.AddItem(Btn(
-                "LT_LinkViewsLevel", "Link Views\nby Level", "LinkViewsLevelCommand",
+                "LT_LinkViewsLevel", "Bulk Views\nby Level", "LinkViewsLevelCommand",
                 "Create cropped 3D, floor plan, and ceiling plan views per level and building cluster.",
                 "\uE8B7"));  // Segoe MDL2: Layers
 
-            linkViewsPanel.AddStackedItems(
-                Btn("LT_LinkViewsDiscipline",     "By Discipline",        "LinkViewsDisciplineCommand",
-                    "Create one 3D view per link with a section box, with optional combined views per discipline."),
-                Btn("LT_ReplicateDependentViews", "Replicate Dep. Views", "ReplicateDependentViewsCommand",
-                    "Copy dependent views and their crop regions from a source view onto one or more target views."));
+            linkViewsPanel.AddItem(Btn(
+                "LT_ReplicateDependentViews", "Replicate\nDep. Views", "ReplicateDependentViewsCommand",
+                "Copy dependent views and their crop regions from a source view onto one or more target views.",
+                "\uE8C8"));  // Segoe MDL2: Copy
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Stacked 3: Split by Level  |  Split by Grid  |  Split by Cell
@@ -299,10 +298,12 @@ namespace LemoineTools
                     "Apply dimension strings across multiple views at once."));
 
             testingPanel.AddStackedItems(
-                Btn("LT_CreateSheets", "Create Sheets", "CreateSheetsCommand",
+                Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
-                Btn("LT_SheetPack",    "Sheet Pack",    "SheetPackCommand",
-                    "Organise sheets into named issue packages and stamp sheet parameters."));
+                Btn("LT_SheetPack",            "Sheet Pack",    "SheetPackCommand",
+                    "Organise sheets into named issue packages and stamp sheet parameters."),
+                Btn("LT_LinkViewsDiscipline",  "By Discipline", "LinkViewsDisciplineCommand",
+                    "Create one 3D view per link with a section box, with optional combined views per discipline."));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");

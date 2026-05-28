@@ -20,7 +20,7 @@ namespace LemoineTools.Tools.LinkViews
     public class LinkViewsLevelViewModel : ILemoineTool, ILemoineToolSettings
     {
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => "Link Views — Level";
+        public string Title    => "Bulk Views by Level";
         public string RunLabel => "Create Views in Revit →";
 
         public StepDefinition[] Steps => new[]
@@ -53,15 +53,18 @@ namespace LemoineTools.Tools.LinkViews
         private List<LevelScanResult>_scannedLevels      = new List<LevelScanResult>();
         private Dictionary<string, ElementId> _levelKeyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
         private List<ElementId>      _selectedLevelIds   = new List<ElementId>();
-        private bool                 _create3D       = true;
-        private bool                 _createFP       = true;
-        private bool                 _createRCP      = true;
-        private bool                 _scanning       = false;
-        private bool                 _scanDone       = false;
-        private bool                 _showAllLevels  = false;
-        private string               _subDisc3D      = "";
-        private string               _subDiscFP      = "";
-        private string               _subDiscRCP     = "";
+        private bool                 _create3D         = true;
+        private bool                 _createFP         = true;
+        private bool                 _createRCP        = true;
+        private bool                 _createPrintSets  = false;
+        private bool                 _scanning         = false;
+        private bool                 _scanDone         = false;
+        private bool                 _showAllLevels    = false;
+        private string               _subDisc3D        = "";
+        private string               _subDiscFP        = "";
+        private string               _subDiscRCP       = "";
+        private string               _buildingLabel    = "Bldg";
+        private bool                 _appendViewType   = true;
         private ElementId            _template3DId   = ElementId.InvalidElementId;
         private ElementId            _templateFPId   = ElementId.InvalidElementId;
         private ElementId            _templateRCPId  = ElementId.InvalidElementId;
@@ -409,7 +412,21 @@ namespace LemoineTools.Tools.LinkViews
                 OnValidationChanged();
             };
 
+            // ── Print sets (opt-in per run) ────────────────────────────
+            var printSetToggles = new LemoineToggleSwitches();
+            printSetToggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "printSets", Label = "Create print sets",
+                                 Desc = "Add created views to Coordination print sets (3D Views, Floor Plans, Ceiling Plans)",
+                                 DefaultOn = _createPrintSets },
+            });
+            printSetToggles.StateChanged += state =>
+            {
+                _createPrintSets = state.TryGetValue("printSets", out var v) && v;
+            };
+
             _s2Container.Children.Add(toggles);
+            _s2Container.Children.Add(printSetToggles);
             _s2Container.Children.Add(subDiscHeader);
             _s2Container.Children.Add(colHeader);
             _s2Container.Children.Add(_subDiscRow3D);
@@ -502,16 +519,17 @@ namespace LemoineTools.Tools.LinkViews
 
             void UpdatePreview()
             {
-                string levelEx  = _scannedLevels.FirstOrDefault()?.Name ?? "Level 2";
-                string modelEx  = _scannedLevels.FirstOrDefault()?.ModelName ?? "Architecture";
-                string typeEx   = _create3D ? "3D" : _createFP ? "FP" : "RCP";
-                string clusterEx = "Bldg A";
+                string levelEx   = _scannedLevels.FirstOrDefault()?.Name ?? "Level 2";
+                string modelEx   = _scannedLevels.FirstOrDefault()?.ModelName ?? "Architecture";
+                string typeEx    = _create3D ? "3D" : _createFP ? "FP" : "RCP";
+                string bldgLabel = string.IsNullOrWhiteSpace(_buildingLabel) ? "Bldg" : _buildingLabel.Trim();
+                string baseEx    = $"L{levelEx} - {bldgLabel} A";
 
                 string ResolveSlot(string slot, string custom)
                 {
                     switch (slot)
                     {
-                        case "Host Level":  return levelEx;
+                        case "Host Level":  return baseEx;
                         case "Model Name":  return modelEx;
                         case "View Type":   return typeEx;
                         case "Custom":      return string.IsNullOrWhiteSpace(custom) ? "(custom)" : custom.Trim();
@@ -519,15 +537,23 @@ namespace LemoineTools.Tools.LinkViews
                     }
                 }
 
-                var slots = new[]
+                bool anySet = _namingFront != "None" || _namingCenter != "None" || _namingEnd != "None";
+                List<string> parts;
+                if (anySet)
                 {
-                    ResolveSlot(_namingFront,  _namingFrontCustom),
-                    ResolveSlot(_namingCenter, _namingCenterCustom),
-                    ResolveSlot(_namingEnd,    _namingEndCustom),
-                };
-                var parts = slots.Where(s => !string.IsNullOrEmpty(s)).ToList();
-                parts.Add(clusterEx);
-                parts.Add(typeEx);
+                    parts = new[] {
+                        ResolveSlot(_namingFront,  _namingFrontCustom),
+                        ResolveSlot(_namingCenter, _namingCenterCustom),
+                        ResolveSlot(_namingEnd,    _namingEndCustom)
+                    }.Where(s => !string.IsNullOrEmpty(s)).ToList();
+                }
+                else
+                {
+                    parts = new List<string> { baseEx };
+                }
+
+                if (_appendViewType) parts.Add(typeEx);
+                if (parts.Count == 0) { parts.Add(baseEx); parts.Add(typeEx); }
                 previewText.Text = string.Join(" - ", parts);
             }
 
@@ -586,6 +612,55 @@ namespace LemoineTools.Tools.LinkViews
             AddSlotRow("Front",  _namingFront,  v => _namingFront  = v, _namingFrontCustom,  v => _namingFrontCustom  = v);
             AddSlotRow("Center", _namingCenter, v => _namingCenter = v, _namingCenterCustom, v => _namingCenterCustom = v);
             AddSlotRow("End",    _namingEnd,    v => _namingEnd    = v, _namingEndCustom,    v => _namingEndCustom    = v);
+
+            // ── Building label input ───────────────────────────────────────────
+            var bldgLabelRow = new StackPanel { Orientation = Orientation.Horizontal,
+                                                Margin = new Thickness(0, 0, 0, 8) };
+            var bldgLbl = new TextBlock { Text = "Bldg label", Width = 60,
+                                          VerticalAlignment = VerticalAlignment.Center };
+            bldgLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            bldgLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            bldgLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            bldgLabelRow.Children.Add(bldgLbl);
+
+            var bldgLabelBox = new WpfTextBox { Text = _buildingLabel, Width = 80 };
+            bldgLabelBox.SetResourceReference(FrameworkElement.HeightProperty,                   "LemoineH_Input");
+            bldgLabelBox.SetResourceReference(System.Windows.Controls.Control.PaddingProperty,   "LemoineTh_InputPad");
+            bldgLabelBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            bldgLabelBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            bldgLabelBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+            bldgLabelBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+            bldgLabelBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorder");
+            bldgLabelBox.TextChanged += (s, e) => { _buildingLabel = bldgLabelBox.Text; UpdatePreview(); };
+            bldgLabelRow.Children.Add(bldgLabelBox);
+
+            var bldgHint = new TextBlock
+            {
+                Text = " — used when multiple building clusters found per level",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            bldgHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            bldgHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            bldgHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            bldgLabelRow.Children.Add(bldgHint);
+            outer.Children.Add(bldgLabelRow);
+
+            // ── Append view type suffix toggle ────────────────────────────────
+            var appendTypeToggle = new LemoineToggleSwitches();
+            appendTypeToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "appendType", Label = "Append view type",
+                                 Desc = "Append 3D / FP / RCP as the final name segment",
+                                 DefaultOn = _appendViewType },
+            });
+            appendTypeToggle.StateChanged += state =>
+            {
+                _appendViewType = state.TryGetValue("appendType", out var v) && v;
+                UpdatePreview();
+            };
+            outer.Children.Add(appendTypeToggle);
+            outer.Children.Add(new FrameworkElement { Height = 6 });
 
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 4, 0, 10) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
@@ -690,7 +765,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 Text = "Creates cropped coordination views per level and building cluster. " +
                        "Levels with rooms spread across separate building footprints will " +
-                       "generate one view per cluster. All views are added to named print sets.",
+                       "generate one view per cluster.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 8, 0, 0),
@@ -776,6 +851,9 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.Template3D         = _template3DId;
             _runHandler.TemplateFP         = _templateFPId;
             _runHandler.TemplateRCP        = _templateRCPId;
+            _runHandler.CreatePrintSets    = _createPrintSets;
+            _runHandler.BuildingLabel      = _buildingLabel;
+            _runHandler.AppendViewType     = _appendViewType;
             _runHandler.PushLog          = pushLog;
             _runHandler.OnProgress       = onProgress;
             _runHandler.OnComplete       = onComplete;
