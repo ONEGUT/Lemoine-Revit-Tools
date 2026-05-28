@@ -80,6 +80,59 @@ If no silent failures are found, state "No silent failures detected" explicitly 
 
 ---
 
+## Communication Style
+
+- Short replies from the user ("OK", "do it", "looks great", "that fixed it", "add it") are final answers. Acknowledge briefly and move on — do not ask follow-up questions.
+- Keep post-task summaries to 1–2 sentences. Report results, not process.
+- Do not narrate every step. State what changed and what's next.
+
+---
+
+## Decision Protocol
+
+**UX / design decisions** (layout, interaction model, naming, workflow): Before writing any code, present 2–4 concrete options with a one-sentence tradeoff each and a clear recommendation. Wait for the user to pick one.
+
+**Bug fixes and unambiguous feature requests**: Implement directly — no options, no pre-questions.
+
+**Ambiguous requests**: Ask at most one clarifying question, then proceed once answered.
+
+---
+
+## Multi-Item Requests
+
+When the user lists multiple changes in a single message, address all of them in one implementation pass. Do not stop mid-list to ask questions or seek approval for individual items.
+
+---
+
+## Build Errors
+
+When the user pastes compiler errors directly into chat, fix them immediately on the current branch. Do not create a new plan file or branch for a build-error fix.
+
+---
+
+## Merge Signal
+
+"Merge with main" or "merge this" means: create a PR via GitHub MCP and merge it. No further confirmation is needed — the user has already given it.
+
+---
+
+## UX Philosophy
+
+Before implementing any workflow, check whether it is practical:
+
+- Never require a user to open a picker inside a picker for the same data type.
+- UI state must always be unambiguous — if selecting vs. editing look identical, flag it before building.
+- Prefer explicit single-action patterns (a dedicated save button, a confirm step) over implicit double-purpose interactions (one click that both selects and edits).
+- If a workflow feels impractical, say so and propose an alternative before building it.
+
+---
+
+## Research Discipline
+
+Always read the relevant source files before recommending or writing code. Never generate implementation from memory when the actual file is available.
+
+---
+
 ## WPF UI Tasks
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
