@@ -120,6 +120,27 @@ namespace LemoineTools.Lemoine
             BuildFooter();
             InjectControlStyles();        // ← themed scrollbars, ComboBox, CheckBox
             ApplyContainerStyles();
+
+            // Wire step-activation callbacks for tools that implement IStepAware.
+            if (_tool is IStepAware stepAware)
+            {
+                stepAware.SetContentRefreshCallback(stepId =>
+                {
+                    // Always dispatch to WPF thread — called from any thread.
+                    Dispatcher.BeginInvoke((Action)(() =>
+                    {
+                        int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
+                        if (idx < 0) return;
+                        var newContent = _tool.GetStepContent(stepId) ?? new Grid();
+                        if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
+                        {
+                            cs.Children.RemoveAt(0);
+                            cs.Children.Insert(0, newContent);
+                        }
+                    }));
+                });
+            }
+
             // Defer tab-bar rendering until after callers can RegisterLogTab()
             Loaded += (s, e) => BuildTabBar();
             ActivateStep(0);
@@ -711,6 +732,7 @@ namespace LemoineTools.Lemoine
             }
             RefreshStepState(index);
             UpdateStepCounter();
+            (_tool as IStepAware)?.OnStepActivated(_tool.Steps[index].Id);
         }
 
         private void RefreshStepState(int index)

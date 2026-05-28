@@ -35,29 +35,27 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc      = commandData.Application.ActiveUIDocument;
-            var doc        = uidoc.Document;
+            var uidoc        = commandData.Application.ActiveUIDocument;
+            var doc          = uidoc.Document;
             var activeViewId = uidoc.ActiveView?.Id;
 
-            // ── Pre-selection (E) ──────────────────────────────────────────────
-            var supportedBics  = new HashSet<long>(SplitElementsShared.GridSplitCategories.Select(c => (long)c.Cat));
-            var catLabelLookup = SplitElementsShared.GridSplitCategories.ToDictionary(c => (long)c.Cat, c => c.Label);
-            var rawSelection   = uidoc.Selection.GetElementIds()
+            // Dynamic category counts: all model categories present in the document.
+            var counts = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => e.Category?.CategoryType == CategoryType.Model && e.Category.Name != null)
+                .GroupBy(e => e.Category!.Name)
+                .OrderBy(g => g.Key)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // Pre-selection: accept any selected model element.
+            var rawSelection = uidoc.Selection.GetElementIds()
                 .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Id != null && supportedBics.Contains(e.Category.Id.Value))
+                .Where(e => e?.Category?.CategoryType == CategoryType.Model && e.Category.Name != null)
                 .ToList();
             var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
             var preSelectedCats = rawSelection
-                .Select(e => catLabelLookup[e.Category.Id.Value])
+                .Select(e => e.Category!.Name)
                 .Distinct().ToList();
-
-            // ── Element counts (A) ─────────────────────────────────────────────
-            var counts = SplitElementsShared.GridSplitCategories.ToDictionary(
-                c => c.Label,
-                c => new FilteredElementCollector(doc)
-                    .OfCategoryId(new ElementId(c.Cat))
-                    .WhereElementIsNotElementType()
-                    .ToList().Count);
 
             var allGrids = new FilteredElementCollector(doc)
                 .OfClass(typeof(Grid))
@@ -66,7 +64,7 @@ namespace LemoineTools.Commands
                 .OrderBy(g => g.Name)
                 .ToList();
 
-            var vm    = new SplitByGridViewModel(
+            var vm = new SplitByGridViewModel(
                 App.SplitByGridHandler!, App.SplitByGridEvent!,
                 allGrids, counts, activeViewId,
                 preSelectedIds, preSelectedCats);

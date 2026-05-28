@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByGridViewModel : ILemoineTool
+    public class SplitByGridViewModel : ILemoineTool, IStepAware
     {
         public string Title    => "Split Elements by Grid Lines";
         public string RunLabel => "Split in Revit →";
@@ -28,12 +28,13 @@ namespace LemoineTools.Tools.ModifyElements
         private List<string>                                    _selectedCats      = new List<string>();
         private List<string>                                    _selectedGridNames = new List<string>();
         private bool                                            _useActiveView     = false;
+        private Action<string>?                                 _rebuildContent;
 
-        private readonly Dictionary<string, Autodesk.Revit.DB.Grid> _gridsByName;
-        private readonly IReadOnlyDictionary<string, int>            _elementCounts;
-        private readonly ElementId?                                  _activeViewId;
-        private readonly IReadOnlyList<ElementId>                    _preSelectedIds;
-        private readonly IReadOnlyList<string>                       _preSelectedCats;
+        private Dictionary<string, Autodesk.Revit.DB.Grid>     _gridsByName;
+        private readonly IReadOnlyDictionary<string, int>       _elementCounts;
+        private readonly ElementId?                             _activeViewId;
+        private readonly IReadOnlyList<ElementId>               _preSelectedIds;
+        private readonly IReadOnlyList<string>                  _preSelectedCats;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly SplitByGridEventHandler _handler;
@@ -58,14 +59,38 @@ namespace LemoineTools.Tools.ModifyElements
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
 
-            _gridsByName = allGrids
-                .Where(g => g.Curve is Line)
-                .GroupBy(g => g.Name)
-                .ToDictionary(g => g.Key, g => g.First());
+            _gridsByName = BuildGridMap(allGrids);
 
             if (_preSelectedIds.Count > 0)
                 _selectedCats = new List<string>(_preSelectedCats);
         }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+
+            _handler.IsRefreshRequest = true;
+            _handler.OnRefreshed = freshGrids =>
+            {
+                _gridsByName = BuildGridMap(freshGrids);
+                _selectedGridNames = _selectedGridNames
+                    .Where(n => _gridsByName.ContainsKey(n))
+                    .ToList();
+                _rebuildContent?.Invoke("S2");
+            };
+            _event.Raise();
+        }
+
+        private static Dictionary<string, Autodesk.Revit.DB.Grid> BuildGridMap(
+            IEnumerable<Autodesk.Revit.DB.Grid> grids) =>
+            grids
+                .Where(g => g.Curve is Line)
+                .GroupBy(g => g.Name)
+                .ToDictionary(g => g.Key, g => g.First());
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -88,12 +113,11 @@ namespace LemoineTools.Tools.ModifyElements
 
             var outer = new StackPanel();
 
-            // A — element count strip
-            var parts = SplitElementsShared.GridSplitCategories
-                .Select(c => $"{c.Label}: {(_elementCounts.TryGetValue(c.Label, out int n) ? n : 0)}");
+            int totalCats  = _elementCounts.Count;
+            int totalElems = _elementCounts.Values.Sum();
             var countStrip = new TextBlock
             {
-                Text         = string.Join("  ·  ", parts),
+                Text         = $"{totalCats} categories · {totalElems} elements in document",
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -102,12 +126,9 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Category picker
-            var groups = new Dictionary<string, List<string>>
-            {
-                { "Categories", SplitElementsShared.GridSplitCategories.Select(c => c.Label).ToList() }
-            };
-            var tabs = new LemoineMultiSelectTabs();
+            var catNames = _elementCounts.Keys.OrderBy(k => k).ToList();
+            var groups   = new Dictionary<string, List<string>> { { "Categories", catNames } };
+            var tabs     = new LemoineMultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -116,7 +137,6 @@ namespace LemoineTools.Tools.ModifyElements
             };
             outer.Children.Add(tabs);
 
-            // B — active view filter
             if (_activeViewId != null)
             {
                 var toggle = new LemoineToggleSwitches();
@@ -257,7 +277,7 @@ namespace LemoineTools.Tools.ModifyElements
             var note = new TextBlock
             {
                 Text         = "Elements whose LocationCurve intersects a selected grid plane will be split at that intersection point. " +
-                               "Only linear (non-arc) grids are supported as split planes.",
+                               "Elements with no linear curve are skipped. Only linear (non-arc) grids are supported as split planes.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 8, 0, 0),
@@ -332,17 +352,9 @@ namespace LemoineTools.Tools.ModifyElements
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _handler.PreSelectedIds = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
-            _handler.ActiveViewId   = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
-
-            if (_preSelectedIds.Count == 0)
-            {
-                var selectedBics = new HashSet<string>(_selectedCats);
-                _handler.SelectedBics = SplitElementsShared.GridSplitCategories
-                    .Where(c => selectedBics.Contains(c.Label))
-                    .Select(c => c.Cat)
-                    .ToList();
-            }
+            _handler.PreSelectedIds        = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId          = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
+            _handler.SelectedCategoryNames = new List<string>(_selectedCats);
 
             _handler.SelectedGridIds = _selectedGridNames
                 .Where(n => _gridsByName.ContainsKey(n))

@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByReferencePlaneViewModel : ILemoineTool
+    public class SplitByReferencePlaneViewModel : ILemoineTool, IStepAware
     {
         public string Title    => "Split Elements by Reference Plane";
         public string RunLabel => "Split in Revit →";
@@ -25,15 +25,16 @@ namespace LemoineTools.Tools.ModifyElements
         };
 
         // ── State ─────────────────────────────────────────────────────────────
-        private List<string> _selectedCats     = new List<string>();
-        private List<string> _selectedRefNames = new List<string>();
-        private bool         _useActiveView    = false;
+        private List<string>  _selectedCats     = new List<string>();
+        private List<string>  _selectedRefNames = new List<string>();
+        private bool          _useActiveView    = false;
+        private Action<string>? _rebuildContent;
 
-        private readonly Dictionary<string, ReferencePlane>          _refPlanesByName;
-        private readonly IReadOnlyDictionary<string, int>            _elementCounts;
-        private readonly ElementId?                                  _activeViewId;
-        private readonly IReadOnlyList<ElementId>                    _preSelectedIds;
-        private readonly IReadOnlyList<string>                       _preSelectedCats;
+        private Dictionary<string, ReferencePlane>           _refPlanesByName;
+        private readonly IReadOnlyDictionary<string, int>    _elementCounts;
+        private readonly ElementId?                          _activeViewId;
+        private readonly IReadOnlyList<ElementId>            _preSelectedIds;
+        private readonly IReadOnlyList<string>               _preSelectedCats;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly SplitByReferencePlaneEventHandler _handler;
@@ -58,18 +59,42 @@ namespace LemoineTools.Tools.ModifyElements
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
 
-            _refPlanesByName = allRefPlanes
-                .GroupBy(r => RefPlaneName(r))
-                .ToDictionary(g => g.Key, g => g.First());
+            _refPlanesByName = BuildRefPlaneMap(allRefPlanes);
 
             if (_preSelectedIds.Count > 0)
                 _selectedCats = new List<string>(_preSelectedCats);
+        }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+
+            _handler.IsRefreshRequest = true;
+            _handler.OnRefreshed = freshPlanes =>
+            {
+                _refPlanesByName = BuildRefPlaneMap(freshPlanes);
+                _selectedRefNames = _selectedRefNames
+                    .Where(n => _refPlanesByName.ContainsKey(n))
+                    .ToList();
+                _rebuildContent?.Invoke("S2");
+            };
+            _event.Raise();
         }
 
         private static string RefPlaneName(ReferencePlane rp) =>
             string.IsNullOrWhiteSpace(rp.Name)
                 ? $"Ref Plane {rp.Id.IntegerValue}"
                 : rp.Name;
+
+        private static Dictionary<string, ReferencePlane> BuildRefPlaneMap(
+            IEnumerable<ReferencePlane> planes) =>
+            planes
+                .GroupBy(r => RefPlaneName(r))
+                .ToDictionary(g => g.Key, g => g.First());
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -92,12 +117,11 @@ namespace LemoineTools.Tools.ModifyElements
 
             var outer = new StackPanel();
 
-            // A — element count strip (reuses GridSplitCategories — same supported set)
-            var parts = SplitElementsShared.GridSplitCategories
-                .Select(c => $"{c.Label}: {(_elementCounts.TryGetValue(c.Label, out int n) ? n : 0)}");
+            int totalCats  = _elementCounts.Count;
+            int totalElems = _elementCounts.Values.Sum();
             var countStrip = new TextBlock
             {
-                Text         = string.Join("  ·  ", parts),
+                Text         = $"{totalCats} categories · {totalElems} elements in document",
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -106,12 +130,9 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Category picker
-            var groups = new Dictionary<string, List<string>>
-            {
-                { "Categories", SplitElementsShared.GridSplitCategories.Select(c => c.Label).ToList() }
-            };
-            var tabs = new LemoineMultiSelectTabs();
+            var catNames = _elementCounts.Keys.OrderBy(k => k).ToList();
+            var groups   = new Dictionary<string, List<string>> { { "Categories", catNames } };
+            var tabs     = new LemoineMultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -120,7 +141,6 @@ namespace LemoineTools.Tools.ModifyElements
             };
             outer.Children.Add(tabs);
 
-            // B — active view filter
             if (_activeViewId != null)
             {
                 var toggle = new LemoineToggleSwitches();
@@ -261,7 +281,7 @@ namespace LemoineTools.Tools.ModifyElements
             var note = new TextBlock
             {
                 Text         = "Elements whose LocationCurve intersects a reference plane will be split at that intersection. " +
-                               "The reference plane's own normal vector is used as the cutting direction.",
+                               "Elements with no linear curve are skipped. The reference plane's own normal vector is used as the cutting direction.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 8, 0, 0),
@@ -336,17 +356,9 @@ namespace LemoineTools.Tools.ModifyElements
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _handler.PreSelectedIds = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
-            _handler.ActiveViewId   = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
-
-            if (_preSelectedIds.Count == 0)
-            {
-                var selectedBics = new HashSet<string>(_selectedCats);
-                _handler.SelectedBics = SplitElementsShared.GridSplitCategories
-                    .Where(c => selectedBics.Contains(c.Label))
-                    .Select(c => c.Cat)
-                    .ToList();
-            }
+            _handler.PreSelectedIds        = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId          = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
+            _handler.SelectedCategoryNames = new List<string>(_selectedCats);
 
             _handler.SelectedRefPlaneIds = _selectedRefNames
                 .Where(n => _refPlanesByName.ContainsKey(n))

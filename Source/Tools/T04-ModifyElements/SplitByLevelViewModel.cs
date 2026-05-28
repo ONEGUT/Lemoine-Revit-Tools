@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByLevelViewModel : ILemoineTool
+    public class SplitByLevelViewModel : ILemoineTool, IStepAware
     {
         public string Title    => "Split Elements by Levels";
         public string RunLabel => "Split in Revit →";
@@ -25,11 +25,12 @@ namespace LemoineTools.Tools.ModifyElements
         };
 
         // ── State ─────────────────────────────────────────────────────────────
-        private List<string>                       _selectedCats       = new List<string>();
-        private List<string>                       _selectedLevelNames = new List<string>();
-        private bool                               _useActiveView      = false;
+        private List<string>                _selectedCats       = new List<string>();
+        private List<string>                _selectedLevelNames = new List<string>();
+        private bool                        _useActiveView      = false;
+        private Action<string>?             _rebuildContent;
 
-        private readonly Dictionary<string, Level>           _levelsByName;
+        private Dictionary<string, Level>                    _levelsByName;
         private readonly IReadOnlyDictionary<string, int>    _elementCounts;
         private readonly ElementId?                          _activeViewId;
         private readonly IReadOnlyList<ElementId>            _preSelectedIds;
@@ -58,14 +59,38 @@ namespace LemoineTools.Tools.ModifyElements
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
 
-            _levelsByName = allLevels
-                .OrderBy(l => l.Elevation)
-                .GroupBy(l => l.Name)
-                .ToDictionary(g => g.Key, g => g.First());
+            _levelsByName = BuildLevelMap(allLevels);
 
             if (_preSelectedIds.Count > 0)
                 _selectedCats = new List<string>(_preSelectedCats);
         }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+
+            _handler.IsRefreshRequest = true;
+            _handler.OnRefreshed = freshLevels =>
+            {
+                _levelsByName = BuildLevelMap(freshLevels);
+                // Preserve valid selections; drop any that no longer exist.
+                _selectedLevelNames = _selectedLevelNames
+                    .Where(n => _levelsByName.ContainsKey(n))
+                    .ToList();
+                _rebuildContent?.Invoke("S2");
+            };
+            _event.Raise();
+        }
+
+        private static Dictionary<string, Level> BuildLevelMap(IEnumerable<Level> levels) =>
+            levels
+                .OrderBy(l => l.Elevation)
+                .GroupBy(l => l.Name)
+                .ToDictionary(g => g.Key, g => g.First());
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -88,12 +113,12 @@ namespace LemoineTools.Tools.ModifyElements
 
             var outer = new StackPanel();
 
-            // A — element count strip
-            var parts = SplitElementsShared.LevelSplitCategories
-                .Select(c => $"{c.Label}: {(_elementCounts.TryGetValue(c.Label, out int n) ? n : 0)}");
+            // Count summary strip
+            int totalCats  = _elementCounts.Count;
+            int totalElems = _elementCounts.Values.Sum();
             var countStrip = new TextBlock
             {
-                Text         = string.Join("  ·  ", parts),
+                Text         = $"{totalCats} categories · {totalElems} elements in document",
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -102,12 +127,10 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Category picker
-            var groups = new Dictionary<string, List<string>>
-            {
-                { "Categories", SplitElementsShared.LevelSplitCategories.Select(c => c.Label).ToList() }
-            };
-            var tabs = new LemoineMultiSelectTabs();
+            // Category picker — all model categories with elements
+            var catNames = _elementCounts.Keys.OrderBy(k => k).ToList();
+            var groups   = new Dictionary<string, List<string>> { { "Categories", catNames } };
+            var tabs     = new LemoineMultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -116,7 +139,7 @@ namespace LemoineTools.Tools.ModifyElements
             };
             outer.Children.Add(tabs);
 
-            // B — active view filter (only offered when a view ID was captured)
+            // Active view filter
             if (_activeViewId != null)
             {
                 var toggle = new LemoineToggleSwitches();
@@ -253,7 +276,8 @@ namespace LemoineTools.Tools.ModifyElements
             var note = new TextBlock
             {
                 Text         = "Elements spanning multiple selected levels will be split into one segment per span. " +
-                               "Walls and columns use level constraints; MEP curves and framing use LocationCurve adjustment.",
+                               "Walls and columns use level constraints; MEP curves and framing use LocationCurve adjustment. " +
+                               "Elements with no applicable split strategy are skipped.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 8, 0, 0),
@@ -328,17 +352,9 @@ namespace LemoineTools.Tools.ModifyElements
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _handler.PreSelectedIds  = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
-            _handler.ActiveViewId    = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
-
-            if (_preSelectedIds.Count == 0)
-            {
-                var selectedBics = new HashSet<string>(_selectedCats);
-                _handler.SelectedBics = SplitElementsShared.LevelSplitCategories
-                    .Where(c => selectedBics.Contains(c.Label))
-                    .Select(c => c.Cat)
-                    .ToList();
-            }
+            _handler.PreSelectedIds       = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId         = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
+            _handler.SelectedCategoryNames = new List<string>(_selectedCats);
 
             _handler.SelectedLevelIds = _selectedLevelNames
                 .Where(n => _levelsByName.ContainsKey(n))

@@ -134,24 +134,17 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
-                    long bic = el.Category.Id.Value;
 
-                    if (bic == (long)BuiltInCategory.OST_Walls)
+                    // Property-based dispatch: works for any category.
+                    // Wall is checked first because walls also have a LocationCurve.
+                    if (el is Wall)
                         SplitWallByLevel(doc, (Wall)el, levels, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralColumns ||
-                             bic == (long)BuiltInCategory.OST_Columns)
+                    else if (el.get_Parameter(ColBase) != null && el.get_Parameter(ColTop) != null)
                         SplitColumnByLevel(doc, el, levels, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralFraming ||
-                             bic == (long)BuiltInCategory.OST_DuctCurves        ||
-                             bic == (long)BuiltInCategory.OST_PipeCurves        ||
-                             bic == (long)BuiltInCategory.OST_Conduit           ||
-                             bic == (long)BuiltInCategory.OST_CableTray)
+                    else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByLevel(doc, el, levels, stats);
-
                     else
-                        stats.Skip($"Unsupported category: {el.Category.Name}");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable level-split strategy (not a wall, no level params, no linear curve)");
                 }
                 catch (Exception ex)
                 {
@@ -231,20 +224,15 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
-                    long bic = el.Category.Id.Value;
 
-                    if (bic == (long)BuiltInCategory.OST_Walls)
+                    // Property-based dispatch: works for any category.
+                    // Wall is checked first because walls also have a LocationCurve.
+                    if (el is Wall)
                         SplitWallByGrid(doc, (Wall)el, planes, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralFraming ||
-                             bic == (long)BuiltInCategory.OST_DuctCurves        ||
-                             bic == (long)BuiltInCategory.OST_PipeCurves        ||
-                             bic == (long)BuiltInCategory.OST_Conduit           ||
-                             bic == (long)BuiltInCategory.OST_CableTray)
+                    else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByGrid(doc, el, planes, stats);
-
                     else
-                        stats.Skip($"Unsupported category: {el.Category.Name}");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable plane-split strategy (not a wall, no linear curve)");
                 }
                 catch (Exception ex)
                 {
