@@ -13,8 +13,8 @@ New tool that identifies element clashes between two filter-defined groups, draw
 | 1 | Select Views | Multi-select view picker (same pattern as BatchDimension step 1) |
 | 2 | Group 1 Filters | Multi-select from existing AutoFilters rules — source of clash colour; applies to host document and optionally linked models |
 | 3 | Group 2 Filters | Multi-select from existing AutoFilters rules — clash targets (must not overlap Group 1); same host + link scope |
-| 4 | References | User picks grids (checkbox list by name) and/or floor slabs (checkbox list by level + type) to dimension from |
-| 5 | Settings & Run | Tolerance, dimension style picker, dimension line offset, dimension target (centre vs edge), fill style (solid vs outline), clear previous output checkbox, Run button |
+| 4 | References | User picks grids (checkbox list by name) and/or floor slabs (checkbox list by level + type) to dimension from. Optional — skip to run annotations only |
+| 5 | Settings & Run | Tolerance (mm, default 25.4), dimension style picker, dimension line offset (mm), dimension target toggle (Edge / Centre), fill style toggle (Solid / Outline), clear previous output checkbox, review cards, Run button |
 
 ---
 
@@ -108,11 +108,14 @@ For each user-selected floor element:
 
 ### ViewModel
 - `Source/Tools/Testing/ClashDimension/ClashDimensionViewModel.cs`
-  - Implements `ILemoineTool`
-  - 5-step wizard
+  - Implements `ILemoineTool` only — no `ILemoineToolSettings`, no settings overlay panel
+  - 5-step wizard; all configuration lives inside the wizard steps
+  - On open, pre-populates all inputs from `ClashDimensionSettings.Instance` (last-used values)
+  - On Run, writes current values back to `ClashDimensionSettings` before firing the event
   - Reads filter list from `AutoFiltersSettings.Instance`
   - Reads available grids and floors from the active document
-  - Validates: ≥1 view, ≥1 Group 1 filter, ≥1 Group 2 filter, groups non-overlapping, ≥1 reference element
+  - Validates: ≥1 view, ≥1 Group 1 filter, ≥1 Group 2 filter, groups non-overlapping
+  - References (Step 4) are optional — if none selected, annotations are placed without dimensions
   - Fires `ClashDimensionEvent` on Run
 
 ### Event Handler
