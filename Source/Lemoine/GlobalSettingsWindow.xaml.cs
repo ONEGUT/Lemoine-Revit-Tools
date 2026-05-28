@@ -184,10 +184,8 @@ namespace LemoineTools.Lemoine
             ("filters", "Filters / Color"),
             ("t08",     "Legend Creator"),
             ("t04",     "Link Views"),
-            ("tx",      "Batch Export"),
             ("ty",      "Batch Dimension"),
             ("tz",      "Create Sheets"),
-            ("tw",      "Sheet Pack"),
         };
 
         private void BuildTabNav()
@@ -290,10 +288,8 @@ namespace LemoineTools.Lemoine
                 case "filters":  content = BuildFiltersContent();  break;
                 case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
-                case "tx":       content = BuildSpecContent(new BatchExportViewModel(null, null, null), "Batch Export"); break;
                 case "ty":       content = BuildSpecContent(new BatchDimensionViewModel(null, null, null, null), "Batch Dimension"); break;
                 case "tz":       content = BuildSpecContent(new CreateSheetsViewModel(), "Create Sheets"); break;
-                case "tw":       content = BuildSpecContent(new SheetPackViewModel(), "Sheet Pack"); break;
                 default:         content = BuildNoSettingsContent(); break;
             }
 
