@@ -139,6 +139,62 @@ For any task that involves building, modifying, or debugging a WPF window or Use
 
 ---
 
+## Known Compile Error Patterns
+
+These mistakes have appeared in multiple sessions. Check for them before committing.
+
+### Ambiguous type aliases — required in any file that uses both WPF and Revit API types
+
+```csharp
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfTextBox    = System.Windows.Controls.TextBox;
+using WpfVisibility = System.Windows.Visibility;
+using WpfPoint      = System.Windows.Point;
+using RevitColor    = Autodesk.Revit.DB.Color;
+```
+
+Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`, `Point`, or `TextBox` in a ViewModel file that also imports `Autodesk.Revit.DB`.
+
+### Missing `using` directives that keep appearing
+
+| Symbol | Required namespace |
+|--------|-------------------|
+| `Brushes` | `System.Windows.Media` |
+| `Math` | `System` |
+| `OfType<>` | `System.Linq` |
+
+### Access modifiers across partial files
+
+Methods shared between partial class files must be `internal`, not `private`. A `private` method in one partial file is invisible to another — CS0122.
+
+---
+
+## Revit Crash Constraints
+
+These patterns cause Revit to crash or hang. They have been discovered by breaking Revit in real sessions. Do not use them.
+
+| ❌ Crashes Revit | ✅ Safe alternative |
+|---|---|
+| `Popup` with `StaysOpen=false` | `StaysOpen=true` + manual dismiss via `PreviewMouseDown` or a close button |
+| `SizeToContent="WidthAndHeight"` + `WindowStyle="None"` | `Width=N` (fixed) + `SizeToContent="Height"` |
+| `Autodesk.Windows.ComponentManager.ApplicationWindow` for window owner | Not referenced in this project — omit or use `WindowInteropHelper` with a Revit HWND |
+
+### Why `Popup StaysOpen=false` crashes Revit
+
+`StaysOpen=false` registers a `ComponentDispatcher.ThreadFilterMessage` hook to detect outside clicks. This fires on every Win32 message on Revit's main thread and corrupts the message loop.
+
+### Revit API gotchas (Revit 2024)
+
+| Wrong | Correct |
+|---|---|
+| `ZoomType.FitPage` | `ZoomType.FitToPage` |
+| `RasterQualityType.Draft` | `RasterQualityType.Low` (Draft removed in 2024) |
+| `PDFExportOptions.Zoom` | `PDFExportOptions.ZoomPercentage` |
+| `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
+| `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
+
+---
+
 ## Key Files
 
 | Path | Purpose |
