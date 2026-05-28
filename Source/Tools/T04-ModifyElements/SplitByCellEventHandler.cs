@@ -111,14 +111,23 @@ namespace LemoineTools.Tools.ModifyElements
                                     pushLog($"✓ {el.Category?.Name} {el.Id} → {n} cell(s)", "pass");
                                     tx.Commit();
                                 }
-                                else
+                                else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    string reason = cellStatus == CellSplitStatus.NoGeometry         ? "no solid geometry"
-                                                  : cellStatus == CellSplitStatus.NoCellsIntersected ? "no cells intersect geometry"
-                                                  : "fits in one cell";
-                                    pushLog($"— {el.Category?.Name} {el.Id}: {reason}, skipped", "info");
+                                    pushLog($"— {el.Category?.Name} {el.Id}: fits in one cell, skipped", "info");
+                                }
+                                else if (cellStatus == CellSplitStatus.NoGeometry)
+                                {
+                                    tx.RollBack();
+                                    skipped++;
+                                    pushLog($"— {el.Category?.Name} {el.Id}: no solid geometry, skipped", "info");
+                                }
+                                else // NoCellsIntersected
+                                {
+                                    tx.RollBack();
+                                    failed++;
+                                    pushLog($"✗ {el.Category?.Name} {el.Id}: boolean intersection returned no cells — the element's geometry may be non-planar or the solid could not be intersected", "fail");
                                 }
                             }
                             catch (Exception ex)

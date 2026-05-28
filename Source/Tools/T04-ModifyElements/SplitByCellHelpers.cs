@@ -72,6 +72,12 @@ namespace LemoineTools.Tools.ModifyElements
 
             var newIds = new List<ElementId>();
 
+            // ── Phase 1: compute all cell shapes BEFORE touching the document ────
+            // RecreateElement modifies the document, which invalidates the elementSolid
+            // reference held by Revit's geometry engine. All boolean intersections must
+            // be completed before any element is created.
+            var pendingLoops = new List<IList<CurveLoop>>();
+
             foreach (var (xMin, xMax) in cellsX)
             {
                 foreach (var (yMin, yMax) in cellsY)
@@ -94,17 +100,22 @@ namespace LemoineTools.Tools.ModifyElements
                     IList<CurveLoop>? loops = ExtractBottomFaceLoops(intersection);
                     if (loops == null || loops.Count == 0) continue;
 
-                    // RecreateElement propagates Revit API exceptions so the caller's transaction
-                    // rolls back; InvalidElementId means unsupported/misconfigured element type.
-                    ElementId newId = RecreateElement(doc, el, loops);
-                    if (newId == null || newId == ElementId.InvalidElementId)
-                        throw new InvalidOperationException(
-                            $"Cell ({xMin:F2}–{xMax:F2}, {yMin:F2}–{yMax:F2}): element recreation failed.");
-                    newIds.Add(newId);
+                    pendingLoops.Add(loops);
                 }
             }
 
-            if (newIds.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+            if (pendingLoops.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+
+            // ── Phase 2: create replacement elements (document modification) ──────
+            // RecreateElement propagates Revit API exceptions so the caller's transaction
+            // rolls back; InvalidElementId means unsupported/misconfigured element type.
+            foreach (var loops in pendingLoops)
+            {
+                ElementId newId = RecreateElement(doc, el, loops);
+                if (newId == null || newId == ElementId.InvalidElementId)
+                    throw new InvalidOperationException("Cell element recreation failed.");
+                newIds.Add(newId);
+            }
 
             doc.Delete(el.Id);
             return (newIds.Count, CellSplitStatus.Split);
