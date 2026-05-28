@@ -26,17 +26,27 @@ namespace LemoineTools.Tools.LinkViews
             new StepDefinition("S2", "Review & Run",       required: false),
         };
 
-        // ── Data type passed in from Command ──────────────────────────
+        // ── Data types passed in from Command ─────────────────────────
         public sealed class LinkEntry
         {
             public ElementId LinkInstId { get; set; } = null!;
             public string    Name       { get; set; } = null!;
         }
 
+        public sealed class ViewTemplateEntry
+        {
+            public ElementId Id   { get; set; }
+            public string    Name { get; set; }
+        }
+
         // ── State ──────────────────────────────────────────────────────
         private readonly List<LinkEntry> _links;
         private readonly Dictionary<long, string> _assignments;
-        private string _subDisc = "";
+        private string   _subDisc     = "";
+        private ElementId _template3DId = ElementId.InvalidElementId;
+
+        // ── Available view templates ───────────────────────────────────
+        private readonly List<ViewTemplateEntry> _templates3D;
 
         // ── ExternalEvent wiring ───────────────────────────────────────
         private readonly LinkViewsDisciplineRunHandler _runHandler;
@@ -48,12 +58,14 @@ namespace LemoineTools.Tools.LinkViews
         public LinkViewsDisciplineViewModel(
             LinkViewsDisciplineRunHandler runHandler,
             Autodesk.Revit.UI.ExternalEvent runEvent,
-            List<LinkEntry> links)
+            List<LinkEntry> links,
+            List<ViewTemplateEntry>? templates3D = null)
         {
             _runHandler  = runHandler;
             _runEvent    = runEvent;
             _links       = links ?? new List<LinkEntry>();
             _assignments = new Dictionary<long, string>();
+            _templates3D = templates3D ?? new List<ViewTemplateEntry>();
             foreach (var l in _links)
                 _assignments[l.LinkInstId.Value] = "SKIP";
         }
@@ -119,16 +131,55 @@ namespace LemoineTools.Tools.LinkViews
             var wrapper = new StackPanel();
             wrapper.Children.Add(sv);
 
-            // ── Sub Discipline input ───────────────────────────────────
+            // ── VIEW OPTIONS: Sub Discipline + View Template ───────────
             wrapper.Children.Add(new FrameworkElement { Height = 10 });
-            var subDiscHeader = new TextBlock { Text = "SUB DISCIPLINE",
-                                                Margin = new Thickness(0, 0, 0, 6) };
-            subDiscHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            subDiscHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            subDiscHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            wrapper.Children.Add(subDiscHeader);
+            var viewOptionsHeader = new TextBlock { Text = "VIEW OPTIONS",
+                                                    Margin = new Thickness(0, 0, 0, 4) };
+            viewOptionsHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            viewOptionsHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            viewOptionsHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            wrapper.Children.Add(viewOptionsHeader);
 
-            var tb = new WpfTextBox { Text = _subDisc, Width = 200 };
+            var colHeader = new StackPanel { Orientation = Orientation.Horizontal,
+                                              Margin = new Thickness(40, 0, 0, 4) };
+            var colSubDisc = new TextBlock { Text = "Sub Discipline", Width = 120 };
+            colSubDisc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            colSubDisc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            colSubDisc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var colTemplate = new TextBlock { Text = "View Template", Width = 150,
+                                              Margin = new Thickness(8, 0, 0, 0) };
+            colTemplate.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            colTemplate.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            colTemplate.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            colHeader.Children.Add(colSubDisc);
+            colHeader.Children.Add(colTemplate);
+            wrapper.Children.Add(colHeader);
+
+            wrapper.Children.Add(BuildViewTypeRow());
+
+            return wrapper;
+        }
+
+        private FrameworkElement BuildViewTypeRow()
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin      = new Thickness(0, 0, 0, 4),
+            };
+
+            var lbl = new TextBlock
+            {
+                Text              = "3D",
+                Width             = 40,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            row.Children.Add(lbl);
+
+            var tb = new WpfTextBox { Text = _subDisc, Width = 120 };
             tb.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
             tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
             tb.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
@@ -137,9 +188,29 @@ namespace LemoineTools.Tools.LinkViews
             tb.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
             tb.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorder");
             tb.TextChanged += (s, e) => _subDisc = tb.Text;
-            wrapper.Children.Add(tb);
+            row.Children.Add(tb);
 
-            return wrapper;
+            row.Children.Add(new FrameworkElement { Width = 8 });
+
+            var templateNames = new List<string>(new[] { "(none)" }
+                .Concat(_templates3D.Select(t => t.Name)));
+            string selectedName = _templates3D.FirstOrDefault(
+                t => t.Id != null && t.Id.Value == _template3DId.Value)?.Name ?? "(none)";
+
+            var templateSelect = new LemoineSingleSelect
+            {
+                Width        = 150,
+                Items        = templateNames,
+                SelectedItem = selectedName,
+            };
+            templateSelect.SelectionChanged += name =>
+            {
+                var entry = _templates3D.FirstOrDefault(t => t.Name == name);
+                _template3DId = entry?.Id ?? ElementId.InvalidElementId;
+            };
+            row.Children.Add(templateSelect);
+
+            return row;
         }
 
         private UIElement BuildLinkRow(LinkEntry link, List<string> disciplines)
@@ -345,6 +416,7 @@ namespace LemoineTools.Tools.LinkViews
 
             _runHandler.Assignments = assignments;
             _runHandler.SubDisc     = _subDisc;
+            _runHandler.Template3D  = _template3DId;
             _runHandler.PushLog     = pushLog;
             _runHandler.OnProgress  = onProgress;
             _runHandler.OnComplete  = onComplete;

@@ -209,21 +209,13 @@ namespace LemoineTools.Tools.LinkViews
                 var viewSet = new ViewSet();
                 if (existing != null)
                 {
-                    // Merge existing views into the set
+                    // Merge existing views into the set before saving
                     foreach (View v in existing.Views) viewSet.Insert(v);
                 }
                 foreach (var v in views) viewSet.Insert(v);
 
-                if (existing != null)
-                {
-                    vss.CurrentViewSheetSet.Views = viewSet;
-                    vss.SaveAs(setName);
-                }
-                else
-                {
-                    vss.CurrentViewSheetSet.Views = viewSet;
-                    vss.SaveAs(setName);
-                }
+                vss.CurrentViewSheetSet.Views = viewSet;
+                vss.SaveAs(setName);
 
                 log.Add($"Print set '{setName}' updated ({viewSet.Size} view(s)).");
             }

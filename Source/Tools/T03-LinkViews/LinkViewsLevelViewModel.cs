@@ -30,12 +30,18 @@ namespace LemoineTools.Tools.LinkViews
             new StepDefinition("S4", "Review & Run",        required: false),
         };
 
-        // ── Data type passed in from Command ──────────────────────────
+        // ── Data types passed in from Command ─────────────────────────
         public sealed class DocEntry
         {
             public string    Label;
             public bool      IsHost;
             public ElementId LinkInstId;
+        }
+
+        public sealed class ViewTemplateEntry
+        {
+            public ElementId Id   { get; set; }
+            public string    Name { get; set; }
         }
 
         // ── State ──────────────────────────────────────────────────────
@@ -55,6 +61,9 @@ namespace LemoineTools.Tools.LinkViews
         private string               _subDisc3D      = "";
         private string               _subDiscFP      = "";
         private string               _subDiscRCP     = "";
+        private ElementId            _template3DId   = ElementId.InvalidElementId;
+        private ElementId            _templateFPId   = ElementId.InvalidElementId;
+        private ElementId            _templateRCPId  = ElementId.InvalidElementId;
         private FrameworkElement     _subDiscRow3D;
         private FrameworkElement     _subDiscRowFP;
         private FrameworkElement     _subDiscRowRCP;
@@ -79,16 +88,27 @@ namespace LemoineTools.Tools.LinkViews
         private readonly LinkViewsLevelRunHandler?    _runHandler;
         private readonly ExternalEvent?               _runEvent;
 
+        // ── Available view templates (populated by command on main thread) ─
+        private readonly List<ViewTemplateEntry> _templates3D;
+        private readonly List<ViewTemplateEntry> _templatesFP;
+        private readonly List<ViewTemplateEntry> _templatesRCP;
+
         public event EventHandler? ValidationChanged;
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public LinkViewsLevelViewModel(
             LinkViewsLevelPhase1Handler? phase1Handler, ExternalEvent? phase1Event,
             LinkViewsLevelRunHandler?    runHandler,    ExternalEvent? runEvent,
-            List<DocEntry>?              availableDocs)
+            List<DocEntry>?              availableDocs,
+            List<ViewTemplateEntry>?     templates3D  = null,
+            List<ViewTemplateEntry>?     templatesFP  = null,
+            List<ViewTemplateEntry>?     templatesRCP = null)
         {
             _phase1Handler = phase1Handler;
             _phase1Event   = phase1Event;
+            _templates3D   = templates3D  ?? new List<ViewTemplateEntry>();
+            _templatesFP   = templatesFP  ?? new List<ViewTemplateEntry>();
+            _templatesRCP  = templatesRCP ?? new List<ViewTemplateEntry>();
             _runHandler    = runHandler;
             _runEvent      = runEvent;
             _availableDocs = availableDocs ?? new List<DocEntry>();
@@ -348,16 +368,34 @@ namespace LemoineTools.Tools.LinkViews
                                  Desc = "RCP with crop box and view range per cluster",       DefaultOn = _createRCP },
             });
 
-            // ── Sub Discipline section ─────────────────────────────────
-            var subDiscHeader = new TextBlock { Text = "SUB DISCIPLINE",
-                                                Margin = new Thickness(0, 10, 0, 6) };
+            // ── Sub Discipline / View Template section ─────────────────
+            var subDiscHeader = new TextBlock { Text = "VIEW OPTIONS",
+                                                Margin = new Thickness(0, 10, 0, 4) };
             subDiscHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             subDiscHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             subDiscHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-            _subDiscRow3D  = BuildSubDiscRow("3D",  _subDisc3D,  v => _subDisc3D  = v, _create3D);
-            _subDiscRowFP  = BuildSubDiscRow("FP",  _subDiscFP,  v => _subDiscFP  = v, _createFP);
-            _subDiscRowRCP = BuildSubDiscRow("RCP", _subDiscRCP, v => _subDiscRCP = v, _createRCP);
+            // Column header row
+            var colHeader = new StackPanel { Orientation = Orientation.Horizontal,
+                                              Margin = new Thickness(40, 0, 0, 4) };
+            var colSubDisc = new TextBlock { Text = "Sub Discipline", Width = 120 };
+            colSubDisc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            colSubDisc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            colSubDisc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var colTemplate = new TextBlock { Text = "View Template", Width = 150,
+                                              Margin = new Thickness(8, 0, 0, 0) };
+            colTemplate.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            colTemplate.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            colTemplate.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            colHeader.Children.Add(colSubDisc);
+            colHeader.Children.Add(colTemplate);
+
+            _subDiscRow3D  = BuildViewTypeRow("3D",  _subDisc3D,  v => _subDisc3D  = v,
+                                              _templates3D,  _template3DId,  id => _template3DId  = id, _create3D);
+            _subDiscRowFP  = BuildViewTypeRow("FP",  _subDiscFP,  v => _subDiscFP  = v,
+                                              _templatesFP,  _templateFPId,  id => _templateFPId  = id, _createFP);
+            _subDiscRowRCP = BuildViewTypeRow("RCP", _subDiscRCP, v => _subDiscRCP = v,
+                                              _templatesRCP, _templateRCPId, id => _templateRCPId = id, _createRCP);
 
             toggles.StateChanged += state =>
             {
@@ -372,13 +410,17 @@ namespace LemoineTools.Tools.LinkViews
 
             _s2Container.Children.Add(toggles);
             _s2Container.Children.Add(subDiscHeader);
+            _s2Container.Children.Add(colHeader);
             _s2Container.Children.Add(_subDiscRow3D);
             _s2Container.Children.Add(_subDiscRowFP);
             _s2Container.Children.Add(_subDiscRowRCP);
         }
 
-        private FrameworkElement BuildSubDiscRow(string typeLabel, string currentValue,
-                                                  Action<string> setter, bool visible)
+        private FrameworkElement BuildViewTypeRow(
+            string typeLabel,
+            string subDiscValue,  Action<string>   subDiscSetter,
+            List<ViewTemplateEntry> templates, ElementId selectedTemplateId, Action<ElementId> templateSetter,
+            bool visible)
         {
             var row = new StackPanel
             {
@@ -398,7 +440,7 @@ namespace LemoineTools.Tools.LinkViews
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             row.Children.Add(lbl);
 
-            var tb = new WpfTextBox { Text = currentValue, Width = 180 };
+            var tb = new WpfTextBox { Text = subDiscValue, Width = 120 };
             tb.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
             tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
             tb.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
@@ -406,8 +448,28 @@ namespace LemoineTools.Tools.LinkViews
             tb.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
             tb.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
             tb.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorder");
-            tb.TextChanged += (s, e) => setter(tb.Text);
+            tb.TextChanged += (s, e) => subDiscSetter(tb.Text);
             row.Children.Add(tb);
+
+            row.Children.Add(new FrameworkElement { Width = 8 });
+
+            var templateNames = new List<string>(new[] { "(none)" }
+                .Concat(templates.Select(t => t.Name)));
+            string selectedName = templates.FirstOrDefault(
+                t => t.Id != null && t.Id.Value == selectedTemplateId.Value)?.Name ?? "(none)";
+
+            var templateSelect = new LemoineSingleSelect
+            {
+                Width        = 150,
+                Items        = templateNames,
+                SelectedItem = selectedName,
+            };
+            templateSelect.SelectionChanged += name =>
+            {
+                var entry = templates.FirstOrDefault(t => t.Name == name);
+                templateSetter(entry?.Id ?? ElementId.InvalidElementId);
+            };
+            row.Children.Add(templateSelect);
 
             return row;
         }
@@ -710,6 +772,9 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.SubDisc3D          = _subDisc3D;
             _runHandler.SubDiscFP          = _subDiscFP;
             _runHandler.SubDiscRCP         = _subDiscRCP;
+            _runHandler.Template3D         = _template3DId;
+            _runHandler.TemplateFP         = _templateFPId;
+            _runHandler.TemplateRCP        = _templateRCPId;
             _runHandler.PushLog          = pushLog;
             _runHandler.OnProgress       = onProgress;
             _runHandler.OnComplete       = onComplete;

@@ -20,6 +20,8 @@ namespace LemoineTools.Tools.LinkViews
         public List<DisciplineAssignment> Assignments { get; set; } = new List<DisciplineAssignment>();
         /// <summary>Sub Discipline parameter value applied to all created views. Empty = skip.</summary>
         public string SubDisc { get; set; } = "";
+        /// <summary>View template applied to 3D views before section box is set. InvalidElementId = none.</summary>
+        public ElementId Template3D { get; set; } = ElementId.InvalidElementId;
 
         // ── Callbacks ─────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -104,6 +106,7 @@ namespace LemoineTools.Tools.LinkViews
                             .ToList();
 
                         View3D v = CreateIsometric(doc, viewName, vft3d.Id);
+                        ApplyTemplate(v, Template3D);
                         v.SetSectionBox(ExpandBBox(combined, SectionBoxBuffer));
                         HideNonGridLevelAnnotations(v, doc);
                         HideOtherLinks(v, doc, keepIds);
@@ -143,6 +146,7 @@ namespace LemoineTools.Tools.LinkViews
                     try
                     {
                         View3D v = CreateIsometric(doc, viewName, vft3d.Id);
+                        ApplyTemplate(v, Template3D);
                         v.SetSectionBox(ExpandBBox(bb, SectionBoxBuffer));
                         HideNonGridLevelAnnotations(v, doc);
                         HideOtherLinks(v, doc, new List<ElementId> { a.LinkInstId });
@@ -166,6 +170,12 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         // ── Helpers ───────────────────────────────────────────────────
+
+        private static void ApplyTemplate(View view, ElementId templateId)
+        {
+            if (templateId == null || templateId.Value == ElementId.InvalidElementId.Value) return;
+            try { view.ViewTemplateId = templateId; } catch { }
+        }
 
         private static void SetSubDisc(View view, string value)
         {
