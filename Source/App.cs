@@ -181,7 +181,6 @@ namespace LemoineTools
 
             // ── T01 — Filters ─────────────────────────────────────────────────
             // Pulldown: Filter Tools (Auto Filters | Discover Rules)
-            // Large:    Legend Creation
             // Large:    Filters Settings
             // SplitButton: Apply to Views | Remove from View | Delete from Project
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
@@ -201,19 +200,19 @@ namespace LemoineTools
 
             filterToolsBtn?.AddPushButton(Btn(
                 "LT_DiscoverRules", "Discover Rules", "DiscoverLaunchCommand",
-                "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules."));
-
-            filtersPanel.AddItem(Btn(
-                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
-                "Create or update a Legend view from the current Legend Creator settings.",
-                ""));
+                "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules.",
+                ""));  // Segoe MDL2: Search
 
             filtersPanel.AddItem(Btn(
                 "LT_FiltersSettings", "Filters\nSettings", "OpenFiltersSettingsCommand",
                 "Open the Filters / Color settings window.",
                 ""));
 
-            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions");
+            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions")
+            {
+                LargeImage = CreateGlyphBitmap(32, "\uE700"),
+                Image      = CreateGlyphBitmap(16, "\uE700"),
+            };
             var split = (SplitButton)filtersPanel.AddItem(splitData);
             split.AddPushButton(Btn(
                 "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
@@ -227,6 +226,21 @@ namespace LemoineTools
                 "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
                 "Permanently delete selected ParameterFilterElements from the project.",
                 ""));  // Segoe MDL2: Delete
+
+            // ── T01B — Legend ─────────────────────────────────────────────────
+            // Large: Legend Creation
+            // Large: Legend Settings
+            var legendPanel = application.CreateRibbonPanel("Lemoine Tools", "T01B  Legend");
+
+            legendPanel.AddItem(Btn(
+                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
+                "Create or update a Legend view from the current Legend Creator settings.",
+                "\uE8FD"));  // Segoe MDL2: Color / Solid
+
+            legendPanel.AddItem(Btn(
+                "LT_LegendSettings", "Legend\nSettings", "OpenLegendSettingsCommand",
+                "Open the Legend Creator settings window.",
+                "\uE713"));  // Segoe MDL2: Settings gear
 
             // ── T02 — Ceilings ────────────────────────────────────────────────
             // Large:   Ceiling Heatmap

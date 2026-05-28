@@ -9,7 +9,6 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
@@ -121,7 +120,6 @@ namespace LemoineTools.Lemoine
         private static readonly (string Id, string Label)[] _navDefs =
         {
             ("general", "General"),
-            ("t08",     "Legend Creator"),
             ("t04",     "Link Views"),
             ("tx",      "Batch Export"),
             ("ty",      "Batch Dimension"),
@@ -227,7 +225,6 @@ namespace LemoineTools.Lemoine
             {
                 case "general":  content = BuildGeneralContent();  break;
                 case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
-                case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
                 case "tx":       content = BuildSpecContent(new BatchExportViewModel(null, null, null), "Batch Export"); break;
                 case "ty":       content = BuildSpecContent(new BatchDimensionViewModel(null, null, null, null), "Batch Dimension"); break;
                 case "tz":       content = BuildSpecContent(new CreateSheetsViewModel(), "Create Sheets"); break;
@@ -276,16 +273,7 @@ namespace LemoineTools.Lemoine
 
         private void ApplyCurrentTab()
         {
-            switch (_activeTabId)
-            {
-                case "t08":
-                    LegendCreatorTabContent.Apply();
-                    FlashStatus("Legend layout saved.");
-                    break;
-                default:
-                    FlashStatus("Applied.");
-                    break;
-            }
+            FlashStatus("Applied.");
         }
 
         private void FlashStatus(string msg)
