@@ -16,6 +16,7 @@ namespace LemoineTools.Tools.ModifyElements
         {
             BuiltInCategory.OST_Floors,
             BuiltInCategory.OST_Ceilings,
+            BuiltInCategory.OST_Roofs,
             BuiltInCategory.OST_StructuralFoundation,
             BuiltInCategory.OST_FilledRegion,
         };
@@ -35,6 +36,11 @@ namespace LemoineTools.Tools.ModifyElements
             double   cellY,
             XYZ?     gridOrigin)
         {
+            // Fail fast for element types we don't know how to recreate.
+            if (!IsSupportedForRecreation(el))
+                throw new NotSupportedException(
+                    $"'{el.Category?.Name ?? el.GetType().Name}' elements are not yet supported for cell splitting.");
+
             Solid? elementSolid = GetPrimarySolid(el);
             if (elementSolid == null || elementSolid.Volume < 1e-9)
                 return (0, CellSplitStatus.NoGeometry);
@@ -178,6 +184,10 @@ namespace LemoineTools.Tools.ModifyElements
 
         // ── Element recreation ────────────────────────────────────────────────
 
+        // Floor, Ceiling, FilledRegion; OST_StructuralFoundation slabs are Floor instances.
+        private static bool IsSupportedForRecreation(Element el) =>
+            el is Floor || el is Ceiling || el is FilledRegion;
+
         // No outer try/catch: Revit API exceptions propagate to SplitElement's caller so
         // the per-element transaction can roll back atomically.
         private static ElementId RecreateElement(
@@ -192,11 +202,9 @@ namespace LemoineTools.Tools.ModifyElements
             if (source is FilledRegion fr)
                 return CreateFilledRegion(doc, fr, loops);
 
-            if (source.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation))
-                if (source is Floor foundationFloor)
-                    return CreateFloor(doc, foundationFloor, loops);
-
-            return ElementId.InvalidElementId;
+            // Should not be reachable — IsSupportedForRecreation guards this path.
+            throw new NotSupportedException(
+                $"'{source.Category?.Name ?? source.GetType().Name}' elements are not supported for cell splitting.");
         }
 
         private static ElementId CreateFloor(

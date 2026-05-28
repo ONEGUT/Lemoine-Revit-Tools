@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 { BuiltInCategory.OST_Floors,               "Floors" },
                 { BuiltInCategory.OST_Ceilings,             "Ceilings" },
+                { BuiltInCategory.OST_Roofs,                "Roofs" },
                 { BuiltInCategory.OST_StructuralFoundation, "Structural Foundations" },
                 { BuiltInCategory.OST_FilledRegion,         "Filled Regions" },
             };
