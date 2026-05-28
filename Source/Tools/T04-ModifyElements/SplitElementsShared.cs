@@ -287,6 +287,7 @@ namespace LemoineTools.Tools.ModifyElements
                 if (cwall != null) DisallowWallJoins(doc, cwall);
             }
 
+            int successes = 0;
             for (int k = 0; k < copies.Count; k++)
             {
                 var seg = doc.GetElement(copies[k]) as Wall;
@@ -297,12 +298,24 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(WallTop)    ?.Set(spans[k + 1].Id);
                     seg.get_Parameter(WallBaseOff)?.Set(k == 0                    ? baseOff : 0.0);
                     seg.get_Parameter(WallTopOff) ?.Set(k == copies.Count - 1    ? topOff  : 0.0);
+                    successes++;
                 }
                 catch (Exception ex) { stats.Fail($"Wall {wall.Id} seg {k}", ex.Message); }
             }
 
-            doc.Delete(wall.Id);
-            stats.Split($"Wall {wall.Id} → {copies.Count} segments");
+            if (successes == copies.Count)
+            {
+                doc.Delete(wall.Id);
+                stats.Split($"Wall {wall.Id} → {copies.Count} segments");
+            }
+            else
+            {
+                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                stats.Fail(wall.Id.ToString(),
+                    successes == 0
+                        ? "All segment parameter assignments failed; copies removed."
+                        : $"Only {successes}/{copies.Count} segments configured; copies removed.");
+            }
         }
 
         private static void SplitColumnByLevel(
@@ -326,6 +339,7 @@ namespace LemoineTools.Tools.ModifyElements
             var copies = CopyTimes(doc, col.Id, spans.Count - 1);
             if (copies == null) { stats.Fail(col.Id.ToString(), "Copy failed"); return; }
 
+            int successes = 0;
             for (int k = 0; k < copies.Count; k++)
             {
                 var seg = doc.GetElement(copies[k]);
@@ -336,12 +350,24 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(ColTop)    ?.Set(spans[k + 1].Id);
                     seg.get_Parameter(ColBaseOff)?.Set(k == 0                 ? baseOff : 0.0);
                     seg.get_Parameter(ColTopOff) ?.Set(k == copies.Count - 1 ? topOff  : 0.0);
+                    successes++;
                 }
                 catch (Exception ex) { stats.Fail($"Column {col.Id} seg {k}", ex.Message); }
             }
 
-            doc.Delete(col.Id);
-            stats.Split($"Column {col.Id} → {copies.Count} segments");
+            if (successes == copies.Count)
+            {
+                doc.Delete(col.Id);
+                stats.Split($"Column {col.Id} → {copies.Count} segments");
+            }
+            else
+            {
+                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                stats.Fail(col.Id.ToString(),
+                    successes == 0
+                        ? "All segment parameter assignments failed; copies removed."
+                        : $"Only {successes}/{copies.Count} segments configured; copies removed.");
+            }
         }
 
         private static void SplitCurveByLevel(
@@ -459,6 +485,9 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 catch (Exception ex)
                 {
+                    // Clean up all copies made so far before bailing (#2)
+                    foreach (var cid in segIds.Skip(1))
+                        try { doc.Delete(cid); } catch { }
                     stats.Fail(el.Id.ToString(), $"copy #{i} failed: {ex.Message}");
                     return;
                 }
@@ -482,16 +511,20 @@ namespace LemoineTools.Tools.ModifyElements
 
                 try
                 {
-                    DisconnectAllConnectors(seg);
-                    if (seg is Wall wSeg)
-                        DisallowWallJoins(doc, wSeg);
+                    // Validate geometry before touching connectors (#7): if CreateBound throws,
+                    // the element's connectors are left intact.
+                    Line newCurve = Line.CreateBound(segA, segB);
                     var segLc = seg.Location as LocationCurve;
                     if (segLc == null) throw new InvalidOperationException("No LocationCurve on copy.");
-                    segLc.Curve = Line.CreateBound(segA, segB);
+                    if (seg is Wall wSeg) DisallowWallJoins(doc, wSeg);
+                    DisconnectAllConnectors(seg);
+                    segLc.Curve = newCurve;
                     success++;
                 }
                 catch (Exception ex)
                 {
+                    // Remove orphaned copy; leave original (i==0) in place (#3)
+                    if (i > 0) { try { doc.Delete(segIds[i]); } catch { } }
                     stats.Fail(el.Id.ToString(), $"seg {i} curve set failed: {ex.Message}");
                 }
             }
@@ -619,10 +652,18 @@ namespace LemoineTools.Tools.ModifyElements
                 {
                     ICollection<ElementId> c =
                         ElementTransformUtils.CopyElement(doc, id, XYZ.Zero);
-                    if (c == null || !c.Any()) return null;
+                    if (c == null || !c.Any())
+                    {
+                        foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                        return null;
+                    }
                     result.Add(c.First());
                 }
-                catch { return null; }
+                catch
+                {
+                    foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                    return null;
+                }
             }
             return result;
         }

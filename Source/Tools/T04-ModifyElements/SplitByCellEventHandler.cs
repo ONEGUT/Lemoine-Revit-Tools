@@ -49,10 +49,15 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 else
                 {
-                    var categoryMap = SplitByCellHelpers.BuildCategoryMap(doc, view);
-                    var selectedSet = new HashSet<string>(SelectedCategoryLabels, StringComparer.OrdinalIgnoreCase);
+                    var categoryMap  = SplitByCellHelpers.BuildCategoryMap(doc, view);
+                    var labelToBic   = SplitByCellViewModel.CatLabels
+                        .ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase);
+                    var selectedBics = new HashSet<BuiltInCategory>(
+                        SelectedCategoryLabels
+                            .Where(l => labelToBic.ContainsKey(l))
+                            .Select(l => labelToBic[l]));
                     targetIds = categoryMap
-                        .Where(kvp => selectedSet.Contains(kvp.Key))
+                        .Where(kvp => selectedBics.Contains(kvp.Key))
                         .SelectMany(kvp => kvp.Value)
                         .ToList();
                 }
@@ -66,9 +71,14 @@ namespace LemoineTools.Tools.ModifyElements
 
                 pushLog($"Found {targetIds.Count} element(s) to process.", "info");
 
-                XYZ? gridOrigin = UseProjectOrigin
-                    ? SplitByCellHelpers.GetProjectBasePoint(doc)
-                    : null;
+                XYZ? gridOrigin = null;
+                if (UseProjectOrigin)
+                {
+                    XYZ? bp = SplitByCellHelpers.GetProjectBasePoint(doc);
+                    if (bp == null)
+                        pushLog("Project base point not found; grid aligned to document origin (0,0,0).", "info");
+                    gridOrigin = bp ?? XYZ.Zero;
+                }
 
                 int created = 0;
                 int skipped = 0;
@@ -92,10 +102,10 @@ namespace LemoineTools.Tools.ModifyElements
 
                             try
                             {
-                                int n = SplitByCellHelpers.SplitElement(
+                                var (n, cellStatus) = SplitByCellHelpers.SplitElement(
                                     doc, el, cellXft, cellYft, gridOrigin);
 
-                                if (n > 0)
+                                if (cellStatus == CellSplitStatus.Split)
                                 {
                                     created += n;
                                     pushLog($"✓ {el.Category?.Name} {el.Id} → {n} cell(s)", "pass");
@@ -105,7 +115,10 @@ namespace LemoineTools.Tools.ModifyElements
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog($"— {el.Category?.Name} {el.Id}: fits in one cell, skipped", "info");
+                                    string reason = cellStatus == CellSplitStatus.NoGeometry         ? "no solid geometry"
+                                                  : cellStatus == CellSplitStatus.NoCellsIntersected ? "no cells intersect geometry"
+                                                  : "fits in one cell";
+                                    pushLog($"— {el.Category?.Name} {el.Id}: {reason}, skipped", "info");
                                 }
                             }
                             catch (Exception ex)

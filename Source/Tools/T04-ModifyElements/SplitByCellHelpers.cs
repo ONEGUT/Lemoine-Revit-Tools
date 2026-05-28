@@ -5,6 +5,8 @@ using Autodesk.Revit.DB;
 
 namespace LemoineTools.Tools.ModifyElements
 {
+    internal enum CellSplitStatus { Split, FitsInOneCell, NoGeometry, NoCellsIntersected }
+
     /// <summary>
     /// Geometry helpers and element-recreation logic for SplitByCellEventHandler.
     /// </summary>
@@ -14,7 +16,6 @@ namespace LemoineTools.Tools.ModifyElements
         {
             BuiltInCategory.OST_Floors,
             BuiltInCategory.OST_Ceilings,
-            BuiltInCategory.OST_Roofs,
             BuiltInCategory.OST_StructuralFoundation,
             BuiltInCategory.OST_FilledRegion,
         };
@@ -23,9 +24,11 @@ namespace LemoineTools.Tools.ModifyElements
 
         /// <summary>
         /// Splits one element into grid cells.
-        /// Returns the number of replacement cells created, or 0 if no split needed.
+        /// Returns the number of replacement cells and a status code.
+        /// Throws if any cell recreation fails so the caller's transaction rolls back cleanly,
+        /// leaving the original element intact with no partial cells in the model.
         /// </summary>
-        internal static int SplitElement(
+        internal static (int CellCount, CellSplitStatus Status) SplitElement(
             Document doc,
             Element  el,
             double   cellX,
@@ -34,10 +37,10 @@ namespace LemoineTools.Tools.ModifyElements
         {
             Solid? elementSolid = GetPrimarySolid(el);
             if (elementSolid == null || elementSolid.Volume < 1e-9)
-                return 0;
+                return (0, CellSplitStatus.NoGeometry);
 
             BoundingBoxXYZ bb = el.get_BoundingBox(null);
-            if (bb == null) return 0;
+            if (bb == null) return (0, CellSplitStatus.NoGeometry);
 
             double ox = gridOrigin?.X ?? bb.Min.X;
             double oy = gridOrigin?.Y ?? bb.Min.Y;
@@ -54,7 +57,7 @@ namespace LemoineTools.Tools.ModifyElements
                 cellsY.Add((y, y + cellY));
 
             if (cellsX.Count == 1 && cellsY.Count == 1)
-                return 0;
+                return (0, CellSplitStatus.FitsInOneCell);
 
             double zMid    = (bb.Min.Z + bb.Max.Z) * 0.5;
             double halfH   = Math.Max((bb.Max.Z - bb.Min.Z) * 0.5, 0.5) + 1.0;
@@ -85,16 +88,20 @@ namespace LemoineTools.Tools.ModifyElements
                     IList<CurveLoop>? loops = ExtractBottomFaceLoops(intersection);
                     if (loops == null || loops.Count == 0) continue;
 
+                    // RecreateElement propagates Revit API exceptions so the caller's transaction
+                    // rolls back; InvalidElementId means unsupported/misconfigured element type.
                     ElementId newId = RecreateElement(doc, el, loops);
-                    if (newId != null && newId != ElementId.InvalidElementId)
-                        newIds.Add(newId);
+                    if (newId == null || newId == ElementId.InvalidElementId)
+                        throw new InvalidOperationException(
+                            $"Cell ({xMin:F2}–{xMax:F2}, {yMin:F2}–{yMax:F2}): element recreation failed.");
+                    newIds.Add(newId);
                 }
             }
 
-            if (newIds.Count == 0) return 0;
+            if (newIds.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
 
             doc.Delete(el.Id);
-            return newIds.Count;
+            return (newIds.Count, CellSplitStatus.Split);
         }
 
         // ── Geometry ──────────────────────────────────────────────────────────
@@ -171,27 +178,25 @@ namespace LemoineTools.Tools.ModifyElements
 
         // ── Element recreation ────────────────────────────────────────────────
 
+        // No outer try/catch: Revit API exceptions propagate to SplitElement's caller so
+        // the per-element transaction can roll back atomically.
         private static ElementId RecreateElement(
             Document doc, Element source, IList<CurveLoop> loops)
         {
-            try
-            {
-                if (source is Floor floor)
-                    return CreateFloor(doc, floor, loops);
+            if (source is Floor floor)
+                return CreateFloor(doc, floor, loops);
 
-                if (source is Ceiling ceiling)
-                    return CreateCeiling(doc, ceiling, loops);
+            if (source is Ceiling ceiling)
+                return CreateCeiling(doc, ceiling, loops);
 
-                if (source is FilledRegion fr)
-                    return CreateFilledRegion(doc, fr, loops);
+            if (source is FilledRegion fr)
+                return CreateFilledRegion(doc, fr, loops);
 
-                if (source.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation))
-                    if (source is Floor foundationFloor)
-                        return CreateFloor(doc, foundationFloor, loops);
+            if (source.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation))
+                if (source is Floor foundationFloor)
+                    return CreateFloor(doc, foundationFloor, loops);
 
-                return ElementId.InvalidElementId;
-            }
-            catch { return ElementId.InvalidElementId; }
+            return ElementId.InvalidElementId;
         }
 
         private static ElementId CreateFloor(
@@ -247,7 +252,11 @@ namespace LemoineTools.Tools.ModifyElements
 
         // ── Project base point ────────────────────────────────────────────────
 
-        internal static XYZ GetProjectBasePoint(Document doc)
+        /// <summary>
+        /// Returns the project base point XY location, or null if not found.
+        /// Callers should log the absence and fall back to XYZ.Zero.
+        /// </summary>
+        internal static XYZ? GetProjectBasePoint(Document doc)
         {
             try
             {
@@ -266,15 +275,19 @@ namespace LemoineTools.Tools.ModifyElements
             }
             catch { }
 
-            return XYZ.Zero;
+            return null;
         }
 
         // ── Category map builder ──────────────────────────────────────────────
 
-        internal static Dictionary<string, List<ElementId>> BuildCategoryMap(
+        /// <summary>
+        /// Builds a map from BuiltInCategory to element IDs visible in the given view.
+        /// Keyed by BIC enum (not Category.Name) so matching works in non-English Revit.
+        /// </summary>
+        internal static Dictionary<BuiltInCategory, List<ElementId>> BuildCategoryMap(
             Document doc, View view)
         {
-            var map = new Dictionary<string, List<ElementId>>();
+            var map = new Dictionary<BuiltInCategory, List<ElementId>>();
 
             foreach (BuiltInCategory bic in SupportedCategories)
             {
@@ -299,13 +312,9 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (ids.Count == 0) continue;
 
-                Element first = doc.GetElement(ids[0]);
-                string  name  = first?.Category?.Name
-                                ?? bic.ToString().Replace("OST_", "");
-
-                if (!map.ContainsKey(name))
-                    map[name] = new List<ElementId>();
-                map[name].AddRange(ids);
+                if (!map.ContainsKey(bic))
+                    map[bic] = new List<ElementId>();
+                map[bic].AddRange(ids);
             }
 
             return map;
