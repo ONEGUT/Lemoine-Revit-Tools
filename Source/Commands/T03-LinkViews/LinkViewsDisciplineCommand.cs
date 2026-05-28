@@ -56,10 +56,14 @@ namespace LemoineTools.Commands
                 });
             }
 
+            // ── Collect 3D view templates on the main thread ────────────
+            var templates3D = CollectViewTemplates(doc);
+
             var vm = new LinkViewsDisciplineViewModel(
                 App.LinkViewsDisciplineRunHandler!,
                 App.LinkViewsDisciplineRunEvent!,
-                links);
+                links,
+                templates3D);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
@@ -84,5 +88,12 @@ namespace LemoineTools.Commands
             _window = win;
             return Result.Succeeded;
         }
+        private static List<LinkViewsDisciplineViewModel.ViewTemplateEntry> CollectViewTemplates(Document doc) =>
+            new FilteredElementCollector(doc)
+                .OfClass(typeof(View)).Cast<View>()
+                .Where(v => v.IsTemplate && v.ViewType == ViewType.ThreeD)
+                .OrderBy(v => v.Name)
+                .Select(v => new LinkViewsDisciplineViewModel.ViewTemplateEntry { Id = v.Id, Name = v.Name })
+                .ToList();
     }
 }

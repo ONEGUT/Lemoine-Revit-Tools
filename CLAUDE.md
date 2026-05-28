@@ -146,6 +146,12 @@ For any task that involves building, modifying, or debugging a WPF window or Use
 
 ---
 
+## Edit Tool — C# Unicode Escape Sequences
+
+The Edit tool cannot match C# string literals that contain `\uXXXX` escape sequences (e.g. `""` glyph strings in `App.cs`). The JSON parameter parser converts `\uXXXX` to the actual Unicode character before comparing, so the search always fails. Use a Python `str.replace()` script for any edit that touches those lines.
+
+---
+
 ## Known Compile Error Patterns
 
 These mistakes have appeared in multiple sessions. Check for them before committing.
@@ -173,6 +179,20 @@ Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`
 ### Access modifiers across partial files
 
 Methods shared between partial class files must be `internal`, not `private`. A `private` method in one partial file is invisible to another — CS0122.
+
+---
+
+## Revit API Ordering Constraints
+
+### ViewTemplateId before geometry
+
+`view.ViewTemplateId = templateId` must be assigned **before** `SetSectionBox()` or any crop-box operation. The template assignment can reset view geometry; setting it first lets the subsequent programmatic geometry override it.
+
+---
+
+## LemoineMultiSelectTabs Contract
+
+`SetGroups` fires `SelectionChanged` once at the end of setup. Any ViewModel that mirrors tab selection into a private field must subscribe to `SelectionChanged` **before** calling `SetGroups` — that callback is the only mechanism that populates the mirror field on initialisation.
 
 ---
 
