@@ -112,7 +112,14 @@ When the user pastes compiler errors directly into chat, fix them immediately on
 
 ## Merge Signal
 
-"Merge with main" or "merge this" means: create a PR via GitHub MCP and merge it. No further confirmation is needed — the user has already given it.
+"Merge with main" or "merge this" means:
+
+1. **Run `/pre-merge-review` first** — scan the branch commits and PR comments
+   for new errors, preferences, or Revit constraints not yet in CLAUDE.md.
+   Propose any additions, wait for a quick confirmation, apply them.
+2. **Then create the PR and merge** via GitHub MCP. No further confirmation
+   needed for the merge itself — the user already gave it when they said
+   "merge with main".
 
 ---
 
