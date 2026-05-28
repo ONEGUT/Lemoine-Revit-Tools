@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Lemoine
@@ -78,6 +79,9 @@ namespace LemoineTools.Lemoine
 
             BuildChrome();
             _tool.ValidationChanged += (s, e) => RefreshStepState(_activeStep);
+            if (_tool is ILemoineNavigable nav)
+                nav.NavigateRequested += (s, idx) =>
+                    Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
         }
 
         private void OnThemeChanged(LemoineTheme t)

@@ -106,4 +106,14 @@ namespace LemoineTools.Lemoine
         /// </summary>
         event EventHandler? ValidationChanged;
     }
+
+    /// <summary>
+    /// Optional interface for tools that need to drive accordion navigation programmatically.
+    /// StepFlowWindow subscribes when the tool implements this interface.
+    /// </summary>
+    public interface ILemoineNavigable
+    {
+        /// <summary>Raised with the target step index to trigger navigation from within step content.</summary>
+        event EventHandler<int> NavigateRequested;
+    }
 }
