@@ -9,6 +9,8 @@ using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -197,7 +199,7 @@ namespace LemoineTools.Tools.AutoFilters
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
             // Grid inside ScrollViewer (HorizontalScrollBarVisibility=Disabled) → width constrained ✓
-            var g = new Grid();
+            var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // checkbox
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // "Trade:"
@@ -246,10 +248,10 @@ namespace LemoineTools.Tools.AutoFilters
             tradeBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineUiFont");
             tradeBox.TextChanged += (s, e) => { link.TradeName = tradeBox.Text; RaiseValidation(); };
 
-            Grid.SetColumn(cb,       0);
-            Grid.SetColumn(lbl,      1);
-            Grid.SetColumn(tradeLbl, 2);
-            Grid.SetColumn(tradeBox, 3);
+            WpfGrid.SetColumn(cb,       0);
+            WpfGrid.SetColumn(lbl,      1);
+            WpfGrid.SetColumn(tradeLbl, 2);
+            WpfGrid.SetColumn(tradeBox, 3);
             g.Children.Add(cb);
             g.Children.Add(lbl);
             g.Children.Add(tradeLbl);
@@ -330,7 +332,7 @@ namespace LemoineTools.Tools.AutoFilters
                 _s3Panel.Children.Add(BuildS3ConfigRow(row));
 
             // "Discover Rules →" button
-            var btnRow = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+            var btnRow = new WpfGrid { Margin = new Thickness(0, 12, 0, 0) };
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -339,7 +341,7 @@ namespace LemoineTools.Tools.AutoFilters
                 LemoineControlStyles.LemoineButtonVariant.Primary);
             _s3ScanBtn.HorizontalAlignment = HorizontalAlignment.Right;
             _s3ScanBtn.Click += OnScanButtonClick;
-            Grid.SetColumn(_s3ScanBtn, 1);
+            WpfGrid.SetColumn(_s3ScanBtn, 1);
             btnRow.Children.Add(_s3ScanBtn);
             _s3Panel.Children.Add(btnRow);
 
@@ -348,7 +350,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 Text       = "",
                 Margin     = new Thickness(0, 6, 0, 0),
-                Visibility = Visibility.Collapsed,
+                Visibility = WpfVisibility.Collapsed,
             };
             _s3ScanStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
@@ -366,7 +368,7 @@ namespace LemoineTools.Tools.AutoFilters
             };
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var g = new Grid();
+            var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });                   // mode
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });                   // parameter
@@ -378,7 +380,7 @@ namespace LemoineTools.Tools.AutoFilters
                 tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                Grid.SetColumn(tb, col);
+                WpfGrid.SetColumn(tb, col);
                 g.Children.Add(tb);
             }
             H("Category", 0);
@@ -400,7 +402,7 @@ namespace LemoineTools.Tools.AutoFilters
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
-            var g = new Grid();
+            var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });                   // mode
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });                   // param
@@ -415,7 +417,7 @@ namespace LemoineTools.Tools.AutoFilters
             catLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             catLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             catLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            Grid.SetColumn(catLbl, 0);
+            WpfGrid.SetColumn(catLbl, 0);
             g.Children.Add(catLbl);
 
             var modeCombo = new ComboBox
@@ -429,7 +431,7 @@ namespace LemoineTools.Tools.AutoFilters
             modeCombo.SetResourceReference(ComboBox.FontSizeProperty,    "LemoineFS_SM");
             modeCombo.SetResourceReference(ComboBox.FontFamilyProperty,  "LemoineUiFont");
             modeCombo.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorder");
-            Grid.SetColumn(modeCombo, 1);
+            WpfGrid.SetColumn(modeCombo, 1);
             g.Children.Add(modeCombo);
 
             var paramCombo = new ComboBox
@@ -443,7 +445,7 @@ namespace LemoineTools.Tools.AutoFilters
             paramCombo.SetResourceReference(ComboBox.FontSizeProperty,    "LemoineFS_SM");
             paramCombo.SetResourceReference(ComboBox.FontFamilyProperty,  "LemoineUiFont");
             paramCombo.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorder");
-            Grid.SetColumn(paramCombo, 2);
+            WpfGrid.SetColumn(paramCombo, 2);
             g.Children.Add(paramCombo);
 
             // ⓘ indicator — shown when param is not in the known-safe set (Gap 2 mitigation)
@@ -461,7 +463,7 @@ namespace LemoineTools.Tools.AutoFilters
             infoTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             infoTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             infoTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            Grid.SetColumn(infoTb, 3);
+            WpfGrid.SetColumn(infoTb, 3);
             g.Children.Add(infoTb);
 
             // Wire events
@@ -470,7 +472,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var sel = modeCombo.SelectedItem as string ?? "Per Value";
                 row.Mode = (sel == "Whole Category") ? "WholeCategory" : "PerValue";
                 paramCombo.Visibility = (row.Mode == "WholeCategory")
-                    ? Visibility.Collapsed : Visibility.Visible;
+                    ? WpfVisibility.Collapsed : WpfVisibility.Visible;
                 _scanComplete = false;
                 RaiseValidation();
             };
@@ -507,7 +509,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (_s3ScanStatus != null)
             {
                 _s3ScanStatus.Text       = "● Scanning…";
-                _s3ScanStatus.Visibility = Visibility.Visible;
+                _s3ScanStatus.Visibility = WpfVisibility.Visible;
                 _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             }
 
@@ -562,7 +564,7 @@ namespace LemoineTools.Tools.AutoFilters
                         _s3ScanStatus.Text = "● No rules found. Check link selection and categories.";
                         _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
                     }
-                    _s3ScanStatus.Visibility = Visibility.Visible;
+                    _s3ScanStatus.Visibility = WpfVisibility.Visible;
                 }
 
                 PopulateS4(results);
@@ -645,7 +647,7 @@ namespace LemoineTools.Tools.AutoFilters
             };
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var g = new Grid();
+            var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });                    // check
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });                    // swatch
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // name
@@ -658,7 +660,7 @@ namespace LemoineTools.Tools.AutoFilters
                 tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                Grid.SetColumn(tb, col);
+                WpfGrid.SetColumn(tb, col);
                 g.Children.Add(tb);
             }
             H("",        0);
@@ -683,7 +685,7 @@ namespace LemoineTools.Tools.AutoFilters
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
             // Grid inside ScrollViewer (HorizontalScrollBarVisibility=Disabled) → width constrained ✓
-            var g = new Grid();
+            var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -698,7 +700,7 @@ namespace LemoineTools.Tools.AutoFilters
             };
             cb.Checked   += (s, e) => { rule.IsIncluded = true;  UpdateS5Summary(); RaiseValidation(); };
             cb.Unchecked += (s, e) => { rule.IsIncluded = false; UpdateS5Summary(); RaiseValidation(); };
-            Grid.SetColumn(cb, 0);
+            WpfGrid.SetColumn(cb, 0);
             g.Children.Add(cb);
 
             // Color swatch — uses shared factory (handles open-picker, update hex, update UI)
@@ -707,7 +709,7 @@ namespace LemoineTools.Tools.AutoFilters
                 setHex: hex => { rule.HexColor = hex; },
                 showHexLabel: false);
             swatchPanel.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(swatchPanel, 1);
+            WpfGrid.SetColumn(swatchPanel, 1);
             g.Children.Add(swatchPanel);
 
             // Rule name — editable inline
@@ -719,7 +721,7 @@ namespace LemoineTools.Tools.AutoFilters
                 VerticalAlignment = VerticalAlignment.Center,
             };
             nameEdit.TextCommitted += (s, name) => rule.RuleName = name;
-            Grid.SetColumn(nameEdit, 2);
+            WpfGrid.SetColumn(nameEdit, 2);
             g.Children.Add(nameEdit);
 
             // Trade name
@@ -732,7 +734,7 @@ namespace LemoineTools.Tools.AutoFilters
             tradeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             tradeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             tradeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            Grid.SetColumn(tradeTb, 3);
+            WpfGrid.SetColumn(tradeTb, 3);
             g.Children.Add(tradeTb);
 
             // Element count
@@ -745,7 +747,7 @@ namespace LemoineTools.Tools.AutoFilters
             countTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             countTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             countTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            Grid.SetColumn(countTb, 4);
+            WpfGrid.SetColumn(countTb, 4);
             g.Children.Add(countTb);
 
             card.Child = g;
