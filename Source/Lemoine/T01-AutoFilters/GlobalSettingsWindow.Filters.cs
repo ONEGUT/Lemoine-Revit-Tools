@@ -18,13 +18,10 @@ using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Lemoine
 {
-    public partial class GlobalSettingsWindow
+    public partial class FiltersSettingsWindow
     {
         // ═════════════════════════════════════════════════════════════════════
-        public void ActivateFiltersTab() => SwitchTab("filters");
-
-        // ═════════════════════════════════════════════════════════════════════
-        //  FILTERS TAB — Split-pane  (V3: Trade → Rule, no Category layer)
+        //  FILTERS — Split-pane  (V3: Trade → Rule, no Category layer)
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildFiltersContent()
         {

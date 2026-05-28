@@ -1,19 +1,22 @@
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
     /// <summary>
     /// Entry point for the in-tool gear-icon overlay for Auto Filters.
-    /// The full editor lives in GlobalSettingsWindow as an embedded Filters tab.
-    /// This class opens that window and jumps to the correct tab.
+    /// Opens the standalone FiltersSettingsWindow on a dedicated STA thread.
     /// </summary>
     public static class AutoFiltersSettingsWindow
     {
+        private static FiltersSettingsWindow? _window;
+
         /// <summary>
         /// Returns a UIElement for StepFlowWindow's gear-icon overlay —
-        /// a description + button that opens GlobalSettingsWindow at the Filters tab.
+        /// a description + button that opens the FiltersSettingsWindow.
         /// </summary>
         public static UIElement BuildPanel()
         {
@@ -22,7 +25,7 @@ namespace LemoineTools.Tools.AutoFilters
             var desc = new TextBlock
             {
                 Text = "Edit trades, categories, color rules and graphic overrides " +
-                       "in the Filters / Color tab of the Settings window.",
+                       "in the Filters / Color Settings window.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 0, 0, 10),
@@ -32,25 +35,52 @@ namespace LemoineTools.Tools.AutoFilters
             desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             panel.Children.Add(desc);
 
-            var btn = LemoineControlStyles.BuildButton("Open Filter Settings\u2026");
+            var btn = LemoineControlStyles.BuildButton("Open Filter Settings…");
             btn.HorizontalAlignment = HorizontalAlignment.Left;
-            btn.Click += (s, e) => OpenGlobalSettings(btn);
+            btn.Click += (s, e) => OpenFiltersSettings();
             panel.Children.Add(btn);
             return panel;
         }
 
-        private static void OpenGlobalSettings(FrameworkElement anchor)
+        private static void OpenFiltersSettings()
         {
-            var owner = Window.GetWindow(anchor);
-            if (App.GlobalSettings == null || !App.GlobalSettings.IsVisible)
+            // Bring existing window to front if open
+            if (_window != null)
             {
-                App.GlobalSettings = new Lemoine.GlobalSettingsWindow();
-                if (owner != null) App.GlobalSettings.Owner = owner;
-                App.GlobalSettings.Closed += (s, e) => App.GlobalSettings = null;
-                App.GlobalSettings.Show();
+                try
+                {
+                    _window.Dispatcher.Invoke(() =>
+                    {
+                        if (_window.IsVisible) _window.Activate();
+                        else _window = null;
+                    });
+                    if (_window != null) return;
+                }
+                catch { _window = null; }
             }
-            App.GlobalSettings.ActivateFiltersTab();
-            App.GlobalSettings.Activate();
+
+            // Open on a dedicated STA thread (callers are on their own STA dispatcher)
+            var ready = new ManualResetEventSlim(false);
+            FiltersSettingsWindow? win = null;
+
+            var thread = new Thread(() =>
+            {
+                win = new FiltersSettingsWindow();
+                win.Closed += (s, e) =>
+                {
+                    _window = null;
+                    Dispatcher.CurrentDispatcher.InvokeShutdown();
+                };
+                win.Show();
+                ready.Set();
+                Dispatcher.Run();
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+
+            ready.Wait();
+            _window = win;
         }
     }
 }
