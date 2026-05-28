@@ -30,11 +30,12 @@ namespace LemoineTools.Tools.ModifyElements
         private bool                        _useActiveView      = false;
         private Action<string>?             _rebuildContent;
 
-        private Dictionary<string, Level>                    _levelsByName;
-        private readonly IReadOnlyDictionary<string, int>    _elementCounts;
-        private readonly ElementId?                          _activeViewId;
-        private readonly IReadOnlyList<ElementId>            _preSelectedIds;
-        private readonly IReadOnlyList<string>               _preSelectedCats;
+        private Dictionary<string, Level>                             _levelsByName;
+        private readonly Dictionary<string, List<string>>             _categoryGroups;
+        private readonly int                                          _totalElements;
+        private readonly ElementId?                                   _activeViewId;
+        private readonly IReadOnlyList<ElementId>                     _preSelectedIds;
+        private readonly IReadOnlyList<string>                        _preSelectedCats;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly SplitByLevelEventHandler _handler;
@@ -44,17 +45,19 @@ namespace LemoineTools.Tools.ModifyElements
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public SplitByLevelViewModel(
-            SplitByLevelEventHandler         handler,
-            ExternalEvent                    externalEvent,
-            IEnumerable<Level>               allLevels,
-            IReadOnlyDictionary<string, int> elementCounts,
-            ElementId?                       activeViewId,
-            IReadOnlyList<ElementId>         preSelectedIds,
-            IReadOnlyList<string>            preSelectedCats)
+            SplitByLevelEventHandler               handler,
+            ExternalEvent                          externalEvent,
+            IEnumerable<Level>                     allLevels,
+            Dictionary<string, List<string>>       categoryGroups,
+            int                                    totalElements,
+            ElementId?                             activeViewId,
+            IReadOnlyList<ElementId>               preSelectedIds,
+            IReadOnlyList<string>                  preSelectedCats)
         {
             _handler         = handler;
             _event           = externalEvent;
-            _elementCounts   = elementCounts;
+            _categoryGroups  = categoryGroups;
+            _totalElements   = totalElements;
             _activeViewId    = activeViewId;
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
@@ -114,11 +117,10 @@ namespace LemoineTools.Tools.ModifyElements
             var outer = new StackPanel();
 
             // Count summary strip
-            int totalCats  = _elementCounts.Count;
-            int totalElems = _elementCounts.Values.Sum();
+            int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = $"{totalCats} categories · {totalElems} elements in document",
+                Text         = $"{totalCats} categories · {_totalElements} elements in document",
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -127,11 +129,9 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Category picker — all model categories with elements
-            var catNames = _elementCounts.Keys.OrderBy(k => k).ToList();
-            var groups   = new Dictionary<string, List<string>> { { "Categories", catNames } };
-            var tabs     = new LemoineMultiSelectTabs();
-            tabs.SetGroups(groups);
+            // Category picker — grouped by discipline
+            var tabs = new LemoineMultiSelectTabs();
+            tabs.SetGroups(_categoryGroups);
             tabs.SelectionChanged += selected =>
             {
                 _selectedCats = new List<string>(selected);

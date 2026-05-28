@@ -39,18 +39,22 @@ namespace LemoineTools.Commands
             var doc          = uidoc.Document;
             var activeViewId = uidoc.ActiveView?.Id;
 
-            // Dynamic category counts: all model categories present in the document.
-            var counts = new FilteredElementCollector(doc)
+            // All categorised elements → discipline-grouped category picker.
+            var allElements = new FilteredElementCollector(doc)
                 .WhereElementIsNotElementType()
-                .Where(e => e.Category?.CategoryType == CategoryType.Model && e.Category.Name != null)
-                .GroupBy(e => e.Category!.Name)
-                .OrderBy(g => g.Key)
-                .ToDictionary(g => g.Key, g => g.Count());
+                .Where(e => e.Category?.Name != null &&
+                           (e.Category.CategoryType == CategoryType.Model ||
+                            e.Category.CategoryType == CategoryType.Annotation))
+                .ToList();
+            var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
+            int totalElements  = allElements.Count;
 
-            // Pre-selection: accept any selected model element.
+            // Pre-selection: any selected element with a recognisable category.
             var rawSelection = uidoc.Selection.GetElementIds()
                 .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.CategoryType == CategoryType.Model && e.Category.Name != null)
+                .Where(e => e?.Category?.Name != null &&
+                           (e.Category.CategoryType == CategoryType.Model ||
+                            e.Category.CategoryType == CategoryType.Annotation))
                 .ToList();
             var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
             var preSelectedCats = rawSelection
@@ -65,7 +69,7 @@ namespace LemoineTools.Commands
 
             var vm = new SplitByLevelViewModel(
                 App.SplitByLevelHandler!, App.SplitByLevelEvent!,
-                allLevels, counts, activeViewId,
+                allLevels, categoryGroups, totalElements, activeViewId,
                 preSelectedIds, preSelectedCats);
 
             var ready = new ManualResetEventSlim(false);
