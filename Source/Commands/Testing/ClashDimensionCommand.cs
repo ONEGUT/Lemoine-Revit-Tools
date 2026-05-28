@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -36,7 +37,23 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var doc        = commandData.Application.ActiveUIDocument.Document;
+            var activeView = commandData.Application.ActiveUIDocument.ActiveView;
+
+            // Level elevation of the active view (for filtering linked floors by level)
+            double? activeElev = null;
+            if (activeView is ViewPlan vp && vp.GenLevel != null)
+                activeElev = vp.GenLevel.Elevation;
+
+            // Host elements visible in the active view
+            var activeViewHostGridIds  = new HashSet<long>();
+            var activeViewHostFloorIds = new HashSet<long>();
+            foreach (var g in new FilteredElementCollector(doc, activeView.Id)
+                .OfCategory(BuiltInCategory.OST_Grids).OfClass(typeof(Grid)).Cast<Grid>())
+                activeViewHostGridIds.Add(g.Id.Value);
+            foreach (var f in new FilteredElementCollector(doc, activeView.Id)
+                .OfCategory(BuiltInCategory.OST_Floors).OfClass(typeof(Floor)).Cast<Floor>())
+                activeViewHostFloorIds.Add(f.Id.Value);
 
             // Dimension types
             var dimStyleNames = new FilteredElementCollector(doc)
@@ -46,7 +63,7 @@ namespace LemoineTools.Commands
                 .OrderBy(n => n)
                 .ToList();
 
-            // Plan views only (floor plan + ceiling plan)
+            // Plan views only
             var allViews = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
                 .Cast<View>()
@@ -56,83 +73,82 @@ namespace LemoineTools.Commands
                 .OrderBy(v => v.Name)
                 .ToList();
 
-            // Grids — host doc first, then each loaded link
-            var gridNames   = new List<string>();
-            var gridIds     = new List<long>();
-            var gridLinkIds = new List<long>();   // 0 = host doc, >0 = RevitLinkInstance.Id.Value
-            var usedGridNames = new HashSet<string>();
-
-            foreach (var g in new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Grids)
-                .OfClass(typeof(Grid))
-                .Cast<Grid>()
-                .OrderBy(g => g.Name))
-            {
-                string name = UniqueName(g.Name, usedGridNames);
-                gridNames.Add(name);
-                gridIds.Add(g.Id.Value);
-                gridLinkIds.Add(0L);
-            }
-
-            foreach (var li in new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>())
-            {
-                var ld = li.GetLinkDocument();
-                if (ld == null) continue;
-                string prefix = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "] ";
-                foreach (var g in new FilteredElementCollector(ld)
-                    .OfCategory(BuiltInCategory.OST_Grids)
-                    .OfClass(typeof(Grid))
-                    .Cast<Grid>()
-                    .OrderBy(g => g.Name))
-                {
-                    string name = UniqueName(prefix + g.Name, usedGridNames);
-                    gridNames.Add(name);
-                    gridIds.Add(g.Id.Value);
-                    gridLinkIds.Add(li.Id.Value);
-                }
-            }
-
-            // Floors/slabs — host doc first, then each loaded link
-            var floorNames   = new List<string>();
-            var floorIds     = new List<long>();
-            var floorLinkIds = new List<long>();
+            var activeViewData = new GridFloorData();
+            var allData        = new GridFloorData();
+            var usedGridNames  = new HashSet<string>();
             var usedFloorNames = new HashSet<string>();
 
-            foreach (var f in new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Floors)
-                .OfClass(typeof(Floor))
-                .Cast<Floor>()
-                .OrderBy(f => f.Name))
+            // Host grids
+            foreach (var g in new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Grids).OfClass(typeof(Grid))
+                .Cast<Grid>().OrderBy(g => g.Name))
             {
-                var lvl = doc.GetElement(f.LevelId) as Level;
-                string display = lvl != null ? $"{f.Name} — {lvl.Name}" : f.Name;
-                string name = UniqueName(display, usedFloorNames);
-                floorNames.Add(name);
-                floorIds.Add(f.Id.Value);
-                floorLinkIds.Add(0L);
+                string name = UniqueName(g.Name, usedGridNames);
+                allData.AddGrid(name, g.Id.Value, 0L);
+                if (activeViewHostGridIds.Contains(g.Id.Value))
+                    activeViewData.AddGrid(name, g.Id.Value, 0L);
             }
 
+            // Host floors — "(Host)" prefix so origin model is always visible
+            foreach (var f in new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Floors).OfClass(typeof(Floor))
+                .Cast<Floor>().OrderBy(f => f.Name))
+            {
+                var lvl = doc.GetElement(f.LevelId) as Level;
+                string display = lvl != null
+                    ? $"(Host) {f.Name} — {lvl.Name}"
+                    : $"(Host) {f.Name}";
+                string name = UniqueName(display, usedFloorNames);
+                allData.AddFloor(name, f.Id.Value, 0L);
+                if (activeViewHostFloorIds.Contains(f.Id.Value))
+                    activeViewData.AddFloor(name, f.Id.Value, 0L);
+            }
+
+            // Linked elements
             foreach (var li in new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>())
+                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
                 var ld = li.GetLinkDocument();
                 if (ld == null) continue;
-                string prefix = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "] ";
+
+                bool linkVisibleInView = !li.IsHidden(activeView);
+                var linkTx             = li.GetTotalTransform();
+                string prefix          = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "] ";
+
+                // Linked grids — visible if link is not hidden in the active view
+                foreach (var g in new FilteredElementCollector(ld)
+                    .OfCategory(BuiltInCategory.OST_Grids).OfClass(typeof(Grid))
+                    .Cast<Grid>().OrderBy(g => g.Name))
+                {
+                    string name = UniqueName(prefix + g.Name, usedGridNames);
+                    allData.AddGrid(name, g.Id.Value, li.Id.Value);
+                    if (linkVisibleInView)
+                        activeViewData.AddGrid(name, g.Id.Value, li.Id.Value);
+                }
+
+                // Linked floors — visible if link not hidden AND level elevation matches active view (±3 ft)
                 foreach (var f in new FilteredElementCollector(ld)
-                    .OfCategory(BuiltInCategory.OST_Floors)
-                    .OfClass(typeof(Floor))
-                    .Cast<Floor>()
-                    .OrderBy(f => f.Name))
+                    .OfCategory(BuiltInCategory.OST_Floors).OfClass(typeof(Floor))
+                    .Cast<Floor>().OrderBy(f => f.Name))
                 {
                     var lvl = ld.GetElement(f.LevelId) as Level;
-                    string display = lvl != null ? $"{f.Name} — {lvl.Name}" : f.Name;
-                    string name = UniqueName(prefix + display, usedFloorNames);
-                    floorNames.Add(name);
-                    floorIds.Add(f.Id.Value);
-                    floorLinkIds.Add(li.Id.Value);
+                    string display = lvl != null
+                        ? $"{prefix}{f.Name} — {lvl.Name}"
+                        : $"{prefix}{f.Name}";
+                    string name = UniqueName(display, usedFloorNames);
+                    allData.AddFloor(name, f.Id.Value, li.Id.Value);
+
+                    if (linkVisibleInView)
+                    {
+                        bool elevMatch = activeElev == null;   // no level info → include all
+                        if (!elevMatch && lvl != null)
+                        {
+                            double hostElev = linkTx.OfPoint(new XYZ(0, 0, lvl.Elevation)).Z;
+                            elevMatch = Math.Abs(hostElev - activeElev!.Value) < 3.0;
+                        }
+                        if (elevMatch)
+                            activeViewData.AddFloor(name, f.Id.Value, li.Id.Value);
+                    }
                 }
             }
 
@@ -149,8 +165,7 @@ namespace LemoineTools.Commands
             var vm = new ClashDimensionViewModel(
                 App.ClashDimensionHandler!, App.ClashDimensionEvent!,
                 dimStyleNames, allViews,
-                gridNames, gridIds, gridLinkIds,
-                floorNames, floorIds, floorLinkIds,
+                activeViewData, allData,
                 lineStyleNames);
 
             var ready = new ManualResetEventSlim(false);

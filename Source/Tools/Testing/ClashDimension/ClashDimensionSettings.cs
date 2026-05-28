@@ -21,6 +21,7 @@ namespace LemoineTools.Tools.Testing
         public string CrossLineTypeName { get; set; } = "";
         public bool   ClearPrevious     { get; set; } = true;
         public int    MaxClashes        { get; set; } = 500;
+        public bool   ShowAllDocuments  { get; set; } = false;
 
         [XmlArray("Group1RuleKeys")] [XmlArrayItem("Key")]
         public List<string> Group1RuleKeys { get; set; } = new List<string>();
