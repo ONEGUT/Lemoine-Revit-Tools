@@ -80,9 +80,125 @@ If no silent failures are found, state "No silent failures detected" explicitly 
 
 ---
 
+## Communication Style
+
+- Short replies from the user ("OK", "do it", "looks great", "that fixed it", "add it") are final answers. Acknowledge briefly and move on — do not ask follow-up questions.
+- Keep post-task summaries to 1–2 sentences. Report results, not process.
+- Do not narrate every step. State what changed and what's next.
+
+---
+
+## Decision Protocol
+
+**UX / design decisions** (layout, interaction model, naming, workflow): Before writing any code, present 2–4 concrete options with a one-sentence tradeoff each and a clear recommendation. Wait for the user to pick one.
+
+**Bug fixes and unambiguous feature requests**: Implement directly — no options, no pre-questions.
+
+**Ambiguous requests**: Ask at most one clarifying question, then proceed once answered.
+
+---
+
+## Multi-Item Requests
+
+When the user lists multiple changes in a single message, address all of them in one implementation pass. Do not stop mid-list to ask questions or seek approval for individual items.
+
+---
+
+## Build Errors
+
+When the user pastes compiler errors directly into chat, fix them immediately on the current branch. Do not create a new plan file or branch for a build-error fix.
+
+---
+
+## Merge Signal
+
+"Merge with main" or "merge this" means:
+
+1. **Run `/pre-merge-review` first** — scan the branch commits and PR comments
+   for new errors, preferences, or Revit constraints not yet in CLAUDE.md.
+   Propose any additions, wait for a quick confirmation, apply them.
+2. **Then create the PR and merge** via GitHub MCP. No further confirmation
+   needed for the merge itself — the user already gave it when they said
+   "merge with main".
+
+---
+
+## UX Philosophy
+
+Before implementing any workflow, check whether it is practical:
+
+- Never require a user to open a picker inside a picker for the same data type.
+- UI state must always be unambiguous — if selecting vs. editing look identical, flag it before building.
+- Prefer explicit single-action patterns (a dedicated save button, a confirm step) over implicit double-purpose interactions (one click that both selects and edits).
+- If a workflow feels impractical, say so and propose an alternative before building it.
+
+---
+
+## Research Discipline
+
+Always read the relevant source files before recommending or writing code. Never generate implementation from memory when the actual file is available.
+
+---
+
 ## WPF UI Tasks
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
+
+---
+
+## Known Compile Error Patterns
+
+These mistakes have appeared in multiple sessions. Check for them before committing.
+
+### Ambiguous type aliases — required in any file that uses both WPF and Revit API types
+
+```csharp
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfTextBox    = System.Windows.Controls.TextBox;
+using WpfVisibility = System.Windows.Visibility;
+using WpfPoint      = System.Windows.Point;
+using RevitColor    = Autodesk.Revit.DB.Color;
+```
+
+Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`, `Point`, or `TextBox` in a ViewModel file that also imports `Autodesk.Revit.DB`.
+
+### Missing `using` directives that keep appearing
+
+| Symbol | Required namespace |
+|--------|-------------------|
+| `Brushes` | `System.Windows.Media` |
+| `Math` | `System` |
+| `OfType<>` | `System.Linq` |
+
+### Access modifiers across partial files
+
+Methods shared between partial class files must be `internal`, not `private`. A `private` method in one partial file is invisible to another — CS0122.
+
+---
+
+## Revit Crash Constraints
+
+These patterns cause Revit to crash or hang. They have been discovered by breaking Revit in real sessions. Do not use them.
+
+| ❌ Crashes Revit | ✅ Safe alternative |
+|---|---|
+| `Popup` with `StaysOpen=false` | `StaysOpen=true` + manual dismiss via `PreviewMouseDown` or a close button |
+| `SizeToContent="WidthAndHeight"` + `WindowStyle="None"` | `Width=N` (fixed) + `SizeToContent="Height"` |
+| `Autodesk.Windows.ComponentManager.ApplicationWindow` for window owner | Not referenced in this project — omit or use `WindowInteropHelper` with a Revit HWND |
+
+### Why `Popup StaysOpen=false` crashes Revit
+
+`StaysOpen=false` registers a `ComponentDispatcher.ThreadFilterMessage` hook to detect outside clicks. This fires on every Win32 message on Revit's main thread and corrupts the message loop.
+
+### Revit API gotchas (Revit 2024)
+
+| Wrong | Correct |
+|---|---|
+| `ZoomType.FitPage` | `ZoomType.FitToPage` |
+| `RasterQualityType.Draft` | `RasterQualityType.Low` (Draft removed in 2024) |
+| `PDFExportOptions.Zoom` | `PDFExportOptions.ZoomPercentage` |
+| `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
+| `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
 
 ---
 
