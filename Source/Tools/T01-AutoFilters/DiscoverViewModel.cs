@@ -15,15 +15,14 @@ using WpfVisibility = System.Windows.Visibility;
 namespace LemoineTools.Tools.AutoFilters
 {
     // =========================================================================
-    // DiscoverViewModel — ILemoineTool, 5-step accordion
+    // DiscoverViewModel — ILemoineTool, 4-step accordion
     //
     // Step flow:
     //   S1  Select which loaded Revit links to scan (one trade per link)
-    //   S2  Choose Revit categories via LemoineMultiSelectTabs
-    //   S3  Configure scan: mode (Whole Category | Per Value) + parameter per row
+    //   S2  Configure links: per-link category picker + mode/parameter grid
     //         → "Discover Rules" button fires DiscoverEventHandler (MainScan)
-    //   S4  Review discovered rules: include/exclude, rename, pick colours
-    //   S5  Summary card + Confirm triggers DiscoverEventHandler (Commit)
+    //   S3  Review discovered rules: include/exclude, rename, pick colours
+    //   S4  Summary card + Confirm triggers DiscoverEventHandler (Commit)
     // =========================================================================
 
     public class DiscoverViewModel : ILemoineTool
@@ -37,11 +36,15 @@ namespace LemoineTools.Tools.AutoFilters
             public string    TradeName  { get; set; }
             public bool      IsSelected { get; set; }
 
+            // Per-link S2 config
+            public bool                IsExpanded         { get; set; } = true;
+            public List<string>        SelectedCategories { get; }      = new List<string>();
+            public List<ScanConfigRow> ConfigRows         { get; }      = new List<ScanConfigRow>();
+
             public LinkEntry(ElementId id, string label)
             {
                 Id        = id;
                 Label     = label;
-                // Default trade name: link title (truncated to 20 chars if long)
                 TradeName = label.Length > 20 ? label.Substring(0, 20).TrimEnd() : label;
             }
         }
@@ -54,7 +57,6 @@ namespace LemoineTools.Tools.AutoFilters
             public string   Parameter       { get; set; }
             public string[] AvailableParams { get; }
 
-            /// <summary>True when Parameter is in the known-safe set for Revit API resolution.</summary>
             public bool IsKnownSafe => DiscoverEventHandler.KnownSafeParams.Contains(Parameter);
 
             public ScanConfigRow(string label, string ostCategory)
@@ -62,7 +64,6 @@ namespace LemoineTools.Tools.AutoFilters
                 CategoryLabel   = label;
                 OstCategory     = ostCategory;
                 AvailableParams = AutoFiltersSettings.GetParametersFor(ostCategory);
-                // Pick a safe default where possible
                 Parameter = AvailableParams.FirstOrDefault(
                     p => DiscoverEventHandler.KnownSafeParams.Contains(p))
                     ?? (AvailableParams.Length > 0 ? AvailableParams[0] : "Type Name");
@@ -89,11 +90,10 @@ namespace LemoineTools.Tools.AutoFilters
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Links",      required: true),
-            new StepDefinition("S2", "Select Categories", required: true),
-            new StepDefinition("S3", "Configure Scan",    required: true),
-            new StepDefinition("S4", "Review Rules",      required: true),
-            new StepDefinition("S5", "Confirm & Commit",  required: false),
+            new StepDefinition("S1", "Select Links",     required: true),
+            new StepDefinition("S2", "Configure Links",  required: true),
+            new StepDefinition("S3", "Review Rules",     required: true),
+            new StepDefinition("S4", "Confirm & Commit", required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -104,21 +104,29 @@ namespace LemoineTools.Tools.AutoFilters
         private readonly DiscoverEventHandler               _handler;
         private readonly Autodesk.Revit.UI.ExternalEvent    _event;
         private readonly List<LinkEntry>                    _links;
+        private readonly List<DiscoveredRuleRow>            _discoveredRules = new List<DiscoveredRuleRow>();
 
-        private IReadOnlyCollection<string> _selectedCategories = Array.Empty<string>();
-        private readonly List<ScanConfigRow>     _scanConfigRows  = new List<ScanConfigRow>();
-        private readonly List<DiscoveredRuleRow> _discoveredRules = new List<DiscoveredRuleRow>();
+        private bool        _scanComplete;
+        private bool        _isScanning;
+        private Dispatcher? _wpfDispatcher;
 
-        private bool       _scanComplete;
-        private bool       _isScanning;
-        private Dispatcher? _wpfDispatcher;  // captured on WPF STA thread
+        // Mutable UI references
+        private StackPanel?           _s2CardsStack;
+        private Button?               _s2ScanBtn;
+        private TextBlock?            _s2ScanStatus;
+        private StackPanel?           _s3Panel;
+        private LemoineReviewSummary? _s4Review;
 
-        // Mutable UI panels — built once by GetStepContent, updated dynamically
-        private StackPanel?          _s3Panel;
-        private TextBlock?           _s3ScanStatus;
-        private Button?              _s3ScanBtn;
-        private StackPanel?          _s4Panel;
-        private LemoineReviewSummary? _s5Review;
+        // Category groups — defined once and shared across all link cards
+        private static readonly Dictionary<string, List<string>> CategoryGroups =
+            new Dictionary<string, List<string>>
+            {
+                ["MEP / HVAC"]    = new List<string> { "Ducts","Duct Fittings","Duct Accessories","Duct Insulation","Duct Linings","Air Terminals","Flex Ducts","Mechanical Equipment","Fabrication Ductwork" },
+                ["Piping"]        = new List<string> { "Pipes","Pipe Fittings","Pipe Accessories","Pipe Insulation","Pipe Linings","Flex Pipes","Plumbing Fixtures","Sprinklers","Fabrication Pipework","Fabrication Hangers","Fabrication Containment" },
+                ["Electrical"]    = new List<string> { "Cable Trays","Cable Tray Fittings","Conduits","Conduit Fittings","Electrical Equipment","Electrical Fixtures","Lighting Fixtures","Lighting Devices","Communication Devices","Fire Alarm Devices","Security Devices","Data Devices","Telephone Devices","Nurse Call Devices" },
+                ["Structural"]    = new List<string> { "Structural Framing","Structural Columns","Structural Foundations","Structural Trusses","Rebar" },
+                ["Architectural"] = new List<string> { "Walls","Floors","Roofs","Ceilings","Doors","Windows","Generic Models","Rooms","Spaces" },
+            };
 
         // ── Constructor ───────────────────────────────────────────────────────
 
@@ -127,9 +135,9 @@ namespace LemoineTools.Tools.AutoFilters
             Autodesk.Revit.UI.ExternalEvent  externalEvent,
             List<LinkEntry>                  links)
         {
-            _handler = handler  ?? throw new ArgumentNullException(nameof(handler));
+            _handler = handler       ?? throw new ArgumentNullException(nameof(handler));
             _event   = externalEvent ?? throw new ArgumentNullException(nameof(externalEvent));
-            _links   = links    ?? new List<LinkEntry>();
+            _links   = links         ?? new List<LinkEntry>();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -138,9 +146,6 @@ namespace LemoineTools.Tools.AutoFilters
 
         public FrameworkElement? GetStepContent(string stepId)
         {
-            // Capture the WPF STA dispatcher the first time any step is built.
-            // GetStepContent is called from StepFlowWindow.BuildStepAccordion()
-            // which runs on the WPF STA thread.
             if (_wpfDispatcher == null)
                 _wpfDispatcher = Dispatcher.CurrentDispatcher;
 
@@ -150,7 +155,6 @@ namespace LemoineTools.Tools.AutoFilters
                 case "S2": return BuildS2();
                 case "S3": return BuildS3();
                 case "S4": return BuildS4();
-                case "S5": return BuildS5();
                 default:   return null;
             }
         }
@@ -162,14 +166,12 @@ namespace LemoineTools.Tools.AutoFilters
             var sv = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, // ⚠ constrain horizontal
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = 320,
             };
-
             var sp = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
-
-            var hdr = MakeNote("Select which loaded Revit links to scan. Each link produces one trade.");
-            sp.Children.Add(hdr);
+            sp.Children.Add(MakeNote(
+                "Select which loaded Revit links to scan. Each link produces one trade."));
 
             if (_links.Count == 0)
             {
@@ -198,12 +200,11 @@ namespace LemoineTools.Tools.AutoFilters
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
-            // Grid inside ScrollViewer (HorizontalScrollBarVisibility=Disabled) → width constrained ✓
             var g = new WpfGrid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // checkbox
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                    // "Trade:"
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(155) });                // trade name
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(155) });
 
             var cb = new CheckBox
             {
@@ -211,8 +212,18 @@ namespace LemoineTools.Tools.AutoFilters
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, 0, 8, 0),
             };
-            cb.Checked   += (s, e) => { link.IsSelected = true;  RaiseValidation(); };
-            cb.Unchecked += (s, e) => { link.IsSelected = false; RaiseValidation(); };
+            cb.Checked   += (s, e) =>
+            {
+                link.IsSelected = true;
+                RaiseValidation();
+                _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(RebuildS2Cards));
+            };
+            cb.Unchecked += (s, e) =>
+            {
+                link.IsSelected = false;
+                RaiseValidation();
+                _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(RebuildS2Cards));
+            };
 
             var lbl = new TextBlock
             {
@@ -261,104 +272,222 @@ namespace LemoineTools.Tools.AutoFilters
             return card;
         }
 
-        // ── S2 — Select Categories ────────────────────────────────────────────
+        // ── S2 — Configure Links ──────────────────────────────────────────────
 
         private FrameworkElement BuildS2()
         {
-            var sp = new StackPanel();
-            sp.Children.Add(MakeNote(
-                "Select the Revit categories you want to scan. " +
-                "Each category can be configured independently in Step 3."));
+            var root = new StackPanel();
+            root.Children.Add(MakeNote(
+                "For each link, pick the categories to scan and configure mode / parameter. " +
+                "Then click Discover Rules."));
 
-            var tabs = new LemoineMultiSelectTabs { Height = 320 };
-            tabs.SetGroups(new Dictionary<string, List<string>>
+            // Cards area — scrollable, rebuilt dynamically as S1 selection changes
+            var sv = new ScrollViewer
             {
-                ["MEP / HVAC"]    = new List<string> { "Ducts","Duct Fittings","Duct Accessories","Duct Insulation","Duct Linings","Air Terminals","Flex Ducts","Mechanical Equipment","Fabrication Ductwork" },
-                ["Piping"]        = new List<string> { "Pipes","Pipe Fittings","Pipe Accessories","Pipe Insulation","Pipe Linings","Flex Pipes","Plumbing Fixtures","Sprinklers","Fabrication Pipework","Fabrication Hangers","Fabrication Containment" },
-                ["Electrical"]    = new List<string> { "Cable Trays","Cable Tray Fittings","Conduits","Conduit Fittings","Electrical Equipment","Electrical Fixtures","Lighting Fixtures","Lighting Devices","Communication Devices","Fire Alarm Devices","Security Devices","Data Devices","Telephone Devices","Nurse Call Devices" },
-                ["Structural"]    = new List<string> { "Structural Framing","Structural Columns","Structural Foundations","Structural Trusses","Rebar" },
-                ["Architectural"] = new List<string> { "Walls","Floors","Roofs","Ceilings","Doors","Windows","Generic Models","Rooms","Spaces" },
-            });
-            tabs.SelectionChanged += cats =>
-            {
-                _selectedCategories = cats;
-                // Rebuild S3 rows whenever selection changes
-                _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
-                {
-                    RebuildS3Panel();
-                    _scanComplete = false;
-                    RaiseValidation();
-                }));
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = 420,
+                Margin    = new Thickness(0, 0, 0, 8),
             };
-            sp.Children.Add(tabs);
-            return sp;
-        }
+            _s2CardsStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
+            RebuildS2Cards();   // populate from current S1 selection
+            sv.Content = _s2CardsStack;
+            root.Children.Add(sv);
 
-        // ── S3 — Configure Scan ───────────────────────────────────────────────
-
-        private FrameworkElement BuildS3()
-        {
-            _s3Panel = new StackPanel();
-            _s3Panel.Children.Add(MakeNote(
-                "Select categories in Step 2, then configure the scan mode and parameter for each row here."));
-            return _s3Panel;
-        }
-
-        private void RebuildS3Panel()
-        {
-            if (_s3Panel == null) return;
-            _s3Panel.Children.Clear();
-            _scanComplete = false;
-
-            _scanConfigRows.Clear();
-            foreach (var catLabel in _selectedCategories)
-                if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
-                    _scanConfigRows.Add(new ScanConfigRow(catLabel, ost));
-
-            if (_scanConfigRows.Count == 0)
-            {
-                _s3Panel.Children.Add(MakeNote("No categories selected. Choose categories in Step 2."));
-                return;
-            }
-
-            _s3Panel.Children.Add(MakeNote(
-                "Configure each category: scan by individual parameter values, or treat the whole category as one rule."));
-
-            // Table header
-            _s3Panel.Children.Add(BuildS3Header());
-
-            // One config row per selected category
-            foreach (var row in _scanConfigRows)
-                _s3Panel.Children.Add(BuildS3ConfigRow(row));
-
-            // "Discover Rules →" button
-            var btnRow = new WpfGrid { Margin = new Thickness(0, 12, 0, 0) };
+            // Discover button row
+            var btnRow = new WpfGrid();
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            _s3ScanBtn = LemoineControlStyles.BuildButton(
+            _s2ScanBtn = LemoineControlStyles.BuildButton(
                 "Discover Rules →",
                 LemoineControlStyles.LemoineButtonVariant.Primary);
-            _s3ScanBtn.HorizontalAlignment = HorizontalAlignment.Right;
-            _s3ScanBtn.Click += OnScanButtonClick;
-            WpfGrid.SetColumn(_s3ScanBtn, 1);
-            btnRow.Children.Add(_s3ScanBtn);
-            _s3Panel.Children.Add(btnRow);
+            _s2ScanBtn.HorizontalAlignment = HorizontalAlignment.Right;
+            _s2ScanBtn.IsEnabled           = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
+            _s2ScanBtn.Click += OnScanButtonClick;
+            WpfGrid.SetColumn(_s2ScanBtn, 1);
+            btnRow.Children.Add(_s2ScanBtn);
+            root.Children.Add(btnRow);
 
             // Status line (hidden until first scan)
-            _s3ScanStatus = new TextBlock
+            _s2ScanStatus = new TextBlock
             {
                 Text       = "",
                 Margin     = new Thickness(0, 6, 0, 0),
                 Visibility = WpfVisibility.Collapsed,
             };
-            _s3ScanStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            _s3ScanStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            _s3Panel.Children.Add(_s3ScanStatus);
+            _s2ScanStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            _s2ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            _s2ScanStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            root.Children.Add(_s2ScanStatus);
+
+            return root;
         }
 
-        private FrameworkElement BuildS3Header()
+        private void RebuildS2Cards()
+        {
+            if (_s2CardsStack == null) return;
+            _s2CardsStack.Children.Clear();
+
+            var selectedLinks = _links.Where(l => l.IsSelected).ToList();
+            if (selectedLinks.Count == 0)
+            {
+                _s2CardsStack.Children.Add(new LemoineWarnBanner(
+                    "⚠  No links selected. Go back to Step 1 and select at least one link."));
+                return;
+            }
+
+            foreach (var link in selectedLinks)
+                _s2CardsStack.Children.Add(BuildLinkCard(link));
+        }
+
+        private FrameworkElement BuildLinkCard(LinkEntry link)
+        {
+            var outer = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Margin          = new Thickness(0, 0, 0, 6),
+            };
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            var stack = new StackPanel();
+
+            // ── Header ────────────────────────────────────────────────────────
+            var header = new Border
+            {
+                Padding         = new Thickness(10, 7, 10, 7),
+                BorderThickness = new Thickness(0, 0, 0, link.IsExpanded ? 1 : 0),
+                CornerRadius    = link.IsExpanded
+                    ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6),
+                Cursor = Cursors.Hand,
+            };
+            header.SetResourceReference(Border.BackgroundProperty,  "LemoineCard");
+            header.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var headerGrid = new WpfGrid();
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // Left: trade name + link label
+            var headerLeft = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var tradeTb = new TextBlock
+            {
+                Text              = link.TradeName,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            tradeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            tradeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tradeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            var labelTb = new TextBlock
+            {
+                Text              = $"({link.Label})",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            labelTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            labelTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            labelTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            headerLeft.Children.Add(tradeTb);
+            headerLeft.Children.Add(labelTb);
+            WpfGrid.SetColumn(headerLeft, 0);
+            headerGrid.Children.Add(headerLeft);
+
+            // Right: chevron
+            var chevron = new TextBlock
+            {
+                Text              = link.IsExpanded ? "▲" : "▼",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            chevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            chevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            chevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            WpfGrid.SetColumn(chevron, 1);
+            headerGrid.Children.Add(chevron);
+
+            header.Child = headerGrid;
+
+            // ── Body (collapsible) ────────────────────────────────────────────
+            var body = new Border
+            {
+                Padding    = new Thickness(10, 8, 10, 8),
+                Visibility = link.IsExpanded ? WpfVisibility.Visible : WpfVisibility.Collapsed,
+            };
+            var bodyStack = new StackPanel();
+
+            // Category picker
+            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
+            catTabs.SetGroups(CategoryGroups);
+
+            // Config rows panel — rebuilt whenever categories change
+            var configPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            configPanel.Children.Add(MakeNote("Select categories above to configure the scan."));
+
+            catTabs.SelectionChanged += cats =>
+            {
+                link.SelectedCategories.Clear();
+                link.SelectedCategories.AddRange(cats);
+                _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+                {
+                    RebuildLinkConfigPanel(link, configPanel);
+                    _scanComplete = false;
+                    RaiseValidation();
+                }));
+            };
+
+            bodyStack.Children.Add(catTabs);
+            bodyStack.Children.Add(configPanel);
+            body.Child = bodyStack;
+
+            // Toggle body on header click
+            header.MouseLeftButtonUp += (s, e) =>
+            {
+                link.IsExpanded        = !link.IsExpanded;
+                body.Visibility        = link.IsExpanded ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                chevron.Text           = link.IsExpanded ? "▲" : "▼";
+                header.BorderThickness = new Thickness(0, 0, 0, link.IsExpanded ? 1 : 0);
+                header.CornerRadius    = link.IsExpanded
+                    ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6);
+            };
+
+            stack.Children.Add(header);
+            stack.Children.Add(body);
+            outer.Child = stack;
+            return outer;
+        }
+
+        private void RebuildLinkConfigPanel(LinkEntry link, StackPanel configPanel)
+        {
+            configPanel.Children.Clear();
+            link.ConfigRows.Clear();
+
+            foreach (var catLabel in link.SelectedCategories)
+                if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
+                    link.ConfigRows.Add(new ScanConfigRow(catLabel, ost));
+
+            if (link.ConfigRows.Count == 0)
+            {
+                configPanel.Children.Add(MakeNote("Select categories above to configure the scan."));
+            }
+            else
+            {
+                configPanel.Children.Add(BuildConfigHeader());
+                foreach (var row in link.ConfigRows)
+                    configPanel.Children.Add(BuildConfigRow(row));
+            }
+
+            if (_s2ScanBtn != null)
+                _s2ScanBtn.IsEnabled = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
+        }
+
+        private FrameworkElement BuildConfigHeader()
         {
             var border = new Border
             {
@@ -369,10 +498,10 @@ namespace LemoineTools.Tools.AutoFilters
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var g = new WpfGrid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });                   // mode
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });                   // parameter
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });                    // info
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
 
             void H(string text, int col)
             {
@@ -390,7 +519,7 @@ namespace LemoineTools.Tools.AutoFilters
             return border;
         }
 
-        private FrameworkElement BuildS3ConfigRow(ScanConfigRow row)
+        private FrameworkElement BuildConfigRow(ScanConfigRow row)
         {
             var card = new Border
             {
@@ -400,13 +529,13 @@ namespace LemoineTools.Tools.AutoFilters
                 Padding         = new Thickness(6, 5, 6, 5),
             };
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
 
             var g = new WpfGrid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // label
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });                   // mode
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });                   // param
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });                    // info
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
 
             var catLbl = new TextBlock
             {
@@ -423,7 +552,7 @@ namespace LemoineTools.Tools.AutoFilters
             var modeCombo = new ComboBox
             {
                 ItemsSource   = new[] { "Per Value", "Whole Category" },
-                SelectedIndex = 0,
+                SelectedIndex = row.Mode == "WholeCategory" ? 1 : 0,
                 Margin        = new Thickness(4, 0, 4, 0),
             };
             modeCombo.SetResourceReference(ComboBox.BackgroundProperty,  "LemoineSelectBg");
@@ -436,9 +565,11 @@ namespace LemoineTools.Tools.AutoFilters
 
             var paramCombo = new ComboBox
             {
-                ItemsSource   = row.AvailableParams,
-                SelectedIndex = 0,
-                Margin        = new Thickness(0, 0, 4, 0),
+                ItemsSource       = row.AvailableParams,
+                SelectedItem      = row.Parameter,
+                Margin            = new Thickness(0, 0, 4, 0),
+                Visibility        = row.Mode == "WholeCategory"
+                    ? WpfVisibility.Collapsed : WpfVisibility.Visible,
             };
             paramCombo.SetResourceReference(ComboBox.BackgroundProperty,  "LemoineSelectBg");
             paramCombo.SetResourceReference(ComboBox.ForegroundProperty,  "LemoineText");
@@ -448,30 +579,28 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(paramCombo, 2);
             g.Children.Add(paramCombo);
 
-            // ⓘ indicator — shown when param is not in the known-safe set (Gap 2 mitigation)
             var infoTb = new TextBlock
             {
                 Text              = row.IsKnownSafe ? "" : "ⓘ",
                 VerticalAlignment = VerticalAlignment.Center,
                 TextAlignment     = TextAlignment.Center,
                 Margin            = new Thickness(2, 0, 0, 0),
+                ToolTip           = row.IsKnownSafe ? null
+                    : (object)("This parameter may not resolve in all documents.\n" +
+                               "Known-safe: System Classification, Type Name, Family Name, " +
+                               "Fabrication Service, Structural Material."),
             };
-            if (!row.IsKnownSafe)
-                infoTb.ToolTip = "This parameter may not resolve in all documents.\n" +
-                                 "Known-safe: System Classification, Type Name, Family Name, " +
-                                 "Fabrication Service, Structural Material.";
             infoTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             infoTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             infoTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             WpfGrid.SetColumn(infoTb, 3);
             g.Children.Add(infoTb);
 
-            // Wire events
             modeCombo.SelectionChanged += (s, e) =>
             {
                 var sel = modeCombo.SelectedItem as string ?? "Per Value";
-                row.Mode = (sel == "Whole Category") ? "WholeCategory" : "PerValue";
-                paramCombo.Visibility = (row.Mode == "WholeCategory")
+                row.Mode          = sel == "Whole Category" ? "WholeCategory" : "PerValue";
+                paramCombo.Visibility = row.Mode == "WholeCategory"
                     ? WpfVisibility.Collapsed : WpfVisibility.Visible;
                 _scanComplete = false;
                 RaiseValidation();
@@ -480,12 +609,12 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 if (paramCombo.SelectedItem is string param)
                 {
-                    row.Parameter = param;
-                    infoTb.Text   = row.IsKnownSafe ? "" : "ⓘ";
+                    row.Parameter  = param;
+                    infoTb.Text    = row.IsKnownSafe ? "" : "ⓘ";
                     infoTb.ToolTip = row.IsKnownSafe ? null
-                        : (object)"This parameter may not resolve in all documents.\n" +
-                          "Known-safe: System Classification, Type Name, Family Name, " +
-                          "Fabrication Service, Structural Material.";
+                        : (object)("This parameter may not resolve in all documents.\n" +
+                                   "Known-safe: System Classification, Type Name, Family Name, " +
+                                   "Fabrication Service, Structural Material.");
                 }
                 _scanComplete = false;
                 RaiseValidation();
@@ -495,28 +624,28 @@ namespace LemoineTools.Tools.AutoFilters
             return card;
         }
 
-        // ── S3 scan trigger ───────────────────────────────────────────────────
+        // ── S2 scan trigger ───────────────────────────────────────────────────
 
         private void OnScanButtonClick(object sender, RoutedEventArgs e)
         {
             if (_isScanning) return;
 
-            var selectedLinks = _links.Where(l => l.IsSelected).ToList();
-            if (selectedLinks.Count == 0 || _scanConfigRows.Count == 0) return;
+            var selectedLinks = _links.Where(l => l.IsSelected && l.ConfigRows.Count > 0).ToList();
+            if (selectedLinks.Count == 0) return;
 
             _isScanning = true;
-            if (_s3ScanBtn    != null) _s3ScanBtn.IsEnabled = false;
-            if (_s3ScanStatus != null)
+            if (_s2ScanBtn    != null) _s2ScanBtn.IsEnabled = false;
+            if (_s2ScanStatus != null)
             {
-                _s3ScanStatus.Text       = "● Scanning…";
-                _s3ScanStatus.Visibility = WpfVisibility.Visible;
-                _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+                _s2ScanStatus.Text       = "● Scanning…";
+                _s2ScanStatus.Visibility = WpfVisibility.Visible;
+                _s2ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             }
 
-            // Build scan specs: each selected link × each config row
+            // Each link uses its own ConfigRows, so each gets independent scan specs
             var specs = new List<ScanSpec>();
             foreach (var link in selectedLinks)
-                foreach (var row in _scanConfigRows)
+                foreach (var row in link.ConfigRows)
                     specs.Add(new ScanSpec
                     {
                         OstCategory = row.OstCategory,
@@ -526,22 +655,16 @@ namespace LemoineTools.Tools.AutoFilters
                         TradeName   = link.TradeName,
                     });
 
-            _handler.Mode      = DiscoverMode.MainScan;
-            _handler.ScanSpecs = specs;
-            _handler.PushLog   = null;     // log not wired for intermediate scan
+            _handler.Mode       = DiscoverMode.MainScan;
+            _handler.ScanSpecs  = specs;
+            _handler.PushLog    = null;
             _handler.OnProgress = null;
-            // OnComplete dispatches back to WPF thread via _wpfDispatcher
             _handler.OnComplete = OnScanComplete;
             _event.Raise();
         }
 
-        /// <summary>
-        /// Called by DiscoverEventHandler.Execute() on Revit's main thread.
-        /// Dispatches UI updates back to the WPF STA thread.
-        /// </summary>
         private void OnScanComplete(int pass, int fail, int skip)
         {
-            // ScanResults is written before OnComplete fires — safe to read here.
             var results = _handler.ScanResults;
 
             _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
@@ -549,46 +672,40 @@ namespace LemoineTools.Tools.AutoFilters
                 _isScanning   = false;
                 _scanComplete = results.Count > 0;
 
-                if (_s3ScanBtn != null)
-                    _s3ScanBtn.IsEnabled = true;
+                if (_s2ScanBtn != null)
+                    _s2ScanBtn.IsEnabled = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
 
-                if (_s3ScanStatus != null)
+                if (_s2ScanStatus != null)
                 {
-                    if (_scanComplete)
-                    {
-                        _s3ScanStatus.Text = $"● {results.Count} rule(s) discovered.";
-                        _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
-                    }
-                    else
-                    {
-                        _s3ScanStatus.Text = "● No rules found. Check link selection and categories.";
-                        _s3ScanStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
-                    }
-                    _s3ScanStatus.Visibility = WpfVisibility.Visible;
+                    _s2ScanStatus.Text = _scanComplete
+                        ? $"● {results.Count} rule(s) discovered."
+                        : "● No rules found. Check link selection and categories.";
+                    _s2ScanStatus.Visibility = WpfVisibility.Visible;
+                    _s2ScanStatus.SetResourceReference(TextBlock.ForegroundProperty,
+                        _scanComplete ? "LemoineGreen" : "LemoineRed");
                 }
 
-                PopulateS4(results);
-                UpdateS5Summary();
+                PopulateS3(results);
+                UpdateS4Summary();
                 RaiseValidation();
             }));
         }
 
-        // ── S4 — Review Rules ─────────────────────────────────────────────────
+        // ── S3 — Review Rules ─────────────────────────────────────────────────
 
-        private FrameworkElement BuildS4()
+        private FrameworkElement BuildS3()
         {
-            _s4Panel = new StackPanel();
-            _s4Panel.Children.Add(MakeNote("Run the scan in Step 3 to see discovered rules here."));
-            return _s4Panel;
+            _s3Panel = new StackPanel();
+            _s3Panel.Children.Add(MakeNote("Run the scan in Step 2 to see discovered rules here."));
+            return _s3Panel;
         }
 
-        private void PopulateS4(List<ScanResult> results)
+        private void PopulateS3(List<ScanResult> results)
         {
-            if (_s4Panel == null) return;
-            _s4Panel.Children.Clear();
+            if (_s3Panel == null) return;
+            _s3Panel.Children.Clear();
             _discoveredRules.Clear();
 
-            // Convert ScanResults → DiscoveredRuleRows
             foreach (var r in results)
             {
                 _discoveredRules.Add(new DiscoveredRuleRow
@@ -611,33 +728,30 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (_discoveredRules.Count == 0)
             {
-                _s4Panel.Children.Add(new LemoineWarnBanner(
+                _s3Panel.Children.Add(new LemoineWarnBanner(
                     "⚠  No rules discovered. Try a different scan mode or check your link selection."));
                 return;
             }
 
-            _s4Panel.Children.Add(MakeNote(
+            _s3Panel.Children.Add(MakeNote(
                 $"{_discoveredRules.Count} rule(s) discovered. " +
                 "Check to include, click the colour swatch to change colour, double-click the name to rename."));
+            _s3Panel.Children.Add(BuildS3Header());
 
-            // Table header
-            _s4Panel.Children.Add(BuildS4Header());
-
-            // Scrollable rule rows
             var sv = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, // ⚠ constrain
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = 320,
             };
             var rowStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
             foreach (var rule in _discoveredRules)
-                rowStack.Children.Add(BuildS4RuleRow(rule));
+                rowStack.Children.Add(BuildS3RuleRow(rule));
             sv.Content = rowStack;
-            _s4Panel.Children.Add(sv);
+            _s3Panel.Children.Add(sv);
         }
 
-        private FrameworkElement BuildS4Header()
+        private FrameworkElement BuildS3Header()
         {
             var border = new Border
             {
@@ -648,11 +762,11 @@ namespace LemoineTools.Tools.AutoFilters
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var g = new WpfGrid();
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });                    // check
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });                    // swatch
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // name
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });                   // trade
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });                    // count
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });
 
             void H(string text, int col)
             {
@@ -663,8 +777,8 @@ namespace LemoineTools.Tools.AutoFilters
                 WpfGrid.SetColumn(tb, col);
                 g.Children.Add(tb);
             }
-            H("",        0);
-            H("",        1);
+            H("",          0);
+            H("",          1);
             H("Rule Name", 2);
             H("Trade",     3);
             H("Count",     4);
@@ -672,7 +786,7 @@ namespace LemoineTools.Tools.AutoFilters
             return border;
         }
 
-        private FrameworkElement BuildS4RuleRow(DiscoveredRuleRow rule)
+        private FrameworkElement BuildS3RuleRow(DiscoveredRuleRow rule)
         {
             var card = new Border
             {
@@ -684,7 +798,6 @@ namespace LemoineTools.Tools.AutoFilters
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
-            // Grid inside ScrollViewer (HorizontalScrollBarVisibility=Disabled) → width constrained ✓
             var g = new WpfGrid();
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
@@ -692,18 +805,16 @@ namespace LemoineTools.Tools.AutoFilters
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });
 
-            // Include checkbox
             var cb = new CheckBox
             {
                 IsChecked         = rule.IsIncluded,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            cb.Checked   += (s, e) => { rule.IsIncluded = true;  UpdateS5Summary(); RaiseValidation(); };
-            cb.Unchecked += (s, e) => { rule.IsIncluded = false; UpdateS5Summary(); RaiseValidation(); };
+            cb.Checked   += (s, e) => { rule.IsIncluded = true;  UpdateS4Summary(); RaiseValidation(); };
+            cb.Unchecked += (s, e) => { rule.IsIncluded = false; UpdateS4Summary(); RaiseValidation(); };
             WpfGrid.SetColumn(cb, 0);
             g.Children.Add(cb);
 
-            // Color swatch — uses shared factory (handles open-picker, update hex, update UI)
             var swatchPanel = LemoineColorPickerWindow.BuildColorPickerSwatch(
                 getHex: () => rule.HexColor,
                 setHex: hex => { rule.HexColor = hex; },
@@ -712,7 +823,6 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(swatchPanel, 1);
             g.Children.Add(swatchPanel);
 
-            // Rule name — editable inline
             var nameEdit = new LemoineInlineEdit
             {
                 Text              = rule.RuleName,
@@ -724,7 +834,6 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(nameEdit, 2);
             g.Children.Add(nameEdit);
 
-            // Trade name
             var tradeTb = new TextBlock
             {
                 Text              = rule.TradeName,
@@ -737,7 +846,6 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(tradeTb, 3);
             g.Children.Add(tradeTb);
 
-            // Element count
             var countTb = new TextBlock
             {
                 Text              = rule.ElementCount.ToString(),
@@ -754,30 +862,26 @@ namespace LemoineTools.Tools.AutoFilters
             return card;
         }
 
-        // ── S5 — Confirm & Commit ─────────────────────────────────────────────
+        // ── S4 — Confirm & Commit ─────────────────────────────────────────────
 
-        private FrameworkElement BuildS5()
+        private FrameworkElement BuildS4()
         {
             var sp = new StackPanel();
-
-            _s5Review = new LemoineReviewSummary { Margin = new Thickness(0, 0, 0, 12) };
-            sp.Children.Add(_s5Review);
-
-            // ⚠  Gap 4 mitigation: static note about existing Revit filter elements
+            _s4Review = new LemoineReviewSummary { Margin = new Thickness(0, 0, 0, 12) };
+            sp.Children.Add(_s4Review);
             sp.Children.Add(new LemoineWarnBanner(
                 "⚠  Existing Revit filter elements are not updated automatically. " +
                 "After committing, run 'Auto Filters' to apply updated rules to your views.",
                 bottomMargin: 0));
-
             return sp;
         }
 
-        private void UpdateS5Summary()
+        private void UpdateS4Summary()
         {
-            if (_s5Review == null) return;
-            var included = _discoveredRules.Where(r => r.IsIncluded).ToList();
-            int tradeCount = included.Select(r => r.TradeName)
-                                     .Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            if (_s4Review == null) return;
+            var included    = _discoveredRules.Where(r => r.IsIncluded).ToList();
+            int tradeCount  = included.Select(r => r.TradeName)
+                                      .Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
             var items = new List<(string id, string label)>
             {
@@ -794,7 +898,7 @@ namespace LemoineTools.Tools.AutoFilters
                 ["trades"]  = tradeCount.ToString(),
             };
             var chips = included.Select(r => r.RuleName).Distinct().Take(24).ToList();
-            _s5Review.SetItems(items, values, chips);
+            _s4Review.SetItems(items, values, chips);
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -810,12 +914,10 @@ namespace LemoineTools.Tools.AutoFilters
                         && _links.Where(l => l.IsSelected)
                                  .All(l => !string.IsNullOrWhiteSpace(l.TradeName));
                 case "S2":
-                    return _selectedCategories.Count > 0;
-                case "S3":
                     return _scanComplete && _discoveredRules.Count > 0;
-                case "S4":
+                case "S3":
                     return _discoveredRules.Any(r => r.IsIncluded);
-                case "S5":
+                case "S4":
                     return true;
                 default:
                     return true;
@@ -835,38 +937,27 @@ namespace LemoineTools.Tools.AutoFilters
                         : $"{sel.Count} link(s): {string.Join(", ", sel.Select(l => l.TradeName))}";
                 }
                 case "S2":
-                {
-                    int c = _selectedCategories.Count;
-                    return c == 0 ? "No categories selected"
-                        : $"{c} categor{(c == 1 ? "y" : "ies")} selected";
-                }
-                case "S3":
                     return _scanComplete
                         ? $"{_discoveredRules.Count} rule(s) discovered"
                         : "Not yet scanned";
-                case "S4":
+                case "S3":
                 {
                     int inc = _discoveredRules.Count(r => r.IsIncluded);
                     return $"{inc} of {_discoveredRules.Count} rule(s) selected";
                 }
-                case "S5":
+                case "S4":
                     return "";
                 default:
                     return "";
             }
         }
 
-        /// <summary>
-        /// Called by StepFlowWindow when the user confirms the final step.
-        /// Wires the Commit event and raises it. The callbacks are already
-        /// wrapped in Dispatcher.BeginInvoke by StepFlowWindow.StartRun().
-        /// </summary>
         public void Run(
             Action<string, string>     pushLog,
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            UpdateS5Summary();
+            UpdateS4Summary();
 
             var specs = _discoveredRules
                 .Where(r => r.IsIncluded)
