@@ -180,14 +180,15 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Pulldown: Filter Tools (Auto Filters | Discover Rules | Legend Creation)
+            // Pulldown: Filter Tools (Auto Filters | Discover Rules)
+            // Large:    Legend Creation
             // Large:    Filters Settings
-            // Large SplitButton: Apply to Views | Remove from View | Delete from Project
+            // SplitButton: Apply to Views | Remove from View | Delete from Project
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
 
             var filterToolsPulldown = new PulldownButtonData("LT_FilterTools", "Filter\nTools")
             {
-                ToolTip    = "Auto Filters, Discover Rules, and Legend Creation tools.",
+                ToolTip    = "Auto Filters and Discover Rules tools.",
                 LargeImage = CreateGlyphBitmap(32, ""),
                 Image      = CreateGlyphBitmap(16, ""),
             };
@@ -202,8 +203,8 @@ namespace LemoineTools
                 "LT_DiscoverRules", "Discover Rules", "DiscoverLaunchCommand",
                 "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules."));
 
-            filterToolsBtn?.AddPushButton(Btn(
-                "LT_AutoFiltersLegend", "Legend Creation", "AutoFiltersLegendLaunchCommand",
+            filtersPanel.AddItem(Btn(
+                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
                 "Create or update a Legend view from the current Legend Creator settings.",
                 ""));
 
@@ -211,6 +212,21 @@ namespace LemoineTools
                 "LT_FiltersSettings", "Filters\nSettings", "OpenFiltersSettingsCommand",
                 "Open the Filters / Color settings window.",
                 ""));
+
+            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions");
+            var split = (SplitButton)filtersPanel.AddItem(splitData);
+            split.AddPushButton(Btn(
+                "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
+                "Apply existing project filters to multiple views at once, with optional color overrides.",
+                ""));  // Segoe MDL2: Add
+            split.AddPushButton(Btn(
+                "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
+                "Remove selected filters from the active view (filters are kept in the project).",
+                ""));  // Segoe MDL2: Remove
+            split.AddPushButton(Btn(
+                "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
+                "Permanently delete selected ParameterFilterElements from the project.",
+                ""));  // Segoe MDL2: Delete
 
             // ── T02 — Ceilings ────────────────────────────────────────────────
             // Large:   Ceiling Heatmap
