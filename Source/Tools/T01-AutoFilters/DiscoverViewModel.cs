@@ -15,18 +15,17 @@ using WpfVisibility = System.Windows.Visibility;
 namespace LemoineTools.Tools.AutoFilters
 {
     // =========================================================================
-    // DiscoverViewModel — ILemoineTool + ILemoineNavigable, 5-step accordion
+    // DiscoverViewModel — ILemoineTool + ILemoineNavigable + ILemoineStepConfirmable
     //
     // Step flow:
     //   S1  Select which loaded Revit links to scan (one trade per link)
-    //   S2  Configure links: per-link accordion — category picker + parameter
-    //         → "Discover Rules" button starts scan and navigates to S3
-    //   S3  Scanning — live log + progress; auto-navigates to S4 when done
-    //   S4  Review discovered rules: include/exclude, rename, pick colours
+    //   S2  Configure links: per-link accordion — "Discover Rules →" Confirm starts scan
+    //   S3  Scanning — live log + progress; user confirms manually to advance
+    //   S4  Review discovered rules grouped by trade: include/exclude, rename, colour
     //   S5  Summary card + Confirm triggers DiscoverEventHandler (Commit)
     // =========================================================================
 
-    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable
+    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable
     {
         // ── Nested types ──────────────────────────────────────────────────────
 
@@ -100,6 +99,10 @@ namespace LemoineTools.Tools.AutoFilters
         private void RaiseValidation() => ValidationChanged?.Invoke(this, EventArgs.Empty);
         private void RaiseNavigate(int index) => NavigateRequested?.Invoke(this, index);
 
+        // ── ILemoineStepConfirmable ────────────────────────────────────────────
+        public string? ConfirmLabelFor(string stepId) => stepId == "S2" ? "Discover Rules →" : null;
+        public void OnStepConfirm(string stepId) { if (stepId == "S2") StartScan(); }
+
         // ── State ─────────────────────────────────────────────────────────────
 
         private readonly DiscoverEventHandler            _handler;
@@ -113,7 +116,6 @@ namespace LemoineTools.Tools.AutoFilters
 
         // S2 UI
         private StackPanel? _s2CardsStack;
-        private Button?     _s2ScanBtn;
 
         // S3 scanning UI
         private TextBlock?    _s3StatusTb;
@@ -127,10 +129,15 @@ namespace LemoineTools.Tools.AutoFilters
         // S5 confirm UI
         private LemoineReviewSummary? _s5Review;
 
-        // Single-expand accordion: one open card at a time
+        // S2 single-expand accordion: one open card at a time
         private readonly List<(Action Open, Action Close)> _cardActions
             = new List<(Action Open, Action Close)>();
         private int _openCardIndex = 0;
+
+        // S4 single-expand accordion
+        private readonly List<(Action Open, Action Close)> _s4CardActions
+            = new List<(Action Open, Action Close)>();
+        private int _s4OpenCardIndex = 0;
 
         // Shared across all link cards — allocated once
         private static readonly Dictionary<string, List<string>> CategoryGroups =
@@ -313,20 +320,6 @@ namespace LemoineTools.Tools.AutoFilters
             sv.Content = _s2CardsStack;
             root.Children.Add(sv);
 
-            var btnRow = new WpfGrid();
-            btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            btnRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            _s2ScanBtn = LemoineControlStyles.BuildButton(
-                "Discover Rules →",
-                LemoineControlStyles.LemoineButtonVariant.Primary);
-            _s2ScanBtn.HorizontalAlignment = HorizontalAlignment.Right;
-            _s2ScanBtn.IsEnabled           = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
-            _s2ScanBtn.Click += OnScanButtonClick;
-            WpfGrid.SetColumn(_s2ScanBtn, 1);
-            btnRow.Children.Add(_s2ScanBtn);
-            root.Children.Add(btnRow);
-
             return root;
         }
 
@@ -342,16 +335,11 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 _s2CardsStack.Children.Add(new LemoineWarnBanner(
                     "⚠  No links selected. Go back to Step 1 and select at least one link."));
-
-                if (_s2ScanBtn != null) _s2ScanBtn.IsEnabled = false;
                 return;
             }
 
             foreach (var link in selectedLinks)
                 _s2CardsStack.Children.Add(BuildLinkCard(link));
-
-            if (_s2ScanBtn != null)
-                _s2ScanBtn.IsEnabled = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
         }
 
         private FrameworkElement BuildLinkCard(LinkEntry link)
@@ -529,9 +517,6 @@ namespace LemoineTools.Tools.AutoFilters
                 foreach (var row in link.ConfigRows)
                     configPanel.Children.Add(BuildConfigRow(row));
             }
-
-            if (_s2ScanBtn != null)
-                _s2ScanBtn.IsEnabled = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
         }
 
         private FrameworkElement BuildConfigHeader()
@@ -670,7 +655,7 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── S2 scan trigger ───────────────────────────────────────────────────
 
-        private void OnScanButtonClick(object sender, RoutedEventArgs e)
+        private void StartScan()
         {
             if (_isScanning) return;
 
@@ -680,21 +665,14 @@ namespace LemoineTools.Tools.AutoFilters
             _isScanning   = true;
             _scanComplete = false;
 
-            if (_s2ScanBtn != null) _s2ScanBtn.IsEnabled = false;
-
-            // Reset S3 display and navigate there before the scan starts
-            _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+            // Reset S3 display (called on WPF thread via OnStepConfirm)
+            if (_s3LogStack != null) _s3LogStack.Children.Clear();
+            if (_s3Progress != null) _s3Progress.Value = 0;
+            if (_s3StatusTb != null)
             {
-                if (_s3LogStack != null) _s3LogStack.Children.Clear();
-                if (_s3Progress != null) _s3Progress.Value = 0;
-                if (_s3StatusTb != null)
-                {
-                    _s3StatusTb.Text = "● Scanning…";
-                    _s3StatusTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-                }
-            }));
-
-            RaiseNavigate(2);   // → S3 (Scanning)
+                _s3StatusTb.Text = "● Scanning…";
+                _s3StatusTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            }
 
             var specs = new List<ScanSpec>();
             foreach (var link in selectedLinks)
@@ -739,15 +717,9 @@ namespace LemoineTools.Tools.AutoFilters
                 }
                 if (_s3Progress != null) _s3Progress.Value = 100;
 
-                if (_s2ScanBtn != null)
-                    _s2ScanBtn.IsEnabled = _links.Any(l => l.IsSelected && l.ConfigRows.Count > 0);
-
                 PopulateS4(results);
                 UpdateS5Summary();
                 RaiseValidation();
-
-                if (_scanComplete)
-                    RaiseNavigate(3);   // → S4 (Review Rules)
             }));
         }
 
@@ -841,6 +813,8 @@ namespace LemoineTools.Tools.AutoFilters
             if (_s4Panel == null) return;
             _s4Panel.Children.Clear();
             _discoveredRules.Clear();
+            _s4CardActions.Clear();
+            _s4OpenCardIndex = 0;
 
             foreach (var r in results)
             {
@@ -872,20 +846,143 @@ namespace LemoineTools.Tools.AutoFilters
             _s4Panel.Children.Add(MakeNote(
                 $"{_discoveredRules.Count} rule(s) discovered. " +
                 "Check to include, click the colour swatch to change colour, double-click the name to rename."));
-            _s4Panel.Children.Add(BuildS4Header());
+
+            var byTrade = _discoveredRules
+                .GroupBy(r => r.TradeName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             var sv = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                MaxHeight = 320,
+                MaxHeight = 380,
             };
             LemoineControlStyles.WireBubblingScroll(sv);
-            var rowStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
-            foreach (var rule in _discoveredRules)
-                rowStack.Children.Add(BuildS4RuleRow(rule));
-            sv.Content = rowStack;
+            var cardStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
+
+            for (int i = 0; i < byTrade.Count; i++)
+                cardStack.Children.Add(BuildS4TradeCard(byTrade[i].Key, byTrade[i].ToList(), i));
+
+            sv.Content = cardStack;
             _s4Panel.Children.Add(sv);
+        }
+
+        private FrameworkElement BuildS4TradeCard(string tradeName, List<DiscoveredRuleRow> rules, int cardIndex)
+        {
+            var outer = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6),
+                Margin          = new Thickness(0, 0, 0, 6),
+            };
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            var stack = new StackPanel();
+
+            // ── Header ────────────────────────────────────────────────────────
+            var header = new Border
+            {
+                Padding = new Thickness(10, 7, 10, 7),
+                Cursor  = Cursors.Hand,
+            };
+            header.SetResourceReference(Border.BackgroundProperty,  "LemoineCard");
+            header.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var headerGrid = new WpfGrid();
+            headerGrid.Background = Brushes.Transparent;
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var headerLeft = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var tradeTb = new TextBlock
+            {
+                Text              = tradeName,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            tradeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            tradeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tradeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            var countBadge = new Border
+            {
+                Padding = new Thickness(5, 1, 5, 1),
+                Margin  = new Thickness(4, 0, 0, 0),
+            };
+            countBadge.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            countBadge.SetResourceReference(Border.BackgroundProperty,   "LemoineAccentDim");
+            countBadge.SetResourceReference(Border.BorderBrushProperty,  "LemoineAccent");
+            var countBadgeTb = new TextBlock { Text = rules.Count.ToString() };
+            countBadgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            countBadgeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            countBadgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            countBadge.Child = countBadgeTb;
+
+            headerLeft.Children.Add(tradeTb);
+            headerLeft.Children.Add(countBadge);
+            WpfGrid.SetColumn(headerLeft, 0);
+            headerGrid.Children.Add(headerLeft);
+
+            var chevron = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+            chevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            chevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            chevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            WpfGrid.SetColumn(chevron, 1);
+            headerGrid.Children.Add(chevron);
+            header.Child = headerGrid;
+
+            // ── Body ─────────────────────────────────────────────────────────
+            var body      = new Border { Padding = new Thickness(8, 6, 8, 8) };
+            var bodyStack = new StackPanel();
+            bodyStack.Children.Add(BuildS4Header());
+            foreach (var rule in rules)
+                bodyStack.Children.Add(BuildS4RuleRow(rule));
+            body.Child = bodyStack;
+
+            // ── Single-expand accordion wiring ────────────────────────────────
+            Action open = () =>
+            {
+                body.Visibility        = WpfVisibility.Visible;
+                chevron.Text           = "▲";
+                header.BorderThickness = new Thickness(0, 0, 0, 1);
+                header.CornerRadius    = new CornerRadius(6, 6, 0, 0);
+            };
+            Action close = () =>
+            {
+                body.Visibility        = WpfVisibility.Collapsed;
+                chevron.Text           = "▼";
+                header.BorderThickness = new Thickness(0);
+                header.CornerRadius    = new CornerRadius(6);
+            };
+            _s4CardActions.Add((open, close));
+
+            if (cardIndex == 0) open(); else close();
+
+            header.PreviewMouseLeftButtonDown += (s, e) => ExpandS4Card(cardIndex);
+
+            stack.Children.Add(header);
+            stack.Children.Add(body);
+            outer.Child = stack;
+            return outer;
+        }
+
+        private void ExpandS4Card(int index)
+        {
+            int target = (index == _s4OpenCardIndex)
+                ? (index + 1 < _s4CardActions.Count ? index + 1 : -1)
+                : index;
+            _s4OpenCardIndex = target;
+            for (int i = 0; i < _s4CardActions.Count; i++)
+            {
+                if (i == target) _s4CardActions[i].Open();
+                else             _s4CardActions[i].Close();
+            }
         }
 
         private FrameworkElement BuildS4Header()
@@ -917,7 +1014,7 @@ namespace LemoineTools.Tools.AutoFilters
             H("",          0);
             H("",          1);
             H("Rule Name", 2);
-            H("Trade",     3);
+            H("Category",  3);
             H("Count",     4);
             border.Child = g;
             return border;
@@ -971,17 +1068,17 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(nameEdit, 2);
             g.Children.Add(nameEdit);
 
-            var tradeTb = new TextBlock
+            var catTb = new TextBlock
             {
-                Text              = rule.TradeName,
+                Text              = CategoryDisplayName(rule.BuiltInCategories.Count > 0 ? rule.BuiltInCategories[0] : ""),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming      = TextTrimming.CharacterEllipsis,
             };
-            tradeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tradeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tradeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            WpfGrid.SetColumn(tradeTb, 3);
-            g.Children.Add(tradeTb);
+            catTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            catTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            catTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            WpfGrid.SetColumn(catTb, 3);
+            g.Children.Add(catTb);
 
             var countTb = new TextBlock
             {
@@ -1141,6 +1238,11 @@ namespace LemoineTools.Tools.AutoFilters
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             return tb;
         }
+
+        private static string CategoryDisplayName(string ostCategory)
+            => AutoFiltersSettings.KnownCategoryMap
+                   .FirstOrDefault(kvp => kvp.Value == ostCategory).Key
+               ?? ostCategory;
 
         private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)
             where T : DependencyObject

@@ -116,4 +116,16 @@ namespace LemoineTools.Lemoine
         /// <summary>Raised with the target step index to trigger navigation from within step content.</summary>
         event EventHandler<int> NavigateRequested;
     }
+
+    /// <summary>
+    /// Optional interface for tools that need to customise the per-step Confirm button label
+    /// or hook into the Confirm click before StepFlowWindow advances to the next step.
+    /// </summary>
+    public interface ILemoineStepConfirmable
+    {
+        /// <summary>Return a custom label for the Confirm button on the given step, or null for the default "Confirm →".</summary>
+        string? ConfirmLabelFor(string stepId);
+        /// <summary>Called by StepFlowWindow when the user clicks Confirm on the given step, before navigation occurs.</summary>
+        void OnStepConfirm(string stepId);
+    }
 }
