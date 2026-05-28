@@ -217,15 +217,15 @@ namespace LemoineTools
             split.AddPushButton(Btn(
                 "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
                 "Apply existing project filters to multiple views at once, with optional color overrides.",
-                ""));  // Segoe MDL2: Add
+                ""));  // Segoe MDL2: Add/Plus
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
                 "Remove selected filters from the active view (filters are kept in the project).",
-                ""));  // Segoe MDL2: Remove
+                ""));  // Segoe MDL2: Remove
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
                 "Permanently delete selected ParameterFilterElements from the project.",
-                ""));  // Segoe MDL2: Delete
+                ""));  // Segoe MDL2: Delete
 
             // ── T01B — Legend ─────────────────────────────────────────────────
             // Large: Legend Creation
