@@ -10,9 +10,10 @@ using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
-using WpfGrid    = System.Windows.Controls.Grid;
-using WpfPoint   = System.Windows.Point;
-using WpfTextBox = System.Windows.Controls.TextBox;
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfPoint      = System.Windows.Point;
+using WpfTextBox    = System.Windows.Controls.TextBox;
+using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -402,9 +403,9 @@ namespace LemoineTools.Tools.LinkViews
                 _create3D  = state.TryGetValue("3d",  out var v3)  && v3;
                 _createFP  = state.TryGetValue("fp",  out var vf)  && vf;
                 _createRCP = state.TryGetValue("rcp", out var vr2) && vr2;
-                if (_subDiscRow3D  != null) _subDiscRow3D.Visibility  = _create3D  ? Visibility.Visible : Visibility.Collapsed;
-                if (_subDiscRowFP  != null) _subDiscRowFP.Visibility  = _createFP  ? Visibility.Visible : Visibility.Collapsed;
-                if (_subDiscRowRCP != null) _subDiscRowRCP.Visibility = _createRCP ? Visibility.Visible : Visibility.Collapsed;
+                if (_subDiscRow3D  != null) _subDiscRow3D.Visibility  = _create3D  ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                if (_subDiscRowFP  != null) _subDiscRowFP.Visibility  = _createFP  ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                if (_subDiscRowRCP != null) _subDiscRowRCP.Visibility = _createRCP ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                 OnValidationChanged();
             };
 
@@ -426,7 +427,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 Orientation = Orientation.Horizontal,
                 Margin      = new Thickness(0, 0, 0, 4),
-                Visibility  = visible ? Visibility.Visible : Visibility.Collapsed,
+                Visibility  = visible ? WpfVisibility.Visible : WpfVisibility.Collapsed,
             };
 
             var lbl = new TextBlock
@@ -558,7 +559,7 @@ namespace LemoineTools.Tools.LinkViews
                     Text       = curCustom,
                     Width      = 140,
                     Margin     = new Thickness(6, 0, 0, 0),
-                    Visibility = curVal == "Custom" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed,
+                    Visibility = curVal == "Custom" ? WpfVisibility.Visible : WpfVisibility.Collapsed,
                 };
                 tb.SetResourceReference(FrameworkElement.HeightProperty,                   "LemoineH_Input");
                 tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty,   "LemoineTh_InputPad");
@@ -573,7 +574,7 @@ namespace LemoineTools.Tools.LinkViews
                 {
                     if (v == null) return;
                     setVal(v);
-                    tb.Visibility = v == "Custom" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    tb.Visibility = v == "Custom" ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                     UpdatePreview();
                     OnValidationChanged();
                 };
