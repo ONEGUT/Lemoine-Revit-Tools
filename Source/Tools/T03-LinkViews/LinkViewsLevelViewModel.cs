@@ -522,8 +522,9 @@ namespace LemoineTools.Tools.LinkViews
                 string levelEx   = _scannedLevels.FirstOrDefault()?.Name ?? "Level 2";
                 string modelEx   = _scannedLevels.FirstOrDefault()?.ModelName ?? "Architecture";
                 string typeEx    = _create3D ? "3D" : _createFP ? "FP" : "RCP";
-                string bldgLabel = string.IsNullOrWhiteSpace(_buildingLabel) ? "Bldg" : _buildingLabel.Trim();
-                string baseEx    = $"L{levelEx} - {bldgLabel} A";
+                string bldgLabel  = string.IsNullOrWhiteSpace(_buildingLabel) ? "Bldg" : _buildingLabel.Trim();
+                string baseEx     = $"L{levelEx}";
+                string baseExMult = $"L{levelEx} - {bldgLabel} A";
 
                 string ResolveSlot(string slot, string custom)
                 {
@@ -554,7 +555,17 @@ namespace LemoineTools.Tools.LinkViews
 
                 if (_appendViewType) parts.Add(typeEx);
                 if (parts.Count == 0) { parts.Add(baseEx); parts.Add(typeEx); }
-                previewText.Text = string.Join(" - ", parts);
+
+                // Show multi-cluster variant on a second line when building label is relevant
+                bool hostLevelInSlots = _namingFront == "Host Level" || _namingCenter == "Host Level" || _namingEnd == "Host Level"
+                                        || (!anySet);
+                string single = string.Join(" - ", parts);
+                string multi  = hostLevelInSlots
+                    ? single.Replace(baseEx, baseExMult)
+                    : single;
+                previewText.Text = single == multi
+                    ? single
+                    : $"{single}\n{multi}  (multi-cluster)";
             }
 
             // Helper: one slot row — [label] [combo] [textbox, only if Custom]
