@@ -7,7 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Interop;
+using System.Windows.Interop;  // HwndSource used in MakeGhostHwndTransparent
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Shapes;
@@ -99,9 +99,6 @@ namespace LemoineTools.Lemoine
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _outerBorder.CornerRadius = new CornerRadius(8);
-
-            var helper = new WindowInteropHelper(this);
-            helper.Owner = Autodesk.Windows.ComponentManager.ApplicationWindow;
 
             UpdateRowHeights();
             BuildToolbar();
