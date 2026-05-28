@@ -54,6 +54,32 @@ Refactor ILemoineTool to support async execute
 
 ---
 
+## Error Handling & Silent Failure Audit
+
+### Standards for all C# code
+
+- Never swallow exceptions silently — empty `catch` blocks and catch-and-log-only blocks that discard the error are forbidden unless the risk is explicitly acknowledged and the user has been told.
+- Always `await` async operations or attach a `.ContinueWith` / `.GetAwaiter().GetResult()` handler. Fire-and-forget `Task` calls that can fail silently are not allowed.
+- Check return values where failure is meaningful (e.g. Revit API calls that return `null` on failure, `bool` results indicating success).
+- Validate inputs at system boundaries: user input, external APIs, Revit API calls, file I/O. Do not validate internal calls that are already guaranteed by the framework or calling code.
+
+### Post-change silent failure scan
+
+After **every** set of code changes, before reporting the task complete, Claude must:
+
+1. Scan the diff for patterns that hide failures from the user at runtime:
+   - Empty or catch-and-discard `catch` blocks
+   - Unawaited `Task` / `async void` methods (outside event handlers)
+   - Unchecked `null` returns at Revit API or external boundaries
+   - Return values that signal failure being ignored
+2. Produce a numbered list of findings — file path, approximate line, pattern type, and a one-sentence risk description.
+3. Present the list to the user and ask for each finding: **warn**, **rethrow**, **log**, or **leave as-is**.
+4. Apply the chosen handling before committing.
+
+If no silent failures are found, state "No silent failures detected" explicitly so the user knows the scan ran.
+
+---
+
 ## WPF UI Tasks
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
