@@ -12,6 +12,7 @@ namespace LemoineTools.Tools.ModifyElements
         public double                     CellX                  { get; set; } = 10.0;
         public double                     CellY                  { get; set; } = 10.0;
         public bool                       UseProjectOrigin       { get; set; } = false;
+        public List<ElementId>?           PreSelectedIds         { get; set; }  // E
         public Action<string, string>?     OnLog                  { get; set; }
         public Action<int, int, int, int>? OnProgress            { get; set; }
         public Action<int, int, int>?      OnComplete            { get; set; }
@@ -40,14 +41,21 @@ namespace LemoineTools.Tools.ModifyElements
                 double cellXft = CellX;
                 double cellYft = CellY;
 
-                var categoryMap = SplitByCellHelpers.BuildCategoryMap(doc, view);
-
-                // Filter to selected category labels
-                var selectedSet = new HashSet<string>(SelectedCategoryLabels, StringComparer.OrdinalIgnoreCase);
-                var targetIds   = categoryMap
-                    .Where(kvp => selectedSet.Contains(kvp.Key))
-                    .SelectMany(kvp => kvp.Value)
-                    .ToList();
+                List<ElementId> targetIds;
+                if (PreSelectedIds != null && PreSelectedIds.Count > 0)
+                {
+                    targetIds = new List<ElementId>(PreSelectedIds);
+                    pushLog($"Operating on {targetIds.Count} pre-selected element(s).", "info");
+                }
+                else
+                {
+                    var categoryMap = SplitByCellHelpers.BuildCategoryMap(doc, view);
+                    var selectedSet = new HashSet<string>(SelectedCategoryLabels, StringComparer.OrdinalIgnoreCase);
+                    targetIds = categoryMap
+                        .Where(kvp => selectedSet.Contains(kvp.Key))
+                        .SelectMany(kvp => kvp.Value)
+                        .ToList();
+                }
 
                 if (!targetIds.Any())
                 {

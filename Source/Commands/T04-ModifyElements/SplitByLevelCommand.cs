@@ -35,7 +35,29 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            Document doc = commandData.Application.ActiveUIDocument.Document;
+            var uidoc      = commandData.Application.ActiveUIDocument;
+            var doc        = uidoc.Document;
+            var activeViewId = uidoc.ActiveView?.Id;
+
+            // ── Pre-selection (E) — elements already selected in Revit ─────────
+            var supportedBics  = new HashSet<long>(SplitElementsShared.LevelSplitCategories.Select(c => (long)c.Cat));
+            var catLabelLookup = SplitElementsShared.LevelSplitCategories.ToDictionary(c => (long)c.Cat, c => c.Label);
+            var rawSelection   = uidoc.Selection.GetElementIds()
+                .Select(id => doc.GetElement(id))
+                .Where(e => e?.Category?.Id != null && supportedBics.Contains(e.Category.Id.Value))
+                .ToList();
+            var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
+            var preSelectedCats = rawSelection
+                .Select(e => catLabelLookup[e.Category.Id.Value])
+                .Distinct().ToList();
+
+            // ── Element counts (A) — whole-document totals for the picker ──────
+            var counts = SplitElementsShared.LevelSplitCategories.ToDictionary(
+                c => c.Label,
+                c => new FilteredElementCollector(doc)
+                    .OfCategoryId(new ElementId(c.Cat))
+                    .WhereElementIsNotElementType()
+                    .ToList().Count);
 
             var allLevels = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level))
@@ -43,7 +65,11 @@ namespace LemoineTools.Commands
                 .OrderBy(l => l.Elevation)
                 .ToList();
 
-            var vm    = new SplitByLevelViewModel(App.SplitByLevelHandler!, App.SplitByLevelEvent!, allLevels);
+            var vm    = new SplitByLevelViewModel(
+                App.SplitByLevelHandler!, App.SplitByLevelEvent!,
+                allLevels, counts, activeViewId,
+                preSelectedIds, preSelectedCats);
+
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 

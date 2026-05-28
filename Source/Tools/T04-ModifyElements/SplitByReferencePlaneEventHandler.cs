@@ -6,17 +6,17 @@ using Autodesk.Revit.UI;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByLevelEventHandler : IExternalEventHandler
+    public class SplitByReferencePlaneEventHandler : IExternalEventHandler
     {
-        public List<BuiltInCategory>       SelectedBics     { get; set; } = new List<BuiltInCategory>();
-        public List<ElementId>             SelectedLevelIds { get; set; } = new List<ElementId>();
-        public List<ElementId>?            PreSelectedIds   { get; set; }  // E: null = collect by category
-        public ElementId?                  ActiveViewId     { get; set; }  // B: null = whole document
-        public Action<string, string>?      OnLog            { get; set; }
-        public Action<int, int, int, int>?  OnProgress      { get; set; }
-        public Action<int, int, int>?       OnComplete      { get; set; }
+        public List<BuiltInCategory>      SelectedBics        { get; set; } = new List<BuiltInCategory>();
+        public List<ElementId>            SelectedRefPlaneIds { get; set; } = new List<ElementId>();
+        public List<ElementId>?           PreSelectedIds      { get; set; }  // E
+        public ElementId?                 ActiveViewId        { get; set; }  // B
+        public Action<string, string>?    OnLog               { get; set; }
+        public Action<int, int, int, int>? OnProgress          { get; set; }
+        public Action<int, int, int>?      OnComplete          { get; set; }
 
-        public string GetName() => "SplitByLevel";
+        public string GetName() => "SplitByReferencePlane";
 
         public void Execute(UIApplication app)
         {
@@ -28,15 +28,14 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 Document doc = app.ActiveUIDocument.Document;
 
-                var levels = SelectedLevelIds
-                    .Select(id => doc.GetElement(id))
-                    .OfType<Level>()
-                    .OrderBy(l => l.Elevation)
+                var refPlanes = SelectedRefPlaneIds
+                    .Select(id => doc.GetElement(id) as ReferencePlane)
+                    .Where(r => r != null)
                     .ToList();
 
-                if (!levels.Any())
+                if (!refPlanes.Any())
                 {
-                    pushLog("No valid levels found.", "fail");
+                    pushLog("No valid reference planes found.", "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -67,22 +66,21 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog($"Found {elements.Count} elements across {SelectedBics.Count} category(ies).", "info");
                 }
 
-                pushLog($"Splitting at {levels.Count} level(s)...", "info");
+                pushLog($"Splitting at {refPlanes.Count} reference plane(s)...", "info");
 
                 SplitStats stats;
-                using (var tx = new Transaction(doc, "Split Elements by Level"))
+                using (var tx = new Transaction(doc, "Split Elements by Reference Plane"))
                 {
                     var fho = tx.GetFailureHandlingOptions();
                     fho.SetClearAfterRollback(true);
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels);
+                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes);
 
                     tx.Commit();
                 }
 
-                int total = stats.SplitCount + stats.SkipCount + stats.FailCount;
                 foreach (var entry in stats.Log)
                 {
                     string status = entry.StartsWith("✓") ? "pass"

@@ -183,18 +183,46 @@ namespace LemoineTools.Tools.ModifyElements
             IEnumerable<Element> elements,
             List<Grid?>          grids)
         {
-            var stats = new SplitStats();
-
             var planes = grids
                 .Where(g => g != null)
                 .Select(g => TryBuildGridPlane(g!))
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
+            return SplitByPlanesCore(doc, elements, planes, "grids");
+        }
+
+        /// <summary>
+        /// Splits each element in <paramref name="elements"/> at the plane of each
+        /// <see cref="ReferencePlane"/> in <paramref name="refPlanes"/>, using the same
+        /// CURVE strategy as the grid split.  The reference plane's own normal and origin
+        /// are used directly as the cutting plane.
+        /// </summary>
+        public static SplitStats SplitByReferencePlane(
+            Document              doc,
+            IEnumerable<Element>  elements,
+            List<ReferencePlane?> refPlanes)
+        {
+            var planes = refPlanes
+                .Where(r => r != null)
+                .Select(r => TryBuildReferencePlanePlane(r!))
+                .Where(p => p.HasValue)
+                .Select(p => p!.Value)
+                .ToList();
+            return SplitByPlanesCore(doc, elements, planes, "reference planes");
+        }
+
+        private static SplitStats SplitByPlanesCore(
+            Document                       doc,
+            IEnumerable<Element>           elements,
+            List<(XYZ Normal, XYZ Origin)> planes,
+            string                         contextLabel)
+        {
+            var stats = new SplitStats();
 
             if (!planes.Any())
             {
-                stats.Fail("grids", "No valid grid planes could be computed.");
+                stats.Fail(contextLabel, "No valid cutting planes could be computed.");
                 return stats;
             }
 
@@ -532,6 +560,22 @@ namespace LemoineTools.Tools.ModifyElements
         /// or <see langword="null"/> if the grid has no linear curve or the curve is
         /// degenerate (length &lt; 1e-9).
         /// </returns>
+        /// <summary>
+        /// Derives a cutting plane from a <see cref="ReferencePlane"/>.  The plane's own
+        /// normal and origin are used directly.  Returns <see langword="null"/> if the
+        /// normal is degenerate.
+        /// </summary>
+        public static (XYZ Normal, XYZ Origin)? TryBuildReferencePlanePlane(ReferencePlane rp)
+        {
+            try
+            {
+                Plane plane = rp.GetPlane();
+                if (plane.Normal.GetLength() < 1e-9) return null;
+                return (plane.Normal.Normalize(), plane.Origin);
+            }
+            catch { return null; }
+        }
+
         public static (XYZ Normal, XYZ Origin)? TryBuildGridPlane(Grid grid)
         {
             try

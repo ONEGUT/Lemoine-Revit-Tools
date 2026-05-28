@@ -12,7 +12,7 @@ namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class SplitByCellCommand : IExternalCommand
+    public class SplitByReferencePlaneCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -39,37 +39,36 @@ namespace LemoineTools.Commands
             var doc        = uidoc.Document;
             var activeViewId = uidoc.ActiveView?.Id;
 
-            // ── Element counts (A) — active view scope matches Cell's runtime scope ──
-            var counts = new Dictionary<string, int>();
-            if (activeViewId != null)
-            {
-                foreach (var bic in SplitByCellHelpers.SupportedCategories)
-                {
-                    if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
-                    counts[label] = new FilteredElementCollector(doc, activeViewId)
-                        .OfCategoryId(new ElementId(bic))
-                        .WhereElementIsNotElementType()
-                        .ToList().Count;
-                }
-            }
-
             // ── Pre-selection (E) ──────────────────────────────────────────────
-            var supportedBics = new HashSet<BuiltInCategory>(SplitByCellHelpers.SupportedCategories);
-            var rawSelection  = uidoc.Selection.GetElementIds()
+            var supportedBics  = new HashSet<long>(SplitElementsShared.GridSplitCategories.Select(c => (long)c.Cat));
+            var catLabelLookup = SplitElementsShared.GridSplitCategories.ToDictionary(c => (long)c.Cat, c => c.Label);
+            var rawSelection   = uidoc.Selection.GetElementIds()
                 .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Id != null &&
-                            supportedBics.Contains((BuiltInCategory)(int)e.Category.Id.Value))
+                .Where(e => e?.Category?.Id != null && supportedBics.Contains(e.Category.Id.Value))
                 .ToList();
-            var preSelectedIds = rawSelection.Select(e => e.Id).ToList();
+            var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
             var preSelectedCats = rawSelection
-                .Select(e => (BuiltInCategory)(int)e.Category.Id.Value)
-                .Where(bic => SplitByCellViewModel.CatLabels.ContainsKey(bic))
-                .Select(bic => SplitByCellViewModel.CatLabels[bic])
+                .Select(e => catLabelLookup[e.Category.Id.Value])
                 .Distinct().ToList();
 
-            var vm    = new SplitByCellViewModel(
-                App.SplitByCellHandler!, App.SplitByCellEvent!,
-                counts, preSelectedIds, preSelectedCats);
+            // ── Element counts (A) ─────────────────────────────────────────────
+            var counts = SplitElementsShared.GridSplitCategories.ToDictionary(
+                c => c.Label,
+                c => new FilteredElementCollector(doc)
+                    .OfCategoryId(new ElementId(c.Cat))
+                    .WhereElementIsNotElementType()
+                    .ToList().Count);
+
+            // ── Reference planes ───────────────────────────────────────────────
+            var allRefPlanes = new FilteredElementCollector(doc)
+                .OfClass(typeof(ReferencePlane))
+                .Cast<ReferencePlane>()
+                .ToList();
+
+            var vm    = new SplitByReferencePlaneViewModel(
+                App.SplitByReferencePlaneHandler!, App.SplitByReferencePlaneEvent!,
+                allRefPlanes, counts, activeViewId,
+                preSelectedIds, preSelectedCats);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
