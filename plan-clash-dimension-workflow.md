@@ -14,7 +14,7 @@ New tool that identifies element clashes between two filter-defined groups, draw
 | 2 | Group 1 Filters | Multi-select from existing AutoFilters rules — source of clash colour; applies to host document and optionally linked models |
 | 3 | Group 2 Filters | Multi-select from existing AutoFilters rules — clash targets (must not overlap Group 1); same host + link scope |
 | 4 | References | User picks grids (checkbox list by name) and/or floor slabs (checkbox list by level + type) to dimension from. Optional — skip to run annotations only |
-| 5 | Settings & Run | Tolerance (mm, default 25.4), dimension style picker, dimension line offset (mm), dimension target toggle (Edge / Centre), fill style toggle (Solid / Outline), clear previous output checkbox, review cards, Run button |
+| 5 | Settings & Run | Tolerance (mm, default 25.4), dimension style picker, dimension line offset (mm), dimension target toggle (Edge / Centre), fill style toggle (Solid / Outline), cross line type picker (dropdown from document line styles), clear previous output checkbox, review cards, Run button |
 
 ---
 
@@ -140,7 +140,7 @@ For each user-selected floor element:
 ### Settings
 - `Source/Tools/Testing/ClashDimension/ClashDimensionSettings.cs`
   - XML-persisted singleton (same pattern as `BatchDimensionSettings.cs`)
-  - Stores: tolerance value, dimension style name, dimension line offset, dimension target (edge/centre), fill style (solid/outline), clear-previous flag, last selected filter IDs (group 1 & 2), last selected grid/floor ElementIds
+  - Stores: tolerance value, dimension style name, dimension line offset, dimension target (edge/centre), fill style (solid/outline), cross line type name, clear-previous flag, last selected filter IDs (group 1 & 2), last selected grid/floor ElementIds
 
 ---
 
@@ -169,6 +169,7 @@ For each user-selected floor element:
 | Colour annotation | `FilledRegionType.ForegroundPatternColor` |
 | Outline-only fill | `FilledRegionType.ForegroundPatternId = InvalidElementId` |
 | Create cross arms | `doc.Create.NewDetailCurve(view, line)` |
+| Set cross line style | `detailLine.LineStyle = lineStyleCategory` — resolved from `doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines).SubCategories` by name |
 | Grid reference | `new Reference(gridElement)` |
 | Nearest grid per axis | Sort user-selected grids by distance to clash centre in view coordinates; take closest vertical + closest horizontal |
 | Slab edge reference | `PlanarFace.Reference` from floor geometry solid |
