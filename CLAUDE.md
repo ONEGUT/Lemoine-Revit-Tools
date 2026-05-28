@@ -175,6 +175,7 @@ Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`
 | `Brushes` | `System.Windows.Media` |
 | `Math` | `System` |
 | `OfType<>` | `System.Linq` |
+| `LegendCreatorTabContent` | `LemoineTools.Tools.Testing.LegendCreator` |
 
 ### Access modifiers across partial files
 
