@@ -1966,7 +1966,7 @@ namespace LemoineTools.Lemoine.Controls
             AutoFiltersSettings.Saved -= OnFiltersSaved;
         }
 
-        private void OnFiltersSaved()
+        internal void OnFiltersSaved()
         {
             Dispatcher.Invoke(() =>
             {

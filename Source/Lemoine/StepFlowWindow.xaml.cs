@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Lemoine
@@ -78,6 +79,9 @@ namespace LemoineTools.Lemoine
 
             BuildChrome();
             _tool.ValidationChanged += (s, e) => RefreshStepState(_activeStep);
+            if (_tool is ILemoineNavigable nav)
+                nav.NavigateRequested += (s, idx) =>
+                    Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -413,9 +417,21 @@ namespace LemoineTools.Lemoine
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var captIdx    = idx;
-            var confirmBtn = BuildButton(idx == _tool.Steps.Length - 1 ? _tool.RunLabel : "Confirm →", true);
-            confirmBtn.Click += (s, e) => ConfirmStep(captIdx);
+            var captIdx = idx;
+            string btnLabel;
+            if (idx == _tool.Steps.Length - 1)
+                btnLabel = _tool.RunLabel;
+            else if (_tool is ILemoineStepConfirmable sc && sc.ConfirmLabelFor(step.Id) is string lbl)
+                btnLabel = lbl;
+            else
+                btnLabel = "Confirm →";
+            var confirmBtn = BuildButton(btnLabel, true);
+            confirmBtn.Click += (s, e) =>
+            {
+                if (_tool is ILemoineStepConfirmable sc2)
+                    sc2.OnStepConfirm(_tool.Steps[captIdx].Id);
+                ConfirmStep(captIdx);
+            };
             _confirmBtns[idx] = confirmBtn;
             Grid.SetColumn(confirmBtn, 2);
             btnGrid.Children.Add(confirmBtn);

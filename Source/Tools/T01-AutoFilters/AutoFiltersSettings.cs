@@ -281,6 +281,14 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArrayItem("Trade")]
         public List<FilterTradeConfig> Trades { get; set; } = new List<FilterTradeConfig>();
 
+        /// <summary>
+        /// Names of ParameterFilterElements last created by "Create Filters".
+        /// Used to detect and delete orphans when trades or rules are removed.
+        /// </summary>
+        [XmlArray("CreatedFilters")]
+        [XmlArrayItem("Filter")]
+        public List<string> CreatedFilterNames { get; set; } = new List<string>();
+
         // ── Known lookup values ───────────────────────────────────────────────
 
         /// <summary>

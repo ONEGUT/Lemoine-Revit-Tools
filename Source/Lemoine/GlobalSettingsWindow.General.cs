@@ -13,8 +13,6 @@ using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 
