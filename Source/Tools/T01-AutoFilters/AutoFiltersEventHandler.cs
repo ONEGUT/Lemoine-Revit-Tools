@@ -40,9 +40,10 @@ namespace LemoineTools.Tools.AutoFilters
         public bool OverwriteFilterDefinition { get; set; } = false;
 
         // ── Callbacks ─────────────────────────────────────────────────────────
-        public Action<string, string>?     PushLog    { get; set; }
-        public Action<int, int, int, int>? OnProgress { get; set; }
-        public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<string, string>?        PushLog    { get; set; }
+        public Action<int, int, int, int>?    OnProgress { get; set; }
+        /// <summary>Invoked on Revit's main thread with (pass, fail, skip, removed).</summary>
+        public Action<int, int, int, int>?    OnComplete { get; set; }
 
         public string GetName() => "LemoineTools.Tools.AutoFilters.AutoFiltersEventHandler";
 
@@ -50,11 +51,11 @@ namespace LemoineTools.Tools.AutoFilters
         {
             var doc  = app.ActiveUIDocument.Document;
             var view = doc.ActiveView;
-            int pass = 0, fail = 0, skip = 0;
+            int pass = 0, fail = 0, skip = 0, removed = 0;
 
             try
             {
-                Run(app, doc, view, ref pass, ref fail, ref skip);
+                Run(app, doc, view, ref pass, ref fail, ref skip, ref removed);
             }
             catch (Exception ex)
             {
@@ -63,7 +64,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
 
             Progress(100, pass, fail, skip);
-            Complete(pass, fail, skip);
+            Complete(pass, fail, skip, removed);
         }
 
         // ── Core logic ────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ namespace LemoineTools.Tools.AutoFilters
         // a HasValue rule is used to match all elements with any value for the parameter).
         //
         private void Run(UIApplication app, Document doc, View view,
-            ref int pass, ref int fail, ref int skip)
+            ref int pass, ref int fail, ref int skip, ref int removed)
         {
             bool createOnly   = CreateOnly;
             bool overwriteDef = createOnly || OverwriteFilterDefinition;
@@ -159,11 +160,52 @@ namespace LemoineTools.Tools.AutoFilters
 
             int reused = 0;
 
+            // Build the expected filter name set from current settings (used for orphan cleanup)
+            var expectedFilterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (createOnly)
+            {
+                foreach (var t in trades)
+                {
+                    foreach (var r in t.Rules)
+                    {
+                        if (!r.Enabled || (r.MatchType != "all" && r.Match.Count == 0)) continue;
+                        expectedFilterNames.Add(t.Id + "_" + r.Name.Trim().Replace(" ", "_").ToUpperInvariant());
+                    }
+                }
+            }
+
             string txName = createOnly ? "Auto Filters — Create" : "Auto Filters — Create & Color";
             using (var tx = new Transaction(doc, txName))
             {
                 ConfigureFailures(tx);
                 tx.Start();
+
+                // Remove orphaned filters: in the saved manifest but no longer in the expected set
+                if (createOnly)
+                {
+                    var prevCreated = AutoFiltersSettings.Instance.CreatedFilterNames;
+                    if (prevCreated != null)
+                    {
+                        foreach (var orphanName in prevCreated)
+                        {
+                            if (!expectedFilterNames.Contains(orphanName)
+                                && existingFilters.TryGetValue(orphanName, out var orphan))
+                            {
+                                try
+                                {
+                                    doc.Delete(orphan.Id);
+                                    existingFilters.Remove(orphanName);
+                                    removed++;
+                                    Log($"Removed '{orphanName}'.", "info");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"Could not remove '{orphanName}': {ex.Message}", "fail");
+                                }
+                            }
+                        }
+                    }
+                }
 
                 var matMap = new FilteredElementCollector(doc)
                     .OfClass(typeof(Material)).Cast<Material>()
@@ -191,7 +233,15 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped.", "pass");
+            // Persist updated manifest so future runs know which filters we own
+            if (createOnly)
+            {
+                AutoFiltersSettings.Instance.CreatedFilterNames = expectedFilterNames.ToList();
+                AutoFiltersSettings.Instance.Save();
+            }
+
+            string removeMsg = removed > 0 ? $", {removed} removed" : "";
+            Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped{removeMsg}.", "pass");
             pass += reused;
         }
 
@@ -610,6 +660,6 @@ namespace LemoineTools.Tools.AutoFilters
 
         private void Log(string text, string status) => PushLog?.Invoke(text, status);
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
-        private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
+        private void Complete(int p, int f, int s, int r = 0) => OnComplete?.Invoke(p, f, s, r);
     }
 }

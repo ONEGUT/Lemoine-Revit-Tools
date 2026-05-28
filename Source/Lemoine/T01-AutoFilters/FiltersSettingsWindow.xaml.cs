@@ -168,15 +168,18 @@ namespace LemoineTools.Lemoine
 
             // ⚠ OnComplete is invoked on Revit's main thread — marshal back to this STA dispatcher.
             var windowDispatcher = Dispatcher;
-            handler.OnComplete = (pass, fail, skip) =>
+            handler.OnComplete = (pass, fail, skip, removed) =>
                 windowDispatcher.BeginInvoke(new Action(() =>
                 {
+                    string removedSuffix = removed > 0 ? $", {removed} removed." : ".";
                     if (fail == 0 && pass > 0)
-                        FlashStatus($"{pass} filter(s) created.");
+                        FlashStatus($"{pass} filter(s) created{removedSuffix}");
+                    else if (fail == 0 && removed > 0)
+                        FlashStatus($"{removed} filter(s) removed.");
                     else if (fail == 0)
                         FlashStatus("Filters up to date.");
                     else if (pass > 0)
-                        FlashStatus($"{pass} created, {fail} failed.");
+                        FlashStatus($"{pass} created, {fail} failed{removedSuffix}");
                     else
                         FlashStatus("Failed — check Revit journal.");
                 }));
