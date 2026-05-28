@@ -20,14 +20,38 @@ namespace LemoineTools.Tools.Testing
         public string                      FilenamePattern { get; set; } = "{SheetNumber}-{SheetName}";
         public string                      OutputFolder    { get; set; } = "";
         public bool                        SplitByFormat   { get; set; } = false;
+
+        // ── Format flags ──────────────────────────────────────────────────────
         public bool                        ExportPdf       { get; set; } = true;
         public bool                        ExportDwg       { get; set; } = false;
         public bool                        ExportNwc       { get; set; } = false;
         public bool                        ExportIfc       { get; set; } = false;
+
+        // ── PDF options ───────────────────────────────────────────────────────
         public bool                        CombinePdf      { get; set; } = false;
-        public string                      DwgSetupName    { get; set; } = "";
         public string                      PdfPlacement    { get; set; } = "Center";
         public string                      HiddenLines     { get; set; } = "Vector Processing";
+
+        // ── DWG options ───────────────────────────────────────────────────────
+        public string                      DwgSetupName    { get; set; } = "";
+
+        // ── NWC options (all NavisworksExportOptions properties) ──────────────
+        public string                      NwcCoordinates        { get; set; } = "Shared";
+        public string                      NwcParameters         { get; set; } = "All";
+        public bool                        NwcConvertElementProps{ get; set; } = true;
+        public bool                        NwcDivideByLevel      { get; set; } = false;
+        public bool                        NwcExportLinks        { get; set; } = true;
+        public bool                        NwcExportParts        { get; set; } = false;
+        public bool                        NwcExportElementIds   { get; set; } = true;
+        public bool                        NwcExportUrls         { get; set; } = false;
+        public bool                        NwcFindMissingMaterials { get; set; } = false;
+        public bool                        NwcExportRoomGeometry { get; set; } = false;
+        public bool                        NwcExportRoomAsAttribute { get; set; } = false;
+        public bool                        NwcConvertLights      { get; set; } = false;
+        public bool                        NwcConvertLinkedCad   { get; set; } = false;
+        public double                      NwcFacetingFactor     { get; set; } = 1.0;
+
+        // ── IFC options ───────────────────────────────────────────────────────
         public string                      IfcVersion      { get; set; } = "IFC2x3";
 
         // ── Callbacks ─────────────────────────────────────────────────────────
@@ -85,34 +109,55 @@ namespace LemoineTools.Tools.Testing
                     return;
                 }
 
-                // TEMPORARY DEBUG — log Navisworks assemblies present in AppDomain
+                // ── NWC pre-flight ────────────────────────────────────────────
+                // Check Sheets mode block and Navisworks availability before touching the loop
+                bool nwcReady = false;
                 if (ExportNwc)
                 {
-                    debug.Log("NWC-SCAN", "Scanning AppDomain for Navisworks-related assemblies...");
-                    int nwcFound = 0;
-                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        string name = asm.GetName().Name ?? "";
-                        if (name.IndexOf("navisworks", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            name.IndexOf("nwexport",   StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            debug.Log("NWC-SCAN", $"  Found: {name}",
-                                $"Version={asm.GetName().Version}  Location={asm.Location}");
-                            nwcFound++;
-                        }
-                    }
-                    debug.Log("NWC-SCAN", $"Scan complete — {nwcFound} Navisworks assembly/ies in AppDomain.");
-
                     if (ExportMode == "Sheets")
                     {
                         pushLog("NWC: Skipped — NWC requires Views mode (3D views only). Switch to Views in Step 1.", "fail");
-                        debug.Log("NWC", "Export blocked — ExportMode is Sheets, NWC only supports 3D Views.");
-                        skip += elements.Count;
+                        debug.Log("NWC", "Export blocked — ExportMode is Sheets.");
+                    }
+                    else
+                    {
+                        // TEMPORARY DEBUG — scan AppDomain for Navisworks assemblies
+                        debug.Log("NWC-SCAN", "Scanning AppDomain for Navisworks-related assemblies...");
+                        int nwcFound = 0;
+                        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                        {
+                            string asmName = asm.GetName().Name ?? "";
+                            if (asmName.IndexOf("navisworks", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                asmName.IndexOf("nwexport",   StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                debug.Log("NWC-SCAN", $"  {asmName}",
+                                    $"v{asm.GetName().Version}  {asm.Location}");
+                                nwcFound++;
+                            }
+                        }
+                        debug.Log("NWC-SCAN", $"Scan complete — {nwcFound} Navisworks assembly/ies found.");
+
+                        nwcReady = OptionalFunctionalityUtils.IsNavisworksExporterAvailable();
+                        debug.Log("NWC", $"IsNavisworksExporterAvailable() = {nwcReady}");
+
+                        if (!nwcReady)
+                        {
+                            pushLog("NWC: Navisworks Exporter not available — is Navisworks Manage installed and loaded in this session?", "fail");
+                            debug.Log("NWC", "NWC export disabled for this run — exporter not registered in Revit.");
+                        }
+                        else
+                        {
+                            debug.Log("NWC", $"Settings: Coords={NwcCoordinates}  Params={NwcParameters}  FacetingFactor={NwcFacetingFactor}");
+                            debug.Log("NWC", $"          ConvertElementProps={NwcConvertElementProps}  DivideByLevel={NwcDivideByLevel}  ExportLinks={NwcExportLinks}");
+                            debug.Log("NWC", $"          ExportParts={NwcExportParts}  ExportElementIds={NwcExportElementIds}  ExportUrls={NwcExportUrls}");
+                            debug.Log("NWC", $"          FindMissingMaterials={NwcFindMissingMaterials}  RoomGeometry={NwcExportRoomGeometry}  RoomAsAttr={NwcExportRoomAsAttribute}");
+                            debug.Log("NWC", $"          ConvertLights={NwcConvertLights}  ConvertLinkedCad={NwcConvertLinkedCad}");
+                        }
                     }
                 }
 
-                // Effective NWC/IFC: blocked entirely when in Sheets mode
-                bool nwcEffective = ExportNwc && ExportMode != "Sheets";
+                // Effective format flags — NWC/IFC only run in Views mode with NWC available
+                bool nwcEffective = ExportNwc && ExportMode != "Sheets" && nwcReady;
                 bool ifcEffective = ExportIfc && ExportMode != "Sheets";
 
                 int total = elements.Count * (ExportPdf     ? 1 : 0)
@@ -127,7 +172,6 @@ namespace LemoineTools.Tools.Testing
 
                 foreach (var element in elements)
                 {
-                    // Build token dictionary for this element
                     var tokens = new Dictionary<string, string>
                     {
                         ["SheetNumber"]   = element.get_Parameter(BuiltInParameter.SHEET_NUMBER)?.AsString()           ?? "",
@@ -144,22 +188,19 @@ namespace LemoineTools.Tools.Testing
                     string resolved = LemoineTokenInput.Resolve(FilenamePattern, tokens);
                     string safeName = SanitizeFilename(resolved);
 
-                    debug.Log("ELEMENT", $"Id={element.Id}  Type={element.GetType().Name}  SafeName={safeName}");
+                    debug.Log("ELEMENT", $"Id={element.Id}  Type={element.GetType().Name}  Name={safeName}");
 
                     // ── PDF ───────────────────────────────────────────────────
                     if (ExportPdf)
                     {
                         try
                         {
-                            string outDir = SplitByFormat
-                                ? EnsureSubfolder(OutputFolder, "PDF")
-                                : OutputFolder;
-
+                            string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
                             var ids  = new List<ElementId> { element.Id };
                             var opts = new PDFExportOptions
                             {
-                                FileName = safeName,
-                                Combine  = CombinePdf,
+                                FileName       = safeName,
+                                Combine        = CombinePdf,
                                 PaperPlacement = PdfPlacement == "Center"
                                     ? PaperPlacementType.Center
                                     : PaperPlacementType.LowerLeft,
@@ -184,11 +225,8 @@ namespace LemoineTools.Tools.Testing
                     {
                         try
                         {
-                            string outDir = SplitByFormat
-                                ? EnsureSubfolder(OutputFolder, "DWG")
-                                : OutputFolder;
+                            string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
 
-                            // Locate export setup by name
                             ExportDWGSettings? setup = null;
                             if (!string.IsNullOrEmpty(DwgSetupName))
                             {
@@ -226,7 +264,7 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     // ── NWC ───────────────────────────────────────────────────
-                    // NWC is 3D-views-only; Sheets mode is blocked before the loop.
+                    // 3D views only. Sheets mode and unavailable exporter are blocked above.
                     if (nwcEffective)
                     {
                         try
@@ -235,21 +273,52 @@ namespace LemoineTools.Tools.Testing
                             {
                                 skip++;
                                 pushLog($"NWC: Skipped {safeName} — not a 3D view.", "warn");
-                                debug.Log("NWC", $"Skipped {safeName} — element type={element.GetType().Name}");
+                                debug.Log("NWC", $"Skipped {safeName} — type={element.GetType().Name}");
                             }
                             else
                             {
-                                string outDir = SplitByFormat
-                                    ? EnsureSubfolder(OutputFolder, "NWC")
-                                    : OutputFolder;
+                                string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "NWC") : OutputFolder;
 
-                                // TEMPORARY DEBUG — log the options type we're using
                                 var opts = new NavisworksExportOptions();
-                                debug.Log("NWC", $"NavisworksExportOptions type: {opts.GetType().FullName}");
-                                debug.Log("NWC", $"Assembly: {opts.GetType().Assembly.GetName().Name}  v{opts.GetType().Assembly.GetName().Version}");
-                                debug.Log("NWC", $"Calling doc.Export({outDir}, {safeName}, [{view3d.Id}], opts)");
 
-                                doc.Export(outDir, safeName, new List<ElementId> { view3d.Id }, opts);
+                                // Scope: always View for per-view batch — ViewId drives which view exports
+                                opts.ExportScope              = NavisworksExportScope.View;
+                                opts.ViewId                   = view3d.Id;
+
+                                // Coordinates
+                                opts.Coordinates = NwcCoordinates == "Internal"
+                                    ? NavisworksCoordinates.Internal
+                                    : NavisworksCoordinates.Shared;
+
+                                // Parameters
+                                opts.Parameters = NwcParameters switch
+                                {
+                                    "Elements" => NavisworksParameters.Elements,
+                                    "None"     => NavisworksParameters.None,
+                                    _          => NavisworksParameters.All,
+                                };
+
+                                opts.ConvertElementProperties = NwcConvertElementProps;
+                                opts.DivideFileIntoLevels     = NwcDivideByLevel;
+                                opts.ExportLinks              = NwcExportLinks;
+                                opts.ExportParts              = NwcExportParts;
+                                opts.ExportElementIds         = NwcExportElementIds;
+                                opts.ExportUrls               = NwcExportUrls;
+                                opts.FindMissingMaterials     = NwcFindMissingMaterials;
+                                opts.ExportRoomGeometry       = NwcExportRoomGeometry;
+                                opts.ExportRoomAsAttribute    = NwcExportRoomAsAttribute;
+                                opts.ConvertLights            = NwcConvertLights;
+                                opts.FacetingFactor           = NwcFacetingFactor;
+
+                                // ConvertLinkedCADFormats was added mid-cycle — guard for older API versions
+                                // TEMPORARY DEBUG — remove try/catch once minimum API version confirmed
+                                try { opts.ConvertLinkedCADFormats = NwcConvertLinkedCad; }
+                                catch (Exception ex) { debug.Log("NWC", "ConvertLinkedCADFormats not available in this API build", ex.Message); }
+
+                                debug.Log("NWC", $"Calling doc.Export({outDir}, {safeName}, opts) [3-param NWC overload]  ViewId={view3d.Id}");
+
+                                // NWC export uses the 3-parameter overload — ViewId is set on the options object
+                                doc.Export(outDir, safeName, opts);
                                 pass++;
                                 pushLog($"NWC: {safeName}.nwc", "pass");
                                 debug.Log("NWC", $"OK: {safeName}.nwc");
@@ -266,7 +335,7 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     // ── IFC ───────────────────────────────────────────────────
-                    // IFC is 3D-views-only; Sheets mode is blocked by ifcEffective.
+                    // 3D views only. Sheets mode is blocked by ifcEffective.
                     if (ifcEffective)
                     {
                         try
@@ -275,21 +344,17 @@ namespace LemoineTools.Tools.Testing
                             {
                                 skip++;
                                 pushLog($"IFC: Skipped {safeName} — not a 3D view.", "warn");
-                                debug.Log("IFC", $"Skipped {safeName} — element type={element.GetType().Name}");
+                                debug.Log("IFC", $"Skipped {safeName} — type={element.GetType().Name}");
                             }
                             else
                             {
-                                string outDir = SplitByFormat
-                                    ? EnsureSubfolder(OutputFolder, "IFC")
-                                    : OutputFolder;
+                                string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "IFC") : OutputFolder;
 
                                 var opts = new IFCExportOptions();
                                 opts.FileVersion  = IfcVersion == "IFC4" ? IFCVersion.IFC4 : IFCVersion.IFC2x3;
                                 opts.FilterViewId = element.Id;
 
-                                debug.Log("IFC", $"IFCExportOptions type: {opts.GetType().FullName}");
-                                debug.Log("IFC", $"FileVersion={opts.FileVersion}  FilterViewId={opts.FilterViewId}");
-                                debug.Log("IFC", $"Calling doc.Export({outDir}, {safeName}, opts)");
+                                debug.Log("IFC", $"Calling doc.Export({outDir}, {safeName}, opts)  Version={opts.FileVersion}  FilterViewId={opts.FilterViewId}");
 
                                 doc.Export(outDir, safeName, opts);
                                 pass++;
