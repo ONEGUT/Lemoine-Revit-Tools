@@ -9,16 +9,22 @@ using RevitColor = Autodesk.Revit.DB.Color;
 namespace LemoineTools.Tools.AutoFilters
 {
     /// <summary>
-    /// Executes the Auto Filters scan + filter-creation cycle on the Revit main thread.
+    /// Executes the Auto Filters filter-creation cycle on the Revit main thread.
     ///
-    /// AutoFiltersViewModel.Run() sets all properties then calls Raise().
-    /// Revit calls Execute() at the next idle moment on the main thread.
+    /// Set all properties then call Raise(). Revit calls Execute() at the next idle moment.
     /// </summary>
     public class AutoFiltersEventHandler : IExternalEventHandler
     {
-        // ── Set by ViewModel before Raise() ───────────────────────────────────
+        // ── Set by caller before Raise() ──────────────────────────────────────
         public IList<string> SelectedLinkTitles   { get; set; } = new List<string>();
         public IList<string> SelectedDisciplines  { get; set; } = new List<string>();
+
+        /// <summary>
+        /// When true, only create/update ParameterFilterElement definitions — do not apply
+        /// filters to any view and do not set graphic overrides. OverwriteFilterDefinition
+        /// is treated as true in this mode.
+        /// </summary>
+        public bool CreateOnly { get; set; } = false;
 
         /// <summary>
         /// When true, graphic overrides are NOT re-applied to filters that already exist on the view.
@@ -34,9 +40,10 @@ namespace LemoineTools.Tools.AutoFilters
         public bool OverwriteFilterDefinition { get; set; } = false;
 
         // ── Callbacks ─────────────────────────────────────────────────────────
-        public Action<string, string>?     PushLog    { get; set; }
-        public Action<int, int, int, int>? OnProgress { get; set; }
-        public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<string, string>?        PushLog    { get; set; }
+        public Action<int, int, int, int>?    OnProgress { get; set; }
+        /// <summary>Invoked on Revit's main thread with (pass, fail, skip, removed).</summary>
+        public Action<int, int, int, int>?    OnComplete { get; set; }
 
         public string GetName() => "LemoineTools.Tools.AutoFilters.AutoFiltersEventHandler";
 
@@ -44,11 +51,11 @@ namespace LemoineTools.Tools.AutoFilters
         {
             var doc  = app.ActiveUIDocument.Document;
             var view = doc.ActiveView;
-            int pass = 0, fail = 0, skip = 0;
+            int pass = 0, fail = 0, skip = 0, removed = 0;
 
             try
             {
-                Run(app, doc, view, ref pass, ref fail, ref skip);
+                Run(app, doc, view, ref pass, ref fail, ref skip, ref removed);
             }
             catch (Exception ex)
             {
@@ -57,7 +64,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
 
             Progress(100, pass, fail, skip);
-            Complete(pass, fail, skip);
+            Complete(pass, fail, skip, removed);
         }
 
         // ── Core logic ────────────────────────────────────────────────────────
@@ -71,9 +78,12 @@ namespace LemoineTools.Tools.AutoFilters
         // a HasValue rule is used to match all elements with any value for the parameter).
         //
         private void Run(UIApplication app, Document doc, View view,
-            ref int pass, ref int fail, ref int skip)
+            ref int pass, ref int fail, ref int skip, ref int removed)
         {
-            if (!view.AreGraphicsOverridesAllowed())
+            bool createOnly   = CreateOnly;
+            bool overwriteDef = createOnly || OverwriteFilterDefinition;
+
+            if (!createOnly && !view.AreGraphicsOverridesAllowed())
             {
                 Log($"Active view '{view.Name}' does not support graphic overrides.", "fail");
                 fail++; return;
@@ -144,15 +154,58 @@ namespace LemoineTools.Tools.AutoFilters
                 .Cast<ParameterFilterElement>()
                 .ToDictionary(f => f.Name);
 
-            var existingViewFilterIds = new HashSet<long>(
-                view.GetFilters().Select(id => id.Value));
+            var existingViewFilterIds = createOnly
+                ? new HashSet<long>()
+                : new HashSet<long>(view.GetFilters().Select(id => id.Value));
 
             int reused = 0;
 
-            using (var tx = new Transaction(doc, "Auto Filters — Create & Color"))
+            // Build the expected filter name set from current settings (used for orphan cleanup)
+            var expectedFilterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (createOnly)
+            {
+                foreach (var t in trades)
+                {
+                    foreach (var r in t.Rules)
+                    {
+                        if (!r.Enabled || (r.MatchType != "all" && r.Match.Count == 0)) continue;
+                        expectedFilterNames.Add(t.Id + "_" + r.Name.Trim().Replace(" ", "_").ToUpperInvariant());
+                    }
+                }
+            }
+
+            string txName = createOnly ? "Auto Filters — Create" : "Auto Filters — Create & Color";
+            using (var tx = new Transaction(doc, txName))
             {
                 ConfigureFailures(tx);
                 tx.Start();
+
+                // Remove orphaned filters: in the saved manifest but no longer in the expected set
+                if (createOnly)
+                {
+                    var prevCreated = AutoFiltersSettings.Instance.CreatedFilterNames;
+                    if (prevCreated != null)
+                    {
+                        foreach (var orphanName in prevCreated)
+                        {
+                            if (!expectedFilterNames.Contains(orphanName)
+                                && existingFilters.TryGetValue(orphanName, out var orphan))
+                            {
+                                try
+                                {
+                                    doc.Delete(orphan.Id);
+                                    existingFilters.Remove(orphanName);
+                                    removed++;
+                                    Log($"Removed '{orphanName}'.", "info");
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"Could not remove '{orphanName}': {ex.Message}", "fail");
+                                }
+                            }
+                        }
+                    }
+                }
 
                 var matMap = new FilteredElementCollector(doc)
                     .OfClass(typeof(Material)).Cast<Material>()
@@ -172,6 +225,7 @@ namespace LemoineTools.Tools.AutoFilters
                         ProcessRule(doc, view, trade, rule, bipMap, matMap,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
+                            createOnly, overwriteDef,
                             ref pass, ref fail, ref skip, ref reused, ref rulesDone, totalRules);
                     }
                 }
@@ -179,7 +233,15 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped.", "pass");
+            // Persist updated manifest so future runs know which filters we own
+            if (createOnly)
+            {
+                AutoFiltersSettings.Instance.CreatedFilterNames = expectedFilterNames.ToList();
+                AutoFiltersSettings.Instance.Save();
+            }
+
+            string removeMsg = removed > 0 ? $", {removed} removed" : "";
+            Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped{removeMsg}.", "pass");
             pass += reused;
         }
 
@@ -193,6 +255,7 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> linePatternMap,
             Dictionary<string, ParameterFilterElement> existingFilters,
             HashSet<long> existingViewFilterIds,
+            bool createOnly, bool overwriteDef,
             ref int pass, ref int fail, ref int skip, ref int reused,
             ref int rulesDone, int totalRules)
         {
@@ -239,15 +302,15 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 ParameterFilterElement? pfe = null;
 
-                // Optionally delete and recreate if definition has changed
-                if (OverwriteFilterDefinition && existingFilters.TryGetValue(filterName, out var oldPfe))
+                // Delete and recreate if definition has changed (or in CreateOnly mode)
+                if (overwriteDef && existingFilters.TryGetValue(filterName, out var oldPfe))
                 {
                     doc.Delete(oldPfe.Id);
                     existingFilters.Remove(filterName);
                     existingViewFilterIds.Remove(oldPfe.Id.Value);
                 }
 
-                if (!OverwriteFilterDefinition && existingFilters.TryGetValue(filterName, out pfe))
+                if (!overwriteDef && existingFilters.TryGetValue(filterName, out pfe))
                 {
                     reused++;
 
@@ -277,15 +340,17 @@ namespace LemoineTools.Tools.AutoFilters
                     pass++;
                 }
 
-                if (!existingViewFilterIds.Contains(pfe!.Id.Value))
+                if (!createOnly)
                 {
-                    view.AddFilter(pfe.Id);
-                    existingViewFilterIds.Add(pfe.Id.Value);
-                }
+                    if (!existingViewFilterIds.Contains(pfe!.Id.Value))
+                    {
+                        view.AddFilter(pfe.Id);
+                        existingViewFilterIds.Add(pfe.Id.Value);
+                    }
 
-                // Apply graphic overrides (colors, line style, halftone, transparency)
-                // Visibility (show/hide elements) is applied inside ApplyRuleOverride via rule.Visible.
-                ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                    // Apply graphic overrides (colors, line style, halftone, transparency)
+                    ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                }
             }
             catch (Exception ex)
             {
@@ -595,6 +660,6 @@ namespace LemoineTools.Tools.AutoFilters
 
         private void Log(string text, string status) => PushLog?.Invoke(text, status);
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
-        private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
+        private void Complete(int p, int f, int s, int r = 0) => OnComplete?.Invoke(p, f, s, r);
     }
 }

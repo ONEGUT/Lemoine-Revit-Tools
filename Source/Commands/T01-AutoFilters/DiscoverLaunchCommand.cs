@@ -10,13 +10,15 @@ using LemoineTools.Tools.AutoFilters;
 namespace LemoineTools.Commands
 {
     /// <summary>
-    /// Thin launcher for the Auto Filters step-flow window.
-    /// Captures loaded link titles and configured disciplines on the main thread,
-    /// then opens the UI on a dedicated STA thread.
+    /// Thin launcher for the Discover Rules step-flow window.
+    ///
+    /// Queries loaded RevitLinkInstances on the Revit main thread,
+    /// then opens the window on a dedicated STA thread so real-time
+    /// progress and colour pickers work correctly.
     /// </summary>
-    [Transaction(TransactionMode.Manual)]
+    [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]
-    public class AutoFiltersLaunchCommand : IExternalCommand
+    public class DiscoverLaunchCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -25,7 +27,7 @@ namespace LemoineTools.Commands
             ref string          message,
             ElementSet          elements)
         {
-            // FIX: bring existing window to front via Dispatcher (STA-safe)
+            // Bring existing window to front (STA-safe via Dispatcher)
             if (_window != null)
             {
                 try
@@ -42,32 +44,25 @@ namespace LemoineTools.Commands
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 
-            // Capture loaded link titles on the main thread
-            var linkTitles = new System.Collections.Generic.List<string>();
+            // Collect loaded link instances on the Revit main thread
+            var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>();
             foreach (RevitLinkInstance li in
                 new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+                    .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
                 var ld = li.GetLinkDocument();
                 if (ld == null) continue;
-                string title = ld.Title ?? li.Name;
-                if (!linkTitles.Contains(title))
-                    linkTitles.Add(title);
+                string label = ld.Title ?? li.Name;
+                if (!links.Any(x => x.Label == label))
+                    links.Add(new DiscoverViewModel.LinkEntry(li.Id, label));
             }
 
-            // Discipline list uses Label (full trade name) for display and selection.
-            // The event handler matches SelectedDisciplines against t.Label, not t.Id.
-            var disciplines = AutoFiltersSettings.Instance.Trades
-                .Select(t => t.Label)
-                .ToList();
+            var vm = new DiscoverViewModel(
+                App.DiscoverHandler!,
+                App.DiscoverEvent!,
+                links);
 
-            var vm = new AutoFiltersViewModel(
-                App.AutoFiltersHandler!,
-                App.AutoFiltersEvent!,
-                linkTitles,
-                disciplines);
-
-            // FIX: open window on dedicated STA thread so real-time progress works
+            // Open the window on a dedicated STA thread so Dispatcher.Run() pumps messages
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
@@ -81,7 +76,7 @@ namespace LemoineTools.Commands
                 };
                 win.Show();
                 ready.Set();
-                Dispatcher.Run();
+                Dispatcher.Run(); // ← message pump; keeps STA thread alive while window is open
             });
             thread.SetApartmentState(ApartmentState.STA);
             thread.IsBackground = true;

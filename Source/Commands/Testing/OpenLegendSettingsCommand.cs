@@ -1,27 +1,24 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing;
 
 namespace LemoineTools.Commands
 {
-    [Transaction(TransactionMode.Manual)]
+    /// <summary>
+    /// Opens the standalone Legend Creator Settings window on a dedicated STA thread.
+    /// </summary>
+    [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]
-    public class SheetPackCommand : IExternalCommand
+    public class OpenLegendSettingsCommand : IExternalCommand
     {
-        private static StepFlowWindow? _window;
+        private static LegendSettingsWindow? _window;
 
-        public Result Execute(
-            ExternalCommandData commandData,
-            ref string          message,
-            ElementSet          elements)
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            // Reuse existing open window
+            // Bring existing window to front (STA-safe)
             if (_window != null)
             {
                 try
@@ -36,26 +33,12 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // ── Collect all sheets ────────────────────────────────────────────
-            var allSheets = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewSheet))
-                .Cast<ViewSheet>()
-                .Where(vs => !vs.IsPlaceholder)
-                .OrderBy(vs => vs.SheetNumber)
-                .ToDictionary(vs => vs.SheetNumber, vs => vs.Name);
-
-            var vm = new SheetPackViewModel(
-                App.SheetPackHandler!, App.SheetPackEvent!,
-                allSheets);
-
             var ready = new ManualResetEventSlim(false);
-            StepFlowWindow? win = null;
+            LegendSettingsWindow? win = null;
 
-            var thread = new System.Threading.Thread(() =>
+            var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new LegendSettingsWindow();
                 win.Closed += (s, e) =>
                 {
                     _window = null;
