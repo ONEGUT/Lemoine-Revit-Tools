@@ -76,9 +76,6 @@ namespace LemoineTools
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
 
-        // ── Testing — Sheet Pack ────────────────────────────────────────────────────
-        internal static SheetPackEventHandler?     SheetPackHandler     { get; private set; }
-        internal static ExternalEvent?             SheetPackEvent       { get; private set; }
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler? SplitByLevelHandler { get; private set; }
@@ -154,8 +151,6 @@ namespace LemoineTools
             BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
-            SheetPackHandler     = new SheetPackEventHandler();
-            SheetPackEvent       = ExternalEvent.Create(SheetPackHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler = new SplitByLevelEventHandler();
@@ -322,11 +317,9 @@ namespace LemoineTools
                 Btn("LT_BatchDimension", "Batch Dimension", "BatchDimensionCommand",
                     "Apply dimension strings across multiple views at once."));
 
-            testingPanel.AddStackedItems(
-                Btn("LT_CreateSheets", "Create Sheets", "CreateSheetsCommand",
-                    "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
-                Btn("LT_SheetPack",    "Sheet Pack",    "SheetPackCommand",
-                    "Organise sheets into named issue packages and stamp sheet parameters."));
+            testingPanel.AddItem(Btn(
+                "LT_CreateSheets", "Create\nSheets", "CreateSheetsCommand",
+                "Generate sheets from levels, rooms, scope boxes, or a CSV file."));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
