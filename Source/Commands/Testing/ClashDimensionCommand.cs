@@ -1,0 +1,188 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Windows.Threading;
+using Autodesk.Revit.Attributes;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
+using LemoineTools.Tools.Testing;
+
+namespace LemoineTools.Commands
+{
+    [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
+    public class ClashDimensionCommand : IExternalCommand
+    {
+        private static StepFlowWindow? _window;
+
+        public Result Execute(
+            ExternalCommandData commandData,
+            ref string          message,
+            ElementSet          elements)
+        {
+            if (_window != null)
+            {
+                try
+                {
+                    _window.Dispatcher.Invoke(() =>
+                    {
+                        if (_window.IsVisible) _window.Activate();
+                        else _window = null;
+                    });
+                    if (_window != null) return Result.Succeeded;
+                }
+                catch { _window = null; }
+            }
+
+            var doc = commandData.Application.ActiveUIDocument.Document;
+
+            // Dimension types
+            var dimStyleNames = new FilteredElementCollector(doc)
+                .OfClass(typeof(DimensionType))
+                .Cast<DimensionType>()
+                .Select(dt => dt.Name)
+                .OrderBy(n => n)
+                .ToList();
+
+            // Plan views only (floor plan + ceiling plan)
+            var allViews = new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => !v.IsTemplate
+                         && (v.ViewType == ViewType.FloorPlan
+                          || v.ViewType == ViewType.CeilingPlan))
+                .OrderBy(v => v.Name)
+                .ToList();
+
+            // Grids — host doc first, then each loaded link
+            var gridNames   = new List<string>();
+            var gridIds     = new List<long>();
+            var gridLinkIds = new List<long>();   // 0 = host doc, >0 = RevitLinkInstance.Id.Value
+            var usedGridNames = new HashSet<string>();
+
+            foreach (var g in new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Grids)
+                .OfClass(typeof(Grid))
+                .Cast<Grid>()
+                .OrderBy(g => g.Name))
+            {
+                string name = UniqueName(g.Name, usedGridNames);
+                gridNames.Add(name);
+                gridIds.Add(g.Id.Value);
+                gridLinkIds.Add(0L);
+            }
+
+            foreach (var li in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance))
+                .Cast<RevitLinkInstance>())
+            {
+                var ld = li.GetLinkDocument();
+                if (ld == null) continue;
+                string prefix = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "] ";
+                foreach (var g in new FilteredElementCollector(ld)
+                    .OfCategory(BuiltInCategory.OST_Grids)
+                    .OfClass(typeof(Grid))
+                    .Cast<Grid>()
+                    .OrderBy(g => g.Name))
+                {
+                    string name = UniqueName(prefix + g.Name, usedGridNames);
+                    gridNames.Add(name);
+                    gridIds.Add(g.Id.Value);
+                    gridLinkIds.Add(li.Id.Value);
+                }
+            }
+
+            // Floors/slabs — host doc first, then each loaded link
+            var floorNames   = new List<string>();
+            var floorIds     = new List<long>();
+            var floorLinkIds = new List<long>();
+            var usedFloorNames = new HashSet<string>();
+
+            foreach (var f in new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Floors)
+                .OfClass(typeof(Floor))
+                .Cast<Floor>()
+                .OrderBy(f => f.Name))
+            {
+                var lvl = doc.GetElement(f.LevelId) as Level;
+                string display = lvl != null ? $"{f.Name} — {lvl.Name}" : f.Name;
+                string name = UniqueName(display, usedFloorNames);
+                floorNames.Add(name);
+                floorIds.Add(f.Id.Value);
+                floorLinkIds.Add(0L);
+            }
+
+            foreach (var li in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance))
+                .Cast<RevitLinkInstance>())
+            {
+                var ld = li.GetLinkDocument();
+                if (ld == null) continue;
+                string prefix = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "] ";
+                foreach (var f in new FilteredElementCollector(ld)
+                    .OfCategory(BuiltInCategory.OST_Floors)
+                    .OfClass(typeof(Floor))
+                    .Cast<Floor>()
+                    .OrderBy(f => f.Name))
+                {
+                    var lvl = ld.GetElement(f.LevelId) as Level;
+                    string display = lvl != null ? $"{f.Name} — {lvl.Name}" : f.Name;
+                    string name = UniqueName(prefix + display, usedFloorNames);
+                    floorNames.Add(name);
+                    floorIds.Add(f.Id.Value);
+                    floorLinkIds.Add(li.Id.Value);
+                }
+            }
+
+            // Line style names
+            var lineStyleNames = new List<string>();
+            var linesCat = doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines);
+            if (linesCat != null)
+            {
+                foreach (Category sub in linesCat.SubCategories)
+                    lineStyleNames.Add(sub.Name);
+                lineStyleNames.Sort();
+            }
+
+            var vm = new ClashDimensionViewModel(
+                App.ClashDimensionHandler!, App.ClashDimensionEvent!,
+                dimStyleNames, allViews,
+                gridNames, gridIds, gridLinkIds,
+                floorNames, floorIds, floorLinkIds,
+                lineStyleNames);
+
+            var ready = new ManualResetEventSlim(false);
+            StepFlowWindow? win = null;
+
+            var thread = new Thread(() =>
+            {
+                win = new StepFlowWindow(vm);
+                win.Closed += (s, e) =>
+                {
+                    _window = null;
+                    Dispatcher.CurrentDispatcher.InvokeShutdown();
+                };
+                win.Show();
+                ready.Set();
+                Dispatcher.Run();
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+
+            ready.Wait();
+            _window = win;
+            return Result.Succeeded;
+        }
+
+        private static string UniqueName(string candidate, HashSet<string> used)
+        {
+            if (used.Add(candidate)) return candidate;
+            int n = 2;
+            while (!used.Add($"{candidate} ({n})")) n++;
+            return $"{candidate} ({n})";
+        }
+    }
+}

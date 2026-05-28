@@ -66,6 +66,10 @@ namespace LemoineTools
         internal static BatchDimensionEventHandler? BatchDimensionHandler { get; private set; }
         internal static ExternalEvent?              BatchDimensionEvent   { get; private set; }
 
+        // ── Testing — Clash Dimension ───────────────────────────────────────────────
+        internal static ClashDimensionEventHandler? ClashDimensionHandler { get; private set; }
+        internal static ExternalEvent?              ClashDimensionEvent   { get; private set; }
+
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
@@ -144,6 +148,8 @@ namespace LemoineTools
             BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
             BatchDimensionHandler = new BatchDimensionEventHandler();
             BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
+            ClashDimensionHandler = new ClashDimensionEventHandler();
+            ClashDimensionEvent   = ExternalEvent.Create(ClashDimensionHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             SheetPackHandler     = new SheetPackEventHandler();
@@ -303,6 +309,11 @@ namespace LemoineTools
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_SheetPack",    "Sheet Pack",    "SheetPackCommand",
                     "Organise sheets into named issue packages and stamp sheet parameters."));
+
+            testingPanel.AddItem(Btn(
+                "LT_ClashDimension", "Clash\nDimension", "ClashDimensionCommand",
+                "Detect bounding-box clashes between two filter groups, annotate each clash with a coloured filled region and cross, and place locating dimensions to selected grids and slab edges.",
+                ""));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
