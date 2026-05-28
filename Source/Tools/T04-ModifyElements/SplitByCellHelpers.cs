@@ -185,8 +185,9 @@ namespace LemoineTools.Tools.ModifyElements
         // ── Element recreation ────────────────────────────────────────────────
 
         // Floor, Ceiling, FilledRegion; OST_StructuralFoundation slabs are Floor instances.
+        // RoofBase (FootPrintRoof only — ExtrusionRoof is rejected inside CreateRoof).
         private static bool IsSupportedForRecreation(Element el) =>
-            el is Floor || el is Ceiling || el is FilledRegion;
+            el is Floor || el is Ceiling || el is FilledRegion || el is RoofBase;
 
         // No outer try/catch: Revit API exceptions propagate to SplitElement's caller so
         // the per-element transaction can roll back atomically.
@@ -201,6 +202,9 @@ namespace LemoineTools.Tools.ModifyElements
 
             if (source is FilledRegion fr)
                 return CreateFilledRegion(doc, fr, loops);
+
+            if (source is RoofBase roof)
+                return CreateRoof(doc, roof, loops);
 
             // Should not be reachable — IsSupportedForRecreation guards this path.
             throw new NotSupportedException(
@@ -256,6 +260,42 @@ namespace LemoineTools.Tools.ModifyElements
             FilledRegion newRegion = FilledRegion.Create(
                 doc, source.GetTypeId(), source.OwnerViewId, loops);
             return newRegion.Id;
+        }
+
+        private static ElementId CreateRoof(
+            Document doc, RoofBase source, IList<CurveLoop> loops)
+        {
+            if (!(source is FootPrintRoof))
+                throw new NotSupportedException(
+                    $"Only footprint roofs can be cell-split; extrusion roofs are not supported.");
+
+            Level? level = doc.GetElement(
+                source.get_Parameter(BuiltInParameter.ROOF_BASE_LEVEL_PARAM)?.AsElementId()
+                ?? ElementId.InvalidElementId) as Level;
+
+            if (level == null)
+                throw new InvalidOperationException($"Roof {source.Id}: host level not found.");
+
+            RoofType? rt = doc.GetElement(source.GetTypeId()) as RoofType;
+            if (rt == null)
+                throw new InvalidOperationException($"Roof {source.Id}: roof type not found.");
+
+            FootPrintRoof newRoof = FootPrintRoof.Create(doc, loops, level.Id, rt.Id);
+
+            // Preserve vertical positioning
+            double baseOffset = source.get_Parameter(BuiltInParameter.ROOF_LEVEL_OFFSET_PARAM)?.AsDouble() ?? 0.0;
+            newRoof.get_Parameter(BuiltInParameter.ROOF_LEVEL_OFFSET_PARAM)?.Set(baseOffset);
+
+            // Preserve cutoff level if set
+            ElementId? cutoffId = source.get_Parameter(BuiltInParameter.ROOF_UPTO_LEVEL_PARAM)?.AsElementId();
+            if (cutoffId != null && cutoffId != ElementId.InvalidElementId)
+            {
+                newRoof.get_Parameter(BuiltInParameter.ROOF_UPTO_LEVEL_PARAM)?.Set(cutoffId);
+                double cutoffOffset = source.get_Parameter(BuiltInParameter.ROOF_UPTO_LEVEL_OFFSET_PARAM)?.AsDouble() ?? 0.0;
+                newRoof.get_Parameter(BuiltInParameter.ROOF_UPTO_LEVEL_OFFSET_PARAM)?.Set(cutoffOffset);
+            }
+
+            return newRoof.Id;
         }
 
         // ── Project base point ────────────────────────────────────────────────
