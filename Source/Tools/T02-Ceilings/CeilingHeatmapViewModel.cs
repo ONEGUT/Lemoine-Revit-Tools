@@ -18,7 +18,7 @@ using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class CeilingHeatmapViewModel : ILemoineTool
+    public class CeilingHeatmapViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Identity ─────────────────────────────────────────────────────────────
         public string Title    => "Ceiling Elevation Heatmap";
@@ -113,7 +113,7 @@ namespace LemoineTools.Tools.Ceilings
                 case "S1":     return BuildS1();
                 case "S_RAMP": return BuildS_RAMP();
                 case "S2":     return BuildS2();
-                case "S3":     return BuildReview();
+                case "S3":     return null; // framework renders review (ILemoineReviewable)
                 default:       return null;
             }
         }
@@ -463,87 +463,33 @@ namespace LemoineTools.Tools.Ceilings
             { Label = l; Val = v; Row = r; Col = c; }
         }
 
-        private FrameworkElement BuildReview()
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            for (int i = 0; i < 3; i++)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            ("views",  "Views Selected"),
+            ("ramp",   "Color Ramp"),
+            ("delete", "Delete Existing Filters"),
+            ("links",  "Include Linked Ceilings"),
+            ("tags",   "Place Ceiling Tags"),
+            ("tol",    "Elevation Tolerance"),
+        };
 
-            var cards = new[]
-            {
-                new CardDef("Views Selected",
-                    () => _selectedViewNames.Count == 0 ? "—"
-                        : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
-                    0, 0),
-                new CardDef("Color Ramp",
-                    () => $"{_colorLow} → {_colorMid} → {_colorHigh}",
-                    0, 1),
-                new CardDef("Delete Existing Filters",
-                    () => _deleteExisting ? "Yes" : "No",
-                    1, 0),
-                new CardDef("Include Linked Ceilings",
-                    () => _includeLinks ? "Yes" : "No",
-                    1, 1),
-                new CardDef("Place Ceiling Tags",
-                    () => _placeTags ? "Yes" : "No",
-                    2, 0),
-                new CardDef("Elevation Tolerance",
-                    () => $"{Math.Round(_elevTolerance * 12.0, 4)} in",
-                    2, 1),
-            };
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["views"]  = _selectedViewNames.Count == 0 ? "—"
+                : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
+            ["ramp"]   = $"{_colorLow} → {_colorMid} → {_colorHigh}",
+            ["delete"] = _deleteExisting ? "Yes" : "No",
+            ["links"]  = _includeLinks ? "Yes" : "No",
+            ["tags"]   = _placeTags ? "Yes" : "No",
+            ["tol"]    = $"{Math.Round(_elevTolerance * 12.0, 4)} in",
+        };
 
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var capturedVal = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = capturedVal();
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-                WpfGrid.SetRow(card, c.Row);
-                WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-            outer.Children.Add(grid);
-
-            var desc = new TextBlock
-            {
-                Text         = "Selected ceiling plan views will be scanned for \"Height Offset From Level\" data. One view filter is created per distinct height offset bucket and applied to every selected view as a solid surface color override.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Selected ceiling plan views will be scanned for \"Height Offset " +
+            "From Level\" data. One view filter is created per distinct height offset bucket and applied to every " +
+            "selected view as a solid surface color override.";
+        public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run

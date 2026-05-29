@@ -12,7 +12,7 @@ using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ProjectedCeilingGridsViewModel : ILemoineTool
+    public class ProjectedCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool identity ─────────────────────────────────────────────
         public string Title    => "Project Ceiling Grids";
@@ -53,7 +53,7 @@ namespace LemoineTools.Tools.Ceilings
         public FrameworkElement? GetStepContent(string stepId)
         {
             if (stepId == "S1") return BuildS1();
-            if (stepId == "S2") return BuildReviewPanel();
+            if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
             return null;
         }
 
@@ -167,49 +167,56 @@ namespace LemoineTools.Tools.Ceilings
             { Label = label; Val = val; Row = row; Col = col; }
         }
 
-        private FrameworkElement BuildReviewPanel()
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems
         {
-            var outer = new StackPanel();
-            outer.Children.Add(BuildInfoPanel());
-
-            var desc = new TextBlock
+            get
             {
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            if (_batchMode)
-            {
-                desc.Text = "Each DWG in the selected folder will be matched to a ceiling plan view " +
-                            "by filename (without extension). Matched pairs will be projected; " +
-                            "unmatched DWGs will be logged and skipped.";
-
-                int dwgCount = 0;
-                if (Directory.Exists(_folderPath))
-                    dwgCount = Directory.GetFiles(_folderPath, "*.dwg", SearchOption.TopDirectoryOnly).Length;
-
-                var countNote = new TextBlock
+                var items = new List<(string, string)>
                 {
-                    Text   = dwgCount > 0 ? $"{dwgCount} DWG file(s) found in folder." : "No DWG files found in folder.",
-                    Margin = new Thickness(0, 6, 0, 0),
+                    ("source", "Source"),
+                    ("mode",   "Mode"),
+                    ("target", "Target View"),
+                    ("output", "Output"),
                 };
-                countNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                countNote.SetResourceReference(TextBlock.ForegroundProperty, dwgCount > 0 ? "LemoineGreen" : "LemoineRed");
-                countNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                outer.Children.Add(countNote);
+                if (_batchMode) items.Add(("dwg", "DWG Files"));
+                return items;
             }
-            else
-            {
-                desc.Text = "The DWG will be imported into the active view at origin, all curves extracted, " +
-                            "then the import deleted. Each curve is projected vertically onto matching ceiling " +
-                            "soffit faces and recreated as a model curve at the correct elevation.";
-            }
-
-            outer.Children.Add(desc);
-            return outer;
         }
+
+        public IDictionary<string, string> ReviewValues
+        {
+            get
+            {
+                var d = new Dictionary<string, string>
+                {
+                    ["source"] = _batchMode
+                        ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
+                        : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)),
+                    ["mode"]   = _batchMode ? "Batch — folder"   : "Single file",
+                    ["target"] = _batchMode ? "Per DWG filename" : "Active view",
+                    ["output"] = "Model curves",
+                };
+                if (_batchMode) d["dwg"] = $"{CountDwgs()} found";
+                return d;
+            }
+        }
+
+        public IList<string>? ReviewChips => null;
+
+        public string? ReviewNote => _batchMode
+            ? "Each DWG in the selected folder will be matched to a ceiling plan view by filename (without " +
+              "extension). Matched pairs will be projected; unmatched DWGs will be logged and skipped."
+            : "The DWG will be imported into the active view at origin, all curves extracted, then the import " +
+              "deleted. Each curve is projected vertically onto matching ceiling soffit faces and recreated as a " +
+              "model curve at the correct elevation.";
+
+        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? "No DWG files found in folder." : null;
+
+        private int CountDwgs()
+            => Directory.Exists(_folderPath)
+                ? Directory.GetFiles(_folderPath, "*.dwg", SearchOption.TopDirectoryOnly).Length
+                : 0;
 
         private WpfGrid BuildInfoPanel()
         {
