@@ -62,12 +62,14 @@ namespace LemoineTools.Lemoine.Controls
         private TextBox?   _searchBox;
         private ListBox?   _listBox;
         private UIElement? _addBtn;
+        private Window?    _ownerWindow;   // hooked while the popup is open for outside-click dismissal
 
         public LemoineTagChipInput()
         {
             InitializeComponent();
             SelectedItems = new ObservableCollection<string>();
-            Loaded += (s, e) => Rebuild();
+            Loaded   += (s, e) => Rebuild();
+            Unloaded += (s, e) => ClosePopup(); // unhook owner-window handlers if torn down while open
         }
 
         // ── Build ──────────────────────────────────────────────────────────────
@@ -231,7 +233,10 @@ namespace LemoineTools.Lemoine.Controls
             {
                 PlacementTarget = this,
                 Placement       = PlacementMode.Bottom,
-                StaysOpen       = false,
+                // StaysOpen MUST be true: StaysOpen=false installs a ComponentDispatcher
+                // message hook that corrupts Revit's message loop (see CLAUDE.md). Outside-
+                // click dismissal is handled manually in OpenPopup/ClosePopup instead.
+                StaysOpen       = true,
                 AllowsTransparency = true,
                 PopupAnimation  = PopupAnimation.Fade,
             };
@@ -293,11 +298,8 @@ namespace LemoineTools.Lemoine.Controls
                 if (e.Key == Key.Escape) { ClosePopup(); e.Handled = true; }
             };
 
-            // Style list items
-            var itemStyle = new Style(typeof(ListBoxItem));
-            itemStyle.Setters.Add(new Setter(ListBoxItem.PaddingProperty, new Thickness(8, 4, 8, 4)));
-            itemStyle.Setters.Add(new Setter(ListBoxItem.CursorProperty, Cursors.Hand));
-            _listBox.ItemContainerStyle = itemStyle;
+            // Themed list items — hover + selection highlight (shared style).
+            _listBox.ItemContainerStyle = LemoineControlStyles.BuildListBoxItemStyle();
 
             stack.Children.Add(_listBox);
 
@@ -312,7 +314,7 @@ namespace LemoineTools.Lemoine.Controls
                 freeRow.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
                 var freeHint = new TextBlock { Text = "Press Enter to add typed value" };
-                freeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+                freeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 freeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 freeHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 freeRow.Child = freeHint;
@@ -331,10 +333,30 @@ namespace LemoineTools.Lemoine.Controls
             RefreshPopupList();
             _popup.IsOpen = true;
             _searchBox.Focus();
+
+            // Manual outside-click dismissal (StaysOpen=true). Clicks inside the popup go to
+            // the popup's own window, so a PreviewMouseDown on the owner window only fires for
+            // clicks elsewhere in the app — exactly the "clicked outside" case. Deactivated
+            // covers clicking another top-level window.
+            _ownerWindow = Window.GetWindow(this);
+            if (_ownerWindow != null)
+            {
+                _ownerWindow.PreviewMouseDown += OnOwnerPreviewMouseDown;
+                _ownerWindow.Deactivated      += OnOwnerDeactivated;
+            }
         }
+
+        private void OnOwnerPreviewMouseDown(object sender, MouseButtonEventArgs e) => ClosePopup();
+        private void OnOwnerDeactivated(object? sender, EventArgs e)                 => ClosePopup();
 
         private void ClosePopup()
         {
+            if (_ownerWindow != null)
+            {
+                _ownerWindow.PreviewMouseDown -= OnOwnerPreviewMouseDown;
+                _ownerWindow.Deactivated      -= OnOwnerDeactivated;
+                _ownerWindow = null;
+            }
             if (_popup != null) _popup.IsOpen = false;
         }
 

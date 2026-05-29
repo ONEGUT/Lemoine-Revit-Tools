@@ -475,6 +475,42 @@ namespace LemoineTools.Lemoine
 
         private static Style MakeTextBoxStyle() => ParseStyle(TextBoxXaml)!;
 
+        // ── ListBoxItem — themed hover + selection (e.g. TagChipInput popup list) ─
+        // Assigned per-ListBox via ItemContainerStyle so it doesn't disturb other lists.
+        public static Style BuildListBoxItemStyle() => ParseStyle(ListBoxItemXaml)!;
+
+        private const string ListBoxItemXaml = @"
+<Style TargetType=""{x:Type ListBoxItem}"">
+  <Setter Property=""Foreground"" Value=""{DynamicResource LemoineText}""/>
+  <Setter Property=""Background"" Value=""Transparent""/>
+  <Setter Property=""FontFamily"" Value=""{DynamicResource LemoineUiFont}""/>
+  <Setter Property=""FontSize""   Value=""{DynamicResource LemoineFS_SM}""/>
+  <Setter Property=""Cursor""     Value=""Hand""/>
+  <Setter Property=""Template"">
+    <Setter.Value>
+      <ControlTemplate TargetType=""{x:Type ListBoxItem}"">
+        <Border x:Name=""Bd""
+                Padding=""8,4,8,4""
+                CornerRadius=""3""
+                Background=""{TemplateBinding Background}"">
+          <ContentPresenter VerticalAlignment=""Center""/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property=""IsMouseOver"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccentDim}""/>
+          </Trigger>
+          <Trigger Property=""IsSelected"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccentDim}""/>
+            <Setter Property=""Foreground"" Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
+
         // ── CheckBox ──────────────────────────────────────────────────────────
         private static Style MakeCheckBoxStyle()
         {

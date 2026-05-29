@@ -161,13 +161,19 @@ namespace LemoineTools.Tools.Debuggers
 
             var single = new LemoineSingleSelect { Label = "Mode" };
             single.Items = new List<string> { "Automatic", "Manual", "Hybrid" };
+            single.Margin = new Thickness(0, 0, 0, 12);
             stack.Children.Add(single);
+
+            var tags = new LemoineTagChipInput { Placeholder = "Add tags…", AllowFreeText = true };
+            tags.ItemsSource = new List<string> { "Walls", "Doors", "Windows", "Floors", "Roofs", "Ceilings" };
+            stack.Children.Add(tags);
 
             return LookFor("P2 · INPUT CONTROLS",
                 "Folder browser: 'Browse…' opens a folder dialog and fills the path. " +
-                "Text field: the watermark disappears as you type. Mode: this is a single-choice " +
-                "picker — it should read as a dropdown (no caret / no editable text box) and only " +
-                "let you pick from the list.",
+                "Text field: the watermark disappears as you type. Mode: single-choice picker — " +
+                "reads as a dropdown (no caret / no editable text box). Tags: click '+', then the " +
+                "popup list rows should highlight on hover; the popup must close when you click " +
+                "OUTSIDE it (and must NOT crash Revit — StaysOpen fix).",
                 stack);
         }
 
