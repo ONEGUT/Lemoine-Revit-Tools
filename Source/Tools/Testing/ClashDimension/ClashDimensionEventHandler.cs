@@ -830,9 +830,8 @@ namespace LemoineTools.Tools.Testing
                         if (faceRef == null) continue;
                         if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
 
-                        XYZ  faceN  = tx.OfVector(pf.FaceNormal).Normalize();
-                        XYZ  origin = tx.OfPoint(pf.Origin);
-                        double dist = Math.Abs(faceN.X * (cx - origin.X) + faceN.Y * (cy - origin.Y));
+                        XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
+                        double dist = FaceClosestDist2D(pf, tx, cx, cy);
 
                         if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
                         {
@@ -887,6 +886,35 @@ namespace LemoineTools.Tools.Testing
             {
                 Log($"Floor dim ({floor.Name}): {ex.Message}", "info");
             }
+        }
+
+        // Returns the minimum 2-D (XY) distance from (cx, cy) to the nearest point on
+        // any boundary edge of the face, after applying the link transform tx.
+        private static double FaceClosestDist2D(PlanarFace pf, Transform tx, double cx, double cy)
+        {
+            double minDist = double.MaxValue;
+            foreach (EdgeArray loop in pf.EdgeLoops)
+            {
+                foreach (Edge edge in loop)
+                {
+                    var pts = edge.Tessellate();
+                    for (int i = 0; i < pts.Count - 1; i++)
+                    {
+                        XYZ p0 = tx.OfPoint(pts[i]);
+                        XYZ p1 = tx.OfPoint(pts[i + 1]);
+                        double segDx = p1.X - p0.X, segDy = p1.Y - p0.Y;
+                        double len2  = segDx * segDx + segDy * segDy;
+                        double t     = len2 < 1e-10 ? 0.0
+                                       : Math.Max(0.0, Math.Min(1.0,
+                                           ((cx - p0.X) * segDx + (cy - p0.Y) * segDy) / len2));
+                        double ex = p0.X + t * segDx - cx;
+                        double ey = p0.Y + t * segDy - cy;
+                        double d  = Math.Sqrt(ex * ex + ey * ey);
+                        if (d < minDist) minDist = d;
+                    }
+                }
+            }
+            return minDist;
         }
 
         // ── FilledRegionType management ───────────────────────────────────────
