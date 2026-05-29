@@ -14,23 +14,20 @@ using Microsoft.Win32;
 namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
-    /// Top-level orchestrator for the Legend Creator tab. Mutates an in-memory
+    /// Top-level orchestrator for the Legend Creator canvas. Mutates an in-memory
     /// editing buffer (Layout + Rows) that callers commit on global Apply.
     ///
-    /// Layout:
-    ///   ┌──────────────── LemoineLegendLayoutBar ─────────────────────────────┐
-    ///   ├───────────────────────────────────────┬────────────┬────────────────┤
-    ///   │  [top drop bar]                       │            │  SIZING        │
-    ///   │  [left] [rows scroll] [right]         │ splitter   │  palette scope │
-    ///   │  [bottom drop bar]                    │            │  palette       │
-    ///   ├───────────────────────────────────────┴────────────┴────────────────┤
-    ///   │  preview overlay (ZIndex=10, col 0 overlay)                         │
-    ///   ├─────────────────────────────────────────────────────────────────────┤
-    ///   │  footer: counts                                                      │
-    ///   └─────────────────────────────────────────────────────────────────────┘
+    /// Layout (single-column — right panel and sizing are managed by the host window):
+    ///   ┌─────────────────── LemoineLegendLayoutBar ───────────────────────────┐
+    ///   │  [top drop bar]                                                       │
+    ///   │  [left] [rows scroll] [right]                                         │
+    ///   │  [bottom drop bar]                                                    │
+    ///   │  preview overlay (ZIndex=10, absolute)                                │
+    ///   └──────────────────────────────────────────────────────────────────────┘
+    ///   │  footer: counts                                                        │
     ///
-    /// NOTE: BlockClickedOnCanvas on LemoineLegendRow is Action&lt;string, bool, bool&gt;
-    /// (blockId, ctrl, shift) — not EventHandler.
+    /// <see cref="BulkEditorChanged"/> fires with the bulk editor UIElement when
+    /// 2+ blocks are selected, or <see langword="null"/> to restore the palette.
     /// </summary>
     public partial class LemoineLegendBuilder : UserControl
     {
@@ -39,11 +36,18 @@ namespace LemoineTools.Lemoine.Controls
         public List<LegendRowConfig> Rows           { get; private set; } = new List<LegendRowConfig>();
         public bool                  PreviewVisible => _previewVisible;
 
+        // ── Events ─────────────────────────────────────────────────────────────
+        /// <summary>
+        /// Fires with the bulk-editor UIElement when 2+ blocks are selected,
+        /// or <see langword="null"/> when the palette should be restored.
+        /// The host window swaps its right-panel palette slot based on this.
+        /// </summary>
+        public event Action<UIElement?>? BulkEditorChanged;
+
         // ── Child references ───────────────────────────────────────────────────
         private LemoineLegendLayoutBar? _layoutBar;
         private ScrollViewer?           _rowsScroll;
         private StackPanel?             _rowsStack;
-        private LemoineLegendPalette?   _palette;
         private TextBlock?              _countsTb;
 
         // Canvas-level drop bars
@@ -53,12 +57,9 @@ namespace LemoineTools.Lemoine.Controls
         private Border? _rightDropBar;
         private List<Border> _betweenRowBars = new List<Border>();
 
-        // Right panel swap target
-        private Border? _rightPanelContent;
-
         // Preview overlay
-        private bool                _previewVisible = false;
-        private Grid?               _previewOverlay;
+        private bool                  _previewVisible = false;
+        private Grid?                 _previewOverlay;
         private LemoineLegendPreview? _preview;
 
         // Multi-select state
@@ -75,13 +76,25 @@ namespace LemoineTools.Lemoine.Controls
             Unloaded += OnUnloaded;
         }
 
-        public void LoadFrom(LegendCreatorSettings settings)
+        public void LoadFrom(LegendEntry entry)
         {
-            Layout = LegendCreatorSettings.DeepCopy(settings.Layout ?? new LegendLayoutConfig());
-            Rows   = LegendCreatorSettings.DeepCopy(settings.Rows   ?? new List<LegendRowConfig>());
-            _previewVisible = settings.PreviewVisible;
+            Layout          = LegendCreatorSettings.DeepCopy(entry.Layout ?? new LegendLayoutConfig());
+            Rows            = LegendCreatorSettings.DeepCopy(entry.Rows   ?? new List<LegendRowConfig>());
+            _previewVisible = entry.PreviewVisible;
             if (IsLoaded) BuildAll();
         }
+
+        /// <summary>Shows the templates popup anchored to the given element.</summary>
+        public void ShowTemplatesPopup(UIElement anchor) => ShowLegendTemplatesPopup(anchor);
+
+        // ── Called by host window to notify the builder that it is the active tab ──
+        public void NotifyActivated() { }
+
+        /// <summary>
+        /// Called by the host window's sizing controls after they mutate <see cref="Layout"/>.
+        /// Triggers a canvas rebuild and preview refresh.
+        /// </summary>
+        public void NotifyLayoutChanged() => OnEdited();
 
         // ─────────────────────────────────────────────────────────────────────
         // Build skeleton
@@ -93,68 +106,35 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
 
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 0: layout bar
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 1: sizing bar
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 2: main content
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 3: footer
+            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: canvas + preview overlay
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 2: footer
 
             // ── Row 0: Layout bar ──────────────────────────────────────────────
             _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
             _layoutBar.Changed            += (s, e) => OnEdited();
             _layoutBar.PreviewRequested   += (s, e) => TogglePreview();
-            _layoutBar.TemplatesRequested += (s, e) => ShowLegendTemplatesPopup(s as UIElement ?? _layoutBar);
             Grid.SetRow(_layoutBar, 0);
             _root.Children.Add(_layoutBar);
 
-            // ── Row 1: Main 3-column split ─────────────────────────────────────
-            var mainGrid = new Grid();
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 200 }); // col 0: canvas
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });                                    // col 1: splitter
-            mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240), MinWidth = 240 });                  // col 2: right panel
+            // ── Row 1: Canvas + preview overlay ────────────────────────────────
+            var canvasHost = new Grid();
 
-            // ── Col 0: canvas grid (drop bars + rows scroll) ───────────────────
             var canvasGrid = BuildCanvasGrid();
-            Grid.SetColumn(canvasGrid, 0);
-            mainGrid.Children.Add(canvasGrid);
+            canvasHost.Children.Add(canvasGrid);
 
-            // ── Col 1: GridSplitter ────────────────────────────────────────────
-            var splitter = new GridSplitter
-            {
-                Width                   = 5,
-                Background              = Brushes.Transparent,
-                HorizontalAlignment     = HorizontalAlignment.Stretch,
-                VerticalAlignment       = VerticalAlignment.Stretch,
-                Cursor                  = Cursors.SizeWE,
-                ResizeBehavior          = GridResizeBehavior.PreviousAndNext,
-                ResizeDirection         = GridResizeDirection.Columns,
-            };
-            Grid.SetColumn(splitter, 1);
-            mainGrid.Children.Add(splitter);
-
-            // ── Col 2: Right panel (DockPanel) ─────────────────────────────────
-            var rightPanel = BuildRightPanel();
-            Grid.SetColumn(rightPanel, 2);
-            mainGrid.Children.Add(rightPanel);
-
-            // ── Preview overlay (col 0, ZIndex=10) ────────────────────────────
             _previewOverlay = BuildPreviewOverlay();
-            Grid.SetColumn(_previewOverlay, 0);
             Panel.SetZIndex(_previewOverlay, 10);
-            mainGrid.Children.Add(_previewOverlay);
+            canvasHost.Children.Add(_previewOverlay);
 
-            // ── Row 1: Sizing bar ─────────────────────────────────────────────
-            var sizingBar = BuildSizingBar();
-            Grid.SetRow(sizingBar, 1);
-            _root.Children.Add(sizingBar);
+            Grid.SetRow(canvasHost, 1);
+            _root.Children.Add(canvasHost);
 
-            Grid.SetRow(mainGrid, 2);
-            _root.Children.Add(mainGrid);
-
-            // ── Row 3: Footer ──────────────────────────────────────────────────
+            // ── Row 2: Footer ──────────────────────────────────────────────────
             var footer = BuildFooter();
-            Grid.SetRow(footer, 3);
+            Grid.SetRow(footer, 2);
             _root.Children.Add(footer);
 
-            // ── Subscribe to filter saves so palette refreshes ─────────────────
+            // ── Subscribe to filter saves ─────────────────────────────────────
             AutoFiltersSettings.Saved += OnFiltersSaved;
 
             // ── Populate ───────────────────────────────────────────────────────
@@ -169,34 +149,21 @@ namespace LemoineTools.Lemoine.Controls
         private Grid BuildCanvasGrid()
         {
             var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });                    // row 0: top drop bar
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: inner
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });                    // row 2: bottom drop bar
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
 
-            // Top drop bar
-            _topDropBar = new Border
-            {
-                Height     = 18,
-                AllowDrop  = true,
-                Background = Brushes.Transparent,
-            };
+            _topDropBar = new Border { Height = 18, AllowDrop = true, Background = Brushes.Transparent };
             WireExternalDropBar(_topDropBar, DropBarRole.Top);
             Grid.SetRow(_topDropBar, 0);
             grid.Children.Add(_topDropBar);
 
-            // Inner grid: [left 18px] [★ scroll] [right 18px]
             var innerGrid = new Grid();
             innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
             innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
 
-            _leftDropBar = new Border
-            {
-                Width      = 18,
-                AllowDrop  = true,
-                Background = Brushes.Transparent,
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
+            _leftDropBar = new Border { Width = 18, AllowDrop = true, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Stretch };
             WireExternalDropBar(_leftDropBar, DropBarRole.Left);
             Grid.SetColumn(_leftDropBar, 0);
             innerGrid.Children.Add(_leftDropBar);
@@ -212,13 +179,7 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(_rowsScroll, 1);
             innerGrid.Children.Add(_rowsScroll);
 
-            _rightDropBar = new Border
-            {
-                Width      = 18,
-                AllowDrop  = true,
-                Background = Brushes.Transparent,
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
+            _rightDropBar = new Border { Width = 18, AllowDrop = true, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Stretch };
             WireExternalDropBar(_rightDropBar, DropBarRole.Right);
             Grid.SetColumn(_rightDropBar, 2);
             innerGrid.Children.Add(_rightDropBar);
@@ -226,368 +187,12 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetRow(innerGrid, 1);
             grid.Children.Add(innerGrid);
 
-            // Bottom drop bar
-            _bottomDropBar = new Border
-            {
-                Height     = 18,
-                AllowDrop  = true,
-                Background = Brushes.Transparent,
-            };
+            _bottomDropBar = new Border { Height = 18, AllowDrop = true, Background = Brushes.Transparent };
             WireExternalDropBar(_bottomDropBar, DropBarRole.Bottom);
             Grid.SetRow(_bottomDropBar, 2);
             grid.Children.Add(_bottomDropBar);
 
             return grid;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Sizing bar (full-width, row 1 of _root)
-        // ─────────────────────────────────────────────────────────────────────
-        private UIElement BuildSizingBar()
-        {
-            var border = new Border
-            {
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding         = new Thickness(10, 5, 10, 5),
-            };
-            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var panel = new StackPanel
-            {
-                Orientation       = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var header = new TextBlock
-            {
-                Text              = "SIZING",
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 16, 0),
-            };
-            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            panel.Children.Add(header);
-
-            // SCALE — dropdown of standard architectural (imperial) scales
-            var scaleWrap = new StackPanel
-            {
-                Orientation       = Orientation.Horizontal,
-                Margin            = new Thickness(0, 0, 20, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            scaleWrap.Children.Add(MakeSizingBarLabel("SCALE"));
-
-            var scaleCombo = new ComboBox { IsEditable = false };
-            scaleCombo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
-            scaleCombo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
-            scaleCombo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
-            foreach (var entry in StandardScales)
-                scaleCombo.Items.Add(entry);
-            int bestScaleIdx = 0, bestDiff = int.MaxValue;
-            for (int i = 0; i < StandardScales.Length; i++)
-            {
-                int diff = Math.Abs(StandardScales[i].Value - Layout.ViewScale);
-                if (diff < bestDiff) { bestDiff = diff; bestScaleIdx = i; }
-            }
-            scaleCombo.SelectedIndex = bestScaleIdx;
-            scaleCombo.SelectionChanged += (s, e) =>
-            {
-                if (scaleCombo.SelectedItem is ScaleEntry se)
-                {
-                    Layout.ViewScale = se.Value;
-                    OnEdited();
-                }
-            };
-            scaleWrap.Children.Add(scaleCombo);
-            panel.Children.Add(scaleWrap);
-
-            // SWATCH
-            var swatchWrap = new StackPanel { Orientation = Orientation.Horizontal };
-            swatchWrap.Children.Add(MakeSizingBarLabel("SWATCH"));
-            swatchWrap.Children.Add(BuildSwatchSteppers());
-            swatchWrap.Children.Add(MakeSizingUnit("in"));
-            panel.Children.Add(swatchWrap);
-
-            // FONT
-            var fontWrap = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0) };
-            fontWrap.Children.Add(MakeSizingBarLabel("FONT"));
-            fontWrap.Children.Add(BuildInlineStepper(Layout.FontPt, 7, 16, 1, v => { Layout.FontPt = v; OnEdited(); }));
-            fontWrap.Children.Add(MakeSizingUnit("pt"));
-            panel.Children.Add(fontWrap);
-
-            // GAP
-            var gapWrap = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 0, 0, 0) };
-            gapWrap.Children.Add(MakeSizingBarLabel("GAP"));
-            gapWrap.Children.Add(BuildDoubleInlineStepper(Layout.Gap, 0.0, 1.0, 0.01, 2,
-                v => { Layout.Gap = v; OnEdited(); }));
-            gapWrap.Children.Add(MakeSizingUnit("in"));
-            panel.Children.Add(gapWrap);
-
-            border.Child = panel;
-            return border;
-        }
-
-        // Standard architectural (imperial) view scales — label maps to Revit 1:N denominator.
-        private struct ScaleEntry
-        {
-            public string Label;
-            public int    Value;
-            public ScaleEntry(string label, int value) { Label = label; Value = value; }
-            public override string ToString() => Label;
-        }
-
-        private static readonly ScaleEntry[] StandardScales =
-        {
-            new ScaleEntry("3\" = 1'-0\"",    4),
-            new ScaleEntry("1½\" = 1'-0\"",   8),
-            new ScaleEntry("1\" = 1'-0\"",   12),
-            new ScaleEntry("¾\" = 1'-0\"",   16),
-            new ScaleEntry("½\" = 1'-0\"",   24),
-            new ScaleEntry("⅜\" = 1'-0\"",   32),
-            new ScaleEntry("¼\" = 1'-0\"",   48),
-            new ScaleEntry("3/16\" = 1'-0\"", 64),
-            new ScaleEntry("⅛\" = 1'-0\"",   96),
-            new ScaleEntry("3/32\" = 1'-0\"",128),
-            new ScaleEntry("1/16\" = 1'-0\"",192),
-            new ScaleEntry("3/64\" = 1'-0\"",256),
-        };
-
-        private static TextBlock MakeSizingBarLabel(string text)
-        {
-            var tb = new TextBlock
-            {
-                Text              = text,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 6, 0),
-            };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            return tb;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Right panel (palette / bulk editor only — sizing moved to top bar)
-        // ─────────────────────────────────────────────────────────────────────
-        private UIElement BuildRightPanel()
-        {
-            _palette = new LemoineLegendPalette();
-            _rightPanelContent = new Border { Padding = new Thickness(0) };
-            _rightPanelContent.Child = _palette;
-            return _rightPanelContent;
-        }
-
-        private StackPanel BuildSwatchSteppers()
-        {
-            var wStep = BuildDoubleInlineStepper(Layout.SwatchW, 0.05, 3.0, 0.05, 2, v => { Layout.SwatchW = v; OnEdited(); });
-            var times = new TextBlock { Text = " × ", VerticalAlignment = VerticalAlignment.Center };
-            times.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            times.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            times.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            var hStep = BuildDoubleInlineStepper(Layout.SwatchH, 0.02, 2.0, 0.05, 2, v => { Layout.SwatchH = v; OnEdited(); });
-            var inner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            inner.Children.Add(wStep);
-            inner.Children.Add(times);
-            inner.Children.Add(hStep);
-            return inner;
-        }
-
-        private static Border BuildDoubleInlineStepper(double initialValue, double min, double max, double step, int decimals, Action<double> onChange)
-        {
-            var outer = new Border
-            {
-                BorderThickness   = new Thickness(1),
-                CornerRadius      = new CornerRadius(4),
-                ClipToBounds      = true,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            outer.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
-            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var panel = new StackPanel { Orientation = Orientation.Horizontal };
-
-            Border MakeBtn(string text)
-            {
-                var b = new Border
-                {
-                    Padding           = new Thickness(7, 0, 7, 0),
-                    Cursor            = Cursors.Hand,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                };
-                b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                var tb = new TextBlock
-                {
-                    Text              = text,
-                    TextAlignment     = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
-                tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                b.Child = tb;
-                b.MouseEnter += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                b.MouseLeave += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                return b;
-            }
-
-            var minus = MakeBtn("−");
-            var sepL  = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-            sepL.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            string Fmt(double v) => v.ToString("F" + decimals);
-            double current = Math.Round(initialValue, decimals);
-            var valueTb = new TextBlock
-            {
-                Text              = Fmt(current),
-                Width             = 38,
-                TextAlignment     = TextAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            valueTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            valueTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valueTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var sepR = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-            sepR.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            var plus = MakeBtn("+");
-
-            panel.Children.Add(minus);
-            panel.Children.Add(sepL);
-            panel.Children.Add(valueTb);
-            panel.Children.Add(sepR);
-            panel.Children.Add(plus);
-            outer.Child = panel;
-
-            minus.MouseLeftButtonUp += (s, e) =>
-            {
-                double next = Math.Round(current - step, decimals);
-                if (next >= min - 1e-9) { current = next; valueTb.Text = Fmt(current); onChange(current); }
-                e.Handled = true;
-            };
-            plus.MouseLeftButtonUp += (s, e) =>
-            {
-                double next = Math.Round(current + step, decimals);
-                if (next <= max + 1e-9) { current = next; valueTb.Text = Fmt(current); onChange(current); }
-                e.Handled = true;
-            };
-
-            return outer;
-        }
-
-        private static StackPanel BuildSizingRow(string label, UIElement content)
-        {
-            var row = new StackPanel
-            {
-                Orientation       = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 2, 0, 2),
-            };
-            var lbl = new TextBlock
-            {
-                Text              = label,
-                Width             = 46,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 6, 0),
-            };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            row.Children.Add(lbl);
-            row.Children.Add(content);
-            return row;
-        }
-
-        private static TextBlock MakeSizingUnit(string text)
-        {
-            var tb = new TextBlock { Text = " " + text, VerticalAlignment = VerticalAlignment.Center };
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            return tb;
-        }
-
-        private static Border BuildInlineStepper(int initialValue, int min, int max, int step, Action<int> onChange)
-        {
-            var outer = new Border
-            {
-                BorderThickness   = new Thickness(1),
-                CornerRadius      = new CornerRadius(4),
-                ClipToBounds      = true,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            outer.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
-            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var panel = new StackPanel { Orientation = Orientation.Horizontal };
-
-            Border MakeBtn(string text)
-            {
-                var b = new Border
-                {
-                    Padding           = new Thickness(7, 0, 7, 0),
-                    Cursor            = Cursors.Hand,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                };
-                b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                var tb = new TextBlock
-                {
-                    Text              = text,
-                    TextAlignment     = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
-                tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                b.Child = tb;
-                b.MouseEnter += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                b.MouseLeave += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                return b;
-            }
-
-            var minus = MakeBtn("−");
-            var sepL  = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-            sepL.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            int current = initialValue;
-            var valueTb = new TextBlock
-            {
-                Text              = current.ToString(),
-                Width             = 28,
-                TextAlignment     = TextAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            valueTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            valueTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valueTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var sepR = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-            sepR.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            var plus = MakeBtn("+");
-
-            panel.Children.Add(minus);
-            panel.Children.Add(sepL);
-            panel.Children.Add(valueTb);
-            panel.Children.Add(sepR);
-            panel.Children.Add(plus);
-            outer.Child = panel;
-
-            minus.MouseLeftButtonUp += (s, e) =>
-            {
-                if (current > min) { current -= step; valueTb.Text = current.ToString(); onChange(current); }
-                e.Handled = true;
-            };
-            plus.MouseLeftButtonUp += (s, e) =>
-            {
-                if (current < max) { current += step; valueTb.Text = current.ToString(); onChange(current); }
-                e.Handled = true;
-            };
-
-            return outer;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -603,10 +208,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             overlay.SetResourceReference(Grid.BackgroundProperty, "LemoineSurface");
 
-            _preview = new LemoineLegendPreview
-            {
-                Margin = new Thickness(8),
-            };
+            _preview = new LemoineLegendPreview { Margin = new Thickness(8) };
             overlay.Children.Add(_preview);
 
             return overlay;
@@ -672,7 +274,7 @@ namespace LemoineTools.Lemoine.Controls
 
             void OnSessionEnd() => ApplyIdle();
 
-            bar.Loaded   += (s, e) =>
+            bar.Loaded += (s, e) =>
             {
                 LegendDragSession.Started += OnSessionStart;
                 LegendDragSession.Ended   += OnSessionEnd;
@@ -688,12 +290,7 @@ namespace LemoineTools.Lemoine.Controls
             bar.DragEnter += (s, e) =>
             {
                 var p = GetGroupPayload(e);
-                if (p != null)
-                {
-                    ApplyActive();
-                    e.Effects = DragDropEffects.Move;
-                    e.Handled = true;
-                }
+                if (p != null) { ApplyActive(); e.Effects = DragDropEffects.Move; e.Handled = true; }
                 else e.Effects = DragDropEffects.None;
             };
             bar.DragOver += (s, e) =>
@@ -788,7 +385,6 @@ namespace LemoineTools.Lemoine.Controls
             return null;
         }
 
-        /// <summary>Find the LegendRowConfig whose row control center-Y is nearest to dropY.</summary>
         private LegendRowConfig? FindNearestRow(double dropY)
         {
             if (_rowsStack == null || Rows.Count == 0) return null;
@@ -798,13 +394,9 @@ namespace LemoineTools.Lemoine.Controls
             {
                 if (child is LemoineLegendRow rowCtrl && _rowsScroll != null)
                 {
-                    var pt  = rowCtrl.TranslatePoint(new Point(0, rowCtrl.ActualHeight / 2), _rowsScroll);
+                    var pt = rowCtrl.TranslatePoint(new Point(0, rowCtrl.ActualHeight / 2), _rowsScroll);
                     double d = Math.Abs(pt.Y - dropY);
-                    if (d < minDist)
-                    {
-                        minDist = d;
-                        nearest = rowCtrl.Row;
-                    }
+                    if (d < minDist) { minDist = d; nearest = rowCtrl.Row; }
                 }
             }
             return nearest;
@@ -821,17 +413,10 @@ namespace LemoineTools.Lemoine.Controls
 
             for (int i = 0; i < Rows.Count; i++)
             {
-                // Between-row bar before each row (except the first)
                 if (i > 0)
                 {
                     int capturedIdx = i - 1;
-                    var bar = new Border
-                    {
-                        Height     = 8,
-                        AllowDrop  = true,
-                        Background = Brushes.Transparent,
-                        Margin     = new Thickness(0),
-                    };
+                    var bar = new Border { Height = 8, AllowDrop = true, Background = Brushes.Transparent, Margin = new Thickness(0) };
                     WireExternalDropBar(bar, DropBarRole.Between, capturedIdx);
                     _betweenRowBars.Add(bar);
                     _rowsStack.Children.Add(bar);
@@ -839,7 +424,6 @@ namespace LemoineTools.Lemoine.Controls
 
                 var row     = Rows[i];
                 var rowCtrl = new LemoineLegendRow();
-
                 rowCtrl.SetSelectionContext(_lSelectedBlockIds, _lActiveBlockId);
                 rowCtrl.Bind(row);
 
@@ -852,7 +436,7 @@ namespace LemoineTools.Lemoine.Controls
                 _rowsStack.Children.Add(rowCtrl);
             }
 
-            // ── "Add New Group" affordance at the bottom of the canvas ────────
+            // ── "Add New Group" affordance ────────────────────────────────────
             var addGrpBorder = new Border
             {
                 Margin          = new Thickness(8, 8, 8, 4),
@@ -890,19 +474,13 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var newGrp = new LegendGroupConfig
                 {
-                    Id            = LegendIdGen.New("g"),
-                    Title         = "",
-                    SourceTradeId = "",
-                    Blocks        = new List<LegendBlockConfig>(),
+                    Id = LegendIdGen.New("g"), Title = "", SourceTradeId = "",
+                    Blocks = new List<LegendBlockConfig>(),
                 };
                 if (Rows.Count > 0)
                     Rows[Rows.Count - 1].Groups.Add(newGrp);
                 else
-                    Rows.Add(new LegendRowConfig
-                    {
-                        Id     = LegendIdGen.New("r"),
-                        Groups = new List<LegendGroupConfig> { newGrp },
-                    });
+                    Rows.Add(new LegendRowConfig { Id = LegendIdGen.New("r"), Groups = new List<LegendGroupConfig> { newGrp } });
                 OnEdited();
             };
             _rowsStack.Children.Add(addGrpBorder);
@@ -915,10 +493,8 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         private void OnCanvasBlockClicked(string blockId, bool ctrl, bool shift)
         {
-
             if (shift && _lShiftAnchorBlockId != null)
             {
-                // Shift+click: select range from anchor to clicked
                 var allIds = AllBlockIdsInOrder().ToList();
                 int anchorIdx  = allIds.IndexOf(_lShiftAnchorBlockId);
                 int clickedIdx = allIds.IndexOf(blockId);
@@ -927,22 +503,19 @@ namespace LemoineTools.Lemoine.Controls
                     int lo = Math.Min(anchorIdx, clickedIdx);
                     int hi = Math.Max(anchorIdx, clickedIdx);
                     _lSelectedBlockIds.Clear();
-                    for (int i = lo; i <= hi; i++)
-                        _lSelectedBlockIds.Add(allIds[i]);
+                    for (int i = lo; i <= hi; i++) _lSelectedBlockIds.Add(allIds[i]);
                     _lActiveBlockId = blockId;
                 }
                 else
                 {
-                    // Fallback to plain click
                     _lSelectedBlockIds.Clear();
                     _lSelectedBlockIds.Add(blockId);
-                    _lActiveBlockId        = blockId;
-                    _lShiftAnchorBlockId   = blockId;
+                    _lActiveBlockId      = blockId;
+                    _lShiftAnchorBlockId = blockId;
                 }
             }
             else if (ctrl)
             {
-                // Ctrl+click: toggle
                 if (_lSelectedBlockIds.Contains(blockId))
                 {
                     _lSelectedBlockIds.Remove(blockId);
@@ -958,7 +531,6 @@ namespace LemoineTools.Lemoine.Controls
             }
             else
             {
-                // Plain click
                 _lSelectedBlockIds.Clear();
                 _lSelectedBlockIds.Add(blockId);
                 _lActiveBlockId      = blockId;
@@ -966,7 +538,7 @@ namespace LemoineTools.Lemoine.Controls
             }
 
             RefreshSelectionVisuals();
-            RefreshRightPanel();
+            BulkEditorChanged?.Invoke(LBulkEditing ? (UIElement)BuildBulkBlockEditor() : null);
         }
 
         private IEnumerable<string> AllBlockIdsInOrder()
@@ -980,20 +552,12 @@ namespace LemoineTools.Lemoine.Controls
         private void RefreshSelectionVisuals()
         {
             if (_rowsStack == null) return;
-            // Update selection state on existing block rows in-place — no rebuild,
-            // so _mouseDown and DragInitiated wiring on block rows are preserved.
             foreach (var child in _rowsStack.Children.OfType<LemoineLegendRow>())
                 child.RefreshBlockSelection(_lSelectedBlockIds, _lActiveBlockId);
         }
 
-        private void RefreshRightPanel()
-        {
-            if (_rightPanelContent == null) return;
-            _rightPanelContent.Child = LBulkEditing ? (UIElement)BuildBulkBlockEditor() : _palette;
-        }
-
         // ─────────────────────────────────────────────────────────────────────
-        // Bulk block editor
+        // Bulk block editor — built on demand and handed to the host window
         // ─────────────────────────────────────────────────────────────────────
         private UIElement BuildBulkBlockEditor()
         {
@@ -1005,7 +569,6 @@ namespace LemoineTools.Lemoine.Controls
 
             var stack = new StackPanel { Margin = new Thickness(10, 10, 10, 10) };
 
-            // Header
             var header = new TextBlock { Text = "BATCH BLOCK EDIT" };
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1014,13 +577,7 @@ namespace LemoineTools.Lemoine.Controls
 
             stack.Children.Add(MakeBulkSep());
 
-            // N blocks selected
-            var note = new TextBlock
-            {
-                Text      = $"{_lSelectedBlockIds.Count} blocks selected.",
-                FontStyle = FontStyles.Italic,
-                Margin    = new Thickness(0, 4, 0, 4),
-            };
+            var note = new TextBlock { Text = $"{_lSelectedBlockIds.Count} blocks selected.", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 4, 0, 4) };
             note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -1028,29 +585,18 @@ namespace LemoineTools.Lemoine.Controls
 
             stack.Children.Add(MakeBulkSep());
 
-            // Get all selected blocks for reading current state
             var selectedBlocks = AllSelectedBlocks().ToList();
 
             // COLOR
             {
                 string firstColor = selectedBlocks.FirstOrDefault()?.Color ?? "#888888";
-                var colorRow = new StackPanel
-                {
-                    Orientation       = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin            = new Thickness(0, 3, 0, 3),
-                };
+                var colorRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 3) };
                 var colorLabel   = MakeBulkRowLabel("COLOR");
                 var swatchBorder = new Border
                 {
-                    Width               = 22,
-                    Height              = 14,
-                    BorderThickness     = new Thickness(1),
-                    CornerRadius        = new CornerRadius(2),
-                    Background          = new SolidColorBrush(BrushHelper.ColorFromHex(firstColor, LemoineTheme.FallbackGrey)),
-                    Cursor              = Cursors.Hand,
-                    Margin              = new Thickness(4, 0, 0, 0),
-                    VerticalAlignment   = VerticalAlignment.Center,
+                    Width = 22, Height = 14, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2),
+                    Background = new SolidColorBrush(BrushHelper.ColorFromHex(firstColor, LemoineTheme.FallbackGrey)),
+                    Cursor = Cursors.Hand, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                 };
                 swatchBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 swatchBorder.MouseLeftButtonUp += (s, e) =>
@@ -1059,34 +605,21 @@ namespace LemoineTools.Lemoine.Controls
                         AllSelectedBlocks().FirstOrDefault()?.Color ?? "#888888",
                         LemoineTheme.FallbackGrey);
 
-                    // Inline color picker popup — no blocking wait on main thread.
-                    var container = new Border
-                    {
-                        Padding         = new Thickness(12),
-                        BorderThickness = new Thickness(1),
-                    };
+                    var container = new Border { Padding = new Thickness(12), BorderThickness = new Thickness(1) };
                     container.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
                     container.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-                    // Copy window resources before creating the panel so
-                    // SetResourceReference calls inside it resolve on Loaded.
                     var win = Window.GetWindow(this);
                     if (win != null)
                         foreach (var key in win.Resources.Keys)
                             container.Resources[key] = win.Resources[key];
 
                     var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
-
                     var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
                     var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
                     cancelBtn.Margin = new Thickness(0, 0, 6, 0);
 
-                    var btnRow = new StackPanel
-                    {
-                        Orientation         = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Right,
-                        Margin              = new Thickness(0, 8, 0, 0),
-                    };
+                    var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 0) };
                     btnRow.Children.Add(cancelBtn);
                     btnRow.Children.Add(applyBtn);
 
@@ -1097,29 +630,21 @@ namespace LemoineTools.Lemoine.Controls
 
                     var popup = new Popup
                     {
-                        PlacementTarget    = swatchBorder,
-                        Placement          = PlacementMode.Bottom,
-                        StaysOpen          = false,
-                        AllowsTransparency = false,
-                        Child              = container,
+                        PlacementTarget = swatchBorder, Placement = PlacementMode.Bottom,
+                        StaysOpen = false, AllowsTransparency = false, Child = container,
                     };
 
                     applyBtn.Click += (as2, ae) =>
                     {
                         var c   = pickerPanel.SelectedColor;
                         string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-                        foreach (var b in AllSelectedBlocks())
-                        {
-                            b.Color         = hex;
-                            b.ColorOverride = true;
-                        }
+                        foreach (var b in AllSelectedBlocks()) { b.Color = hex; b.ColorOverride = true; }
                         pickerPanel.AddToRecent(c);
                         swatchBorder.Background = new SolidColorBrush(c);
                         popup.IsOpen = false;
                         OnEdited();
                     };
                     cancelBtn.Click += (cs2, ce) => popup.IsOpen = false;
-
                     popup.IsOpen = true;
                 };
                 colorRow.Children.Add(colorLabel);
@@ -1130,22 +655,13 @@ namespace LemoineTools.Lemoine.Controls
             // VISIBLE
             {
                 bool anyVisible = selectedBlocks.Any(b => b.Visible);
-                var visRow = new StackPanel
-                {
-                    Orientation       = Orientation.Horizontal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin            = new Thickness(0, 3, 0, 3),
-                };
+                var visRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 3) };
                 var visLabel = MakeBulkRowLabel("VISIBLE");
                 var eyeBtn = new Border
                 {
-                    Width           = 28,
-                    Height          = 22,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                    Cursor          = Cursors.Hand,
-                    Margin          = new Thickness(4, 0, 0, 0),
-                    Child           = LemoineEyeGlyph.Make(anyVisible, size: 16),
+                    Width = 28, Height = 22, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+                    Cursor = Cursors.Hand, Margin = new Thickness(4, 0, 0, 0),
+                    Child = LemoineEyeGlyph.Make(anyVisible, size: 16),
                 };
                 eyeBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                 eyeBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
@@ -1153,8 +669,7 @@ namespace LemoineTools.Lemoine.Controls
                 eyeBtn.MouseLeftButtonUp += (s, e) =>
                 {
                     currentState = !currentState;
-                    foreach (var b in AllSelectedBlocks())
-                        b.Visible = currentState;
+                    foreach (var b in AllSelectedBlocks()) b.Visible = currentState;
                     eyeBtn.Child = LemoineEyeGlyph.Make(currentState, size: 16);
                     OnEdited();
                 };
@@ -1170,10 +685,8 @@ namespace LemoineTools.Lemoine.Controls
             var deleteRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
             var deleteBorder = new Border
             {
-                Padding         = new Thickness(10, 4, 10, 4),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(4),
-                Cursor          = Cursors.Hand,
+                Padding = new Thickness(10, 4, 10, 4), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4), Cursor = Cursors.Hand,
             };
             deleteBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
             deleteBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
@@ -1184,18 +697,11 @@ namespace LemoineTools.Lemoine.Controls
             deleteTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             deleteBorder.Child = deleteTb;
 
-            deleteBorder.MouseEnter += (s, e) =>
-                deleteBorder.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-            deleteBorder.MouseLeave += (s, e) =>
-                deleteBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-
+            deleteBorder.MouseEnter += (s, e) => deleteBorder.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            deleteBorder.MouseLeave += (s, e) => deleteBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
             deleteBorder.MouseLeftButtonUp += (s, e) =>
             {
-                if (!_confirmDelete)
-                {
-                    deleteTb.Text    = "Confirm — click again";
-                    _confirmDelete   = true;
-                }
+                if (!_confirmDelete) { deleteTb.Text = "Confirm — click again"; _confirmDelete = true; }
                 else
                 {
                     var ids = new HashSet<string>(_lSelectedBlockIds);
@@ -1228,12 +734,7 @@ namespace LemoineTools.Lemoine.Controls
 
         private static TextBlock MakeBulkRowLabel(string text)
         {
-            var tb = new TextBlock
-            {
-                Text              = text,
-                Width             = 52,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var tb = new TextBlock { Text = text, Width = 52, VerticalAlignment = VerticalAlignment.Center };
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -1268,16 +769,7 @@ namespace LemoineTools.Lemoine.Controls
                 }
                 case LegendDragPayload.Kind.PaletteCustom:
                 {
-                    var block = new LegendBlockConfig
-                    {
-                        Id      = LegendIdGen.New("b"),
-                        Name    = "Custom",
-                        Custom  = true,
-                        Color   = "#888888",
-                        Kind    = "square",
-                        Fill    = "solid",
-                        Visible = true,
-                    };
+                    var block = new LegendBlockConfig { Id=LegendIdGen.New("b"), Name="Custom", Custom=true, Color="#888888", Kind="square", Fill="solid", Visible=true };
                     int idx = Math.Max(0, Math.Min(args.TargetIndex, grp.Blocks.Count));
                     grp.Blocks.Insert(idx, block);
                     break;
@@ -1286,8 +778,7 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     if (!TryTakeBlock(p.BlockId, out var block, out var fromGrp)) return;
                     int idx = args.TargetIndex;
-                    if (fromGrp == grp) { if (idx > grp.Blocks.Count) idx = grp.Blocks.Count; }
-                    else                { if (idx > grp.Blocks.Count) idx = grp.Blocks.Count; }
+                    if (idx > grp.Blocks.Count) idx = grp.Blocks.Count;
                     grp.Blocks.Insert(idx, block!);
                     break;
                 }
@@ -1332,8 +823,8 @@ namespace LemoineTools.Lemoine.Controls
             var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == tradeId);
             var grp = new LegendGroupConfig
             {
-                Id            = LegendIdGen.New("g"),
-                Title         = (trade?.Label ?? "Custom").ToUpperInvariant(),
+                Id = LegendIdGen.New("g"),
+                Title = (trade?.Label ?? "Custom").ToUpperInvariant(),
                 SourceTradeId = trade?.Id ?? "",
             };
             if (trade?.Rules != null)
@@ -1343,14 +834,9 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     grp.Blocks.Add(new LegendBlockConfig
                     {
-                        Id            = LegendIdGen.New("b"),
-                        Name          = rule.Name ?? "",
-                        SourceTradeId = trade.Id,
-                        SourceRuleId  = rule.Id,
-                        Color         = rule.SurfColor ?? "#888888",
-                        Kind          = "square",
-                        Fill          = "solid",
-                        Visible       = true,
+                        Id = LegendIdGen.New("b"), Name = rule.Name ?? "",
+                        SourceTradeId = trade.Id, SourceRuleId = rule.Id,
+                        Color = rule.SurfColor ?? "#888888", Kind = "square", Fill = "solid", Visible = true,
                     });
                 }
             }
@@ -1365,14 +851,9 @@ namespace LemoineTools.Lemoine.Controls
             if (rule == null) return null;
             return new LegendBlockConfig
             {
-                Id            = LegendIdGen.New("b"),
-                Name          = rule.Name ?? "",
-                SourceTradeId = trade.Id,
-                SourceRuleId  = rule.Id,
-                Color         = rule.SurfColor ?? "#888888",
-                Kind          = "square",
-                Fill          = "solid",
-                Visible       = true,
+                Id = LegendIdGen.New("b"), Name = rule.Name ?? "",
+                SourceTradeId = trade.Id, SourceRuleId = rule.Id,
+                Color = rule.SurfColor ?? "#888888", Kind = "square", Fill = "solid", Visible = true,
             };
         }
 
@@ -1393,13 +874,7 @@ namespace LemoineTools.Lemoine.Controls
             foreach (var grp in row.Groups)
             {
                 int i = grp.Blocks.FindIndex(b => b.Id == blockId);
-                if (i >= 0)
-                {
-                    block     = grp.Blocks[i];
-                    fromGroup = grp;
-                    grp.Blocks.RemoveAt(i);
-                    return true;
-                }
+                if (i >= 0) { block = grp.Blocks[i]; fromGroup = grp; grp.Blocks.RemoveAt(i); return true; }
             }
             return false;
         }
@@ -1452,11 +927,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
             };
-            close.Completed += (s, e) =>
-            {
-                if (_previewOverlay != null)
-                    _previewOverlay.Visibility = Visibility.Collapsed;
-            };
+            close.Completed += (s, e) => { if (_previewOverlay != null) _previewOverlay.Visibility = Visibility.Collapsed; };
             st.BeginAnimation(ScaleTransform.ScaleXProperty, close);
             st.BeginAnimation(ScaleTransform.ScaleYProperty, close);
         }
@@ -1467,7 +938,7 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Templates popup
+        // Templates popup (called by host window's sidebar Templates button)
         // ─────────────────────────────────────────────────────────────────────
         private void ShowLegendTemplatesPopup(UIElement anchor)
         {
@@ -1498,7 +969,6 @@ namespace LemoineTools.Lemoine.Controls
 
             var root = new StackPanel { Margin = new Thickness(0, 6, 0, 6) };
 
-            // ── Helpers ────────────────────────────────────────────────────────
             void AddSectionHeader(string text)
             {
                 var tb = new TextBlock { Text = text, Margin = new Thickness(12, 8, 12, 4) };
@@ -1519,34 +989,18 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var row = new Border
                 {
-                    Padding         = new Thickness(10, 4, 12, 4),
-                    CornerRadius    = new CornerRadius(12),
-                    BorderThickness = new Thickness(1),
-                    Margin          = new Thickness(4, 2, 4, 2),
-                    Cursor          = Cursors.Hand,
+                    Padding = new Thickness(10, 4, 12, 4), CornerRadius = new CornerRadius(12),
+                    BorderThickness = new Thickness(1), Margin = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand,
                 };
                 row.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                 row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-                var iconTb = new TextBlock
-                {
-                    Text              = icon,
-                    Width             = 18,
-                    TextAlignment     = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
+                var iconTb = new TextBlock { Text = icon, Width = 18, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 iconTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 iconTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 iconTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-                var labelTb = new TextBlock
-                {
-                    Text              = label,
-                    Margin            = new Thickness(7, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
+                var labelTb = new TextBlock { Text = label, Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 labelTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 labelTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 labelTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -1556,39 +1010,24 @@ namespace LemoineTools.Lemoine.Controls
                 content.Children.Add(labelTb);
                 row.Child = content;
 
-                row.MouseEnter += (s, e) =>
-                {
-                    row.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                    row.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                };
-                row.MouseLeave += (s, e) =>
-                {
-                    row.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                    row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                };
+                row.MouseEnter += (s, e) => { row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim"); row.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent"); };
+                row.MouseLeave += (s, e) => { row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");    row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder"); };
                 row.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
                 root.Children.Add(row);
                 return row;
             }
 
-            // ── 1. Saved templates list ────────────────────────────────────────
+            // ── Saved templates list ──────────────────────────────────────────
             AddSectionHeader("SAVED TEMPLATES");
-
             var templateListPanel = new StackPanel();
 
             void RebuildTemplateList()
             {
                 templateListPanel.Children.Clear();
                 var current = store.List();
-
                 if (current.Count == 0)
                 {
-                    var empty = new TextBlock
-                    {
-                        Text      = "No saved templates yet.",
-                        Margin    = new Thickness(12, 4, 12, 4),
-                        FontStyle = FontStyles.Italic,
-                    };
+                    var empty = new TextBlock { Text = "No saved templates yet.", Margin = new Thickness(12, 4, 12, 4), FontStyle = FontStyles.Italic };
                     empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                     empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                     empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1598,28 +1037,12 @@ namespace LemoineTools.Lemoine.Controls
 
                 foreach (var tmpl in current)
                 {
-                    var t = tmpl;
-
-                    var pillBorder = new Border
-                    {
-                        CornerRadius    = new CornerRadius(12),
-                        BorderThickness = new Thickness(1),
-                        Margin          = new Thickness(4, 2, 4, 2),
-                        Cursor          = Cursors.Hand,
-                        ClipToBounds    = true,
-                    };
+                    var t          = tmpl;
+                    var pillBorder = new Border { CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Margin = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand, ClipToBounds = true };
                     pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                     pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                    pillBorder.MouseEnter += (s, e) =>
-                    {
-                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                    };
-                    pillBorder.MouseLeave += (s, e) =>
-                    {
-                        pillBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                        pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                    };
+                    pillBorder.MouseEnter += (s, e) => { pillBorder.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim"); pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent"); };
+                    pillBorder.MouseLeave += (s, e) => { pillBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");    pillBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder"); };
 
                     var rowGrid = new Grid();
                     rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1634,11 +1057,7 @@ namespace LemoineTools.Lemoine.Controls
                     nameTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                     nameTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-                    var dateTb = new TextBlock
-                    {
-                        Text   = t.Created.ToString("MMM d, yyyy"),
-                        Margin = new Thickness(0, 1, 0, 0),
-                    };
+                    var dateTb = new TextBlock { Text = t.Created.ToString("MMM d, yyyy"), Margin = new Thickness(0, 1, 0, 0) };
                     dateTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                     dateTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                     dateTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1658,32 +1077,36 @@ namespace LemoineTools.Lemoine.Controls
                                 el = VisualTreeHelper.GetParent(el) as FrameworkElement;
                             }
                         }
-                        e.Handled    = true;
+                        e.Handled = true;
                         popup.IsOpen = false;
                         if (store.Load(t, out var loaded, out _) && loaded != null)
                         {
-                            Layout = LegendCreatorSettings.DeepCopy(loaded.Layout ?? new LegendLayoutConfig());
-                            Rows   = LegendCreatorSettings.DeepCopy(loaded.Rows   ?? new List<LegendRowConfig>());
+                            // Load from the first legend entry in the template
+                            var entry = loaded.Legends?.Count > 0 ? loaded.Legends[0] : null;
+                            if (entry != null)
+                            {
+                                Layout = LegendCreatorSettings.DeepCopy(entry.Layout ?? new LegendLayoutConfig());
+                                Rows   = LegendCreatorSettings.DeepCopy(entry.Rows   ?? new List<LegendRowConfig>());
+                            }
+                            else
+                            {
+                                Layout = new LegendLayoutConfig();
+                                Rows   = new List<LegendRowConfig>();
+                            }
                             BuildAll();
                         }
                         else
                         {
-                            MessageBox.Show("Failed to load template.", "Template Error",
-                                MessageBoxButton.OK, MessageBoxImage.Error);
+                            MessageBox.Show("Failed to load template.", "Template Error", MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     };
 
                     rowGrid.Children.Add(loadBorder);
 
-                    // Delete button (trash confirm)
-                    var delBtn = BuildTemplateDeleteButton(() =>
-                    {
-                        store.Delete(t, out _);
-                        RebuildTemplateList();
-                    });
-                    ((FrameworkElement)delBtn).Tag                 = "deleteBtn";
-                    ((FrameworkElement)delBtn).Margin              = new Thickness(0, 0, 6, 0);
-                    ((FrameworkElement)delBtn).VerticalAlignment   = VerticalAlignment.Center;
+                    var delBtn = BuildTemplateDeleteButton(() => { store.Delete(t, out _); RebuildTemplateList(); });
+                    ((FrameworkElement)delBtn).Tag               = "deleteBtn";
+                    ((FrameworkElement)delBtn).Margin            = new Thickness(0, 0, 6, 0);
+                    ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
                     Grid.SetColumn((UIElement)delBtn, 1);
                     rowGrid.Children.Add((UIElement)delBtn);
 
@@ -1695,24 +1118,14 @@ namespace LemoineTools.Lemoine.Controls
             RebuildTemplateList();
             root.Children.Add(templateListPanel);
 
-            // ── 2. Save current as template ────────────────────────────────────
+            // ── Save current as template ──────────────────────────────────────
             AddSep();
-
             var saveRowHost = new Border { Margin = new Thickness(4, 0, 4, 0) };
 
             void ShowSaveInputState()
             {
-                var inputRow = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Margin      = new Thickness(8, 4, 8, 4),
-                };
-                var nameBox = new TextBox
-                {
-                    Width                    = 140,
-                    MaxLength                = 50,
-                    VerticalContentAlignment = VerticalAlignment.Center,
-                };
+                var inputRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 4, 8, 4) };
+                var nameBox  = new TextBox { Width = 140, MaxLength = 50, VerticalContentAlignment = VerticalAlignment.Center };
                 nameBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
                 nameBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
                 nameBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
@@ -1725,9 +1138,16 @@ namespace LemoineTools.Lemoine.Controls
                     if (string.IsNullOrEmpty(name)) return;
                     var snapshot = new LegendCreatorSettings
                     {
-                        Layout         = LegendCreatorSettings.DeepCopy(Layout),
-                        Rows           = LegendCreatorSettings.DeepCopy(Rows),
-                        PreviewVisible = _previewVisible,
+                        Legends = new List<LegendEntry>
+                        {
+                            new LegendEntry
+                            {
+                                Id     = LegendIdGen.New("legend"),
+                                Layout = LegendCreatorSettings.DeepCopy(Layout),
+                                Rows   = LegendCreatorSettings.DeepCopy(Rows),
+                                PreviewVisible = _previewVisible,
+                            }
+                        },
                     };
                     if (store.Save(name, snapshot, out string? err))
                     {
@@ -1736,8 +1156,7 @@ namespace LemoineTools.Lemoine.Controls
                     }
                     else
                     {
-                        MessageBox.Show("Save failed: " + err, "Template Error",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show("Save failed: " + err, "Template Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
 
@@ -1760,8 +1179,7 @@ namespace LemoineTools.Lemoine.Controls
                 inputRow.Children.Add(cancelBtn);
                 saveRowHost.Child = inputRow;
 
-                nameBox.Dispatcher.BeginInvoke(
-                    System.Windows.Threading.DispatcherPriority.Input,
+                nameBox.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,
                     new Action(() => nameBox.Focus()));
             }
 
@@ -1769,34 +1187,18 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var btn = new Border
                 {
-                    Padding         = new Thickness(10, 4, 12, 4),
-                    CornerRadius    = new CornerRadius(12),
-                    BorderThickness = new Thickness(1),
-                    Cursor          = Cursors.Hand,
-                    Margin          = new Thickness(4, 2, 4, 2),
+                    Padding = new Thickness(10, 4, 12, 4), CornerRadius = new CornerRadius(12),
+                    BorderThickness = new Thickness(1), Cursor = Cursors.Hand, Margin = new Thickness(4, 2, 4, 2),
                 };
                 btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                 btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-                var icon = new TextBlock
-                {
-                    Text              = "＋",
-                    Width             = 18,
-                    TextAlignment     = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
+                var icon = new TextBlock { Text = "＋", Width = 18, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 icon.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-                var lbl = new TextBlock
-                {
-                    Text              = "Save Current as Template",
-                    Margin            = new Thickness(7, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    IsHitTestVisible  = false,
-                };
+                var lbl = new TextBlock { Text = "Save Current as Template", Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -1806,16 +1208,8 @@ namespace LemoineTools.Lemoine.Controls
                 row.Children.Add(lbl);
                 btn.Child = row;
 
-                btn.MouseEnter += (s, e) =>
-                {
-                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                };
-                btn.MouseLeave += (s, e) =>
-                {
-                    btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                };
+                btn.MouseEnter += (s, e) => { btn.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim"); btn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent"); };
+                btn.MouseLeave += (s, e) => { btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");    btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder"); };
                 btn.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowSaveInputState(); };
                 saveRowHost.Child = btn;
             }
@@ -1823,31 +1217,27 @@ namespace LemoineTools.Lemoine.Controls
             ShowSaveButtonState();
             root.Children.Add(saveRowHost);
 
-            // ── 3. File operations ─────────────────────────────────────────────
+            // ── File operations ───────────────────────────────────────────────
             AddSep();
             AddSectionHeader("FILE");
 
             AddMenuRow("↑", "Import from File", () =>
             {
                 popup.IsOpen = false;
-                var dlg = new OpenFileDialog
-                {
-                    Title  = "Import Legend Template",
-                    Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*",
-                };
+                var dlg = new OpenFileDialog { Title = "Import Legend Template", Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*" };
                 if (dlg.ShowDialog() == true)
                 {
                     var loaded = LegendCreatorSettings.TryLoad(dlg.FileName);
-                    if (loaded != null)
+                    var entry  = loaded?.Legends?.Count > 0 ? loaded.Legends[0] : null;
+                    if (entry != null)
                     {
-                        Layout = LegendCreatorSettings.DeepCopy(loaded.Layout ?? new LegendLayoutConfig());
-                        Rows   = LegendCreatorSettings.DeepCopy(loaded.Rows   ?? new List<LegendRowConfig>());
+                        Layout = LegendCreatorSettings.DeepCopy(entry.Layout ?? new LegendLayoutConfig());
+                        Rows   = LegendCreatorSettings.DeepCopy(entry.Rows   ?? new List<LegendRowConfig>());
                         BuildAll();
                     }
                     else
                     {
-                        MessageBox.Show("Failed to import file.", "Import Error",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show("Failed to import file.", "Import Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
             });
@@ -1855,19 +1245,21 @@ namespace LemoineTools.Lemoine.Controls
             AddMenuRow("↓", "Export to File", () =>
             {
                 popup.IsOpen = false;
-                var dlg = new SaveFileDialog
-                {
-                    Title      = "Export Legend Template",
-                    Filter     = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*",
-                    DefaultExt = "xml",
-                };
+                var dlg = new SaveFileDialog { Title = "Export Legend Template", Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*", DefaultExt = "xml" };
                 if (dlg.ShowDialog() == true)
                 {
                     var snapshot = new LegendCreatorSettings
                     {
-                        Layout         = LegendCreatorSettings.DeepCopy(Layout),
-                        Rows           = LegendCreatorSettings.DeepCopy(Rows),
-                        PreviewVisible = _previewVisible,
+                        Legends = new List<LegendEntry>
+                        {
+                            new LegendEntry
+                            {
+                                Id     = LegendIdGen.New("legend"),
+                                Layout = LegendCreatorSettings.DeepCopy(Layout),
+                                Rows   = LegendCreatorSettings.DeepCopy(Rows),
+                                PreviewVisible = _previewVisible,
+                            }
+                        },
                     };
                     LegendCreatorSettings.ExportTo(dlg.FileName, snapshot);
                 }
@@ -1883,17 +1275,12 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         private static Button MakeFlatSmBtn(string text)
         {
-            var b = new Button
-            {
-                Content         = text,
-                Padding         = new Thickness(8, 3, 8, 3),
-                FocusVisualStyle = null,
-            };
+            var b = new Button { Content = text, Padding = new Thickness(8, 3, 8, 3), FocusVisualStyle = null };
             b.SetResourceReference(Control.ForegroundProperty,  "LemoineText");
-            b.SetResourceReference(Control.FontFamilyProperty,   "LemoineMonoFont");
-            b.SetResourceReference(Control.FontSizeProperty,     "LemoineFS_SM");
-            b.SetResourceReference(Control.BackgroundProperty,   "LemoineRaised");
-            b.SetResourceReference(Control.BorderBrushProperty,  "LemoineBorder");
+            b.SetResourceReference(Control.FontFamilyProperty,  "LemoineMonoFont");
+            b.SetResourceReference(Control.FontSizeProperty,    "LemoineFS_SM");
+            b.SetResourceReference(Control.BackgroundProperty,  "LemoineRaised");
+            b.SetResourceReference(Control.BorderBrushProperty, "LemoineBorder");
             b.Template = LemoineControlStyles.BuildFlatButtonTemplate();
             return b;
         }
@@ -1901,13 +1288,7 @@ namespace LemoineTools.Lemoine.Controls
         private UIElement BuildTemplateDeleteButton(Action onConfirm)
         {
             bool confirmed = false;
-            var btn = new Border
-            {
-                Padding         = new Thickness(6, 3, 6, 3),
-                CornerRadius    = new CornerRadius(10),
-                BorderThickness = new Thickness(1),
-                Cursor          = Cursors.Hand,
-            };
+            var btn = new Border { Padding = new Thickness(6, 3, 6, 3), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Cursor = Cursors.Hand };
             btn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             btn.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
 
@@ -1917,11 +1298,8 @@ namespace LemoineTools.Lemoine.Controls
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             btn.Child = tb;
 
-            btn.MouseEnter += (s, e) =>
-                btn.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-            btn.MouseLeave += (s, e) =>
-                btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-
+            btn.MouseEnter += (s, e) => btn.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            btn.MouseLeave += (s, e) => btn.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
             btn.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
@@ -1939,7 +1317,7 @@ namespace LemoineTools.Lemoine.Controls
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 RebuildRows();
-                RefreshRightPanel();
+                BulkEditorChanged?.Invoke(LBulkEditing ? (UIElement)BuildBulkBlockEditor() : null);
                 UpdatePreview();
                 UpdateCounts();
             }), System.Windows.Threading.DispatcherPriority.Background);
@@ -1950,8 +1328,7 @@ namespace LemoineTools.Lemoine.Controls
             if (_countsTb == null) return;
             int rows   = Rows.Count;
             int groups = Rows.Sum(r => r.Groups?.Count ?? 0);
-            int blocks = Rows.SelectMany(r => r.Groups ?? new List<LegendGroupConfig>())
-                             .Sum(g => g.Blocks?.Count ?? 0);
+            int blocks = Rows.SelectMany(r => r.Groups ?? new List<LegendGroupConfig>()).Sum(g => g.Blocks?.Count ?? 0);
             int hidden = Rows.SelectMany(r => r.Groups ?? new List<LegendGroupConfig>())
                              .SelectMany(g => g.Blocks ?? new List<LegendBlockConfig>())
                              .Count(b => !b.Visible);
@@ -1970,7 +1347,6 @@ namespace LemoineTools.Lemoine.Controls
         {
             Dispatcher.Invoke(() =>
             {
-                _palette?.Refresh();
                 RebuildRows();
                 UpdatePreview();
                 UpdateCounts();

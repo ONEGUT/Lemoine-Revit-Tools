@@ -22,27 +22,29 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         private const double LabelWidth = 4.00;   // proven-safe TextNote width ceiling (feet)
 
         // ── Callbacks ───────────────────────────────────────────────────────
-        public Action<string, string>?    PushLog    { get; set; }
-        public Action<int, int, int, int>? OnProgress { get; set; }
-        public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<string, string>?    PushLog         { get; set; }
+        public Action<int, int, int, int>? OnProgress     { get; set; }
+        public Action<int, int, int>?      OnComplete     { get; set; }
+        /// <summary>Fired after a successful Create (not Update) with the new view's ElementId.</summary>
+        public Action<ElementId>?          OnLegendCreated { get; set; }
 
-        // Set by the step-flow launcher to pin which legend view is duplicated.
+        // Layout and rows to render — set by the caller before raising the event.
+        public LegendLayoutConfig?    Layout { get; set; }
+        public List<LegendRowConfig>? Rows   { get; set; }
+
         // Null → fall back to the first legend view found in the project.
         public ElementId? TemplateLegendId { get; set; }
 
-        // Set by LegendCreatorUpdateCommand after the user picks a legend view.
         // Null → fall back to matching by Layout.Title name.
         public ElementId? TargetLegendId { get; set; }
 
         /// <summary>
         /// False (default) → duplicate a template legend and create a new view.
-        /// True            → update the view specified by TargetLegendId (or the first view
-        ///                   whose name matches Layout.Title), clearing and redrawing in place.
+        /// True            → update the view specified by TargetLegendId.
         /// </summary>
         public bool UpdateMode { get; set; }
 
-        // Per-role TextNoteType element IDs set by the step-flow launcher.
-        // Null → fall back to the first TextNoteType found in the document.
+        // Per-role TextNoteType element IDs. Null → fall back to first in document.
         public ElementId? TitleTypeId       { get; set; }
         public ElementId? SubtitleTypeId    { get; set; }
         public ElementId? GroupHeaderTypeId { get; set; }
@@ -71,9 +73,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ─────────────────────────────────────────────────────────────────────
         private void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            var settings = LegendCreatorSettings.Instance;
-            var layout   = settings.Layout ?? new LegendLayoutConfig();
-            var rows     = settings.Rows   ?? new List<LegendRowConfig>();
+            var layout = this.Layout ?? new LegendLayoutConfig();
+            var rows   = this.Rows   ?? new List<LegendRowConfig>();
 
             // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
             double scale   = layout.ViewScale > 0 ? (double)layout.ViewScale : 48.0;
@@ -398,6 +399,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 tx.Commit();
                 pass++;
+
+                // Notify caller of the newly created view's id (Create mode only).
+                if (!UpdateMode) OnLegendCreated?.Invoke(dv.Id);
             }
 
             foreach (var l in logMsgs) Log(l, "info");
