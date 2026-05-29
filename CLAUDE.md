@@ -223,6 +223,14 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 
 ---
 
+## Build Environment
+
+This project cannot be built on Linux. `UseWPF=true` + `net48` requires `Microsoft.NET.Sdk.WindowsDesktop`, which is Windows-only — neither the Linux .NET SDK nor Mono can satisfy it. Do not attempt Linux CI or cloud builds. Build and test on Windows only.
+
+The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) are checked in to `libs/`. The `.csproj` falls back to `libs/` when the standard Revit 2024 install path (`C:\Program Files\Autodesk\Revit 2024`) does not exist, so cloning the repo is sufficient to resolve references without a local Revit installation.
+
+---
+
 ## Key Files
 
 | Path | Purpose |
