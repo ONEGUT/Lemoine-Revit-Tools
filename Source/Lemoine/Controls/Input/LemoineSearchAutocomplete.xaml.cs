@@ -109,9 +109,17 @@ namespace LemoineTools.Lemoine.Controls
         private void AttachEvents()
         {
             _textBox.TextChanged += OnTextChanged;
-            _textBox.GotFocus    += (s, e) => ShowDropdown();
+            _textBox.GotFocus    += (s, e) =>
+            {
+                // Hide the icon and shift text left the moment the field is focused —
+                // not on first keystroke — so the caret sits flush at the field's edge.
+                UpdateIconState(showIcon: false);
+                ShowDropdown();
+            };
             _textBox.LostFocus   += (s, e) =>
             {
+                // Restore the icon only when the field is left empty.
+                UpdateIconState(showIcon: string.IsNullOrEmpty(_textBox.Text));
                 // Delay so clicks on dropdown items register
                 Dispatcher.BeginInvoke(new Action(() => _popup.IsOpen = false),
                     System.Windows.Threading.DispatcherPriority.Background);
@@ -137,26 +145,28 @@ namespace LemoineTools.Lemoine.Controls
             // Only auto-open the dropdown for real typing — a programmatic text change
             // (e.g. panel rebuild / SetValue) must not pop the popup. Guard on keyboard focus.
             if (_textBox.IsKeyboardFocusWithin) ShowDropdown();
-            UpdateIconState(!string.IsNullOrEmpty(_value));
+            // A programmatic SetValue on an unfocused field should still hide the icon when
+            // it fills text in; focus changes are handled by the Got/LostFocus handlers.
+            if (!string.IsNullOrEmpty(_value)) UpdateIconState(showIcon: false);
         }
 
-        // Fades the search icon out when typing begins and back in when the field is cleared.
-        // Padding slides left simultaneously so typed text fills the full field width.
-        private void UpdateIconState(bool hasText)
+        // Fades the search icon out (and slides the text padding left to fill the gap) when the
+        // field is focused or holds text, and reverses both when it returns to an empty rest state.
+        private void UpdateIconState(bool showIcon)
         {
             var dur = new Duration(TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast));
 
-            if (hasText && _iconVisible)
+            if (!showIcon && _iconVisible)
             {
                 _iconVisible = false;
                 var fade = new DoubleAnimation(0, dur) { EasingFunction = _iconEase };
-                // Guard: only collapse if we haven't already been asked to restore.
+                // Guard: only collapse if we haven't been asked to restore in the meantime.
                 fade.Completed += (s, e) => { if (!_iconVisible) _iconCanvas.Visibility = Visibility.Collapsed; };
                 _iconCanvas.BeginAnimation(UIElement.OpacityProperty, fade);
                 _textBox.BeginAnimation(Control.PaddingProperty,
                     new ThicknessAnimation(_padNoIcon, dur) { EasingFunction = _iconEase });
             }
-            else if (!hasText && !_iconVisible)
+            else if (showIcon && !_iconVisible)
             {
                 _iconVisible = true;
                 _iconCanvas.Visibility = Visibility.Visible;
