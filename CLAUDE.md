@@ -59,6 +59,7 @@ Refactor ILemoineTool to support async execute
 ### Standards for all C# code
 
 - Never swallow exceptions silently — empty `catch` blocks and catch-and-log-only blocks that discard the error are forbidden unless the risk is explicitly acknowledged and the user has been told.
+- `LemoineLog` is the central diagnostic sink (logs to `%AppData%\LemoineTools\diagnostics.log` plus an in-memory ring). Route every deliberately-swallowed exception through `LemoineLog.Swallowed(context, ex)` or `LemoineLog.Error(context, ex)` with a human-readable context string — never an empty `catch {}` or a `Debug.WriteLine`. It is Revit-free, so every layer can call it.
 - Always `await` async operations or attach a `.ContinueWith` / `.GetAwaiter().GetResult()` handler. Fire-and-forget `Task` calls that can fail silently are not allowed.
 - Check return values where failure is meaningful (e.g. Revit API calls that return `null` on failure, `bool` results indicating success).
 - Validate inputs at system boundaries: user input, external APIs, Revit API calls, file I/O. Do not validate internal calls that are already guaranteed by the framework or calling code.
@@ -132,6 +133,7 @@ Before implementing any workflow, check whether it is practical:
 - Prefer explicit single-action patterns (a dedicated save button, a confirm step) over implicit double-purpose interactions (one click that both selects and edits).
 - If a workflow feels impractical, say so and propose an alternative before building it.
 - When adding secondary actions (copy, delete) to sidebar item rows, note that this may clutter the row and ask the user whether they'd prefer those actions consolidated into the primary edit popup instead.
+- Settings windows auto-save on change (theme/size on click, tool fields via `ApplySettings`). Do not add an "Apply" button — persistence is implicit per control.
 
 ---
 
@@ -183,6 +185,10 @@ Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`
 ### Access modifiers across partial files
 
 Methods shared between partial class files must be `internal`, not `private`. A `private` method in one partial file is invisible to another — CS0122.
+
+### XmlSerializer requires public types
+
+Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal` (or otherwise non-public) root type throws *"only public types can be processed"* at `new XmlSerializer(typeof(T))` construction — and because that call usually sits inside a try/catch, every save and load fails **silently**, leaving settings stuck on defaults. This was the root cause of theme / UI-size resetting on restart (`UISettingsDto` was `internal`).
 
 ---
 
