@@ -443,7 +443,7 @@ namespace LemoineTools.Lemoine
 
             var trashTb = new TextBlock
             {
-                Text = "",
+                Text = "",
                 FontSize = DoubleRes("LemoineFS_SM", 12),
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 Foreground = BrushRes("LemoineTextDim", Brushes.Gray),
@@ -589,7 +589,7 @@ namespace LemoineTools.Lemoine
 
             var icon = new TextBlock
             {
-                Text                = "",
+                Text                = "",
                 FontFamily          = new FontFamily("Segoe MDL2 Assets"),
                 VerticalAlignment   = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,

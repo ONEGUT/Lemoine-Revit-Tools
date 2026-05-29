@@ -36,13 +36,12 @@ namespace LemoineTools.Lemoine
             if (_fActiveRuleId == null || activeTrade?.Rules.All(r => r.Id != _fActiveRuleId) == true)
                 _fActiveRuleId = activeTrade?.Rules.FirstOrDefault()?.Id;
 
-            // ── Root: five-column split (left | splitter | right | sep | trades sidebar) ──
+            // ── Root: four-column split (trades | rule list | splitter | editor) ──
             var root = new Grid();
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280), MinWidth = 280 });
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });    // visual separator
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });  // trades sidebar
 
             var splitter = new GridSplitter
             {
@@ -54,7 +53,7 @@ namespace LemoineTools.Lemoine
                 Background          = Brushes.Transparent,
                 Cursor              = Cursors.SizeWE,
             };
-            Grid.SetColumn(splitter, 1);
+            Grid.SetColumn(splitter, 2);
             root.Children.Add(splitter);
 
             // ── Left panel ───────────────────────────────────────────────────
@@ -152,8 +151,11 @@ namespace LemoineTools.Lemoine
             leftDock.Children.Add(ruleScroll);
             FRefreshRuleList();
 
-            Grid.SetColumn(leftDock, 0);
-            root.Children.Add(leftDock);
+            var leftWrapper = new Border { BorderThickness = new Thickness(1, 0, 0, 0) };
+            leftWrapper.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            leftWrapper.Child = leftDock;
+            Grid.SetColumn(leftWrapper, 1);
+            root.Children.Add(leftWrapper);
 
             // ── Right panel (resizable editor, min 280px) ────────────────────
             _fEditorBorder = new Border
@@ -163,16 +165,10 @@ namespace LemoineTools.Lemoine
             _fEditorBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
             _fEditorBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             FRefreshRuleEditor();
-            Grid.SetColumn(_fEditorBorder, 2);
+            Grid.SetColumn(_fEditorBorder, 3);
             root.Children.Add(_fEditorBorder);
 
-            // ── 1px visual divider (col 3) ────────────────────────────────────────
-            var sidebarDiv = new Border();
-            sidebarDiv.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-            Grid.SetColumn(sidebarDiv, 3);
-            root.Children.Add(sidebarDiv);
-
-            // ── Trades sidebar (col 4) ────────────────────────────────────────────
+            // ── Trades sidebar (col 0) ────────────────────────────────────────────
             _fTradeListPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
             var tradeScroll = new ScrollViewer
@@ -268,7 +264,7 @@ namespace LemoineTools.Lemoine
 
             _fTradesSidebar = new Border { BorderThickness = new Thickness(0) };
             _fTradesSidebar.Child = sidebarDock;
-            Grid.SetColumn(_fTradesSidebar, 4);
+            Grid.SetColumn(_fTradesSidebar, 0);
             root.Children.Add(_fTradesSidebar);
 
             FRefreshTradesSidebar();
@@ -307,29 +303,31 @@ namespace LemoineTools.Lemoine
         {
             bool isActive = trade.Id == _fActiveTradeId;
 
+            // Active tab: rounded on the left only, no right border, -1px right margin overlaps
+            // the rule list's 1px left border to create a visual connection between tab and content.
             var rowBorder = new Border
             {
-                BorderThickness = new Thickness(3, 0, 0, 0),
-                Padding         = new Thickness(8, 7, 8, 7),
+                CornerRadius    = isActive ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(6),
+                BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
+                Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
+                Padding         = new Thickness(8, 6, 8, 6),
                 Cursor          = isActive ? Cursors.Arrow : Cursors.Hand,
             };
+            rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             if (isActive)
-            {
-                rowBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            }
+                rowBorder.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
             else
-            {
-                rowBorder.Background  = Brushes.Transparent;
-                rowBorder.BorderBrush = Brushes.Transparent;
-            }
+                rowBorder.Background = Brushes.Transparent;
 
             if (!isActive)
             {
                 rowBorder.MouseEnter += (s, e) =>
                     rowBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
                 rowBorder.MouseLeave += (s, e) =>
+                {
                     rowBorder.Background = Brushes.Transparent;
+                    rowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                };
                 string tid = trade.Id;
                 rowBorder.MouseLeftButtonUp += (s, e) =>
                 {
@@ -380,6 +378,7 @@ namespace LemoineTools.Lemoine
             string editId = trade.Id;
             var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
             editBtn.ToolTip = "Edit trade name and colour";
+            editBtn.Margin  = new Thickness(4, 0, 0, 0);
             editBtn.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
@@ -409,7 +408,7 @@ namespace LemoineTools.Lemoine
                 VerticalAlignment   = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Background          = Brushes.Transparent,
-                Margin              = new Thickness(2, 0, 0, 0),
+                Margin              = new Thickness(4, 0, 0, 0),
                 ToolTip             = "Duplicate trade",
                 Child               = dupIcon,
             };
@@ -449,7 +448,7 @@ namespace LemoineTools.Lemoine
                 FRefreshRuleList();
                 FRefreshRuleEditor();
             });
-            ((FrameworkElement)delBtn).Margin            = new Thickness(2, 0, 0, 0);
+            ((FrameworkElement)delBtn).Margin            = new Thickness(4, 0, 0, 0);
             ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn((UIElement)delBtn, 4);
             rowGrid.Children.Add((UIElement)delBtn);
@@ -779,7 +778,7 @@ namespace LemoineTools.Lemoine
                     FRefreshRuleList(); // update opacity on all affected rows
                 }
             });
-            toggle.Margin            = new Thickness(8, 0, 4, 0);
+            toggle.Margin            = new Thickness(4, 0, 0, 0);
             toggle.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(toggle, 3);
             outerRow.Children.Add(toggle);
@@ -809,7 +808,7 @@ namespace LemoineTools.Lemoine
                 FRefreshRuleList();
                 FRefreshRuleEditor();
             });
-            ((FrameworkElement)trashBtn).Margin            = new Thickness(2, 0, 0, 0);
+            ((FrameworkElement)trashBtn).Margin            = new Thickness(4, 0, 0, 0);
             ((FrameworkElement)trashBtn).VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn((UIElement)trashBtn, 5);
             outerRow.Children.Add((UIElement)trashBtn);
