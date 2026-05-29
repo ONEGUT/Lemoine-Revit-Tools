@@ -251,27 +251,20 @@ namespace LemoineTools.Lemoine
             _fStatusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
             _fStatusText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var applyBtn = BuildFlatButton("Apply");
-            applyBtn.Margin = new Thickness(0, 0, 6, 0);
-            applyBtn.Click  += (s, e) => ApplyCurrentTab();
-
+            // Settings auto-save the moment each control changes (theme/size on click,
+            // tool fields via ApplySettings on change), so there is no Apply button —
+            // only Close. _fStatusText is retained for the Filters template messages.
             var closeBtn = BuildFlatButton("Close");
             closeBtn.Click += (s, e) => Close();
 
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
             var btnStack = new StackPanel { Orientation = Orientation.Horizontal };
-            btnStack.Children.Add(applyBtn);
             btnStack.Children.Add(closeBtn);
             DockPanel.SetDock(btnStack, Dock.Right);
             dp.Children.Add(btnStack);
             dp.Children.Add(_fStatusText);
 
             _footerBorder.Child = dp;
-        }
-
-        private void ApplyCurrentTab()
-        {
-            FlashStatus("Applied.");
         }
 
         private void FlashStatus(string msg)
