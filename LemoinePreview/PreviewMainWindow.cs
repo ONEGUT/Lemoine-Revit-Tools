@@ -10,7 +10,6 @@ using System.Windows.Shapes;
 using System.Windows.Shell;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Lemoine.Controls.Input;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;

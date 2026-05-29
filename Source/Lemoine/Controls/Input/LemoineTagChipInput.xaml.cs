@@ -8,7 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace LemoineTools.Lemoine.Controls.Input
+namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
     /// A wrapping row of removable tag chips with a '+' button that opens a

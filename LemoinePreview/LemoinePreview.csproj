@@ -83,7 +83,6 @@
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorSettings.cs" />
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorTabContent.cs" />
     <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackLayout.cs" />
-    <Compile Include="..\Source\Tools\Testing\SheetPack\SheetPackSettings.cs" />
   </ItemGroup>
 
   <!-- ── Framework assemblies ────────────────────────────────────────────────── -->
