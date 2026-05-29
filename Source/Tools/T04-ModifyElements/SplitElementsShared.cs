@@ -299,7 +299,7 @@ namespace LemoineTools.Tools.ModifyElements
             }
             else
             {
-                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete unused wall copy", __lex); }
                 stats.Fail(wall.Id.ToString(),
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
@@ -351,7 +351,7 @@ namespace LemoineTools.Tools.ModifyElements
             }
             else
             {
-                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete unused column copy", __lex); }
                 stats.Fail(col.Id.ToString(),
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
@@ -476,7 +476,7 @@ namespace LemoineTools.Tools.ModifyElements
                 {
                     // Clean up all copies made so far before bailing (#2)
                     foreach (var cid in segIds.Skip(1))
-                        try { doc.Delete(cid); } catch { }
+                        try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: clean up partial copies after failure", __lex); }
                     stats.Fail(el.Id.ToString(), $"copy #{i} failed: {ex.Message}");
                     return;
                 }
@@ -513,7 +513,7 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     // Remove orphaned copy; leave original (i==0) in place (#3)
-                    if (i > 0) { try { doc.Delete(segIds[i]); } catch { } }
+                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete orphaned segment copy", __lex); } }
                     stats.Fail(el.Id.ToString(), $"seg {i} curve set failed: {ex.Message}");
                 }
             }
@@ -643,14 +643,14 @@ namespace LemoineTools.Tools.ModifyElements
                         ElementTransformUtils.CopyElement(doc, id, XYZ.Zero);
                     if (c == null || !c.Any())
                     {
-                        foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                        foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete copies after empty copy result", __lex); }
                         return null;
                     }
                     result.Add(c.First());
                 }
                 catch
                 {
-                    foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                    foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: clean up copies after copy failure", __lex); }
                     return null;
                 }
             }
