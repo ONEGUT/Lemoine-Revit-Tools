@@ -27,6 +27,7 @@ namespace LemoineTools.Tools.Debuggers
             new StepDefinition("T2", "Hover Animation (P1)",        required: false),
             new StepDefinition("T3", "Dropdown + Code Guard (P1+P0)", required: false),
             new StepDefinition("T4", "Scroll Bubbling (P0)",        required: false),
+            new StepDefinition("T6", "Input Controls (P2)",         required: false),
             new StepDefinition("T5", "Review & Log Tabs (P0)",      required: false),
         };
 
@@ -45,6 +46,7 @@ namespace LemoineTools.Tools.Debuggers
                 case "T2": return BuildT2();
                 case "T3": return BuildT3();
                 case "T4": return BuildT4();
+                case "T6": return BuildT6();
                 case "T5": return BuildT5();
                 default:   return new Grid();
             }
@@ -140,6 +142,31 @@ namespace LemoineTools.Tools.Debuggers
                 "continued scrolling should keep moving the OUTER window content instead of " +
                 "stalling at the list edge.",
                 frame);
+        }
+
+        // ── T6 — P2 input controls (folder browser, text field, read-only select) ─
+        private FrameworkElement BuildT6()
+        {
+            var stack = new StackPanel();
+
+            var folder = new LemoineFolderBrowser { Label = "Output folder", DialogTitle = "Pick a folder" };
+            folder.Margin = new Thickness(0, 0, 0, 12);
+            stack.Children.Add(folder);
+
+            var field = new LemoineTextField { Label = "Prefix", Placeholder = "Type a value…" };
+            field.Margin = new Thickness(0, 0, 0, 12);
+            stack.Children.Add(field);
+
+            var single = new LemoineSingleSelect { Label = "Mode" };
+            single.Items = new List<string> { "Automatic", "Manual", "Hybrid" };
+            stack.Children.Add(single);
+
+            return LookFor("P2 · INPUT CONTROLS",
+                "Folder browser: 'Browse…' opens a folder dialog and fills the path. " +
+                "Text field: the watermark disappears as you type. Mode: this is a single-choice " +
+                "picker — it should read as a dropdown (no caret / no editable text box) and only " +
+                "let you pick from the list.",
+                stack);
         }
 
         // ── T5 — review summary + log-tab hover (tabs registered by the command) ─

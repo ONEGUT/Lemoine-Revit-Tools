@@ -274,6 +274,111 @@ namespace LemoineTools.Lemoine
   </Setter>
 </Style>";
 
+        // ── Read-only ComboBox — single-choice picker (no editable text box) ──
+        // LemoineSingleSelect is a pick-one control, not a free-text combo. The global
+        // ComboBox style above forces IsEditable=True, which renders a caret + editable
+        // text box. This template shows the selected item as static content with a full-
+        // width click target, so it reads as a dropdown, not a text field.
+        public static Style BuildReadOnlyComboBoxStyle() => ParseStyle(ReadOnlyComboBoxXaml)!;
+
+        private const string ReadOnlyComboBoxXaml = @"
+<Style TargetType=""{x:Type ComboBox}"">
+  <Setter Property=""Foreground""      Value=""{DynamicResource LemoineText}""/>
+  <Setter Property=""Background""      Value=""{DynamicResource LemoineSelectBg}""/>
+  <Setter Property=""BorderBrush""     Value=""{DynamicResource LemoineBorderMid}""/>
+  <Setter Property=""BorderThickness"" Value=""1""/>
+  <Setter Property=""FontFamily""      Value=""{DynamicResource LemoineUiFont}""/>
+  <Setter Property=""FontSize""        Value=""{DynamicResource LemoineFS_MD}""/>
+  <Setter Property=""MinHeight""       Value=""{DynamicResource LemoineH_Input}""/>
+  <Setter Property=""IsEditable""      Value=""False""/>
+  <Setter Property=""IsTextSearchEnabled"" Value=""False""/>
+  <Setter Property=""Template"">
+    <Setter.Value>
+      <ControlTemplate TargetType=""{x:Type ComboBox}"">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width=""*""/>
+            <ColumnDefinition Width=""22""/>
+          </Grid.ColumnDefinitions>
+
+          <Border x:Name=""Bd"" Grid.ColumnSpan=""2""
+                  CornerRadius=""3""
+                  Background=""{TemplateBinding Background}""
+                  BorderBrush=""{TemplateBinding BorderBrush}""
+                  BorderThickness=""{TemplateBinding BorderThickness}""/>
+
+          <!-- Full-width invisible click target opens the dropdown -->
+          <ToggleButton x:Name=""PART_ToggleButton""
+                        Grid.ColumnSpan=""2""
+                        Focusable=""False""
+                        ClickMode=""Press""
+                        IsChecked=""{Binding IsDropDownOpen, Mode=TwoWay,
+                            RelativeSource={RelativeSource TemplatedParent}}"">
+            <ToggleButton.Template>
+              <ControlTemplate TargetType=""{x:Type ToggleButton}"">
+                <Border Background=""Transparent""/>
+              </ControlTemplate>
+            </ToggleButton.Template>
+          </ToggleButton>
+
+          <!-- Selected item, static (non-hit-testable so clicks reach the toggle) -->
+          <ContentPresenter Grid.Column=""0""
+                            Margin=""10,0,0,0""
+                            Content=""{TemplateBinding SelectionBoxItem}""
+                            ContentTemplate=""{TemplateBinding SelectionBoxItemTemplate}""
+                            ContentTemplateSelector=""{TemplateBinding ItemTemplateSelector}""
+                            VerticalAlignment=""Center""
+                            IsHitTestVisible=""False""
+                            TextElement.Foreground=""{TemplateBinding Foreground}""/>
+
+          <Path Grid.Column=""1""
+                Data=""M 0 0 L 4 4 L 8 0 Z""
+                Fill=""{DynamicResource LemoineTextDim}""
+                Width=""8"" Height=""4""
+                HorizontalAlignment=""Center""
+                VerticalAlignment=""Center""
+                IsHitTestVisible=""False""/>
+
+          <Popup x:Name=""PART_Popup""
+                 Grid.ColumnSpan=""2""
+                 Placement=""Bottom""
+                 IsOpen=""{TemplateBinding IsDropDownOpen}""
+                 AllowsTransparency=""True""
+                 Focusable=""False""
+                 PopupAnimation=""Slide"">
+            <Border CornerRadius=""3""
+                    BorderThickness=""1""
+                    Padding=""0,3,0,3""
+                    MinWidth=""{Binding ActualWidth,
+                        RelativeSource={RelativeSource AncestorType=ComboBox}}""
+                    MaxHeight=""{TemplateBinding MaxDropDownHeight}""
+                    Background=""{DynamicResource LemoineRaised}""
+                    BorderBrush=""{DynamicResource LemoineBorderMid}"">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius=""14"" ShadowDepth=""4""
+                                  Opacity=""0.4"" Color=""Black""/>
+              </Border.Effect>
+              <ScrollViewer MaxHeight=""200"">
+                <ItemsPresenter/>
+              </ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property=""IsMouseOver"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+          <Trigger Property=""IsKeyboardFocusWithin"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
+
         // ── ComboBoxItem ──────────────────────────────────────────────────────
         private const string ComboBoxItemXaml = @"
 <Style TargetType=""{x:Type ComboBoxItem}"">

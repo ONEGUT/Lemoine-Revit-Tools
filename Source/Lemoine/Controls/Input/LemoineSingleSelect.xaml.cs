@@ -49,6 +49,8 @@ namespace LemoineTools.Lemoine.Controls
 
         private void ApplyResourceReferences()
         {
+            // Read-only template: a single-choice picker, not an editable text combo.
+            _combo.Style = LemoineControlStyles.BuildReadOnlyComboBoxStyle();
             _combo.SetResourceReference(ComboBox.BackgroundProperty,   "LemoineSelectBg");
             _combo.SetResourceReference(ComboBox.ForegroundProperty,   "LemoineText");
             _combo.SetResourceReference(ComboBox.BorderBrushProperty,  "LemoineBorderMid");
