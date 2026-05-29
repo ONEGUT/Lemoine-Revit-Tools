@@ -93,7 +93,7 @@ namespace LemoineTools.Tools.ModifyElements
         // ── Level constraint parameters ───────────────────────────────────────
 
         private static readonly BuiltInParameter WallBase    = BuiltInParameter.WALL_BASE_CONSTRAINT;
-        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_TOP_CONSTRAINT;
+        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_HEIGHT_TYPE;
         private static readonly BuiltInParameter WallBaseOff = BuiltInParameter.WALL_BASE_OFFSET;
         private static readonly BuiltInParameter WallTopOff  = BuiltInParameter.WALL_TOP_OFFSET;
 
