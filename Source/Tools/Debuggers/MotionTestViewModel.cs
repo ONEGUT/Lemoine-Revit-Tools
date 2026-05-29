@@ -16,10 +16,32 @@ namespace LemoineTools.Tools.Debuggers
     /// change, all running inside the real StepFlowWindow so step transitions,
     /// button press, and the log-tab hover are tested in their actual context.
     /// </summary>
-    public sealed class MotionTestViewModel : ILemoineTool
+    public sealed class MotionTestViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "P0 / P1 Motion Test";
         public string RunLabel => "Simulate Run →";
+
+        // ── ILemoineReviewable (P3) — the framework renders the last step from these ──
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("press",  "Button press"),
+            ("hover",  "Row hover"),
+            ("guard",  "Code-set guard"),
+            ("scroll", "Scroll bubbling"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["press"]  = "0.97 scale",
+            ["hover"]  = "fade 180ms",
+            ["guard"]  = "no popup",
+            ["scroll"] = "bubbles",
+        };
+
+        public IList<string>? ReviewChips   => new List<string> { "P0", "P1", "P2", "P3" };
+        public string?        ReviewNote    => "This entire card grid is built by StepFlowWindow from " +
+                                               "ILemoineReviewable (P3) — the tool no longer hand-rolls it.";
+        public string?        ReviewWarning => null;
 
         public StepDefinition[] Steps { get; } =
         {
@@ -49,7 +71,7 @@ namespace LemoineTools.Tools.Debuggers
                 case "T4": return BuildT4();
                 case "T6": return BuildT6();
                 case "T7": return BuildT7();
-                case "T5": return BuildT5();
+                case "T5": return null; // last step is framework-rendered via ILemoineReviewable (P3)
                 default:   return new Grid();
             }
         }
@@ -196,32 +218,9 @@ namespace LemoineTools.Tools.Debuggers
                 row);
         }
 
-        // ── T5 — review summary + log-tab hover (tabs registered by the command) ─
-        private FrameworkElement BuildT5()
-        {
-            var review = new LemoineReviewSummary();
-            review.SetItems(
-                new List<(string, string)>
-                {
-                    ("press",  "Button press"),
-                    ("hover",  "Row hover"),
-                    ("guard",  "Code-set guard"),
-                    ("scroll", "Scroll bubbling"),
-                },
-                new Dictionary<string, string>
-                {
-                    ["press"]  = "0.97 scale",
-                    ["hover"]  = "fade 180ms",
-                    ["guard"]  = "no popup",
-                    ["scroll"] = "bubbles",
-                });
-
-            return LookFor("P0 · LOG-TAB HOVER",
-                "Click 'Simulate Run →', then look below the run button: two tabs appear " +
-                "('Output Log' and 'Notes'). Hover the INACTIVE tab — its label brightens, and " +
-                "must return to DIM when you move away. It must not stay bright.",
-                review);
-        }
+        // T5 (the last step) is now framework-rendered from ILemoineReviewable (P3): the
+        // card grid, note, and chips above are built by StepFlowWindow. The log tabs still
+        // appear below the run button — hover the inactive 'Notes' tab to test the P0 fix.
 
         /// <summary>Second log tab content, registered by the command so the tab bar (and its hover) appears.</summary>
         public FrameworkElement BuildNotesTab()

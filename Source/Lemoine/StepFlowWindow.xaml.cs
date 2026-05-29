@@ -23,6 +23,8 @@ namespace LemoineTools.Lemoine
         private bool _isRunning  = false;
         private bool _isDone     = false;
 
+        private LemoineReviewSummary? _reviewSummary; // framework-built review for ILemoineReviewable tools
+
         // Named XAML elements — _outerBorder is declared by x:Name in XAML
 
         private Border[]    _stepRows        = Array.Empty<Border>();
@@ -78,7 +80,7 @@ namespace LemoineTools.Lemoine
             };
 
             BuildChrome();
-            _tool.ValidationChanged += (s, e) => RefreshStepState(_activeStep);
+            _tool.ValidationChanged += (s, e) => { RefreshStepState(_activeStep); PopulateReview(); };
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested += (s, idx) =>
                     Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
@@ -289,9 +291,32 @@ namespace LemoineTools.Lemoine
 
             for (int i = 0; i < steps.Length; i++)
             {
-                _stepRows[i] = BuildStepRow(i, steps[i], _tool.GetStepContent(steps[i].Id) ?? new Grid());
+                FrameworkElement content;
+                // A reviewable tool's LAST step is framework-rendered as a review summary —
+                // the tool need not build any content for it. This guarantees the final step
+                // is review-only by construction.
+                if (i == steps.Length - 1 && _tool is ILemoineReviewable)
+                {
+                    _reviewSummary = new LemoineReviewSummary();
+                    content        = _reviewSummary;
+                }
+                else
+                {
+                    content = _tool.GetStepContent(steps[i].Id) ?? new Grid();
+                }
+                _stepRows[i] = BuildStepRow(i, steps[i], content);
                 _stepStack.Children.Add(_stepRows[i]);
             }
+            PopulateReview();
+        }
+
+        // Fills the framework-rendered review summary from the tool's ILemoineReviewable
+        // contract. No-op for non-reviewable tools. Called on build, on entering the last
+        // step, and whenever validation changes so the values stay current.
+        private void PopulateReview()
+        {
+            if (_reviewSummary == null || !(_tool is ILemoineReviewable r)) return;
+            _reviewSummary.SetItems(r.ReviewItems, r.ReviewValues, r.ReviewChips, r.ReviewNote, r.ReviewWarning);
         }
 
         private Border BuildStepRow(int idx, StepDefinition step, FrameworkElement content)
@@ -748,6 +773,9 @@ namespace LemoineTools.Lemoine
             }
             RefreshStepState(index);
             UpdateStepCounter();
+            // Refresh the framework review when the (last) review step opens so it reflects
+            // the latest input values.
+            if (index == _tool.Steps.Length - 1) PopulateReview();
             (_tool as IStepAware)?.OnStepActivated(_tool.Steps[index].Id);
         }
 
