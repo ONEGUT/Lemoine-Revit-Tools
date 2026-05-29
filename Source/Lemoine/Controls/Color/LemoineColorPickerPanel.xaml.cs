@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Xml.Linq;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -163,7 +164,7 @@ namespace LemoineTools.Lemoine.Controls
                     .Take(MaxRecentColors)
                     .ToList() ?? new List<Color>();
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ColorPicker: load saved swatches", __lex); }
 
             if (_colorSets.Count == 0)
                 _colorSets.Add(new ColorSet("Set 1"));
@@ -187,7 +188,7 @@ namespace LemoineTools.Lemoine.Controls
                             _recentColors.Select(c => new XElement("Color", ColorToHex(c))))));
                 doc.Save(PersistPath);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ColorPicker: save swatches", __lex); }
         }
 
         private static Color? TryParseHexColor(string? s)

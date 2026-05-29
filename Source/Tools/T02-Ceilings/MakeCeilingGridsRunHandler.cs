@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -164,7 +165,7 @@ namespace LemoineTools.Tools.Ceilings
                 if (cat.CategoryType != CategoryType.Model) continue;
                 if (!cat.get_AllowsVisibilityControl(view)) continue;
                 bool keep = cat.Id.Value == (int)BuiltInCategory.OST_Ceilings;
-                try { view.SetCategoryHidden(cat.Id, !keep); } catch { }
+                try { view.SetCategoryHidden(cat.Id, !keep); } catch (Exception __lex) { LemoineLog.Swallowed($"MakeCeilingGrids: set category {cat.Id.Value} visibility in view {view.Id.Value}", __lex); }
             }
         }
 

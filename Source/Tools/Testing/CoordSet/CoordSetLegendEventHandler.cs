@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.CoordSet
 {
@@ -117,7 +118,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                         if (c.IsValid && !(c.Red == 0 && c.Green == 0 && c.Blue == 0))
                             rgb = (c.Red, c.Green, c.Blue);
                     }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: read surface foreground colour", __lex); }
                     if (rgb == null)
                     {
                         try
@@ -126,7 +127,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                             if (c.IsValid && !(c.Red == 0 && c.Green == 0 && c.Blue == 0))
                                 rgb = (c.Red, c.Green, c.Blue);
                         }
-                        catch { }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: read projection line colour", __lex); }
                     }
 
                     string name = pfe.Name;
@@ -238,7 +239,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                         newFRT.ForegroundPatternColor = new Color(
                             (byte)rgb.R, (byte)rgb.G, (byte)rgb.B);
                         newFRT.BackgroundPatternId = ElementId.InvalidElementId;
-                        try { newFRT.LineWeight = 1; } catch { }
+                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: set filled-region line weight", __lex); }
                         colorTypeMap[rgb] = newFRT.Id;
                         frtByName[tname]  = newFRT.Id;
                     }
@@ -253,7 +254,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                 dv.Name = legendName;
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
-                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: set text-note alignment", __lex); }
 
                 double cy = 0.0;
                 int totalRows = rows.Count;
@@ -345,13 +346,13 @@ namespace LemoineTools.Tools.Testing.CoordSet
 
         private static string? SafeName(Element el)
         {
-            try { return el.Name; } catch { }
+            try { return el.Name; } catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: read element name", __lex); }
             try
             {
                 var p = el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM);
                 if (p != null) return p.AsString();
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CoordSet legend: read symbol name parameter", __lex); }
             return null;
         }
 

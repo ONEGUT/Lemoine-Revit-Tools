@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Templates
 {
@@ -93,7 +94,7 @@ namespace LemoineTools.Lemoine.Templates
                 var dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools", "Templates", _toolId);
-                try { System.IO.Directory.CreateDirectory(dir); } catch { }
+                try { System.IO.Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("TemplateStore: create storage directory", __lex); }
                 return dir;
             }
         }

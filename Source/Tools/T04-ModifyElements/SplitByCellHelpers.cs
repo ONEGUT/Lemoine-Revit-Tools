@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -264,7 +265,7 @@ namespace LemoineTools.Tools.ModifyElements
                         0);
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("SplitByCell: read project base point", __lex); }
 
             return XYZ.Zero;
         }

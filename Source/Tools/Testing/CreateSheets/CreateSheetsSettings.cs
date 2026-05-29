@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
@@ -33,7 +34,7 @@ namespace LemoineTools.Tools.Testing
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("CreateSheetsSettings: create config directory", __lex); }
                 return Path.Combine(dir, "CreateSheetsSettings.xml");
             }
         }
@@ -46,7 +47,7 @@ namespace LemoineTools.Tools.Testing
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CreateSheetsSettings.Save", __lex); }
         }
 
         private static CreateSheetsSettings Load()
@@ -61,7 +62,7 @@ namespace LemoineTools.Tools.Testing
                         return (CreateSheetsSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CreateSheetsSettings.Load", __lex); }
             return new CreateSheetsSettings();
         }
     }

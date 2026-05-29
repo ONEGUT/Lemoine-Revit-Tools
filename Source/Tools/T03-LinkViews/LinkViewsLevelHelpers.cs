@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -179,7 +180,7 @@ namespace LemoineTools.Tools.LinkViews
         public static View3D Create3d(Document doc, string name, ElementId vftId)
         {
             View3D v = View3D.CreateIsometric(doc, vftId);
-            try { v.Name = name; } catch { }
+            try { v.Name = name; } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews level: set name on view {v.Id.Value}", __lex); }
             return v;
         }
 

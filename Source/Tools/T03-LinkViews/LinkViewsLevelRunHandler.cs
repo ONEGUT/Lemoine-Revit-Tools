@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -480,13 +481,13 @@ namespace LemoineTools.Tools.LinkViews
         private static void ApplyTemplate(View view, ElementId templateId)
         {
             if (templateId == null || templateId.Value == ElementId.InvalidElementId.Value) return;
-            try { view.ViewTemplateId = templateId; } catch { }
+            try { view.ViewTemplateId = templateId; } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews level: apply view template to view {view.Id.Value}", __lex); }
         }
 
         private static void SetSubDisc(View view, string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return;
-            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch { }
+            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews level: set Sub Discipline on view {view.Id.Value}", __lex); }
         }
 
         private static void ConfigureFailures(Transaction tx)

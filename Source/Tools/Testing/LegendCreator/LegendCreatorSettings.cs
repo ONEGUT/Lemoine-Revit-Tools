@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine.Templates;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -230,7 +231,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreatorSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LegendCreatorSettings.xml");
             }
         }

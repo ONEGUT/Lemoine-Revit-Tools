@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -566,14 +567,14 @@ namespace LemoineTools.Lemoine.Controls
         {
             Active  = true;
             Current = payload;
-            try { Started?.Invoke(payload); } catch { }
+            try { Started?.Invoke(payload); } catch (Exception __lex) { LemoineLog.Swallowed("LegendPalette: raise Started event", __lex); }
         }
 
         public static void End()
         {
             Active  = false;
             Current = null;
-            try { Ended?.Invoke(); } catch { }
+            try { Ended?.Invoke(); } catch (Exception __lex) { LemoineLog.Swallowed("LegendPalette: raise Ended event", __lex); }
         }
     }
 

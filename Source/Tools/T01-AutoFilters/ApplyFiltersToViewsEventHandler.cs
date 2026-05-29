@@ -5,6 +5,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using RevitColor = Autodesk.Revit.DB.Color;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -205,7 +206,7 @@ namespace LemoineTools.Tools.AutoFilters
                     System.Globalization.NumberStyles.HexNumber, null, out int v))
                     return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ApplyFilters: parse colour hex", __lex); }
             return null;
         }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -157,7 +158,7 @@ namespace LemoineTools.Tools.LinkViews
                     if (scopeParam != null && !scopeParam.IsReadOnly)
                         scopeParam.Set(dep.ScopeBoxId);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: apply scope box to view {newDep.Id.Value}", __lex); }
             }
         }
 
@@ -171,7 +172,7 @@ namespace LemoineTools.Tools.LinkViews
             }
             catch
             {
-                try { view.Name = $"{name} ({view.Id.Value})"; } catch { }
+                try { view.Name = $"{name} ({view.Id.Value})"; } catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: set fallback name on view {view.Id.Value}", __lex); }
             }
         }
 

@@ -8,6 +8,7 @@ using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.Testing.CoordSet;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
+using System;
 
 namespace LemoineTools
 {
@@ -162,7 +163,7 @@ namespace LemoineTools
             ExtendWallsHandler  = new ExtendWallsEventHandler();
             ExtendWallsEvent    = ExternalEvent.Create(ExtendWallsHandler);
 
-            try { application.CreateRibbonTab("Lemoine Tools"); } catch { }
+            try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { LemoineLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
 
             // Local helper — avoids repeating the dll path and namespace prefix on every button.

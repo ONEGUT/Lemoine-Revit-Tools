@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -381,7 +382,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             finally
             {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete temp image file", __lex); }
             }
         }
 
@@ -494,7 +495,7 @@ namespace LemoineTools.Tools.Ceilings
                 if (nextLevel != null)
                     zMaxWorld = nextLevel.Elevation;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: find next level elevation", __lex); }
 
             double zMin = invLinkXform.OfPoint(new XYZ(0, 0, levelElev - 1.0)).Z;
             double zMax = invLinkXform.OfPoint(new XYZ(0, 0, zMaxWorld)).Z;
@@ -523,7 +524,7 @@ namespace LemoineTools.Tools.Ceilings
                             got = true;
                         }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: compute ceiling bounds", __lex); }
 
             if (!got)
             {
