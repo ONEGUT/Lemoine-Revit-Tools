@@ -29,6 +29,29 @@ namespace LemoineTools.Tools.Testing
         [XmlArray("Group2RuleKeys")] [XmlArrayItem("Key")]
         public List<string> Group2RuleKeys { get; set; } = new List<string>();
 
+        // ── Per-group definition mode + selections (Rules | Categories | Elements) ──
+        public string Group1Mode { get; set; } = "Rules";
+        public string Group2Mode { get; set; } = "Rules";
+
+        [XmlArray("Group1Categories")] [XmlArrayItem("Cat")]
+        public List<string> Group1Categories { get; set; } = new List<string>();
+        [XmlArray("Group2Categories")] [XmlArrayItem("Cat")]
+        public List<string> Group2Categories { get; set; } = new List<string>();
+
+        [XmlArray("Group1ElemIds")] [XmlArrayItem("Id")]
+        public List<long> Group1ElemIds { get; set; } = new List<long>();
+        [XmlArray("Group1ElemLinkIds")] [XmlArrayItem("Id")]
+        public List<long> Group1ElemLinkIds { get; set; } = new List<long>();
+        [XmlArray("Group2ElemIds")] [XmlArrayItem("Id")]
+        public List<long> Group2ElemIds { get; set; } = new List<long>();
+        [XmlArray("Group2ElemLinkIds")] [XmlArrayItem("Id")]
+        public List<long> Group2ElemLinkIds { get; set; } = new List<long>();
+
+        [XmlArray("Group1SourceLinkIds")] [XmlArrayItem("Id")]
+        public List<long> Group1SourceLinkIds { get; set; } = new List<long>();
+        [XmlArray("Group2SourceLinkIds")] [XmlArrayItem("Id")]
+        public List<long> Group2SourceLinkIds { get; set; } = new List<long>();
+
         [XmlArray("GridIds")] [XmlArrayItem("Id")]
         public List<long> GridIds { get; set; } = new List<long>();
 

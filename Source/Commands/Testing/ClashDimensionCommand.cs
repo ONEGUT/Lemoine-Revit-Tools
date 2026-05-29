@@ -140,11 +140,22 @@ namespace LemoineTools.Commands
 
                     if (linkVisibleInView)
                     {
+                        // Match by the floor's OWN host-space elevation (robust to differing
+                        // link origins), not by transforming the link level elevation.
                         bool elevMatch = activeElev == null;   // no level info → include all
-                        if (!elevMatch && lvl != null)
+                        if (!elevMatch)
                         {
-                            double hostElev = linkTx.OfPoint(new XYZ(0, 0, lvl.Elevation)).Z;
-                            elevMatch = Math.Abs(hostElev - activeElev!.Value) < 3.0;
+                            var fbb = f.get_BoundingBox(null);
+                            if (fbb != null)
+                            {
+                                XYZ centre = (fbb.Min + fbb.Max) * 0.5;
+                                double hostZ = linkTx.OfPoint(centre).Z;
+                                elevMatch = Math.Abs(hostZ - activeElev!.Value) < 4.0;  // within ~4 ft of view level
+                            }
+                            else
+                            {
+                                elevMatch = true;  // can't measure → don't hide it
+                            }
                         }
                         if (elevMatch)
                             activeViewData.AddFloor(name, f.Id.Value, li.Id.Value);
@@ -162,10 +173,28 @@ namespace LemoineTools.Commands
                 lineStyleNames.Sort();
             }
 
+            // Source documents available to each clash group (host + each loaded link)
+            var docs = new List<ClashDocInfo>
+            {
+                new ClashDocInfo { Name = "(Host) " + doc.Title, LinkInstId = 0L }
+            };
+            foreach (var li in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+            {
+                var ld = li.GetLinkDocument();
+                if (ld == null) continue;
+                docs.Add(new ClashDocInfo
+                {
+                    Name       = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "]",
+                    LinkInstId = li.Id.Value,
+                });
+            }
+
             var vm = new ClashDimensionViewModel(
                 App.ClashDimensionHandler!, App.ClashDimensionEvent!,
+                App.ClashPickHandler!, App.ClashPickEvent!,
                 dimStyleNames, allViews,
-                activeViewData, allData,
+                activeViewData, allData, docs,
                 lineStyleNames);
 
             var ready = new ManualResetEventSlim(false);

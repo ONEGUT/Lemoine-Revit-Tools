@@ -13,8 +13,8 @@ namespace LemoineTools.Tools.Testing
     {
         // ── Input properties (set by ViewModel before Raise()) ────────────────
         public List<ElementId> ViewIds           { get; set; } = new List<ElementId>();
-        public List<string>    Group1RuleKeys    { get; set; } = new List<string>();
-        public List<string>    Group2RuleKeys    { get; set; } = new List<string>();
+        public ClashGroupSpec  Group1Spec        { get; set; } = new ClashGroupSpec();
+        public ClashGroupSpec  Group2Spec        { get; set; } = new ClashGroupSpec();
         public List<long>      GridIds           { get; set; } = new List<long>();
         public List<long>      GridLinkIds       { get; set; } = new List<long>();   // parallel to GridIds; 0 = host doc
         public List<long>      FloorIds          { get; set; } = new List<long>();
@@ -33,6 +33,10 @@ namespace LemoineTools.Tools.Testing
         public Action<int, int, int>?      OnComplete { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashDimensionEventHandler";
+
+        // Default colours for Categories / Elements modes (no owning filter rule).
+        private const string DefaultColor1 = "#E78F36";
+        private const string DefaultColor2 = "#3FB3D9";
 
         // ── BIP map for fast parameter resolution ─────────────────────────────
         private static readonly Dictionary<string, BuiltInParameter> BipMap =
@@ -53,15 +57,17 @@ namespace LemoineTools.Tools.Testing
             public RevitLinkInstance? LinkInstance;
             public Transform          HostTransform = Transform.Identity;
             public ElementId          Id            = ElementId.InvalidElementId;
-            public FilterRuleConfig   Rule          = null!;
-            public FilterTradeConfig  Trade         = null!;
+            public string             Label         = "";
+            public string             ColorHex      = "#888888";
             public BoundingBoxXYZ     HostBBox      = null!;
+            public Solid?             HostSolid;
+            public bool               SolidTried;
         }
 
         private class ClashResult
         {
-            public ClashElement  Group1    = null!;
-            public ClashElement  Group2    = null!;
+            public ClashElement   Group1      = null!;
+            public ClashElement   Group2      = null!;
             public BoundingBoxXYZ OverlapBBox = null!;
         }
 
@@ -88,22 +94,7 @@ namespace LemoineTools.Tools.Testing
         // ── Core logic ────────────────────────────────────────────────────────
         private void Run(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            // 1. Resolve rules
-            var group1 = ResolveRules(Group1RuleKeys);
-            var group2 = ResolveRules(Group2RuleKeys);
-
-            if (group1.Count == 0)
-            {
-                Log("Group 1 rules could not be resolved — check Auto Filters settings.", "fail");
-                fail++; return;
-            }
-            if (group2.Count == 0)
-            {
-                Log("Group 2 rules could not be resolved — check Auto Filters settings.", "fail");
-                fail++; return;
-            }
-
-            // 2. Collect source documents (host + all loaded links)
+            // 1. Collect source documents (host + all loaded links)
             var sources = new List<(Document doc, RevitLinkInstance? link, Transform tx)>
             {
                 (doc, null, Transform.Identity)
@@ -120,45 +111,51 @@ namespace LemoineTools.Tools.Testing
             Log($"Scanning {sources.Count} document(s)…", "info");
             Progress(10, pass, fail, skip);
 
-            // 3. Scan elements
-            var group1Elements = ScanGroup(group1, sources);
-            var group2Elements = ScanGroup(group2, sources);
+            // 2. Scan each group per its mode
+            var group1Elements = ScanGroupSpec(doc, Group1Spec, sources, DefaultColor1, "Group 1");
+            var group2Elements = ScanGroupSpec(doc, Group2Spec, sources, DefaultColor2, "Group 2");
             Log($"Group 1: {group1Elements.Count} element(s)   Group 2: {group2Elements.Count} element(s)", "info");
+
+            if (group1Elements.Count == 0)
+            {
+                Log("Group 1 produced no elements — check its mode, selection, and source documents in Step 2.", "fail");
+                fail++; return;
+            }
+            if (group2Elements.Count == 0)
+            {
+                Log("Group 2 produced no elements — check its mode, selection, and source documents in Step 3.", "fail");
+                fail++; return;
+            }
 
             Progress(30, pass, fail, skip);
 
-            // 4. Find clashes
+            // 3. Find clashes — bbox pre-screen + real solid intersection
             double toleranceFt = ToleranceMm / 304.8;
             var clashes = FindClashes(group1Elements, group2Elements, MaxClashes);
             bool hitLimit = clashes.Count >= MaxClashes;
 
             if (clashes.Count == 0)
             {
-                Log("No clashes detected.", "pass");
-                if (group1Elements.Count > 0 && group2Elements.Count > 0)
-                {
-                    var b1 = group1Elements[0].HostBBox;
-                    var b2 = group2Elements[0].HostBBox;
-                    Log($"  Diag G1[0] ({group1Elements[0].Rule.Name}): " +
-                        $"X[{b1.Min.X:F1},{b1.Max.X:F1}] Y[{b1.Min.Y:F1},{b1.Max.Y:F1}] Z[{b1.Min.Z:F1},{b1.Max.Z:F1}]", "info");
-                    Log($"  Diag G2[0] ({group2Elements[0].Rule.Name}): " +
-                        $"X[{b2.Min.X:F1},{b2.Max.X:F1}] Y[{b2.Min.Y:F1},{b2.Max.Y:F1}] Z[{b2.Min.Z:F1},{b2.Max.Z:F1}]", "info");
-                }
+                Log("No solid intersections detected between the two groups.", "pass");
+                var b1 = group1Elements[0].HostBBox;
+                var b2 = group2Elements[0].HostBBox;
+                Log($"  Diag G1[0] ({group1Elements[0].Label}): " +
+                    $"X[{b1.Min.X:F1},{b1.Max.X:F1}] Y[{b1.Min.Y:F1},{b1.Max.Y:F1}] Z[{b1.Min.Z:F1},{b1.Max.Z:F1}]", "info");
+                Log($"  Diag G2[0] ({group2Elements[0].Label}): " +
+                    $"X[{b2.Min.X:F1},{b2.Max.X:F1}] Y[{b2.Min.Y:F1},{b2.Max.Y:F1}] Z[{b2.Min.Z:F1},{b2.Max.Z:F1}]", "info");
                 pass = 1; return;
             }
 
             Log(hitLimit
-                ? $"Found {clashes.Count} clash(es) — limit of {MaxClashes} reached. " +
-                  "Increase Max Clashes in Settings to detect more."
-                : $"Found {clashes.Count} clash(es).",
-                hitLimit ? "info" : "info");
+                ? $"Found {clashes.Count} clash(es) — limit of {MaxClashes} reached. Increase Max Clashes to detect more."
+                : $"Found {clashes.Count} clash(es).", "info");
 
             Progress(40, pass, fail, skip);
 
-            // 5. Resolve dimension type
+            // 4. Resolve dimension type
             DimensionType? dimType = ResolveDimType(doc);
 
-            // 6. Create annotations in a single transaction
+            // 5. Create annotations in a single transaction
             using (var tx = new Transaction(doc, "Lemoine — Clash Dimension"))
             {
                 tx.Start();
@@ -166,10 +163,7 @@ namespace LemoineTools.Tools.Testing
 
                 if (ClearPrevious) ClearPreviousAnnotations(doc);
 
-                // Resolve line style for cross arms
                 ElementId lineStyleId = ResolveLineStyleId(doc);
-
-                // Cache FilledRegionType per hex+style pair to avoid repeated creation
                 var regionTypeCache = new Dictionary<string, ElementId?>();
 
                 int done = 0;
@@ -203,23 +197,36 @@ namespace LemoineTools.Tools.Testing
             Log($"Done — {pass} annotation(s) placed, {fail} failed.", pass > 0 ? "pass" : "fail");
         }
 
-        // ── Rule resolution ───────────────────────────────────────────────────
+        // ── Group scanning (mode-aware) ───────────────────────────────────────
 
-        private static List<(FilterTradeConfig trade, FilterRuleConfig rule)> ResolveRules(
-            List<string> persistKeys)
+        private List<ClashElement> ScanGroupSpec(
+            Document hostDoc, ClashGroupSpec spec,
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
+            string defaultColor, string label)
         {
-            var result = new List<(FilterTradeConfig, FilterRuleConfig)>();
-            var keySet = new HashSet<string>(persistKeys);
-            foreach (var trade in AutoFiltersSettings.Instance.Trades)
-                foreach (var rule in trade.Rules)
-                    if (keySet.Contains($"{trade.Id}::{rule.Id}"))
-                        result.Add((trade, rule));
-            return result;
+            switch (spec.Mode)
+            {
+                case "Categories":
+                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds), defaultColor);
+                case "Elements":
+                    return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources, defaultColor);
+                default:
+                    var rules = ResolveRules(spec.RuleKeys);
+                    if (rules.Count == 0)
+                        Log($"{label}: no filter rules resolved — check Auto Filters or switch mode.", "info");
+                    return ScanRules(rules, FilterSources(allSources, spec.SourceLinkIds));
+            }
         }
 
-        // ── Element scanning ──────────────────────────────────────────────────
+        private static List<(Document doc, RevitLinkInstance? link, Transform tx)> FilterSources(
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> all, List<long> sourceLinkIds)
+        {
+            if (sourceLinkIds == null || sourceLinkIds.Count == 0) return all;
+            var set = new HashSet<long>(sourceLinkIds);
+            return all.Where(s => set.Contains(s.link?.Id.Value ?? 0L)).ToList();
+        }
 
-        private List<ClashElement> ScanGroup(
+        private List<ClashElement> ScanRules(
             List<(FilterTradeConfig trade, FilterRuleConfig rule)> rules,
             List<(Document doc, RevitLinkInstance? link, Transform tx)> sources)
         {
@@ -236,8 +243,7 @@ namespace LemoineTools.Tools.Testing
 
                 if (catIds.Count == 0)
                 {
-                    Log($"Rule '{rule.Name}' has no categories configured — skipped. " +
-                        "Add at least one BuiltInCategory to this rule in Auto Filters.", "info");
+                    Log($"Rule '{rule.Name}' has no categories configured — skipped.", "info");
                     continue;
                 }
 
@@ -260,9 +266,8 @@ namespace LemoineTools.Tools.Testing
                         foreach (var el in elems)
                         {
                             if (!MatchesRule(el, rule)) continue;
-
-                            var hostBBox = GetHostBBox(el, tx);
-                            if (hostBBox == null) continue;
+                            var bb = GetHostBBox(el, tx);
+                            if (bb == null) continue;
 
                             result.Add(new ClashElement
                             {
@@ -270,9 +275,9 @@ namespace LemoineTools.Tools.Testing
                                 LinkInstance  = link,
                                 HostTransform = tx,
                                 Id            = el.Id,
-                                Rule          = rule,
-                                Trade         = trade,
-                                HostBBox      = hostBBox,
+                                Label         = rule.Name,
+                                ColorHex      = rule.SurfColor ?? "#888888",
+                                HostBBox      = bb,
                             });
                             srcCount++;
                         }
@@ -282,9 +287,104 @@ namespace LemoineTools.Tools.Testing
                     ruleTotal += srcCount;
                 }
                 if (ruleTotal == 0)
-                    Log($"  Rule '{rule.Name}': 0 matching elements in any document — check filter categories/match criteria.", "info");
+                    Log($"  Rule '{rule.Name}': 0 matching elements — check categories/match criteria/source docs.", "info");
             }
 
+            return result;
+        }
+
+        private List<ClashElement> ScanCategories(
+            List<string> osts,
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources,
+            string color)
+        {
+            var result = new List<ClashElement>();
+            foreach (var ostStr in osts ?? new List<string>())
+            {
+                if (!Enum.TryParse<BuiltInCategory>(ostStr, false, out var bic)) continue;
+
+                int catTotal = 0;
+                foreach (var (srcDoc, link, tx) in sources)
+                {
+                    int srcCount = 0;
+                    IEnumerable<Element> elems;
+                    try
+                    {
+                        elems = new FilteredElementCollector(srcDoc)
+                            .OfCategory(bic)
+                            .WhereElementIsNotElementType()
+                            .ToElements();
+                    }
+                    catch { continue; }
+
+                    foreach (var el in elems)
+                    {
+                        var bb = GetHostBBox(el, tx);
+                        if (bb == null) continue;
+                        result.Add(new ClashElement
+                        {
+                            Doc           = srcDoc,
+                            LinkInstance  = link,
+                            HostTransform = tx,
+                            Id            = el.Id,
+                            Label         = ostStr,
+                            ColorHex      = color,
+                            HostBBox      = bb,
+                        });
+                        srcCount++;
+                    }
+                    catTotal += srcCount;
+                }
+                Log($"  Category {ostStr}: {catTotal} element(s)", "info");
+            }
+            return result;
+        }
+
+        private List<ClashElement> ScanElements(
+            List<long> elemIds, List<long> elemLinkIds,
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
+            string color)
+        {
+            var result = new List<ClashElement>();
+            // Map linkInstId → (doc, link, tx)
+            var byLink = new Dictionary<long, (Document doc, RevitLinkInstance? link, Transform tx)>();
+            foreach (var s in allSources) byLink[s.link?.Id.Value ?? 0L] = s;
+
+            for (int i = 0; i < elemIds.Count; i++)
+            {
+                long lnk = (i < elemLinkIds.Count) ? elemLinkIds[i] : 0L;
+                if (!byLink.TryGetValue(lnk, out var src)) continue;
+
+                var el = src.doc.GetElement(new ElementId(elemIds[i]));
+                if (el == null) continue;
+                var bb = GetHostBBox(el, src.tx);
+                if (bb == null) continue;
+
+                result.Add(new ClashElement
+                {
+                    Doc           = src.doc,
+                    LinkInstance  = src.link,
+                    HostTransform = src.tx,
+                    Id            = el.Id,
+                    Label         = el.Name ?? "(element)",
+                    ColorHex      = color,
+                    HostBBox      = bb,
+                });
+            }
+            Log($"  Picked elements resolved: {result.Count}", "info");
+            return result;
+        }
+
+        // ── Rule resolution & matching ────────────────────────────────────────
+
+        private static List<(FilterTradeConfig trade, FilterRuleConfig rule)> ResolveRules(List<string> persistKeys)
+        {
+            var result = new List<(FilterTradeConfig, FilterRuleConfig)>();
+            var keySet = new HashSet<string>(persistKeys);
+            foreach (var trade in AutoFiltersSettings.Instance.Trades)
+                foreach (var rule in trade.Rules)
+                    if (keySet.Contains($"{trade.Id}::{rule.Id}"))
+                        result.Add((trade, rule));
             return result;
         }
 
@@ -357,42 +457,40 @@ namespace LemoineTools.Tools.Testing
             catch { return null; }
             if (bb == null) return null;
 
-            // Transform all 8 corners to host coordinates and compute AABB
-            var pts = new XYZ[]
-            {
-                new XYZ(bb.Min.X, bb.Min.Y, bb.Min.Z),
-                new XYZ(bb.Max.X, bb.Min.Y, bb.Min.Z),
-                new XYZ(bb.Min.X, bb.Max.Y, bb.Min.Z),
-                new XYZ(bb.Max.X, bb.Max.Y, bb.Min.Z),
-                new XYZ(bb.Min.X, bb.Min.Y, bb.Max.Z),
-                new XYZ(bb.Max.X, bb.Min.Y, bb.Max.Z),
-                new XYZ(bb.Min.X, bb.Max.Y, bb.Max.Z),
-                new XYZ(bb.Max.X, bb.Max.Y, bb.Max.Z),
-            };
+            var pts = BoxCorners(bb.Min, bb.Max);
+            return WorldAabb(pts, hostTransform);
+        }
 
+        private static XYZ[] BoxCorners(XYZ min, XYZ max) => new[]
+        {
+            new XYZ(min.X, min.Y, min.Z), new XYZ(max.X, min.Y, min.Z),
+            new XYZ(min.X, max.Y, min.Z), new XYZ(max.X, max.Y, min.Z),
+            new XYZ(min.X, min.Y, max.Z), new XYZ(max.X, min.Y, max.Z),
+            new XYZ(min.X, max.Y, max.Z), new XYZ(max.X, max.Y, max.Z),
+        };
+
+        private static BoundingBoxXYZ WorldAabb(XYZ[] pts, Transform tx)
+        {
             double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
             double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
             foreach (var p in pts)
             {
-                XYZ t = hostTransform.OfPoint(p);
+                XYZ t = (tx == null || tx.IsIdentity) ? p : tx.OfPoint(p);
                 if (t.X < minX) minX = t.X; if (t.X > maxX) maxX = t.X;
                 if (t.Y < minY) minY = t.Y; if (t.Y > maxY) maxY = t.Y;
                 if (t.Z < minZ) minZ = t.Z; if (t.Z > maxZ) maxZ = t.Z;
             }
-
-            var result = new BoundingBoxXYZ();
-            result.Min = new XYZ(minX, minY, minZ);
-            result.Max = new XYZ(maxX, maxY, maxZ);
-            return result;
+            return new BoundingBoxXYZ { Min = new XYZ(minX, minY, minZ), Max = new XYZ(maxX, maxY, maxZ) };
         }
 
-        // ── Clash detection ───────────────────────────────────────────────────
+        // ── Clash detection (bbox pre-screen + solid intersection) ────────────
 
-        private static List<ClashResult> FindClashes(
+        private List<ClashResult> FindClashes(
             List<ClashElement> group1, List<ClashElement> group2, int maxClashes)
         {
-            const double minOverlap = 0.001;
+            const double eps = 1e-6;
             var results = new List<ClashResult>();
+            int booleanFails = 0;
 
             foreach (var g1 in group1)
             {
@@ -400,28 +498,123 @@ namespace LemoineTools.Tools.Testing
                 foreach (var g2 in group2)
                 {
                     var b2 = g2.HostBBox;
-                    double ox = Math.Min(b1.Max.X, b2.Max.X) - Math.Max(b1.Min.X, b2.Min.X);
-                    double oy = Math.Min(b1.Max.Y, b2.Max.Y) - Math.Max(b1.Min.Y, b2.Min.Y);
-                    double oz = Math.Min(b1.Max.Z, b2.Max.Z) - Math.Max(b1.Min.Z, b2.Min.Z);
+                    if (!BBoxOverlap(b1, b2)) continue;   // fast reject
 
-                    if (ox > minOverlap && oy > minOverlap && oz > minOverlap)
+                    var s1 = EnsureSolid(g1);
+                    var s2 = EnsureSolid(g2);
+
+                    BoundingBoxXYZ? overlap = null;
+                    if (s1 != null && s2 != null)
                     {
-                        var overlap = new BoundingBoxXYZ();
-                        overlap.Min = new XYZ(
-                            Math.Max(b1.Min.X, b2.Min.X),
-                            Math.Max(b1.Min.Y, b2.Min.Y),
-                            Math.Max(b1.Min.Z, b2.Min.Z));
-                        overlap.Max = new XYZ(
-                            Math.Min(b1.Max.X, b2.Max.X),
-                            Math.Min(b1.Max.Y, b2.Max.Y),
-                            Math.Min(b1.Max.Z, b2.Max.Z));
+                        Solid? inter = null;
+                        try
+                        {
+                            inter = BooleanOperationsUtils.ExecuteBooleanOperation(
+                                s1, s2, BooleanOperationsType.Intersect);
+                        }
+                        catch { inter = null; booleanFails++; }
 
-                        results.Add(new ClashResult { Group1 = g1, Group2 = g2, OverlapBBox = overlap });
-                        if (results.Count >= maxClashes) return results;
+                        if (inter != null && inter.Volume > eps)
+                            overlap = SolidWorldBBox(inter);
+                        else if (inter != null)
+                            continue;   // solids do not actually intersect
+                        else
+                            overlap = BBoxOverlapRegion(b1, b2);   // boolean failed → fall back to bbox
+                    }
+                    else
+                    {
+                        // No usable solids (e.g. annotation-like elements) → bbox overlap
+                        overlap = BBoxOverlapRegion(b1, b2);
+                    }
+
+                    if (overlap == null) continue;
+                    results.Add(new ClashResult { Group1 = g1, Group2 = g2, OverlapBBox = overlap });
+                    if (results.Count >= maxClashes)
+                    {
+                        if (booleanFails > 0) Log($"  ({booleanFails} boolean op fallback(s) to bbox)", "info");
+                        return results;
                     }
                 }
             }
+            if (booleanFails > 0) Log($"  ({booleanFails} boolean op fallback(s) to bbox)", "info");
             return results;
+        }
+
+        private static bool BBoxOverlap(BoundingBoxXYZ a, BoundingBoxXYZ b)
+        {
+            return a.Min.X <= b.Max.X && a.Max.X >= b.Min.X
+                && a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y
+                && a.Min.Z <= b.Max.Z && a.Max.Z >= b.Min.Z;
+        }
+
+        private static BoundingBoxXYZ BBoxOverlapRegion(BoundingBoxXYZ a, BoundingBoxXYZ b)
+        {
+            return new BoundingBoxXYZ
+            {
+                Min = new XYZ(Math.Max(a.Min.X, b.Min.X), Math.Max(a.Min.Y, b.Min.Y), Math.Max(a.Min.Z, b.Min.Z)),
+                Max = new XYZ(Math.Min(a.Max.X, b.Max.X), Math.Min(a.Max.Y, b.Max.Y), Math.Min(a.Max.Z, b.Max.Z)),
+            };
+        }
+
+        private Solid? EnsureSolid(ClashElement e)
+        {
+            if (e.SolidTried) return e.HostSolid;
+            e.SolidTried = true;
+            var el = e.Doc.GetElement(e.Id);
+            if (el != null) e.HostSolid = GetUnionSolidHost(el, e.HostTransform);
+            return e.HostSolid;
+        }
+
+        private static Solid? GetUnionSolidHost(Element el, Transform tx)
+        {
+            GeometryElement? ge;
+            try
+            {
+                ge = el.get_Geometry(new Options
+                {
+                    ComputeReferences      = false,
+                    IncludeNonVisibleObjects = false,
+                    DetailLevel            = ViewDetailLevel.Medium,
+                });
+            }
+            catch { return null; }
+            if (ge == null) return null;
+            return AccumulateSolids(ge, tx, null);
+        }
+
+        private static Solid? AccumulateSolids(GeometryElement ge, Transform tx, Solid? acc)
+        {
+            foreach (GeometryObject obj in ge)
+            {
+                if (obj is Solid s && s.Volume > 1e-6)
+                {
+                    Solid hs;
+                    try { hs = (tx == null || tx.IsIdentity) ? s : SolidUtils.CreateTransformed(s, tx); }
+                    catch { continue; }
+                    acc = Combine(acc, hs);
+                }
+                else if (obj is GeometryInstance gi)
+                {
+                    GeometryElement? ige = null;
+                    try { ige = gi.GetInstanceGeometry(); } catch { }
+                    if (ige != null) acc = AccumulateSolids(ige, tx, acc);
+                }
+            }
+            return acc;
+        }
+
+        private static Solid? Combine(Solid? acc, Solid s)
+        {
+            if (acc == null) return s;
+            try { return BooleanOperationsUtils.ExecuteBooleanOperation(acc, s, BooleanOperationsType.Union); }
+            catch { return acc; }
+        }
+
+        private static BoundingBoxXYZ SolidWorldBBox(Solid solid)
+        {
+            var bb = solid.GetBoundingBox();   // local coords + Transform to world
+            var pts = BoxCorners(bb.Min, bb.Max);
+            return WorldAabb(pts, bb.Transform);
         }
 
         // ── Annotation creation ───────────────────────────────────────────────
@@ -439,14 +632,14 @@ namespace LemoineTools.Tools.Testing
 
             if (maxX - minX < 0.001 || maxY - minY < 0.001) return;
 
-            double cx      = (minX + maxX) / 2.0;
-            double cy      = (minY + maxY) / 2.0;
-            double halfW   = (maxX - minX) / 2.0;
-            double halfH   = (maxY - minY) / 2.0;
-            double armLen  = Math.Max(0.5, Math.Max(halfW, halfH) * 1.5);  // min 0.5 ft ≈ 150 mm
+            double cx     = (minX + maxX) / 2.0;
+            double cy     = (minY + maxY) / 2.0;
+            double halfW  = (maxX - minX) / 2.0;
+            double halfH  = (maxY - minY) / 2.0;
+            double armLen = Math.Max(0.5, Math.Max(halfW, halfH) * 1.5);
 
             // ── FilledRegion ─────────────────────────────────────────────────
-            string hexColor = (clash.Group1.Rule.SurfColor ?? "#888888").TrimStart('#').ToUpperInvariant();
+            string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
             string cacheKey = $"{hexColor}_{FillStyle}";
             if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
             {
@@ -454,12 +647,7 @@ namespace LemoineTools.Tools.Testing
                 regionTypeCache[cacheKey] = typeId;
             }
 
-            if (typeId == null || typeId == ElementId.InvalidElementId)
-            {
-                Log("Could not create FilledRegionType — no template type found in project. " +
-                    "Cross annotation will be placed without a filled region.", "info");
-            }
-            else
+            if (typeId != null && typeId != ElementId.InvalidElementId)
             {
                 try
                 {
@@ -474,12 +662,11 @@ namespace LemoineTools.Tools.Testing
                 catch { }
             }
 
-            // ── Cross lines ──────────────────────────────────────────────────
+            // ── Cross lines + dimensions ─────────────────────────────────────
             double dimLineOffsetFt = DimLineOffsetMm / 304.8;
 
             if (DimTarget == "Centre")
             {
-                // 4 half-arms: each arm has its centre point as a shared endpoint
                 var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0));
                 var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0));
                 var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0));
@@ -487,28 +674,21 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLeft != null && hRight != null && vBot != null && vTop != null)
                 {
-                    // Centre reference: end(1) of left half = end(0) of right half = both at (cx,cy)
                     var hCentreRef = hLeft.GeometryCurve.GetEndPointReference(1);
                     var vCentreRef = vBot.GeometryCurve.GetEndPointReference(1);
-
                     CreateGridAndFloorDimensions(doc, view, hCentreRef, vCentreRef,
                         cx, cy, dimLineOffsetFt, dimType, isFromCenter: true);
                 }
             }
             else
             {
-                // 2 full-length arms
                 var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0));
                 var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0));
 
                 if (hLine != null && vLine != null)
                 {
-                    // GetEndPointReference(0) = start, (1) = end
-                    // hLine: (0) = left tip, (1) = right tip
-                    // vLine: (0) = bottom tip, (1) = top tip
                     var hRightRef = hLine.GeometryCurve.GetEndPointReference(1);
                     var vTopRef   = vLine.GeometryCurve.GetEndPointReference(1);
-
                     CreateGridAndFloorDimensions(doc, view, hRightRef, vTopRef,
                         cx, cy, dimLineOffsetFt, dimType, isFromCenter: false);
                 }
@@ -578,9 +758,8 @@ namespace LemoineTools.Tools.Testing
                 XYZ dir = gridCurve.Direction.Normalize();
                 if (linkInst != null)
                     dir = linkInst.GetTotalTransform().OfVector(dir).Normalize();
-                bool isVGrid = Math.Abs(dir.Y) > Math.Abs(dir.X);  // N-S grid → measure X
+                bool isVGrid = Math.Abs(dir.Y) > Math.Abs(dir.X);
 
-                // Lift reference to host context if element lives in a linked file
                 Reference gridRef = new Reference(grid);
                 if (linkInst != null)
                     gridRef = gridRef.CreateLinkReference(linkInst);
@@ -592,18 +771,14 @@ namespace LemoineTools.Tools.Testing
                 if (isVGrid)
                 {
                     double dimY = cy + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(
-                        new XYZ(cx - extent, dimY, 0),
-                        new XYZ(cx + extent, dimY, 0));
+                    dimLine = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
                     refs.Append(hRef);
                     refs.Append(gridRef);
                 }
                 else
                 {
                     double dimX = cx + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(
-                        new XYZ(dimX, cy - extent, 0),
-                        new XYZ(dimX, cy + extent, 0));
+                    dimLine = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
                     refs.Append(vRef);
                     refs.Append(gridRef);
                 }
@@ -636,7 +811,6 @@ namespace LemoineTools.Tools.Testing
                 var geom = floor.get_Geometry(geomOpts);
                 var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
 
-                // Collect ALL vertical planar faces — each one gets its own dimension
                 var faces = new List<(PlanarFace pf, Reference faceRef)>();
                 foreach (GeometryObject obj in geom)
                 {
@@ -665,7 +839,7 @@ namespace LemoineTools.Tools.Testing
                     try
                     {
                         XYZ faceN    = tx.OfVector(pf.FaceNormal).Normalize();
-                        bool isVFace = Math.Abs(faceN.Y) > Math.Abs(faceN.X);  // N/S-facing face
+                        bool isVFace = Math.Abs(faceN.Y) > Math.Abs(faceN.X);
 
                         var refs = new ReferenceArray();
                         Line dimLine;
@@ -673,18 +847,14 @@ namespace LemoineTools.Tools.Testing
                         if (isVFace)
                         {
                             double dimY = cy + dimLineOffsetFt;
-                            dimLine = Line.CreateBound(
-                                new XYZ(cx - extent, dimY, 0),
-                                new XYZ(cx + extent, dimY, 0));
+                            dimLine = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
                             refs.Append(hRef);
                             refs.Append(faceRef);
                         }
                         else
                         {
                             double dimX = cx + dimLineOffsetFt;
-                            dimLine = Line.CreateBound(
-                                new XYZ(dimX, cy - extent, 0),
-                                new XYZ(dimX, cy + extent, 0));
+                            dimLine = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
                             refs.Append(vRef);
                             refs.Append(faceRef);
                         }
@@ -743,7 +913,6 @@ namespace LemoineTools.Tools.Testing
             }
             else
             {
-                // Outline: no foreground fill
                 newType.ForegroundPatternId = ElementId.InvalidElementId;
             }
 
@@ -752,8 +921,7 @@ namespace LemoineTools.Tools.Testing
 
         // ── Detail line creation ──────────────────────────────────────────────
 
-        private static DetailCurve? CreateLine(Document doc, View view, ElementId lineStyleId,
-            XYZ start, XYZ end)
+        private static DetailCurve? CreateLine(Document doc, View view, ElementId lineStyleId, XYZ start, XYZ end)
         {
             var line = Line.CreateBound(start, end);
             var dc   = doc.Create.NewDetailCurve(view, line);
@@ -775,11 +943,9 @@ namespace LemoineTools.Tools.Testing
             {
                 var toDelete = new List<ElementId>();
 
-                // Detail lines with Mark="LemoineCD"
                 try
                 {
-                    toDelete.AddRange(
-                        new FilteredElementCollector(doc, viewId)
+                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
                         .OfCategory(BuiltInCategory.OST_Lines)
                         .WhereElementIsNotElementType()
                         .ToElements()
@@ -788,11 +954,9 @@ namespace LemoineTools.Tools.Testing
                 }
                 catch { }
 
-                // FilledRegions with Mark="LemoineCD"
                 try
                 {
-                    toDelete.AddRange(
-                        new FilteredElementCollector(doc, viewId)
+                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
                         .OfClass(typeof(FilledRegion))
                         .ToElements()
                         .Where(e => e.LookupParameter("Mark")?.AsString() == "LemoineCD")
@@ -800,11 +964,9 @@ namespace LemoineTools.Tools.Testing
                 }
                 catch { }
 
-                // Dimensions with Mark="LemoineCD"
                 try
                 {
-                    toDelete.AddRange(
-                        new FilteredElementCollector(doc, viewId)
+                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
                         .OfClass(typeof(Dimension))
                         .ToElements()
                         .Where(e => e.LookupParameter("Mark")?.AsString() == "LemoineCD")

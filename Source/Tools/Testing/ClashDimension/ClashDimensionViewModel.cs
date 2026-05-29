@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -12,6 +13,7 @@ using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 
 using WpfGrid       = System.Windows.Controls.Grid;
+using WpfButton     = System.Windows.Controls.Button;
 using WpfTextBox    = System.Windows.Controls.TextBox;
 using WpfComboBox   = System.Windows.Controls.ComboBox;
 using WpfVisibility = System.Windows.Visibility;
@@ -26,8 +28,8 @@ namespace LemoineTools.Tools.Testing
         public StepDefinition[] Steps => new[]
         {
             new StepDefinition("S1", "Select Views",              required: true),
-            new StepDefinition("S2", "Group 1 — Source Filters",  required: true),
-            new StepDefinition("S3", "Group 2 — Target Filters",  required: true),
+            new StepDefinition("S2", "Group 1 — Source",          required: true),
+            new StepDefinition("S3", "Group 2 — Target",          required: true),
             new StepDefinition("S4", "Grids & Slab References",   required: false),
             new StepDefinition("S5", "Settings & Review",         required: false),
         };
@@ -35,21 +37,34 @@ namespace LemoineTools.Tools.Testing
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        // ── Filter group state ────────────────────────────────────────────────
-        private readonly HashSet<string> _group1Keys = new HashSet<string>();
-        private readonly HashSet<string> _group2Keys = new HashSet<string>();
+        // ── Per-group definition state ────────────────────────────────────────
+        private sealed class GroupState
+        {
+            public string Mode = "Rules";   // "Rules" | "Categories" | "Elements"
+            public readonly HashSet<string>            RuleKeys      = new HashSet<string>();   // display keys
+            public readonly HashSet<string>            Categories    = new HashSet<string>();   // display names
+            public readonly List<(long lnk, long id)>  ElemRefs      = new List<(long, long)>();
+            public readonly HashSet<long>              SourceLinkIds = new HashSet<long>();      // 0 = host
+        }
+        private readonly GroupState _g1 = new GroupState();
+        private readonly GroupState _g2 = new GroupState();
 
-        // displayKey → FilterRuleConfig
+        // ── Filter rule mappings ──────────────────────────────────────────────
         private readonly Dictionary<string, FilterRuleConfig>  _displayKeyToRule    = new Dictionary<string, FilterRuleConfig>();
-        // displayKey → persistKey ("{tradeId}::{ruleId}")
         private readonly Dictionary<string, string>            _displayKeyToPersist = new Dictionary<string, string>();
-        // persistKey → displayKey
         private readonly Dictionary<string, string>            _persistKeyToDisplay = new Dictionary<string, string>();
-        // trade label → list of display keys (for LemoineMultiSelectTabs)
         private readonly Dictionary<string, List<string>>      _filterGroups        = new Dictionary<string, List<string>>();
 
-        // ── Grid / floor state ────────────────────────────────────────────────
-        // Each display name maps to (linkInstId, elemId); linkInstId=0 means host doc.
+        // ── Category mappings ─────────────────────────────────────────────────
+        private readonly Dictionary<string, List<string>> _categoryGroups      = new Dictionary<string, List<string>>();
+        private readonly Dictionary<string, string>       _categoryDisplayToOst = new Dictionary<string, string>();
+        private readonly Dictionary<string, string>       _ostToCategoryDisplay = new Dictionary<string, string>();
+
+        // ── Source documents ──────────────────────────────────────────────────
+        private readonly List<string>               _docNames          = new List<string>();
+        private readonly Dictionary<string, long>   _docDisplayToLinkId = new Dictionary<string, long>();
+
+        // ── Grid / floor state (S4) ───────────────────────────────────────────
         private readonly Dictionary<string, (long lnk, long id)> _gridDisplayToRef  = new Dictionary<string, (long, long)>();
         private readonly Dictionary<string, (long lnk, long id)> _floorDisplayToRef = new Dictionary<string, (long, long)>();
         private readonly HashSet<string> _selectedGridNames = new HashSet<string>();
@@ -80,6 +95,15 @@ namespace LemoineTools.Tools.Testing
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly ClashDimensionEventHandler? _handler;
         private readonly ExternalEvent?              _event;
+        private readonly ClashPickEventHandler?      _pickHandler;
+        private readonly ExternalEvent?              _pickEvent;
+
+        // Mode display ↔ internal
+        private static readonly string[] ModeDisplayItems = { "Filter Rules", "Categories", "Select Elements" };
+        private static string ModeToDisplay(string m) =>
+            m == "Categories" ? "Categories" : m == "Elements" ? "Select Elements" : "Filter Rules";
+        private static string DisplayToMode(string? d) =>
+            d == "Categories" ? "Categories" : d == "Select Elements" ? "Elements" : "Rules";
 
         // ── Named struct (no anonymous tuple arrays) ──────────────────────────
         private struct CardDef
@@ -93,14 +117,19 @@ namespace LemoineTools.Tools.Testing
         public ClashDimensionViewModel(
             ClashDimensionEventHandler? handler,
             ExternalEvent?              externalEvent,
+            ClashPickEventHandler?      pickHandler,
+            ExternalEvent?              pickEvent,
             List<string>                dimStyleNames,
             List<View>                  allViews,
             GridFloorData               activeViewData,
             GridFloorData               allData,
+            List<ClashDocInfo>          docs,
             List<string>                lineStyleNames)
         {
             _handler        = handler;
             _event          = externalEvent;
+            _pickHandler    = pickHandler;
+            _pickEvent      = pickEvent;
             _dimStyleNames  = dimStyleNames;
             _allViews       = allViews;
             _activeViewData = activeViewData;
@@ -111,13 +140,20 @@ namespace LemoineTools.Tools.Testing
                 if (!_viewNameToId.ContainsKey(v.Name))
                     _viewNameToId[v.Name] = v.Id;
 
-            // Build lookup dicts from allData (the full set)
+            foreach (var d in docs)
+            {
+                if (_docDisplayToLinkId.ContainsKey(d.Name)) continue;
+                _docNames.Add(d.Name);
+                _docDisplayToLinkId[d.Name] = d.LinkInstId;
+            }
+
             for (int i = 0; i < allData.GridNames.Count; i++)
                 _gridDisplayToRef[allData.GridNames[i]] = (allData.GridLinkIds[i], allData.GridIds[i]);
             for (int i = 0; i < allData.FloorNames.Count; i++)
                 _floorDisplayToRef[allData.FloorNames[i]] = (allData.FloorLinkIds[i], allData.FloorIds[i]);
 
             BuildFilterMappings();
+            BuildCategoryMappings();
             RestoreFromSettings();
         }
 
@@ -154,17 +190,45 @@ namespace LemoineTools.Tools.Testing
             }
         }
 
+        private void BuildCategoryMappings()
+        {
+            foreach (var kv in AutoFiltersSettings.KnownCategoryMap)
+            {
+                string display = kv.Key;
+                string ost     = kv.Value;
+                string disc    = DisciplineOf(ost);
+
+                if (!_categoryGroups.ContainsKey(disc)) _categoryGroups[disc] = new List<string>();
+                _categoryGroups[disc].Add(display);
+                _categoryDisplayToOst[display] = ost;
+                _ostToCategoryDisplay[ost]     = display;
+            }
+            foreach (var k in _categoryGroups.Keys.ToList())
+                _categoryGroups[k].Sort(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static string DisciplineOf(string ost)
+        {
+            bool C(params string[] needles) => needles.Any(n => ost.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (C("Duct", "MechanicalEquipment", "FlexDuct"))                                      return "Mechanical";
+            if (C("Pipe", "Plumbing", "Sprinkler", "FlexPipe", "FabricationPipe",
+                  "FabricationHangers", "FabricationContainment"))                                  return "Piping";
+            if (C("Cable", "Conduit", "Electrical", "Lighting", "Communication",
+                  "FireAlarm", "Security", "Data", "Telephone", "NurseCall"))                       return "Electrical";
+            if (C("Structural", "Rebar", "Reinforcement", "Fabric"))                                return "Structural";
+            return "Architectural";
+        }
+
         private void RestoreFromSettings()
         {
             var s = ClashDimensionSettings.Instance;
 
-            // Filter selections
-            foreach (var pk in s.Group1RuleKeys)
-                if (_persistKeyToDisplay.TryGetValue(pk, out var dk) && dk != null) _group1Keys.Add(dk);
-            foreach (var pk in s.Group2RuleKeys)
-                if (_persistKeyToDisplay.TryGetValue(pk, out var dk) && dk != null) _group2Keys.Add(dk);
+            RestoreGroup(_g1, s.Group1Mode, s.Group1RuleKeys, s.Group1Categories,
+                         s.Group1ElemIds, s.Group1ElemLinkIds, s.Group1SourceLinkIds);
+            RestoreGroup(_g2, s.Group2Mode, s.Group2RuleKeys, s.Group2Categories,
+                         s.Group2ElemIds, s.Group2ElemLinkIds, s.Group2SourceLinkIds);
 
-            // Build reverse lookup: (linkId, elemId) → display name
+            // Build reverse lookup for grids/floors: (linkId, elemId) → display name
             var gridRefToDisplay  = new Dictionary<(long, long), string>();
             var floorRefToDisplay = new Dictionary<(long, long), string>();
             foreach (var kv in _gridDisplayToRef)
@@ -172,15 +236,12 @@ namespace LemoineTools.Tools.Testing
             foreach (var kv in _floorDisplayToRef)
                 floorRefToDisplay[(kv.Value.lnk, kv.Value.id)] = kv.Key;
 
-            // Grids (multi-select)
             for (int i = 0; i < s.GridIds.Count; i++)
             {
                 long lnk = (i < s.GridLinkIds.Count) ? s.GridLinkIds[i] : 0L;
                 if (gridRefToDisplay.TryGetValue((lnk, s.GridIds[i]), out var display))
                     _selectedGridNames.Add(display);
             }
-
-            // Floor (single-select) — restore from first saved entry
             if (s.FloorIds.Count > 0)
             {
                 long lnk = (s.FloorLinkIds.Count > 0) ? s.FloorLinkIds[0] : 0L;
@@ -189,8 +250,50 @@ namespace LemoineTools.Tools.Testing
             }
         }
 
+        private void RestoreGroup(GroupState g, string mode,
+            List<string> ruleKeys, List<string> categories,
+            List<long> elemIds, List<long> elemLinkIds, List<long> sourceLinkIds)
+        {
+            g.Mode = (mode == "Categories" || mode == "Elements") ? mode : "Rules";
+
+            foreach (var pk in ruleKeys)
+                if (_persistKeyToDisplay.TryGetValue(pk, out var dk) && dk != null) g.RuleKeys.Add(dk);
+
+            foreach (var ost in categories)
+                if (_ostToCategoryDisplay.TryGetValue(ost, out var disp) && disp != null) g.Categories.Add(disp);
+
+            for (int i = 0; i < elemIds.Count; i++)
+            {
+                long lnk = (i < elemLinkIds.Count) ? elemLinkIds[i] : 0L;
+                g.ElemRefs.Add((lnk, elemIds[i]));
+            }
+
+            foreach (var id in sourceLinkIds) g.SourceLinkIds.Add(id);
+        }
+
+        private bool BothRulesMode() => _g1.Mode == "Rules" && _g2.Mode == "Rules";
         private bool HasGroupOverlap() =>
-            _group1Keys.Count > 0 && _group2Keys.Count > 0 && _group1Keys.Overlaps(_group2Keys);
+            BothRulesMode() && _g1.RuleKeys.Count > 0 && _g2.RuleKeys.Count > 0 && _g1.RuleKeys.Overlaps(_g2.RuleKeys);
+
+        private static bool GroupValid(GroupState g)
+        {
+            switch (g.Mode)
+            {
+                case "Categories": return g.Categories.Count > 0;
+                case "Elements":   return g.ElemRefs.Count > 0;
+                default:           return g.RuleKeys.Count > 0;
+            }
+        }
+
+        private static string GroupSummary(GroupState g)
+        {
+            switch (g.Mode)
+            {
+                case "Categories": return g.Categories.Count == 0 ? "—" : $"{g.Categories.Count} category(ies)";
+                case "Elements":   return g.ElemRefs.Count   == 0 ? "—" : $"{g.ElemRefs.Count} element(s)";
+                default:           return g.RuleKeys.Count    == 0 ? "—" : $"{g.RuleKeys.Count} rule(s)";
+            }
+        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -200,8 +303,8 @@ namespace LemoineTools.Tools.Testing
             switch (stepId)
             {
                 case "S1": return BuildS1();
-                case "S2": return BuildS2();
-                case "S3": return BuildS3();
+                case "S2": return BuildGroupStep(1);
+                case "S3": return BuildGroupStep(2);
                 case "S4": return BuildS4();
                 case "S5": return BuildS5();
                 default:   return null;
@@ -266,24 +369,17 @@ namespace LemoineTools.Tools.Testing
             return groups;
         }
 
-        // ── S2 — Group 1 Filters ──────────────────────────────────────────────
-        private FrameworkElement BuildS2()
+        // ── S2 / S3 — Group definition (shared) ───────────────────────────────
+        private FrameworkElement BuildGroupStep(int group)
         {
+            var g = group == 1 ? _g1 : _g2;
             var outer = new StackPanel();
-
-            if (_filterGroups.Count == 0)
-            {
-                var empty = new TextBlock { Text = "No filters configured. Set up Auto Filters first.", TextWrapping = TextWrapping.Wrap };
-                empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(empty);
-                return WrapInScroll(outer);
-            }
 
             var note = new TextBlock
             {
-                Text = "Select the filter rules whose clashing elements will be annotated (Group 1 — source).",
+                Text = group == 1
+                    ? "Define Group 1 — the SOURCE elements whose clashes get annotated (colour comes from this group)."
+                    : "Define Group 2 — the TARGET elements tested against Group 1 for clashes.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 8),
             };
@@ -292,67 +388,167 @@ namespace LemoineTools.Tools.Testing
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             outer.Children.Add(note);
 
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), _group1Keys);
-            tabs.SelectionChanged += selected =>
+            // Overlap warning (Group 2 only)
+            TextBlock? warnText = null;
+            if (group == 2)
             {
-                _group1Keys.Clear();
-                foreach (var s in selected) _group1Keys.Add(s);
+                warnText = new TextBlock
+                {
+                    Text = "⚠ Some rules appear in both groups — elements may clash against themselves.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Visibility = HasGroupOverlap() ? WpfVisibility.Visible : WpfVisibility.Collapsed,
+                };
+                warnText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+                warnText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                warnText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(warnText);
+                var capturedWarn = warnText;
+                ValidationChanged += (s, e) =>
+                    capturedWarn.Visibility = HasGroupOverlap() ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            }
+
+            // ── Body container (rebuilt on mode change) ───────────────────────
+            var body = new StackPanel();
+
+            Action rebuildBody = () =>
+            {
+                body.Children.Clear();
+                switch (g.Mode)
+                {
+                    case "Categories": BuildCategoryBody(body, g); break;
+                    case "Elements":   BuildElementsBody(body, g); break;
+                    default:           BuildRulesBody(body, g, warnText); break;
+                }
+                body.Dispatcher.BeginInvoke(new Action(() => Keyboard.ClearFocus()), DispatcherPriority.Input);
+            };
+
+            // ── Mode selector ─────────────────────────────────────────────────
+            AddLabel(outer, "Group definition mode");
+            var modeSelect = new LemoineSingleSelect();
+            modeSelect.Items        = ModeDisplayItems;
+            modeSelect.SelectedItem = ModeToDisplay(g.Mode);
+            modeSelect.SelectionChanged += val =>
+            {
+                g.Mode = DisplayToMode(val);
+                rebuildBody();
                 Fire();
             };
-            outer.Children.Add(tabs);
+            outer.Children.Add(modeSelect);
+
+            AddDivider(outer);
+
+            // ── Source documents ──────────────────────────────────────────────
+            AddLabel(outer, "Source documents (which models this group scans)");
+            var docGroups = new Dictionary<string, List<string>> { ["Documents"] = new List<string>(_docNames) };
+            var initialDocs = (g.SourceLinkIds.Count == 0)
+                ? new List<string>(_docNames)   // none stored → all selected
+                : _docNames.Where(n => g.SourceLinkIds.Contains(_docDisplayToLinkId[n])).ToList();
+            var srcTabs = new LemoineMultiSelectTabs();
+            srcTabs.SetGroups(docGroups, initialDocs);
+            srcTabs.SelectionChanged += selected =>
+            {
+                g.SourceLinkIds.Clear();
+                foreach (var n in selected)
+                    if (_docDisplayToLinkId.TryGetValue(n, out var lid)) g.SourceLinkIds.Add(lid);
+                Fire();
+            };
+            outer.Children.Add(srcTabs);
+
+            AddDivider(outer);
+            outer.Children.Add(body);
+
+            rebuildBody();
             return WrapInScroll(outer);
         }
 
-        // ── S3 — Group 2 Filters ──────────────────────────────────────────────
-        private FrameworkElement BuildS3()
+        private void BuildRulesBody(StackPanel body, GroupState g, TextBlock? warnText)
         {
-            var outer = new StackPanel();
-
             if (_filterGroups.Count == 0)
             {
-                var empty = new TextBlock { Text = "No filters configured. Set up Auto Filters first.", TextWrapping = TextWrapping.Wrap };
-                empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(empty);
-                return WrapInScroll(outer);
+                AddDim(body, "No AutoFilters rules configured. Switch to Categories or Select Elements, or set up Auto Filters first.");
+                return;
             }
-
-            var note = new TextBlock
-            {
-                Text = "Select the filter rules to test against Group 1 for clashes (Group 2 — target).",
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            var warnText = new TextBlock
-            {
-                Text = "⚠ Some rules appear in both groups — this may cause elements to clash against themselves.",
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8),
-                Visibility = HasGroupOverlap() ? WpfVisibility.Visible : WpfVisibility.Collapsed,
-            };
-            warnText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            warnText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            warnText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(warnText);
-
             var tabs = new LemoineMultiSelectTabs();
-            tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), _group2Keys);
+            tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), g.RuleKeys);
             tabs.SelectionChanged += selected =>
             {
-                _group2Keys.Clear();
-                foreach (var s in selected) _group2Keys.Add(s);
-                warnText.Visibility = HasGroupOverlap() ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                g.RuleKeys.Clear();
+                foreach (var s in selected) g.RuleKeys.Add(s);
+                if (warnText != null)
+                    warnText.Visibility = HasGroupOverlap() ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                 Fire();
             };
-            outer.Children.Add(tabs);
-            return WrapInScroll(outer);
+            body.Children.Add(tabs);
+        }
+
+        private void BuildCategoryBody(StackPanel body, GroupState g)
+        {
+            if (_categoryGroups.Count == 0)
+            {
+                AddDim(body, "No categories available.");
+                return;
+            }
+            var tabs = new LemoineMultiSelectTabs();
+            tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), g.Categories);
+            tabs.SelectionChanged += selected =>
+            {
+                g.Categories.Clear();
+                foreach (var s in selected) g.Categories.Add(s);
+                Fire();
+            };
+            body.Children.Add(tabs);
+        }
+
+        private void BuildElementsBody(StackPanel body, GroupState g)
+        {
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+
+            var pickHost  = MakeButton("＋ Pick host elements");
+            var pickLinks = MakeButton("＋ Pick linked elements");
+            var clearBtn  = MakeButton("Clear");
+            clearBtn.Margin = new Thickness(0);
+
+            btnRow.Children.Add(pickHost);
+            btnRow.Children.Add(pickLinks);
+            btnRow.Children.Add(clearBtn);
+            body.Children.Add(btnRow);
+
+            var count = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            count.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            count.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            count.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            body.Children.Add(count);
+
+            Action refresh = () => count.Text = g.ElemRefs.Count == 0
+                ? "No elements picked yet. Use the buttons above to pick in the model."
+                : $"{g.ElemRefs.Count} element(s) picked.";
+            refresh();
+
+            pickHost.Click  += (s, e) => StartPick(g, false, (WpfButton)s!, refresh);
+            pickLinks.Click += (s, e) => StartPick(g, true,  (WpfButton)s!, refresh);
+            clearBtn.Click  += (s, e) => { g.ElemRefs.Clear(); refresh(); Fire(); };
+        }
+
+        private void StartPick(GroupState g, bool inLinks, WpfButton sourceBtn, Action refresh)
+        {
+            if (_pickHandler == null || _pickEvent == null) return;
+            var disp = sourceBtn.Dispatcher;   // window's STA dispatcher
+
+            _pickHandler.InLinks = inLinks;
+            _pickHandler.OnPicked = picks =>
+            {
+                // Runs on Revit's main thread — marshal back to the UI thread.
+                disp.BeginInvoke(new Action(() =>
+                {
+                    foreach (var p in picks)
+                        if (!g.ElemRefs.Any(e => e.lnk == p.linkId && e.id == p.elemId))
+                            g.ElemRefs.Add((p.linkId, p.elemId));
+                    refresh();
+                    Fire();
+                }));
+            };
+            _pickEvent.Raise();
         }
 
         // ── S4 — Grids & Slab References ─────────────────────────────────────
@@ -360,7 +556,6 @@ namespace LemoineTools.Tools.Testing
         {
             var outer = new StackPanel();
 
-            // ── Toggle: show all documents ────────────────────────────────────
             var toggleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
             var toggleCb  = new CheckBox { IsChecked = _showAll, VerticalAlignment = VerticalAlignment.Center };
             toggleCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
@@ -381,13 +576,7 @@ namespace LemoineTools.Tools.Testing
 
             AddDivider(outer);
 
-            // ── Grids label ───────────────────────────────────────────────────
-            var gridsLbl = new TextBlock
-            {
-                Text = "GRIDS",
-                FontStyle = FontStyles.Italic,
-                Margin = new Thickness(0, 0, 0, 4),
-            };
+            var gridsLbl = new TextBlock { Text = "GRIDS", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 4) };
             gridsLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             gridsLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             gridsLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -398,12 +587,10 @@ namespace LemoineTools.Tools.Testing
 
             AddDivider(outer);
 
-            // ── Slab edges label ──────────────────────────────────────────────
             var floorsLbl = new TextBlock
             {
                 Text = "SLAB EDGE (select one — all edges will be dimensioned)",
-                FontStyle = FontStyles.Italic,
-                Margin = new Thickness(0, 0, 0, 4),
+                FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 4),
             };
             floorsLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             floorsLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -413,21 +600,17 @@ namespace LemoineTools.Tools.Testing
             var floorContainer = new StackPanel();
             outer.Children.Add(floorContainer);
 
-            // ── Rebuild closure: clears and repopulates both containers ───────
             Action rebuild = () =>
             {
                 var data = _showAll ? _allData : _activeViewData;
 
-                // Grid section
                 gridContainer.Children.Clear();
                 if (data.GridNames.Count > 0)
                 {
-                    var gridGroups = BuildSourceGroups(data.GridNames);
                     var gridTabs = new LemoineMultiSelectTabs();
-                    gridTabs.SetGroups(gridGroups, new List<string>(_selectedGridNames));
+                    gridTabs.SetGroups(BuildSourceGroups(data.GridNames), new List<string>(_selectedGridNames));
                     gridTabs.SelectionChanged += selected =>
                     {
-                        // Preserve selections from elements not in the current visible set
                         var visibleSet = new HashSet<string>(data.GridNames);
                         var hidden     = new List<string>(_selectedGridNames.Where(n => !visibleSet.Contains(n)));
                         _selectedGridNames.Clear();
@@ -439,67 +622,35 @@ namespace LemoineTools.Tools.Testing
                 }
                 else
                 {
-                    var noGrids = new TextBlock
-                    {
-                        Text = _showAll
-                            ? "No grids found in host or linked documents."
-                            : "No grids visible in the active view. Toggle 'Show all documents' to see all.",
-                        TextWrapping = TextWrapping.Wrap,
-                        Margin = new Thickness(0, 0, 0, 8),
-                    };
-                    noGrids.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                    noGrids.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                    noGrids.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    gridContainer.Children.Add(noGrids);
+                    AddDim(gridContainer, _showAll
+                        ? "No grids found in host or linked documents."
+                        : "No grids visible in the active view. Toggle 'Show all documents' to see all.");
                 }
 
-                // Floor section (single-select)
                 floorContainer.Children.Clear();
                 var floorItems = new List<string> { "(None)" };
                 floorItems.AddRange(data.FloorNames);
 
                 var floorSelect = new LemoineSingleSelect();
                 floorSelect.Items = floorItems.ToArray();
-
-                // Restore saved selection only if visible in current data
-                string floorSel = (_selectedFloorDisplay != null && floorItems.Contains(_selectedFloorDisplay))
-                    ? _selectedFloorDisplay
-                    : "(None)";
-                floorSelect.SelectedItem = floorSel;
-
-                // Wire SelectionChanged AFTER setting Items and SelectedItem ⚠
+                floorSelect.SelectedItem = (_selectedFloorDisplay != null && floorItems.Contains(_selectedFloorDisplay))
+                    ? _selectedFloorDisplay : "(None)";
                 floorSelect.SelectionChanged += val =>
                 {
                     _selectedFloorDisplay = (val == null || val == "(None)") ? null : val;
                     Fire();
                 };
 
+                floorContainer.Children.Add(floorSelect);
                 if (data.FloorNames.Count == 0)
                 {
                     floorSelect.IsEnabled = false;
-                    var hint = new TextBlock
-                    {
-                        Text = _showAll
-                            ? "No floors found in host or linked documents."
-                            : "No floors visible in the active view. Toggle 'Show all documents' to see all.",
-                        TextWrapping = TextWrapping.Wrap,
-                        Margin = new Thickness(0, 4, 0, 0),
-                    };
-                    hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                    hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                    hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    floorContainer.Children.Add(floorSelect);
-                    floorContainer.Children.Add(hint);
-                }
-                else
-                {
-                    floorContainer.Children.Add(floorSelect);
+                    AddDim(floorContainer, _showAll
+                        ? "No floors found in host or linked documents."
+                        : "No floors visible in the active view. Toggle 'Show all documents' to see all.");
                 }
 
-                // ⚠ Clear keyboard focus after rebuild to prevent ComboBox autocomplete spurious events
-                floorSelect.Dispatcher.BeginInvoke(
-                    new Action(() => Keyboard.ClearFocus()),
-                    DispatcherPriority.Input);
+                floorSelect.Dispatcher.BeginInvoke(new Action(() => Keyboard.ClearFocus()), DispatcherPriority.Input);
             };
 
             toggleCb.Checked   += (s, e) => { _showAll = true;  rebuild(); Fire(); };
@@ -509,7 +660,6 @@ namespace LemoineTools.Tools.Testing
             return WrapInScroll(outer);
         }
 
-        // Groups display names by source: "[LinkName]" prefix → grouped under that link name; others → "Host"
         private static Dictionary<string, List<string>> BuildSourceGroups(List<string> displayNames)
         {
             var groups = new Dictionary<string, List<string>>();
@@ -521,10 +671,7 @@ namespace LemoineTools.Tools.Testing
                     int end = name.IndexOf(']');
                     groupKey = end > 0 ? name.Substring(1, end - 1) : "Link";
                 }
-                else
-                {
-                    groupKey = "Host";
-                }
+                else groupKey = "Host";
                 if (!groups.ContainsKey(groupKey)) groups[groupKey] = new List<string>();
                 groups[groupKey].Add(name);
             }
@@ -537,12 +684,7 @@ namespace LemoineTools.Tools.Testing
         {
             var outer = new StackPanel();
 
-            var settingsHdr = new TextBlock
-            {
-                Text = "ANNOTATION SETTINGS",
-                FontStyle = FontStyles.Italic,
-                Margin = new Thickness(0, 0, 0, 8),
-            };
+            var settingsHdr = new TextBlock { Text = "ANNOTATION SETTINGS", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
             settingsHdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             settingsHdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             settingsHdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -573,21 +715,13 @@ namespace LemoineTools.Tools.Testing
 
             AddDivider(outer);
             AddLabel(outer, "Dimension Reference");
-            var targetSelect = new LemoineSingleSelect
-            {
-                Items        = new[] { "Edge", "Centre" },
-                SelectedItem = _dimTarget,
-            };
+            var targetSelect = new LemoineSingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = _dimTarget };
             targetSelect.SelectionChanged += val => { if (val != null) { _dimTarget = val; Fire(); } };
             outer.Children.Add(targetSelect);
 
             AddDivider(outer);
             AddLabel(outer, "Fill Style");
-            var fillSelect = new LemoineSingleSelect
-            {
-                Items        = new[] { "Solid", "Outline" },
-                SelectedItem = _fillStyle,
-            };
+            var fillSelect = new LemoineSingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = _fillStyle };
             fillSelect.SelectionChanged += val => { if (val != null) { _fillStyle = val; Fire(); } };
             outer.Children.Add(fillSelect);
 
@@ -598,8 +732,7 @@ namespace LemoineTools.Tools.Testing
             var lineSelect = new LemoineSingleSelect
             {
                 Items        = lineItems.ToArray(),
-                SelectedItem = _lineStyleNames.Contains(_crossLineTypeName)
-                    ? _crossLineTypeName : "(Default)",
+                SelectedItem = _lineStyleNames.Contains(_crossLineTypeName) ? _crossLineTypeName : "(Default)",
             };
             lineSelect.SelectionChanged += val =>
             {
@@ -630,14 +763,8 @@ namespace LemoineTools.Tools.Testing
                 _maxClashes.ToString(),
                 val => { if (int.TryParse(val, out int n) && n > 0) { _maxClashes = n; Fire(); } });
 
-            // ── Review cards ──────────────────────────────────────────────────
             AddDivider(outer);
-            var reviewHdr = new TextBlock
-            {
-                Text = "RUN SUMMARY",
-                FontStyle = FontStyles.Italic,
-                Margin = new Thickness(0, 0, 0, 8),
-            };
+            var reviewHdr = new TextBlock { Text = "RUN SUMMARY", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
             reviewHdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             reviewHdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             reviewHdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -650,8 +777,8 @@ namespace LemoineTools.Tools.Testing
             var cardDefs = new CardDef[]
             {
                 new CardDef("Views",          () => $"{_selectedViewNames.Count} selected"),
-                new CardDef("Group 1 Rules",  () => $"{_group1Keys.Count} selected"),
-                new CardDef("Group 2 Rules",  () => $"{_group2Keys.Count} selected"),
+                new CardDef("Group 1",        () => $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}"),
+                new CardDef("Group 2",        () => $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}"),
                 new CardDef("Grids & Slabs",  () => $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}"),
                 new CardDef("Tolerance",      () => $"{_toleranceMm:F1} mm"),
                 new CardDef("Dim Reference",  () => _dimTarget),
@@ -660,8 +787,7 @@ namespace LemoineTools.Tools.Testing
 
             for (int i = 0; i < cardDefs.Length; i++)
             {
-                int row = i / 2;
-                int col = i % 2;
+                int row = i / 2, col = i % 2;
                 if (cardGrid.RowDefinitions.Count <= row)
                     cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 AddReviewCard(cardGrid, cardDefs[i].Label, cardDefs[i].Value, row, col);
@@ -672,6 +798,35 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── UI helpers ────────────────────────────────────────────────────────
+
+        private WpfButton MakeButton(string label)
+        {
+            var b = new WpfButton
+            {
+                Content         = label,
+                Cursor          = Cursors.Hand,
+                BorderThickness = new Thickness(1),
+                Margin          = new Thickness(0, 0, 8, 0),
+                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
+            };
+            b.SetResourceReference(WpfButton.MinHeightProperty,  "LemoineH_BtnMin");
+            b.SetResourceReference(WpfButton.PaddingProperty,    "LemoineTh_BtnPad");
+            b.SetResourceReference(WpfButton.FontSizeProperty,   "LemoineFS_MD");
+            b.SetResourceReference(WpfButton.FontFamilyProperty, "LemoineUiFont");
+            b.Background = Brushes.Transparent;
+            b.SetResourceReference(WpfButton.BorderBrushProperty, "LemoineBorder");
+            b.SetResourceReference(WpfButton.ForegroundProperty,  "LemoineText");
+            return b;
+        }
+
+        private static void AddDim(StackPanel parent, string text)
+        {
+            var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4) };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            parent.Children.Add(tb);
+        }
 
         private void AddSettingRow(StackPanel parent, string label, string hint, string initial, Action<string> onChange)
         {
@@ -755,8 +910,8 @@ namespace LemoineTools.Tools.Testing
             switch (stepId)
             {
                 case "S1": return _selectedViewNames.Count > 0;
-                case "S2": return _group1Keys.Count > 0;
-                case "S3": return _group2Keys.Count > 0;
+                case "S2": return GroupValid(_g1);
+                case "S3": return GroupValid(_g2);
                 default:   return true;
             }
         }
@@ -765,21 +920,29 @@ namespace LemoineTools.Tools.Testing
         {
             switch (stepId)
             {
-                case "S1": return _selectedViewNames.Count == 0 ? "—"
-                    : $"{_selectedViewNames.Count} view(s)";
-                case "S2": return _group1Keys.Count == 0 ? "—"
-                    : $"{_group1Keys.Count} rule(s)";
-                case "S3": return _group2Keys.Count == 0 ? "—"
-                    : $"{_group2Keys.Count} rule(s)"
-                    + (HasGroupOverlap() ? " ⚠ overlap" : "");
+                case "S1": return _selectedViewNames.Count == 0 ? "—" : $"{_selectedViewNames.Count} view(s)";
+                case "S2": return $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}";
+                case "S3": return $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}"
+                                + (HasGroupOverlap() ? " ⚠ overlap" : "");
                 case "S4":
                     int total = _selectedGridNames.Count + (_selectedFloorDisplay != null ? 1 : 0);
                     if (total == 0) return "No references";
-                    string floorPart = _selectedFloorDisplay ?? "—";
-                    return $"{_selectedGridNames.Count} grid(s) · floor: {floorPart}";
+                    return $"{_selectedGridNames.Count} grid(s) · floor: {_selectedFloorDisplay ?? "—"}";
                 case "S5": return $"Tol {_toleranceMm:F0} mm · {_dimTarget} · {_fillStyle}";
                 default:   return "—";
             }
+        }
+
+        private ClashGroupSpec BuildSpec(GroupState g)
+        {
+            var spec = new ClashGroupSpec { Mode = g.Mode };
+            foreach (var dk in g.RuleKeys)
+                if (_displayKeyToPersist.TryGetValue(dk, out var pk) && pk != null) spec.RuleKeys.Add(pk);
+            foreach (var disp in g.Categories)
+                if (_categoryDisplayToOst.TryGetValue(disp, out var ost) && ost != null) spec.Categories.Add(ost);
+            foreach (var r in g.ElemRefs) { spec.ElemIds.Add(r.id); spec.ElemLinkIds.Add(r.lnk); }
+            foreach (var id in g.SourceLinkIds) spec.SourceLinkIds.Add(id);
+            return spec;
         }
 
         public void Run(
@@ -789,52 +952,48 @@ namespace LemoineTools.Tools.Testing
         {
             if (_handler == null || _event == null) return;
 
+            var spec1 = BuildSpec(_g1);
+            var spec2 = BuildSpec(_g2);
+
             // Grid lists from multi-select
             var gridIds     = new List<long>();
             var gridLinkIds = new List<long>();
             foreach (var display in _selectedGridNames)
-            {
-                if (_gridDisplayToRef.TryGetValue(display, out var r))
-                {
-                    gridIds.Add(r.id);
-                    gridLinkIds.Add(r.lnk);
-                }
-            }
+                if (_gridDisplayToRef.TryGetValue(display, out var r)) { gridIds.Add(r.id); gridLinkIds.Add(r.lnk); }
 
-            // Floor lists from single-select (at most one entry)
+            // Floor lists from single-select (at most one)
             var floorIds     = new List<long>();
             var floorLinkIds = new List<long>();
-            if (_selectedFloorDisplay != null
-                && _floorDisplayToRef.TryGetValue(_selectedFloorDisplay, out var fRef))
-            {
-                floorIds.Add(fRef.id);
-                floorLinkIds.Add(fRef.lnk);
-            }
+            if (_selectedFloorDisplay != null && _floorDisplayToRef.TryGetValue(_selectedFloorDisplay, out var fRef))
+            { floorIds.Add(fRef.id); floorLinkIds.Add(fRef.lnk); }
 
             // Persist settings
             var s = ClashDimensionSettings.Instance;
-            var g1Keys = new List<string>();
-            foreach (var dk in _group1Keys)
-                if (_displayKeyToPersist.TryGetValue(dk, out var pk) && pk != null) g1Keys.Add(pk);
-            s.Group1RuleKeys = g1Keys;
-
-            var g2Keys = new List<string>();
-            foreach (var dk in _group2Keys)
-                if (_displayKeyToPersist.TryGetValue(dk, out var pk) && pk != null) g2Keys.Add(pk);
-            s.Group2RuleKeys    = g2Keys;
-            s.GridIds           = gridIds;
-            s.GridLinkIds       = gridLinkIds;
-            s.FloorIds          = floorIds;
-            s.FloorLinkIds      = floorLinkIds;
-            s.ToleranceMm       = _toleranceMm;
-            s.DimStyleName      = _dimStyleName;
-            s.DimLineOffsetMm   = _dimLineOffsetMm;
-            s.DimTarget         = _dimTarget;
-            s.FillStyle         = _fillStyle;
-            s.CrossLineTypeName = _crossLineTypeName;
-            s.ClearPrevious     = _clearPrevious;
-            s.MaxClashes        = _maxClashes;
-            s.ShowAllDocuments  = _showAll;
+            s.Group1Mode          = _g1.Mode;
+            s.Group2Mode          = _g2.Mode;
+            s.Group1RuleKeys      = new List<string>(spec1.RuleKeys);
+            s.Group2RuleKeys      = new List<string>(spec2.RuleKeys);
+            s.Group1Categories    = new List<string>(spec1.Categories);
+            s.Group2Categories    = new List<string>(spec2.Categories);
+            s.Group1ElemIds       = new List<long>(spec1.ElemIds);
+            s.Group1ElemLinkIds   = new List<long>(spec1.ElemLinkIds);
+            s.Group2ElemIds       = new List<long>(spec2.ElemIds);
+            s.Group2ElemLinkIds   = new List<long>(spec2.ElemLinkIds);
+            s.Group1SourceLinkIds = new List<long>(spec1.SourceLinkIds);
+            s.Group2SourceLinkIds = new List<long>(spec2.SourceLinkIds);
+            s.GridIds             = gridIds;
+            s.GridLinkIds         = gridLinkIds;
+            s.FloorIds            = floorIds;
+            s.FloorLinkIds        = floorLinkIds;
+            s.ToleranceMm         = _toleranceMm;
+            s.DimStyleName        = _dimStyleName;
+            s.DimLineOffsetMm     = _dimLineOffsetMm;
+            s.DimTarget           = _dimTarget;
+            s.FillStyle           = _fillStyle;
+            s.CrossLineTypeName   = _crossLineTypeName;
+            s.ClearPrevious       = _clearPrevious;
+            s.MaxClashes          = _maxClashes;
+            s.ShowAllDocuments    = _showAll;
             s.Save();
 
             // Wire handler
@@ -842,8 +1001,8 @@ namespace LemoineTools.Tools.Testing
                 .Where(n => _viewNameToId.ContainsKey(n))
                 .Select(n => _viewNameToId[n])
                 .ToList();
-            _handler.Group1RuleKeys    = new List<string>(s.Group1RuleKeys);
-            _handler.Group2RuleKeys    = new List<string>(s.Group2RuleKeys);
+            _handler.Group1Spec        = spec1;
+            _handler.Group2Spec        = spec2;
             _handler.GridIds           = gridIds;
             _handler.GridLinkIds       = gridLinkIds;
             _handler.FloorIds          = floorIds;

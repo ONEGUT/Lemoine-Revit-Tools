@@ -69,6 +69,8 @@ namespace LemoineTools
         // ── Testing — Clash Dimension ───────────────────────────────────────────────
         internal static ClashDimensionEventHandler? ClashDimensionHandler { get; private set; }
         internal static ExternalEvent?              ClashDimensionEvent   { get; private set; }
+        internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
+        internal static ExternalEvent?              ClashPickEvent        { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -150,6 +152,8 @@ namespace LemoineTools
             BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
             ClashDimensionHandler = new ClashDimensionEventHandler();
             ClashDimensionEvent   = ExternalEvent.Create(ClashDimensionHandler);
+            ClashPickHandler      = new ClashPickEventHandler();
+            ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             SheetPackHandler     = new SheetPackEventHandler();
@@ -312,7 +316,7 @@ namespace LemoineTools
 
             testingPanel.AddItem(Btn(
                 "LT_ClashDimension", "Clash\nDimension", "ClashDimensionCommand",
-                "Detect bounding-box clashes between two filter groups, annotate each clash with a coloured filled region and cross, and place locating dimensions to selected grids and slab edges.",
+                "Detect solid clashes between two element groups (filter rules, categories, or picked elements, in the host or links), annotate each clash with a coloured filled region and cross, and place locating dimensions to selected grids and slab edges.",
                 ""));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
