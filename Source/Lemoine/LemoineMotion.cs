@@ -73,6 +73,21 @@ namespace LemoineTools.Lemoine
             el.MouseLeave                 += (s, e) => ScaleTo(st, 1.0);
         }
 
+        // ── Text-link hover (foreground brighten) ───────────────────────────────
+        /// <summary>
+        /// Hover affordance for clickable text links (e.g. "Clear", "+ New Set", a set
+        /// name) that aren't real buttons: the foreground fades to the accent colour and
+        /// back. <paramref name="normalForegroundKey"/> is the resting text resource the
+        /// link rebinds to on leave.
+        /// </summary>
+        public static void WireTextHover(TextBlock tb, string normalForegroundKey, string hoverForegroundKey = "LemoineAccent")
+        {
+            if (tb == null) return;
+            tb.MouseEnter += (s, e) => AnimateTo(tb, TextBlock.ForegroundProperty, ColorOf(tb, hoverForegroundKey));
+            tb.MouseLeave += (s, e) =>
+                RestoreTo(tb, TextBlock.ForegroundProperty, normalForegroundKey, ColorOf(tb, normalForegroundKey));
+        }
+
         // ── Swatch hover (accent ring + soft shadow lift) ───────────────────────
         /// <summary>
         /// Hover affordance for clickable colour tiles: the border fades to the accent
