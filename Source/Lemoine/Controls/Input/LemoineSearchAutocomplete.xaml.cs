@@ -6,6 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 
 namespace LemoineTools.Lemoine.Controls
@@ -26,6 +27,12 @@ namespace LemoineTools.Lemoine.Controls
         private IList<string> _items           = new List<string>();
         private int           _maxSuggestions  = 8;
         private string        _value           = "";
+
+        // Icon show/hide state
+        private bool _iconVisible = true;
+        private static readonly Thickness _padWithIcon = new Thickness(26, 6, 10, 6);
+        private static readonly Thickness _padNoIcon   = new Thickness(8,  6, 10, 6);
+        private static readonly CubicEase _iconEase    = new CubicEase { EasingMode = EasingMode.EaseOut };
 
         public string Value
         {
@@ -130,6 +137,34 @@ namespace LemoineTools.Lemoine.Controls
             // Only auto-open the dropdown for real typing — a programmatic text change
             // (e.g. panel rebuild / SetValue) must not pop the popup. Guard on keyboard focus.
             if (_textBox.IsKeyboardFocusWithin) ShowDropdown();
+            UpdateIconState(!string.IsNullOrEmpty(_value));
+        }
+
+        // Fades the search icon out when typing begins and back in when the field is cleared.
+        // Padding slides left simultaneously so typed text fills the full field width.
+        private void UpdateIconState(bool hasText)
+        {
+            var dur = new Duration(TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast));
+
+            if (hasText && _iconVisible)
+            {
+                _iconVisible = false;
+                var fade = new DoubleAnimation(0, dur) { EasingFunction = _iconEase };
+                // Guard: only collapse if we haven't already been asked to restore.
+                fade.Completed += (s, e) => { if (!_iconVisible) _iconCanvas.Visibility = Visibility.Collapsed; };
+                _iconCanvas.BeginAnimation(UIElement.OpacityProperty, fade);
+                _textBox.BeginAnimation(Control.PaddingProperty,
+                    new ThicknessAnimation(_padNoIcon, dur) { EasingFunction = _iconEase });
+            }
+            else if (!hasText && !_iconVisible)
+            {
+                _iconVisible = true;
+                _iconCanvas.Visibility = Visibility.Visible;
+                _iconCanvas.BeginAnimation(UIElement.OpacityProperty,
+                    new DoubleAnimation(1, dur) { EasingFunction = _iconEase });
+                _textBox.BeginAnimation(Control.PaddingProperty,
+                    new ThicknessAnimation(_padWithIcon, dur) { EasingFunction = _iconEase });
+            }
         }
 
         private void ShowDropdown()
