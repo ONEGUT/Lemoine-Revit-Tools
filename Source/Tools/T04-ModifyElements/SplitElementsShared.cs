@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.ModifyElements
         // ── Level constraint parameters ───────────────────────────────────────
 
         private static readonly BuiltInParameter WallBase    = BuiltInParameter.WALL_BASE_CONSTRAINT;
-        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_HEIGHT_TYPE;
+        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_TOP_CONSTRAINT;
         private static readonly BuiltInParameter WallBaseOff = BuiltInParameter.WALL_BASE_OFFSET;
         private static readonly BuiltInParameter WallTopOff  = BuiltInParameter.WALL_TOP_OFFSET;
 
@@ -259,8 +259,8 @@ namespace LemoineTools.Tools.ModifyElements
             { stats.Skip($"Wall {wall.Id}: not level-constrained"); return; }
 
             var spans = BuildLevelSpans(levels, baseLevel, topLevel);
-            if (spans.Count < 2)
-            { stats.Skip($"Wall {wall.Id}: no intermediate levels in range"); return; }
+            if (spans.Count < 3)
+            { stats.Skip($"Wall {wall.Id}: no selected levels fall between its base and top constraints"); return; }
 
             double baseOff = wall.get_Parameter(WallBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = wall.get_Parameter(WallTopOff)?.AsDouble()  ?? 0.0;
@@ -318,8 +318,8 @@ namespace LemoineTools.Tools.ModifyElements
             { stats.Skip($"Column {col.Id}: not level-constrained"); return; }
 
             var spans = BuildLevelSpans(levels, baseLevel, topLevel);
-            if (spans.Count < 2)
-            { stats.Skip($"Column {col.Id}: no intermediate levels in range"); return; }
+            if (spans.Count < 3)
+            { stats.Skip($"Column {col.Id}: no selected levels fall between its base and top constraints"); return; }
 
             double baseOff = col.get_Parameter(ColBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = col.get_Parameter(ColTopOff)?.AsDouble()  ?? 0.0;

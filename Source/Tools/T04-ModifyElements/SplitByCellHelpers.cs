@@ -41,6 +41,10 @@ namespace LemoineTools.Tools.ModifyElements
                 throw new NotSupportedException(
                     $"'{el.Category?.Name ?? el.GetType().Name}' elements are not yet supported for cell splitting.");
 
+            // FilledRegion is a 2D element — no solid geometry; clip its boundary curves directly.
+            if (el is FilledRegion fr2d)
+                return SplitFilledRegion(doc, fr2d, cellX, cellY, gridOrigin);
+
             Solid? elementSolid = GetPrimarySolid(el);
             if (elementSolid == null || elementSolid.Volume < 1e-9)
                 return (0, CellSplitStatus.NoGeometry);
@@ -97,7 +101,7 @@ namespace LemoineTools.Tools.ModifyElements
                     if (intersection == null || intersection.Volume < 1e-9)
                         continue;
 
-                    IList<CurveLoop>? loops = ExtractBottomFaceLoops(intersection);
+                    IList<CurveLoop>? loops = ExtractTopFaceLoops(intersection);
                     if (loops == null || loops.Count == 0) continue;
 
                     pendingLoops.Add(loops);
@@ -174,23 +178,200 @@ namespace LemoineTools.Tools.ModifyElements
             catch { return null; }
         }
 
-        private static IList<CurveLoop>? ExtractBottomFaceLoops(Solid solid)
+        // Use the top face (normal = +Z) so GetEdgesAsCurveLoops returns CCW loops when
+        // viewed from above — the orientation Floor.Create and Ceiling.Create require.
+        // The bottom face (normal = -Z) returns CW loops, which those APIs reject.
+        private static IList<CurveLoop>? ExtractTopFaceLoops(Solid solid)
         {
-            PlanarFace? bottomFace = null;
-            double lowestZ = double.MaxValue;
+            PlanarFace? topFace  = null;
+            double      highestZ = double.MinValue;
 
             foreach (Face face in solid.Faces)
             {
                 if (!(face is PlanarFace pf)) continue;
-                if (Math.Abs(Math.Abs(pf.FaceNormal.Z) - 1.0) > 1e-6) continue;
-                if (pf.Origin.Z < lowestZ)
+                if (pf.FaceNormal.Z < 1.0 - 1e-6) continue; // only upward-facing
+                if (pf.Origin.Z > highestZ)
                 {
-                    lowestZ    = pf.Origin.Z;
-                    bottomFace = pf;
+                    highestZ = pf.Origin.Z;
+                    topFace  = pf;
                 }
             }
 
-            return bottomFace?.GetEdgesAsCurveLoops();
+            return topFace?.GetEdgesAsCurveLoops();
+        }
+
+        // ── FilledRegion 2D split ─────────────────────────────────────────────
+
+        // FilledRegion has no 3D solid; clip its sketch boundary directly in XY using
+        // Sutherland-Hodgman against each cell rectangle. Only line-segment boundaries
+        // are supported — arcs/splines cause that region to be skipped gracefully.
+        private static (int CellCount, CellSplitStatus Status) SplitFilledRegion(
+            Document      doc,
+            FilledRegion  fr,
+            double        cellX,
+            double        cellY,
+            XYZ?          gridOrigin)
+        {
+            IList<CurveLoop> boundaries = fr.GetBoundaries();
+            if (boundaries == null || boundaries.Count == 0)
+                return (0, CellSplitStatus.NoGeometry);
+
+            CurveLoop outerLoop = boundaries[0];
+
+            double minX = double.MaxValue, maxX = double.MinValue;
+            double minY = double.MaxValue, maxY = double.MinValue;
+            double z    = 0;
+            bool   first = true;
+
+            foreach (Curve c in outerLoop)
+            {
+                XYZ p = c.GetEndPoint(0);
+                if (first) { z = p.Z; first = false; }
+                minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X);
+                minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y);
+            }
+
+            double ox     = gridOrigin?.X ?? minX;
+            double oy     = gridOrigin?.Y ?? minY;
+            double startX = Math.Floor((minX - ox) / cellX) * cellX + ox;
+            double startY = Math.Floor((minY - oy) / cellY) * cellY + oy;
+
+            var cellsX = new List<(double Min, double Max)>();
+            for (double x = startX; x < maxX; x += cellX)
+                cellsX.Add((x, x + cellX));
+
+            var cellsY = new List<(double Min, double Max)>();
+            for (double y = startY; y < maxY; y += cellY)
+                cellsY.Add((y, y + cellY));
+
+            if (cellsX.Count == 1 && cellsY.Count == 1)
+                return (0, CellSplitStatus.FitsInOneCell);
+
+            // Phase 1: clip outer boundary + any holes against each cell rectangle.
+            var pending = new List<IList<CurveLoop>>();
+
+            foreach (var (xMin, xMax) in cellsX)
+            {
+                foreach (var (yMin, yMax) in cellsY)
+                {
+                    List<XYZ>? clippedOuter = ClipLoopToRect(outerLoop, xMin, xMax, yMin, yMax, z);
+                    if (clippedOuter == null || clippedOuter.Count < 3) continue;
+
+                    CurveLoop? outer = PointsToLoop(clippedOuter);
+                    if (outer == null) continue;
+
+                    var cellLoops = new List<CurveLoop> { outer };
+
+                    // Clip holes (inner loops, index 1+) against the same cell rectangle.
+                    for (int hi = 1; hi < boundaries.Count; hi++)
+                    {
+                        List<XYZ>? clippedHole = ClipLoopToRect(boundaries[hi], xMin, xMax, yMin, yMax, z);
+                        if (clippedHole == null || clippedHole.Count < 3) continue;
+                        CurveLoop? hole = PointsToLoop(clippedHole);
+                        if (hole != null) cellLoops.Add(hole);
+                    }
+
+                    pending.Add(cellLoops);
+                }
+            }
+
+            if (pending.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+
+            // Phase 2: create replacement FilledRegions.
+            var newIds = new List<ElementId>();
+            foreach (var loops in pending)
+            {
+                FilledRegion newFr = FilledRegion.Create(doc, fr.GetTypeId(), fr.OwnerViewId, loops);
+                newIds.Add(newFr.Id);
+            }
+
+            doc.Delete(fr.Id);
+            return (newIds.Count, CellSplitStatus.Split);
+        }
+
+        // Sutherland-Hodgman clip of a CurveLoop against an axis-aligned rectangle.
+        // Returns null if the loop has non-linear curves (unsupported).
+        private static List<XYZ>? ClipLoopToRect(
+            CurveLoop loop,
+            double xMin, double xMax, double yMin, double yMax, double z)
+        {
+            var polygon = new List<XYZ>();
+            foreach (Curve c in loop)
+            {
+                if (!(c is Line)) return null;
+                polygon.Add(c.GetEndPoint(0));
+            }
+
+            if (polygon.Count < 3) return null;
+
+            // Clip against each of the four half-planes.
+            var pts = SHClip(polygon, p => p.X >= xMin, (a, b) => IntersectAtX(a, b, xMin, z));
+            if (pts.Count < 3) return null;
+            pts = SHClip(pts,     p => p.X <= xMax, (a, b) => IntersectAtX(a, b, xMax, z));
+            if (pts.Count < 3) return null;
+            pts = SHClip(pts,     p => p.Y >= yMin, (a, b) => IntersectAtY(a, b, yMin, z));
+            if (pts.Count < 3) return null;
+            pts = SHClip(pts,     p => p.Y <= yMax, (a, b) => IntersectAtY(a, b, yMax, z));
+            return pts.Count >= 3 ? pts : null;
+        }
+
+        private static List<XYZ> SHClip(
+            List<XYZ>       polygon,
+            Func<XYZ, bool> inside,
+            Func<XYZ, XYZ, XYZ> intersect)
+        {
+            var output = new List<XYZ>();
+            int n = polygon.Count;
+            for (int i = 0; i < n; i++)
+            {
+                XYZ curr = polygon[i];
+                XYZ prev = polygon[(i + n - 1) % n];
+                bool currIn = inside(curr);
+                bool prevIn = inside(prev);
+                if (currIn)
+                {
+                    if (!prevIn) output.Add(intersect(prev, curr));
+                    output.Add(curr);
+                }
+                else if (prevIn)
+                {
+                    output.Add(intersect(prev, curr));
+                }
+            }
+            return output;
+        }
+
+        private static XYZ IntersectAtX(XYZ a, XYZ b, double x, double z)
+        {
+            double t = (x - a.X) / (b.X - a.X);
+            return new XYZ(x, a.Y + t * (b.Y - a.Y), z);
+        }
+
+        private static XYZ IntersectAtY(XYZ a, XYZ b, double y, double z)
+        {
+            double t = (y - a.Y) / (b.Y - a.Y);
+            return new XYZ(a.X + t * (b.X - a.X), y, z);
+        }
+
+        private static CurveLoop? PointsToLoop(List<XYZ> pts)
+        {
+            try
+            {
+                // Remove duplicate adjacent points.
+                var clean = new List<XYZ>();
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    if (pts[i].DistanceTo(pts[(i + 1) % pts.Count]) > 1e-6)
+                        clean.Add(pts[i]);
+                }
+                if (clean.Count < 3) return null;
+
+                var loop = new CurveLoop();
+                for (int i = 0; i < clean.Count; i++)
+                    loop.Append(Line.CreateBound(clean[i], clean[(i + 1) % clean.Count]));
+                return loop;
+            }
+            catch { return null; }
         }
 
         // ── Element recreation ────────────────────────────────────────────────
