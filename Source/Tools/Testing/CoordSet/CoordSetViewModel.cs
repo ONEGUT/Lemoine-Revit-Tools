@@ -282,7 +282,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
             addGrpBtn.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnPad");
             addGrpBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_SM");
             addGrpBtn.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
-            addGrpBtn.SetResourceReference(Button.BackgroundProperty,  "Transparent");
+            addGrpBtn.Background = System.Windows.Media.Brushes.Transparent;
             addGrpBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
             addGrpBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
             addGrpBtn.Click += (s2, e2) =>
