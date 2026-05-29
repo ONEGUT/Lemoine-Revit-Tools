@@ -17,7 +17,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineToolSettings
+    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Views by Level";
@@ -133,7 +133,7 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S1") return BuildS1();
             if (stepId == "S2") return BuildS2();
             if (stepId == "S3") return BuildS3Naming();
-            if (stepId == "S4") return BuildReview();
+            if (stepId == "S4") return null; // framework renders review (ILemoineReviewable)
             return null;
         }
 
@@ -698,96 +698,39 @@ namespace LemoineTools.Tools.LinkViews
             return outer;
         }
 
-        private FrameworkElement BuildReview()
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
+            ("docs",   "Source Documents"),
+            ("levels", "Levels Selected"),
+            ("types",  "View Types"),
+            ("min",    "Min. Views Expected"),
+        };
 
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var cards = new[]
+        public IDictionary<string, string> ReviewValues
+        {
+            get
             {
-                new CardDef("Source Documents",
-                    () => _selectedDocLabels.Count > 0
-                          ? $"{_selectedDocLabels.Count} document(s)"
-                          : "—", 0, 0),
-                new CardDef("Levels Selected",
-                    () => _selectedLevelIds.Count > 0
-                          ? $"{_selectedLevelIds.Count} level(s)"
-                          : "—", 0, 1),
-                new CardDef("View Types",
-                    () =>
-                    {
-                        var t = new List<string>();
-                        if (_create3D)  t.Add("3D");
-                        if (_createFP)  t.Add("FP");
-                        if (_createRCP) t.Add("RCP");
-                        return t.Count > 0 ? string.Join(" · ", t) : "—";
-                    }, 1, 0),
-                new CardDef("Min. Views Expected",
-                    () =>
-                    {
-                        int types = (_create3D ? 1 : 0) + (_createFP ? 1 : 0) + (_createRCP ? 1 : 0);
-                        int min   = _selectedLevelIds.Count * types;
-                        return min > 0 ? $"≥ {min}  (more with multi-building levels)" : "—";
-                    }, 1, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
+                var types = new List<string>();
+                if (_create3D)  types.Add("3D");
+                if (_createFP)  types.Add("FP");
+                if (_createRCP) types.Add("RCP");
+                int typeCount = (_create3D ? 1 : 0) + (_createFP ? 1 : 0) + (_createRCP ? 1 : 0);
+                int min       = _selectedLevelIds.Count * typeCount;
+                return new Dictionary<string, string>
                 {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
+                    ["docs"]   = _selectedDocLabels.Count > 0 ? $"{_selectedDocLabels.Count} document(s)" : "—",
+                    ["levels"] = _selectedLevelIds.Count > 0 ? $"{_selectedLevelIds.Count} level(s)" : "—",
+                    ["types"]  = types.Count > 0 ? string.Join(" · ", types) : "—",
+                    ["min"]    = min > 0 ? $"≥ {min}  (more with multi-building levels)" : "—",
                 };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(),
-                                          Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var capturedVal = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium,
-                                              TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = capturedVal();
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl); sp.Children.Add(valText);
-                card.Child = sp;
-                WpfGrid.SetRow(card, c.Row); WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
             }
-
-            outer.Children.Add(grid);
-
-            var desc = new TextBlock
-            {
-                Text = "Creates cropped coordination views per level and building cluster. " +
-                       "Levels with rooms spread across separate building footprints will " +
-                       "generate one view per cluster.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
         }
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Creates cropped coordination views per level and building cluster. " +
+            "Levels with rooms spread across separate building footprints will generate one view per cluster.";
+        public string?        ReviewWarning => null;
 
         // ═══════════════════════════════════════════════════════════════
         // IsValid / SummaryFor
