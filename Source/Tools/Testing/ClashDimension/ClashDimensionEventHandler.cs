@@ -636,9 +636,11 @@ namespace LemoineTools.Tools.Testing
             double cy     = (minY + maxY) / 2.0;
             double halfW  = (maxX - minX) / 2.0;
             double halfH  = (maxY - minY) / 2.0;
-            double armLen = Math.Max(0.5, Math.Max(halfW, halfH) * 1.5);
+            // Radius circumscribes the clash bbox; arm extends just past the circle, capped at 3 ft
+            double radius = Math.Max(0.25, Math.Max(halfW, halfH));
+            double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
-            // ── FilledRegion ─────────────────────────────────────────────────
+            // ── FilledRegion (circular) ───────────────────────────────────────
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
             string cacheKey = $"{hexColor}_{FillStyle}";
             if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
@@ -651,11 +653,13 @@ namespace LemoineTools.Tools.Testing
             {
                 try
                 {
+                    // Two semicircular arcs form a closed circular loop
+                    var ctr  = new XYZ(cx, cy, 0);
+                    var arc1 = Arc.Create(ctr, radius, 0,        Math.PI, XYZ.BasisX, XYZ.BasisY);
+                    var arc2 = Arc.Create(ctr, radius, Math.PI, 2 * Math.PI, XYZ.BasisX, XYZ.BasisY);
                     var loop = new CurveLoop();
-                    loop.Append(Line.CreateBound(new XYZ(minX, minY, 0), new XYZ(maxX, minY, 0)));
-                    loop.Append(Line.CreateBound(new XYZ(maxX, minY, 0), new XYZ(maxX, maxY, 0)));
-                    loop.Append(Line.CreateBound(new XYZ(maxX, maxY, 0), new XYZ(minX, maxY, 0)));
-                    loop.Append(Line.CreateBound(new XYZ(minX, maxY, 0), new XYZ(minX, minY, 0)));
+                    loop.Append(arc1);
+                    loop.Append(arc2);
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
                     fr.LookupParameter("Mark")?.Set("LemoineCD");
                 }
