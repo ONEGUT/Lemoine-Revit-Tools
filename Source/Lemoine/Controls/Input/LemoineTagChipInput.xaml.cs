@@ -268,7 +268,9 @@ namespace LemoineTools.Lemoine.Controls
             _searchBox.SetResourceReference(TextBox.BorderBrushProperty,  "LemoineBorder");
             _searchBox.SetResourceReference(TextBox.FontSizeProperty,     "LemoineFS_SM");
             _searchBox.SetResourceReference(TextBox.FontFamilyProperty,   "LemoineUiFont");
-            _searchBox.TextChanged += (s, e) => RefreshPopupList();
+            // Guard: only refilter on real typing — a programmatic Text reset must not
+            // rebuild the list out from under the popup. The open flow refreshes explicitly.
+            _searchBox.TextChanged += (s, e) => { if (_searchBox.IsKeyboardFocusWithin) RefreshPopupList(); };
             _searchBox.PreviewKeyDown += SearchBox_KeyDown;
             stack.Children.Add(_searchBox);
 

@@ -663,7 +663,7 @@ namespace LemoineTools.Lemoine
             btn.MouseLeave += (s, e) =>
             {
                 if ((string)btn.Tag != _activeLogTab)
-                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             };
             return btn;
         }

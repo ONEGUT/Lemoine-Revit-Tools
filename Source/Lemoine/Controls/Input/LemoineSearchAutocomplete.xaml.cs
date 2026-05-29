@@ -127,7 +127,9 @@ namespace LemoineTools.Lemoine.Controls
             _placeholder.Visibility = string.IsNullOrEmpty(_value)
                 ? Visibility.Visible : Visibility.Collapsed;
             SelectionChanged?.Invoke(_value);
-            ShowDropdown();
+            // Only auto-open the dropdown for real typing — a programmatic text change
+            // (e.g. panel rebuild / SetValue) must not pop the popup. Guard on keyboard focus.
+            if (_textBox.IsKeyboardFocusWithin) ShowDropdown();
         }
 
         private void ShowDropdown()

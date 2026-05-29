@@ -84,6 +84,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             _filterList = new StackPanel();
             sv.Content = _filterList;
+            LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to parent at scroll limits
             AddRow(3, sv);
 
             AddRow(4, MakeMonoLabel("CUSTOM"));
