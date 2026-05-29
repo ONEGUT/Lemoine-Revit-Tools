@@ -989,7 +989,10 @@ namespace LemoineTools.Tools.Testing
                 dimType = new FilteredElementCollector(doc)
                     .OfClass(typeof(DimensionType))
                     .Cast<DimensionType>()
-                    .FirstOrDefault(dt => dt.Name == DimStyleName);
+                    .FirstOrDefault(dt => dt.Name == DimStyleName
+                                      && dt.StyleType == DimensionStyleType.Linear);
+                if (dimType == null)
+                    Log($"Dimension style '{DimStyleName}' not found or is not a linear type — using project default.", "info");
             }
             if (dimType == null)
             {
@@ -997,6 +1000,16 @@ namespace LemoineTools.Tools.Testing
                 if (defId != null && defId != ElementId.InvalidElementId)
                     dimType = doc.GetElement(defId) as DimensionType;
             }
+            // Final fallback: first linear type in the document
+            if (dimType == null)
+            {
+                dimType = new FilteredElementCollector(doc)
+                    .OfClass(typeof(DimensionType))
+                    .Cast<DimensionType>()
+                    .FirstOrDefault(dt => dt.StyleType == DimensionStyleType.Linear);
+            }
+            if (dimType == null)
+                Log("No linear dimension type found in document — dimensions will be skipped.", "fail");
             return dimType;
         }
 

@@ -55,10 +55,11 @@ namespace LemoineTools.Commands
                 .OfCategory(BuiltInCategory.OST_Floors).OfClass(typeof(Floor)).Cast<Floor>())
                 activeViewHostFloorIds.Add(f.Id.Value);
 
-            // Dimension types
+            // Dimension types — linear only (angular/radial/arc-length types throw in NewDimension)
             var dimStyleNames = new FilteredElementCollector(doc)
                 .OfClass(typeof(DimensionType))
                 .Cast<DimensionType>()
+                .Where(dt => dt.StyleType == DimensionStyleType.Linear)
                 .Select(dt => dt.Name)
                 .OrderBy(n => n)
                 .ToList();
