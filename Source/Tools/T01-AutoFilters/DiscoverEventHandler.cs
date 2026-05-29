@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -116,7 +117,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: discover aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
             Progress(100, pass, fail, skip);

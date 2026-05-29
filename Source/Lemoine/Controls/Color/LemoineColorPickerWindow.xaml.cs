@@ -188,7 +188,7 @@ namespace LemoineTools.Lemoine.Controls
                     byte b = Convert.ToByte(hex.Substring(5, 2), 16);
                     return Color.FromRgb(r, g, b);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ColorPicker window: parse colour hex", __lex); }
             }
             return Colors.Gray;
         }

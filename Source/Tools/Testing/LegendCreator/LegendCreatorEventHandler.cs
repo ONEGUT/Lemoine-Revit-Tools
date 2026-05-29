@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -63,7 +64,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(uidoc.Document, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }
@@ -141,7 +142,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     foreach (var rule in trade.Rules)
                         if (!ruleMap.ContainsKey(rule.Id)) ruleMap[rule.Id] = rule;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: load AutoFilters rule map", __lex); }
 
             // ── Collect needed (colorHex, fill) pairs → display name for FRT ──
             // First block with a given (color, fill) pair wins the name slot.
@@ -224,7 +225,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         newFRT.ForegroundPatternColor = new Color(
                             (byte)rgb.Value.R, (byte)rgb.Value.G, (byte)rgb.Value.B);
                         newFRT.BackgroundPatternId = ElementId.InvalidElementId;
-                        try { newFRT.LineWeight = 1; } catch { }
+                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set filled-region line weight", __lex); }
                         frtMap[(colorHex, fill)] = newFRT.Id;
                         frtByKey[tname]          = newFRT.Id;
                     }
@@ -256,8 +257,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
                     foreach (var id in toDelete)
-                        try { doc.Delete(id); } catch { }
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
+                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete temp element", __lex); }
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
                 }
                 else
                 {
@@ -265,14 +266,14 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     dv = doc.GetElement(newLegendId) as View;
                     if (dv == null) { fail++; tx.Commit(); return; }
                     dv.Name = legendName;
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
                     // Clear any content carried over from the template legend before drawing.
                     var templateElems = new FilteredElementCollector(doc, dv.Id)
                         .WherePasses(new LogicalOrFilter(
                             new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
-                    foreach (var id in templateElems) try { doc.Delete(id); } catch { }
+                    foreach (var id in templateElems) try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete template element", __lex); }
                 }
 
                 // ── Resolve per-role TextNoteType IDs ────────────────────────
@@ -309,10 +310,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 {
                     if (string.IsNullOrEmpty(text)) return;
                     var o = new TextNoteOptions { TypeId = typeId };
-                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
                     double w = NoteWidth(text, fontH);
                     try   { TextNote.Create(doc, viewId, origin, w,          text, o); return; }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: create legend text note", __lex); }
                     try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, o); }
                     catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
                 }
@@ -524,8 +525,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         private static string? SafeName(Element el)
         {
-            try { return el.Name; } catch { }
-            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch { }
+            try { return el.Name; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read element name", __lex); }
+            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read symbol name parameter", __lex); }
             return null;
         }
 
@@ -543,7 +544,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 double h = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
                 if (h > 0) return h * scale;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read text-note type size", __lex); }
             return fallbackPt / 72.0 / 12.0 * scale;
         }
 

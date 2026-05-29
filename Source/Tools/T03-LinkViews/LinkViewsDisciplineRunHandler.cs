@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -33,10 +34,13 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
+            long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try { RunViews(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LinkViews discipline: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
+            long __issues = LemoineLog.IssuesSince(__issues0);
+            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
             Complete(pass, fail, skip);
         }
 
@@ -174,13 +178,13 @@ namespace LemoineTools.Tools.LinkViews
         private static void ApplyTemplate(View view, ElementId templateId)
         {
             if (templateId == null || templateId.Value == ElementId.InvalidElementId.Value) return;
-            try { view.ViewTemplateId = templateId; } catch { }
+            try { view.ViewTemplateId = templateId; } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews discipline: apply view template to view {view.Id.Value}", __lex); }
         }
 
         private static void SetSubDisc(View view, string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return;
-            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch { }
+            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews discipline: set Sub Discipline on view {view.Id.Value}", __lex); }
         }
 
         private static double SectionBoxBuffer =>
@@ -193,7 +197,7 @@ namespace LemoineTools.Tools.LinkViews
         private static View3D CreateIsometric(Document doc, string name, ElementId vftId)
         {
             View3D v = View3D.CreateIsometric(doc, vftId);
-            try { v.Name = name; } catch { }
+            try { v.Name = name; } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews discipline: set name on view {v.Id.Value}", __lex); }
             return v;
         }
 
@@ -220,7 +224,7 @@ namespace LemoineTools.Tools.LinkViews
                     minX = Math.Min(minX, eb.Min.X); minY = Math.Min(minY, eb.Min.Y); minZ = Math.Min(minZ, eb.Min.Z);
                     maxX = Math.Max(maxX, eb.Max.X); maxY = Math.Max(maxY, eb.Max.Y); maxZ = Math.Max(maxZ, eb.Max.Z);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("LinkViews discipline: read element bounding box", __lex); }
             }
             if (!found) return null;
 
@@ -270,7 +274,7 @@ namespace LemoineTools.Tools.LinkViews
                     if (keep.Contains(cat.Id.Value)) continue;
                     view.SetCategoryHidden(cat.Id, true);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews discipline: hide annotation category {cat.Id.Value} in view {view.Id.Value}", __lex); }
             }
         }
 
@@ -282,7 +286,7 @@ namespace LemoineTools.Tools.LinkViews
                 .Where(li => !keepSet.Contains(li.Id.Value))
                 .Select(li => li.Id).ToList();
             if (toHide.Count == 0) return;
-            try { view.HideElements(new List<ElementId>(toHide)); } catch { }
+            try { view.HideElements(new List<ElementId>(toHide)); } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews discipline: hide elements in view {view.Id.Value}", __lex); }
         }
 
         private static void ConfigureFailures(Transaction tx)

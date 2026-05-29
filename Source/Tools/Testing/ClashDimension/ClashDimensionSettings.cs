@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
@@ -73,7 +74,7 @@ namespace LemoineTools.Tools.Testing
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("ClashDimensionSettings: ensure settings directory exists", __lex); }
                 return Path.Combine(dir, "ClashDimensionSettings.xml");
             }
         }
@@ -86,7 +87,7 @@ namespace LemoineTools.Tools.Testing
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Error("ClashDimensionSettings: save settings", __lex); }
         }
 
         private static ClashDimensionSettings Load()
@@ -101,7 +102,7 @@ namespace LemoineTools.Tools.Testing
                         return (ClashDimensionSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimensionSettings: load settings (using defaults)", __lex); }
             return new ClashDimensionSettings();
         }
     }

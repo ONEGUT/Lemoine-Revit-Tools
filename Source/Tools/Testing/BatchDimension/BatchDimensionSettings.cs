@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
@@ -34,7 +35,7 @@ namespace LemoineTools.Tools.Testing
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("BatchDimensionSettings: create config directory", __lex); }
                 return Path.Combine(dir, "BatchDimensionSettings.xml");
             }
         }
@@ -48,7 +49,7 @@ namespace LemoineTools.Tools.Testing
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { /* never crash the UI over a settings write */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchDimensionSettings.Save", __lex); }
         }
 
         private static BatchDimensionSettings Load()
@@ -63,7 +64,7 @@ namespace LemoineTools.Tools.Testing
                         return (BatchDimensionSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchDimensionSettings.Load", __lex); }
             return new BatchDimensionSettings();
         }
     }

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -27,7 +28,7 @@ namespace LemoineTools.Tools.LinkViews
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("LinkViewsLevelSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LinkViewsLevelSettings.xml");
             }
         }
@@ -40,7 +41,7 @@ namespace LemoineTools.Tools.LinkViews
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LinkViewsLevelSettings.Save", __lex); }
         }
 
         private static LinkViewsLevelSettings Load()
@@ -55,7 +56,7 @@ namespace LemoineTools.Tools.LinkViews
                         return (LinkViewsLevelSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LinkViewsLevelSettings.Load", __lex); }
             return new LinkViewsLevelSettings();
         }
     }

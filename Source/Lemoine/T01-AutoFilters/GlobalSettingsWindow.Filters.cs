@@ -13,7 +13,6 @@ using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Lemoine.Controls.Input;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Lemoine

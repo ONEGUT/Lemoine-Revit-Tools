@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -30,10 +31,13 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
+            long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try { Run(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
+            long __issues = LemoineLog.IssuesSince(__issues0);
+            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
             Complete(pass, fail, skip);
         }
 
@@ -157,7 +161,7 @@ namespace LemoineTools.Tools.LinkViews
                     if (scopeParam != null && !scopeParam.IsReadOnly)
                         scopeParam.Set(dep.ScopeBoxId);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: apply scope box to view {newDep.Id.Value}", __lex); }
             }
         }
 
@@ -171,7 +175,7 @@ namespace LemoineTools.Tools.LinkViews
             }
             catch
             {
-                try { view.Name = $"{name} ({view.Id.Value})"; } catch { }
+                try { view.Name = $"{name} ({view.Id.Value})"; } catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: set fallback name on view {view.Id.Value}", __lex); }
             }
         }
 

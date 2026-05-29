@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -37,7 +38,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                Log($"Fatal error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingHeatmap: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
@@ -257,7 +258,7 @@ namespace LemoineTools.Tools.Ceilings
                         .ToList())
                     {
                         try { doc.Delete(staleId); tagDeleted++; }
-                        catch { /* protected or already gone */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete element (protected or already gone)", __lex); }
                     }
 
                     foreach (Element el in new FilteredElementCollector(doc, viewId)
@@ -381,7 +382,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             finally
             {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete temp image file", __lex); }
             }
         }
 
@@ -410,7 +411,7 @@ namespace LemoineTools.Tools.Ceilings
                             XYZ n = face.ComputeNormal(mid);
                             if (n.Z < -0.9) { bottomFace = face; break; }
                         }
-                        catch { /* malformed face — skip */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: skip malformed face", __lex); }
                     }
                     if (bottomFace != null) break;
                 }
@@ -494,7 +495,7 @@ namespace LemoineTools.Tools.Ceilings
                 if (nextLevel != null)
                     zMaxWorld = nextLevel.Elevation;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: find next level elevation", __lex); }
 
             double zMin = invLinkXform.OfPoint(new XYZ(0, 0, levelElev - 1.0)).Z;
             double zMax = invLinkXform.OfPoint(new XYZ(0, 0, zMaxWorld)).Z;
@@ -523,7 +524,7 @@ namespace LemoineTools.Tools.Ceilings
                             got = true;
                         }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: compute ceiling bounds", __lex); }
 
             if (!got)
             {
@@ -589,7 +590,7 @@ namespace LemoineTools.Tools.Ceilings
                             if (v.GetFilters().Contains(pfe.Id))
                                 v.RemoveFilter(pfe.Id);
                         }
-                        catch { /* view type may not support filters */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: apply filter (view type may not support filters)", __lex); }
                     }
 
                     try   { doc.Delete(pfe.Id); }

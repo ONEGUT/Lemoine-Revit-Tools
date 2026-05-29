@@ -829,7 +829,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                         System.Windows.Media.Color.FromRgb(r, g, b));
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CoordSet: parse colour hex", __lex); }
             return System.Windows.Media.Brushes.Gray;
         }
 

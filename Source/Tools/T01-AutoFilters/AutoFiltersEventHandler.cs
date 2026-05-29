@@ -5,6 +5,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using RevitColor = Autodesk.Revit.DB.Color;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -59,7 +60,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
@@ -524,7 +525,7 @@ namespace LemoineTools.Tools.AutoFilters
                     System.Globalization.NumberStyles.HexNumber, null, out int v))
                     return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: parse colour hex", __lex); }
             return null;
         }
 
@@ -536,7 +537,7 @@ namespace LemoineTools.Tools.AutoFilters
             // 1. BIP map first — works even when no elements exist in the model
             if (bipMap.TryGetValue(paramName, out var bip))
             {
-                try { return new ElementId((long)(int)bip); } catch { }
+                try { return new ElementId((long)(int)bip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve built-in parameter id", __lex); }
             }
 
             // 2. Scan live elements in the category
@@ -549,7 +550,7 @@ namespace LemoineTools.Tools.AutoFilters
                 if (p != null) return p.Id;
                 foreach (Parameter pp in el.Parameters)
                 {
-                    try { if (pp.Definition.Name == paramName) return pp.Id; } catch { }
+                    try { if (pp.Definition.Name == paramName) return pp.Id; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: match project parameter name", __lex); }
                 }
             }
 
@@ -557,7 +558,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (Enum.TryParse<BuiltInParameter>(
                     paramName.Replace(" ", "_").ToUpperInvariant(), out var fallbackBip))
             {
-                try { return new ElementId((long)(int)fallbackBip); } catch { }
+                try { return new ElementId((long)(int)fallbackBip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve fallback parameter id", __lex); }
             }
 
             return null;
@@ -573,7 +574,7 @@ namespace LemoineTools.Tools.AutoFilters
                     var sn = el.GetType().GetProperty("ServiceName")?.GetValue(el) as string;
                     if (!string.IsNullOrEmpty(sn)) return sn;
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read fabrication ServiceName", __lex); }
             }
             if (paramName == "Type Name")
             {
@@ -582,13 +583,13 @@ namespace LemoineTools.Tools.AutoFilters
                     var t = el.Document.GetElement(el.GetTypeId());
                     if (t != null && !string.IsNullOrEmpty(t.Name)) return t.Name;
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read element type name", __lex); }
                 try
                 {
                     var p = el.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME);
                     if (p != null) return p.AsString() ?? p.AsValueString();
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read type-name parameter", __lex); }
                 return null;
             }
             if (paramName == "Structural Material")
@@ -606,7 +607,7 @@ namespace LemoineTools.Tools.AutoFilters
                         }
                     }
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read material name", __lex); }
                 return null;
             }
             try
@@ -620,7 +621,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (!string.IsNullOrEmpty(s)) return s;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read parameter value", __lex); }
             if (bipMap.TryGetValue(paramName, out var bipFallback))
             {
                 try
@@ -628,7 +629,7 @@ namespace LemoineTools.Tools.AutoFilters
                     var p = el.get_Parameter(bipFallback);
                     if (p != null) return p.AsValueString() ?? p.AsString();
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read fallback parameter value", __lex); }
             }
             return null;
         }

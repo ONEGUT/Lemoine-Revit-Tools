@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine.Templates;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -546,7 +547,7 @@ namespace LemoineTools.Tools.AutoFilters
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LemoineAutoFiltersV2.xml");
             }
         }
@@ -571,7 +572,7 @@ namespace LemoineTools.Tools.AutoFilters
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
                 Saved?.Invoke();
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings.Save", __lex); }
         }
 
         private static AutoFiltersSettings Load()
@@ -590,7 +591,7 @@ namespace LemoineTools.Tools.AutoFilters
                     }
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings.Load", __lex); }
             var fresh = new AutoFiltersSettings { Trades = BuildDefaultTrades() };
             fresh.Save();
             return fresh;

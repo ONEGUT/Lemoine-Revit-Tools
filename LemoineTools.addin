@@ -4,8 +4,7 @@
     <Name>Lemoine Tools</Name>
     <Assembly>LemoineTools.dll</Assembly>
     <FullClassName>LemoineTools.App</FullClassName>
-    <!-- Replace with a unique GUID: [System.Guid]::NewGuid() in PowerShell -->
-    <AddInId>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</AddInId>
+    <AddInId>58F27C6A-BDD7-4FAD-90F6-DAC30F0A4638</AddInId>
     <VendorId>LemoineTools</VendorId>
     <VendorDescription>Lemoine Tools — MEP Automation Suite</VendorDescription>
   </AddIn>

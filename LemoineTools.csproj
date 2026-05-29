@@ -21,29 +21,38 @@
 
   <!--
     SDK-style project — all .cs files under Source\ compile automatically.
+
+    Tool folders are number-prefixed (T01-, T02-, ...) for ordering on disk, but
+    the namespaces are NOT prefixed — e.g. folder Tools\T01-AutoFilters\ maps to
+    namespace LemoineTools.Tools.AutoFilters.
+
     Folder structure:
       Source\App.cs
       Source\Commands\OpenSettingsCommand.cs
-      Source\Commands\AutoFilters\        — Auto Filters commands (ns: LemoineTools.Commands)
-      Source\Commands\Ceilings\           — Ceiling Grids + Ceiling Heatmap commands (ns: LemoineTools.Commands)
-      Source\Commands\LinkViews\          — Link Views + Replicate Dependent Views commands (ns: LemoineTools.Commands)
-      Source\Commands\ModifyElements\     — Split/Extend wall commands (ns: LemoineTools.Commands)
+      Source\Commands\T01-AutoFilters\    — Auto Filters commands (ns: LemoineTools.Commands)
+      Source\Commands\T02-Ceilings\       — Ceiling Grids + Ceiling Heatmap commands (ns: LemoineTools.Commands)
+      Source\Commands\T03-LinkViews\      — Link Views + Replicate Dependent Views commands (ns: LemoineTools.Commands)
+      Source\Commands\T04-ModifyElements\ — Split/Extend wall commands (ns: LemoineTools.Commands)
       Source\Commands\Debuggers\          — Debug tool commands (ns: LemoineTools.Commands)
       Source\Commands\Testing\            — In-progress/experimental tool commands (ns: LemoineTools.Commands)
-      Source\Tools\AutoFilters\           — Auto Filters view-models + settings (ns: LemoineTools.Tools.AutoFilters)
-      Source\Tools\Ceilings\             — Ceiling Grids + Ceiling Heatmap view-models (ns: LemoineTools.Tools.Ceilings)
-      Source\Tools\LinkViews\            — Link Views view-models + settings (ns: LemoineTools.Tools.LinkViews)
-      Source\Tools\ModifyElements\       — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
-      Source\Tools\Debuggers\            — Debug view-models (ns: LemoineTools.Tools.Debuggers)
-      Source\Tools\Testing\CoordSet\     — Coordination Drawing Set (ns: LemoineTools.Tools.Testing)
-      Source\Tools\Testing\LegendCreator\ — Legend Creator (ns: LemoineTools.Tools.Testing)
-      Source\Lemoine\                    — library (StepFlowWindow, GlobalSettingsWindow, controls)
-      Source\Lemoine\AutoFilters\        — GlobalSettingsWindow partial for Auto Filters tab
-      Source\Lemoine\Ceilings\           — GlobalSettingsWindow partial for Ceilings tab
-      Source\Lemoine\LinkViews\          — GlobalSettingsWindow partial for Link Views tab
-      Source\Lemoine\Testing\            — GlobalSettingsWindow partial for Testing tab
-      Source\Helpers\                    — shared utilities (MepColorMap)
-      Source\Resources\                  — embedded resources
+      Source\Tools\T01-AutoFilters\       — Auto Filters view-models + settings (ns: LemoineTools.Tools.AutoFilters)
+      Source\Tools\T02-Ceilings\          — Ceiling Grids + Ceiling Heatmap view-models (ns: LemoineTools.Tools.Ceilings)
+      Source\Tools\T03-LinkViews\         — Link Views view-models + settings (ns: LemoineTools.Tools.LinkViews)
+      Source\Tools\T04-ModifyElements\    — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
+      Source\Tools\Debuggers\             — Debug view-models (ns: LemoineTools.Tools.Debuggers)
+      Source\Tools\Testing\               — Experimental tools, one subfolder each
+                                            (BatchDimension, BatchExport, CoordSet,
+                                            CreateSheets, LegendCreator, SheetPack;
+                                            ns: LemoineTools.Tools.Testing.*)
+      Source\Lemoine\                     — library (StepFlowWindow, GlobalSettingsWindow, controls)
+      Source\Lemoine\Controls\            — shared WPF controls (Color, Input, Layout, Legend)
+      Source\Lemoine\Templates\           — template store
+      Source\Lemoine\T01-AutoFilters\     — GlobalSettingsWindow partial + FiltersSettingsWindow
+      Source\Lemoine\T02-Ceilings\        — GlobalSettingsWindow partial for Ceilings tab
+      Source\Lemoine\T03-LinkViews\       — GlobalSettingsWindow partial for Link Views tab
+      Source\Lemoine\Testing\             — GlobalSettingsWindow partial for Testing tab
+      Source\Helpers\                     — shared utilities (MepColorMap)
+      Source\Resources\                   — embedded resources
 
     *** NEW TOOL POLICY ***
     All new tools must be created in Source\Commands\Testing\ and Source\Tools\Testing\

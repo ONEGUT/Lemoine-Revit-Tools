@@ -6,6 +6,7 @@ using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
 
 using RevitColor = Autodesk.Revit.DB.Color;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
@@ -416,7 +417,7 @@ namespace LemoineTools.Tools.Testing
                     var t = el.Document.GetElement(el.GetTypeId());
                     if (t != null && !string.IsNullOrEmpty(t.Name)) return t.Name;
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: read Type Name parameter", __lex); }
             }
 
             try
@@ -430,7 +431,7 @@ namespace LemoineTools.Tools.Testing
                     if (!string.IsNullOrEmpty(v)) return v;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: read parameter value", __lex); }
 
             if (BipMap.TryGetValue(paramName, out var bip))
             {
@@ -443,7 +444,7 @@ namespace LemoineTools.Tools.Testing
                         if (!string.IsNullOrEmpty(v)) return v;
                     }
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: read built-in parameter value", __lex); }
             }
             return null;
         }
@@ -596,7 +597,7 @@ namespace LemoineTools.Tools.Testing
                 else if (obj is GeometryInstance gi)
                 {
                     GeometryElement? ige = null;
-                    try { ige = gi.GetInstanceGeometry(); } catch { }
+                    try { ige = gi.GetInstanceGeometry(); } catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: extract instance geometry", __lex); }
                     if (ige != null) acc = AccumulateSolids(ige, tx, acc);
                 }
             }
@@ -663,7 +664,7 @@ namespace LemoineTools.Tools.Testing
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
                     fr.LookupParameter("Mark")?.Set("LemoineCD");
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: create clash filled region", __lex); }
             }
 
             // ── Cross lines + dimensions ─────────────────────────────────────
@@ -970,7 +971,7 @@ namespace LemoineTools.Tools.Testing
             if (lineStyleId != ElementId.InvalidElementId)
             {
                 var gs = doc.GetElement(lineStyleId) as GraphicsStyle;
-                if (gs != null) try { dc.LineStyle = gs; } catch { }
+                if (gs != null) try { dc.LineStyle = gs; } catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: apply detail-curve line style", __lex); }
             }
             return dc;
         }
@@ -992,7 +993,7 @@ namespace LemoineTools.Tools.Testing
                         .Where(e => e.LookupParameter("Mark")?.AsString() == "LemoineCD")
                         .Select(e => e.Id));
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: collect tagged lines for cleanup", __lex); }
 
                 try
                 {
@@ -1002,7 +1003,7 @@ namespace LemoineTools.Tools.Testing
                         .Where(e => e.LookupParameter("Mark")?.AsString() == "LemoineCD")
                         .Select(e => e.Id));
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: collect tagged filled regions for cleanup", __lex); }
 
                 try
                 {
@@ -1012,10 +1013,10 @@ namespace LemoineTools.Tools.Testing
                         .Where(e => e.LookupParameter("Mark")?.AsString() == "LemoineCD")
                         .Select(e => e.Id));
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: collect tagged dimensions for cleanup", __lex); }
 
                 foreach (var id in toDelete)
-                    try { doc.Delete(id); } catch { }
+                    try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: delete tagged annotation", __lex); }
             }
         }
 
@@ -1069,7 +1070,7 @@ namespace LemoineTools.Tools.Testing
                     }
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: resolve cross-line graphics style", __lex); }
             return ElementId.InvalidElementId;
         }
 
@@ -1080,7 +1081,7 @@ namespace LemoineTools.Tools.Testing
                 .Cast<FillPatternElement>())
             {
                 try { if (fp.GetFillPattern().IsSolidFill) return fp.Id; }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: inspect fill pattern", __lex); }
             }
             return ElementId.InvalidElementId;
         }
@@ -1096,7 +1097,7 @@ namespace LemoineTools.Tools.Testing
                     return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: parse hex colour", __lex); }
             return null;
         }
 
