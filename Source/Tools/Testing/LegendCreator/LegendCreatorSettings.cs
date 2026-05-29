@@ -13,15 +13,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     //
     // Hierarchy:
     //   LegendCreatorSettings
-    //     ├── Layout            — Title / Subtitle / dims / font / gap
-    //     ├── PreviewVisible    — side-panel preview toggle (persisted)
-    //     └── Rows[]            — vertical rows
-    //           └── Groups[]    — groups inside a row
-    //                 └── Blocks[]  — single entries (one swatch+label per row)
-    //
-    // Palette is a *live* mirror of AutoFiltersSettings.Trades — categories =
-    // Trades, palette filters = Rules. Nothing about the palette is stored
-    // here; only the user's chosen rows/groups/blocks.
+    //     └── Legends[]         — list of named legend slots
+    //           ├── Layout      — Title / Subtitle / dims / font / gap
+    //           ├── Rows[]      — vertical rows
+    //           └── RevitViewId — ElementId of the created Revit legend view (-1 = not yet created)
     // =========================================================================
 
     /// <summary>
@@ -29,32 +24,14 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     /// </summary>
     public sealed class LegendLayoutConfig
     {
-        /// <summary>Main heading displayed at the top of the rendered legend.</summary>
         [XmlAttribute] public string Title    { get; set; } = "Filter Legend";
-
-        /// <summary>Optional secondary line shown beneath <see cref="Title"/>. Empty by default.</summary>
         [XmlAttribute] public string Subtitle { get; set; } = "";
-
-        /// <summary>Revit view scale denominator (1 : ViewScale). 48 = 1/4" = 1'-0".</summary>
         [XmlAttribute] public int    ViewScale { get; set; } = 48;
-
-        /// <summary>Swatch rectangle width in inches (paper/sheet at the configured view scale).</summary>
         [XmlAttribute] public double SwatchW  { get; set; } = 0.25;
-
-        /// <summary>Swatch rectangle height in inches (paper/sheet at the configured view scale).</summary>
         [XmlAttribute] public double SwatchH  { get; set; } = 0.13;
-
-        /// <summary>Label font size in points.</summary>
         [XmlAttribute] public int    FontPt   { get; set; } = 9;
-
-        /// <summary>Horizontal gap in inches between the swatch and its label.</summary>
         [XmlAttribute] public double Gap      { get; set; } = 0.08;
 
-        /// <summary>
-        /// Migrates from old pixel-based values (SwatchW=22, SwatchH=14, Gap=6) to the
-        /// new inch-based system. Called by <see cref="LegendCreatorSettings"/> after
-        /// deserialising so existing save files silently reset to the new defaults.
-        /// </summary>
         public void Normalize()
         {
             if (SwatchW > 5 || SwatchH > 5 || Gap > 3)
@@ -64,7 +41,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             if (ViewScale <= 0) ViewScale = 48;
         }
 
-        /// <summary>Returns a shallow clone of this layout configuration.</summary>
         public LegendLayoutConfig Clone() => new LegendLayoutConfig
         {
             Title = Title, Subtitle = Subtitle,
@@ -79,14 +55,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     /// </summary>
     public sealed class LegendRowConfig
     {
-        /// <summary>Stable runtime identifier for this row.</summary>
         [XmlAttribute] public string Id { get; set; } = "";
 
-        /// <summary>Ordered list of category groups displayed left-to-right within this row.</summary>
         [XmlArray("Groups"), XmlArrayItem("Group")]
         public List<LegendGroupConfig> Groups { get; set; } = new List<LegendGroupConfig>();
 
-        /// <summary>Returns a deep clone of this row, including all child groups and blocks.</summary>
         public LegendRowConfig Clone() => new LegendRowConfig
         {
             Id     = Id,
@@ -95,31 +68,18 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     }
 
     /// <summary>
-    /// A category card inside a row. Color is *not* user-overridable — it's
-    /// derived from the source Trade's Color (or a neutral default when Custom).
+    /// A category card inside a row.
     /// </summary>
     public sealed class LegendGroupConfig
     {
-        /// <summary>Stable runtime identifier for this group.</summary>
         [XmlAttribute] public string Id            { get; set; } = "";
-
-        /// <summary>Display heading shown at the top of the group card.</summary>
         [XmlAttribute] public string Title         { get; set; } = "";
-
-        /// <summary>
-        /// Id of the AutoFilters Trade that this group mirrors.
-        /// Empty string indicates a custom (user-authored) group with no palette source.
-        /// </summary>
-        [XmlAttribute] public string SourceTradeId { get; set; } = "";   // "" = Custom group
-
-        /// <summary>When <see langword="true"/> the group's block list is hidden in the UI.</summary>
+        [XmlAttribute] public string SourceTradeId { get; set; } = "";
         [XmlAttribute] public bool   Collapsed     { get; set; } = false;
 
-        /// <summary>Ordered list of legend entries (swatches) inside this group.</summary>
         [XmlArray("Blocks"), XmlArrayItem("Block")]
         public List<LegendBlockConfig> Blocks { get; set; } = new List<LegendBlockConfig>();
 
-        /// <summary>Returns a deep clone of this group, including all child blocks.</summary>
         public LegendGroupConfig Clone() => new LegendGroupConfig
         {
             Id            = Id,
@@ -132,44 +92,21 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
     /// <summary>
     /// A single legend entry (one row in the rendered legend).
-    /// Color/Name pull from the source Rule unless explicitly overridden.
     /// </summary>
     public sealed class LegendBlockConfig
     {
-        /// <summary>Stable runtime identifier for this block.</summary>
         [XmlAttribute] public string Id            { get; set; } = "";
-
-        /// <summary>Display label for this legend entry. Pulled from the source rule when <see cref="NameOverride"/> is <see langword="false"/>.</summary>
         [XmlAttribute] public string Name          { get; set; } = "";
-
-        /// <summary>When <see langword="true"/>, <see cref="Name"/> is user-supplied rather than mirrored from the source rule.</summary>
         [XmlAttribute] public bool   NameOverride  { get; set; } = false;
-
-        /// <summary>Id of the AutoFilters Trade that is the source of this block. Empty when <see cref="Custom"/> is <see langword="true"/>.</summary>
-        [XmlAttribute] public string SourceTradeId { get; set; } = ""; // "" if Custom
-
-        /// <summary>Id of the AutoFilters Rule that this block represents. Empty when <see cref="Custom"/> is <see langword="true"/>.</summary>
-        [XmlAttribute] public string SourceRuleId  { get; set; } = ""; // "" if Custom
-
-        /// <summary>Swatch fill color as a hex string (#RRGGBB). Defaults to neutral grey for custom blocks.</summary>
+        [XmlAttribute] public string SourceTradeId { get; set; } = "";
+        [XmlAttribute] public string SourceRuleId  { get; set; } = "";
         [XmlAttribute] public string Color         { get; set; } = "#888888";
-
-        /// <summary>When <see langword="true"/>, <see cref="Color"/> is user-supplied rather than derived from the source rule.</summary>
         [XmlAttribute] public bool   ColorOverride { get; set; } = false;
-
-        /// <summary>Swatch fill pattern: <c>solid</c>, <c>hatch</c>, or <c>dots</c>.</summary>
-        [XmlAttribute] public string Fill          { get; set; } = "solid";   // solid|hatch|dots
-
-        /// <summary>Swatch shape: <c>square</c>, <c>circle</c>, <c>tri</c>, <c>line</c>, or <c>dash</c>.</summary>
-        [XmlAttribute] public string Kind          { get; set; } = "square";  // square|circle|tri|line|dash
-
-        /// <summary>When <see langword="false"/>, the block is hidden in the rendered legend.</summary>
+        [XmlAttribute] public string Fill          { get; set; } = "solid";
+        [XmlAttribute] public string Kind          { get; set; } = "square";
         [XmlAttribute] public bool   Visible       { get; set; } = true;
-
-        /// <summary>When <see langword="true"/>, this block was created by the user and has no palette source.</summary>
         [XmlAttribute] public bool   Custom        { get; set; } = false;
 
-        /// <summary>Returns a shallow clone of this block configuration.</summary>
         public LegendBlockConfig Clone() => new LegendBlockConfig
         {
             Id            = Id,
@@ -182,47 +119,103 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     }
 
     // =========================================================================
-    // Singleton — XML-backed
+    // LegendEntry — a named legend slot
     // =========================================================================
 
     /// <summary>
-    /// XML-backed singleton that stores the full Legend Creator configuration,
-    /// including layout options and the user-arranged row/group/block hierarchy.
-    /// Persisted to <c>%AppData%\LemoineTools\LegendCreatorSettings.xml</c>.
+    /// One legend slot: its layout, row/group/block tree, Revit view binding,
+    /// and per-role TextNoteType selections. Multiple entries are managed in
+    /// the sidebar of <c>LegendSettingsWindow</c>.
     /// </summary>
-    [XmlRoot("LegendCreatorSettings")]
-    public sealed class LegendCreatorSettings
+    public sealed class LegendEntry
     {
-        // ── Persisted ────────────────────────────────────────────────────────
+        /// <summary>Stable runtime identifier for this legend slot.</summary>
+        [XmlAttribute] public string Id { get; set; } = "";
 
-        /// <summary>Title, subtitle, swatch dimensions, font size, and gap for the legend layout bar.</summary>
+        /// <summary>
+        /// User-overridden sidebar label. Null means auto-mirror <see cref="Layout"/>.Title.
+        /// </summary>
+        [XmlAttribute] public string? DisplayName { get; set; }
+
+        /// <summary>
+        /// <see cref="Autodesk.Revit.DB.ElementId.IntegerValue"/> of the legend view created
+        /// in Revit. <c>-1</c> means the legend has not been created yet.
+        /// </summary>
+        [XmlAttribute] public long RevitViewId { get; set; } = -1;
+
+        /// <summary>Per-role TextNoteType ElementId (-1 = use project default).</summary>
+        [XmlAttribute] public long TitleTypeId       { get; set; } = -1;
+        [XmlAttribute] public long SubtitleTypeId    { get; set; } = -1;
+        [XmlAttribute] public long GroupHeaderTypeId { get; set; } = -1;
+        [XmlAttribute] public long LabelTypeId       { get; set; } = -1;
+
         [XmlElement("Layout")]
         public LegendLayoutConfig Layout { get; set; } = new LegendLayoutConfig();
 
-        /// <summary>Whether the live preview panel is currently visible. Persisted across sessions.</summary>
-        [XmlAttribute] public bool PreviewVisible { get; set; } = true;
-
-        /// <summary>Ordered list of horizontal row bands that make up the legend canvas.</summary>
         [XmlArray("Rows"), XmlArrayItem("Row")]
         public List<LegendRowConfig> Rows { get; set; } = new List<LegendRowConfig>();
 
-        // ── Lazy singleton ──────────────────────────────────────────────────
+        [XmlAttribute] public bool PreviewVisible { get; set; }
+
+        /// <summary>Returns the sidebar tab label for this entry.</summary>
+        public string GetDisplayName() =>
+            !string.IsNullOrWhiteSpace(DisplayName) ? DisplayName! :
+            !string.IsNullOrWhiteSpace(Layout?.Title) ? Layout!.Title : "Untitled";
+
+        public LegendEntry Clone() => new LegendEntry
+        {
+            Id                = Id,
+            DisplayName       = DisplayName,
+            RevitViewId       = RevitViewId,
+            TitleTypeId       = TitleTypeId,
+            SubtitleTypeId    = SubtitleTypeId,
+            GroupHeaderTypeId = GroupHeaderTypeId,
+            LabelTypeId       = LabelTypeId,
+            Layout            = LegendCreatorSettings.DeepCopy(Layout),
+            Rows              = LegendCreatorSettings.DeepCopy(Rows),
+            PreviewVisible    = PreviewVisible,
+        };
+    }
+
+    // =========================================================================
+    // Singleton — XML-backed
+    // =========================================================================
+
+    [XmlRoot("LegendCreatorSettings")]
+    public sealed class LegendCreatorSettings
+    {
+        // ── New multi-legend storage ─────────────────────────────────────────
+        [XmlArray("Legends"), XmlArrayItem("Legend")]
+        public List<LegendEntry> Legends { get; set; } = new List<LegendEntry>();
+
+        // ── Legacy single-legend fields (read from old XML, never written) ───
+        // ShouldSerializeXxx() returning false prevents XmlSerializer from emitting
+        // these on save; they are still deserialized from old files for migration.
+
+        [XmlElement("Layout")]
+        public LegendLayoutConfig? LegacyLayout { get; set; }
+        public bool ShouldSerializeLegacyLayout() => false;
+
+        [XmlArray("Rows"), XmlArrayItem("Row")]
+        public List<LegendRowConfig>? LegacyRows { get; set; }
+        public bool ShouldSerializeLegacyRows() => false;
+
+        [XmlAttribute("PreviewVisible")]
+        public bool LegacyPreviewVisible { get; set; } = true;
+        public bool ShouldSerializeLegacyPreviewVisible() => false;
+
+        // ── Singleton ────────────────────────────────────────────────────────
         private static readonly Lazy<LegendCreatorSettings> _lazy =
             new Lazy<LegendCreatorSettings>(LoadFromDisk);
 
-        /// <summary>Gets the process-wide singleton, loading from disk on first access.</summary>
         public static LegendCreatorSettings Instance => _lazy.Value;
 
-        /// <summary>Parameterless constructor required by <see cref="System.Xml.Serialization.XmlSerializer"/> and <see cref="DefaultSeed"/>.</summary>
         public LegendCreatorSettings() { }
 
-        // ── Events ──────────────────────────────────────────────────────────
-        /// <summary>Raised after Save() persists. Subscribers can refresh views.</summary>
+        // ── Events ───────────────────────────────────────────────────────────
         public static event Action? Saved;
 
-        // ─────────────────────────────────────────────────────────────────────
-        // Persistence
-        // ─────────────────────────────────────────────────────────────────────
+        // ── Persistence ──────────────────────────────────────────────────────
         private static string FilePath
         {
             get
@@ -235,10 +228,6 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
         }
 
-        /// <summary>
-        /// Serializes the current settings to disk and fires <see cref="Saved"/>.
-        /// Failures are logged to the debug output and silently swallowed so the UI is never blocked.
-        /// </summary>
         public void Save()
         {
             try
@@ -266,7 +255,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     using (var r = new StreamReader(path))
                     {
                         var result = (LegendCreatorSettings)xs.Deserialize(r)!;
-                        result.Layout?.Normalize(); // migrate old pixel-based values
+                        result.Normalize();
                         return result;
                     }
                 }
@@ -279,52 +268,62 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return DefaultSeed();
         }
 
-        /// <summary>
-        /// First-run / fallback layout — a single row with one placeholder group
-        /// containing three example blocks. Replaced as soon as the user drags
-        /// anything from the palette.
-        /// </summary>
+        // If no Legends list was found (old file format), migrate the top-level
+        // Layout + Rows into a single LegendEntry.
+        private void Normalize()
+        {
+            if (Legends.Count == 0)
+            {
+                var entry = new LegendEntry
+                {
+                    Id             = LegendIdGen.New("legend"),
+                    Layout         = LegacyLayout ?? new LegendLayoutConfig(),
+                    Rows           = LegacyRows   ?? new List<LegendRowConfig>(),
+                    PreviewVisible = LegacyPreviewVisible,
+                };
+                entry.Layout.Normalize();
+                Legends.Add(entry);
+            }
+            else
+            {
+                foreach (var e in Legends)
+                    e.Layout?.Normalize();
+            }
+        }
+
         public static LegendCreatorSettings DefaultSeed() => new LegendCreatorSettings
         {
-            Layout = new LegendLayoutConfig
+            Legends = new List<LegendEntry>
             {
-                Title    = "Filter Legend",
-                Subtitle = "",
-                ViewScale = 48,
-                SwatchW  = 0.25, SwatchH = 0.13, FontPt = 9, Gap = 0.08,
-            },
-            PreviewVisible = true,
-            Rows = new List<LegendRowConfig>
-            {
-                new LegendRowConfig
+                new LegendEntry
                 {
-                    Id = "r_seed_1",
-                    Groups = new List<LegendGroupConfig>
+                    Id = "legend_seed_1",
+                    Layout = new LegendLayoutConfig
                     {
-                        new LegendGroupConfig
+                        Title    = "Filter Legend",
+                        Subtitle = "",
+                        ViewScale = 48,
+                        SwatchW = 0.25, SwatchH = 0.13, FontPt = 9, Gap = 0.08,
+                    },
+                    PreviewVisible = true,
+                    Rows = new List<LegendRowConfig>
+                    {
+                        new LegendRowConfig
                         {
-                            Id = "g_seed_1",
-                            Title = "ARCHITECTURAL",
-                            SourceTradeId = "",
-                            Blocks = new List<LegendBlockConfig>
+                            Id = "r_seed_1",
+                            Groups = new List<LegendGroupConfig>
                             {
-                                new LegendBlockConfig
+                                new LegendGroupConfig
                                 {
-                                    Id = "b_seed_1", Name = "Example 1",
-                                    Color = "#8c8c8c", Kind = "square", Fill = "solid",
-                                    Custom = true, Visible = true,
-                                },
-                                new LegendBlockConfig
-                                {
-                                    Id = "b_seed_2", Name = "Example 2",
-                                    Color = "#8c8c8c", Kind = "square", Fill = "hatch",
-                                    Custom = true, Visible = true,
-                                },
-                                new LegendBlockConfig
-                                {
-                                    Id = "b_seed_3", Name = "Example 3",
-                                    Color = "#8c8c8c", Kind = "square", Fill = "dots",
-                                    Custom = true, Visible = true,
+                                    Id = "g_seed_1",
+                                    Title = "ARCHITECTURAL",
+                                    SourceTradeId = "",
+                                    Blocks = new List<LegendBlockConfig>
+                                    {
+                                        new LegendBlockConfig { Id="b_seed_1", Name="Example 1", Color="#8c8c8c", Kind="square", Fill="solid",  Custom=true, Visible=true },
+                                        new LegendBlockConfig { Id="b_seed_2", Name="Example 2", Color="#8c8c8c", Kind="square", Fill="hatch",  Custom=true, Visible=true },
+                                        new LegendBlockConfig { Id="b_seed_3", Name="Example 3", Color="#8c8c8c", Kind="square", Fill="dots",   Custom=true, Visible=true },
+                                    },
                                 },
                             },
                         },
@@ -333,16 +332,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             },
         };
 
-        // ─────────────────────────────────────────────────────────────────────
-        // DeepCopy helpers — used by tab content to build an editing buffer
-        // that the user can mutate, then commit on Apply.
-        // ─────────────────────────────────────────────────────────────────────
-        /// <summary>
-        /// Returns a deep copy of <paramref name="rows"/>, cloning each row and all of its
-        /// descendant groups and blocks. Used by tab content to build an editing buffer.
-        /// </summary>
-        /// <param name="rows">The source row list to copy.</param>
-        /// <returns>A new list containing independent clones of every row.</returns>
+        // ── DeepCopy helpers ─────────────────────────────────────────────────
         public static List<LegendRowConfig> DeepCopy(List<LegendRowConfig> rows)
         {
             var list = new List<LegendRowConfig>(rows.Count);
@@ -350,18 +340,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return list;
         }
 
-        /// <summary>
-        /// Returns a deep copy of <paramref name="layout"/>. Used alongside
-        /// <see cref="DeepCopy(List{LegendRowConfig})"/> to snapshot the full settings state
-        /// before the user begins editing.
-        /// </summary>
-        /// <param name="layout">The layout configuration to clone.</param>
-        /// <returns>An independent clone of <paramref name="layout"/>.</returns>
         public static LegendLayoutConfig DeepCopy(LegendLayoutConfig layout) => layout.Clone();
 
-        // ─────────────────────────────────────────────────────────────────────
-        // Template store
-        // ─────────────────────────────────────────────────────────────────────
+        public static LegendEntry DeepCopy(LegendEntry entry) => entry.Clone();
+
+        // ── Template store ───────────────────────────────────────────────────
         public static void ExportTo(string path, LegendCreatorSettings data)
         {
             var xs = new XmlSerializer(typeof(LegendCreatorSettings));
@@ -374,7 +357,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             {
                 var xs = new XmlSerializer(typeof(LegendCreatorSettings));
                 using (var r = new StreamReader(path))
-                    return (LegendCreatorSettings)xs.Deserialize(r)!;
+                {
+                    var result = (LegendCreatorSettings)xs.Deserialize(r)!;
+                    result.Normalize();
+                    return result;
+                }
             }
             catch { return null; }
         }
@@ -388,7 +375,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     }
 
     // =========================================================================
-    // Id helper — short stable ids for runtime use
+    // Id helper
     // =========================================================================
     internal static class LegendIdGen
     {
