@@ -6,7 +6,7 @@
         <!-- TextBox + search icon + placeholder -->
         <Grid>
             <TextBox x:Name="_textBox"
-                     Padding="30,6,10,6"
+                     Padding="30,7,10,5"
                      BorderThickness="1"
                      VerticalContentAlignment="Center" />
             <!-- Search icon drawn in code-behind as a Path -->
