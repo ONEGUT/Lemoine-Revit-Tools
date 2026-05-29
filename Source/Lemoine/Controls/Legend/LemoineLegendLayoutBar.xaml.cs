@@ -108,13 +108,8 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(editBtn, 1);
             grid.Children.Add(editBtn);
 
-            // ── Preview button (centered in the star spacer) ─────────────────
-            var previewBtn = LemoineControlStyles.BuildButton("Preview", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            previewBtn.VerticalAlignment   = VerticalAlignment.Center;
-            previewBtn.HorizontalAlignment = HorizontalAlignment.Center;
-            previewBtn.Click += (s, e) => PreviewRequested?.Invoke(this, EventArgs.Empty);
-            Grid.SetColumn(previewBtn, 2);
-            grid.Children.Add(previewBtn);
+            // Preview moved to the host window's floating bottom-right pill.
+            // Column 2 (star) is left empty as flexible spacer / drag area.
 
             _root.Children.Add(grid);
         }

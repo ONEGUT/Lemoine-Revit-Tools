@@ -103,60 +103,52 @@ namespace LemoineTools.Lemoine
 
             UpdateRowHeights();
             BuildToolbar();
-            BuildFooter();
+            BuildFloatingActions();
             _contentBorder.Child = BuildFiltersContent();
+        }
+
+        // Persist buffered edits when the window closes — the footer Apply button
+        // was removed, so this is the catch-all save path (Create also saves).
+        protected override void OnClosed(EventArgs e)
+        {
+            if (_filterTrades != null)
+            {
+                AutoFiltersSettings.Instance.Trades = _filterTrades;
+                AutoFiltersSettings.Instance.Save();
+            }
+            base.OnClosed(e);
         }
 
         private void UpdateRowHeights()
         {
             if (_root == null) return;
             _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
-            _root.RowDefinitions[2].Height = new GridLength(LemoineSettings.Instance.FooterHeight);
         }
 
         // ── Toolbar ───────────────────────────────────────────────────────────
+        // Identical structure to the Legend window: [⚙ icon + title] … [× close].
+        // The "Create Filters" action moved to the floating bottom-right pill.
         private void BuildToolbar()
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            // Grid: [* | Auto | *]
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // Col 0–2: full-width title bar as drag handle / chrome
-            var titleBar = new Controls.LemoineTitleBar
-            {
-                Title     = "Auto Filters",
-                IconGlyph = "⚙",
-            };
-            Grid.SetColumn(titleBar, 0);
-            Grid.SetColumnSpan(titleBar, 3);
-            Grid.SetZIndex(titleBar, 0);
-            grid.Children.Add(titleBar);
-
-            // Col 1: "Create Filters" button, centred, overlays the title bar
-            var createBtn = BuildFlatButton("Create Filters");
-            createBtn.VerticalAlignment   = VerticalAlignment.Center;
-            createBtn.HorizontalAlignment = HorizontalAlignment.Center;
-            createBtn.Click += (s, e) => CreateFilters();
-            Grid.SetColumn(createBtn, 1);
-            Grid.SetZIndex(createBtn, 1);
-            grid.Children.Add(createBtn);
-
-            // Col 2: "×" close button, right-aligned
             var closeBtn = BuildFlatButton("×");
-            closeBtn.Margin               = new Thickness(0, 0, 8, 0);
-            closeBtn.VerticalAlignment    = VerticalAlignment.Center;
-            closeBtn.HorizontalAlignment  = HorizontalAlignment.Right;
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
-            Grid.SetColumn(closeBtn, 2);
-            Grid.SetZIndex(closeBtn, 1);
-            grid.Children.Add(closeBtn);
 
-            _toolbarBorder.Child = grid;
+            var rightPanel = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            rightPanel.Children.Add(closeBtn);
+
+            _toolbarBorder.Child = new Controls.LemoineTitleBar
+            {
+                Title        = "Auto Filters",
+                IconGlyph    = "⚙",
+                RightContent = rightPanel,
+            };
         }
 
         private void CreateFilters()
@@ -204,48 +196,32 @@ namespace LemoineTools.Lemoine
             FlashStatus("Creating filters…");
         }
 
-        // ── Footer ────────────────────────────────────────────────────────────
-        private void BuildFooter()
+        // ── Floating bottom-right action pills ──────────────────────────────────
+        private void BuildFloatingActions()
         {
-            _footerBorder.SetResourceReference(Border.PaddingProperty, "LemoineTh_FooterPad");
-            _footerBorder.BorderThickness = new Thickness(0, 1, 0, 0);
-            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
             _fStatusText = new TextBlock
             {
-                Text = "", VerticalAlignment = VerticalAlignment.Center,
-                FontStyle = FontStyles.Italic,
+                Text                = "",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin              = new Thickness(0, 0, 4, 6),
+                FontStyle           = FontStyles.Italic,
             };
             _fStatusText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             _fStatusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
             _fStatusText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var applyBtn = BuildFlatButton("Apply");
-            applyBtn.Margin = new Thickness(0, 0, 6, 0);
-            applyBtn.Click  += (s, e) => ApplyCurrent();
+            var createPill = LemoineControlStyles.BuildActionPill("Create Filters", primary: true, () => CreateFilters());
 
-            var closeBtn = BuildFlatButton("Close");
-            closeBtn.Click += (s, e) => Close();
-
-            var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
-            var btnStack = new StackPanel { Orientation = Orientation.Horizontal };
-            btnStack.Children.Add(applyBtn);
-            btnStack.Children.Add(closeBtn);
-            DockPanel.SetDock(btnStack, Dock.Right);
-            dp.Children.Add(btnStack);
-            dp.Children.Add(_fStatusText);
-
-            _footerBorder.Child = dp;
-        }
-
-        private void ApplyCurrent()
-        {
-            if (_filterTrades != null)
+            var stack = new StackPanel
             {
-                AutoFiltersSettings.Instance.Trades = _filterTrades;
-                AutoFiltersSettings.Instance.Save();
-                FlashStatus("Saved.");
-            }
+                Orientation         = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment   = VerticalAlignment.Bottom,
+            };
+            stack.Children.Add(_fStatusText);
+            stack.Children.Add(createPill);
+
+            _floatingSlot.Content = stack;
         }
 
         private void FlashStatus(string msg)

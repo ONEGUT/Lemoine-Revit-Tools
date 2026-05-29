@@ -59,29 +59,8 @@ namespace LemoineTools.Lemoine
             var leftDock = new DockPanel { LastChildFill = true };
             leftDock.SetResourceReference(DockPanel.BackgroundProperty, "LemoineBg");
 
-            // Sticky "+ Add Rule" button (bottom)
-            var addRuleOuter = new Border
-            {
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Padding         = new Thickness(10, 8, 10, 8),
-            };
-            addRuleOuter.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            addRuleOuter.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            var addRuleBtn = BuildFlatButton("＋  Add Rule");
-            addRuleBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            addRuleBtn.Click += (s, e) =>
-            {
-                var trade2 = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
-                if (trade2 == null) return;
-                var newRule = FilterRuleConfig.NewBlank();
-                trade2.Rules.Add(newRule);
-                _fActiveRuleId = newRule.Id;
-                FRefreshRuleList();
-                FRefreshRuleEditor();
-            };
-            addRuleOuter.Child = addRuleBtn;
-            DockPanel.SetDock(addRuleOuter, Dock.Bottom);
-            leftDock.Children.Add(addRuleOuter);
+            // "＋ Add Rule" floats as the last item inside the rule list
+            // (AppendAddRulePill, called from FRefreshRuleList) — no sticky bar.
 
             // Rule list (fills remaining)
             // Background = Transparent (not null) so inter-row gaps are hit-testable during drag-drop.
@@ -221,44 +200,15 @@ namespace LemoineTools.Lemoine
             var templSep = new Border { Height = 1, Margin = new Thickness(0, 4, 0, 0) };
             templSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
 
-            // "＋ Add Trade" sticky button at bottom
-            var addTradeBorder = new Border
-            {
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Padding         = new Thickness(10, 8, 10, 8),
-                Cursor          = Cursors.Hand,
-            };
-            addTradeBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            addTradeBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            var addTradeLabel = new TextBlock
-            {
-                Text                = "＋  Add Trade",
-                HorizontalAlignment = HorizontalAlignment.Center,
-            };
-            addTradeLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            addTradeLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            addTradeLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            addTradeBorder.Child = addTradeLabel;
-            _fAddTradeAnchor = addTradeBorder;
-
-            addTradeBorder.MouseEnter += (s, e) =>
-                addTradeBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-            addTradeBorder.MouseLeave += (s, e) =>
-                addTradeBorder.SetResourceReference(Border.BackgroundProperty, "LemoineSurface");
-            addTradeBorder.MouseLeftButtonUp += (s, e) =>
-            {
-                e.Handled = true;
-                ShowAddTradeForm(_fAddTradeAnchor!);
-            };
+            // "＋ Add Trade" now floats as the last item inside the trade list
+            // (AppendAddTradePill, called from FRefreshTradesSidebar) — no sticky bar.
 
             var sidebarDock = new DockPanel { LastChildFill = true };
             sidebarDock.SetResourceReference(DockPanel.BackgroundProperty, "LemoineSurface");
             DockPanel.SetDock(templatesPill,   Dock.Top);
             DockPanel.SetDock(templSep,        Dock.Top);
-            DockPanel.SetDock(addTradeBorder,  Dock.Bottom);
             sidebarDock.Children.Add(templatesPill);
             sidebarDock.Children.Add(templSep);
-            sidebarDock.Children.Add(addTradeBorder);
             sidebarDock.Children.Add(tradeScroll);
 
             _fTradesSidebar = new Border { BorderThickness = new Thickness(0) };
@@ -282,7 +232,7 @@ namespace LemoineTools.Lemoine
             {
                 var empty = new TextBlock
                 {
-                    Text         = "No trades — click ＋ Add Trade below.",
+                    Text         = "No trades — use ＋ Add Trade below.",
                     Margin       = new Thickness(12, 12, 12, 0),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
@@ -291,11 +241,25 @@ namespace LemoineTools.Lemoine
                 empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 _fTradeListPanel.Children.Add(empty);
+                AppendAddTradePill();
                 return;
             }
 
             foreach (var t in trades)
                 _fTradeListPanel.Children.Add(BuildTradeRow(t));
+
+            AppendAddTradePill();
+        }
+
+        // "＋ Add Trade" affordance that floats as the last item in the trade list.
+        // The pill doubles as the anchor for the add-trade popup form.
+        private void AppendAddTradePill()
+        {
+            if (_fTradeListPanel == null) return;
+            Border pill = null!;
+            pill = LemoineControlStyles.BuildAddPill("＋  Add Trade", () => ShowAddTradeForm(pill));
+            _fAddTradeAnchor = pill;
+            _fTradeListPanel.Children.Add(pill);
         }
 
         private UIElement BuildTradeRow(FilterTradeConfig trade)
@@ -491,7 +455,7 @@ namespace LemoineTools.Lemoine
             {
                 var empty = new TextBlock
                 {
-                    Text = "No rules yet — click \"＋ Add Rule\" below.",
+                    Text = "No rules yet — use ＋ Add Rule below.",
                     Margin = new Thickness(14, 14, 14, 0),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle = FontStyles.Italic,
@@ -500,11 +464,31 @@ namespace LemoineTools.Lemoine
                 empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 _fRuleListPanel.Children.Add(empty);
+                AppendAddRulePill();
                 return;
             }
 
             foreach (var rule in trade.Rules)
                 _fRuleListPanel.Children.Add(BuildRuleListRow(trade, rule));
+
+            AppendAddRulePill();
+        }
+
+        // "＋ Add Rule" affordance that floats as the last item in the rule list.
+        private void AppendAddRulePill()
+        {
+            if (_fRuleListPanel == null) return;
+            var pill = LemoineControlStyles.BuildAddPill("＋  Add Rule", () =>
+            {
+                var trade = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
+                if (trade == null) return;
+                var newRule = FilterRuleConfig.NewBlank();
+                trade.Rules.Add(newRule);
+                _fActiveRuleId = newRule.Id;
+                FRefreshRuleList();
+                FRefreshRuleEditor();
+            });
+            _fRuleListPanel.Children.Add(pill);
         }
 
         private UIElement BuildRuleListRow(FilterTradeConfig trade, FilterRuleConfig rule)
@@ -979,7 +963,7 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
+                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
@@ -1104,7 +1088,7 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
+                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
@@ -1253,7 +1237,7 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
+                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
@@ -1536,7 +1520,7 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
+                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 10, 10, 10),
             };
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
@@ -2894,7 +2878,7 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
+                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");

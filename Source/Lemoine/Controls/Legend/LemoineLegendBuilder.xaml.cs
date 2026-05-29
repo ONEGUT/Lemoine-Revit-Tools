@@ -203,7 +203,9 @@ namespace LemoineTools.Lemoine.Controls
             var overlay = new Grid
             {
                 Visibility            = Visibility.Collapsed,
-                RenderTransformOrigin = new Point(1, 0),
+                // Grow from/to the bottom-right corner, matching the floating
+                // Preview pill's new home in the host window.
+                RenderTransformOrigin = new Point(1, 1),
                 RenderTransform       = new ScaleTransform(1, 1),
             };
             overlay.SetResourceReference(Grid.BackgroundProperty, "LemoineSurface");
@@ -898,9 +900,15 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         // Preview
         // ─────────────────────────────────────────────────────────────────────
-        private void TogglePreview()
+        /// <summary>
+        /// Toggles the preview overlay. Public so the host window's floating
+        /// Preview pill can drive it (the Preview button has moved out of the
+        /// inner layout bar). Returns the new visibility state.
+        /// </summary>
+        public bool TogglePreview()
         {
             if (_previewVisible) ClosePreview(); else OpenPreview();
+            return _previewVisible;
         }
 
         private void OpenPreview()

@@ -28,7 +28,11 @@ namespace LemoineTools.Lemoine
 
         // ── UI refs ────────────────────────────────────────────────────────────
         private TextBlock?              _statusText;
-        private Button?                 _createUpdateBtn;
+        private Border?                 _createPill;       // floating bottom-right Create/Update
+        private TextBlock?              _createPillLabel;
+        private bool                    _createBusy;       // guards re-entry while a run is in flight
+        private Border?                 _previewPill;      // floating bottom-right Preview (above Create)
+        private TextBlock?              _previewPillLabel;
         private StackPanel?             _tabStack;
         private LemoineLegendPalette?   _palette;
         private ContentControl?         _builderSlot;
@@ -76,8 +80,8 @@ namespace LemoineTools.Lemoine
 
             UpdateRowHeights();
             BuildToolbar();
-            BuildFooter();
             BuildMainLayout();
+            BuildFloatingActions();
         }
 
         protected override void OnClosed(EventArgs e)
@@ -94,7 +98,6 @@ namespace LemoineTools.Lemoine
         {
             if (_root == null) return;
             _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
-            _root.RowDefinitions[2].Height = new GridLength(LemoineSettings.Instance.FooterHeight);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -119,48 +122,64 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new LemoineTitleBar
             {
-                Title        = "Legend Creator",
+                Title        = "Legend Creation",
                 IconGlyph    = "⚙",
                 RightContent = rightPanel,
             };
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Footer
+        // Floating bottom-right action pills (status · Preview · Create/Update)
         // ─────────────────────────────────────────────────────────────────────
-        private void BuildFooter()
+        private void BuildFloatingActions()
         {
-            _footerBorder.SetResourceReference(Border.PaddingProperty,    "LemoineTh_FooterPad");
-            _footerBorder.BorderThickness = new Thickness(0, 1, 0, 0);
-            _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
             _statusText = new TextBlock
             {
-                Text          = "",
-                VerticalAlignment = VerticalAlignment.Center,
-                FontStyle     = FontStyles.Italic,
+                Text                = "",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin              = new Thickness(0, 0, 4, 6),
+                FontStyle           = FontStyles.Italic,
             };
             _statusText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
             _statusText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var closeBtn = LemoineControlStyles.BuildButton(
-                "Close", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            closeBtn.Click += (s, ev) => Close();
+            // Preview pill — sits directly above the Create pill
+            _previewPill = LemoineControlStyles.BuildActionPill("Preview", primary: false, TogglePreviewFromPill);
+            _previewPill.HorizontalAlignment = HorizontalAlignment.Right;
+            _previewPill.Margin              = new Thickness(0, 0, 0, 8);
+            _previewPillLabel = _previewPill.Child as TextBlock;
 
-            var btnStack = new StackPanel { Orientation = Orientation.Horizontal };
-            btnStack.Children.Add(closeBtn);
+            // Create / Update pill
+            _createPill = LemoineControlStyles.BuildActionPill("Create Legend →", primary: true, HandleCreateUpdate);
+            _createPill.HorizontalAlignment = HorizontalAlignment.Right;
+            _createPillLabel = _createPill.Child as TextBlock;
 
-            var dp = new DockPanel
+            var stack = new StackPanel
             {
-                LastChildFill = true,
-                VerticalAlignment = VerticalAlignment.Center,
+                Orientation         = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment   = VerticalAlignment.Bottom,
             };
-            DockPanel.SetDock(btnStack, Dock.Right);
-            dp.Children.Add(btnStack);
-            dp.Children.Add(_statusText);
+            stack.Children.Add(_statusText);
+            stack.Children.Add(_previewPill);
+            stack.Children.Add(_createPill);
 
-            _footerBorder.Child = dp;
+            _floatingSlot.Content = stack;
+
+            // Reflect the Create/Update label for the active legend
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex >= 0 && _activeIndex < entries.Count)
+                UpdateCreateUpdateButton(entries[_activeIndex]);
+        }
+
+        private void TogglePreviewFromPill()
+        {
+            var builder = _builderSlot?.Content as LemoineLegendBuilder;
+            if (builder == null) return;
+            bool visible = builder.TogglePreview();
+            if (_previewPillLabel != null)
+                _previewPillLabel.Text = visible ? "Hide Preview" : "Preview";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -168,10 +187,13 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private void BuildMainLayout()
         {
+            // Four-column split mirroring the Auto Filters window:
+            // [sidebar 180] [canvas * (min150)] [splitter 5] [right editor 280 (min280)]
             var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280), MinWidth = 280 });
 
             // Sidebar
             var sidebarBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0) };
@@ -185,11 +207,25 @@ namespace LemoineTools.Lemoine
             WpfGrid.SetColumn(_builderSlot, 1);
             grid.Children.Add(_builderSlot);
 
+            // Splitter between canvas and right editor
+            var splitter = new GridSplitter
+            {
+                Width               = 5,
+                VerticalAlignment   = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ResizeDirection     = GridResizeDirection.Columns,
+                ResizeBehavior      = GridResizeBehavior.PreviousAndNext,
+                Background          = Brushes.Transparent,
+                Cursor              = Cursors.SizeWE,
+            };
+            WpfGrid.SetColumn(splitter, 2);
+            grid.Children.Add(splitter);
+
             // Right panel
             var rightBorder = new Border { BorderThickness = new Thickness(1, 0, 0, 0) };
             rightBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             rightBorder.Child = BuildRightPanel();
-            WpfGrid.SetColumn(rightBorder, 2);
+            WpfGrid.SetColumn(rightBorder, 3);
             grid.Children.Add(rightBorder);
 
             _contentBorder.Child = grid;
@@ -221,28 +257,9 @@ namespace LemoineTools.Lemoine
             DockPanel.SetDock(legendsLabel, Dock.Top);
             dp.Children.Add(legendsLabel);
 
-            // Add Legend button at very bottom
-            var addBtn = LemoineControlStyles.BuildButton(
-                "＋  Add Legend", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            addBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            addBtn.Margin = new Thickness(8, 6, 8, 8);
-            addBtn.Click += (s, e) => AddLegend();
-            DockPanel.SetDock(addBtn, Dock.Bottom);
-            dp.Children.Add(addBtn);
-
-            var addSep = new Border { Height = 1 };
-            addSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-            DockPanel.SetDock(addSep, Dock.Bottom);
-            dp.Children.Add(addSep);
-
-            // Create/Update button above the separator
-            _createUpdateBtn = LemoineControlStyles.BuildButton(
-                "Create Legend →", LemoineControlStyles.LemoineButtonVariant.Primary);
-            _createUpdateBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            _createUpdateBtn.Margin = new Thickness(8, 6, 8, 0);
-            _createUpdateBtn.Click += (s, e) => HandleCreateUpdate();
-            DockPanel.SetDock(_createUpdateBtn, Dock.Bottom);
-            dp.Children.Add(_createUpdateBtn);
+            // "＋ Add Legend" now floats as the last item inside the tab list
+            // (AppendAddLegendPill, called from RebuildTabStack) — no sticky bar.
+            // Create/Update moved to the floating bottom-right pill.
 
             // Tab list (fills remaining space)
             _tabStack = new StackPanel { Orientation = Orientation.Vertical };
@@ -297,6 +314,10 @@ namespace LemoineTools.Lemoine
             var entries = LegendCreatorSettings.Instance.Legends;
             for (int i = 0; i < entries.Count; i++)
                 _tabStack.Children.Add(BuildTabItem(entries[i], i));
+
+            // "＋ Add Legend" floats as the last item in the list
+            _tabStack.Children.Add(
+                LemoineControlStyles.BuildAddPill("＋  Add Legend", () => AddLegend()));
 
             // Guard for ComboBoxes that may have been rebuilt
             Dispatcher.BeginInvoke(new Action(() => Keyboard.ClearFocus()),
@@ -445,36 +466,73 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private UIElement BuildRightPanel()
         {
-            var dp = new DockPanel { LastChildFill = true };
+            // [cards scroll (capped)] over [palette fills] — see the design decision:
+            // SIZING + TEXT STYLES are scrollable rounded cards on top; the palette
+            // (drag source / bulk-block editor) fills and keeps its own scroll.
+            var grid = new WpfGrid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 160 });
 
-            _sizingSlot = new ContentControl();
-            DockPanel.SetDock(_sizingSlot, Dock.Top);
-            dp.Children.Add(_sizingSlot);
-
+            _sizingSlot     = new ContentControl();
             _textStylesSlot = new ContentControl();
-            DockPanel.SetDock(_textStylesSlot, Dock.Top);
-            dp.Children.Add(_textStylesSlot);
 
-            // PALETTE header
-            var palHeader = new Border
+            var cardsStack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            cardsStack.Children.Add(_sizingSlot);
+            cardsStack.Children.Add(_textStylesSlot);
+
+            var cardsScroll = new ScrollViewer
             {
-                BorderThickness = new Thickness(0, 1, 0, 0),
-                Padding         = new Thickness(10, 6, 10, 6),
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content                       = cardsStack,
             };
-            palHeader.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            var palHeaderTb = new TextBlock { Text = "PALETTE" };
-            palHeaderTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            palHeaderTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            palHeaderTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            palHeader.Child = palHeaderTb;
-            DockPanel.SetDock(palHeader, Dock.Top);
-            dp.Children.Add(palHeader);
+            LemoineControlStyles.WireBubblingScroll(cardsScroll);
+            // Cap the cards region to ~half the column so the palette always claims space.
+            grid.SizeChanged += (s, e) => cardsScroll.MaxHeight = Math.Max(120, e.NewSize.Height * 0.5);
+            WpfGrid.SetRow(cardsScroll, 0);
+            grid.Children.Add(cardsScroll);
 
-            _paletteSlot = new ContentControl();
-            _paletteSlot.Content = _palette;
-            dp.Children.Add(_paletteSlot);
+            // PALETTE card (the control renders its own "PALETTE" header internally).
+            var palCard = new Border
+            {
+                Margin          = new Thickness(10, 0, 10, 10),
+                BorderThickness = new Thickness(1),
+            };
+            palCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            palCard.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            palCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            _paletteSlot = new ContentControl { Content = _palette };
+            palCard.Child = _paletteSlot;
+            WpfGrid.SetRow(palCard, 1);
+            grid.Children.Add(palCard);
 
-            return dp;
+            return grid;
+        }
+
+        // Section label + rounded card wrapper shared by the right-panel sections.
+        private UIElement WrapCard(string title, UIElement body)
+        {
+            var outer = new StackPanel();
+
+            var lbl = new TextBlock { Text = title, Margin = new Thickness(12, 0, 12, 4) };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(lbl);
+
+            var card = new Border
+            {
+                Margin          = new Thickness(10, 0, 10, 10),
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(10, 8, 10, 8),
+                Child           = body,
+            };
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            outer.Children.Add(card);
+
+            return outer;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -511,6 +569,8 @@ namespace LemoineTools.Lemoine
                 _textStylesSlot.Content = BuildTextStylesSection(entry);
 
             UpdateCreateUpdateButton(entry);
+            if (_previewPillLabel != null)
+                _previewPillLabel.Text = builder.PreviewVisible ? "Hide Preview" : "Preview";
             RebuildTabStack();
         }
 
@@ -532,9 +592,27 @@ namespace LemoineTools.Lemoine
 
         private void UpdateCreateUpdateButton(LegendEntry entry)
         {
-            if (_createUpdateBtn == null) return;
-            _createUpdateBtn.Content   = entry.RevitViewId != -1 ? "Update Legend →" : "Create Legend →";
-            _createUpdateBtn.IsEnabled = true;
+            _createBusy = false;
+            if (_createPill != null) _createPill.Opacity = 1.0;
+            if (_createPillLabel == null) return;
+            _createPillLabel.Text = entry.RevitViewId != -1 ? "Update Legend →" : "Create Legend →";
+        }
+
+        // Toggles the floating Create pill between idle and in-flight (busy) states.
+        private void SetCreateBusy(bool busy, string? busyLabel)
+        {
+            _createBusy = busy;
+            if (_createPill != null) _createPill.Opacity = busy ? 0.6 : 1.0;
+            if (_createPillLabel == null) return;
+            if (busy && busyLabel != null)
+            {
+                _createPillLabel.Text = busyLabel;
+                return;
+            }
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex >= 0 && _activeIndex < entries.Count)
+                _createPillLabel.Text =
+                    entries[_activeIndex].RevitViewId != -1 ? "Update Legend →" : "Create Legend →";
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -544,15 +622,7 @@ namespace LemoineTools.Lemoine
         {
             var layout = builder.Layout;
 
-            var sp = new StackPanel { Margin = new Thickness(10, 10, 10, 0) };
-
-            var header = new TextBlock { Text = "SIZING", Margin = new Thickness(0, 0, 0, 8) };
-            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            sp.Children.Add(header);
-
-            var grid = new WpfGrid { Margin = new Thickness(0, 0, 0, 10) };
+            var grid = new WpfGrid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -570,13 +640,7 @@ namespace LemoineTools.Lemoine
             AddSizingRow(grid, 4, "Gap", layout.Gap.ToString("F3"),
                 val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d >= 0) { layout.Gap = d; builder.NotifyLayoutChanged(); } });
 
-            sp.Children.Add(grid);
-
-            var sep = new Border { Height = 1, Margin = new Thickness(-10, 0, -10, 0) };
-            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-            sp.Children.Add(sep);
-
-            return sp;
+            return WrapCard("SIZING", grid);
         }
 
         private void AddSizingRow(WpfGrid grid, int row, string label, string value, Action<string> onCommit)
@@ -622,49 +686,32 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private UIElement BuildTextStylesSection(LegendEntry entry)
         {
-            var sp = new StackPanel { Margin = new Thickness(10, 10, 10, 0) };
-
-            var header = new TextBlock { Text = "TEXT STYLES", Margin = new Thickness(0, 0, 0, 8) };
-            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            sp.Children.Add(header);
-
             if (_textTypes.Count == 0)
             {
                 var noTypes = new TextBlock
                 {
                     Text         = "No TextNoteTypes found in project.",
                     TextWrapping = TextWrapping.Wrap,
-                    Margin       = new Thickness(0, 0, 0, 8),
                 };
                 noTypes.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 noTypes.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 noTypes.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                sp.Children.Add(noTypes);
-            }
-            else
-            {
-                var grid = new WpfGrid { Margin = new Thickness(0, 0, 0, 10) };
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                for (int r = 0; r < 4; r++)
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => entry.TitleTypeId       = id);
-                AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => entry.SubtitleTypeId    = id);
-                AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => entry.GroupHeaderTypeId = id);
-                AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => entry.LabelTypeId       = id);
-
-                sp.Children.Add(grid);
+                return WrapCard("TEXT STYLES", noTypes);
             }
 
-            var sep = new Border { Height = 1, Margin = new Thickness(-10, 0, -10, 0) };
-            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-            sp.Children.Add(sep);
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int r = 0; r < 4; r++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            return sp;
+            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => entry.TitleTypeId       = id);
+            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => entry.SubtitleTypeId    = id);
+            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => entry.GroupHeaderTypeId = id);
+            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => entry.LabelTypeId       = id);
+
+            return WrapCard("TEXT STYLES", grid);
         }
 
         private void AddTextTypeRow(WpfGrid grid, int row, string label, long storedId, Action<long> onChanged)
@@ -717,6 +764,8 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private void HandleCreateUpdate()
         {
+            if (_createBusy) return; // guard re-entry while a run is in flight
+
             if (App.LegendCreatorHandler == null || App.LegendCreatorEvent == null)
             {
                 FlashStatus("Legend creator not initialised.");
@@ -761,7 +810,7 @@ namespace LemoineTools.Lemoine
                         UpdateCreateUpdateButton(list[capturedIndex]);
                     }
                     FlashStatus("Legend created.");
-                    if (_createUpdateBtn != null) _createUpdateBtn.IsEnabled = true;
+                    SetCreateBusy(false, null);
                 }));
             };
 
@@ -769,17 +818,13 @@ namespace LemoineTools.Lemoine
             {
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (_createUpdateBtn != null) _createUpdateBtn.IsEnabled = true;
+                    SetCreateBusy(false, null);
                     if (fail > 0)          FlashStatus($"Completed with {fail} error(s).");
                     else if (isUpdate)     FlashStatus("Legend updated.");
                 }));
             };
 
-            if (_createUpdateBtn != null)
-            {
-                _createUpdateBtn.IsEnabled = false;
-                _createUpdateBtn.Content   = isUpdate ? "Updating…" : "Creating…";
-            }
+            SetCreateBusy(true, isUpdate ? "Updating…" : "Creating…");
 
             LegendCreatorSettings.Instance.Save();
             App.LegendCreatorEvent.Raise();
