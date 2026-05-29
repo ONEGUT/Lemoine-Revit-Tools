@@ -28,6 +28,7 @@ namespace LemoineTools.Tools.Debuggers
             new StepDefinition("T3", "Dropdown + Code Guard (P1+P0)", required: false),
             new StepDefinition("T4", "Scroll Bubbling (P0)",        required: false),
             new StepDefinition("T6", "Input Controls (P2)",         required: false),
+            new StepDefinition("T7", "Swatch Hover (P2)",           required: false),
             new StepDefinition("T5", "Review & Log Tabs (P0)",      required: false),
         };
 
@@ -47,6 +48,7 @@ namespace LemoineTools.Tools.Debuggers
                 case "T3": return BuildT3();
                 case "T4": return BuildT4();
                 case "T6": return BuildT6();
+                case "T7": return BuildT7();
                 case "T5": return BuildT5();
                 default:   return new Grid();
             }
@@ -167,6 +169,25 @@ namespace LemoineTools.Tools.Debuggers
                 "picker — it should read as a dropdown (no caret / no editable text box) and only " +
                 "let you pick from the list.",
                 stack);
+        }
+
+        // ── T7 — color swatch hover (accent ring + shadow lift, P2) ─────────────
+        private string _hex1 = "#E5484D";
+        private string _hex2 = "#30A46C";
+        private string _hex3 = "#5B5BD6";
+
+        private FrameworkElement BuildT7()
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(LemoineColorPickerWindow.BuildColorPickerSwatch(() => _hex1, h => _hex1 = h, showHexLabel: false));
+            row.Children.Add(LemoineColorPickerWindow.BuildColorPickerSwatch(() => _hex2, h => _hex2 = h, showHexLabel: false));
+            row.Children.Add(LemoineColorPickerWindow.BuildColorPickerSwatch(() => _hex3, h => _hex3 = h, showHexLabel: false));
+
+            return LookFor("P2 · SWATCH HOVER",
+                "Hover the colour tiles: each fades an accent ring, lifts with a soft shadow, " +
+                "and scales up slightly, then settles back when you move away. Move on/off " +
+                "rapidly — none should get stuck lifted. (Clicking opens the colour picker.)",
+                row);
         }
 
         // ── T5 — review summary + log-tab hover (tabs registered by the command) ─

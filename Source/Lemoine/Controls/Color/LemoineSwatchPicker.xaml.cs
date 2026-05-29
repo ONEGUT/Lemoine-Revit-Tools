@@ -208,11 +208,13 @@ namespace LemoineTools.Lemoine.Controls
             {
                 b.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
                 b.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                LemoineMotion.WireSwatchHover(b, "LemoineAccent");
             }
             else
             {
                 b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 b.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+                LemoineMotion.WireSwatchHover(b, "LemoineBorder");
             }
             return b;
         }

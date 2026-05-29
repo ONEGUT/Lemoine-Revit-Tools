@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 
 namespace LemoineTools.Lemoine
 {
@@ -72,6 +73,51 @@ namespace LemoineTools.Lemoine
             el.MouseLeave                 += (s, e) => ScaleTo(st, 1.0);
         }
 
+        // ── Swatch hover (accent ring + soft shadow lift) ───────────────────────
+        /// <summary>
+        /// Hover affordance for clickable colour tiles: the border fades to the accent
+        /// colour, a soft drop-shadow lifts the tile, and it scales up slightly — a clear
+        /// "this is clickable" cue without a press. <paramref name="normalBorderKey"/> is
+        /// the resting border resource the tile rebinds to on leave.
+        /// Do not combine with <see cref="WirePress"/> on the same element — both own the
+        /// RenderTransform.
+        /// </summary>
+        public static void WireSwatchHover(Border b, string normalBorderKey, double scale = 1.06)
+        {
+            if (b == null) return;
+
+            // Centre-origin scale transform for the lift.
+            var st = new ScaleTransform(1, 1);
+            b.RenderTransform       = st;
+            b.RenderTransformOrigin = new Point(0.5, 0.5);
+
+            // Soft neutral shadow, invisible at rest.
+            var shadow = new DropShadowEffect
+            {
+                BlurRadius  = 8,
+                ShadowDepth = 2,
+                Direction   = 270,
+                Color       = Colors.Black,
+                Opacity     = 0,
+            };
+            b.Effect = shadow;
+
+            b.MouseEnter += (s, e) =>
+            {
+                AnimateTo(b, Border.BorderBrushProperty, ColorOf(b, "LemoineAccent"));
+                shadow.BeginAnimation(DropShadowEffect.OpacityProperty,
+                    new DoubleAnimation(0.35, Hover) { EasingFunction = EaseOut });
+                LiftTo(st, scale);
+            };
+            b.MouseLeave += (s, e) =>
+            {
+                RestoreTo(b, Border.BorderBrushProperty, normalBorderKey, ColorOf(b, normalBorderKey));
+                shadow.BeginAnimation(DropShadowEffect.OpacityProperty,
+                    new DoubleAnimation(0, Hover) { EasingFunction = EaseOut });
+                LiftTo(st, 1.0);
+            };
+        }
+
         // ── Reveal (fade + slight upward slide) ─────────────────────────────────
         /// <summary>
         /// Fades an element in from below — used when a step's content expands.
@@ -132,6 +178,14 @@ namespace LemoineTools.Lemoine
         private static void ScaleTo(ScaleTransform st, double to)
         {
             var a = new DoubleAnimation(to, Press) { EasingFunction = EaseOut };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+        }
+
+        // Hover-paced scale (smoother than the snappier press scale) for the swatch lift.
+        private static void LiftTo(ScaleTransform st, double to)
+        {
+            var a = new DoubleAnimation(to, Hover) { EasingFunction = EaseOut };
             st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
             st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
         }

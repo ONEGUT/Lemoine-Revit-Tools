@@ -143,6 +143,7 @@ namespace LemoineTools.Lemoine.Controls
                 SnapsToDevicePixels = true,
             };
             swatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            LemoineMotion.WireSwatchHover(swatch, "LemoineBorder");
 
             TextBlock? hexLbl = null;
             if (showHexLabel)
