@@ -49,7 +49,7 @@ namespace LemoineTools.Tools.Testing
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { /* never crash the UI over a settings write */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchDimensionSettings.Save", __lex); }
         }
 
         private static BatchDimensionSettings Load()

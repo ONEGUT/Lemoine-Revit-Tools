@@ -161,7 +161,7 @@ namespace LemoineTools.Tools.Testing
                             }
                         }
                     }
-                    catch { /* skip reference errors per element */ }
+                    catch (Exception __lex) { LemoineLog.Swallowed("BatchDimension: skip reference error for element", __lex); }
                 }
 
                 if (refArray.IsEmpty || combinedBb == null)

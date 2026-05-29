@@ -38,6 +38,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
+            long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             var s = Settings ?? CoordSetSettings.Instance;
 
@@ -117,12 +118,15 @@ namespace LemoineTools.Tools.Testing.CoordSet
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("CoordSet: run aborted", ex);
+                Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
             Progress(100, pass, fail, skip);
             Log($"Done — {pass} created, {skip} skipped, {fail} failed.", "pass");
+            long __issues = LemoineLog.IssuesSince(__issues0);
+            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
             Complete(pass, fail, skip);
         }
 

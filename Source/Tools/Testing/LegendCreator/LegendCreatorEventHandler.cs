@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(uidoc.Document, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }

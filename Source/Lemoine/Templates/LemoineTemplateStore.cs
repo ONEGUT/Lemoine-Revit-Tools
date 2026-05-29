@@ -141,7 +141,7 @@ namespace LemoineTools.Lemoine.Templates
                     });
                 }
             }
-            catch { /* directory unreadable — return empty list */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("TemplateStore: list templates (directory unreadable)", __lex); }
 
             result.Sort((a, b) => b.Created.CompareTo(a.Created)); // newest first
             return result;

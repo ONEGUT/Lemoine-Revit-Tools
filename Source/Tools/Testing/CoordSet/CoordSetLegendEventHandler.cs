@@ -41,7 +41,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
             var view = doc.ActiveView;
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(doc, view, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("CoordSet legend: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }

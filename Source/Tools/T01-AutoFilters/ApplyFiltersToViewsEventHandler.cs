@@ -39,7 +39,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: apply filters to views aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 

@@ -51,6 +51,7 @@ namespace LemoineTools.Lemoine
         private const long   MaxFileBytes   = 1_000_000;   // ~1 MB before roll
         private static readonly object              _gate = new object();
         private static readonly Queue<Entry>        _ring = new Queue<Entry>(RingCapacity);
+        private static long                         _issueCount;   // Warning + Error entries recorded
 
         /// <summary>
         /// Raised on the calling thread whenever an entry is recorded. Subscribers
@@ -100,6 +101,23 @@ namespace LemoineTools.Lemoine
         }
 
         /// <summary>
+        /// Total number of Warning/Error entries recorded since the plugin loaded.
+        /// A tool captures this at run-start and compares at completion to report how
+        /// many non-fatal issues its run produced (see <see cref="IssuesSince"/>).
+        /// </summary>
+        public static long IssueCount
+        {
+            get { lock (_gate) return _issueCount; }
+        }
+
+        /// <summary>Number of Warning/Error entries recorded since <paramref name="startCount"/> was sampled from <see cref="IssueCount"/>.</summary>
+        public static long IssuesSince(long startCount)
+        {
+            long now = IssueCount;
+            return now > startCount ? now - startCount : 0;
+        }
+
+        /// <summary>
         /// Open the durable log file in the OS default handler. Returns false if it
         /// could not be opened (and records why). Creates an empty file first if none exists.
         /// </summary>
@@ -135,6 +153,7 @@ namespace LemoineTools.Lemoine
             {
                 if (_ring.Count >= RingCapacity) _ring.Dequeue();
                 _ring.Enqueue(entry);
+                if (sev != Severity.Info) _issueCount++;
                 AppendToFile(entry);
             }
 

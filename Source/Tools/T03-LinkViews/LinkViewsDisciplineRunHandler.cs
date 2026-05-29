@@ -34,10 +34,13 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
+            long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try { RunViews(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LinkViews discipline: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
+            long __issues = LemoineLog.IssuesSince(__issues0);
+            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
             Complete(pass, fail, skip);
         }
 

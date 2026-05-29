@@ -38,7 +38,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                Log($"Fatal error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingHeatmap: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
@@ -258,7 +258,7 @@ namespace LemoineTools.Tools.Ceilings
                         .ToList())
                     {
                         try { doc.Delete(staleId); tagDeleted++; }
-                        catch { /* protected or already gone */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete element (protected or already gone)", __lex); }
                     }
 
                     foreach (Element el in new FilteredElementCollector(doc, viewId)
@@ -411,7 +411,7 @@ namespace LemoineTools.Tools.Ceilings
                             XYZ n = face.ComputeNormal(mid);
                             if (n.Z < -0.9) { bottomFace = face; break; }
                         }
-                        catch { /* malformed face — skip */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: skip malformed face", __lex); }
                     }
                     if (bottomFace != null) break;
                 }
@@ -590,7 +590,7 @@ namespace LemoineTools.Tools.Ceilings
                             if (v.GetFilters().Contains(pfe.Id))
                                 v.RemoveFilter(pfe.Id);
                         }
-                        catch { /* view type may not support filters */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: apply filter (view type may not support filters)", __lex); }
                     }
 
                     try   { doc.Delete(pfe.Id); }

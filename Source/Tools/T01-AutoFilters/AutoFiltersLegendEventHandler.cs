@@ -43,7 +43,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters legend: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 

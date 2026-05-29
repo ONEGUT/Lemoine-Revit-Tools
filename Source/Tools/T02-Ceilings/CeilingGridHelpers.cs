@@ -143,7 +143,7 @@ namespace LemoineTools.Tools.Ceilings
                     if (rec.Face.Project(ps) == null || rec.Face.Project(pe) == null) continue;
                     result.Add(Line.CreateBound(ps, pe));
                 }
-                catch { /* skip degenerate */ }
+                catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
             }
             return result;
         }

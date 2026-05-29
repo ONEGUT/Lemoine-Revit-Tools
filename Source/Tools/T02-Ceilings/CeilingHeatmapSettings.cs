@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.Ceilings
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { /* never crash the UI over a settings write */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings.Save", __lex); }
         }
 
         private static CeilingHeatmapSettings Load()
