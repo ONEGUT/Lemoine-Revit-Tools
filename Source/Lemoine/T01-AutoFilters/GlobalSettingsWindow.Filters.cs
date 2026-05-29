@@ -341,12 +341,10 @@ namespace LemoineTools.Lemoine
                 };
             }
 
-            // Row: [Auto swatch | * label | Auto edit | Auto copy | Auto delete]
+            // Row: [Auto swatch | * label | Auto edit]
             var rowGrid = new Grid();
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var swatch = new Border
@@ -387,71 +385,6 @@ namespace LemoineTools.Lemoine
             };
             Grid.SetColumn(editBtn, 2);
             rowGrid.Children.Add(editBtn);
-
-            string dupId = trade.Id;
-            var dupIcon = new TextBlock
-            {
-                Text                = "",
-                FontFamily          = new FontFamily("Segoe MDL2 Assets"),
-                VerticalAlignment   = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                IsHitTestVisible    = false,
-            };
-            dupIcon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            dupIcon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            var dupBtn = new Border
-            {
-                Cursor              = Cursors.Hand,
-                Padding             = new Thickness(5),
-                BorderThickness     = new Thickness(1),
-                CornerRadius        = new CornerRadius(3),
-                VerticalAlignment   = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Background          = Brushes.Transparent,
-                Margin              = new Thickness(4, 0, 0, 0),
-                ToolTip             = "Duplicate trade",
-                Child               = dupIcon,
-            };
-            dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            dupBtn.MouseEnter += (s, e) => dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            dupBtn.MouseLeave += (s, e) => dupBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            dupBtn.MouseLeftButtonUp += (s, e) =>
-            {
-                e.Handled = true;
-                var orig = _filterTrades?.FirstOrDefault(x => x.Id == dupId);
-                if (orig == null) return;
-                var copies = AutoFiltersSettings.DeepCopy(new List<FilterTradeConfig> { orig });
-                var copy   = copies[0];
-                copy.Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3);
-                copy.Label = orig.Label + " (copy)";
-                int idx    = _filterTrades!.IndexOf(orig);
-                _filterTrades.Insert(idx + 1, copy);
-                _fActiveTradeId = copy.Id;
-                _fActiveRuleId  = copy.Rules.FirstOrDefault()?.Id;
-                FRefreshTradesSidebar();
-                FRefreshRuleList();
-                FRefreshRuleEditor();
-            };
-            Grid.SetColumn(dupBtn, 3);
-            rowGrid.Children.Add(dupBtn);
-
-            string delId = trade.Id;
-            var delBtn = BuildTrashConfirmButton("Delete Trade", () =>
-            {
-                _filterTrades?.RemoveAll(x => x.Id == delId);
-                if (_fActiveTradeId == delId)
-                {
-                    _fActiveTradeId = _filterTrades?.FirstOrDefault()?.Id;
-                    _fActiveRuleId  = null;
-                }
-                FRefreshTradesSidebar();
-                FRefreshRuleList();
-                FRefreshRuleEditor();
-            });
-            ((FrameworkElement)delBtn).Margin            = new Thickness(4, 0, 0, 0);
-            ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn((UIElement)delBtn, 4);
-            rowGrid.Children.Add((UIElement)delBtn);
 
             rowBorder.Child = rowGrid;
             return rowBorder;
@@ -2054,6 +1987,56 @@ namespace LemoineTools.Lemoine
                 FRefreshTradesSidebar();
             };
             panel.Children.Add(saveBtn);
+
+            var actionSep = new Border { Height = 1, Margin = new Thickness(-14, 10, -14, 6) };
+            actionSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            panel.Children.Add(actionSep);
+
+            var actionRow = new Grid();
+            actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var dupBtn = FlatSmBtn("Duplicate");
+            dupBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            Grid.SetColumn(dupBtn, 0);
+            dupBtn.Click += (s, e) =>
+            {
+                popup.IsOpen = false;
+                var orig = _filterTrades?.FirstOrDefault(x => x.Id == trade.Id);
+                if (orig == null) return;
+                var copies = AutoFiltersSettings.DeepCopy(new List<FilterTradeConfig> { orig });
+                var copy   = copies[0];
+                copy.Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3);
+                copy.Label = orig.Label + " (copy)";
+                int idx    = _filterTrades!.IndexOf(orig);
+                _filterTrades.Insert(idx + 1, copy);
+                _fActiveTradeId = copy.Id;
+                _fActiveRuleId  = copy.Rules.FirstOrDefault()?.Id;
+                FRefreshTradesSidebar();
+                FRefreshRuleList();
+                FRefreshRuleEditor();
+            };
+            actionRow.Children.Add(dupBtn);
+
+            string delId = trade.Id;
+            var delBtn = BuildTrashConfirmButton("Delete Trade", () =>
+            {
+                _filterTrades?.RemoveAll(x => x.Id == delId);
+                if (_fActiveTradeId == delId)
+                {
+                    _fActiveTradeId = _filterTrades?.FirstOrDefault()?.Id;
+                    _fActiveRuleId  = null;
+                }
+                FRefreshTradesSidebar();
+                FRefreshRuleList();
+                FRefreshRuleEditor();
+            });
+            ((FrameworkElement)delBtn).Margin            = new Thickness(6, 0, 0, 0);
+            ((FrameworkElement)delBtn).VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn((UIElement)delBtn, 1);
+            actionRow.Children.Add((UIElement)delBtn);
+
+            panel.Children.Add(actionRow);
 
             outer.Child  = panel;
             popup.Child  = outer;
