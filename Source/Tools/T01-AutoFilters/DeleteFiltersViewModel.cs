@@ -13,7 +13,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// The list of applied filters is captured on the main thread in the launch
     /// command and passed into this ViewModel for display.
     /// </summary>
-    public class DeleteFiltersViewModel : ILemoineTool
+    public class DeleteFiltersViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Remove Filters from View";
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
 
             if (stepId == "S2")
-                return BuildReviewPanel();
+                return null; // framework renders review (ILemoineReviewable)
 
             return null;
         }
@@ -110,77 +110,27 @@ namespace LemoineTools.Tools.AutoFilters
             { Label = label; Val = val; Row = row; Col = col; }
         }
 
-        private FrameworkElement BuildReviewPanel()
+                // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
+            ("view",      "View"),
+            ("remove",    "Filters to Remove"),
+            ("remaining", "Remaining"),
+            ("action",    "Action"),
+        };
 
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["view"]      = _viewName,
+            ["remove"]    = $"{_selectedNames.Count} selected",
+            ["remaining"] = $"{_allFilterNames.Count - _selectedNames.Count} will stay",
+            ["action"]    = "Detach from view (not deleted)",
+        };
 
-            var cards = new[]
-            {
-                new CardDef("View",             () => _viewName,                                                               0, 0),
-                new CardDef("Filters to Remove",() => $"{_selectedNames.Count} selected",                                     0, 1),
-                new CardDef("Remaining",        () => $"{_allFilterNames.Count - _selectedNames.Count} will stay",            1, 0),
-                new CardDef("Action",           () => "Detach from view (not deleted)",                                       1, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var captured = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = captured();
-                ValidationChanged += (s, e) => valText.Text = captured();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-
-                Grid.SetRow(card, c.Row);
-                Grid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-
-            outer.Children.Add(grid);
-
-            // FIX: descriptive text uses LemoineText + italic, not LemoineTextDim
-            var desc = new TextBlock
-            {
-                Text         = "Selected filters will be detached from the active view only — " +
-                               "they will NOT be deleted from the project and can be re-applied later.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Selected filters will be detached from the active view only — they " +
+            "will NOT be deleted from the project and can be re-applied later.";
+        public string?        ReviewWarning => null;
 
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run

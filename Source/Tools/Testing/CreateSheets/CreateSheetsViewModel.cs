@@ -15,7 +15,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class CreateSheetsViewModel : ILemoineTool, ILemoineToolSettings
+    public class CreateSheetsViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
     {
         // ── Constants ─────────────────────────────────────────────────────────
         private static readonly string[] Modes =
@@ -149,7 +149,7 @@ namespace LemoineTools.Tools.Testing
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildS3();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -530,38 +530,28 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── Step 3 — Review & Run ─────────────────────────────────────────────
-        private FrameworkElement BuildS3()
+                // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            ("mode",   "Source Mode"),
+            ("source", "Source"),
+            ("tb",     "Title Block"),
+            ("naming", "Naming / Numbering"),
+        };
 
-            AddCard(grid, "Source Mode",
-                () => _mode,
-                0, 0);
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["mode"]   = _mode,
+            ["source"] = _mode == "From CSV"
+                ? (string.IsNullOrEmpty(_csvFilePath) ? "—" : Path.GetFileName(_csvFilePath))
+                : (_selectedElementIds.Count == 0 ? "— (none selected)" : $"{_selectedElementIds.Count} element(s) selected"),
+            ["tb"]     = string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
+            ["naming"] = _mode == "From CSV" ? "From CSV columns" : $"Pattern: {_namingPattern}  |  Start: {_startingNumber}",
+        };
 
-            AddCard(grid, "Source",
-                () => _mode == "From CSV"
-                    ? (string.IsNullOrEmpty(_csvFilePath) ? "—" : Path.GetFileName(_csvFilePath))
-                    : (_selectedElementIds.Count == 0 ? "— (none selected)" : $"{_selectedElementIds.Count} element(s) selected"),
-                0, 1);
-
-            AddCard(grid, "Title Block",
-                () => string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
-                1, 0);
-
-            AddCard(grid, "Naming / Numbering",
-                () => _mode == "From CSV"
-                    ? "From CSV columns"
-                    : $"Pattern: {_namingPattern}  |  Start: {_startingNumber}",
-                1, 1);
-
-            outer.Children.Add(grid);
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
 
         private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
         {
