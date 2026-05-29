@@ -93,7 +93,7 @@ namespace LemoineTools.Tools.ModifyElements
         // ── Level constraint parameters ───────────────────────────────────────
 
         private static readonly BuiltInParameter WallBase    = BuiltInParameter.WALL_BASE_CONSTRAINT;
-        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_HEIGHT_TYPE;
+        private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_TOP_CONSTRAINT;
         private static readonly BuiltInParameter WallBaseOff = BuiltInParameter.WALL_BASE_OFFSET;
         private static readonly BuiltInParameter WallTopOff  = BuiltInParameter.WALL_TOP_OFFSET;
 
@@ -135,24 +135,17 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
-                    long bic = el.Category.Id.Value;
 
-                    if (bic == (long)BuiltInCategory.OST_Walls)
+                    // Property-based dispatch: works for any category.
+                    // Wall is checked first because walls also have a LocationCurve.
+                    if (el is Wall)
                         SplitWallByLevel(doc, (Wall)el, levels, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralColumns ||
-                             bic == (long)BuiltInCategory.OST_Columns)
+                    else if (el.get_Parameter(ColBase) != null && el.get_Parameter(ColTop) != null)
                         SplitColumnByLevel(doc, el, levels, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralFraming ||
-                             bic == (long)BuiltInCategory.OST_DuctCurves        ||
-                             bic == (long)BuiltInCategory.OST_PipeCurves        ||
-                             bic == (long)BuiltInCategory.OST_Conduit           ||
-                             bic == (long)BuiltInCategory.OST_CableTray)
+                    else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByLevel(doc, el, levels, stats);
-
                     else
-                        stats.Skip($"Unsupported category: {el.Category.Name}");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable level-split strategy (not a wall, no level params, no linear curve)");
                 }
                 catch (Exception ex)
                 {
@@ -184,18 +177,46 @@ namespace LemoineTools.Tools.ModifyElements
             IEnumerable<Element> elements,
             List<Grid?>          grids)
         {
-            var stats = new SplitStats();
-
             var planes = grids
                 .Where(g => g != null)
                 .Select(g => TryBuildGridPlane(g!))
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
+            return SplitByPlanesCore(doc, elements, planes, "grids");
+        }
+
+        /// <summary>
+        /// Splits each element in <paramref name="elements"/> at the plane of each
+        /// <see cref="ReferencePlane"/> in <paramref name="refPlanes"/>, using the same
+        /// CURVE strategy as the grid split.  The reference plane's own normal and origin
+        /// are used directly as the cutting plane.
+        /// </summary>
+        public static SplitStats SplitByReferencePlane(
+            Document              doc,
+            IEnumerable<Element>  elements,
+            List<ReferencePlane?> refPlanes)
+        {
+            var planes = refPlanes
+                .Where(r => r != null)
+                .Select(r => TryBuildReferencePlanePlane(r!))
+                .Where(p => p.HasValue)
+                .Select(p => p!.Value)
+                .ToList();
+            return SplitByPlanesCore(doc, elements, planes, "reference planes");
+        }
+
+        private static SplitStats SplitByPlanesCore(
+            Document                       doc,
+            IEnumerable<Element>           elements,
+            List<(XYZ Normal, XYZ Origin)> planes,
+            string                         contextLabel)
+        {
+            var stats = new SplitStats();
 
             if (!planes.Any())
             {
-                stats.Fail("grids", "No valid grid planes could be computed.");
+                stats.Fail(contextLabel, "No valid cutting planes could be computed.");
                 return stats;
             }
 
@@ -204,20 +225,15 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
-                    long bic = el.Category.Id.Value;
 
-                    if (bic == (long)BuiltInCategory.OST_Walls)
+                    // Property-based dispatch: works for any category.
+                    // Wall is checked first because walls also have a LocationCurve.
+                    if (el is Wall)
                         SplitWallByGrid(doc, (Wall)el, planes, stats);
-
-                    else if (bic == (long)BuiltInCategory.OST_StructuralFraming ||
-                             bic == (long)BuiltInCategory.OST_DuctCurves        ||
-                             bic == (long)BuiltInCategory.OST_PipeCurves        ||
-                             bic == (long)BuiltInCategory.OST_Conduit           ||
-                             bic == (long)BuiltInCategory.OST_CableTray)
+                    else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByGrid(doc, el, planes, stats);
-
                     else
-                        stats.Skip($"Unsupported category: {el.Category.Name}");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable plane-split strategy (not a wall, no linear curve)");
                 }
                 catch (Exception ex)
                 {
@@ -244,8 +260,8 @@ namespace LemoineTools.Tools.ModifyElements
             { stats.Skip($"Wall {wall.Id}: not level-constrained"); return; }
 
             var spans = BuildLevelSpans(levels, baseLevel, topLevel);
-            if (spans.Count < 2)
-            { stats.Skip($"Wall {wall.Id}: no intermediate levels in range"); return; }
+            if (spans.Count < 3)
+            { stats.Skip($"Wall {wall.Id}: no selected levels fall between its base and top constraints"); return; }
 
             double baseOff = wall.get_Parameter(WallBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = wall.get_Parameter(WallTopOff)?.AsDouble()  ?? 0.0;
@@ -260,6 +276,7 @@ namespace LemoineTools.Tools.ModifyElements
                 if (cwall != null) DisallowWallJoins(doc, cwall);
             }
 
+            int successes = 0;
             for (int k = 0; k < copies.Count; k++)
             {
                 var seg = doc.GetElement(copies[k]) as Wall;
@@ -270,12 +287,24 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(WallTop)    ?.Set(spans[k + 1].Id);
                     seg.get_Parameter(WallBaseOff)?.Set(k == 0                    ? baseOff : 0.0);
                     seg.get_Parameter(WallTopOff) ?.Set(k == copies.Count - 1    ? topOff  : 0.0);
+                    successes++;
                 }
                 catch (Exception ex) { stats.Fail($"Wall {wall.Id} seg {k}", ex.Message); }
             }
 
-            doc.Delete(wall.Id);
-            stats.Split($"Wall {wall.Id} → {copies.Count} segments");
+            if (successes == copies.Count)
+            {
+                doc.Delete(wall.Id);
+                stats.Split($"Wall {wall.Id} → {copies.Count} segments");
+            }
+            else
+            {
+                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                stats.Fail(wall.Id.ToString(),
+                    successes == 0
+                        ? "All segment parameter assignments failed; copies removed."
+                        : $"Only {successes}/{copies.Count} segments configured; copies removed.");
+            }
         }
 
         private static void SplitColumnByLevel(
@@ -290,8 +319,8 @@ namespace LemoineTools.Tools.ModifyElements
             { stats.Skip($"Column {col.Id}: not level-constrained"); return; }
 
             var spans = BuildLevelSpans(levels, baseLevel, topLevel);
-            if (spans.Count < 2)
-            { stats.Skip($"Column {col.Id}: no intermediate levels in range"); return; }
+            if (spans.Count < 3)
+            { stats.Skip($"Column {col.Id}: no selected levels fall between its base and top constraints"); return; }
 
             double baseOff = col.get_Parameter(ColBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = col.get_Parameter(ColTopOff)?.AsDouble()  ?? 0.0;
@@ -299,6 +328,7 @@ namespace LemoineTools.Tools.ModifyElements
             var copies = CopyTimes(doc, col.Id, spans.Count - 1);
             if (copies == null) { stats.Fail(col.Id.ToString(), "Copy failed"); return; }
 
+            int successes = 0;
             for (int k = 0; k < copies.Count; k++)
             {
                 var seg = doc.GetElement(copies[k]);
@@ -309,12 +339,24 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(ColTop)    ?.Set(spans[k + 1].Id);
                     seg.get_Parameter(ColBaseOff)?.Set(k == 0                 ? baseOff : 0.0);
                     seg.get_Parameter(ColTopOff) ?.Set(k == copies.Count - 1 ? topOff  : 0.0);
+                    successes++;
                 }
                 catch (Exception ex) { stats.Fail($"Column {col.Id} seg {k}", ex.Message); }
             }
 
-            doc.Delete(col.Id);
-            stats.Split($"Column {col.Id} → {copies.Count} segments");
+            if (successes == copies.Count)
+            {
+                doc.Delete(col.Id);
+                stats.Split($"Column {col.Id} → {copies.Count} segments");
+            }
+            else
+            {
+                foreach (var cid in copies) try { doc.Delete(cid); } catch { }
+                stats.Fail(col.Id.ToString(),
+                    successes == 0
+                        ? "All segment parameter assignments failed; copies removed."
+                        : $"Only {successes}/{copies.Count} segments configured; copies removed.");
+            }
         }
 
         private static void SplitCurveByLevel(
@@ -432,6 +474,9 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 catch (Exception ex)
                 {
+                    // Clean up all copies made so far before bailing (#2)
+                    foreach (var cid in segIds.Skip(1))
+                        try { doc.Delete(cid); } catch { }
                     stats.Fail(el.Id.ToString(), $"copy #{i} failed: {ex.Message}");
                     return;
                 }
@@ -455,16 +500,20 @@ namespace LemoineTools.Tools.ModifyElements
 
                 try
                 {
-                    DisconnectAllConnectors(seg);
-                    if (seg is Wall wSeg)
-                        DisallowWallJoins(doc, wSeg);
+                    // Validate geometry before touching connectors (#7): if CreateBound throws,
+                    // the element's connectors are left intact.
+                    Line newCurve = Line.CreateBound(segA, segB);
                     var segLc = seg.Location as LocationCurve;
                     if (segLc == null) throw new InvalidOperationException("No LocationCurve on copy.");
-                    segLc.Curve = Line.CreateBound(segA, segB);
+                    if (seg is Wall wSeg) DisallowWallJoins(doc, wSeg);
+                    DisconnectAllConnectors(seg);
+                    segLc.Curve = newCurve;
                     success++;
                 }
                 catch (Exception ex)
                 {
+                    // Remove orphaned copy; leave original (i==0) in place (#3)
+                    if (i > 0) { try { doc.Delete(segIds[i]); } catch { } }
                     stats.Fail(el.Id.ToString(), $"seg {i} curve set failed: {ex.Message}");
                 }
             }
@@ -533,6 +582,22 @@ namespace LemoineTools.Tools.ModifyElements
         /// or <see langword="null"/> if the grid has no linear curve or the curve is
         /// degenerate (length &lt; 1e-9).
         /// </returns>
+        /// <summary>
+        /// Derives a cutting plane from a <see cref="ReferencePlane"/>.  The plane's own
+        /// normal and origin are used directly.  Returns <see langword="null"/> if the
+        /// normal is degenerate.
+        /// </summary>
+        public static (XYZ Normal, XYZ Origin)? TryBuildReferencePlanePlane(ReferencePlane rp)
+        {
+            try
+            {
+                Plane plane = rp.GetPlane();
+                if (plane.Normal.GetLength() < 1e-9) return null;
+                return (plane.Normal.Normalize(), plane.Origin);
+            }
+            catch { return null; }
+        }
+
         public static (XYZ Normal, XYZ Origin)? TryBuildGridPlane(Grid grid)
         {
             try
@@ -576,10 +641,18 @@ namespace LemoineTools.Tools.ModifyElements
                 {
                     ICollection<ElementId> c =
                         ElementTransformUtils.CopyElement(doc, id, XYZ.Zero);
-                    if (c == null || !c.Any()) return null;
+                    if (c == null || !c.Any())
+                    {
+                        foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                        return null;
+                    }
                     result.Add(c.First());
                 }
-                catch { return null; }
+                catch
+                {
+                    foreach (var cid in result) try { doc.Delete(cid); } catch { }
+                    return null;
+                }
             }
             return result;
         }

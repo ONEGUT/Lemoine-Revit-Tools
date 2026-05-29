@@ -11,7 +11,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <RevitDir>C:\Program Files\Autodesk\Revit 2024</RevitDir>
+    <RevitDir Condition="Exists('C:\Program Files\Autodesk\Revit 2024')">C:\Program Files\Autodesk\Revit 2024</RevitDir>
+    <RevitDir Condition="!Exists('C:\Program Files\Autodesk\Revit 2024')">$(MSBuildThisFileDirectory)libs</RevitDir>
     <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\</DeployDir>
     <OutputPath>$(DeployDir)</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

@@ -73,20 +73,28 @@ namespace LemoineTools
         internal static BatchDimensionEventHandler? BatchDimensionHandler { get; private set; }
         internal static ExternalEvent?              BatchDimensionEvent   { get; private set; }
 
+        // ── Testing — Clash Dimension ───────────────────────────────────────────────
+        internal static ClashDimensionEventHandler? ClashDimensionHandler { get; private set; }
+        internal static ExternalEvent?              ClashDimensionEvent   { get; private set; }
+        internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
+        internal static ExternalEvent?              ClashPickEvent        { get; private set; }
+
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
 
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
-        internal static SplitByLevelEventHandler? SplitByLevelHandler { get; private set; }
-        internal static ExternalEvent?            SplitByLevelEvent   { get; private set; }
-        internal static SplitByGridEventHandler?  SplitByGridHandler  { get; private set; }
-        internal static ExternalEvent?            SplitByGridEvent    { get; private set; }
-        internal static SplitByCellEventHandler?  SplitByCellHandler  { get; private set; }
-        internal static ExternalEvent?            SplitByCellEvent    { get; private set; }
-        internal static ExtendWallsEventHandler?  ExtendWallsHandler  { get; private set; }
-        internal static ExternalEvent?            ExtendWallsEvent    { get; private set; }
+        internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
+        internal static ExternalEvent?                     SplitByLevelEvent            { get; private set; }
+        internal static SplitByGridEventHandler?           SplitByGridHandler           { get; private set; }
+        internal static ExternalEvent?                     SplitByGridEvent             { get; private set; }
+        internal static SplitByCellEventHandler?           SplitByCellHandler           { get; private set; }
+        internal static ExternalEvent?                     SplitByCellEvent             { get; private set; }
+        internal static SplitByReferencePlaneEventHandler? SplitByReferencePlaneHandler { get; private set; }
+        internal static ExternalEvent?                     SplitByReferencePlaneEvent   { get; private set; }
+        internal static ExtendWallsEventHandler?           ExtendWallsHandler           { get; private set; }
+        internal static ExternalEvent?                     ExtendWallsEvent             { get; private set; }
 
         // Global settings window — singleton, stays open across tool windows
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
@@ -150,18 +158,24 @@ namespace LemoineTools
             BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
             BatchDimensionHandler = new BatchDimensionEventHandler();
             BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
+            ClashDimensionHandler = new ClashDimensionEventHandler();
+            ClashDimensionEvent   = ExternalEvent.Create(ClashDimensionHandler);
+            ClashPickHandler      = new ClashPickEventHandler();
+            ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
-            SplitByLevelHandler = new SplitByLevelEventHandler();
-            SplitByLevelEvent   = ExternalEvent.Create(SplitByLevelHandler);
-            SplitByGridHandler  = new SplitByGridEventHandler();
-            SplitByGridEvent    = ExternalEvent.Create(SplitByGridHandler);
-            SplitByCellHandler  = new SplitByCellEventHandler();
-            SplitByCellEvent    = ExternalEvent.Create(SplitByCellHandler);
-            ExtendWallsHandler  = new ExtendWallsEventHandler();
-            ExtendWallsEvent    = ExternalEvent.Create(ExtendWallsHandler);
+            SplitByLevelHandler          = new SplitByLevelEventHandler();
+            SplitByLevelEvent            = ExternalEvent.Create(SplitByLevelHandler);
+            SplitByGridHandler           = new SplitByGridEventHandler();
+            SplitByGridEvent             = ExternalEvent.Create(SplitByGridHandler);
+            SplitByCellHandler           = new SplitByCellEventHandler();
+            SplitByCellEvent             = ExternalEvent.Create(SplitByCellHandler);
+            SplitByReferencePlaneHandler = new SplitByReferencePlaneEventHandler();
+            SplitByReferencePlaneEvent   = ExternalEvent.Create(SplitByReferencePlaneHandler);
+            ExtendWallsHandler           = new ExtendWallsEventHandler();
+            ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
 
             try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { LemoineLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
@@ -286,17 +300,51 @@ namespace LemoineTools
                 "\uE8C8"));  // Segoe MDL2: Copy
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
-            // Stacked 3: Split by Level  |  Split by Grid  |  Split by Cell
-            // Large:     Extend Walls
+            // Pulldown: Split Elements (4 sub-commands)
+            // Large:    Extend Walls
             var modifyPanel = application.CreateRibbonPanel("Lemoine Tools", "T04  Modify");
 
-            modifyPanel.AddStackedItems(
-                Btn("LT_SplitByLevel", "Split by Level", "SplitByLevelCommand",
-                    "Split walls, columns, and MEP curves at selected level elevations."),
-                Btn("LT_SplitByGrid",  "Split by Grid",  "SplitByGridCommand",
-                    "Split walls and MEP curves at selected grid plane intersections."),
-                Btn("LT_SplitByCell",  "Split by Cell",  "SplitByCellCommand",
-                    "Split floors, ceilings, and filled regions into a regular grid of cells."));
+            // Icons used here:  (Cut),  (RowsGroup),  (GridView),
+            //                   (Trim/plane),  (Table) — none overlap other panels.
+            var splitPulldownData = new PulldownButtonData("LT_SplitElements", "Split\nElements")
+            {
+                ToolTip    = "Split elements at level elevations, grid planes, reference planes, or a regular cell grid.",
+                LargeImage = CreateGlyphBitmap(32, ""),
+                Image      = CreateGlyphBitmap(16, ""),
+            };
+            var splitBtn = modifyPanel.AddItem(splitPulldownData) as PulldownButton;
+
+            splitBtn?.AddPushButton(new PushButtonData(
+                "LT_SplitByLevel", "Split by Levels", dll, "LemoineTools.Commands.SplitByLevelCommand")
+            {
+                ToolTip    = "Split walls, columns, and MEP curves at selected level elevations.",
+                LargeImage = CreateGlyphBitmap(32, ""),
+                Image      = CreateGlyphBitmap(16, ""),
+            });
+
+            splitBtn?.AddPushButton(new PushButtonData(
+                "LT_SplitByGrid", "Split by Grid Lines", dll, "LemoineTools.Commands.SplitByGridCommand")
+            {
+                ToolTip    = "Split walls and MEP curves at selected grid plane intersections.",
+                LargeImage = CreateGlyphBitmap(32, ""),
+                Image      = CreateGlyphBitmap(16, ""),
+            });
+
+            splitBtn?.AddPushButton(new PushButtonData(
+                "LT_SplitByReferencePlane", "Split by\nRef Plane", dll, "LemoineTools.Commands.SplitByReferencePlaneCommand")
+            {
+                ToolTip    = "Split walls and MEP curves at selected reference plane intersections.",
+                LargeImage = CreateGlyphBitmap(32, ""),
+                Image      = CreateGlyphBitmap(16, ""),
+            });
+
+            splitBtn?.AddPushButton(new PushButtonData(
+                "LT_SplitByCell", "Split by Cell", dll, "LemoineTools.Commands.SplitByCellCommand")
+            {
+                ToolTip    = "Split floors, ceilings, and filled regions into a regular grid of cells.",
+                LargeImage = CreateGlyphBitmap(32, ""),
+                Image      = CreateGlyphBitmap(16, ""),
+            });
 
             modifyPanel.AddItem(Btn(
                 "LT_ExtendWalls", "Extend\nWalls", "ExtendWallsCommand",
@@ -322,6 +370,11 @@ namespace LemoineTools
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
                     "Create one 3D view per link with a section box, with optional combined views per discipline."));
+
+            testingPanel.AddItem(Btn(
+                "LT_ClashDimension", "Clash\nDimension", "ClashDimensionCommand",
+                "Detect solid clashes between two element groups (filter rules, categories, or picked elements, in the host or links), annotate each clash with a coloured filled region and cross, and place locating dimensions to selected grids and slab edges.",
+                ""));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");

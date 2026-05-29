@@ -12,6 +12,7 @@ namespace LemoineTools.Tools.ModifyElements
         public double                     CellX                  { get; set; } = 10.0;
         public double                     CellY                  { get; set; } = 10.0;
         public bool                       UseProjectOrigin       { get; set; } = false;
+        public List<ElementId>?           PreSelectedIds         { get; set; }  // E
         public Action<string, string>?     OnLog                  { get; set; }
         public Action<int, int, int, int>? OnProgress            { get; set; }
         public Action<int, int, int>?      OnComplete            { get; set; }
@@ -40,14 +41,26 @@ namespace LemoineTools.Tools.ModifyElements
                 double cellXft = CellX;
                 double cellYft = CellY;
 
-                var categoryMap = SplitByCellHelpers.BuildCategoryMap(doc, view);
-
-                // Filter to selected category labels
-                var selectedSet = new HashSet<string>(SelectedCategoryLabels, StringComparer.OrdinalIgnoreCase);
-                var targetIds   = categoryMap
-                    .Where(kvp => selectedSet.Contains(kvp.Key))
-                    .SelectMany(kvp => kvp.Value)
-                    .ToList();
+                List<ElementId> targetIds;
+                if (PreSelectedIds != null && PreSelectedIds.Count > 0)
+                {
+                    targetIds = new List<ElementId>(PreSelectedIds);
+                    pushLog($"Operating on {targetIds.Count} pre-selected element(s).", "info");
+                }
+                else
+                {
+                    var categoryMap  = SplitByCellHelpers.BuildCategoryMap(doc, view);
+                    var labelToBic   = SplitByCellViewModel.CatLabels
+                        .ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase);
+                    var selectedBics = new HashSet<BuiltInCategory>(
+                        SelectedCategoryLabels
+                            .Where(l => labelToBic.ContainsKey(l))
+                            .Select(l => labelToBic[l]));
+                    targetIds = categoryMap
+                        .Where(kvp => selectedBics.Contains(kvp.Key))
+                        .SelectMany(kvp => kvp.Value)
+                        .ToList();
+                }
 
                 if (!targetIds.Any())
                 {
@@ -58,9 +71,14 @@ namespace LemoineTools.Tools.ModifyElements
 
                 pushLog($"Found {targetIds.Count} element(s) to process.", "info");
 
-                XYZ? gridOrigin = UseProjectOrigin
-                    ? SplitByCellHelpers.GetProjectBasePoint(doc)
-                    : null;
+                XYZ? gridOrigin = null;
+                if (UseProjectOrigin)
+                {
+                    XYZ? bp = SplitByCellHelpers.GetProjectBasePoint(doc);
+                    if (bp == null)
+                        pushLog("Project base point not found; grid aligned to document origin (0,0,0).", "info");
+                    gridOrigin = bp ?? XYZ.Zero;
+                }
 
                 int created = 0;
                 int skipped = 0;
@@ -84,20 +102,32 @@ namespace LemoineTools.Tools.ModifyElements
 
                             try
                             {
-                                int n = SplitByCellHelpers.SplitElement(
+                                var (n, cellStatus) = SplitByCellHelpers.SplitElement(
                                     doc, el, cellXft, cellYft, gridOrigin);
 
-                                if (n > 0)
+                                if (cellStatus == CellSplitStatus.Split)
                                 {
                                     created += n;
                                     pushLog($"✓ {el.Category?.Name} {el.Id} → {n} cell(s)", "pass");
                                     tx.Commit();
                                 }
-                                else
+                                else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
                                     pushLog($"— {el.Category?.Name} {el.Id}: fits in one cell, skipped", "info");
+                                }
+                                else if (cellStatus == CellSplitStatus.NoGeometry)
+                                {
+                                    tx.RollBack();
+                                    skipped++;
+                                    pushLog($"— {el.Category?.Name} {el.Id}: no solid geometry, skipped", "info");
+                                }
+                                else // NoCellsIntersected
+                                {
+                                    tx.RollBack();
+                                    failed++;
+                                    pushLog($"✗ {el.Category?.Name} {el.Id}: boolean intersection returned no cells — the element's geometry may be non-planar or the solid could not be intersected", "fail");
                                 }
                             }
                             catch (Exception ex)
