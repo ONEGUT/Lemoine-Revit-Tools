@@ -53,6 +53,44 @@ namespace LemoineTools.Lemoine
             };
         }
 
+        /// <summary>
+        /// Hover for a clickable <see cref="Panel"/> row (e.g. a StackPanel holding a
+        /// checkbox + label): fades the panel background in on hover and out on leave.
+        /// Forces a transparent resting background so the whole row stays hit-testable.
+        /// </summary>
+        public static void WireHover(Panel p, string? normalBgKey, string hoverBgKey)
+        {
+            if (p == null) return;
+            if (p.Background == null) p.Background = Brushes.Transparent; // full-width hit area
+            p.MouseEnter += (s, e) => AnimateTo(p, Panel.BackgroundProperty, ColorOf(p, hoverBgKey));
+            p.MouseLeave += (s, e) => RestoreTo(p, Panel.BackgroundProperty, normalBgKey, ColorOf(p, normalBgKey));
+        }
+
+        /// <summary>
+        /// Hover for a persistent toggle tab/pill whose active/inactive resting style is
+        /// managed elsewhere (re-styled in place rather than rebuilt). Animates a hover
+        /// background + border only while <paramref name="isActive"/> is false, so it never
+        /// fights the active highlight and never leaves an inactive tab stuck lit.
+        /// </summary>
+        public static void WireToggleHover(
+            Border b, Func<bool> isActive,
+            string hoverBgKey = "LemoineAccentDim", string hoverBorderKey = "LemoineAccent")
+        {
+            if (b == null || isActive == null) return;
+            b.MouseEnter += (s, e) =>
+            {
+                if (isActive()) return;
+                AnimateTo(b, Border.BackgroundProperty,  ColorOf(b, hoverBgKey));
+                AnimateTo(b, Border.BorderBrushProperty, ColorOf(b, hoverBorderKey));
+            };
+            b.MouseLeave += (s, e) =>
+            {
+                if (isActive()) return;
+                RestoreTo(b, Border.BackgroundProperty,  null, Colors.Transparent);
+                RestoreTo(b, Border.BorderBrushProperty, null, Colors.Transparent);
+            };
+        }
+
         // ── Press (tap-down scale) ──────────────────────────────────────────────
         /// <summary>
         /// Adds a snappy 0.97 press-scale to any element. Uses a preview handler so a

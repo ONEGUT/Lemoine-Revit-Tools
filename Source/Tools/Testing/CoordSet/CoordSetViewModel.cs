@@ -157,6 +157,8 @@ namespace LemoineTools.Tools.Testing.CoordSet
                 row.Children.Add(swatch);
                 row.Children.Add(lbl);
 
+                LemoineMotion.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+
                 void Toggle(bool newVal)
                 {
                     if (newVal) { if (!_selectedTradeIds.Contains(capturedId)) _selectedTradeIds.Add(capturedId); }
@@ -239,6 +241,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                     };
                     del.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                     del.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    LemoineMotion.WireTextHover(del, "LemoineTextDim", "LemoineText");
                     del.MouseLeftButtonDown += (s2, e2) =>
                     {
                         groups.Remove(capturedGrp);

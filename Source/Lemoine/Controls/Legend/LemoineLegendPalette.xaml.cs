@@ -189,6 +189,11 @@ namespace LemoineTools.Lemoine.Controls
                 tradePill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 tradePill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             }
+            LemoineMotion.WireHover(tradePill,
+                normalBgKey:     tradeActive ? "LemoineAccentDim" : "LemoineRaised",
+                hoverBgKey:      "LemoineAccentDim",
+                normalBorderKey: tradeActive ? "LemoineAccent" : "LemoineBorder",
+                hoverBorderKey:  "LemoineAccent");
 
             var tradePillInner = new StackPanel { Orientation = Orientation.Horizontal };
             var tradePillLabel = new TextBlock
@@ -283,6 +288,11 @@ namespace LemoineTools.Lemoine.Controls
                 pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 pill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             }
+            LemoineMotion.WireHover(pill,
+                normalBgKey:     active ? "LemoineAccentDim" : "LemoineRaised",
+                hoverBgKey:      "LemoineAccentDim",
+                normalBorderKey: active ? "LemoineAccent" : "LemoineBorder",
+                hoverBorderKey:  "LemoineAccent");
 
             var tb = new TextBlock
             {

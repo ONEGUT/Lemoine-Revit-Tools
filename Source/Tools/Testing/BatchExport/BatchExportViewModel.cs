@@ -353,6 +353,11 @@ namespace LemoineTools.Tools.Testing
                         tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                         tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                     }
+                    LemoineMotion.WireHover(tab,
+                        normalBgKey:     captured == _activePack ? "LemoineSelectBg" : "LemoineRaised",
+                        hoverBgKey:      "LemoineAccentDim",
+                        normalBorderKey: captured == _activePack ? "LemoineAccent" : "LemoineBorder",
+                        hoverBorderKey:  "LemoineAccent");
 
                     var tabText = new TextBlock { Text = _packs[captured].PackName };
                     tabText.SetResourceReference(TextBlock.ForegroundProperty,
@@ -380,6 +385,9 @@ namespace LemoineTools.Tools.Testing
                 };
                 addBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineCanvas");
                 addBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+                LemoineMotion.WireHover(addBtn,
+                    normalBgKey:     "LemoineCanvas",  hoverBgKey:     "LemoineAccentDim",
+                    normalBorderKey: "LemoineBorderMid", hoverBorderKey: "LemoineAccent");
                 var addText = new TextBlock { Text = "+ New Pack" };
                 addText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 addText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");

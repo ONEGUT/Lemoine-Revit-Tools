@@ -114,6 +114,7 @@ namespace LemoineTools.Lemoine.Controls
                 Tag             = new object[] { label, badgeBorder, badgeText, groupName },
             };
             tab.MouseLeftButtonDown += (s, e) => ActivateGroup(groupName);
+            LemoineMotion.WireToggleHover(tab, () => groupName == _activeGroup);
 
             SetTabStyle(tab, false);
             UpdateTabCounter(tab, groupName);
@@ -306,6 +307,8 @@ namespace LemoineTools.Lemoine.Controls
             };
             sp.Children.Add(cb);
             sp.Children.Add(lbl);
+
+            LemoineMotion.WireHover(sp, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
 
             cb.Checked   += (s, e) => onToggle(true);
             cb.Unchecked += (s, e) => onToggle(false);
