@@ -9,8 +9,10 @@ namespace LemoineTools.Lemoine
     public enum LemoineUiSize { Small, Medium, Large, ExtraLarge }
 
     /// <summary>Persisted UI settings DTO — written to %AppData%\LemoineTools\UISettings.xml.</summary>
+    /// <remarks>Must be <c>public</c>: <see cref="XmlSerializer"/> cannot process a non-public root type,
+    /// which previously made every theme/UI-size save throw and silently drop to defaults on restart.</remarks>
     [XmlRoot("LemoineUISettings")]
-    internal sealed class UISettingsDto
+    public sealed class UISettingsDto
     {
         [XmlAttribute] public string Theme  { get; set; } = nameof(LemoineTheme.DarkMono);
         [XmlAttribute] public string UiSize { get; set; } = nameof(LemoineUiSize.Medium);
@@ -204,7 +206,7 @@ namespace LemoineTools.Lemoine
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LemoineTools] UISettings load failed: {ex.Message}");
+                LemoineLog.Swallowed("LemoineSettings: load UISettings.xml (using defaults)", ex);
             }
         }
 
@@ -221,7 +223,7 @@ namespace LemoineTools.Lemoine
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LemoineTools] UISettings save failed: {ex.Message}");
+                LemoineLog.Error("LemoineSettings: save UISettings.xml failed — theme/size will not persist", ex);
             }
         }
     }
