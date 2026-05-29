@@ -140,5 +140,15 @@ and self-contained.
 4. **Base** — `claude/happy-dijkstra-OzHjz`.
 
 ## Status
-- [ ] **P0** `fix-ui-interaction-bugs` — IN PROGRESS
-- [ ] P1 motion · [ ] P2 inputs · [ ] P3 review · [ ] P4 migrate inputs · [ ] P5 drag
+- [x] **P0** interaction bug fixes — log-tab hover, autocomplete guards, scroll bubbling
+- [x] **P1** motion foundation — `LemoineMotion` (WireHover/WirePress/FadeSlideIn) +
+      `AnimPress` token + button press-scale + step fade-slide + animated dropdown hover
+- [ ] P2 inputs · [ ] P3 review · [ ] P4 migrate inputs · [ ] P5 drag · [ ] **P6 spacing**
+
+### P6 — Spacing tokens (from the spacing audit)
+Worst offenders: 38 label→control gaps use `(0,0,0,2)` instead of the `(0,0,0,8)`
+`LemoineTh_SubLabelMar` token; card padding has 5 vertical values (4–8); row gaps
+split 4 ways (4/6/8/10). Missing tokens to add: `LemoineTh_CardPadCompact (8,4,8,4)`,
+`LemoineTh_LegendHeaderPad (6,4,6,4)`, `LemoineTh_RowGapMed (0,0,0,6)`,
+`LemoineTh_RowGapLg (0,0,0,10)`, `LemoineTh_DividerMar (0,8,0,8)`. Then migrate raw
+`Thickness` literals to the tokens. (Pairs naturally with P4 since both touch every tool.)

@@ -765,6 +765,7 @@ namespace LemoineTools.Lemoine
         {
             var a = new DoubleAnimation { To = expand ? 1200 : 0, Duration = TimeSpan.FromMilliseconds(expand ? LemoineSettings.Instance.AnimExpand : LemoineSettings.Instance.AnimMed), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
             b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+            if (expand) LemoineMotion.FadeSlideIn(b);   // content fades up as the step opens
         }
 
         // ═══════════════════════════════════════ RUN / RESET ══════════════════
@@ -961,6 +962,7 @@ namespace LemoineTools.Lemoine
                 btn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
                 btn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
             }
+            LemoineMotion.WirePress(btn);   // snappy tap-down feedback
             return btn;
         }
 

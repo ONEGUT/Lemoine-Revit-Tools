@@ -165,15 +165,10 @@ namespace LemoineTools.Lemoine.Controls
                 txt.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 row.Child = txt;
 
-                row.MouseEnter += (s, e) =>
-                    row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                row.MouseLeave += (s, e) =>
-                {
-                    if (captured == _value)
-                        row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                    else
-                        row.Background = Brushes.Transparent;
-                };
+                // Animated hover — the selected row keeps its accent rest state.
+                LemoineMotion.WireHover(row,
+                    normalBgKey: captured == _value ? "LemoineAccentDim" : null,
+                    hoverBgKey:  "LemoineAccentDim");
                 row.GotFocus += (s, e) =>
                     row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
                 row.LostFocus += (s, e) =>
