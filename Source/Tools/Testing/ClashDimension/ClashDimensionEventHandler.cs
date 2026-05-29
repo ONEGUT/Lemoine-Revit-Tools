@@ -815,7 +815,10 @@ namespace LemoineTools.Tools.Testing
                 var geom = floor.get_Geometry(geomOpts);
                 var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
 
-                var faces = new List<(PlanarFace pf, Reference faceRef)>();
+                // One closest face per direction: Y-facing (→ horizontal dim) and X-facing (→ vertical dim)
+                Reference? bestYRef = null; double bestYDist = double.MaxValue;
+                Reference? bestXRef = null; double bestXDist = double.MaxValue;
+
                 foreach (GeometryObject obj in geom)
                 {
                     if (!(obj is Solid solid)) continue;
@@ -826,53 +829,58 @@ namespace LemoineTools.Tools.Testing
                         var faceRef = pf.Reference;
                         if (faceRef == null) continue;
                         if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
-                        faces.Add((pf, faceRef));
+
+                        XYZ  faceN  = tx.OfVector(pf.FaceNormal).Normalize();
+                        XYZ  origin = tx.OfPoint(pf.Origin);
+                        double dist = Math.Abs(faceN.X * (cx - origin.X) + faceN.Y * (cy - origin.Y));
+
+                        if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
+                        {
+                            if (dist < bestYDist) { bestYDist = dist; bestYRef = faceRef; }
+                        }
+                        else
+                        {
+                            if (dist < bestXDist) { bestXDist = dist; bestXRef = faceRef; }
+                        }
                     }
                 }
 
-                if (faces.Count == 0)
+                if (bestYRef == null && bestXRef == null)
                 {
                     Log($"Floor dim ({floor.Name}): no vertical slab faces found — skipped.", "info");
                     return;
                 }
-                Log($"Floor dim ({floor.Name}): {faces.Count} vertical face(s).", "info");
 
                 double extent = 1000.0;
-                foreach (var (pf, faceRef) in faces)
+
+                if (bestYRef != null && dimType != null)
                 {
                     try
                     {
-                        XYZ faceN    = tx.OfVector(pf.FaceNormal).Normalize();
-                        bool isVFace = Math.Abs(faceN.Y) > Math.Abs(faceN.X);
-
                         var refs = new ReferenceArray();
-                        Line dimLine;
-
-                        if (isVFace)
-                        {
-                            double dimY = cy + dimLineOffsetFt;
-                            dimLine = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
-                            refs.Append(hRef);
-                            refs.Append(faceRef);
-                        }
-                        else
-                        {
-                            double dimX = cx + dimLineOffsetFt;
-                            dimLine = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
-                            refs.Append(vRef);
-                            refs.Append(faceRef);
-                        }
-
-                        if (dimType != null)
-                        {
-                            var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                            dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                        }
+                        refs.Append(hRef);
+                        refs.Append(bestYRef);
+                        double dimY   = cy + dimLineOffsetFt;
+                        var dimLine   = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
+                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
+                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), Y-face: {ex.Message}", "info"); }
+                }
+
+                if (bestXRef != null && dimType != null)
+                {
+                    try
                     {
-                        Log($"Floor dim ({floor.Name}), face: {ex.Message}", "info");
+                        var refs = new ReferenceArray();
+                        refs.Append(vRef);
+                        refs.Append(bestXRef);
+                        double dimX   = cx + dimLineOffsetFt;
+                        var dimLine   = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
+                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
+                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
                     }
+                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), X-face: {ex.Message}", "info"); }
                 }
             }
             catch (Exception ex)
