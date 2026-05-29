@@ -68,10 +68,56 @@ remaining settings window, which is renamed **Legend Creation**.
   `LemoineRadius_Card` (rounder), and ensure each section card claims full width
   consistently. (Visual-only; no behavioural change.)
 
+## Top-bar / footer / action-button rework (confirmed with user)
+
+### Top bar (both windows) — make identical
+`LemoineTitleBar` only: `[⚙ icon + window title]` (left, drag handle) … `[× close]` (right).
+- Filters: **remove** the centered "Create Filters" button from the top bar.
+- Legend: unchanged structurally (already icon + title + ×).
+
+### Footer — REMOVED from both windows
+- Root grid drops from `[38 toolbar | * content | 42 footer]` to `[38 toolbar | * content]`.
+- `BuildFooter` / `_footerBorder` deleted; `UpdateRowHeights` only sets the toolbar row.
+- Closing is via the top-bar `×`. Status text relocates to a transient label in the
+  floating action area (above the pills, right-aligned).
+- **Data-safety:** Filters loses its explicit Apply/Save button. To avoid losing
+  buffered edits, add `OnClosed` → save `_filterTrades` to `AutoFiltersSettings`
+  (Create already saves; Legend already saves on most edits).
+
+### "Add" buttons — float at the bottom of their list (no sticky bar)
+For trades, rules, and legends: delete the docked-bottom bordered bar and instead
+append a rounded **ghost "＋ Add X" pill as the last child of the scrolling list
+panel** (mirrors the existing `＋ Add New Group` affordance).
+- Filters trades: in `FRefreshTradesSidebar` append to `_fTradeListPanel`.
+- Filters rules: in `FRefreshRuleList` append to `_fRuleListPanel`.
+- Legend: in `RebuildTabStack` append to `_tabStack`.
+
+### Floating bottom-right action pills (over content, full rounded pill + shadow)
+A vertical, right/bottom-aligned overlay in the content cell (high ZIndex,
+margin ~16):
+- **Both:** `Create` pill (Filters: "Create Filters" → `CreateFilters()`;
+  Legend: "Create/Update Legend →" → `HandleCreateUpdate()`).
+- **Legend only:** `Preview` pill stacked **directly above** the Create pill.
+- Transient status text sits above the topmost pill (right-aligned).
+
+### Legend Preview relocation + animation
+- Remove the Preview button from `LemoineLegendLayoutBar` (layout bar becomes
+  `[legend pill][✎ edit]`).
+- Add a public `TogglePreview()` on `LemoineLegendBuilder`; the floating Preview
+  pill calls it (host reads `PreviewVisible` to reflect on/off state).
+- Re-origin the preview overlay `RenderTransformOrigin` from `(1,0)` → **`(1,1)`**
+  so it grows from/to the bottom-right (the new Preview pill location).
+
+### Files added to scope
+- `Source/Lemoine/Controls/Legend/LemoineLegendLayoutBar.xaml.cs` (drop Preview btn).
+- `Source/Lemoine/Controls/Legend/LemoineLegendBuilder.xaml.cs` (public TogglePreview,
+  overlay origin (1,1)).
+
 ## Out of scope / unchanged
-- Drag-drop, multi-select, templates, preview, and create/update logic stay as-is.
+- Drag-drop, multi-select, templates, and create/update *logic* stay as-is.
 - Threading/hosting unchanged (window already uses the STA + Dispatcher pattern).
 - `OpenLegendSettingsCommand` remains the single entry point.
+- Renamed ribbon button keeps its gear glyph `` (it still opens settings).
 
 ## Branch
 Per task instructions, develop on `claude/pensive-hamilton-LbAT2` (already checked
