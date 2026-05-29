@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByLevelViewModel : ILemoineTool, IStepAware
+    public class SplitByLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable
     {
         public string Title    => "Split Elements by Levels";
         public string RunLabel => "Split in Revit →";
@@ -104,7 +104,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildReview();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -247,48 +247,6 @@ namespace LemoineTools.Tools.ModifyElements
             return tabs;
         }
 
-        private FrameworkElement BuildReview()
-        {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            AddCard(grid, "Categories Selected",
-                () => _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-                0, 0);
-            AddCard(grid, "Levels Selected",
-                () => _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
-                0, 1);
-            AddCard(grid, "Operation",
-                () => "Split elements at each selected level boundary",
-                1, 0);
-            AddCard(grid, "Scope",
-                () => _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
-                    : _useActiveView ? "Active view only"
-                    : "Entire document",
-                1, 1);
-
-            outer.Children.Add(grid);
-
-            var note = new TextBlock
-            {
-                Text         = "Elements spanning multiple selected levels will be split into one segment per span. " +
-                               "Walls and columns use level constraints; MEP curves and framing use LocationCurve adjustment. " +
-                               "Elements with no applicable split strategy are skipped.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            return outer;
-        }
 
         private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
         {
@@ -326,6 +284,31 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("cats",   "Categories Selected"),
+            ("levels", "Levels Selected"),
+            ("op",     "Operation"),
+            ("scope",  "Scope"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
+            ["levels"] = _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
+            ["op"]     = "Split elements at each selected level boundary",
+            ["scope"]  = _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
+                : _useActiveView ? "Active view only"
+                : "Entire document",
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Elements spanning multiple selected levels will be split into one " +
+            "segment per span. Walls and columns use level constraints; MEP curves and framing use LocationCurve " +
+            "adjustment. Elements with no applicable split strategy are skipped.";
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _preSelectedIds.Count > 0 || _selectedCats.Count > 0;

@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class ExtendWallsViewModel : ILemoineTool
+    public class ExtendWallsViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Extend Walls to Level";
         public string RunLabel => "Extend in Revit →";
@@ -59,7 +59,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildReview();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -138,47 +138,6 @@ namespace LemoineTools.Tools.ModifyElements
             return outer;
         }
 
-        private FrameworkElement BuildReview()
-        {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            AddCard(grid, "Base Levels",
-                () => _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
-                0, 0);
-            AddCard(grid, "Assumed Ceiling Height",
-                () => $"{_assumedCeilingFt:F2} ft (used when no Ceiling element found)",
-                0, 1);
-            AddCard(grid, "Scope",
-                () => _activeViewOnly ? "Active view" : "Entire document",
-                1, 0);
-            AddCard(grid, "Target",
-                () => "Walls above ceiling — set Top Constraint to next level",
-                1, 1);
-
-            outer.Children.Add(grid);
-
-            var note = new TextBlock
-            {
-                Text         = "Walls whose top elevation exceeds the ceiling threshold at their base level will have their " +
-                               "Top Constraint set to the next level up, with Top Offset zeroed. Curtain walls and walls " +
-                               "without a base constraint are skipped.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            return outer;
-        }
-
         private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
         {
             var card = new Border
@@ -215,6 +174,29 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("levels",  "Base Levels"),
+            ("ceiling", "Assumed Ceiling Height"),
+            ("scope",   "Scope"),
+            ("target",  "Target"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["levels"]  = _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
+            ["ceiling"] = $"{_assumedCeilingFt:F2} ft (used when no Ceiling element found)",
+            ["scope"]   = _activeViewOnly ? "Active view" : "Entire document",
+            ["target"]  = "Walls above ceiling — set Top Constraint to next level",
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Walls whose top elevation exceeds the ceiling threshold at their " +
+            "base level will have their Top Constraint set to the next level up, with Top Offset zeroed. Curtain " +
+            "walls and walls without a base constraint are skipped.";
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _selectedLevelNames.Count > 0;
