@@ -16,10 +16,11 @@
                     Margin="9,0,0,0"
                     IsHitTestVisible="False" />
             <!-- Placeholder watermark — visible when TextBox is empty -->
+            <!-- Left inset matches the TextBox text origin: BorderThickness(1) + Padding.Left(30). -->
             <TextBlock x:Name="_placeholder"
                        IsHitTestVisible="False"
                        VerticalAlignment="Center"
-                       Margin="30,0,10,0"
+                       Margin="31,0,10,0"
                        Opacity="0.55"
                        Visibility="Collapsed" />
         </Grid>
@@ -28,7 +29,7 @@
         <Popup x:Name="_popup"
                PlacementTarget="{Binding ElementName=_textBox}"
                Placement="Bottom"
-               StaysOpen="False"
+               StaysOpen="True"
                AllowsTransparency="True">
             <Border x:Name="_dropdownBorder"
                     MaxHeight="220"

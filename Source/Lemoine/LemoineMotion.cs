@@ -96,7 +96,11 @@ namespace LemoineTools.Lemoine
 
         private static void AnimateTo(FrameworkElement el, DependencyProperty prop, Color to)
         {
-            var from  = (el.GetValue(prop) as SolidColorBrush)?.Color ?? Colors.Transparent;
+            var cur = (el.GetValue(prop) as SolidColorBrush)?.Color ?? Colors.Transparent;
+            // A fully-transparent rest colour is #00FFFFFF (white). Animating its RGB toward
+            // the target flashes white mid-transition, so start from the *target* hue at zero
+            // alpha — only the alpha animates, and the intermediate colour stays on-theme.
+            var from  = cur.A == 0 ? Color.FromArgb(0, to.R, to.G, to.B) : cur;
             var brush = new SolidColorBrush(from);
             el.SetValue(prop, brush);
             brush.BeginAnimation(SolidColorBrush.ColorProperty,
@@ -105,10 +109,13 @@ namespace LemoineTools.Lemoine
 
         private static void RestoreTo(FrameworkElement el, DependencyProperty prop, string? key, Color to)
         {
-            var from  = (el.GetValue(prop) as SolidColorBrush)?.Color ?? Colors.Transparent;
-            var brush = new SolidColorBrush(from);
+            var cur  = (el.GetValue(prop) as SolidColorBrush)?.Color ?? Colors.Transparent;
+            // Fade out to the same hue at zero alpha (not white) so RGB never interpolates
+            // toward #FFFFFF on the way back to a transparent rest state.
+            var dest = to.A == 0 ? Color.FromArgb(0, cur.R, cur.G, cur.B) : to;
+            var brush = new SolidColorBrush(cur);
             el.SetValue(prop, brush);
-            var anim = new ColorAnimation(to, Hover) { EasingFunction = EaseOut };
+            var anim = new ColorAnimation(dest, Hover) { EasingFunction = EaseOut };
             // Re-bind to the theme resource once we're back at rest so live theme
             // switches keep updating the element (the local brush stops following it).
             // Guard on IsMouseOver so a stale leave-completion can't clobber a hover
