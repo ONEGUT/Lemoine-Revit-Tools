@@ -12,62 +12,92 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByCellViewModel : ILemoineTool
+    public class SplitByReferencePlaneViewModel : ILemoineTool, IStepAware
     {
-        public string Title    => "Split Elements by Cell";
+        public string Title    => "Split Elements by Reference Plane";
         public string RunLabel => "Split in Revit →";
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Categories", required: true),
-            new StepDefinition("S2", "Cell Size",         required: true),
-            new StepDefinition("S3", "Review & Run",      required: false),
+            new StepDefinition("S1", "Select Categories",       required: true),
+            new StepDefinition("S2", "Select Reference Planes", required: true),
+            new StepDefinition("S3", "Review & Run",            required: false),
         };
 
-        // Maps BuiltInCategory → display label; shared with SplitByCellCommand for counts + pre-selection.
-        internal static readonly IReadOnlyDictionary<BuiltInCategory, string> CatLabels =
-            new Dictionary<BuiltInCategory, string>
-            {
-                { BuiltInCategory.OST_Floors,               "Floors" },
-                { BuiltInCategory.OST_Ceilings,             "Ceilings" },
-                { BuiltInCategory.OST_Roofs,                "Roofs" },
-                { BuiltInCategory.OST_StructuralFoundation, "Structural Foundations" },
-                { BuiltInCategory.OST_FilledRegion,         "Filled Regions" },
-            };
-
         // ── State ─────────────────────────────────────────────────────────────
-        private List<string> _selectedCats     = new List<string>();
-        private double       _cellX            = 10.0;
-        private double       _cellY            = 10.0;
-        private bool         _useProjectOrigin = false;
+        private List<string>  _selectedCats     = new List<string>();
+        private List<string>  _selectedRefNames = new List<string>();
+        private bool          _useActiveView    = false;
+        private Action<string>? _rebuildContent;
 
-        private readonly IReadOnlyDictionary<string, int> _elementCounts;
-        private readonly IReadOnlyList<ElementId>         _preSelectedIds;
-        private readonly IReadOnlyList<string>            _preSelectedCats;
+        private Dictionary<string, ReferencePlane>                    _refPlanesByName;
+        private readonly Dictionary<string, List<string>>             _categoryGroups;
+        private readonly int                                          _totalElements;
+        private readonly ElementId?                                   _activeViewId;
+        private readonly IReadOnlyList<ElementId>                     _preSelectedIds;
+        private readonly IReadOnlyList<string>                        _preSelectedCats;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
-        private readonly SplitByCellEventHandler _handler;
-        private readonly ExternalEvent           _event;
+        private readonly SplitByReferencePlaneEventHandler _handler;
+        private readonly ExternalEvent                     _event;
 
         public event EventHandler? ValidationChanged;
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        public SplitByCellViewModel(
-            SplitByCellEventHandler          handler,
-            ExternalEvent                    externalEvent,
-            IReadOnlyDictionary<string, int> elementCounts,
-            IReadOnlyList<ElementId>         preSelectedIds,
-            IReadOnlyList<string>            preSelectedCats)
+        public SplitByReferencePlaneViewModel(
+            SplitByReferencePlaneEventHandler      handler,
+            ExternalEvent                          externalEvent,
+            IEnumerable<ReferencePlane>            allRefPlanes,
+            Dictionary<string, List<string>>       categoryGroups,
+            int                                    totalElements,
+            ElementId?                             activeViewId,
+            IReadOnlyList<ElementId>               preSelectedIds,
+            IReadOnlyList<string>                  preSelectedCats)
         {
             _handler         = handler;
             _event           = externalEvent;
-            _elementCounts   = elementCounts;
+            _categoryGroups  = categoryGroups;
+            _totalElements   = totalElements;
+            _activeViewId    = activeViewId;
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
+
+            _refPlanesByName = BuildRefPlaneMap(allRefPlanes);
 
             if (_preSelectedIds.Count > 0)
                 _selectedCats = new List<string>(_preSelectedCats);
         }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+
+            _handler.IsRefreshRequest = true;
+            _handler.OnRefreshed = freshPlanes =>
+            {
+                _refPlanesByName = BuildRefPlaneMap(freshPlanes);
+                _selectedRefNames = _selectedRefNames
+                    .Where(n => _refPlanesByName.ContainsKey(n))
+                    .ToList();
+                _rebuildContent?.Invoke("S2");
+            };
+            _event.Raise();
+        }
+
+        private static string RefPlaneName(ReferencePlane rp) =>
+            string.IsNullOrWhiteSpace(rp.Name)
+                ? $"Ref Plane {rp.Id.IntegerValue}"
+                : rp.Name;
+
+        private static Dictionary<string, ReferencePlane> BuildRefPlaneMap(
+            IEnumerable<ReferencePlane> planes) =>
+            planes
+                .GroupBy(r => RefPlaneName(r))
+                .ToDictionary(g => g.Key, g => g.First());
 
         // ═════════════════════════════════════════════════════════════════════
         //  GetStepContent
@@ -90,13 +120,10 @@ namespace LemoineTools.Tools.ModifyElements
 
             var outer = new StackPanel();
 
-            // A — element count strip (scoped to active view since Cell always uses it)
-            var parts = SplitByCellHelpers.SupportedCategories
-                .Select(bic => CatLabels.TryGetValue(bic, out string? lbl) ? lbl : bic.ToString().Replace("OST_", ""))
-                .Select(label => $"{label}: {(_elementCounts.TryGetValue(label, out int n) ? n : 0)}");
+            int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = string.Join("  ·  ", parts),
+                Text         = $"{totalCats} categories · {_totalElements} elements in document",
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -105,19 +132,35 @@ namespace LemoineTools.Tools.ModifyElements
             countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             outer.Children.Add(countStrip);
 
-            // Category picker
-            var catLabels = SplitByCellHelpers.SupportedCategories
-                .Select(bic => CatLabels.TryGetValue(bic, out string? lbl) ? lbl : bic.ToString().Replace("OST_", ""))
-                .ToList();
-            var groups = new Dictionary<string, List<string>> { { "Categories", catLabels } };
             var tabs = new LemoineMultiSelectTabs();
-            tabs.SetGroups(groups);
+            tabs.SetGroups(_categoryGroups);
             tabs.SelectionChanged += selected =>
             {
                 _selectedCats = new List<string>(selected);
                 OnValidationChanged();
             };
             outer.Children.Add(tabs);
+
+            if (_activeViewId != null)
+            {
+                var toggle = new LemoineToggleSwitches();
+                toggle.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem
+                    {
+                        Id        = "activeView",
+                        Label     = "Active view elements only",
+                        Desc      = "When on, only elements visible in the current Revit view will be split.",
+                        DefaultOn = false,
+                    },
+                });
+                toggle.StateChanged += state =>
+                {
+                    _useActiveView = state.TryGetValue("activeView", out bool v) && v;
+                    OnValidationChanged();
+                };
+                outer.Children.Add(toggle);
+            }
 
             return outer;
         }
@@ -181,44 +224,32 @@ namespace LemoineTools.Tools.ModifyElements
 
         private FrameworkElement BuildS2()
         {
-            var outer = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-
-            var sizeRange = new LemoineNumberRange
+            if (_refPlanesByName.Count == 0)
             {
-                MinLabel = "Cell X width (ft)",
-                MaxLabel = "Cell Y height (ft)",
-                AbsMin   = 0.1,
-                AbsMax   = 1000,
-                Step     = 0.5,
-            };
-            sizeRange.SetValues(_cellX, _cellY);
-            sizeRange.RangeChanged += (min, max) =>
-            {
-                if (min.HasValue && min.Value > 0) _cellX = min.Value;
-                if (max.HasValue && max.Value > 0) _cellY = max.Value;
-                OnValidationChanged();
-            };
-            outer.Children.Add(sizeRange);
-
-            var toggle = new LemoineToggleSwitches();
-            toggle.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem
+                var msg = new TextBlock
                 {
-                    Id        = "projOrigin",
-                    Label     = "Align grid to project origin",
-                    Desc      = "When on, the cell grid snaps to the project base point so cells are consistent across the model. When off, each element's own bounding box is used.",
-                    DefaultOn = false,
-                },
-            });
-            toggle.StateChanged += state =>
+                    Text         = "No reference planes found in the document.",
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                msg.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                msg.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                return msg;
+            }
+
+            var groups = new Dictionary<string, List<string>>
             {
-                _useProjectOrigin = state.TryGetValue("projOrigin", out bool v) && v;
+                { "Reference Planes", _refPlanesByName.Keys.OrderBy(n => n).ToList() }
+            };
+
+            var tabs = new LemoineMultiSelectTabs();
+            tabs.SetGroups(groups);
+            tabs.SelectionChanged += selected =>
+            {
+                _selectedRefNames = new List<string>(selected);
                 OnValidationChanged();
             };
-            outer.Children.Add(toggle);
-
-            return outer;
+            return tabs;
         }
 
         private FrameworkElement BuildReview()
@@ -230,28 +261,27 @@ namespace LemoineTools.Tools.ModifyElements
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddCard(grid, "Categories",
+            AddCard(grid, "Categories Selected",
                 () => _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
                 0, 0);
-            AddCard(grid, "Cell Size",
-                () => $"{_cellX:F2} ft × {_cellY:F2} ft",
+            AddCard(grid, "Reference Planes",
+                () => _selectedRefNames.Count == 0 ? "—" : $"{_selectedRefNames.Count} plane(s)",
                 0, 1);
-            AddCard(grid, "Grid Origin",
-                () => _useProjectOrigin ? "Project base point" : "Per-element bounding box",
+            AddCard(grid, "Operation",
+                () => "Split elements at each reference plane",
                 1, 0);
             AddCard(grid, "Scope",
-                () => _preSelectedIds.Count > 0
-                    ? $"From selection ({_preSelectedIds.Count} elements)"
-                    : "Active view",
+                () => _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
+                    : _useActiveView ? "Active view only"
+                    : "Entire document",
                 1, 1);
 
             outer.Children.Add(grid);
 
             var note = new TextBlock
             {
-                Text         = "Sketch-based elements in the active view will be split into a regular grid of cells. " +
-                               "Elements that fit within a single cell are skipped. Each element runs in its own transaction — " +
-                               "the entire operation collapses to a single Ctrl+Z undo step.",
+                Text         = "Elements whose LocationCurve intersects a reference plane will be split at that intersection. " +
+                               "Elements with no linear curve are skipped. The reference plane's own normal vector is used as the cutting direction.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 8, 0, 0),
@@ -303,7 +333,7 @@ namespace LemoineTools.Tools.ModifyElements
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _preSelectedIds.Count > 0 || _selectedCats.Count > 0;
-            if (stepId == "S2") return _cellX > 0 && _cellY > 0;
+            if (stepId == "S2") return _selectedRefNames.Count > 0;
             return true;
         }
 
@@ -315,7 +345,7 @@ namespace LemoineTools.Tools.ModifyElements
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return $"{_cellX:F2} ft × {_cellY:F2} ft";
+                return _selectedRefNames.Count == 0 ? "—" : $"{_selectedRefNames.Count} plane(s) selected";
             if (stepId == "S3")
                 return "Ready to run";
             return "—";
@@ -326,14 +356,18 @@ namespace LemoineTools.Tools.ModifyElements
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _handler.PreSelectedIds         = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
-            _handler.SelectedCategoryLabels = new List<string>(_selectedCats);
-            _handler.CellX                  = _cellX;
-            _handler.CellY                  = _cellY;
-            _handler.UseProjectOrigin       = _useProjectOrigin;
-            _handler.OnLog                  = pushLog;
-            _handler.OnProgress             = onProgress;
-            _handler.OnComplete             = onComplete;
+            _handler.PreSelectedIds        = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId          = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
+            _handler.SelectedCategoryNames = new List<string>(_selectedCats);
+
+            _handler.SelectedRefPlaneIds = _selectedRefNames
+                .Where(n => _refPlanesByName.ContainsKey(n))
+                .Select(n => _refPlanesByName[n].Id)
+                .ToList();
+
+            _handler.OnLog      = pushLog;
+            _handler.OnProgress = onProgress;
+            _handler.OnComplete = onComplete;
 
             _event.Raise();
         }

@@ -6,23 +6,22 @@ using Autodesk.Revit.UI;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByLevelEventHandler : IExternalEventHandler
+    public class SplitByReferencePlaneEventHandler : IExternalEventHandler
     {
-        public List<string>                SelectedCategoryNames { get; set; } = new List<string>();
-        public List<ElementId>             SelectedLevelIds      { get; set; } = new List<ElementId>();
-        public List<ElementId>?            PreSelectedIds        { get; set; }
-        public ElementId?                  ActiveViewId          { get; set; }
+        public List<string>                      SelectedCategoryNames { get; set; } = new List<string>();
+        public List<ElementId>                   SelectedRefPlaneIds   { get; set; } = new List<ElementId>();
+        public List<ElementId>?                  PreSelectedIds        { get; set; }
+        public ElementId?                        ActiveViewId          { get; set; }
 
-        // Refresh mode: set IsRefreshRequest = true before raising the event to
-        // collect fresh levels without performing a split.
-        public bool                        IsRefreshRequest      { get; set; } = false;
-        public Action<IEnumerable<Level>>? OnRefreshed           { get; set; }
+        // Refresh mode: set IsRefreshRequest = true before raising to collect fresh ref planes.
+        public bool                              IsRefreshRequest      { get; set; } = false;
+        public Action<IEnumerable<ReferencePlane>>? OnRefreshed        { get; set; }
 
-        public Action<string, string>?      OnLog      { get; set; }
-        public Action<int, int, int, int>?  OnProgress { get; set; }
-        public Action<int, int, int>?       OnComplete { get; set; }
+        public Action<string, string>?            OnLog      { get; set; }
+        public Action<int, int, int, int>?        OnProgress { get; set; }
+        public Action<int, int, int>?             OnComplete { get; set; }
 
-        public string GetName() => "SplitByLevel";
+        public string GetName() => "SplitByReferencePlane";
 
         public void Execute(UIApplication app)
         {
@@ -31,14 +30,13 @@ namespace LemoineTools.Tools.ModifyElements
             if (IsRefreshRequest)
             {
                 IsRefreshRequest = false;
-                var freshLevels = new FilteredElementCollector(doc)
-                    .OfClass(typeof(Level))
-                    .Cast<Level>()
-                    .OrderBy(l => l.Elevation)
+                var freshPlanes = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ReferencePlane))
+                    .Cast<ReferencePlane>()
                     .ToList();
                 var cb = OnRefreshed;
                 OnRefreshed = null;
-                cb?.Invoke(freshLevels);
+                cb?.Invoke(freshPlanes);
                 return;
             }
 
@@ -48,15 +46,14 @@ namespace LemoineTools.Tools.ModifyElements
 
             try
             {
-                var levels = SelectedLevelIds
-                    .Select(id => doc.GetElement(id))
-                    .OfType<Level>()
-                    .OrderBy(l => l.Elevation)
+                var refPlanes = SelectedRefPlaneIds
+                    .Select(id => doc.GetElement(id) as ReferencePlane)
+                    .Where(r => r != null)
                     .ToList();
 
-                if (!levels.Any())
+                if (!refPlanes.Any())
                 {
-                    pushLog("No valid levels found.", "fail");
+                    pushLog("No valid reference planes found.", "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -77,22 +74,21 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog($"Found {elements.Count} elements across {SelectedCategoryNames.Count} category(ies).", "info");
                 }
 
-                pushLog($"Splitting at {levels.Count} level(s)...", "info");
+                pushLog($"Splitting at {refPlanes.Count} reference plane(s)...", "info");
 
                 SplitStats stats;
-                using (var tx = new Transaction(doc, "Split Elements by Level"))
+                using (var tx = new Transaction(doc, "Split Elements by Reference Plane"))
                 {
                     var fho = tx.GetFailureHandlingOptions();
                     fho.SetClearAfterRollback(true);
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels);
+                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes);
 
                     tx.Commit();
                 }
 
-                int total = stats.SplitCount + stats.SkipCount + stats.FailCount;
                 foreach (var entry in stats.Log)
                 {
                     string status = entry.StartsWith("✓") ? "pass"

@@ -12,7 +12,7 @@ namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class SplitByCellCommand : IExternalCommand
+    public class SplitByReferencePlaneCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -35,41 +35,41 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc      = commandData.Application.ActiveUIDocument;
-            var doc        = uidoc.Document;
+            var uidoc        = commandData.Application.ActiveUIDocument;
+            var doc          = uidoc.Document;
             var activeViewId = uidoc.ActiveView?.Id;
 
-            // ── Element counts (A) — active view scope matches Cell's runtime scope ──
-            var counts = new Dictionary<string, int>();
-            if (activeViewId != null)
-            {
-                foreach (var bic in SplitByCellHelpers.SupportedCategories)
-                {
-                    if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
-                    counts[label] = new FilteredElementCollector(doc, activeViewId)
-                        .OfCategoryId(new ElementId(bic))
-                        .WhereElementIsNotElementType()
-                        .ToList().Count;
-                }
-            }
-
-            // ── Pre-selection (E) ──────────────────────────────────────────────
-            var supportedBics = new HashSet<BuiltInCategory>(SplitByCellHelpers.SupportedCategories);
-            var rawSelection  = uidoc.Selection.GetElementIds()
-                .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Id != null &&
-                            supportedBics.Contains((BuiltInCategory)(int)e.Category.Id.Value))
+            // All categorised elements → discipline-grouped category picker.
+            var allElements = new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Where(e => e.Category?.Name != null &&
+                           (e.Category.CategoryType == CategoryType.Model ||
+                            e.Category.CategoryType == CategoryType.Annotation))
                 .ToList();
-            var preSelectedIds = rawSelection.Select(e => e.Id).ToList();
+            var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
+            int totalElements  = allElements.Count;
+
+            // Pre-selection: any selected element with a recognisable category.
+            var rawSelection = uidoc.Selection.GetElementIds()
+                .Select(id => doc.GetElement(id))
+                .Where(e => e?.Category?.Name != null &&
+                           (e.Category.CategoryType == CategoryType.Model ||
+                            e.Category.CategoryType == CategoryType.Annotation))
+                .ToList();
+            var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
             var preSelectedCats = rawSelection
-                .Select(e => (BuiltInCategory)(int)e.Category.Id.Value)
-                .Where(bic => SplitByCellViewModel.CatLabels.ContainsKey(bic))
-                .Select(bic => SplitByCellViewModel.CatLabels[bic])
+                .Select(e => e.Category!.Name)
                 .Distinct().ToList();
 
-            var vm    = new SplitByCellViewModel(
-                App.SplitByCellHandler!, App.SplitByCellEvent!,
-                counts, preSelectedIds, preSelectedCats);
+            var allRefPlanes = new FilteredElementCollector(doc)
+                .OfClass(typeof(ReferencePlane))
+                .Cast<ReferencePlane>()
+                .ToList();
+
+            var vm = new SplitByReferencePlaneViewModel(
+                App.SplitByReferencePlaneHandler!, App.SplitByReferencePlaneEvent!,
+                allRefPlanes, categoryGroups, totalElements, activeViewId,
+                preSelectedIds, preSelectedCats);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
