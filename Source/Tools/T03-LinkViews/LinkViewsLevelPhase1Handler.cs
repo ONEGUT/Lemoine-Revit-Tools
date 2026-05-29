@@ -56,20 +56,22 @@ namespace LemoineTools.Tools.LinkViews
                     .OfClass(typeof(Level)).Cast<Level>()
                     .OrderBy(l => l.Elevation).ToList();
 
-                // Accumulate room counts per (levelName, docName)
-                // roomCounts[levelName][docName] = count
-                var roomCounts = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
-
+                // Single-pass: collect rooms per doc and cache — avoids a second CollectRooms call
+                var cachedRooms = new Dictionary<string, List<RoomInfo>>(StringComparer.Ordinal);
                 foreach (var pair in sourcePairs)
+                    cachedRooms[pair.DisplayName] = CollectRooms(doc, new List<Document> { pair.Doc });
+
+                // Accumulate room counts per (levelName, docName)
+                var roomCounts = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+                foreach (var kv in cachedRooms)
                 {
-                    var rooms = CollectRooms(doc, new List<Document> { pair.Doc });
-                    foreach (var r in rooms)
+                    foreach (var r in kv.Value)
                     {
                         if (!roomCounts.ContainsKey(r.LevelName))
                             roomCounts[r.LevelName] = new Dictionary<string, int>(StringComparer.Ordinal);
                         var byDoc = roomCounts[r.LevelName];
-                        if (!byDoc.ContainsKey(pair.DisplayName)) byDoc[pair.DisplayName] = 0;
-                        byDoc[pair.DisplayName]++;
+                        if (!byDoc.ContainsKey(kv.Key)) byDoc[kv.Key] = 0;
+                        byDoc[kv.Key]++;
                     }
                 }
 
@@ -80,9 +82,10 @@ namespace LemoineTools.Tools.LinkViews
 
                 var results = new List<LevelScanResult>();
 
+                // Build results using the cached room data — no second scan needed
                 foreach (var pair in sourcePairs)
                 {
-                    var rooms = CollectRooms(doc, new List<Document> { pair.Doc });
+                    var rooms   = cachedRooms[pair.DisplayName];
                     var byLevel = new Dictionary<string, int>(StringComparer.Ordinal);
                     foreach (var r in rooms)
                     {
@@ -103,6 +106,22 @@ namespace LemoineTools.Tools.LinkViews
                             ModelName    = dominantDoc.TryGetValue(lvl.Name, out var dom) ? dom : pair.DisplayName,
                         });
                     }
+                }
+
+                // Append fallback entries for host levels that have no rooms in any source doc
+                var coveredIds = new HashSet<long>(results.Select(r => r.LevelId.Value));
+                foreach (var lvl in allLevels.Where(l => !coveredIds.Contains(l.Id.Value)))
+                {
+                    results.Add(new LevelScanResult
+                    {
+                        LevelId      = lvl.Id,
+                        Name         = lvl.Name,
+                        ElevationFt  = Math.Round(UnitUtils.ConvertFromInternalUnits(
+                                           lvl.Elevation, UnitTypeId.Feet), 2),
+                        RoomCount    = 0,
+                        DocumentName = "(No rooms)",
+                        ModelName    = "",
+                    });
                 }
 
                 OnLevelsLoaded?.Invoke(results);

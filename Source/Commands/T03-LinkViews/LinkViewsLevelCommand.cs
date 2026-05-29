@@ -68,11 +68,16 @@ namespace LemoineTools.Commands
                 });
             }
 
+            // ── Collect view templates on main thread ─────────────────
+            var templates3D  = CollectViewTemplates(doc, ViewType.ThreeD);
+            var templatesFP  = CollectViewTemplates(doc, ViewType.FloorPlan);
+            var templatesRCP = CollectViewTemplates(doc, ViewType.CeilingPlan);
+
             // ── Create ViewModel and open window on STA thread ────────
             var vm    = new LinkViewsLevelViewModel(
                 App.LinkViewsLevelPhase1Handler!, App.LinkViewsLevelPhase1Event!,
                 App.LinkViewsLevelRunHandler!,    App.LinkViewsLevelRunEvent!,
-                availableDocs);
+                availableDocs, templates3D, templatesFP, templatesRCP);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
@@ -97,5 +102,16 @@ namespace LemoineTools.Commands
             _window = win;
             return Result.Succeeded;
         }
+
+        private static List<LinkViewsLevelViewModel.ViewTemplateEntry> CollectViewTemplates(
+            Document doc, ViewType vt) =>
+            new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => v.IsTemplate && v.ViewType == vt)
+                .OrderBy(v => v.Name)
+                .Select(v => new LinkViewsLevelViewModel.ViewTemplateEntry
+                    { Id = v.Id, Name = v.Name })
+                .ToList();
     }
 }

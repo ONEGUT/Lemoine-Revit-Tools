@@ -28,11 +28,17 @@ namespace LemoineTools
         internal static MakeCeilingGridsRunHandler?    MakeCeilingGridsRunHandler    { get; private set; }
         internal static ExternalEvent?                 MakeCeilingGridsRunEvent      { get; private set; }
 
+        // ── Discover Rules ──────────────────────────────────────────────────────────
+        internal static DiscoverEventHandler? DiscoverHandler { get; private set; }
+        internal static ExternalEvent?        DiscoverEvent   { get; private set; }
+
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
         internal static AutoFiltersLegendEventHandler?        AutoFiltersLegendHandler        { get; private set; }
         internal static ExternalEvent?                        AutoFiltersLegendEvent          { get; private set; }
+        internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
+        internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
         internal static ApplyFiltersToViewsEventHandler?      ApplyFiltersToViewsHandler      { get; private set; }
@@ -76,13 +82,6 @@ namespace LemoineTools
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
 
-        // ── Testing — Sheet Pack ────────────────────────────────────────────────────
-        internal static SheetPackEventHandler?     SheetPackHandler     { get; private set; }
-        internal static ExternalEvent?             SheetPackEvent       { get; private set; }
-
-        // ── Legend Creator (T08) ─────────────────────────────────────────────────────
-        internal static LegendCreatorEventHandler? LegendCreatorHandler { get; private set; }
-        internal static ExternalEvent?             LegendCreatorEvent   { get; private set; }
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler? SplitByLevelHandler { get; private set; }
@@ -115,11 +114,17 @@ namespace LemoineTools
             MakeCeilingGridsRunHandler    = new MakeCeilingGridsRunHandler();
             MakeCeilingGridsRunEvent      = ExternalEvent.Create(MakeCeilingGridsRunHandler);
 
+            // ── Discover Rules ────────────────────────────────────────────────
+            DiscoverHandler = new DiscoverEventHandler();
+            DiscoverEvent   = ExternalEvent.Create(DiscoverHandler);
+
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
             AutoFiltersLegendHandler        = new AutoFiltersLegendEventHandler();
             AutoFiltersLegendEvent          = ExternalEvent.Create(AutoFiltersLegendHandler);
+            LegendCreatorHandler            = new LegendCreatorEventHandler();
+            LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
             ApplyFiltersToViewsHandler      = new ApplyFiltersToViewsEventHandler();
@@ -156,11 +161,6 @@ namespace LemoineTools
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
-            SheetPackHandler     = new SheetPackEventHandler();
-            SheetPackEvent       = ExternalEvent.Create(SheetPackHandler);
-
-            LegendCreatorHandler = new LegendCreatorEventHandler();
-            LegendCreatorEvent   = ExternalEvent.Create(LegendCreatorHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler = new SplitByLevelEventHandler();
@@ -185,35 +185,54 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Large: Auto Filters
-            // Large: Legend Creator
-            // Large SplitButton: Apply to Views | Remove from View | Delete from Project
+            // Large:    Discover Rules
+            // Large:    Auto Filters
+            // SplitButton: Apply to Views | Remove from View | Delete from Project
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
 
             filtersPanel.AddItem(Btn(
-                "LT_AutoFilters", "Auto\nFilters", "AutoFiltersLaunchCommand",
-                "Scan MEP elements and create view filters with automatic color overrides.",
-                ""));  // Segoe MDL2: Filter (funnel)
+                "LT_DiscoverRules", "Discover\nRules", "DiscoverLaunchCommand",
+                "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules.",
+                "\uE773"));  // Segoe MDL2: Search
 
             filtersPanel.AddItem(Btn(
-                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
-                "Create or update a Legend view from the current Legend Creator settings.",
-                "\uE8FD"));  // Segoe MDL2: ColorSolid (color swatch)
+                "LT_AutoFilters", "Auto\nFilters", "OpenFiltersSettingsCommand",
+                "Open the Auto Filters window to configure and create view filters.",
+                "\uE713"));  // Segoe MDL2: Settings gear
 
-            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions");
+            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions")
+            {
+                LargeImage = CreateGlyphBitmap(32, "\uE700"),
+                Image      = CreateGlyphBitmap(16, "\uE700"),
+            };
             var split = (SplitButton)filtersPanel.AddItem(splitData);
             split.AddPushButton(Btn(
                 "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
                 "Apply existing project filters to multiple views at once, with optional color overrides.",
-                ""));  // Segoe MDL2: Add
+                "\uE710"));  // Segoe MDL2: Add/Plus
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
                 "Remove selected filters from the active view (filters are kept in the project).",
-                ""));  // Segoe MDL2: Remove
+                "\uE738"));  // Segoe MDL2: Remove
             split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
                 "Permanently delete selected ParameterFilterElements from the project.",
-                ""));  // Segoe MDL2: Delete
+                "\uE74d"));  // Segoe MDL2: Delete
+
+            // ── T01B — Legend ─────────────────────────────────────────────────
+            // Large: Legend Creation
+            // Large: Legend Settings
+            var legendPanel = application.CreateRibbonPanel("Lemoine Tools", "T01B  Legend");
+
+            legendPanel.AddItem(Btn(
+                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
+                "Create or update a Legend view from the current Legend Creator settings.",
+                "\uE8FD"));  // Segoe MDL2: Color / Solid
+
+            legendPanel.AddItem(Btn(
+                "LT_LegendSettings", "Legend\nSettings", "OpenLegendSettingsCommand",
+                "Open the Legend Creator settings window.",
+                "\uE713"));  // Segoe MDL2: Settings gear
 
             // ── T02 — Ceilings ────────────────────────────────────────────────
             // Large:   Ceiling Heatmap
@@ -260,21 +279,20 @@ namespace LemoineTools
                 Image      = CreateGlyphBitmap(16, "\uE895"),
             });
 
-            // ── T03 — Link Views ──────────────────────────────────────────────
-            // Large:   Link Views by Level
-            // Stacked: By Discipline  |  Replicate Dep. Views
-            var linkViewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T03  Link Views");
+            // ── T03 — Bulk Views ──────────────────────────────────────────────
+            // Large: Bulk Views by Level
+            // Large: Replicate Dep. Views
+            var linkViewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T03  Bulk Views");
 
             linkViewsPanel.AddItem(Btn(
-                "LT_LinkViewsLevel", "Link Views\nby Level", "LinkViewsLevelCommand",
+                "LT_LinkViewsLevel", "Bulk Views\nby Level", "LinkViewsLevelCommand",
                 "Create cropped 3D, floor plan, and ceiling plan views per level and building cluster.",
                 "\uE8B7"));  // Segoe MDL2: Layers
 
-            linkViewsPanel.AddStackedItems(
-                Btn("LT_LinkViewsDiscipline",     "By Discipline",        "LinkViewsDisciplineCommand",
-                    "Create one 3D view per link with a section box, with optional combined views per discipline."),
-                Btn("LT_ReplicateDependentViews", "Replicate Dep. Views", "ReplicateDependentViewsCommand",
-                    "Copy dependent views and their crop regions from a source view onto one or more target views."));
+            linkViewsPanel.AddItem(Btn(
+                "LT_ReplicateDependentViews", "Replicate\nDep. Views", "ReplicateDependentViewsCommand",
+                "Copy dependent views and their crop regions from a source view onto one or more target views.",
+                "\uE8C8"));  // Segoe MDL2: Copy
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Stacked 3: Split by Level  |  Split by Grid  |  Split by Cell
@@ -309,10 +327,10 @@ namespace LemoineTools
                     "Apply dimension strings across multiple views at once."));
 
             testingPanel.AddStackedItems(
-                Btn("LT_CreateSheets", "Create Sheets", "CreateSheetsCommand",
+                Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
-                Btn("LT_SheetPack",    "Sheet Pack",    "SheetPackCommand",
-                    "Organise sheets into named issue packages and stamp sheet parameters."));
+                Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
+                    "Create one 3D view per link with a section box, with optional combined views per discipline."));
 
             testingPanel.AddItem(Btn(
                 "LT_ClashDimension", "Clash\nDimension", "ClashDimensionCommand",
