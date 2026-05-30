@@ -22,7 +22,7 @@ using WpfTextBox    = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Testing.CoordSet
 {
-    public sealed class CoordSetViewModel : ILemoineTool
+    public sealed class CoordSetViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Coordination Drawing Set";
         public string RunLabel => "Create Set in Revit →";
@@ -37,6 +37,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
             new StepDefinition("depviews",   "Dependent View Layout",   required: false),
             new StepDefinition("gridbubbles","Grid Bubbles",            required: false),
             new StepDefinition("coversheet", "Cover Sheet",             required: false),
+            new StepDefinition("review",     "Review & Run",            required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -709,6 +710,27 @@ namespace LemoineTools.Tools.Testing.CoordSet
         // ═══════════════════════════════════════════════════════════════════════
         // Validation + Summary
         // ═══════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("trades",  "Trades"),
+            ("legend",  "Legend Groups"),
+            ("cover",   "Cover Sheet"),
+            ("project", "Project"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["trades"]  = $"{_selectedTradeIds.Count} selected",
+            ["legend"]  = $"{(_s.LegendGroups?.Count ?? 0)} group(s)",
+            ["cover"]   = _s.CreateCoverSheet ? "Yes" : "No",
+            ["project"] = string.IsNullOrEmpty(_s.ProjectName) ? "—" : _s.ProjectName,
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             if (stepId == "filters")     return _selectedTradeIds.Count > 0;

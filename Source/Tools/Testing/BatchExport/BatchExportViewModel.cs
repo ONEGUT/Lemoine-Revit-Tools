@@ -18,7 +18,7 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class BatchExportViewModel : ILemoineTool
+    public class BatchExportViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Batch Export";
@@ -30,7 +30,8 @@ namespace LemoineTools.Tools.Testing
             new StepDefinition("S2", "Build Packs",           required: false),
             new StepDefinition("S3", "Filename & Formats",    required: true),
             new StepDefinition("S4", "PDF Settings",          required: false),
-            new StepDefinition("S5", "Output & Review",       required: true),
+            new StepDefinition("S5", "Output",                required: true),
+            new StepDefinition("S6", "Review & Run",          required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -846,35 +847,6 @@ namespace LemoineTools.Tools.Testing
             splitCb.Unchecked += (s, e) => { _splitByFormat = false; Fire(); };
             outer.Children.Add(splitCb);
 
-            AddDivider(outer);
-            AddSectionLabel(outer, "REVIEW SUMMARY");
-
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var cards = new CardDef[]
-            {
-                new CardDef("Sheets / Views",   () => _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected"),
-                new CardDef("Formats",          () => GetActiveFormats()),
-                new CardDef("Packs",            () => HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export"),
-                new CardDef("Quality",          () => _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled"),
-                new CardDef("Filename Pattern", () => string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern),
-                new CardDef("Output Folder",    () => _outputFolder.Length == 0 ? "—"
-                                                    : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
-                                                    : _outputFolder),
-            };
-
-            for (int i = 0; i < cards.Length; i++)
-            {
-                int row = i / 2;
-                int col = i % 2;
-                if (grid.RowDefinitions.Count <= row)
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(grid, cards[i], row, col);
-            }
-            outer.Children.Add(grid);
-
             return outer;
         }
 
@@ -952,6 +924,33 @@ namespace LemoineTools.Tools.Testing
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("sheets",  "Sheets / Views"),
+            ("formats", "Formats"),
+            ("packs",   "Packs"),
+            ("quality", "Quality"),
+            ("pattern", "Filename Pattern"),
+            ("folder",  "Output Folder"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["sheets"]  = _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected",
+            ["formats"] = GetActiveFormats(),
+            ["packs"]   = HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export",
+            ["quality"] = _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled",
+            ["pattern"] = string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern,
+            ["folder"]  = _outputFolder.Length == 0 ? "—"
+                : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
+                : _outputFolder,
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             switch (stepId)

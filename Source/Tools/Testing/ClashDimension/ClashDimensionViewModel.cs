@@ -20,7 +20,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class ClashDimensionViewModel : ILemoineTool
+    public class ClashDimensionViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Clash Dimension";
         public string RunLabel => "Place Clash Annotations →";
@@ -31,7 +31,8 @@ namespace LemoineTools.Tools.Testing
             new StepDefinition("S2", "Group 1 — Source",          required: true),
             new StepDefinition("S3", "Group 2 — Target",          required: true),
             new StepDefinition("S4", "Grids & Slab References",   required: false),
-            new StepDefinition("S5", "Settings & Review",         required: false),
+            new StepDefinition("S5", "Settings",                  required: false),
+            new StepDefinition("S6", "Review & Run",              required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -763,37 +764,6 @@ namespace LemoineTools.Tools.Testing
                 _maxClashes.ToString(),
                 val => { if (int.TryParse(val, out int n) && n > 0) { _maxClashes = n; Fire(); } });
 
-            AddDivider(outer);
-            var reviewHdr = new TextBlock { Text = "RUN SUMMARY", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
-            reviewHdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            reviewHdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            reviewHdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(reviewHdr);
-
-            var cardGrid = new WpfGrid();
-            cardGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            cardGrid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var cardDefs = new CardDef[]
-            {
-                new CardDef("Views",          () => $"{_selectedViewNames.Count} selected"),
-                new CardDef("Group 1",        () => $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}"),
-                new CardDef("Group 2",        () => $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}"),
-                new CardDef("Grids & Slabs",  () => $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}"),
-                new CardDef("Tolerance",      () => $"{_toleranceMm:F1} mm"),
-                new CardDef("Dim Reference",  () => _dimTarget),
-                new CardDef("Max Clashes",    () => _maxClashes.ToString()),
-            };
-
-            for (int i = 0; i < cardDefs.Length; i++)
-            {
-                int row = i / 2, col = i % 2;
-                if (cardGrid.RowDefinitions.Count <= row)
-                    cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(cardGrid, cardDefs[i].Label, cardDefs[i].Value, row, col);
-            }
-            outer.Children.Add(cardGrid);
-
             return WrapInScroll(outer, maxHeight: 800);
         }
 
@@ -905,6 +875,33 @@ namespace LemoineTools.Tools.Testing
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("views", "Views"),
+            ("g1",    "Group 1"),
+            ("g2",    "Group 2"),
+            ("grids", "Grids & Slabs"),
+            ("tol",   "Tolerance"),
+            ("ref",   "Dim Reference"),
+            ("max",   "Max Clashes"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["views"] = $"{_selectedViewNames.Count} selected",
+            ["g1"]    = $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}",
+            ["g2"]    = $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}",
+            ["grids"] = $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}",
+            ["tol"]   = $"{_toleranceMm:F1} mm",
+            ["ref"]   = _dimTarget,
+            ["max"]   = _maxClashes.ToString(),
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             switch (stepId)
