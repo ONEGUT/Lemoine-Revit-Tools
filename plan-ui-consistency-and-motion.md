@@ -143,7 +143,23 @@ and self-contained.
 - [x] **P0** interaction bug fixes — log-tab hover, autocomplete guards, scroll bubbling
 - [x] **P1** motion foundation — `LemoineMotion` (WireHover/WirePress/FadeSlideIn) +
       `AnimPress` token + button press-scale + step fade-slide + animated dropdown hover
-- [ ] P2 inputs · [ ] P3 review · [ ] P4 migrate inputs · [ ] P5 drag · [ ] **P6 spacing**
+- [x] **P1.5** hover sweep — WireSwatchHover (color tiles: accent ring + shadow lift),
+      WireHover(Panel)/WireToggleHover/WireTextHover; tabs, rows, pills, chips, text links
+- [x] **P2** inputs — `LemoineFolderBrowser` + `LemoineTextField`; read-only `SingleSelect`
+      (BuildReadOnlyComboBoxStyle); `BuildListBoxItemStyle`; TagChipInput popup StaysOpen
+      crash fix + themed list items + FS_XS→FS_SM
+- [x] **P3** review — `ILemoineReviewable` + `StepFlowWindow` auto-render +
+      `LemoineReviewSummary` note/warning slots; migrated 22/23 tools (Discover left as-is,
+      already review-only). Input-bleed tools (ApplyFiltersToViews, BatchExport,
+      ClashDimension) split into an inputs step + a dedicated review step; CoordSet gained
+      a review step. Per-tool hand-rolled card grids deleted.
+- [ ] P4 migrate inputs · [ ] P5 drag · [ ] **P6 spacing**
+
+### P3 cleanup carried forward
+Unused private helpers left by the review-grid deletions (`AddCard` / `AddReviewCard` /
+`BuildInfoPanel` and the `CardDef` structs) are dead but compile-safe (no
+warnings-as-errors). Sweep in a follow-up. Discover can adopt `ILemoineReviewable` later to
+drop its manual `UpdateS5Summary` wiring.
 
 ### P6 — Spacing tokens (from the spacing audit)
 Worst offenders: 38 label→control gaps use `(0,0,0,2)` instead of the `(0,0,0,8)`
