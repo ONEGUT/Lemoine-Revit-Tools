@@ -28,6 +28,13 @@ namespace LemoineTools.Tools.Testing
         public double          ClusterGapMm      { get; set; } = 1000.0;
         // Colour for clashes matching no Auto Filter rule (hex, rendered with a hatch fill).
         public string          FallbackColorHex  { get; set; } = "#FF00FF";
+        // Overlap avoidance: keep placed dimensions off each other, the clash markers,
+        // and (optionally) pre-existing annotations in the view.
+        public bool            AvoidOverlaps     { get; set; } = true;
+        public string          OverlapMode       { get; set; } = "Stagger";  // "Stagger" | "Probe"
+        public double          StaggerFactor     { get; set; } = 2.5;        // lane height = textH × scale × factor
+        public int             MaxLanes          { get; set; } = 6;          // probe retry cap
+        public bool            AvoidExisting     { get; set; } = true;       // probe also dodges existing annotations
         public string          DimTarget         { get; set; } = "Edge";
         public string          FillStyle         { get; set; } = "Solid";
         public string          CrossLineTypeName { get; set; } = "";
@@ -705,6 +712,12 @@ namespace LemoineTools.Tools.Testing
             public double Cy;
             public Reference HRef;
             public Reference VRef;
+            // Drawn XY extents (circle + cross arms) so overlap avoidance can dodge
+            // the marker without any geometry query.
+            public double MinX;
+            public double MinY;
+            public double MaxX;
+            public double MaxY;
         }
 
         // Places the filled region + cross lines for one clash and returns its marker.
@@ -789,7 +802,13 @@ namespace LemoineTools.Tools.Testing
             }
 
             if (hRef == null || vRef == null) return null;
-            return new ClashMarker { Cx = cx, Cy = cy, HRef = hRef, VRef = vRef };
+            double ext = Math.Max(radius, armLen);   // drawn footprint half-size
+            return new ClashMarker
+            {
+                Cx = cx, Cy = cy, HRef = hRef, VRef = vRef,
+                MinX = cx - ext, MaxX = cx + ext,
+                MinY = cy - ext, MaxY = cy + ext,
+            };
         }
 
         // ── Grouped dimension placement ───────────────────────────────────────
@@ -906,20 +925,86 @@ namespace LemoineTools.Tools.Testing
             foreach (var c in xCandidates) { double d = Math.Abs(centX - c.edgeCoord); if (d < dBX) { dBX = d; bestX = c; } }
             foreach (var c in yCandidates) { double d = Math.Abs(centY - c.edgeCoord); if (d < dBY) { dBY = d; bestY = c; } }
 
+            // Overlap-avoidance context: lane height + obstacle set (markers, then each
+            // placed dimension is added so the second axis avoids the first).
+            double stepFt = AvoidOverlaps ? DimStepFt(view, dimType, StaggerFactor) : 0.0;
+            var obstacles = AvoidOverlaps ? BuildObstacles(doc, view, markers) : new List<BoundingBoxXYZ>();
+
             int placed = 0;
             if (bestX != null)
             {
                 var xItems = markers.Select(m => new DimItem { Ref = m.HRef, Mx = m.Cx, My = m.Cy }).ToList();
                 placed += EmitEdgeDimensions(doc, view, dimType, bestX.Value.r, true, bestX.Value.edgeCoord,
-                    xItems, dimLineOffsetFt, groupTolFt, bestX.Value.label);
+                    xItems, dimLineOffsetFt, groupTolFt, stepFt, obstacles, bestX.Value.label);
             }
             if (bestY != null)
             {
                 var yItems = markers.Select(m => new DimItem { Ref = m.VRef, Mx = m.Cx, My = m.Cy }).ToList();
                 placed += EmitEdgeDimensions(doc, view, dimType, bestY.Value.r, false, bestY.Value.edgeCoord,
-                    yItems, dimLineOffsetFt, groupTolFt, bestY.Value.label);
+                    yItems, dimLineOffsetFt, groupTolFt, stepFt, obstacles, bestY.Value.label);
             }
             return placed;
+        }
+
+        // Lane height for staggering / probing, in model feet. TEXT_SIZE is paper-space
+        // feet (Revit internal units); multiply by view scale to reach model space, then
+        // by the user's StaggerFactor so lanes clear text height + arrowheads.
+        private static double DimStepFt(View view, DimensionType dimType, double factor)
+        {
+            int scale = view.Scale > 0 ? view.Scale : 50;
+            try
+            {
+                double h = dimType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+                if (h > 0) return h * scale * Math.Max(0.5, factor);
+            }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: read dimension text size", __lex); }
+            return (5.0 / 304.8) * scale * Math.Max(0.5, factor);   // ~5 mm paper fallback
+        }
+
+        // Obstacle XY boxes the placed dimensions should avoid: the clash markers always,
+        // plus pre-existing annotations in the view when AvoidExisting is on. Our own
+        // freshly-tagged elements are skipped via the LemoineCD mark.
+        private List<BoundingBoxXYZ> BuildObstacles(Document doc, View view, List<ClashMarker> markers)
+        {
+            var list = new List<BoundingBoxXYZ>(markers.Count + 8);
+            foreach (var m in markers)
+                list.Add(new BoundingBoxXYZ
+                {
+                    Min = new XYZ(m.MinX, m.MinY, -1),
+                    Max = new XYZ(m.MaxX, m.MaxY,  1),
+                });
+
+            if (!AvoidExisting) return list;
+            try
+            {
+                var cats = new List<BuiltInCategory>
+                {
+                    BuiltInCategory.OST_Dimensions,
+                    BuiltInCategory.OST_TextNotes,
+                    BuiltInCategory.OST_GenericAnnotation,
+                };
+                var filter = new ElementMulticategoryFilter(cats);
+                foreach (var e in new FilteredElementCollector(doc, view.Id)
+                             .WherePasses(filter)
+                             .WhereElementIsNotElementType())
+                {
+                    if (e.LookupParameter("Mark")?.AsString() == "LemoineCD") continue;
+                    var bb = e.get_BoundingBox(view);
+                    if (bb != null) list.Add(bb);
+                }
+            }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: collect existing annotations for overlap avoidance", __lex); }
+            return list;
+        }
+
+        // True if a's XY box overlaps any obstacle box (Z ignored — plan view).
+        private static bool Overlaps2D(BoundingBoxXYZ a, List<BoundingBoxXYZ> obstacles)
+        {
+            foreach (var b in obstacles)
+                if (a.Min.X <= b.Max.X && a.Max.X >= b.Min.X
+                 && a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y)
+                    return true;
+            return false;
         }
 
         // Places dimensions from one edge to a set of clash references, grouping clashes
@@ -936,7 +1021,8 @@ namespace LemoineTools.Tools.Testing
         private int EmitEdgeDimensions(
             Document doc, View view, DimensionType dimType,
             Reference edgeRef, bool measureIsX, double edgeCoord,
-            List<DimItem> items, double dimLineOffsetFt, double groupTolFt, string ctx)
+            List<DimItem> items, double dimLineOffsetFt, double groupTolFt,
+            double stepFt, List<BoundingBoxXYZ> obstacles, string ctx)
         {
             int n = items.Count;
             if (n == 0) return 0;
@@ -978,7 +1064,7 @@ namespace LemoineTools.Tools.Testing
                         {
                             int rep = band[start + cnt / 2];   // representative near the cluster's middle
                             placed += EmitSingle(doc, view, dimType, edgeRef, items[rep], measure[rep],
-                                                 measureIsX, dimLineOffsetFt, ctx);
+                                                 measureIsX, dimLineOffsetFt, stepFt, obstacles, placed, ctx);
                             for (int j = start; j < k; j++) used[band[j]] = true;
                         }
                         start = k;
@@ -1013,7 +1099,8 @@ namespace LemoineTools.Tools.Testing
 
                     double alongAbs   = chain.Average(i => along[i]);
                     double measureAbs = edgeCoord + chain.Average(i => measure[i]);
-                    int got = EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs, dimLineOffsetFt, ctx);
+                    int got = EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs,
+                        dimLineOffsetFt, stepFt, obstacles, placed, ctx);
                     placed += got;
                     if (got > 0) foreach (var i in idx) used[i] = true;
                 }
@@ -1023,7 +1110,7 @@ namespace LemoineTools.Tools.Testing
             for (int i = 0; i < n; i++)
                 if (!used[i])
                     placed += EmitSingle(doc, view, dimType, edgeRef, items[i], measure[i],
-                                         measureIsX, dimLineOffsetFt, ctx);
+                                         measureIsX, dimLineOffsetFt, stepFt, obstacles, placed, ctx);
 
             return placed;
         }
@@ -1031,41 +1118,74 @@ namespace LemoineTools.Tools.Testing
         // Returns 1 if a dimension was placed, 0 otherwise.
         private int EmitSingle(
             Document doc, View view, DimensionType dimType,
-            Reference edgeRef, DimItem it, double measureSigned, bool measureIsX, double dimLineOffsetFt, string ctx)
+            Reference edgeRef, DimItem it, double measureSigned, bool measureIsX,
+            double dimLineOffsetFt, double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
         {
             if (Math.Abs(measureSigned) < MinSegFt) return 0;   // clash sits on the edge → no measurable gap
-            try
-            {
-                var refs = new ReferenceArray();
-                refs.Append(it.Ref);
-                refs.Append(edgeRef);
-                double alongFixed    = (measureIsX ? it.My : it.Mx) + dimLineOffsetFt;
-                double measureCentre =  measureIsX ? it.Mx : it.My;
-                var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
-                var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                if (dim == null) { Log($"{ctx}: dimension not created (null result).", "info"); return 0; }
-                dim.LookupParameter("Mark")?.Set("LemoineCD");
-                return 1;
-            }
-            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); return 0; }
+            var refs = new ReferenceArray();
+            refs.Append(it.Ref);
+            refs.Append(edgeRef);
+            double alongStart    = (measureIsX ? it.My : it.Mx) + dimLineOffsetFt;
+            double measureCentre =  measureIsX ? it.Mx : it.My;
+            return PlaceWithAvoidance(doc, view, dimType, refs, measureIsX,
+                alongStart, measureCentre, stepFt, obstacles, ordinal, ctx);
         }
 
         // Returns 1 if a dimension was placed, 0 otherwise.
         private int EmitChain(
             Document doc, View view, DimensionType dimType,
             ReferenceArray refs, bool measureIsX,
-            double alongAbs, double measureCentre, double dimLineOffsetFt, string ctx)
+            double alongAbs, double measureCentre,
+            double dimLineOffsetFt, double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
+        {
+            double alongStart = alongAbs + dimLineOffsetFt;
+            return PlaceWithAvoidance(doc, view, dimType, refs, measureIsX,
+                alongStart, measureCentre, stepFt, obstacles, ordinal, $"{ctx} (chain)");
+        }
+
+        // Places one dimension and keeps it off the obstacle set:
+        //   • AvoidOverlaps off  → place once at the base offset (original behaviour).
+        //   • Stagger mode       → shift the start offset by ordinal × step (cheap, no query).
+        //   • Probe mode         → place, Regenerate, read the real bbox, and push the line
+        //                          out one lane at a time until it clears (capped at MaxLanes);
+        //                          the final bbox is added to the obstacle set for later dims.
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int PlaceWithAvoidance(
+            Document doc, View view, DimensionType dimType, ReferenceArray refs,
+            bool measureIsX, double alongStart, double measureCentre,
+            double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
         {
             try
             {
-                double alongFixed = alongAbs + dimLineOffsetFt;
-                var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
+                double along = alongStart;
+                if (AvoidOverlaps && OverlapMode == "Stagger" && stepFt > 0)
+                    along += ordinal * stepFt;
+
+                var dimLine = MakeDimLine(measureIsX, along, measureCentre);
                 var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                if (dim == null) { Log($"{ctx} (chain): dimension not created (null result).", "info"); return 0; }
+                if (dim == null) { Log($"{ctx}: dimension not created (null result).", "info"); return 0; }
                 dim.LookupParameter("Mark")?.Set("LemoineCD");
+
+                if (AvoidOverlaps && OverlapMode == "Probe" && stepFt > 0)
+                {
+                    XYZ shift = measureIsX ? new XYZ(0, stepFt, 0) : new XYZ(stepFt, 0, 0);
+                    doc.Regenerate();
+                    var db = dim.get_BoundingBox(view);
+                    int lane = 0;
+                    while (db != null && Overlaps2D(db, obstacles) && lane < MaxLanes)
+                    {
+                        ElementTransformUtils.MoveElement(doc, dim.Id, shift);
+                        doc.Regenerate();
+                        db = dim.get_BoundingBox(view);
+                        lane++;
+                    }
+                    if (db != null && Overlaps2D(db, obstacles))
+                        Log($"{ctx}: could not fully clear overlap after {MaxLanes} lane(s).", "info");
+                    if (db != null) obstacles.Add(db);
+                }
                 return 1;
             }
-            catch (Exception ex) { Log($"{ctx} (chain): {ex.Message}", "info"); return 0; }
+            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); return 0; }
         }
 
         // Builds the dimension line. Horizontal (measures X) sits at a fixed Y; vertical

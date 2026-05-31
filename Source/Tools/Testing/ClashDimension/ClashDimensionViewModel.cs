@@ -81,6 +81,11 @@ namespace LemoineTools.Tools.Testing
         private double _groupToleranceMm  = ClashDimensionSettings.Instance.GroupToleranceMm;
         private double _clusterGapMm      = ClashDimensionSettings.Instance.ClusterGapMm;
         private string _fallbackColorHex  = ClashDimensionSettings.Instance.FallbackColorHex;
+        private bool   _avoidOverlaps     = ClashDimensionSettings.Instance.AvoidOverlaps;
+        private string _overlapMode       = ClashDimensionSettings.Instance.OverlapMode;
+        private double _staggerFactor     = ClashDimensionSettings.Instance.StaggerFactor;
+        private int    _maxLanes          = ClashDimensionSettings.Instance.MaxLanes;
+        private bool   _avoidExisting     = ClashDimensionSettings.Instance.AvoidExisting;
         private string _dimTarget         = ClashDimensionSettings.Instance.DimTarget;
         private string _fillStyle         = ClashDimensionSettings.Instance.FillStyle;
         private string _crossLineTypeName = ClashDimensionSettings.Instance.CrossLineTypeName;
@@ -790,6 +795,32 @@ namespace LemoineTools.Tools.Testing
                 val => { if (int.TryParse(val, out int n) && n > 0) { _maxClashes = n; Fire(); } });
 
             AddDivider(outer);
+            AddLabel(outer, "Dimension Overlap");
+            AddCheckRow(outer, "Avoid overlapping dimensions",
+                _avoidOverlaps, v => _avoidOverlaps = v);
+
+            var overlapSelect = new LemoineSingleSelect
+            {
+                Items        = new[] { "Stagger", "Probe" },
+                SelectedItem = _overlapMode == "Probe" ? "Probe" : "Stagger",
+            };
+            overlapSelect.SelectionChanged += val => { if (val != null) { _overlapMode = val; Fire(); } };
+            outer.Children.Add(overlapSelect);
+
+            AddSettingRow(outer, "Stagger Factor",
+                "Lane spacing as a multiple of dimension text height. Higher = more gap between stacked dimensions.",
+                _staggerFactor.ToString("F1"),
+                val => { if (double.TryParse(val, out double d) && d > 0) { _staggerFactor = d; Fire(); } });
+
+            AddSettingRow(outer, "Max Lanes (Probe)",
+                "Probe mode only: how many lanes a dimension may be pushed out before giving up.",
+                _maxLanes.ToString(),
+                val => { if (int.TryParse(val, out int n) && n > 0) { _maxLanes = n; Fire(); } });
+
+            AddCheckRow(outer, "Probe also avoids existing annotations",
+                _avoidExisting, v => _avoidExisting = v);
+
+            AddDivider(outer);
             var reviewHdr = new TextBlock { Text = "RUN SUMMARY", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
             reviewHdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             reviewHdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -808,6 +839,7 @@ namespace LemoineTools.Tools.Testing
                 new CardDef("Grids & Slabs",  () => $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}"),
                 new CardDef("Tolerance",      () => $"{_toleranceMm:F1} mm"),
                 new CardDef("Group Tol",      () => _groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "Off"),
+                new CardDef("Overlap",        () => _avoidOverlaps ? _overlapMode : "Off"),
                 new CardDef("Dim Reference",  () => _dimTarget),
                 new CardDef("Max Clashes",    () => _maxClashes.ToString()),
             };
@@ -878,6 +910,24 @@ namespace LemoineTools.Tools.Testing
             box.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
             box.TextChanged += (s, e) => onChange(box.Text);
             parent.Children.Add(box);
+        }
+
+        private void AddCheckRow(StackPanel parent, string label, bool initial, Action<bool> onChange)
+        {
+            var sp = new StackPanel { Orientation = Orientation.Horizontal };
+            var cb = new CheckBox { IsChecked = initial, Margin = new Thickness(0, 0, 0, 4) };
+            cb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
+            cb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
+            cb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_SM");
+            var lbl = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sp.Children.Add(cb);
+            sp.Children.Add(lbl);
+            parent.Children.Add(sp);
+            cb.Checked   += (s, e) => { onChange(true);  Fire(); };
+            cb.Unchecked += (s, e) => { onChange(false); Fire(); };
         }
 
         private static void AddLabel(StackPanel parent, string text)
@@ -955,7 +1005,7 @@ namespace LemoineTools.Tools.Testing
                     int total = _selectedGridNames.Count + (_selectedFloorDisplay != null ? 1 : 0);
                     if (total == 0) return "No references";
                     return $"{_selectedGridNames.Count} grid(s) · floor: {_selectedFloorDisplay ?? "—"}";
-                case "S5": return $"Tol {_toleranceMm:F0} mm · Grp {(_groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "off")} · {_dimTarget} · {_fillStyle}";
+                case "S5": return $"Tol {_toleranceMm:F0} mm · Grp {(_groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "off")} · Ovl {(_avoidOverlaps ? _overlapMode : "off")} · {_dimTarget} · {_fillStyle}";
                 default:   return "—";
             }
         }
@@ -1018,6 +1068,11 @@ namespace LemoineTools.Tools.Testing
             s.GroupToleranceMm    = _groupToleranceMm;
             s.ClusterGapMm        = _clusterGapMm;
             s.FallbackColorHex    = _fallbackColorHex;
+            s.AvoidOverlaps       = _avoidOverlaps;
+            s.OverlapMode         = _overlapMode;
+            s.StaggerFactor       = _staggerFactor;
+            s.MaxLanes            = _maxLanes;
+            s.AvoidExisting       = _avoidExisting;
             s.DimTarget           = _dimTarget;
             s.FillStyle           = _fillStyle;
             s.CrossLineTypeName   = _crossLineTypeName;
@@ -1043,6 +1098,11 @@ namespace LemoineTools.Tools.Testing
             _handler.GroupToleranceMm  = _groupToleranceMm;
             _handler.ClusterGapMm      = _clusterGapMm;
             _handler.FallbackColorHex  = _fallbackColorHex;
+            _handler.AvoidOverlaps     = _avoidOverlaps;
+            _handler.OverlapMode       = _overlapMode;
+            _handler.StaggerFactor     = _staggerFactor;
+            _handler.MaxLanes          = _maxLanes;
+            _handler.AvoidExisting     = _avoidExisting;
             _handler.DimTarget         = _dimTarget;
             _handler.FillStyle         = _fillStyle;
             _handler.CrossLineTypeName = _crossLineTypeName;
