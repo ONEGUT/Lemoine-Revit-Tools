@@ -17,6 +17,9 @@ namespace LemoineTools.Tools.Testing
         public double ToleranceMm       { get; set; } = 25.4;
         public string DimStyleName      { get; set; } = "";
         public double DimLineOffsetMm   { get; set; } = 100.0;
+        // Max difference (mm) in distance-to-edge for clashes to share one grouped
+        // dimension. 0 disables grouping (one dimension per clash, as before).
+        public double GroupToleranceMm  { get; set; } = 50.0;
         public string DimTarget         { get; set; } = "Edge";   // "Edge" | "Centre"
         public string FillStyle         { get; set; } = "Solid";  // "Solid" | "Outline"
         public string CrossLineTypeName { get; set; } = "";

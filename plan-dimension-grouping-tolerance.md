@@ -52,9 +52,20 @@ roughly the same Y (≈ same distance `d` from the edge), at X = x1 < x2 < x3.
 - Vertical grids / vertical edges are the mirror image (dimension line parallel
   to a vertical edge).
 
-**Confirm:** dimension line parallel to the edge through the row of clashes
-(above), vs. perpendicular to the edge. Parallel is the recommendation because
-same-distance clashes give a clean, non-degenerate chain.
+### Final decision table (confirmed)
+
+Per edge (each grid line; each clash's closest slab face per direction), group
+clashes by **signed perpendicular distance** to that edge (same side only — opposite
+sides of the building never merge), then:
+
+| Run vs. edge | Treatment |
+|---|---|
+| **Parallel** (equidistant row spread along the edge) | one **single** dimension for the group |
+| **Perpendicular** (one along-band, varying distance) | one **chained** dimension (edge → each clash) |
+| **Skew / isolated** (neither within tolerance) | perpendicular **single** dimension per clash, both X and Y |
+
+`GroupToleranceMm` is the single mm tolerance for both axes; `0` disables grouping
+(one dimension per clash, current behaviour).
 
 ## Files to change
 

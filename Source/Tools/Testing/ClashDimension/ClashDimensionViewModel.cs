@@ -78,6 +78,7 @@ namespace LemoineTools.Tools.Testing
         private double _toleranceMm       = ClashDimensionSettings.Instance.ToleranceMm;
         private string _dimStyleName      = ClashDimensionSettings.Instance.DimStyleName;
         private double _dimLineOffsetMm   = ClashDimensionSettings.Instance.DimLineOffsetMm;
+        private double _groupToleranceMm  = ClashDimensionSettings.Instance.GroupToleranceMm;
         private string _dimTarget         = ClashDimensionSettings.Instance.DimTarget;
         private string _fillStyle         = ClashDimensionSettings.Instance.FillStyle;
         private string _crossLineTypeName = ClashDimensionSettings.Instance.CrossLineTypeName;
@@ -700,6 +701,11 @@ namespace LemoineTools.Tools.Testing
                 _dimLineOffsetMm.ToString("F0"),
                 val => { if (double.TryParse(val, out double d) && d >= 0) { _dimLineOffsetMm = d; Fire(); } });
 
+            AddSettingRow(outer, "Group Tolerance (mm)",
+                "Clashes within this distance-to-edge of each other share one grouped dimension. 0 = one dimension per clash.",
+                _groupToleranceMm.ToString("F0"),
+                val => { if (double.TryParse(val, out double d) && d >= 0) { _groupToleranceMm = d; Fire(); } });
+
             AddDivider(outer);
             AddLabel(outer, "Dimension Style");
             var styleItems = _dimStyleNames.Count > 0 ? _dimStyleNames.ToArray() : new[] { "(No dimension styles)" };
@@ -781,6 +787,7 @@ namespace LemoineTools.Tools.Testing
                 new CardDef("Group 2",        () => $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}"),
                 new CardDef("Grids & Slabs",  () => $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}"),
                 new CardDef("Tolerance",      () => $"{_toleranceMm:F1} mm"),
+                new CardDef("Group Tol",      () => _groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "Off"),
                 new CardDef("Dim Reference",  () => _dimTarget),
                 new CardDef("Max Clashes",    () => _maxClashes.ToString()),
             };
@@ -928,7 +935,7 @@ namespace LemoineTools.Tools.Testing
                     int total = _selectedGridNames.Count + (_selectedFloorDisplay != null ? 1 : 0);
                     if (total == 0) return "No references";
                     return $"{_selectedGridNames.Count} grid(s) · floor: {_selectedFloorDisplay ?? "—"}";
-                case "S5": return $"Tol {_toleranceMm:F0} mm · {_dimTarget} · {_fillStyle}";
+                case "S5": return $"Tol {_toleranceMm:F0} mm · Grp {(_groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "off")} · {_dimTarget} · {_fillStyle}";
                 default:   return "—";
             }
         }
@@ -988,6 +995,7 @@ namespace LemoineTools.Tools.Testing
             s.ToleranceMm         = _toleranceMm;
             s.DimStyleName        = _dimStyleName;
             s.DimLineOffsetMm     = _dimLineOffsetMm;
+            s.GroupToleranceMm    = _groupToleranceMm;
             s.DimTarget           = _dimTarget;
             s.FillStyle           = _fillStyle;
             s.CrossLineTypeName   = _crossLineTypeName;
@@ -1010,6 +1018,7 @@ namespace LemoineTools.Tools.Testing
             _handler.ToleranceMm       = _toleranceMm;
             _handler.DimStyleName      = _dimStyleName;
             _handler.DimLineOffsetMm   = _dimLineOffsetMm;
+            _handler.GroupToleranceMm  = _groupToleranceMm;
             _handler.DimTarget         = _dimTarget;
             _handler.FillStyle         = _fillStyle;
             _handler.CrossLineTypeName = _crossLineTypeName;

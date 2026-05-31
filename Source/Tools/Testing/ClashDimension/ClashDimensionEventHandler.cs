@@ -23,6 +23,7 @@ namespace LemoineTools.Tools.Testing
         public double          ToleranceMm       { get; set; } = 25.4;
         public string          DimStyleName      { get; set; } = "";
         public double          DimLineOffsetMm   { get; set; } = 100.0;
+        public double          GroupToleranceMm  { get; set; } = 50.0;
         public string          DimTarget         { get; set; } = "Edge";
         public string          FillStyle         { get; set; } = "Solid";
         public string          CrossLineTypeName { get; set; } = "";
@@ -167,6 +168,12 @@ namespace LemoineTools.Tools.Testing
                 ElementId lineStyleId = ResolveLineStyleId(doc);
                 var regionTypeCache = new Dictionary<string, ElementId?>();
 
+                // Filled regions + cross lines are placed per clash (unchanged); the
+                // returned markers feed the grouped dimension pass that follows.
+                var markersByView = new Dictionary<ElementId, List<ClashMarker>>();
+                foreach (var viewId in ViewIds)
+                    markersByView[viewId] = new List<ClashMarker>();
+
                 int done = 0;
                 foreach (var clash in clashes)
                 {
@@ -177,8 +184,9 @@ namespace LemoineTools.Tools.Testing
 
                         try
                         {
-                            CreateClashAnnotation(doc, view, clash, dimType,
+                            var marker = CreateClashMarker(doc, view, clash,
                                 lineStyleId, toleranceFt, regionTypeCache);
+                            if (marker != null) markersByView[viewId].Add(marker.Value);
                             pass++;
                         }
                         catch (Exception ex)
@@ -189,8 +197,29 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     done++;
-                    Progress(40 + (int)(done * 55.0 / clashes.Count), pass, fail, skip);
+                    Progress(40 + (int)(done * 50.0 / clashes.Count), pass, fail, skip);
                 }
+
+                // Grouped dimension placement (one pass per view, after all markers exist).
+                double dimLineOffsetFt = DimLineOffsetMm / 304.8;
+                double groupTolFt      = GroupToleranceMm / 304.8;
+                foreach (var viewId in ViewIds)
+                {
+                    var view = doc.GetElement(viewId) as View;
+                    if (view == null) continue;
+
+                    try
+                    {
+                        PlaceGroupedDimensions(doc, view, markersByView[viewId],
+                            dimType, dimLineOffsetFt, groupTolFt);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Dimensions in '{view.Name}': {ex.Message}", "fail");
+                        fail++;
+                    }
+                }
+                Progress(95, pass, fail, skip);
 
                 tx.Commit();
             }
@@ -620,9 +649,23 @@ namespace LemoineTools.Tools.Testing
 
         // ── Annotation creation ───────────────────────────────────────────────
 
-        private void CreateClashAnnotation(
+        // A placed clash marker (filled region + cross lines). Carries the cross-arm
+        // references used when dimensioning this clash to grids/slab edges:
+        //   HRef → used by X-measuring (horizontal) dimensions
+        //   VRef → used by Y-measuring (vertical) dimensions
+        private struct ClashMarker
+        {
+            public double Cx;
+            public double Cy;
+            public Reference HRef;
+            public Reference VRef;
+        }
+
+        // Places the filled region + cross lines for one clash and returns its marker.
+        // Returns null if the clash zone is degenerate or the cross lines failed.
+        private ClashMarker? CreateClashMarker(
             Document doc, View view, ClashResult clash,
-            DimensionType? dimType, ElementId lineStyleId,
+            ElementId lineStyleId,
             double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
         {
             var zone = clash.OverlapBBox;
@@ -631,7 +674,7 @@ namespace LemoineTools.Tools.Testing
             double minY = zone.Min.Y - toleranceFt;
             double maxY = zone.Max.Y + toleranceFt;
 
-            if (maxX - minX < 0.001 || maxY - minY < 0.001) return;
+            if (maxX - minX < 0.001 || maxY - minY < 0.001) return null;
 
             double cx     = (minX + maxX) / 2.0;
             double cy     = (minY + maxY) / 2.0;
@@ -667,8 +710,9 @@ namespace LemoineTools.Tools.Testing
                 catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: create clash filled region", __lex); }
             }
 
-            // ── Cross lines + dimensions ─────────────────────────────────────
-            double dimLineOffsetFt = DimLineOffsetMm / 304.8;
+            // ── Cross lines ───────────────────────────────────────────────────
+            Reference? hRef = null;
+            Reference? vRef = null;
 
             if (DimTarget == "Centre")
             {
@@ -679,10 +723,8 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLeft != null && hRight != null && vBot != null && vTop != null)
                 {
-                    var hCentreRef = hLeft.GeometryCurve.GetEndPointReference(1);
-                    var vCentreRef = vBot.GeometryCurve.GetEndPointReference(1);
-                    CreateGridAndFloorDimensions(doc, view, hCentreRef, vCentreRef,
-                        cx, cy, dimLineOffsetFt, dimType, isFromCenter: true);
+                    hRef = hLeft.GeometryCurve.GetEndPointReference(1);
+                    vRef = vBot.GeometryCurve.GetEndPointReference(1);
                 }
             }
             else
@@ -692,20 +734,40 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLine != null && vLine != null)
                 {
-                    var hRightRef = hLine.GeometryCurve.GetEndPointReference(1);
-                    var vTopRef   = vLine.GeometryCurve.GetEndPointReference(1);
-                    CreateGridAndFloorDimensions(doc, view, hRightRef, vTopRef,
-                        cx, cy, dimLineOffsetFt, dimType, isFromCenter: false);
+                    hRef = hLine.GeometryCurve.GetEndPointReference(1);
+                    vRef = vLine.GeometryCurve.GetEndPointReference(1);
                 }
             }
+
+            if (hRef == null || vRef == null) return null;
+            return new ClashMarker { Cx = cx, Cy = cy, HRef = hRef, VRef = vRef };
         }
 
-        private void CreateGridAndFloorDimensions(
-            Document doc, View view,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType, bool isFromCenter)
+        // ── Grouped dimension placement ───────────────────────────────────────
+
+        // One clash reference + its centre, queued for dimensioning to a single edge.
+        private struct DimItem
         {
+            public Reference Ref;   // HRef (X-measuring) or VRef (Y-measuring)
+            public double    Mx;
+            public double    My;
+        }
+
+        // Places dimensions for every marker to every selected grid and slab edge.
+        // Clashes at about the same distance from an edge share one dimension
+        // (see EmitEdgeDimensions); GroupToleranceMm <= 0 keeps one dim per clash.
+        private void PlaceGroupedDimensions(
+            Document doc, View view, List<ClashMarker> markers,
+            DimensionType? dimType, double dimLineOffsetFt, double groupTolFt)
+        {
+            if (dimType == null)
+            {
+                if (markers.Count > 0)
+                    Log("No dimension type available — dimensions skipped.", "info");
+                return;
+            }
+            if (markers.Count == 0) return;
+
             for (int i = 0; i < GridIds.Count; i++)
             {
                 long linkId = (i < GridLinkIds.Count) ? GridLinkIds[i] : 0L;
@@ -724,7 +786,7 @@ namespace LemoineTools.Tools.Testing
                 }
 
                 if (grid == null) continue;
-                CreateGridDimension(doc, view, grid, linkInst, hRef, vRef, cx, cy, dimLineOffsetFt, dimType);
+                DimensionGrid(doc, view, grid, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
             }
 
             for (int i = 0; i < FloorIds.Count; i++)
@@ -745,58 +807,39 @@ namespace LemoineTools.Tools.Testing
                 }
 
                 if (floor == null) continue;
-                CreateFloorDimension(doc, view, floor, linkInst, hRef, vRef, cx, cy, dimLineOffsetFt, dimType);
+                DimensionFloor(doc, view, floor, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
             }
         }
 
-        private void CreateGridDimension(
+        // Dimensions every marker to one grid. A vertical grid (runs in Y) is a
+        // constant-X line, so it is measured in X with the horizontal cross arm (HRef);
+        // a horizontal grid is measured in Y with the vertical arm (VRef).
+        private void DimensionGrid(
             Document doc, View view, Grid grid, RevitLinkInstance? linkInst,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType)
+            List<ClashMarker> markers, DimensionType dimType,
+            double dimLineOffsetFt, double groupTolFt)
         {
             try
             {
                 var gridCurve = grid.Curve as Line;
                 if (gridCurve == null) return;
 
-                XYZ dir = gridCurve.Direction.Normalize();
-                if (linkInst != null)
-                    dir = linkInst.GetTotalTransform().OfVector(dir).Normalize();
-                bool isVGrid = Math.Abs(dir.Y) > Math.Abs(dir.X);
+                var tx = linkInst?.GetTotalTransform() ?? Transform.Identity;
+                XYZ dir = tx.OfVector(gridCurve.Direction).Normalize();
+                bool measureIsX = Math.Abs(dir.Y) > Math.Abs(dir.X);   // vertical grid → measure X
+
+                XYZ gp = tx.OfPoint(gridCurve.GetEndPoint(0));
+                double edgeCoord = measureIsX ? gp.X : gp.Y;
 
                 Reference gridRef = new Reference(grid);
-                if (linkInst != null)
-                    gridRef = gridRef.CreateLinkReference(linkInst);
+                if (linkInst != null) gridRef = gridRef.CreateLinkReference(linkInst);
 
-                var refs = new ReferenceArray();
-                Line dimLine;
-                double extent = 1000.0;
+                var items = new List<DimItem>(markers.Count);
+                foreach (var m in markers)
+                    items.Add(new DimItem { Ref = measureIsX ? m.HRef : m.VRef, Mx = m.Cx, My = m.Cy });
 
-                if (isVGrid)
-                {
-                    double dimY = cy + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
-                    refs.Append(hRef);
-                    refs.Append(gridRef);
-                }
-                else
-                {
-                    double dimX = cx + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
-                    refs.Append(vRef);
-                    refs.Append(gridRef);
-                }
-
-                if (dimType != null)
-                {
-                    var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                    dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                }
-                else
-                {
-                    Log($"Grid dim ({grid.Name}): no dimension type available — skipped.", "info");
-                }
+                EmitEdgeDimensions(doc, view, dimType, gridRef, measureIsX, edgeCoord,
+                    items, dimLineOffsetFt, groupTolFt, $"Grid {grid.Name}");
             }
             catch (Exception ex)
             {
@@ -804,11 +847,13 @@ namespace LemoineTools.Tools.Testing
             }
         }
 
-        private void CreateFloorDimension(
+        // Dimensions every marker to its closest vertical slab face per direction.
+        // A Y-facing face (constant Y) is measured in Y with the vertical arm (VRef);
+        // an X-facing face (constant X) is measured in X with the horizontal arm (HRef).
+        private void DimensionFloor(
             Document doc, View view, Floor floor, RevitLinkInstance? linkInst,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType)
+            List<ClashMarker> markers, DimensionType dimType,
+            double dimLineOffsetFt, double groupTolFt)
         {
             try
             {
@@ -816,9 +861,9 @@ namespace LemoineTools.Tools.Testing
                 var geom = floor.get_Geometry(geomOpts);
                 var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
 
-                // One closest face per direction: Y-facing (→ horizontal dim) and X-facing (→ vertical dim)
-                Reference? bestYRef = null; double bestYDist = double.MaxValue;
-                Reference? bestXRef = null; double bestXDist = double.MaxValue;
+                // Candidate vertical faces, split by orientation.
+                var yFaces = new List<(PlanarFace pf, Reference r, double coord)>();  // normal ~Y → measure Y
+                var xFaces = new List<(PlanarFace pf, Reference r, double coord)>();  // normal ~X → measure X
 
                 foreach (GeometryObject obj in geom)
                 {
@@ -832,61 +877,179 @@ namespace LemoineTools.Tools.Testing
                         if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
 
                         XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
-                        double dist = FaceClosestDist2D(pf, tx, cx, cy);
-
-                        if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
-                        {
-                            if (dist < bestYDist) { bestYDist = dist; bestYRef = faceRef; }
-                        }
-                        else
-                        {
-                            if (dist < bestXDist) { bestXDist = dist; bestXRef = faceRef; }
-                        }
+                        XYZ o     = tx.OfPoint(pf.Origin);
+                        if (Math.Abs(faceN.Y) > Math.Abs(faceN.X)) yFaces.Add((pf, faceRef, o.Y));
+                        else                                       xFaces.Add((pf, faceRef, o.X));
                     }
                 }
 
-                if (bestYRef == null && bestXRef == null)
+                if (yFaces.Count == 0 && xFaces.Count == 0)
                 {
                     Log($"Floor dim ({floor.Name}): no vertical slab faces found — skipped.", "info");
                     return;
                 }
 
-                double extent = 1000.0;
+                // Assign each marker to its nearest face in each direction.
+                var yGroups = new Dictionary<int, List<DimItem>>();
+                var xGroups = new Dictionary<int, List<DimItem>>();
 
-                if (bestYRef != null && dimType != null)
+                foreach (var m in markers)
                 {
-                    try
+                    int by = NearestFace(yFaces, tx, m.Cx, m.Cy);
+                    if (by >= 0)
                     {
-                        var refs = new ReferenceArray();
-                        refs.Append(hRef);
-                        refs.Append(bestYRef);
-                        double dimY   = cy + dimLineOffsetFt;
-                        var dimLine   = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
-                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
+                        if (!yGroups.TryGetValue(by, out var l)) { l = new List<DimItem>(); yGroups[by] = l; }
+                        l.Add(new DimItem { Ref = m.VRef, Mx = m.Cx, My = m.Cy });
                     }
-                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), Y-face: {ex.Message}", "info"); }
+
+                    int bx = NearestFace(xFaces, tx, m.Cx, m.Cy);
+                    if (bx >= 0)
+                    {
+                        if (!xGroups.TryGetValue(bx, out var l)) { l = new List<DimItem>(); xGroups[bx] = l; }
+                        l.Add(new DimItem { Ref = m.HRef, Mx = m.Cx, My = m.Cy });
+                    }
                 }
 
-                if (bestXRef != null && dimType != null)
-                {
-                    try
-                    {
-                        var refs = new ReferenceArray();
-                        refs.Append(vRef);
-                        refs.Append(bestXRef);
-                        double dimX   = cx + dimLineOffsetFt;
-                        var dimLine   = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
-                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                    }
-                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), X-face: {ex.Message}", "info"); }
-                }
+                foreach (var kv in yGroups)
+                    EmitEdgeDimensions(doc, view, dimType, yFaces[kv.Key].r, /*measureIsX*/false,
+                        yFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (Y)");
+
+                foreach (var kv in xGroups)
+                    EmitEdgeDimensions(doc, view, dimType, xFaces[kv.Key].r, /*measureIsX*/true,
+                        xFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (X)");
             }
             catch (Exception ex)
             {
                 Log($"Floor dim ({floor.Name}): {ex.Message}", "info");
             }
+        }
+
+        private static int NearestFace(
+            List<(PlanarFace pf, Reference r, double coord)> faces, Transform tx, double cx, double cy)
+        {
+            int best = -1; double bd = double.MaxValue;
+            for (int k = 0; k < faces.Count; k++)
+            {
+                double d = FaceClosestDist2D(faces[k].pf, tx, cx, cy);
+                if (d < bd) { bd = d; best = k; }
+            }
+            return best;
+        }
+
+        // Places dimensions from one edge to a set of clash references, grouping clashes
+        // that line up with the edge so they share a single dimension instead of stacking:
+        //   • Run PARALLEL to the edge (same perpendicular distance, spread along it)
+        //       → one single dimension for the group.
+        //   • Run PERPENDICULAR to the edge (one line, varying distance)
+        //       → one chained dimension (edge → each clash).
+        //   • Anything else (skew / isolated) → a plain single dimension per clash.
+        // measureIsX selects a horizontal dimension line (measuring X to a constant-X edge)
+        // vs a vertical one (measuring Y to a constant-Y edge). edgeCoord is the edge's
+        // coordinate on the measured axis; signed distance to it keeps opposite sides apart.
+        private void EmitEdgeDimensions(
+            Document doc, View view, DimensionType dimType,
+            Reference edgeRef, bool measureIsX, double edgeCoord,
+            List<DimItem> items, double dimLineOffsetFt, double groupTolFt, string ctx)
+        {
+            int n = items.Count;
+            if (n == 0) return;
+
+            // measure = signed distance to the edge; along = position parallel to the edge.
+            var measure = new double[n];
+            var along   = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                measure[i] = (measureIsX ? items[i].Mx : items[i].My) - edgeCoord;
+                along[i]   =  measureIsX ? items[i].My : items[i].Mx;
+            }
+
+            var used = new bool[n];
+
+            if (groupTolFt > 0)
+            {
+                // PARALLEL groups: same signed distance band, genuinely spread along the edge.
+                foreach (var g in Enumerable.Range(0, n)
+                             .GroupBy(i => (int)Math.Round(measure[i] / groupTolFt)))
+                {
+                    var idx = g.ToList();
+                    if (idx.Count < 2) continue;
+                    if (idx.Max(i => along[i]) - idx.Min(i => along[i]) <= groupTolFt) continue;
+
+                    idx.Sort((a, b) => along[a].CompareTo(along[b]));
+                    int rep = idx[idx.Count / 2];   // representative near the middle of the run
+                    EmitSingle(doc, view, dimType, edgeRef, items[rep], measureIsX, dimLineOffsetFt, ctx);
+                    foreach (var i in idx) used[i] = true;
+                }
+
+                // PERPENDICULAR groups: same along-edge band, varying distance → chain.
+                foreach (var g in Enumerable.Range(0, n).Where(i => !used[i])
+                             .GroupBy(i => (int)Math.Round(along[i] / groupTolFt)))
+                {
+                    var idx = g.ToList();
+                    if (idx.Count < 2) continue;
+                    if (idx.Max(i => measure[i]) - idx.Min(i => measure[i]) <= groupTolFt) continue;
+
+                    idx.Sort((a, b) => measure[a].CompareTo(measure[b]));
+                    var refs = new ReferenceArray();
+                    refs.Append(edgeRef);
+                    foreach (var i in idx) refs.Append(items[i].Ref);
+
+                    double alongAbs   = idx.Average(i => along[i]);
+                    double measureAbs = edgeCoord + idx.Average(i => measure[i]);
+                    EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs, dimLineOffsetFt, ctx);
+                    foreach (var i in idx) used[i] = true;
+                }
+            }
+
+            // Remaining clashes (skew / isolated, or grouping disabled): one dim each.
+            for (int i = 0; i < n; i++)
+                if (!used[i])
+                    EmitSingle(doc, view, dimType, edgeRef, items[i], measureIsX, dimLineOffsetFt, ctx);
+        }
+
+        private void EmitSingle(
+            Document doc, View view, DimensionType dimType,
+            Reference edgeRef, DimItem it, bool measureIsX, double dimLineOffsetFt, string ctx)
+        {
+            try
+            {
+                var refs = new ReferenceArray();
+                refs.Append(it.Ref);
+                refs.Append(edgeRef);
+                double alongFixed    = (measureIsX ? it.My : it.Mx) + dimLineOffsetFt;
+                double measureCentre =  measureIsX ? it.Mx : it.My;
+                var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
+                var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
+                if (dim == null) Log($"{ctx}: dimension not created (null result).", "info");
+                else             dim.LookupParameter("Mark")?.Set("LemoineCD");
+            }
+            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); }
+        }
+
+        private void EmitChain(
+            Document doc, View view, DimensionType dimType,
+            ReferenceArray refs, bool measureIsX,
+            double alongAbs, double measureCentre, double dimLineOffsetFt, string ctx)
+        {
+            try
+            {
+                double alongFixed = alongAbs + dimLineOffsetFt;
+                var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
+                var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
+                if (dim == null) Log($"{ctx} (chain): dimension not created (null result).", "info");
+                else             dim.LookupParameter("Mark")?.Set("LemoineCD");
+            }
+            catch (Exception ex) { Log($"{ctx} (chain): {ex.Message}", "info"); }
+        }
+
+        // Builds the dimension line. Horizontal (measures X) sits at a fixed Y; vertical
+        // (measures Y) sits at a fixed X. The line is run long so it spans all references.
+        private static Line MakeDimLine(bool measureIsX, double alongFixed, double measureCentre)
+        {
+            const double extent = 1000.0;
+            return measureIsX
+                ? Line.CreateBound(new XYZ(measureCentre - extent, alongFixed, 0), new XYZ(measureCentre + extent, alongFixed, 0))
+                : Line.CreateBound(new XYZ(alongFixed, measureCentre - extent, 0), new XYZ(alongFixed, measureCentre + extent, 0));
         }
 
         // Returns the minimum 2-D (XY) distance from (cx, cy) to the nearest point on
