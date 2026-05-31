@@ -291,6 +291,13 @@ namespace LemoineTools.Lemoine.Controls
             _listBox.SetResourceReference(ListBox.ForegroundProperty,    "LemoineText");
             _listBox.SetResourceReference(ListBox.FontSizeProperty,      "LemoineFS_SM");
             _listBox.SetResourceReference(ListBox.FontFamilyProperty,    "LemoineUiFont");
+            // A single click on a row adds that tag (selection updates on mouse-down, so the
+            // clicked row is current by mouse-up). Double-click and Enter also still add.
+            _listBox.PreviewMouseLeftButtonUp += (s, e) =>
+            {
+                var item = ItemsControl.ContainerFromElement(_listBox, e.OriginalSource as DependencyObject) as ListBoxItem;
+                if (item?.Content is string picked) { AddItem(picked); e.Handled = true; }
+            };
             _listBox.MouseDoubleClick += (s, e) => ConfirmSelection();
             _listBox.PreviewKeyDown   += (s, e) =>
             {

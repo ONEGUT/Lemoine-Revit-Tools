@@ -51,6 +51,8 @@ namespace LemoineTools.Lemoine.Controls
         {
             // Read-only template: a single-choice picker, not an editable text combo.
             _combo.Style = LemoineControlStyles.BuildReadOnlyComboBoxStyle();
+            // Don't let a closed combo eat the wheel (it would change value + trap page scroll).
+            LemoineControlStyles.WireComboWheelBubbling(_combo);
             _combo.SetResourceReference(ComboBox.BackgroundProperty,   "LemoineSelectBg");
             _combo.SetResourceReference(ComboBox.ForegroundProperty,   "LemoineText");
             _combo.SetResourceReference(ComboBox.BorderBrushProperty,  "LemoineBorderMid");

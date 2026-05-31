@@ -314,13 +314,15 @@ namespace LemoineTools.Tools.Testing
 
         private static ScrollViewer WrapInScroll(FrameworkElement content, double maxHeight = 700)
         {
-            return new ScrollViewer
+            var sv = new ScrollViewer
             {
                 Content = content,
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = maxHeight,
             };
+            LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to the page at scroll limits
+            return sv;
         }
 
         // ── S1 — Select Views ─────────────────────────────────────────────────

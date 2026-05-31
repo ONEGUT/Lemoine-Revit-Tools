@@ -215,6 +215,18 @@ namespace LemoineTools.Lemoine
             </TextBox.FocusVisualStyle>
           </TextBox>
 
+          <!-- Non-editable display: shows the selected item when IsEditable=False
+               (the editable TextBox above is hidden by the IsEditable trigger below). -->
+          <ContentPresenter x:Name=""ContentSite""
+                            Grid.Column=""0""
+                            Margin=""8,0,0,0""
+                            Content=""{TemplateBinding SelectionBoxItem}""
+                            ContentTemplate=""{TemplateBinding SelectionBoxItemTemplate}""
+                            VerticalAlignment=""Center""
+                            IsHitTestVisible=""False""
+                            Visibility=""Collapsed""
+                            TextElement.Foreground=""{TemplateBinding Foreground}""/>
+
           <ToggleButton x:Name=""PART_ToggleButton""
                         Grid.Column=""1""
                         Focusable=""False""
@@ -260,6 +272,10 @@ namespace LemoineTools.Lemoine
           </Popup>
         </Grid>
         <ControlTemplate.Triggers>
+          <Trigger Property=""IsEditable"" Value=""False"">
+            <Setter TargetName=""PART_EditableTextBox"" Property=""Visibility"" Value=""Collapsed""/>
+            <Setter TargetName=""ContentSite""          Property=""Visibility"" Value=""Visible""/>
+          </Trigger>
           <Trigger Property=""IsMouseOver"" Value=""True"">
             <Setter TargetName=""Bd"" Property=""BorderBrush""
                     Value=""{DynamicResource LemoineAccent}""/>
@@ -752,6 +768,28 @@ namespace LemoineTools.Lemoine
                 Source      = inner,
             };
             (inner.Parent as UIElement)?.RaiseEvent(relay);
+        };
+    }
+
+    /// <summary>
+    /// Stops a CLOSED ComboBox from eating the mouse wheel — by default a WPF ComboBox
+    /// changes its selected item on wheel even when closed, which both mutates the value
+    /// unexpectedly and traps page scrolling. This re-raises the wheel to the parent so the
+    /// page/step scrolls instead. When the dropdown is open the wheel scrolls the list.
+    /// </summary>
+    public static void WireComboWheelBubbling(ComboBox combo)
+    {
+        if (combo == null) return;
+        combo.PreviewMouseWheel += (s, e) =>
+        {
+            if (combo.IsDropDownOpen) return; // open list scrolls normally
+            e.Handled = true;
+            (VisualTreeHelper.GetParent(combo) as UIElement)?.RaiseEvent(
+                new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                {
+                    RoutedEvent = UIElement.MouseWheelEvent,
+                    Source      = combo,
+                });
         };
     }
 }
