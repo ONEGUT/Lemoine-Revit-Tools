@@ -570,9 +570,32 @@ namespace LemoineTools.Tools.AutoFilters
                 Exported = DateTime.Now.ToString("O");
                 var xs = new XmlSerializer(typeof(AutoFiltersSettings));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
-                Saved?.Invoke();
+                RaiseSaved();
             }
             catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings.Save", __lex); }
+        }
+
+        // Fires Saved on each subscriber's OWN thread. Tool windows live on separate STA
+        // threads, so invoking their handlers directly from whatever thread called Save()
+        // throws "the calling thread cannot access this object because a different thread
+        // owns it" (seen in diagnostics.log). Marshal to each subscriber's Dispatcher.
+        private static void RaiseSaved()
+        {
+            var handler = Saved;
+            if (handler == null) return;
+            foreach (var d in handler.GetInvocationList())
+            {
+                var action = (Action)d;
+                try
+                {
+                    if (action.Target is System.Windows.Threading.DispatcherObject dobj &&
+                        dobj.Dispatcher != null && !dobj.Dispatcher.CheckAccess())
+                        dobj.Dispatcher.BeginInvoke(action);
+                    else
+                        action();
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("AutoFiltersSettings.Saved subscriber", ex); }
+            }
         }
 
         private static AutoFiltersSettings Load()
