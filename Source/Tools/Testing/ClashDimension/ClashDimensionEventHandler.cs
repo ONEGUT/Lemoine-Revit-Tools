@@ -802,9 +802,9 @@ namespace LemoineTools.Tools.Testing
             public double    My;
         }
 
-        // Places dimensions for every marker to every selected grid and slab edge.
-        // Clashes at about the same distance from an edge share one dimension
-        // (see EmitEdgeDimensions); GroupToleranceMm <= 0 keeps one dim per clash.
+        // Selects the single nearest X-measuring reference (vertical grid / X-facing slab face)
+        // and the single nearest Y-measuring reference (horizontal grid / Y-facing slab face)
+        // across all selected grids and floors, then places at most 2 dimensions — one per axis.
         private int PlaceGroupedDimensions(
             Document doc, View view, List<ClashMarker> markers,
             DimensionType? dimType, double dimLineOffsetFt, double groupTolFt)
@@ -817,178 +817,109 @@ namespace LemoineTools.Tools.Testing
             }
             if (markers.Count == 0) return 0;
 
-            int placed = 0;
+            // Marker centroid — used to choose the nearest reference per axis.
+            double centX = markers.Average(m => m.Cx);
+            double centY = markers.Average(m => m.Cy);
+
+            var xCandidates = new List<(Reference r, double edgeCoord, string label)>();
+            var yCandidates = new List<(Reference r, double edgeCoord, string label)>();
+
+            // ── Grids ─────────────────────────────────────────────────────────
             for (int i = 0; i < GridIds.Count; i++)
             {
                 long linkId = (i < GridLinkIds.Count) ? GridLinkIds[i] : 0L;
                 RevitLinkInstance? linkInst = null;
                 Grid? grid;
-
                 if (linkId == 0)
-                {
                     grid = doc.GetElement(new ElementId(GridIds[i])) as Grid;
-                }
                 else
                 {
                     linkInst = doc.GetElement(new ElementId(linkId)) as RevitLinkInstance;
                     var ld   = linkInst?.GetLinkDocument();
                     grid     = ld?.GetElement(new ElementId(GridIds[i])) as Grid;
                 }
-
                 if (grid == null) continue;
-                placed += DimensionGrid(doc, view, grid, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
+
+                var gridCurve = grid.Curve as Line;
+                if (gridCurve == null) continue;
+                var tx  = linkInst?.GetTotalTransform() ?? Transform.Identity;
+                XYZ dir = tx.OfVector(gridCurve.Direction).Normalize();
+                bool mX = Math.Abs(dir.Y) > Math.Abs(dir.X);   // vertical grid → measure X
+                XYZ gp  = tx.OfPoint(gridCurve.GetEndPoint(0));
+
+                Reference gridRef = new Reference(grid);
+                if (linkInst != null) gridRef = gridRef.CreateLinkReference(linkInst);
+
+                if (mX) xCandidates.Add((gridRef, gp.X, $"Grid {grid.Name}"));
+                else    yCandidates.Add((gridRef, gp.Y, $"Grid {grid.Name}"));
             }
 
+            // ── Floors ────────────────────────────────────────────────────────
             for (int i = 0; i < FloorIds.Count; i++)
             {
                 long linkId = (i < FloorLinkIds.Count) ? FloorLinkIds[i] : 0L;
                 RevitLinkInstance? linkInst = null;
                 Floor? floor;
-
                 if (linkId == 0)
-                {
                     floor = doc.GetElement(new ElementId(FloorIds[i])) as Floor;
-                }
                 else
                 {
                     linkInst = doc.GetElement(new ElementId(linkId)) as RevitLinkInstance;
                     var ld   = linkInst?.GetLinkDocument();
                     floor    = ld?.GetElement(new ElementId(FloorIds[i])) as Floor;
                 }
-
                 if (floor == null) continue;
-                placed += DimensionFloor(doc, view, floor, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
+
+                try
+                {
+                    var geomOpts = new Options { ComputeReferences = true };
+                    var geom = floor.get_Geometry(geomOpts);
+                    var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
+
+                    foreach (GeometryObject gobj in geom)
+                    {
+                        if (!(gobj is Solid solid)) continue;
+                        foreach (Face face in solid.Faces)
+                        {
+                            if (!(face is PlanarFace pf)) continue;
+                            if (Math.Abs(pf.FaceNormal.Z) > 0.1) continue;
+                            var faceRef = pf.Reference;
+                            if (faceRef == null) continue;
+                            if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
+                            XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
+                            XYZ o     = tx.OfPoint(pf.Origin);
+                            if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
+                                yCandidates.Add((faceRef, o.Y, $"Floor {floor.Name} (Y)"));
+                            else
+                                xCandidates.Add((faceRef, o.X, $"Floor {floor.Name} (X)"));
+                        }
+                    }
+                }
+                catch (Exception ex) { Log($"Floor candidates ({floor.Name}): {ex.Message}", "info"); }
+            }
+
+            if (xCandidates.Count == 0 && yCandidates.Count == 0) return 0;
+
+            // Pick the single nearest candidate per axis to the marker centroid.
+            (Reference r, double edgeCoord, string label)? bestX = null, bestY = null;
+            double dBX = double.MaxValue, dBY = double.MaxValue;
+            foreach (var c in xCandidates) { double d = Math.Abs(centX - c.edgeCoord); if (d < dBX) { dBX = d; bestX = c; } }
+            foreach (var c in yCandidates) { double d = Math.Abs(centY - c.edgeCoord); if (d < dBY) { dBY = d; bestY = c; } }
+
+            int placed = 0;
+            if (bestX != null)
+            {
+                var xItems = markers.Select(m => new DimItem { Ref = m.HRef, Mx = m.Cx, My = m.Cy }).ToList();
+                placed += EmitEdgeDimensions(doc, view, dimType, bestX.Value.r, true, bestX.Value.edgeCoord,
+                    xItems, dimLineOffsetFt, groupTolFt, bestX.Value.label);
+            }
+            if (bestY != null)
+            {
+                var yItems = markers.Select(m => new DimItem { Ref = m.VRef, Mx = m.Cx, My = m.Cy }).ToList();
+                placed += EmitEdgeDimensions(doc, view, dimType, bestY.Value.r, false, bestY.Value.edgeCoord,
+                    yItems, dimLineOffsetFt, groupTolFt, bestY.Value.label);
             }
             return placed;
-        }
-
-        // Dimensions every marker to one grid. A vertical grid (runs in Y) is a
-        // constant-X line, so it is measured in X with the horizontal cross arm (HRef);
-        // a horizontal grid is measured in Y with the vertical arm (VRef).
-        private int DimensionGrid(
-            Document doc, View view, Grid grid, RevitLinkInstance? linkInst,
-            List<ClashMarker> markers, DimensionType dimType,
-            double dimLineOffsetFt, double groupTolFt)
-        {
-            try
-            {
-                var gridCurve = grid.Curve as Line;
-                if (gridCurve == null) return 0;
-
-                var tx = linkInst?.GetTotalTransform() ?? Transform.Identity;
-                XYZ dir = tx.OfVector(gridCurve.Direction).Normalize();
-                bool measureIsX = Math.Abs(dir.Y) > Math.Abs(dir.X);   // vertical grid → measure X
-
-                XYZ gp = tx.OfPoint(gridCurve.GetEndPoint(0));
-                double edgeCoord = measureIsX ? gp.X : gp.Y;
-
-                Reference gridRef = new Reference(grid);
-                if (linkInst != null) gridRef = gridRef.CreateLinkReference(linkInst);
-
-                var items = new List<DimItem>(markers.Count);
-                foreach (var m in markers)
-                    items.Add(new DimItem { Ref = measureIsX ? m.HRef : m.VRef, Mx = m.Cx, My = m.Cy });
-
-                return EmitEdgeDimensions(doc, view, dimType, gridRef, measureIsX, edgeCoord,
-                    items, dimLineOffsetFt, groupTolFt, $"Grid {grid.Name}");
-            }
-            catch (Exception ex)
-            {
-                Log($"Grid dim ({grid.Name}): {ex.Message}", "info");
-                return 0;
-            }
-        }
-
-        // Dimensions every marker to its closest vertical slab face per direction.
-        // A Y-facing face (constant Y) is measured in Y with the vertical arm (VRef);
-        // an X-facing face (constant X) is measured in X with the horizontal arm (HRef).
-        private int DimensionFloor(
-            Document doc, View view, Floor floor, RevitLinkInstance? linkInst,
-            List<ClashMarker> markers, DimensionType dimType,
-            double dimLineOffsetFt, double groupTolFt)
-        {
-            try
-            {
-                var geomOpts = new Options { ComputeReferences = true };
-                var geom = floor.get_Geometry(geomOpts);
-                var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
-
-                // Candidate vertical faces, split by orientation.
-                var yFaces = new List<(PlanarFace pf, Reference r, double coord)>();  // normal ~Y → measure Y
-                var xFaces = new List<(PlanarFace pf, Reference r, double coord)>();  // normal ~X → measure X
-
-                foreach (GeometryObject obj in geom)
-                {
-                    if (!(obj is Solid solid)) continue;
-                    foreach (Face face in solid.Faces)
-                    {
-                        if (!(face is PlanarFace pf)) continue;
-                        if (Math.Abs(pf.FaceNormal.Z) > 0.1) continue;  // skip horizontal faces
-                        var faceRef = pf.Reference;
-                        if (faceRef == null) continue;
-                        if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
-
-                        XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
-                        XYZ o     = tx.OfPoint(pf.Origin);
-                        if (Math.Abs(faceN.Y) > Math.Abs(faceN.X)) yFaces.Add((pf, faceRef, o.Y));
-                        else                                       xFaces.Add((pf, faceRef, o.X));
-                    }
-                }
-
-                if (yFaces.Count == 0 && xFaces.Count == 0)
-                {
-                    Log($"Floor dim ({floor.Name}): no vertical slab faces found — skipped.", "info");
-                    return 0;
-                }
-
-                // Assign each marker to its nearest face in each direction.
-                var yGroups = new Dictionary<int, List<DimItem>>();
-                var xGroups = new Dictionary<int, List<DimItem>>();
-
-                foreach (var m in markers)
-                {
-                    int by = NearestFace(yFaces, tx, m.Cx, m.Cy);
-                    if (by >= 0)
-                    {
-                        if (!yGroups.TryGetValue(by, out var l)) { l = new List<DimItem>(); yGroups[by] = l; }
-                        l.Add(new DimItem { Ref = m.VRef, Mx = m.Cx, My = m.Cy });
-                    }
-
-                    int bx = NearestFace(xFaces, tx, m.Cx, m.Cy);
-                    if (bx >= 0)
-                    {
-                        if (!xGroups.TryGetValue(bx, out var l)) { l = new List<DimItem>(); xGroups[bx] = l; }
-                        l.Add(new DimItem { Ref = m.HRef, Mx = m.Cx, My = m.Cy });
-                    }
-                }
-
-                int placed = 0;
-                foreach (var kv in yGroups)
-                    placed += EmitEdgeDimensions(doc, view, dimType, yFaces[kv.Key].r, /*measureIsX*/false,
-                        yFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (Y)");
-
-                foreach (var kv in xGroups)
-                    placed += EmitEdgeDimensions(doc, view, dimType, xFaces[kv.Key].r, /*measureIsX*/true,
-                        xFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (X)");
-                return placed;
-            }
-            catch (Exception ex)
-            {
-                Log($"Floor dim ({floor.Name}): {ex.Message}", "info");
-                return 0;
-            }
-        }
-
-        private static int NearestFace(
-            List<(PlanarFace pf, Reference r, double coord)> faces, Transform tx, double cx, double cy)
-        {
-            int best = -1; double bd = double.MaxValue;
-            for (int k = 0; k < faces.Count; k++)
-            {
-                double d = FaceClosestDist2D(faces[k].pf, tx, cx, cy);
-                if (d < bd) { bd = d; best = k; }
-            }
-            return best;
         }
 
         // Places dimensions from one edge to a set of clash references, grouping clashes
@@ -1145,35 +1076,6 @@ namespace LemoineTools.Tools.Testing
             return measureIsX
                 ? Line.CreateBound(new XYZ(measureCentre - extent, alongFixed, 0), new XYZ(measureCentre + extent, alongFixed, 0))
                 : Line.CreateBound(new XYZ(alongFixed, measureCentre - extent, 0), new XYZ(alongFixed, measureCentre + extent, 0));
-        }
-
-        // Returns the minimum 2-D (XY) distance from (cx, cy) to the nearest point on
-        // any boundary edge of the face, after applying the link transform tx.
-        private static double FaceClosestDist2D(PlanarFace pf, Transform tx, double cx, double cy)
-        {
-            double minDist = double.MaxValue;
-            foreach (EdgeArray loop in pf.EdgeLoops)
-            {
-                foreach (Edge edge in loop)
-                {
-                    var pts = edge.Tessellate();
-                    for (int i = 0; i < pts.Count - 1; i++)
-                    {
-                        XYZ p0 = tx.OfPoint(pts[i]);
-                        XYZ p1 = tx.OfPoint(pts[i + 1]);
-                        double segDx = p1.X - p0.X, segDy = p1.Y - p0.Y;
-                        double len2  = segDx * segDx + segDy * segDy;
-                        double t     = len2 < 1e-10 ? 0.0
-                                       : Math.Max(0.0, Math.Min(1.0,
-                                           ((cx - p0.X) * segDx + (cy - p0.Y) * segDy) / len2));
-                        double ex = p0.X + t * segDx - cx;
-                        double ey = p0.Y + t * segDy - cy;
-                        double d  = Math.Sqrt(ex * ex + ey * ey);
-                        if (d < minDist) minDist = d;
-                    }
-                }
-            }
-            return minDist;
         }
 
         // ── FilledRegionType management ───────────────────────────────────────
