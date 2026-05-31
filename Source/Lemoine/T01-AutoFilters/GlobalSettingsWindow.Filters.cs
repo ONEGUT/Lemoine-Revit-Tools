@@ -27,6 +27,10 @@ namespace LemoineTools.Lemoine
             if (_filterTrades == null)
                 _filterTrades = AutoFiltersSettings.DeepCopy(AutoFiltersSettings.Instance.Trades);
 
+            // Snapshot for the close-time dirty check (avoids redundant saves).
+            if (_filtersSnapshot.Length == 0)
+                _filtersSnapshot = SerializeTrades(_filterTrades);
+
             if (_fActiveTradeId == null || !_filterTrades.Any(t => t.Id == _fActiveTradeId))
                 _fActiveTradeId = _filterTrades.FirstOrDefault()?.Id;
 
@@ -126,6 +130,7 @@ namespace LemoineTools.Lemoine
                 AllowDrop                     = true,
                 Content                       = _fRuleListPanel,
             };
+            _fRuleScroll = ruleScroll;
             leftDock.Children.Add(ruleScroll);
             FRefreshRuleList();
 
@@ -155,6 +160,7 @@ namespace LemoineTools.Lemoine
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = _fTradeListPanel,
             };
+            _fTradeScroll = tradeScroll;
 
             // Templates pill button at top of sidebar
             var templatesPill = new Border
@@ -487,6 +493,8 @@ namespace LemoineTools.Lemoine
                 _fActiveRuleId = newRule.Id;
                 FRefreshRuleList();
                 FRefreshRuleEditor();
+                Dispatcher.BeginInvoke(new Action(() => _fRuleScroll?.ScrollToBottom()),
+                    DispatcherPriority.Background);
             });
             _fRuleListPanel.Children.Add(pill);
         }
@@ -2208,6 +2216,8 @@ namespace LemoineTools.Lemoine
                 FRefreshTradesSidebar();
                 FRefreshRuleList();
                 FRefreshRuleEditor();
+                Dispatcher.BeginInvoke(new Action(() => _fTradeScroll?.ScrollToBottom()),
+                    DispatcherPriority.Background);
             };
             panel.Children.Add(addBtn);
             outer.Child = panel;

@@ -16,7 +16,6 @@ namespace LemoineTools.Lemoine.Controls
     public partial class LemoineLegendLayoutBar : UserControl
     {
         public event EventHandler? Changed;
-        public event EventHandler? PreviewRequested;
 
         private LegendLayoutConfig _layout = new LegendLayoutConfig();
         public LegendLayoutConfig Layout
@@ -42,11 +41,11 @@ namespace LemoineTools.Lemoine.Controls
 
             _root.Children.Clear();
 
-            // Grid: [Auto legend pill] [Auto edit btn] [* spacer — preview centered here]
+            // Grid: [Auto legend pill] [Auto edit btn]  (Preview moved to the
+            // host window's floating bottom-right pill — no spacer column needed).
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             // ── Legend pill ──────────────────────────────────────────────────
             var pill = new Border
@@ -107,9 +106,6 @@ namespace LemoineTools.Lemoine.Controls
 
             Grid.SetColumn(editBtn, 1);
             grid.Children.Add(editBtn);
-
-            // Preview moved to the host window's floating bottom-right pill.
-            // Column 2 (star) is left empty as flexible spacer / drag area.
 
             _root.Children.Add(grid);
         }

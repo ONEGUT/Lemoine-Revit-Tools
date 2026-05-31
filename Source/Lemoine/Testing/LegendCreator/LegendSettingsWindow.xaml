@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-    Title="Lemoine Tools — Legend Creator Settings"
+    Title="Lemoine Tools — Legend Creation"
     Width="1100" Height="720"
     MinWidth="860" MinHeight="520"
     WindowStartupLocation="CenterScreen"
@@ -27,6 +27,8 @@
             <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
             <Grid Grid.Row="1">
                 <Border x:Name="_contentBorder" />
+                <!-- Window-level preview overlay (grows from the bottom-right pill). -->
+                <Grid x:Name="_previewLayer" Panel.ZIndex="40" />
                 <!-- Floating bottom-right action pills (Preview / Create / status). -->
                 <ContentControl x:Name="_floatingSlot"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"

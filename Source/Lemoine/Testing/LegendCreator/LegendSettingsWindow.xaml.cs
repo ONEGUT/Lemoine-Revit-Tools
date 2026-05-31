@@ -6,12 +6,14 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
-using WpfGrid = System.Windows.Controls.Grid;
+using WpfGrid   = System.Windows.Controls.Grid;
+using WpfPoint  = System.Windows.Point;
 
 namespace LemoineTools.Lemoine
 {
@@ -26,7 +28,14 @@ namespace LemoineTools.Lemoine
         private readonly Dictionary<string, LemoineLegendBuilder> _builders =
             new Dictionary<string, LemoineLegendBuilder>();
 
+        // ── Window-level preview overlay (grows from the floating Preview pill) ──
+        private LemoineLegendPreview?   _previewControl;
+        private WpfGrid?                _previewOverlayGrid;
+        private bool                    _previewVisible;
+        private LemoineLegendBuilder?   _activeBuilder;   // subscribed for live preview refresh
+
         // ── UI refs ────────────────────────────────────────────────────────────
+        private Border?                 _statusChip;       // surface chip behind status text
         private TextBlock?              _statusText;
         private Border?                 _createPill;       // floating bottom-right Create/Update
         private TextBlock?              _createPillLabel;
@@ -34,11 +43,13 @@ namespace LemoineTools.Lemoine
         private Border?                 _previewPill;      // floating bottom-right Preview (above Create)
         private TextBlock?              _previewPillLabel;
         private StackPanel?             _tabStack;
+        private ScrollViewer?           _tabScroll;   // auto-scroll to newly-added legend
         private LemoineLegendPalette?   _palette;
         private ContentControl?         _builderSlot;
         private ContentControl?         _sizingSlot;
         private ContentControl?         _textStylesSlot;
         private ContentControl?         _paletteSlot;
+        private Border?                 _paletteCard;      // bottom card; inset to clear floating pills
 
         // ── Constructor ────────────────────────────────────────────────────────
         public LegendSettingsWindow(
@@ -81,6 +92,7 @@ namespace LemoineTools.Lemoine
             UpdateRowHeights();
             BuildToolbar();
             BuildMainLayout();
+            BuildPreviewLayer();
             BuildFloatingActions();
         }
 
@@ -88,7 +100,10 @@ namespace LemoineTools.Lemoine
         {
             AutoFiltersSettings.Saved -= OnFiltersSaved;
             foreach (var b in _builders.Values)
+            {
                 AutoFiltersSettings.Saved -= b.OnFiltersSaved;
+                b.Edited                  -= OnBuilderEdited;
+            }
             base.OnClosed(e);
         }
 
@@ -133,26 +148,21 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private void BuildFloatingActions()
         {
-            _statusText = new TextBlock
-            {
-                Text                = "",
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin              = new Thickness(0, 0, 4, 6),
-                FontStyle           = FontStyles.Italic,
-            };
-            _statusText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
-            _statusText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            _statusChip = LemoineControlStyles.BuildStatusChip(out _statusText);
+            _statusChip.HorizontalAlignment = HorizontalAlignment.Right;
+            _statusChip.Margin              = new Thickness(0, 0, 0, 6);
 
             // Preview pill — sits directly above the Create pill
             _previewPill = LemoineControlStyles.BuildActionPill("Preview", primary: false, TogglePreviewFromPill);
             _previewPill.HorizontalAlignment = HorizontalAlignment.Right;
             _previewPill.Margin              = new Thickness(0, 0, 0, 8);
+            _previewPill.ToolTip             = "Toggle a live preview of the legend";
             _previewPillLabel = _previewPill.Child as TextBlock;
 
             // Create / Update pill
             _createPill = LemoineControlStyles.BuildActionPill("Create Legend →", primary: true, HandleCreateUpdate);
             _createPill.HorizontalAlignment = HorizontalAlignment.Right;
+            _createPill.ToolTip             = "Create or update the Legend view in Revit";
             _createPillLabel = _createPill.Child as TextBlock;
 
             var stack = new StackPanel
@@ -161,11 +171,15 @@ namespace LemoineTools.Lemoine
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment   = VerticalAlignment.Bottom,
             };
-            stack.Children.Add(_statusText);
+            stack.Children.Add(_statusChip);
             stack.Children.Add(_previewPill);
             stack.Children.Add(_createPill);
 
             _floatingSlot.Content = stack;
+
+            // Reserve space at the bottom of the right column so the palette's
+            // last item (CUSTOM tile) is never hidden behind the floating pills.
+            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
 
             // Reflect the Create/Update label for the active legend
             var entries = LegendCreatorSettings.Instance.Legends;
@@ -173,13 +187,72 @@ namespace LemoineTools.Lemoine
                 UpdateCreateUpdateButton(entries[_activeIndex]);
         }
 
+        // ── Window-level preview overlay ────────────────────────────────────────
+        private void BuildPreviewLayer()
+        {
+            _previewControl = new LemoineLegendPreview { Margin = new Thickness(8) };
+            _previewOverlayGrid = new WpfGrid
+            {
+                Visibility            = Visibility.Collapsed,
+                // Grows from/to the bottom-right corner — where the Preview pill lives.
+                RenderTransformOrigin = new WpfPoint(1, 1),
+                RenderTransform       = new ScaleTransform(0, 0),
+            };
+            _previewOverlayGrid.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineSurface");
+            _previewOverlayGrid.Children.Add(_previewControl);
+            _previewLayer.Children.Add(_previewOverlayGrid);
+        }
+
         private void TogglePreviewFromPill()
         {
+            if (_previewVisible) ClosePreview(); else OpenPreview();
+        }
+
+        private void OpenPreview()
+        {
             var builder = _builderSlot?.Content as LemoineLegendBuilder;
-            if (builder == null) return;
-            bool visible = builder.TogglePreview();
-            if (_previewPillLabel != null)
-                _previewPillLabel.Text = visible ? "Hide Preview" : "Preview";
+            if (builder == null || _previewControl == null || _previewOverlayGrid == null) return;
+            _previewVisible = true;
+            _previewControl.Update(builder.Layout, builder.Rows);
+            _previewOverlayGrid.Visibility = Visibility.Visible;
+            var st   = (ScaleTransform)_previewOverlayGrid.RenderTransform;
+            var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, open);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, open);
+            if (_previewPillLabel != null) _previewPillLabel.Text = "Hide Preview";
+        }
+
+        private void ClosePreview()
+        {
+            _previewVisible = false;
+            if (_previewPillLabel != null) _previewPillLabel.Text = "Preview";
+            if (_previewOverlayGrid == null) return;
+            var st    = (ScaleTransform)_previewOverlayGrid.RenderTransform;
+            var close = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            };
+            close.Completed += (s, e) => { if (_previewOverlayGrid != null) _previewOverlayGrid.Visibility = Visibility.Collapsed; };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, close);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, close);
+        }
+
+        // Refreshes the live preview from the active builder when it's showing.
+        private void OnBuilderEdited()
+        {
+            if (_previewVisible && _previewControl != null && _activeBuilder != null)
+                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows);
+        }
+
+        // Pushes a bottom inset onto the palette card so its content clears the pills.
+        private void ApplyFloatingInset(double pillsHeight)
+        {
+            if (_paletteCard == null) return;
+            double inset = Math.Max(0, pillsHeight) + 24;
+            _paletteCard.Margin = new Thickness(10, 0, 10, inset);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -269,6 +342,7 @@ namespace LemoineTools.Lemoine
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             };
             scroll.Content = _tabStack;
+            _tabScroll = scroll;
             dp.Children.Add(scroll);
 
             return dp;
@@ -493,18 +567,18 @@ namespace LemoineTools.Lemoine
             grid.Children.Add(cardsScroll);
 
             // PALETTE card (the control renders its own "PALETTE" header internally).
-            var palCard = new Border
+            _paletteCard = new Border
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
             };
-            palCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
-            palCard.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
-            palCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            _paletteCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            _paletteCard.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            _paletteCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
             _paletteSlot = new ContentControl { Content = _palette };
-            palCard.Child = _paletteSlot;
-            WpfGrid.SetRow(palCard, 1);
-            grid.Children.Add(palCard);
+            _paletteCard.Child = _paletteSlot;
+            WpfGrid.SetRow(_paletteCard, 1);
+            grid.Children.Add(_paletteCard);
 
             return grid;
         }
@@ -549,11 +623,16 @@ namespace LemoineTools.Lemoine
 
             // Detach old builder events
             if (_builderSlot?.Content is LemoineLegendBuilder oldBuilder)
+            {
                 oldBuilder.BulkEditorChanged -= OnBulkEditorChanged;
+                oldBuilder.Edited            -= OnBuilderEdited;
+            }
 
             // Get/create builder and wire up
             var builder = GetOrCreateBuilder(entry);
             builder.BulkEditorChanged += OnBulkEditorChanged;
+            builder.Edited            += OnBuilderEdited;
+            _activeBuilder            = builder;
 
             if (_builderSlot != null)
                 _builderSlot.Content = builder;
@@ -569,8 +648,12 @@ namespace LemoineTools.Lemoine
                 _textStylesSlot.Content = BuildTextStylesSection(entry);
 
             UpdateCreateUpdateButton(entry);
+            // Preview is a single window-level overlay; reflect its state and, if
+            // it's showing, repoint it at the newly-active legend.
             if (_previewPillLabel != null)
-                _previewPillLabel.Text = builder.PreviewVisible ? "Hide Preview" : "Preview";
+                _previewPillLabel.Text = _previewVisible ? "Hide Preview" : "Preview";
+            if (_previewVisible && _previewControl != null)
+                _previewControl.Update(builder.Layout, builder.Rows);
             RebuildTabStack();
         }
 
@@ -843,6 +926,8 @@ namespace LemoineTools.Lemoine
             LegendCreatorSettings.Instance.Legends.Add(entry);
             LegendCreatorSettings.Instance.Save();
             ActivateTab(LegendCreatorSettings.Instance.Legends.Count - 1);
+            Dispatcher.BeginInvoke(new Action(() => _tabScroll?.ScrollToBottom()),
+                DispatcherPriority.Background);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -852,8 +937,14 @@ namespace LemoineTools.Lemoine
         {
             if (_statusText == null) return;
             _statusText.Text = msg;
+            if (_statusChip != null) _statusChip.Visibility = Visibility.Visible;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            timer.Tick += (s, e) => { _statusText.Text = ""; timer.Stop(); };
+            timer.Tick += (s, e) =>
+            {
+                _statusText.Text = "";
+                if (_statusChip != null) _statusChip.Visibility = Visibility.Collapsed;
+                timer.Stop();
+            };
             timer.Start();
         }
     }

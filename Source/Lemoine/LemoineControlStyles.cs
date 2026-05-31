@@ -715,5 +715,42 @@ namespace LemoineTools.Lemoine
         border.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
         return border;
     }
+
+    // ── Floating status chip ────────────────────────────────────────────────
+    /// <summary>
+    /// Builds a rounded surface chip (collapsed by default) wrapping a green,
+    /// italic status <see cref="TextBlock"/>. Used in the floating action area so
+    /// status messages stay legible over content. Toggle the returned Border's
+    /// Visibility and set <paramref name="text"/>.Text to show a message.
+    /// </summary>
+    public static Border BuildStatusChip(out TextBlock text)
+    {
+        text = new TextBlock
+        {
+            Text              = "",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontStyle         = FontStyles.Italic,
+            IsHitTestVisible  = false,
+        };
+        text.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+        text.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+        text.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+        var chip = new Border
+        {
+            Padding         = new Thickness(10, 5, 10, 5),
+            BorderThickness = new Thickness(1),
+            Visibility      = Visibility.Collapsed,
+            Child           = text,
+            Effect          = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 10, Opacity = 0.25, ShadowDepth = 2, Direction = 270,
+            },
+        };
+        chip.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+        chip.SetResourceReference(Border.BackgroundProperty,   "LemoineSurface");
+        chip.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+        return chip;
+    }
 }
 }

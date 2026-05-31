@@ -38,6 +38,10 @@ namespace LemoineTools.Lemoine
         private StackPanel?  _fTradeListPanel;
         private UIElement?   _fAddTradeAnchor;
         private TextBlock?   _fStatusText;
+        private Border?      _fStatusChip;
+        private ScrollViewer? _fRuleScroll;     // for auto-scroll-to-new on add
+        private ScrollViewer? _fTradeScroll;
+        private string       _filtersSnapshot = ""; // serialized buffer at load (dirty check)
         private Border?     _fActiveRowBorder;
         private TextBlock?  _fActiveNameTb;
         private readonly HashSet<string>            _fSelectedRuleIds    = new HashSet<string>();
@@ -103,20 +107,42 @@ namespace LemoineTools.Lemoine
 
             UpdateRowHeights();
             BuildToolbar();
-            BuildFloatingActions();
             _contentBorder.Child = BuildFiltersContent();
+            BuildFloatingActions();
         }
 
         // Persist buffered edits when the window closes — the footer Apply button
         // was removed, so this is the catch-all save path (Create also saves).
+        // Only writes when the buffer actually changed since load (dirty check).
         protected override void OnClosed(EventArgs e)
         {
-            if (_filterTrades != null)
+            if (_filterTrades != null && SerializeTrades(_filterTrades) != _filtersSnapshot)
             {
                 AutoFiltersSettings.Instance.Trades = _filterTrades;
                 AutoFiltersSettings.Instance.Save();
             }
             base.OnClosed(e);
+        }
+
+        // Serializes the trade buffer for a cheap structural dirty comparison.
+        // On failure we return a unique token so the window saves (never loses edits).
+        private static string SerializeTrades(List<FilterTradeConfig>? trades)
+        {
+            if (trades == null) return "";
+            try
+            {
+                var xs = new System.Xml.Serialization.XmlSerializer(typeof(List<FilterTradeConfig>));
+                using (var sw = new System.IO.StringWriter())
+                {
+                    xs.Serialize(sw, trades);
+                    return sw.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("FiltersSettingsWindow.SerializeTrades", ex);
+                return Guid.NewGuid().ToString(); // treat as dirty → save
+            }
         }
 
         private void UpdateRowHeights()
@@ -199,18 +225,12 @@ namespace LemoineTools.Lemoine
         // ── Floating bottom-right action pills ──────────────────────────────────
         private void BuildFloatingActions()
         {
-            _fStatusText = new TextBlock
-            {
-                Text                = "",
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin              = new Thickness(0, 0, 4, 6),
-                FontStyle           = FontStyles.Italic,
-            };
-            _fStatusText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _fStatusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
-            _fStatusText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            _fStatusChip = LemoineControlStyles.BuildStatusChip(out _fStatusText);
+            _fStatusChip.HorizontalAlignment = HorizontalAlignment.Right;
+            _fStatusChip.Margin              = new Thickness(0, 0, 0, 6);
 
             var createPill = LemoineControlStyles.BuildActionPill("Create Filters", primary: true, () => CreateFilters());
+            createPill.ToolTip = "Create/update the project's view filters from these trades";
 
             var stack = new StackPanel
             {
@@ -218,18 +238,36 @@ namespace LemoineTools.Lemoine
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment   = VerticalAlignment.Bottom,
             };
-            stack.Children.Add(_fStatusText);
+            stack.Children.Add(_fStatusChip);
             stack.Children.Add(createPill);
 
             _floatingSlot.Content = stack;
+
+            // Reserve space at the bottom of the editor so its last card clears the pill.
+            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
+            ApplyFloatingInset(_floatingSlot.ActualHeight);
+        }
+
+        // Insets the editor's bottom so content isn't hidden behind the floating pill.
+        private void ApplyFloatingInset(double pillsHeight)
+        {
+            if (_fEditorBorder == null) return;
+            double inset = Math.Max(0, pillsHeight) + 16;
+            _fEditorBorder.Padding = new Thickness(0, 0, 0, inset);
         }
 
         private void FlashStatus(string msg)
         {
             if (_fStatusText == null) return;
             _fStatusText.Text = msg;
+            if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Visible;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            timer.Tick += (s, e) => { _fStatusText.Text = ""; timer.Stop(); };
+            timer.Tick += (s, e) =>
+            {
+                _fStatusText.Text = "";
+                if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Collapsed;
+                timer.Stop();
+            };
             timer.Start();
         }
 

@@ -44,6 +44,12 @@ namespace LemoineTools.Lemoine.Controls
         /// </summary>
         public event Action<UIElement?>? BulkEditorChanged;
 
+        /// <summary>
+        /// Raised whenever the editing buffer (Layout/Rows) changes. The host
+        /// window subscribes to refresh its window-level preview overlay.
+        /// </summary>
+        public event Action? Edited;
+
         // ── Child references ───────────────────────────────────────────────────
         private LemoineLegendLayoutBar? _layoutBar;
         private ScrollViewer?           _rowsScroll;
@@ -57,10 +63,9 @@ namespace LemoineTools.Lemoine.Controls
         private Border? _rightDropBar;
         private List<Border> _betweenRowBars = new List<Border>();
 
-        // Preview overlay
-        private bool                  _previewVisible = false;
-        private Grid?                 _previewOverlay;
-        private LemoineLegendPreview? _preview;
+        // Preview is hosted by the settings window; this only carries the
+        // persisted "was visible" flag for LoadFrom / templates.
+        private bool _previewVisible = false;
 
         // Multi-select state
         private HashSet<string> _lSelectedBlockIds  = new HashSet<string>();
@@ -106,28 +111,19 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
 
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 0: layout bar
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: canvas + preview overlay
+            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: canvas
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 2: footer
 
             // ── Row 0: Layout bar ──────────────────────────────────────────────
             _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
-            _layoutBar.Changed            += (s, e) => OnEdited();
-            _layoutBar.PreviewRequested   += (s, e) => TogglePreview();
+            _layoutBar.Changed += (s, e) => OnEdited();
             Grid.SetRow(_layoutBar, 0);
             _root.Children.Add(_layoutBar);
 
-            // ── Row 1: Canvas + preview overlay ────────────────────────────────
-            var canvasHost = new Grid();
-
+            // ── Row 1: Canvas ──────────────────────────────────────────────────
             var canvasGrid = BuildCanvasGrid();
-            canvasHost.Children.Add(canvasGrid);
-
-            _previewOverlay = BuildPreviewOverlay();
-            Panel.SetZIndex(_previewOverlay, 10);
-            canvasHost.Children.Add(_previewOverlay);
-
-            Grid.SetRow(canvasHost, 1);
-            _root.Children.Add(canvasHost);
+            Grid.SetRow(canvasGrid, 1);
+            _root.Children.Add(canvasGrid);
 
             // ── Row 2: Footer ──────────────────────────────────────────────────
             var footer = BuildFooter();
@@ -139,7 +135,7 @@ namespace LemoineTools.Lemoine.Controls
 
             // ── Populate ───────────────────────────────────────────────────────
             RebuildRows();
-            UpdatePreview();
+            Edited?.Invoke();
             UpdateCounts();
         }
 
@@ -193,27 +189,6 @@ namespace LemoineTools.Lemoine.Controls
             grid.Children.Add(_bottomDropBar);
 
             return grid;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Preview overlay
-        // ─────────────────────────────────────────────────────────────────────
-        private Grid BuildPreviewOverlay()
-        {
-            var overlay = new Grid
-            {
-                Visibility            = Visibility.Collapsed,
-                // Grow from/to the bottom-right corner, matching the floating
-                // Preview pill's new home in the host window.
-                RenderTransformOrigin = new Point(1, 1),
-                RenderTransform       = new ScaleTransform(1, 1),
-            };
-            overlay.SetResourceReference(Grid.BackgroundProperty, "LemoineSurface");
-
-            _preview = new LemoineLegendPreview { Margin = new Thickness(8) };
-            overlay.Children.Add(_preview);
-
-            return overlay;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -900,50 +875,10 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         // Preview
         // ─────────────────────────────────────────────────────────────────────
-        /// <summary>
-        /// Toggles the preview overlay. Public so the host window's floating
-        /// Preview pill can drive it (the Preview button has moved out of the
-        /// inner layout bar). Returns the new visibility state.
-        /// </summary>
-        public bool TogglePreview()
-        {
-            if (_previewVisible) ClosePreview(); else OpenPreview();
-            return _previewVisible;
-        }
-
-        private void OpenPreview()
-        {
-            if (_previewOverlay == null) return;
-            _previewVisible = true;
-            _preview?.Update(Layout, Rows);
-            _previewOverlay.Visibility = Visibility.Visible;
-            var st   = (ScaleTransform)_previewOverlay.RenderTransform;
-            var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            };
-            st.BeginAnimation(ScaleTransform.ScaleXProperty, open);
-            st.BeginAnimation(ScaleTransform.ScaleYProperty, open);
-        }
-
-        private void ClosePreview()
-        {
-            _previewVisible = false;
-            if (_previewOverlay == null) return;
-            var st    = (ScaleTransform)_previewOverlay.RenderTransform;
-            var close = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
-            };
-            close.Completed += (s, e) => { if (_previewOverlay != null) _previewOverlay.Visibility = Visibility.Collapsed; };
-            st.BeginAnimation(ScaleTransform.ScaleXProperty, close);
-            st.BeginAnimation(ScaleTransform.ScaleYProperty, close);
-        }
-
-        private void UpdatePreview()
-        {
-            _preview?.Update(Layout, Rows);
-        }
+        // The live preview overlay is now hosted by the settings window (so it can
+        // grow from/to the floating Preview pill). This control just exposes the
+        // current Layout/Rows and raises <see cref="Edited"/> whenever the buffer
+        // changes so the host can refresh its preview.
 
         // ─────────────────────────────────────────────────────────────────────
         // Templates popup (called by host window's sidebar Templates button)
@@ -1326,7 +1261,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 RebuildRows();
                 BulkEditorChanged?.Invoke(LBulkEditing ? (UIElement)BuildBulkBlockEditor() : null);
-                UpdatePreview();
+                Edited?.Invoke();
                 UpdateCounts();
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
@@ -1356,7 +1291,7 @@ namespace LemoineTools.Lemoine.Controls
             Dispatcher.Invoke(() =>
             {
                 RebuildRows();
-                UpdatePreview();
+                Edited?.Invoke();
                 UpdateCounts();
             });
         }
