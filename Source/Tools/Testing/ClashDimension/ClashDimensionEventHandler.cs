@@ -36,9 +36,17 @@ namespace LemoineTools.Tools.Testing
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashDimensionEventHandler";
 
-        // Default colours for Categories / Elements modes (no owning filter rule).
-        private const string DefaultColor1 = "#E78F36";
-        private const string DefaultColor2 = "#3FB3D9";
+        // Shown when a clashing element matches no Auto Filter rule. Vivid magenta +
+        // a hatch pattern make unruled clashes unmistakable on the sheet.
+        private const string FallbackColor = "#FF00FF";
+
+        // Smallest dimension segment we will attempt (~3 mm); below this Revit rejects
+        // the dimension as zero-length, so coincident/on-edge references are dropped.
+        private const double MinSegFt = 0.01;
+        // A parallel run is split into separate single dimensions where the gap between
+        // consecutive clashes along the edge exceeds this (~1 m), so clashes on opposite
+        // ends of an edge are not collapsed into one dimension.
+        private const double ClusterBreakFt = 1000.0 / 304.8;
 
         // ── BIP map for fast parameter resolution ─────────────────────────────
         private static readonly Dictionary<string, BuiltInParameter> BipMap =
@@ -61,6 +69,7 @@ namespace LemoineTools.Tools.Testing
             public ElementId          Id            = ElementId.InvalidElementId;
             public string             Label         = "";
             public string             ColorHex      = "#888888";
+            public bool               RuleColored   = true;   // false → coloured by fallback, not a rule
             public BoundingBoxXYZ     HostBBox      = null!;
             public Solid?             HostSolid;
             public bool               SolidTried;
@@ -114,8 +123,8 @@ namespace LemoineTools.Tools.Testing
             Progress(10, pass, fail, skip);
 
             // 2. Scan each group per its mode
-            var group1Elements = ScanGroupSpec(doc, Group1Spec, sources, DefaultColor1, "Group 1");
-            var group2Elements = ScanGroupSpec(doc, Group2Spec, sources, DefaultColor2, "Group 2");
+            var group1Elements = ScanGroupSpec(doc, Group1Spec, sources, "Group 1");
+            var group2Elements = ScanGroupSpec(doc, Group2Spec, sources, "Group 2");
             Log($"Group 1: {group1Elements.Count} element(s)   Group 2: {group2Elements.Count} element(s)", "info");
 
             if (group1Elements.Count == 0)
@@ -151,6 +160,10 @@ namespace LemoineTools.Tools.Testing
             Log(hitLimit
                 ? $"Found {clashes.Count} clash(es) — limit of {MaxClashes} reached. Increase Max Clashes to detect more."
                 : $"Found {clashes.Count} clash(es).", "info");
+
+            int unruled = clashes.Count(c => !c.Group1.RuleColored);
+            if (unruled > 0)
+                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {FallbackColor} with a hatch fill.", "info");
 
             Progress(40, pass, fail, skip);
 
@@ -203,6 +216,7 @@ namespace LemoineTools.Tools.Testing
                 // Grouped dimension placement (one pass per view, after all markers exist).
                 double dimLineOffsetFt = DimLineOffsetMm / 304.8;
                 double groupTolFt      = GroupToleranceMm / 304.8;
+                int    dimCount        = 0;
                 foreach (var viewId in ViewIds)
                 {
                     var view = doc.GetElement(viewId) as View;
@@ -210,7 +224,7 @@ namespace LemoineTools.Tools.Testing
 
                     try
                     {
-                        PlaceGroupedDimensions(doc, view, markersByView[viewId],
+                        dimCount += PlaceGroupedDimensions(doc, view, markersByView[viewId],
                             dimType, dimLineOffsetFt, groupTolFt);
                     }
                     catch (Exception ex)
@@ -222,9 +236,10 @@ namespace LemoineTools.Tools.Testing
                 Progress(95, pass, fail, skip);
 
                 tx.Commit();
-            }
 
-            Log($"Done — {pass} annotation(s) placed, {fail} failed.", pass > 0 ? "pass" : "fail");
+                Log($"Done — {pass} marker(s), {dimCount} dimension(s) placed, {fail} failed.",
+                    pass > 0 ? "pass" : "fail");
+            }
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────
@@ -232,14 +247,14 @@ namespace LemoineTools.Tools.Testing
         private List<ClashElement> ScanGroupSpec(
             Document hostDoc, ClashGroupSpec spec,
             List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
-            string defaultColor, string label)
+            string label)
         {
             switch (spec.Mode)
             {
                 case "Categories":
-                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds), defaultColor);
+                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds));
                 case "Elements":
-                    return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources, defaultColor);
+                    return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources);
                 default:
                     var rules = ResolveRules(spec.RuleKeys);
                     if (rules.Count == 0)
@@ -325,8 +340,7 @@ namespace LemoineTools.Tools.Testing
 
         private List<ClashElement> ScanCategories(
             List<string> osts,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources,
-            string color)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources)
         {
             var result = new List<ClashElement>();
             foreach (var ostStr in osts ?? new List<string>())
@@ -351,6 +365,7 @@ namespace LemoineTools.Tools.Testing
                     {
                         var bb = GetHostBBox(el, tx);
                         if (bb == null) continue;
+                        string? ruleColor = ResolveRuleColor(el);
                         result.Add(new ClashElement
                         {
                             Doc           = srcDoc,
@@ -358,7 +373,8 @@ namespace LemoineTools.Tools.Testing
                             HostTransform = tx,
                             Id            = el.Id,
                             Label         = ostStr,
-                            ColorHex      = color,
+                            ColorHex      = ruleColor ?? FallbackColor,
+                            RuleColored   = ruleColor != null,
                             HostBBox      = bb,
                         });
                         srcCount++;
@@ -372,8 +388,7 @@ namespace LemoineTools.Tools.Testing
 
         private List<ClashElement> ScanElements(
             List<long> elemIds, List<long> elemLinkIds,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
-            string color)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources)
         {
             var result = new List<ClashElement>();
             // Map linkInstId → (doc, link, tx)
@@ -390,6 +405,7 @@ namespace LemoineTools.Tools.Testing
                 var bb = GetHostBBox(el, src.tx);
                 if (bb == null) continue;
 
+                string? ruleColor = ResolveRuleColor(el);
                 result.Add(new ClashElement
                 {
                     Doc           = src.doc,
@@ -397,7 +413,8 @@ namespace LemoineTools.Tools.Testing
                     HostTransform = src.tx,
                     Id            = el.Id,
                     Label         = el.Name ?? "(element)",
-                    ColorHex      = color,
+                    ColorHex      = ruleColor ?? FallbackColor,
+                    RuleColored   = ruleColor != null,
                     HostBBox      = bb,
                 });
             }
@@ -416,6 +433,39 @@ namespace LemoineTools.Tools.Testing
                     if (keySet.Contains($"{trade.Id}::{rule.Id}"))
                         result.Add((trade, rule));
             return result;
+        }
+
+        // Resolves the surface colour an element would receive from the Auto Filter rules,
+        // regardless of how its group was defined (Rules, Categories, or direct Elements).
+        // Returns null when the element matches no enabled rule → caller uses the fallback.
+        private static string? ResolveRuleColor(Element el)
+        {
+            string? bic = ElementBicName(el);
+            if (bic == null) return null;
+
+            foreach (var trade in AutoFiltersSettings.Instance.Trades)
+            {
+                if (trade?.Rules == null) continue;
+                foreach (var rule in trade.Rules)
+                {
+                    if (rule == null || !rule.Enabled) continue;
+                    if (rule.BuiltInCategories == null || !rule.BuiltInCategories.Contains(bic)) continue;
+                    if (!MatchesRule(el, rule)) continue;
+                    if (string.IsNullOrEmpty(rule.SurfColor)) continue;
+                    return rule.SurfColor;
+                }
+            }
+            return null;
+        }
+
+        // Returns the element's category as its OST_* enum name (e.g. "OST_PipeCurves"),
+        // matching how rules store their categories. Null for elements without a category.
+        private static string? ElementBicName(Element el)
+        {
+            var cat = el.Category;
+            if (cat == null) return null;
+            try { return ((BuiltInCategory)cat.Id.Value).ToString(); }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: resolve element category", __lex); return null; }
         }
 
         private static bool MatchesRule(Element el, FilterRuleConfig rule)
@@ -685,12 +735,15 @@ namespace LemoineTools.Tools.Testing
             double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
             // ── FilledRegion (circular) ───────────────────────────────────────
+            bool fallback   = !clash.Group1.RuleColored;
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
-            string cacheKey = $"{hexColor}_{FillStyle}";
+            string cacheKey = fallback ? $"{hexColor}_FB" : $"{hexColor}_{FillStyle}";
             if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
             {
-                typeId = GetOrCreateFilledRegionType(doc, hexColor);
+                typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
                 regionTypeCache[cacheKey] = typeId;
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
             }
 
             if (typeId != null && typeId != ElementId.InvalidElementId)
@@ -756,7 +809,7 @@ namespace LemoineTools.Tools.Testing
         // Places dimensions for every marker to every selected grid and slab edge.
         // Clashes at about the same distance from an edge share one dimension
         // (see EmitEdgeDimensions); GroupToleranceMm <= 0 keeps one dim per clash.
-        private void PlaceGroupedDimensions(
+        private int PlaceGroupedDimensions(
             Document doc, View view, List<ClashMarker> markers,
             DimensionType? dimType, double dimLineOffsetFt, double groupTolFt)
         {
@@ -764,10 +817,11 @@ namespace LemoineTools.Tools.Testing
             {
                 if (markers.Count > 0)
                     Log("No dimension type available — dimensions skipped.", "info");
-                return;
+                return 0;
             }
-            if (markers.Count == 0) return;
+            if (markers.Count == 0) return 0;
 
+            int placed = 0;
             for (int i = 0; i < GridIds.Count; i++)
             {
                 long linkId = (i < GridLinkIds.Count) ? GridLinkIds[i] : 0L;
@@ -786,7 +840,7 @@ namespace LemoineTools.Tools.Testing
                 }
 
                 if (grid == null) continue;
-                DimensionGrid(doc, view, grid, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
+                placed += DimensionGrid(doc, view, grid, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
             }
 
             for (int i = 0; i < FloorIds.Count; i++)
@@ -807,14 +861,15 @@ namespace LemoineTools.Tools.Testing
                 }
 
                 if (floor == null) continue;
-                DimensionFloor(doc, view, floor, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
+                placed += DimensionFloor(doc, view, floor, linkInst, markers, dimType, dimLineOffsetFt, groupTolFt);
             }
+            return placed;
         }
 
         // Dimensions every marker to one grid. A vertical grid (runs in Y) is a
         // constant-X line, so it is measured in X with the horizontal cross arm (HRef);
         // a horizontal grid is measured in Y with the vertical arm (VRef).
-        private void DimensionGrid(
+        private int DimensionGrid(
             Document doc, View view, Grid grid, RevitLinkInstance? linkInst,
             List<ClashMarker> markers, DimensionType dimType,
             double dimLineOffsetFt, double groupTolFt)
@@ -822,7 +877,7 @@ namespace LemoineTools.Tools.Testing
             try
             {
                 var gridCurve = grid.Curve as Line;
-                if (gridCurve == null) return;
+                if (gridCurve == null) return 0;
 
                 var tx = linkInst?.GetTotalTransform() ?? Transform.Identity;
                 XYZ dir = tx.OfVector(gridCurve.Direction).Normalize();
@@ -838,19 +893,20 @@ namespace LemoineTools.Tools.Testing
                 foreach (var m in markers)
                     items.Add(new DimItem { Ref = measureIsX ? m.HRef : m.VRef, Mx = m.Cx, My = m.Cy });
 
-                EmitEdgeDimensions(doc, view, dimType, gridRef, measureIsX, edgeCoord,
+                return EmitEdgeDimensions(doc, view, dimType, gridRef, measureIsX, edgeCoord,
                     items, dimLineOffsetFt, groupTolFt, $"Grid {grid.Name}");
             }
             catch (Exception ex)
             {
                 Log($"Grid dim ({grid.Name}): {ex.Message}", "info");
+                return 0;
             }
         }
 
         // Dimensions every marker to its closest vertical slab face per direction.
         // A Y-facing face (constant Y) is measured in Y with the vertical arm (VRef);
         // an X-facing face (constant X) is measured in X with the horizontal arm (HRef).
-        private void DimensionFloor(
+        private int DimensionFloor(
             Document doc, View view, Floor floor, RevitLinkInstance? linkInst,
             List<ClashMarker> markers, DimensionType dimType,
             double dimLineOffsetFt, double groupTolFt)
@@ -886,7 +942,7 @@ namespace LemoineTools.Tools.Testing
                 if (yFaces.Count == 0 && xFaces.Count == 0)
                 {
                     Log($"Floor dim ({floor.Name}): no vertical slab faces found — skipped.", "info");
-                    return;
+                    return 0;
                 }
 
                 // Assign each marker to its nearest face in each direction.
@@ -910,17 +966,20 @@ namespace LemoineTools.Tools.Testing
                     }
                 }
 
+                int placed = 0;
                 foreach (var kv in yGroups)
-                    EmitEdgeDimensions(doc, view, dimType, yFaces[kv.Key].r, /*measureIsX*/false,
+                    placed += EmitEdgeDimensions(doc, view, dimType, yFaces[kv.Key].r, /*measureIsX*/false,
                         yFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (Y)");
 
                 foreach (var kv in xGroups)
-                    EmitEdgeDimensions(doc, view, dimType, xFaces[kv.Key].r, /*measureIsX*/true,
+                    placed += EmitEdgeDimensions(doc, view, dimType, xFaces[kv.Key].r, /*measureIsX*/true,
                         xFaces[kv.Key].coord, kv.Value, dimLineOffsetFt, groupTolFt, $"Floor {floor.Name} (X)");
+                return placed;
             }
             catch (Exception ex)
             {
                 Log($"Floor dim ({floor.Name}): {ex.Message}", "info");
+                return 0;
             }
         }
 
@@ -946,13 +1005,14 @@ namespace LemoineTools.Tools.Testing
         // measureIsX selects a horizontal dimension line (measuring X to a constant-X edge)
         // vs a vertical one (measuring Y to a constant-Y edge). edgeCoord is the edge's
         // coordinate on the measured axis; signed distance to it keeps opposite sides apart.
-        private void EmitEdgeDimensions(
+        // Returns the number of dimensions actually placed.
+        private int EmitEdgeDimensions(
             Document doc, View view, DimensionType dimType,
             Reference edgeRef, bool measureIsX, double edgeCoord,
             List<DimItem> items, double dimLineOffsetFt, double groupTolFt, string ctx)
         {
             int n = items.Count;
-            if (n == 0) return;
+            if (n == 0) return 0;
 
             // measure = signed distance to the edge; along = position parallel to the edge.
             var measure = new double[n];
@@ -963,22 +1023,37 @@ namespace LemoineTools.Tools.Testing
                 along[i]   =  measureIsX ? items[i].My : items[i].Mx;
             }
 
-            var used = new bool[n];
+            var used   = new bool[n];
+            int placed = 0;
 
             if (groupTolFt > 0)
             {
-                // PARALLEL groups: same signed distance band, genuinely spread along the edge.
+                // PARALLEL groups: same signed distance band, split into clusters along the
+                // edge so far-apart rows do not collapse into one dimension.
                 foreach (var g in Enumerable.Range(0, n)
                              .GroupBy(i => (int)Math.Round(measure[i] / groupTolFt)))
                 {
-                    var idx = g.ToList();
-                    if (idx.Count < 2) continue;
-                    if (idx.Max(i => along[i]) - idx.Min(i => along[i]) <= groupTolFt) continue;
+                    var band = g.ToList();
+                    if (band.Count < 2) continue;
+                    band.Sort((a, b) => along[a].CompareTo(along[b]));
 
-                    idx.Sort((a, b) => along[a].CompareTo(along[b]));
-                    int rep = idx[idx.Count / 2];   // representative near the middle of the run
-                    EmitSingle(doc, view, dimType, edgeRef, items[rep], measureIsX, dimLineOffsetFt, ctx);
-                    foreach (var i in idx) used[i] = true;
+                    int start = 0;
+                    for (int k = 1; k <= band.Count; k++)
+                    {
+                        bool boundary = k == band.Count
+                                     || along[band[k]] - along[band[k - 1]] > ClusterBreakFt;
+                        if (!boundary) continue;
+
+                        int cnt = k - start;
+                        if (cnt >= 2 && along[band[k - 1]] - along[band[start]] > groupTolFt)
+                        {
+                            int rep = band[start + cnt / 2];   // representative near the cluster's middle
+                            placed += EmitSingle(doc, view, dimType, edgeRef, items[rep], measure[rep],
+                                                 measureIsX, dimLineOffsetFt, ctx);
+                            for (int j = start; j < k; j++) used[band[j]] = true;
+                        }
+                        start = k;
+                    }
                 }
 
                 // PERPENDICULAR groups: same along-edge band, varying distance → chain.
@@ -987,30 +1062,49 @@ namespace LemoineTools.Tools.Testing
                 {
                     var idx = g.ToList();
                     if (idx.Count < 2) continue;
-                    if (idx.Max(i => measure[i]) - idx.Min(i => measure[i]) <= groupTolFt) continue;
-
                     idx.Sort((a, b) => measure[a].CompareTo(measure[b]));
+
+                    // Drop references on the edge (zero gap) and collapse near-coincident
+                    // positions so Revit does not see a zero-length segment.
+                    var chain = new List<int>();
+                    double last = double.NaN;
+                    foreach (var i in idx)
+                    {
+                        if (Math.Abs(measure[i]) < MinSegFt) continue;
+                        if (!double.IsNaN(last) && Math.Abs(measure[i] - last) < MinSegFt) continue;
+                        chain.Add(i);
+                        last = measure[i];
+                    }
+                    if (chain.Count < 2) continue;
+                    if (measure[chain[chain.Count - 1]] - measure[chain[0]] <= groupTolFt) continue;
+
                     var refs = new ReferenceArray();
                     refs.Append(edgeRef);
-                    foreach (var i in idx) refs.Append(items[i].Ref);
+                    foreach (var i in chain) refs.Append(items[i].Ref);
 
-                    double alongAbs   = idx.Average(i => along[i]);
-                    double measureAbs = edgeCoord + idx.Average(i => measure[i]);
-                    EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs, dimLineOffsetFt, ctx);
-                    foreach (var i in idx) used[i] = true;
+                    double alongAbs   = chain.Average(i => along[i]);
+                    double measureAbs = edgeCoord + chain.Average(i => measure[i]);
+                    int got = EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs, dimLineOffsetFt, ctx);
+                    placed += got;
+                    if (got > 0) foreach (var i in idx) used[i] = true;
                 }
             }
 
             // Remaining clashes (skew / isolated, or grouping disabled): one dim each.
             for (int i = 0; i < n; i++)
                 if (!used[i])
-                    EmitSingle(doc, view, dimType, edgeRef, items[i], measureIsX, dimLineOffsetFt, ctx);
+                    placed += EmitSingle(doc, view, dimType, edgeRef, items[i], measure[i],
+                                         measureIsX, dimLineOffsetFt, ctx);
+
+            return placed;
         }
 
-        private void EmitSingle(
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int EmitSingle(
             Document doc, View view, DimensionType dimType,
-            Reference edgeRef, DimItem it, bool measureIsX, double dimLineOffsetFt, string ctx)
+            Reference edgeRef, DimItem it, double measureSigned, bool measureIsX, double dimLineOffsetFt, string ctx)
         {
+            if (Math.Abs(measureSigned) < MinSegFt) return 0;   // clash sits on the edge → no measurable gap
             try
             {
                 var refs = new ReferenceArray();
@@ -1020,13 +1114,15 @@ namespace LemoineTools.Tools.Testing
                 double measureCentre =  measureIsX ? it.Mx : it.My;
                 var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
                 var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                if (dim == null) Log($"{ctx}: dimension not created (null result).", "info");
-                else             dim.LookupParameter("Mark")?.Set("LemoineCD");
+                if (dim == null) { Log($"{ctx}: dimension not created (null result).", "info"); return 0; }
+                dim.LookupParameter("Mark")?.Set("LemoineCD");
+                return 1;
             }
-            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); }
+            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); return 0; }
         }
 
-        private void EmitChain(
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int EmitChain(
             Document doc, View view, DimensionType dimType,
             ReferenceArray refs, bool measureIsX,
             double alongAbs, double measureCentre, double dimLineOffsetFt, string ctx)
@@ -1036,10 +1132,11 @@ namespace LemoineTools.Tools.Testing
                 double alongFixed = alongAbs + dimLineOffsetFt;
                 var dimLine = MakeDimLine(measureIsX, alongFixed, measureCentre);
                 var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                if (dim == null) Log($"{ctx} (chain): dimension not created (null result).", "info");
-                else             dim.LookupParameter("Mark")?.Set("LemoineCD");
+                if (dim == null) { Log($"{ctx} (chain): dimension not created (null result).", "info"); return 0; }
+                dim.LookupParameter("Mark")?.Set("LemoineCD");
+                return 1;
             }
-            catch (Exception ex) { Log($"{ctx} (chain): {ex.Message}", "info"); }
+            catch (Exception ex) { Log($"{ctx} (chain): {ex.Message}", "info"); return 0; }
         }
 
         // Builds the dimension line. Horizontal (measures X) sits at a fixed Y; vertical
@@ -1083,9 +1180,11 @@ namespace LemoineTools.Tools.Testing
 
         // ── FilledRegionType management ───────────────────────────────────────
 
-        private ElementId? GetOrCreateFilledRegionType(Document doc, string hexColor)
+        // fallback = element matched no rule: force a hatch pattern (not solid/outline) so
+        // unruled clashes are obvious even at a glance, independent of the FillStyle setting.
+        private ElementId? GetOrCreateFilledRegionType(Document doc, string hexColor, bool fallback)
         {
-            string suffix   = FillStyle == "Solid" ? "S" : "O";
+            string suffix   = fallback ? "FB" : (FillStyle == "Solid" ? "S" : "O");
             string typeName = $"LemoineClash_{hexColor}_{suffix}";
 
             var existing = new FilteredElementCollector(doc)
@@ -1109,7 +1208,13 @@ namespace LemoineTools.Tools.Testing
             if (clr != null)
                 newType.ForegroundPatternColor = clr;
 
-            if (FillStyle == "Solid")
+            if (fallback)
+            {
+                // Hatch if the document has one; otherwise solid so the colour still reads.
+                var hatchId = GetHatchFillId(doc);
+                newType.ForegroundPatternId = hatchId != ElementId.InvalidElementId ? hatchId : GetSolidFillId(doc);
+            }
+            else if (FillStyle == "Solid")
             {
                 var solidId = GetSolidFillId(doc);
                 if (solidId != ElementId.InvalidElementId)
@@ -1245,6 +1350,23 @@ namespace LemoineTools.Tools.Testing
             {
                 try { if (fp.GetFillPattern().IsSolidFill) return fp.Id; }
                 catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: inspect fill pattern", __lex); }
+            }
+            return ElementId.InvalidElementId;
+        }
+
+        // First drafting, non-solid fill pattern — used to mark unruled (fallback) clashes.
+        private static ElementId GetHatchFillId(Document doc)
+        {
+            foreach (var fp in new FilteredElementCollector(doc)
+                .OfClass(typeof(FillPatternElement))
+                .Cast<FillPatternElement>())
+            {
+                try
+                {
+                    var pat = fp.GetFillPattern();
+                    if (!pat.IsSolidFill && pat.Target == FillPatternTarget.Drafting) return fp.Id;
+                }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: inspect hatch fill pattern", __lex); }
             }
             return ElementId.InvalidElementId;
         }
