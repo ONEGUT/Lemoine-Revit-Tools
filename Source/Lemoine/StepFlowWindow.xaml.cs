@@ -302,7 +302,7 @@ namespace LemoineTools.Lemoine
                 }
                 else
                 {
-                    content = _tool.GetStepContent(steps[i].Id) ?? new Grid();
+                    content = SafeBuildStepContent(steps[i].Id);
                 }
                 _stepRows[i] = BuildStepRow(i, steps[i], content);
                 _stepStack.Children.Add(_stepRows[i]);
@@ -310,13 +310,64 @@ namespace LemoineTools.Lemoine
             PopulateReview();
         }
 
+        // Builds a step's content, but never lets a faulty tool take down Revit: a thrown
+        // exception is logged to diagnostics.log and replaced with a visible error panel so
+        // the window still opens. (Step content is built eagerly at window construction.)
+        private FrameworkElement SafeBuildStepContent(string stepId)
+        {
+            try
+            {
+                return _tool.GetStepContent(stepId) ?? new Grid();
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"GetStepContent('{stepId}') for tool '{_tool.Title}'", ex);
+                return BuildStepErrorPanel(stepId, ex);
+            }
+        }
+
+        private FrameworkElement BuildStepErrorPanel(string stepId, Exception ex)
+        {
+            var sp = new StackPanel();
+            var hdr = new TextBlock
+            {
+                Text         = $"This step ('{stepId}') failed to load.",
+                TextWrapping = TextWrapping.Wrap,
+                FontWeight   = FontWeights.SemiBold,
+            };
+            hdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            hdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            hdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            sp.Children.Add(hdr);
+
+            var detail = new TextBlock
+            {
+                Text         = $"{ex.GetType().Name}: {ex.Message}\nSee %AppData%\\LemoineTools\\diagnostics.log for the full stack trace.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 4, 0, 0),
+            };
+            detail.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            detail.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            detail.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sp.Children.Add(detail);
+            return sp;
+        }
+
         // Fills the framework-rendered review summary from the tool's ILemoineReviewable
         // contract. No-op for non-reviewable tools. Called on build, on entering the last
-        // step, and whenever validation changes so the values stay current.
+        // step, and whenever validation changes so the values stay current. Guarded so a
+        // throwing ReviewValues degrades to a logged error instead of crashing Revit.
         private void PopulateReview()
         {
             if (_reviewSummary == null || !(_tool is ILemoineReviewable r)) return;
-            _reviewSummary.SetItems(r.ReviewItems, r.ReviewValues, r.ReviewChips, r.ReviewNote, r.ReviewWarning);
+            try
+            {
+                _reviewSummary.SetItems(r.ReviewItems, r.ReviewValues, r.ReviewChips, r.ReviewNote, r.ReviewWarning);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"PopulateReview for tool '{_tool.Title}'", ex);
+            }
         }
 
         private Border BuildStepRow(int idx, StepDefinition step, FrameworkElement content)

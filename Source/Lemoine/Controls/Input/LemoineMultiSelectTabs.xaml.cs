@@ -35,6 +35,10 @@ namespace LemoineTools.Lemoine.Controls
                 if (outer.Child is Grid g && g.Children[0] is Border leftBorder)
                     leftBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             }
+            // Both inner lists bubble the wheel to the page once they hit their scroll limit,
+            // so hovering a tab/checkbox list doesn't trap page scrolling.
+            LemoineControlStyles.WireBubblingScroll(_tabScroll);
+            LemoineControlStyles.WireBubblingScroll(_checkScroll);
         }
 
         public void SetGroups(Dictionary<string, List<string>> groups,

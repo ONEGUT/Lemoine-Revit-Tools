@@ -144,19 +144,21 @@ namespace LemoineTools.Lemoine
             b.RenderTransform       = st;
             b.RenderTransformOrigin = new Point(0.5, 0.5);
 
-            // Soft neutral shadow, invisible at rest.
-            var shadow = new DropShadowEffect
-            {
-                BlurRadius  = 8,
-                ShadowDepth = 2,
-                Direction   = 270,
-                Color       = Colors.Black,
-                Opacity     = 0,
-            };
-            b.Effect = shadow;
+            // Soft neutral shadow — created lazily on first hover, NOT at construction, so a
+            // step that builds many swatches doesn't allocate dozens of shader effects up
+            // front (cheaper to build, and avoids GPU-effect pressure under Revit's host).
+            DropShadowEffect? shadow = null;
 
             b.MouseEnter += (s, e) =>
             {
+                if (shadow == null)
+                {
+                    shadow = new DropShadowEffect
+                    {
+                        BlurRadius = 8, ShadowDepth = 2, Direction = 270, Color = Colors.Black, Opacity = 0,
+                    };
+                    b.Effect = shadow;
+                }
                 AnimateTo(b, Border.BorderBrushProperty, ColorOf(b, "LemoineAccent"));
                 shadow.BeginAnimation(DropShadowEffect.OpacityProperty,
                     new DoubleAnimation(0.35, Hover) { EasingFunction = EaseOut });
@@ -165,7 +167,7 @@ namespace LemoineTools.Lemoine
             b.MouseLeave += (s, e) =>
             {
                 RestoreTo(b, Border.BorderBrushProperty, normalBorderKey, ColorOf(b, normalBorderKey));
-                shadow.BeginAnimation(DropShadowEffect.OpacityProperty,
+                shadow?.BeginAnimation(DropShadowEffect.OpacityProperty,
                     new DoubleAnimation(0, Hover) { EasingFunction = EaseOut });
                 LiftTo(st, 1.0);
             };
