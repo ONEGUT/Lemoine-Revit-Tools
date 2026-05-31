@@ -17,11 +17,14 @@
                      BorderThickness="1"
                      VerticalContentAlignment="Center" />
             <!-- Watermark — visible when the TextBox is empty. Left inset matches the
-                 text origin: BorderThickness(1) + Padding.Left(8) = 9. -->
+                 typed-text origin: BorderThickness(1) + Padding.Left(8) via Margin, plus
+                 Padding="2,0" to match the editable text host's caret inset (same trick the
+                 DatePickerTextBox watermark uses), so the watermark and typed text align. -->
             <TextBlock x:Name="_placeholder"
                        IsHitTestVisible="False"
                        VerticalAlignment="Center"
                        Margin="9,0,10,0"
+                       Padding="2,0"
                        Opacity="0.55"
                        Visibility="Collapsed" />
         </Grid>

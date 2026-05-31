@@ -417,7 +417,8 @@ namespace LemoineTools.Lemoine.Controls
             if (string.IsNullOrWhiteSpace(item)) return;
             if (SelectedItems == null) SelectedItems = new ObservableCollection<string>();
 
-            if (MaxItems == 1)
+            bool single = MaxItems == 1;
+            if (single)
             {
                 // Single-select: replace the current value
                 SelectedItems.Clear();
@@ -429,9 +430,19 @@ namespace LemoineTools.Lemoine.Controls
                     SelectedItems.Add(item);
             }
 
+            // Rebuild the chip row (the new chip appears) on a fresh popup. ClosePopup first
+            // so the owner-window dismissal handlers are unhooked before Rebuild swaps the popup.
             ClosePopup();
             Changed?.Invoke(this, EventArgs.Empty);
             Rebuild();
+
+            // Multi-select: reopen the popup so the user can keep adding and watch the added
+            // item leave the list while its chip appears above. Deferred so the current
+            // popup-item click finishes settling before the popup is reopened.
+            bool atMax = MaxItems > 0 && SelectedItems.Count >= MaxItems;
+            if (!single && !atMax)
+                Dispatcher.BeginInvoke(new Action(OpenPopup),
+                    System.Windows.Threading.DispatcherPriority.Input);
         }
 
         private void RemoveItem(string item)
