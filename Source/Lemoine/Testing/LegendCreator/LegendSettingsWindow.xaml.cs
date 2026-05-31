@@ -12,8 +12,9 @@ using Autodesk.Revit.DB;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
-using WpfGrid   = System.Windows.Controls.Grid;
-using WpfPoint  = System.Windows.Point;
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfPoint      = System.Windows.Point;
+using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Lemoine
 {
@@ -193,7 +194,7 @@ namespace LemoineTools.Lemoine
             _previewControl = new LemoineLegendPreview { Margin = new Thickness(8) };
             _previewOverlayGrid = new WpfGrid
             {
-                Visibility            = Visibility.Collapsed,
+                Visibility            = WpfVisibility.Collapsed,
                 // Grows from/to the bottom-right corner — where the Preview pill lives.
                 RenderTransformOrigin = new WpfPoint(1, 1),
                 RenderTransform       = new ScaleTransform(0, 0),
@@ -214,7 +215,7 @@ namespace LemoineTools.Lemoine
             if (builder == null || _previewControl == null || _previewOverlayGrid == null) return;
             _previewVisible = true;
             _previewControl.Update(builder.Layout, builder.Rows);
-            _previewOverlayGrid.Visibility = Visibility.Visible;
+            _previewOverlayGrid.Visibility = WpfVisibility.Visible;
             var st   = (ScaleTransform)_previewOverlayGrid.RenderTransform;
             var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
             {
@@ -235,7 +236,7 @@ namespace LemoineTools.Lemoine
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
             };
-            close.Completed += (s, e) => { if (_previewOverlayGrid != null) _previewOverlayGrid.Visibility = Visibility.Collapsed; };
+            close.Completed += (s, e) => { if (_previewOverlayGrid != null) _previewOverlayGrid.Visibility = WpfVisibility.Collapsed; };
             st.BeginAnimation(ScaleTransform.ScaleXProperty, close);
             st.BeginAnimation(ScaleTransform.ScaleYProperty, close);
         }
@@ -937,12 +938,12 @@ namespace LemoineTools.Lemoine
         {
             if (_statusText == null) return;
             _statusText.Text = msg;
-            if (_statusChip != null) _statusChip.Visibility = Visibility.Visible;
+            if (_statusChip != null) _statusChip.Visibility = WpfVisibility.Visible;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             timer.Tick += (s, e) =>
             {
                 _statusText.Text = "";
-                if (_statusChip != null) _statusChip.Visibility = Visibility.Collapsed;
+                if (_statusChip != null) _statusChip.Visibility = WpfVisibility.Collapsed;
                 timer.Stop();
             };
             timer.Start();
