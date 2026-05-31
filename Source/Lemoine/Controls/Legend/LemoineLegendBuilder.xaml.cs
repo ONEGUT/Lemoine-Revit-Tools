@@ -379,6 +379,9 @@ namespace LemoineTools.Lemoine.Controls
         private void RebuildRows()
         {
             if (_rowsStack == null) return;
+            // A row with no groups carries nothing — drop it so it never renders
+            // (covers group deletion, cross-row moves, etc.).
+            DropEmptyRows();
             _rowsStack.Children.Clear();
             _betweenRowBars.Clear();
 
@@ -448,10 +451,8 @@ namespace LemoineTools.Lemoine.Controls
                     Id = LegendIdGen.New("g"), Title = "", SourceTradeId = "",
                     Blocks = new List<LegendBlockConfig>(),
                 };
-                if (Rows.Count > 0)
-                    Rows[Rows.Count - 1].Groups.Add(newGrp);
-                else
-                    Rows.Add(new LegendRowConfig { Id = LegendIdGen.New("r"), Groups = new List<LegendGroupConfig> { newGrp } });
+                // Always start a fresh row at the bottom for a new group.
+                Rows.Add(new LegendRowConfig { Id = LegendIdGen.New("r"), Groups = new List<LegendGroupConfig> { newGrp } });
                 OnEdited();
             };
             _rowsStack.Children.Add(addGrpBorder);

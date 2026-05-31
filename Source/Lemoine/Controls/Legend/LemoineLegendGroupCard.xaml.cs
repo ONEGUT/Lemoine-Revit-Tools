@@ -130,9 +130,8 @@ namespace LemoineTools.Lemoine.Controls
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 3: spacer (*)
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 4: count
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 5: eye-all
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 6: shape-all
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 7: + custom
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 8: delete
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 6: + custom
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 7: delete
 
             // Collapse chevron
             var chev = MakeIconButton(Group.Collapsed ? "▸" : "▾", Group.Collapsed ? "Expand" : "Collapse");
@@ -206,12 +205,6 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(eyeAll, 5);
             grid.Children.Add(eyeAll);
 
-            // Bulk shape picker
-            var bulkBtn = MakeIconButton("▤", "Set shape/fill for all blocks");
-            bulkBtn.Click += (s, e) => OpenBulkShapePopup(bulkBtn);
-            Grid.SetColumn(bulkBtn, 6);
-            grid.Children.Add(bulkBtn);
-
             // Add custom block inside this group
             var addCustom = MakeIconButton("+", "Add custom block");
             addCustom.Click += (s, e) =>
@@ -229,13 +222,13 @@ namespace LemoineTools.Lemoine.Controls
                 Changed?.Invoke(this, EventArgs.Empty);
                 BuildAll();
             };
-            Grid.SetColumn(addCustom, 7);
+            Grid.SetColumn(addCustom, 6);
             grid.Children.Add(addCustom);
 
             // Delete
             var del = MakeIconButton("✕", "Delete group");
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
-            Grid.SetColumn(del, 8);
+            Grid.SetColumn(del, 7);
             grid.Children.Add(del);
 
             _header.Child = grid;
@@ -896,42 +889,6 @@ namespace LemoineTools.Lemoine.Controls
                 d = VisualTreeHelper.GetParent(d) ?? LogicalTreeHelper.GetParent(d);
             }
             return false;
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Bulk shape popup
-        // ─────────────────────────────────────────────────────────────────────
-        private void OpenBulkShapePopup(FrameworkElement anchor)
-        {
-            string first = Group.Blocks != null && Group.Blocks.Count > 0
-                ? (Group.Blocks[0].Kind ?? "square") : "square";
-            string firstFill = Group.Blocks != null && Group.Blocks.Count > 0
-                ? (Group.Blocks[0].Fill ?? "solid") : "solid";
-            var picker = new LemoineSwatchPicker
-            {
-                Kind = first, Fill = firstFill,
-                SwatchColor = ResolveTradeColor(),
-                Title = "GROUP",
-            };
-            var popup = new Popup
-            {
-                PlacementTarget    = anchor,
-                Placement          = PlacementMode.Bottom,
-                StaysOpen          = false,
-                AllowsTransparency = false,
-                Child              = picker,
-            };
-            picker.SelectionChanged += (s, args) =>
-            {
-                if (Group.Blocks != null)
-                {
-                    foreach (var b in Group.Blocks) { b.Kind = args.Kind; b.Fill = args.Fill; }
-                }
-                Changed?.Invoke(this, EventArgs.Empty);
-                BuildAll();
-                popup.IsOpen = false;
-            };
-            popup.IsOpen = true;
         }
 
         // ─────────────────────────────────────────────────────────────────────

@@ -16,11 +16,10 @@ namespace LemoineTools.Lemoine.Controls
     /// Side-panel palette for the Legend Creator tab.
     /// Live mirror of <see cref="AutoFiltersSettings.Trades"/>.
     ///
-    /// Three sections, top-to-bottom:
+    /// Two sections, top-to-bottom:
     ///   1. Scope row — "All" pill + trade dropdown pill
     ///   2. FILTERS — list of every (enabled) Rule under the selected scope.
     ///      Each row is draggable into a group.
-    ///   3. CUSTOM — empty-swatch tile draggable to create a Custom block.
     /// </summary>
     public partial class LemoineLegendPalette : UserControl
     {
@@ -57,13 +56,11 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Clear();
             _root.Margin = new Thickness(10, 10, 10, 10);
 
-            // header=0, scope row=1, filters label=2, filters=3, custom label=4, custom tile=5
+            // header=0, scope row=1, filters label=2, filters=3
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // header
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // scope row
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // filters label
             _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // filters
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // custom label
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // custom tile
 
             AddRow(0, MakeMonoLabel("PALETTE"));
 
@@ -85,59 +82,12 @@ namespace LemoineTools.Lemoine.Controls
             _filterList = new StackPanel();
             sv.Content = _filterList;
             AddRow(3, sv);
-
-            AddRow(4, MakeMonoLabel("CUSTOM"));
-            AddRow(5, BuildCustomTile());
         }
 
         private void AddRow(int row, UIElement el)
         {
             Grid.SetRow(el, row);
             _root.Children.Add(el);
-        }
-
-        private UIElement BuildCustomTile()
-        {
-            var border = new Border
-            {
-                BorderThickness = new Thickness(1.4),
-                CornerRadius    = new CornerRadius(4),
-                Padding         = new Thickness(8, 4, 8, 4),
-                Margin          = new Thickness(0, 4, 0, 0),
-                Cursor          = Cursors.Hand,
-            };
-            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            border.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-
-            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            var glyph = new LemoineSwatchGlyph
-            {
-                Kind = "square", Fill = "solid",
-                SwatchColor = LemoineTheme.FallbackGrey,
-                GlyphWidth = 22, GlyphHeight = 14,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            };
-            var label = new TextBlock
-            {
-                Text = "Empty swatch + label",
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-            label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            label.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            row.Children.Add(glyph);
-            row.Children.Add(label);
-            border.Child = row;
-
-            // Drag start
-            border.PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                var payload = new LegendDragPayload { What = LegendDragPayload.Kind.PaletteCustom };
-                StartDrag(border, payload);
-            };
-            return border;
         }
 
         // ─────────────────────────────────────────────────────────────────────
