@@ -20,7 +20,13 @@ namespace LemoineTools.Lemoine
     /// </summary>
     public static class LemoineMotion
     {
-        private static readonly CubicEase EaseOut = new CubicEase { EasingMode = EasingMode.EaseOut };
+        // MUST be frozen: each tool window runs on its own STA thread, and a non-frozen
+        // Freezable (CubicEase) is thread-affine — the second window to animate through this
+        // shared static would throw "calling thread cannot access this object because a
+        // different thread owns it" and crash Revit. Frozen Freezables are thread-safe.
+        private static readonly CubicEase EaseOut = FreezeEase(new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        private static CubicEase FreezeEase(CubicEase e) { e.Freeze(); return e; }
 
         private static Duration Hover => new Duration(TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast));
         private static Duration Press => new Duration(TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimPress));

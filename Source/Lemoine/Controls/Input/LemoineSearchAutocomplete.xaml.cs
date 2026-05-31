@@ -32,7 +32,11 @@ namespace LemoineTools.Lemoine.Controls
         private bool _iconVisible = true;
         private static readonly Thickness _padWithIcon = new Thickness(26, 6, 10, 6);
         private static readonly Thickness _padNoIcon   = new Thickness(8,  6, 10, 6);
-        private static readonly CubicEase _iconEase    = new CubicEase { EasingMode = EasingMode.EaseOut };
+        // Frozen so this shared static is thread-safe across each window's STA thread
+        // (a non-frozen Freezable crashes the second window with a cross-thread access).
+        private static readonly CubicEase _iconEase    = FreezeEase(new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        private static CubicEase FreezeEase(CubicEase e) { e.Freeze(); return e; }
 
         public string Value
         {
