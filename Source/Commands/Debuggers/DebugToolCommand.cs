@@ -7,9 +7,11 @@ using LemoineTools.Tools.Debuggers;
 namespace LemoineTools.Commands
 {
     /// <summary>
-    /// Opens the P0/P1 UI motion test harness from the reserved Developer-panel slot.
-    /// Temporary scaffolding for verifying the interaction-bug and motion changes on
-    /// Windows; the placeholder slot returns once testing is done.
+    /// Opens the crash-isolation probe harness (CrashProbeViewModel) from the reserved
+    /// Developer-panel slot. Each step lazily builds one suspect WPF construct so the
+    /// button-press that crashes Revit names the culprit (per CLAUDE.md "Crashes & Large
+    /// Ambiguous Issues — Build a Debugger First"). Swap the ViewModel here to run the
+    /// motion harness (MotionTestViewModel) instead.
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]
@@ -21,10 +23,8 @@ namespace LemoineTools.Commands
         {
             if (_window != null && _window.IsVisible) { _window.Activate(); return Result.Succeeded; }
 
-            var vm = new MotionTestViewModel();
+            var vm = new CrashProbeViewModel();
             _window = new StepFlowWindow(vm);
-            // Register a second log tab so the tab bar (and the P0 hover-reset fix) is testable.
-            _window.RegisterLogTab("notes", "Notes", vm.BuildNotesTab());
             _window.Closed += (s, e) => _window = null;
             _window.Show();
             return Result.Succeeded;

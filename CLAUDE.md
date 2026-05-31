@@ -6,6 +6,21 @@ This is a Revit plugin built with C# and WPF targeting .NET Framework 4.8. The p
 
 ---
 
+## Crashes & Large Ambiguous Issues — Build a Debugger First
+
+When the user reports a **crash** (Revit closing/hanging) or any **large, ambiguous problem** that can't be pinned to a specific line by reading code, the FIRST move is to **build a dedicated debug harness — not to theorize from inspection**. Code-reading has repeatedly failed to find crash causes; a harness that reproduces and isolates the fault is the reliable path.
+
+The harness is an `ILemoineTool` opened in `StepFlowWindow` (model: `MotionTestViewModel` / `DebugToolCommand`). For crashes specifically:
+
+- **Lazily construct each suspect** behind a button, so merely opening the harness or navigating a step does NOT trigger the crash. `StepFlowWindow` builds every step's content eagerly at construction, so a crashing construct must be deferred to a button `Click` to be isolatable.
+- Give each step/button ONE suspect (a single control, or the same control at scale — e.g. "build 60 swatches", "MultiSelectTabs with 8×40 items"). The button press that crashes Revit names the culprit.
+- Hard crashes (no entry in `%AppData%\LemoineTools\diagnostics.log`) are native/WPF/message-loop or stack-overflow faults that `try/catch` cannot catch — only a probe harness isolates them. A managed exception WILL appear in the log via `LemoineLog`.
+- Keep the harness in `Source/Tools/Debuggers/` and reachable from the reserved Developer-panel button; remove or repoint it once the issue is found.
+
+Only after the harness pinpoints the construct should the fix be written.
+
+---
+
 ## Branch Workflow — Read Before Any Code Changes
 
 ### 1. Always Plan First
