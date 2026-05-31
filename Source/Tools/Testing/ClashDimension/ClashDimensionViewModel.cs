@@ -79,6 +79,8 @@ namespace LemoineTools.Tools.Testing
         private string _dimStyleName      = ClashDimensionSettings.Instance.DimStyleName;
         private double _dimLineOffsetMm   = ClashDimensionSettings.Instance.DimLineOffsetMm;
         private double _groupToleranceMm  = ClashDimensionSettings.Instance.GroupToleranceMm;
+        private double _clusterGapMm      = ClashDimensionSettings.Instance.ClusterGapMm;
+        private string _fallbackColorHex  = ClashDimensionSettings.Instance.FallbackColorHex;
         private string _dimTarget         = ClashDimensionSettings.Instance.DimTarget;
         private string _fillStyle         = ClashDimensionSettings.Instance.FillStyle;
         private string _crossLineTypeName = ClashDimensionSettings.Instance.CrossLineTypeName;
@@ -706,6 +708,11 @@ namespace LemoineTools.Tools.Testing
                 _groupToleranceMm.ToString("F0"),
                 val => { if (double.TryParse(val, out double d) && d >= 0) { _groupToleranceMm = d; Fire(); } });
 
+            AddSettingRow(outer, "Group Cluster Gap (mm)",
+                "Splits a grouped run where clashes are this far apart along the edge, so far-apart clashes are not merged. 0 = never split.",
+                _clusterGapMm.ToString("F0"),
+                val => { if (double.TryParse(val, out double d) && d >= 0) { _clusterGapMm = d; Fire(); } });
+
             AddDivider(outer);
             AddLabel(outer, "Dimension Style");
             var styleItems = _dimStyleNames.Count > 0 ? _dimStyleNames.ToArray() : new[] { "(No dimension styles)" };
@@ -730,6 +737,19 @@ namespace LemoineTools.Tools.Testing
             var fillSelect = new LemoineSingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = _fillStyle };
             fillSelect.SelectionChanged += val => { if (val != null) { _fillStyle = val; Fire(); } };
             outer.Children.Add(fillSelect);
+
+            AddSettingRow(outer, "Fallback Colour (hex)",
+                "Colour (e.g. #FF00FF) + hatch fill used for clashes that match no Auto Filter rule.",
+                _fallbackColorHex,
+                val =>
+                {
+                    string v = val.Trim();
+                    if (System.Text.RegularExpressions.Regex.IsMatch(v, "^#?[0-9A-Fa-f]{6}$"))
+                    {
+                        _fallbackColorHex = v.StartsWith("#") ? v : "#" + v;
+                        Fire();
+                    }
+                });
 
             AddDivider(outer);
             AddLabel(outer, "Cross Line Style");
@@ -996,6 +1016,8 @@ namespace LemoineTools.Tools.Testing
             s.DimStyleName        = _dimStyleName;
             s.DimLineOffsetMm     = _dimLineOffsetMm;
             s.GroupToleranceMm    = _groupToleranceMm;
+            s.ClusterGapMm        = _clusterGapMm;
+            s.FallbackColorHex    = _fallbackColorHex;
             s.DimTarget           = _dimTarget;
             s.FillStyle           = _fillStyle;
             s.CrossLineTypeName   = _crossLineTypeName;
@@ -1019,6 +1041,8 @@ namespace LemoineTools.Tools.Testing
             _handler.DimStyleName      = _dimStyleName;
             _handler.DimLineOffsetMm   = _dimLineOffsetMm;
             _handler.GroupToleranceMm  = _groupToleranceMm;
+            _handler.ClusterGapMm      = _clusterGapMm;
+            _handler.FallbackColorHex  = _fallbackColorHex;
             _handler.DimTarget         = _dimTarget;
             _handler.FillStyle         = _fillStyle;
             _handler.CrossLineTypeName = _crossLineTypeName;

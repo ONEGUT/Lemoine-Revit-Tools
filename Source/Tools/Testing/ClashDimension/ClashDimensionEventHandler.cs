@@ -24,6 +24,10 @@ namespace LemoineTools.Tools.Testing
         public string          DimStyleName      { get; set; } = "";
         public double          DimLineOffsetMm   { get; set; } = 100.0;
         public double          GroupToleranceMm  { get; set; } = 50.0;
+        // Along-edge gap that splits a parallel run (mm); 0 = never split.
+        public double          ClusterGapMm      { get; set; } = 1000.0;
+        // Colour for clashes matching no Auto Filter rule (hex, rendered with a hatch fill).
+        public string          FallbackColorHex  { get; set; } = "#FF00FF";
         public string          DimTarget         { get; set; } = "Edge";
         public string          FillStyle         { get; set; } = "Solid";
         public string          CrossLineTypeName { get; set; } = "";
@@ -36,17 +40,9 @@ namespace LemoineTools.Tools.Testing
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashDimensionEventHandler";
 
-        // Shown when a clashing element matches no Auto Filter rule. Vivid magenta +
-        // a hatch pattern make unruled clashes unmistakable on the sheet.
-        private const string FallbackColor = "#FF00FF";
-
         // Smallest dimension segment we will attempt (~3 mm); below this Revit rejects
         // the dimension as zero-length, so coincident/on-edge references are dropped.
         private const double MinSegFt = 0.01;
-        // A parallel run is split into separate single dimensions where the gap between
-        // consecutive clashes along the edge exceeds this (~1 m), so clashes on opposite
-        // ends of an edge are not collapsed into one dimension.
-        private const double ClusterBreakFt = 1000.0 / 304.8;
 
         // ── BIP map for fast parameter resolution ─────────────────────────────
         private static readonly Dictionary<string, BuiltInParameter> BipMap =
@@ -163,7 +159,7 @@ namespace LemoineTools.Tools.Testing
 
             int unruled = clashes.Count(c => !c.Group1.RuleColored);
             if (unruled > 0)
-                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {FallbackColor} with a hatch fill.", "info");
+                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {FallbackColorHex} with a hatch fill.", "info");
 
             Progress(40, pass, fail, skip);
 
@@ -373,7 +369,7 @@ namespace LemoineTools.Tools.Testing
                             HostTransform = tx,
                             Id            = el.Id,
                             Label         = ostStr,
-                            ColorHex      = ruleColor ?? FallbackColor,
+                            ColorHex      = ruleColor ?? FallbackColorHex,
                             RuleColored   = ruleColor != null,
                             HostBBox      = bb,
                         });
@@ -413,7 +409,7 @@ namespace LemoineTools.Tools.Testing
                     HostTransform = src.tx,
                     Id            = el.Id,
                     Label         = el.Name ?? "(element)",
-                    ColorHex      = ruleColor ?? FallbackColor,
+                    ColorHex      = ruleColor ?? FallbackColorHex,
                     RuleColored   = ruleColor != null,
                     HostBBox      = bb,
                 });
@@ -1025,6 +1021,8 @@ namespace LemoineTools.Tools.Testing
 
             var used   = new bool[n];
             int placed = 0;
+            // Along-edge gap that breaks a parallel run; 0 (or less) = never split.
+            double clusterBreakFt = ClusterGapMm > 0 ? ClusterGapMm / 304.8 : double.MaxValue;
 
             if (groupTolFt > 0)
             {
@@ -1041,7 +1039,7 @@ namespace LemoineTools.Tools.Testing
                     for (int k = 1; k <= band.Count; k++)
                     {
                         bool boundary = k == band.Count
-                                     || along[band[k]] - along[band[k - 1]] > ClusterBreakFt;
+                                     || along[band[k]] - along[band[k - 1]] > clusterBreakFt;
                         if (!boundary) continue;
 
                         int cnt = k - start;

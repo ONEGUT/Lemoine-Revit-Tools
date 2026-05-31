@@ -20,6 +20,11 @@ namespace LemoineTools.Tools.Testing
         // Max difference (mm) in distance-to-edge for clashes to share one grouped
         // dimension. 0 disables grouping (one dimension per clash, as before).
         public double GroupToleranceMm  { get; set; } = 50.0;
+        // Along-edge gap (mm) that splits a parallel run into separate dimensions, so
+        // equidistant clashes far apart along an edge are not merged. 0 = never split.
+        public double ClusterGapMm      { get; set; } = 1000.0;
+        // Colour shown for clashes that match no Auto Filter rule (hex, with hatch fill).
+        public string FallbackColorHex  { get; set; } = "#FF00FF";
         public string DimTarget         { get; set; } = "Edge";   // "Edge" | "Centre"
         public string FillStyle         { get; set; } = "Solid";  // "Solid" | "Outline"
         public string CrossLineTypeName { get; set; } = "";
