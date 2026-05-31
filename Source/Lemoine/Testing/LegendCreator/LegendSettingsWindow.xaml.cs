@@ -150,36 +150,42 @@ namespace LemoineTools.Lemoine
         private void BuildFloatingActions()
         {
             _statusChip = LemoineControlStyles.BuildStatusChip(out _statusText);
-            _statusChip.HorizontalAlignment = HorizontalAlignment.Right;
+            _statusChip.HorizontalAlignment = HorizontalAlignment.Center;
             _statusChip.Margin              = new Thickness(0, 0, 0, 6);
 
             // Preview pill — sits directly above the Create pill
             _previewPill = LemoineControlStyles.BuildActionPill("Preview", primary: false, TogglePreviewFromPill);
-            _previewPill.HorizontalAlignment = HorizontalAlignment.Right;
+            _previewPill.HorizontalAlignment = HorizontalAlignment.Center;
             _previewPill.Margin              = new Thickness(0, 0, 0, 8);
             _previewPill.ToolTip             = "Toggle a live preview of the legend";
             _previewPillLabel = _previewPill.Child as TextBlock;
 
             // Create / Update pill
             _createPill = LemoineControlStyles.BuildActionPill("Create Legend →", primary: true, HandleCreateUpdate);
-            _createPill.HorizontalAlignment = HorizontalAlignment.Right;
+            _createPill.HorizontalAlignment = HorizontalAlignment.Center;
             _createPill.ToolTip             = "Create or update the Legend view in Revit";
             _createPillLabel = _createPill.Child as TextBlock;
 
             var stack = new StackPanel
             {
                 Orientation         = Orientation.Vertical,
-                HorizontalAlignment = HorizontalAlignment.Right,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment   = VerticalAlignment.Bottom,
             };
             stack.Children.Add(_statusChip);
             stack.Children.Add(_previewPill);
             stack.Children.Add(_createPill);
 
-            _floatingSlot.Content = stack;
+            // Pills float at the bottom of the left sidebar column, centered on it.
+            // Kept in the ZIndex-50 slot (above the preview overlay) so the
+            // Hide-Preview pill stays clickable while a preview is open.
+            _floatingSlot.Content             = stack;
+            _floatingSlot.HorizontalAlignment = HorizontalAlignment.Left;
+            _floatingSlot.Width               = 180;   // matches the sidebar column width
+            _floatingSlot.Margin              = new Thickness(0, 0, 0, 16);
 
-            // Reserve space at the bottom of the right column so the palette's
-            // last item (CUSTOM tile) is never hidden behind the floating pills.
+            // Reserve space at the bottom of the sidebar tab list so the last
+            // legend tab / Add Legend pill is never hidden behind the floating pills.
             _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
 
             // Reflect the Create/Update label for the active legend
@@ -195,8 +201,9 @@ namespace LemoineTools.Lemoine
             _previewOverlayGrid = new WpfGrid
             {
                 Visibility            = WpfVisibility.Collapsed,
-                // Grows from/to the bottom-right corner — where the Preview pill lives.
-                RenderTransformOrigin = new WpfPoint(1, 1),
+                // Grows from/to the bottom-left corner — where the Preview pill lives
+                // (the pills now sit at the bottom of the left sidebar column).
+                RenderTransformOrigin = new WpfPoint(0, 1),
                 RenderTransform       = new ScaleTransform(0, 0),
             };
             _previewOverlayGrid.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineSurface");
@@ -248,12 +255,13 @@ namespace LemoineTools.Lemoine
                 _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows);
         }
 
-        // Pushes a bottom inset onto the palette card so its content clears the pills.
+        // Pushes a bottom inset onto the sidebar tab list so its last item (the
+        // Add Legend pill) clears the floating Preview / Create pills below it.
         private void ApplyFloatingInset(double pillsHeight)
         {
-            if (_paletteCard == null) return;
+            if (_tabScroll == null) return;
             double inset = Math.Max(0, pillsHeight) + 24;
-            _paletteCard.Margin = new Thickness(10, 0, 10, inset);
+            _tabScroll.Margin = new Thickness(0, 0, 0, inset);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -403,54 +411,79 @@ namespace LemoineTools.Lemoine
         {
             bool isActive = index == _activeIndex;
 
+            // Structured to mirror the Auto Filters trade tabs: a left accent bar
+            // marks the active item; an inline ✎ opens the editor. (Legends have no
+            // single representative colour, so the filters' colour dot is omitted.)
             var tab = new Border
             {
                 Padding = new Thickness(10, 8, 10, 8),
+                Margin  = new Thickness(0, 0, 0, 2),
                 Cursor  = isActive ? Cursors.Arrow : Cursors.Hand,
             };
 
             if (isActive)
             {
-                tab.BorderThickness = new Thickness(3, 0, 0, 1);
+                tab.BorderThickness = new Thickness(3, 0, 0, 0);
                 tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                tab.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                tab.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
             }
             else
             {
-                tab.BorderThickness = new Thickness(0, 0, 0, 1);
-                tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                tab.BorderThickness = new Thickness(3, 0, 0, 0);
+                tab.BorderBrush     = Brushes.Transparent;
             }
+
+            // [ label ] .......... [ ✎ ]
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var nameDisplay = new TextBlock
             {
-                Text             = entry.GetDisplayName(),
+                Text              = entry.GetDisplayName(),
                 VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming     = TextTrimming.CharacterEllipsis,
+                TextTrimming      = TextTrimming.CharacterEllipsis,
             };
             nameDisplay.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             nameDisplay.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            nameDisplay.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tab.Child = nameDisplay;
+            nameDisplay.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            WpfGrid.SetColumn(nameDisplay, 0);
+            grid.Children.Add(nameDisplay);
 
-            if (!isActive)
+            // Edit pencil (✎) — opens the Title / Subtitle editor moved here from
+            // the builder's old top layout bar.
+            var editBtn = new TextBlock
             {
-                tab.MouseEnter += (s, e) =>
-                    tab.SetResourceReference(Border.BackgroundProperty, "LemoineSelectBg");
-                tab.MouseLeave += (s, e) =>
-                    tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-            }
+                Text              = "✎",
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor            = Cursors.Hand,
+                Margin            = new Thickness(6, 0, 0, 0),
+            };
+            editBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            editBtn.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            editBtn.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            WpfGrid.SetColumn(editBtn, 1);
+            grid.Children.Add(editBtn);
+
+            // Handle Down (not Up) and mark it handled so the click never bubbles to
+            // the tab's activate handler — otherwise activating rebuilds the tab list
+            // and detaches the popup's anchor before it opens.
+            editBtn.MouseLeftButtonDown += (s, e) =>
+            {
+                e.Handled = true;
+                ShowLegendEditPopup(tab, entry, nameDisplay);
+            };
+
+            tab.Child = grid;
 
             int capturedIndex = index;
             tab.MouseLeftButtonDown += (s, e) =>
             {
                 if (capturedIndex != _activeIndex)
-                {
                     ActivateTab(capturedIndex);
-                }
                 else if (e.ClickCount == 2)
                 {
-                    ShowRenamePopup(tab, entry, nameDisplay);
+                    ShowLegendEditPopup(tab, entry, nameDisplay);
                     e.Handled = true;
                 }
             };
@@ -458,58 +491,53 @@ namespace LemoineTools.Lemoine
             return tab;
         }
 
-        private void ShowRenamePopup(UIElement anchor, LegendEntry entry, TextBlock nameDisplay)
+        // Title / Subtitle editor — moved here from the builder's old top layout bar
+        // and anchored to the legend tab's ✎ pencil.
+        private void ShowLegendEditPopup(UIElement anchor, LegendEntry entry, TextBlock nameDisplay)
         {
             var panel = new StackPanel
             {
                 Orientation = Orientation.Vertical,
                 Margin      = new Thickness(8),
-                MinWidth    = 180,
+                MinWidth    = 200,
             };
 
-            var lbl = new TextBlock { Text = "Name", Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            panel.Children.Add(lbl);
+            panel.Children.Add(MakeEditLabel("Title"));
+            var titleBox = MakeEditBox(entry.Layout?.Title ?? "");
+            titleBox.Margin = new Thickness(0, 0, 0, 8);
+            panel.Children.Add(titleBox);
 
-            var nameBox = new TextBox
-            {
-                Text            = entry.GetDisplayName(),
-                Margin          = new Thickness(0, 0, 0, 8),
-                Padding         = new Thickness(6, 4, 6, 4),
-                BorderThickness = new Thickness(1),
-            };
-            nameBox.SetResourceReference(TextBox.ForegroundProperty,    "LemoineText");
-            nameBox.SetResourceReference(TextBox.FontFamilyProperty,    "LemoineUiFont");
-            nameBox.SetResourceReference(TextBox.FontSizeProperty,      "LemoineFS_MD");
-            nameBox.SetResourceReference(TextBox.BorderBrushProperty,   "LemoineBorder");
-            nameBox.SetResourceReference(TextBox.BackgroundProperty,    "LemoineSelectBg");
-            nameBox.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
-            panel.Children.Add(nameBox);
+            panel.Children.Add(MakeEditLabel("Subtitle"));
+            var subBox = MakeEditBox(entry.Layout?.Subtitle ?? "");
+            subBox.Margin = new Thickness(0, 0, 0, 10);
+            panel.Children.Add(subBox);
 
             var popup = new Popup
             {
                 PlacementTarget    = anchor,
                 Placement          = PlacementMode.Bottom,
-                StaysOpen          = true,
+                StaysOpen          = true,   // StaysOpen=false crashes Revit (see CLAUDE.md)
                 AllowsTransparency = false,
             };
 
+            void Commit()
+            {
+                ApplyLegendTitle(entry, titleBox.Text.Trim(), subBox.Text.Trim(), nameDisplay);
+                popup.IsOpen = false;
+            }
+
             var saveBtn = LemoineControlStyles.BuildButton(
                 "Save", LemoineControlStyles.LemoineButtonVariant.Primary);
-            saveBtn.Click += (s, e) =>
-            {
-                CommitRename(entry, nameBox.Text.Trim(), nameDisplay);
-                popup.IsOpen = false;
-            };
+            saveBtn.Click += (s, e) => Commit();
             panel.Children.Add(saveBtn);
 
-            nameBox.KeyDown += (s, e) =>
+            void OnKey(object s, KeyEventArgs e)
             {
-                if (e.Key == Key.Return) { CommitRename(entry, nameBox.Text.Trim(), nameDisplay); popup.IsOpen = false; e.Handled = true; }
+                if (e.Key == Key.Return)      { Commit();            e.Handled = true; }
                 else if (e.Key == Key.Escape) { popup.IsOpen = false; e.Handled = true; }
-            };
+            }
+            titleBox.KeyDown += OnKey;
+            subBox.KeyDown   += OnKey;
 
             var outerBorder = new Border
             {
@@ -523,17 +551,52 @@ namespace LemoineTools.Lemoine
             popup.Child  = outerBorder;
             popup.IsOpen = true;
 
-            Dispatcher.BeginInvoke(new Action(() => { nameBox.Focus(); nameBox.SelectAll(); }),
+            Dispatcher.BeginInvoke(new Action(() => { titleBox.Focus(); titleBox.SelectAll(); }),
                 DispatcherPriority.Input);
         }
 
-        private void CommitRename(LegendEntry entry, string newName, TextBlock display)
+        private static TextBlock MakeEditLabel(string text)
         {
-            if (string.IsNullOrWhiteSpace(newName))
-                newName = entry.Layout?.Title ?? "Untitled";
-            entry.DisplayName = newName == (entry.Layout?.Title ?? "") ? null : newName;
-            display.Text = entry.GetDisplayName();
+            var lbl = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 2) };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return lbl;
+        }
+
+        private static TextBox MakeEditBox(string text)
+        {
+            var box = new TextBox
+            {
+                Text            = text,
+                Padding         = new Thickness(6, 4, 6, 4),
+                BorderThickness = new Thickness(1),
+            };
+            box.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+            box.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineUiFont");
+            box.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_MD");
+            box.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+            box.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+            box.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            return box;
+        }
+
+        // Applies an edited Title/Subtitle to both the persisted entry and the live
+        // builder buffer, then refreshes the tab label and (if open) the preview.
+        private void ApplyLegendTitle(LegendEntry entry, string title, string subtitle, TextBlock nameDisplay)
+        {
+            if (entry.Layout == null) entry.Layout = new LegendLayoutConfig();
+            entry.Layout.Title    = title;
+            entry.Layout.Subtitle = subtitle;
+            entry.DisplayName     = null;   // the title is now the single source of the tab name
+
+            var builder = GetOrCreateBuilder(entry);
+            builder.Layout.Title    = title;
+            builder.Layout.Subtitle = subtitle;
+
+            nameDisplay.Text = entry.GetDisplayName();
             LegendCreatorSettings.Instance.Save();
+            builder.NotifyLayoutChanged();   // rebuilds the canvas and raises Edited → refreshes preview
         }
 
         // ─────────────────────────────────────────────────────────────────────

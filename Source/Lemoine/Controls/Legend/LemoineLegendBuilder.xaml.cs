@@ -17,12 +17,12 @@ namespace LemoineTools.Lemoine.Controls
     /// Top-level orchestrator for the Legend Creator canvas. Mutates an in-memory
     /// editing buffer (Layout + Rows) that callers commit on global Apply.
     ///
-    /// Layout (single-column — right panel and sizing are managed by the host window):
-    ///   ┌─────────────────── LemoineLegendLayoutBar ───────────────────────────┐
+    /// Layout (single-column — title/subtitle, sizing and the preview are all
+    /// managed by the host window; this control is just the drag canvas + counts):
+    ///   ┌──────────────────────────────────────────────────────────────────────┐
     ///   │  [top drop bar]                                                       │
     ///   │  [left] [rows scroll] [right]                                         │
     ///   │  [bottom drop bar]                                                    │
-    ///   │  preview overlay (ZIndex=10, absolute)                                │
     ///   └──────────────────────────────────────────────────────────────────────┘
     ///   │  footer: counts                                                        │
     ///
@@ -51,7 +51,8 @@ namespace LemoineTools.Lemoine.Controls
         public event Action? Edited;
 
         // ── Child references ───────────────────────────────────────────────────
-        private LemoineLegendLayoutBar? _layoutBar;
+        // The legend title/subtitle is edited from the host window's tab pencil;
+        // this control no longer hosts a top layout bar.
         private ScrollViewer?           _rowsScroll;
         private StackPanel?             _rowsStack;
         private TextBlock?              _countsTb;
@@ -110,24 +111,17 @@ namespace LemoineTools.Lemoine.Controls
             _root.ColumnDefinitions.Clear();
             _root.Children.Clear();
 
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 0: layout bar
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 1: canvas
-            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 2: footer
+            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // row 0: canvas
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // row 1: footer
 
-            // ── Row 0: Layout bar ──────────────────────────────────────────────
-            _layoutBar = new LemoineLegendLayoutBar { Layout = Layout };
-            _layoutBar.Changed += (s, e) => OnEdited();
-            Grid.SetRow(_layoutBar, 0);
-            _root.Children.Add(_layoutBar);
-
-            // ── Row 1: Canvas ──────────────────────────────────────────────────
+            // ── Row 0: Canvas ──────────────────────────────────────────────────
             var canvasGrid = BuildCanvasGrid();
-            Grid.SetRow(canvasGrid, 1);
+            Grid.SetRow(canvasGrid, 0);
             _root.Children.Add(canvasGrid);
 
-            // ── Row 2: Footer ──────────────────────────────────────────────────
+            // ── Row 1: Footer ──────────────────────────────────────────────────
             var footer = BuildFooter();
-            Grid.SetRow(footer, 2);
+            Grid.SetRow(footer, 1);
             _root.Children.Add(footer);
 
             // ── Subscribe to filter saves ─────────────────────────────────────
