@@ -20,6 +20,12 @@ namespace LemoineTools.Lemoine.Controls
     ///   MaxItems      — 0 = unlimited; 1 = single-select (replaces instead of adds)
     ///   AllowFreeText — if true, typed text not in ItemsSource is accepted
     ///   Placeholder   — ghost text shown when SelectedItems is empty
+    ///
+    /// The popup uses the same proven pattern as LemoineSearchAutocomplete: StaysOpen=true
+    /// (StaysOpen=false corrupts Revit's message loop — see CLAUDE.md), manually-built
+    /// NON-focusable Border rows whose MouseLeftButtonDown adds the tag (so the search box
+    /// keeps keyboard focus and the popup stays open for multi-add), and LostFocus-based
+    /// dismissal (no owner-window hook, which previously swallowed the click).
     /// </summary>
     public partial class LemoineTagChipInput : UserControl
     {
@@ -57,19 +63,17 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? Changed;
 
         // ── Internal refs ─────────────────────────────────────────────────────
-        private WrapPanel? _chipPanel;
-        private Popup?     _popup;
-        private TextBox?   _searchBox;
-        private ListBox?   _listBox;
-        private UIElement? _addBtn;
-        private Window?    _ownerWindow;   // hooked while the popup is open for outside-click dismissal
+        private WrapPanel?   _chipPanel;
+        private Popup?       _popup;
+        private TextBox?     _searchBox;
+        private StackPanel?  _rowStack;   // popup result rows (manual Borders, not a ListBox)
+        private UIElement?   _addBtn;
 
         public LemoineTagChipInput()
         {
             InitializeComponent();
             SelectedItems = new ObservableCollection<string>();
-            Loaded   += (s, e) => Rebuild();
-            Unloaded += (s, e) => ClosePopup(); // unhook owner-window handlers if torn down while open
+            Loaded += (s, e) => Rebuild();
         }
 
         // ── Build ──────────────────────────────────────────────────────────────
@@ -78,20 +82,25 @@ namespace LemoineTools.Lemoine.Controls
         {
             _root.Children.Clear();
 
-            // Outer wrap panel holds chips + add button
-            _chipPanel = new WrapPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin      = new Thickness(0),
-            };
+            _chipPanel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0) };
+            FillChips();
+            _root.Children.Add(_chipPanel);
+
+            _popup = BuildPopup();
+            _root.Children.Add(_popup);
+        }
+
+        /// <summary>Refreshes only the chip row (chips + placeholder + add button) in place,
+        /// without recreating the popup — so adding a chip never disturbs an open popup.</summary>
+        private void FillChips()
+        {
+            if (_chipPanel == null) { Rebuild(); return; }
+            _chipPanel.Children.Clear();
 
             if (SelectedItems != null)
-            {
                 foreach (var item in SelectedItems)
                     _chipPanel.Children.Add(BuildChip(item));
-            }
 
-            // Show placeholder when empty
             if (SelectedItems == null || SelectedItems.Count == 0)
             {
                 var ph = new TextBlock
@@ -107,19 +116,12 @@ namespace LemoineTools.Lemoine.Controls
                 _chipPanel.Children.Add(ph);
             }
 
-            // Add (+) button — hidden when MaxItems is reached
             bool atMax = MaxItems > 0 && SelectedItems != null && SelectedItems.Count >= MaxItems;
             if (!atMax)
             {
                 _addBtn = BuildAddButton();
                 _chipPanel.Children.Add(_addBtn);
             }
-
-            _root.Children.Add(_chipPanel);
-
-            // Build popup (attached to root, shown on demand)
-            _popup = BuildPopup();
-            _root.Children.Add(_popup);
         }
 
         // ── Chip ──────────────────────────────────────────────────────────────
@@ -139,11 +141,7 @@ namespace LemoineTools.Lemoine.Controls
 
             var row = new StackPanel { Orientation = Orientation.Horizontal };
 
-            var lbl = new TextBlock
-            {
-                Text              = label,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var lbl = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
             lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -160,15 +158,9 @@ namespace LemoineTools.Lemoine.Controls
             removeBtn.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
             string captured = label;
-            removeBtn.MouseLeftButtonDown += (s, e) =>
-            {
-                e.Handled = true;
-                RemoveItem(captured);
-            };
-            removeBtn.MouseEnter += (s, e) =>
-                removeBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            removeBtn.MouseLeave += (s, e) =>
-                removeBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            removeBtn.MouseLeftButtonDown += (s, e) => { e.Handled = true; RemoveItem(captured); };
+            removeBtn.MouseEnter += (s, e) => removeBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            removeBtn.MouseLeave += (s, e) => removeBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
 
             row.Children.Add(lbl);
             row.Children.Add(removeBtn);
@@ -217,11 +209,7 @@ namespace LemoineTools.Lemoine.Controls
                 btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             };
-            btn.MouseLeftButtonUp += (s, e) =>
-            {
-                e.Handled = true;
-                OpenPopup();
-            };
+            btn.MouseLeftButtonUp += (s, e) => { e.Handled = true; OpenPopup(); };
             return btn;
         }
 
@@ -231,29 +219,22 @@ namespace LemoineTools.Lemoine.Controls
         {
             var popup = new Popup
             {
-                PlacementTarget = this,
-                Placement       = PlacementMode.Bottom,
-                // StaysOpen MUST be true: StaysOpen=false installs a ComponentDispatcher
-                // message hook that corrupts Revit's message loop (see CLAUDE.md). Outside-
-                // click dismissal is handled manually in OpenPopup/ClosePopup instead.
-                StaysOpen       = true,
+                PlacementTarget    = this,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = true,   // StaysOpen=false corrupts Revit's message loop (CLAUDE.md)
                 AllowsTransparency = true,
-                PopupAnimation  = PopupAnimation.Fade,
+                PopupAnimation     = PopupAnimation.Fade,
             };
 
             var outerBorder = new Border
             {
                 BorderThickness = new Thickness(1),
                 CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(0),
                 MinWidth        = 200,
                 MaxWidth        = 280,
                 Effect          = new System.Windows.Media.Effects.DropShadowEffect
                 {
-                    BlurRadius  = 8,
-                    Opacity     = 0.18,
-                    ShadowDepth = 2,
-                    Direction   = 270,
+                    BlurRadius = 8, Opacity = 0.18, ShadowDepth = 2, Direction = 270,
                 },
             };
             outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
@@ -268,58 +249,40 @@ namespace LemoineTools.Lemoine.Controls
                 BorderThickness = new Thickness(1),
                 Padding         = new Thickness(6, 4, 6, 4),
             };
-            _searchBox.SetResourceReference(TextBox.BackgroundProperty,   "LemoineBg");
-            _searchBox.SetResourceReference(TextBox.ForegroundProperty,   "LemoineText");
-            _searchBox.SetResourceReference(TextBox.BorderBrushProperty,  "LemoineBorder");
-            _searchBox.SetResourceReference(TextBox.FontSizeProperty,     "LemoineFS_SM");
-            _searchBox.SetResourceReference(TextBox.FontFamilyProperty,   "LemoineUiFont");
-            // Guard: only refilter on real typing — a programmatic Text reset must not
-            // rebuild the list out from under the popup. The open flow refreshes explicitly.
-            _searchBox.TextChanged += (s, e) => { if (_searchBox.IsKeyboardFocusWithin) RefreshPopupList(); };
+            _searchBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineBg");
+            _searchBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+            _searchBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+            _searchBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
+            _searchBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineUiFont");
+            _searchBox.TextChanged    += (s, e) => { if (_searchBox.IsKeyboardFocusWithin) RefreshPopupList(); };
             _searchBox.PreviewKeyDown += SearchBox_KeyDown;
+            // Dismiss when the search box loses focus to something OUTSIDE the popup. Clicking a
+            // result row doesn't steal focus (rows are non-focusable), so the popup stays open
+            // for multi-add; clicking elsewhere closes it. Deferred so the click settles first.
+            _searchBox.LostFocus += (s, e) =>
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_searchBox != null && !_searchBox.IsKeyboardFocusWithin) ClosePopup();
+                }), System.Windows.Threading.DispatcherPriority.Background);
             stack.Children.Add(_searchBox);
 
-            // Results list
-            _listBox = new ListBox
+            // Results — manual rows in a scroller (bubbles wheel at limits)
+            var sv = new ScrollViewer
             {
-                Margin              = new Thickness(4, 0, 4, 8),
-                MaxHeight           = 200,
-                BorderThickness     = new Thickness(0),
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin                        = new Thickness(4, 0, 4, 8),
+                MaxHeight                     = 200,
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             };
-            _listBox.SetResourceReference(ListBox.BackgroundProperty,    "LemoineSurface");
-            _listBox.SetResourceReference(ListBox.ForegroundProperty,    "LemoineText");
-            _listBox.SetResourceReference(ListBox.FontSizeProperty,      "LemoineFS_SM");
-            _listBox.SetResourceReference(ListBox.FontFamilyProperty,    "LemoineUiFont");
-            // A single click on a row adds that tag (selection updates on mouse-down, so the
-            // clicked row is current by mouse-up). Double-click and Enter also still add.
-            _listBox.PreviewMouseLeftButtonUp += (s, e) =>
-            {
-                var item = ItemsControl.ContainerFromElement(_listBox, e.OriginalSource as DependencyObject) as ListBoxItem;
-                if (item?.Content is string picked) { AddItem(picked); e.Handled = true; }
-            };
-            _listBox.MouseDoubleClick += (s, e) => ConfirmSelection();
-            _listBox.PreviewKeyDown   += (s, e) =>
-            {
-                if (e.Key == Key.Enter) { ConfirmSelection(); e.Handled = true; }
-                if (e.Key == Key.Escape) { ClosePopup(); e.Handled = true; }
-            };
+            _rowStack = new StackPanel();
+            sv.Content = _rowStack;
+            LemoineControlStyles.WireBubblingScroll(sv);
+            stack.Children.Add(sv);
 
-            // Themed list items — hover + selection highlight (shared style).
-            _listBox.ItemContainerStyle = LemoineControlStyles.BuildListBoxItemStyle();
-
-            stack.Children.Add(_listBox);
-
-            // Free-text confirm row (shown only if AllowFreeText)
             if (AllowFreeText)
             {
-                var freeRow = new Border
-                {
-                    BorderThickness = new Thickness(0, 1, 0, 0),
-                    Padding         = new Thickness(8, 6, 8, 6),
-                };
+                var freeRow = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(8, 6, 8, 6) };
                 freeRow.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
                 var freeHint = new TextBlock { Text = "Press Enter to add typed value" };
                 freeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 freeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -340,68 +303,77 @@ namespace LemoineTools.Lemoine.Controls
             RefreshPopupList();
             _popup.IsOpen = true;
             _searchBox.Focus();
-
-            // Manual outside-click dismissal (StaysOpen=true). Clicks inside the popup go to
-            // the popup's own window, so a PreviewMouseDown on the owner window only fires for
-            // clicks elsewhere in the app — exactly the "clicked outside" case. Deactivated
-            // covers clicking another top-level window.
-            _ownerWindow = Window.GetWindow(this);
-            if (_ownerWindow != null)
-            {
-                _ownerWindow.PreviewMouseDown += OnOwnerPreviewMouseDown;
-                _ownerWindow.Deactivated      += OnOwnerDeactivated;
-            }
         }
-
-        private void OnOwnerPreviewMouseDown(object sender, MouseButtonEventArgs e) => ClosePopup();
-        private void OnOwnerDeactivated(object? sender, EventArgs e)                 => ClosePopup();
 
         private void ClosePopup()
         {
-            if (_ownerWindow != null)
-            {
-                _ownerWindow.PreviewMouseDown -= OnOwnerPreviewMouseDown;
-                _ownerWindow.Deactivated      -= OnOwnerDeactivated;
-                _ownerWindow = null;
-            }
             if (_popup != null) _popup.IsOpen = false;
         }
 
         private void RefreshPopupList()
         {
-            if (_listBox == null || _searchBox == null) return;
+            if (_rowStack == null || _searchBox == null) return;
+            _rowStack.Children.Clear();
+
             var filter  = _searchBox.Text.Trim();
             var current = SelectedItems ?? new ObservableCollection<string>();
-            var source  = ItemsSource?.ToList() ?? new List<string>();
-
-            var filtered = source
+            var filtered = (ItemsSource?.ToList() ?? new List<string>())
                 .Where(x => !current.Contains(x))
                 .Where(x => string.IsNullOrEmpty(filter) ||
                             x.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
                 .ToList();
 
-            _listBox.ItemsSource = filtered;
-            if (filtered.Count > 0) _listBox.SelectedIndex = 0;
+            foreach (var item in filtered)
+                _rowStack.Children.Add(BuildResultRow(item));
+
+            if (filtered.Count == 0)
+            {
+                var none = new TextBlock
+                {
+                    Text   = AllowFreeText ? "No matches — press Enter to add" : "No matches",
+                    Margin = new Thickness(8, 6, 8, 6),
+                };
+                none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                _rowStack.Children.Add(none);
+            }
+        }
+
+        // A single clickable, NON-focusable row (so clicking it doesn't pull keyboard focus
+        // off the search box — which keeps the popup open and registers the click reliably).
+        private Border BuildResultRow(string item)
+        {
+            var row = new Border
+            {
+                Padding   = new Thickness(8, 4, 8, 4),
+                Cursor    = Cursors.Hand,
+                Focusable = false,
+                Tag       = item,
+                Background = Brushes.Transparent, // full-width hit area
+            };
+            var tb = new TextBlock { Text = item };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            row.Child = tb;
+
+            LemoineMotion.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+
+            string captured = item;
+            row.MouseLeftButtonDown += (s, e) => { e.Handled = true; AddItem(captured); };
+            return row;
         }
 
         private void SearchBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Down && _listBox != null)
+            if (e.Key == Key.Enter)
             {
-                _listBox.Focus();
-                if (_listBox.Items.Count > 0) _listBox.SelectedIndex = 0;
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Enter)
-            {
-                if (_listBox?.SelectedItem is string sel)
-                {
+                var first = _rowStack?.Children.OfType<Border>().FirstOrDefault(b => b.Tag is string);
+                if (first?.Tag is string sel)
                     AddItem(sel);
-                }
                 else if (AllowFreeText && !string.IsNullOrWhiteSpace(_searchBox?.Text))
-                {
                     AddItem(_searchBox!.Text.Trim());
-                }
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)
@@ -409,12 +381,6 @@ namespace LemoineTools.Lemoine.Controls
                 ClosePopup();
                 e.Handled = true;
             }
-        }
-
-        private void ConfirmSelection()
-        {
-            if (_listBox?.SelectedItem is string sel)
-                AddItem(sel);
         }
 
         // ── Data mutations ────────────────────────────────────────────────────
@@ -427,37 +393,39 @@ namespace LemoineTools.Lemoine.Controls
             bool single = MaxItems == 1;
             if (single)
             {
-                // Single-select: replace the current value
                 SelectedItems.Clear();
                 SelectedItems.Add(item);
             }
-            else
+            else if (!SelectedItems.Contains(item))
             {
-                if (!SelectedItems.Contains(item))
-                    SelectedItems.Add(item);
+                SelectedItems.Add(item);
             }
 
-            // Rebuild the chip row (the new chip appears) on a fresh popup. ClosePopup first
-            // so the owner-window dismissal handlers are unhooked before Rebuild swaps the popup.
-            ClosePopup();
+            FillChips();                       // chip appears immediately (popup untouched)
             Changed?.Invoke(this, EventArgs.Empty);
-            Rebuild();
 
-            // Multi-select: reopen the popup so the user can keep adding and watch the added
-            // item leave the list while its chip appears above. Deferred so the current
-            // popup-item click finishes settling before the popup is reopened.
             bool atMax = MaxItems > 0 && SelectedItems.Count >= MaxItems;
-            if (!single && !atMax)
-                Dispatcher.BeginInvoke(new Action(OpenPopup),
-                    System.Windows.Threading.DispatcherPriority.Input);
+            if (single || atMax)
+            {
+                ClosePopup();
+            }
+            else
+            {
+                // Keep the popup open for multi-add: drop the added item from the list and
+                // restore focus to the search box so the user can keep picking/typing.
+                _searchBox!.Text = "";
+                RefreshPopupList();
+                _searchBox.Focus();
+            }
         }
 
         private void RemoveItem(string item)
         {
             if (SelectedItems == null) return;
             SelectedItems.Remove(item);
+            FillChips();
             Changed?.Invoke(this, EventArgs.Empty);
-            Rebuild();
+            if (_popup != null && _popup.IsOpen) RefreshPopupList(); // re-show the freed item
         }
     }
 }
