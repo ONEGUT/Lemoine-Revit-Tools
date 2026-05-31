@@ -76,7 +76,7 @@ namespace LemoineTools.Tools.Debuggers
 
             var host = new Border { Margin = new Thickness(0, 10, 0, 0) };
 
-            var btn = LemoineControlStyles.BuildButton($"▶ Build:  {what}", LemoineButtonVariant.Primary);
+            var btn = LemoineControlStyles.BuildButton($"▶ Build:  {what}", LemoineControlStyles.LemoineButtonVariant.Primary);
             btn.HorizontalAlignment = HorizontalAlignment.Left;
             btn.Click += (s, e) =>
             {
