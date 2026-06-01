@@ -210,7 +210,7 @@ namespace LemoineTools.Lemoine.Controls
                         What          = LegendDragPayload.Kind.PaletteCategory,
                         SourceTradeId = _scope,
                     };
-                    StartDrag(tradePill, tradePill, payload);
+                    StartDrag(tradePill, tradePill, payload, e.GetPosition(tradePill));
                     e.Handled = true;
                 });
             }
@@ -314,7 +314,7 @@ namespace LemoineTools.Lemoine.Controls
                         What          = LegendDragPayload.Kind.PaletteCategory,
                         SourceTradeId = capturedId,
                     };
-                    StartDrag(this, item, payload);
+                    StartDrag(this, item, payload, e.GetPosition(item));
                     e.Handled = true;
                 });
 
@@ -442,7 +442,7 @@ namespace LemoineTools.Lemoine.Controls
                     SourceTradeId = capturedTradeId,
                     SourceRuleId  = capturedRuleId,
                 };
-                StartDrag(border, border, payload);
+                StartDrag(border, border, payload, e.GetPosition(border));
             });
             return border;
         }
@@ -466,7 +466,7 @@ namespace LemoineTools.Lemoine.Controls
             return LemoineTheme.DarkMono.Accent.Color;
         }
 
-        private void StartDrag(DependencyObject source, FrameworkElement ghostVisual, LegendDragPayload payload)
+        private void StartDrag(DependencyObject source, FrameworkElement ghostVisual, LegendDragPayload payload, Point grabOffset)
         {
             var src = source as UIElement;
             QueryContinueDragEventHandler? ghostUpdater = null;
@@ -475,7 +475,7 @@ namespace LemoineTools.Lemoine.Controls
                 // Cursor-following snapshot ghost — same as the group-card block reorder.
                 if (ghostVisual != null && src != null)
                 {
-                    _ghost.Begin(ghostVisual);
+                    _ghost.Begin(ghostVisual, grabOffset);
                     ghostUpdater = (s, e) => _ghost.Update();
                     src.QueryContinueDrag += ghostUpdater;
                 }

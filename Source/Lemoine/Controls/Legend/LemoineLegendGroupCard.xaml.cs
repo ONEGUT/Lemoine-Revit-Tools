@@ -311,8 +311,8 @@ namespace LemoineTools.Lemoine.Controls
                         _dragBlockOrigIdx = _blockStack?.Children.IndexOf(row) ?? -1;
                         if (_dragBlockOrigIdx < 0) { _dragBlockRow = null; _dragBlockId = null; return; }
 
-                        _ghost.Begin(row);   // snapshot the live row before dimming it
-                        row.Opacity = 0;     // invisible — the ghost represents it
+                        _ghost.Begin(row, e.GetPosition(row));   // snapshot the live row (anchored at grab point) before dimming
+                        row.Opacity = 0;                         // invisible — the ghost represents it
 
                         // Dual payload: StringFormat for same-group live-snap,
                         // LegendDragPayload for cross-group and session pre-lighting

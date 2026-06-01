@@ -10,14 +10,20 @@ namespace LemoineTools.Lemoine
     /// <summary>
     /// Reusable cursor-following drag ghost. Snapshots the element being dragged into a
     /// frozen bitmap (a live view of its current appearance) and draws it on the window's
-    /// <see cref="AdornerLayer"/>, centred on the cursor. One instance per active drag:
-    /// <see cref="Begin"/> shows it, <see cref="Update"/> repositions it (call from
-    /// <c>QueryContinueDrag</c>), <see cref="End"/> removes it. Revit-free.
+    /// <see cref="AdornerLayer"/>. One instance per active drag: <see cref="Begin"/> shows it,
+    /// <see cref="Update"/> repositions it (call from <c>QueryContinueDrag</c>), <see cref="End"/>
+    /// removes it. Revit-free.
     ///
     /// The adorner lives in window space (not a screen-space Popup), so it never gets nudged
-    /// back on-screen near a screen edge — the ghost tracks the cursor exactly. The snapshot
-    /// is a <see cref="RenderTargetBitmap"/> taken at grab time, so the source element may be
-    /// dimmed (Opacity=0) afterwards without the ghost going transparent.
+    /// back on-screen near a screen edge — the ghost tracks the cursor exactly. The snapshot is
+    /// a <see cref="RenderTargetBitmap"/> taken at grab time, so the source element may be dimmed
+    /// (Opacity=0) afterwards without the ghost going transparent. A themed solid backing is
+    /// painted behind the snapshot so rows with a transparent background (inactive tabs/rules)
+    /// still read as a solid floating card rather than disembodied text.
+    ///
+    /// Pass <c>grabOffset</c> (the point within the source where the drag began, in the source's
+    /// own coordinates) to keep that exact point under the cursor — without it the ghost is
+    /// centred, which reads as "off the mouse" when a wide row is grabbed near an edge.
     /// </summary>
     public sealed class LemoineDragGhost
     {
@@ -28,12 +34,14 @@ namespace LemoineTools.Lemoine
         private AdornerLayer?     _layer;
         private UIElement?        _adorned;   // element the adorner is attached to (for positioning)
         private Size              _size;
+        private Point             _anchor;    // point within the snapshot kept under the cursor
 
         /// <summary>
-        /// Snapshots <paramref name="source"/> and shows the ghost centred on the cursor.
-        /// <paramref name="source"/> must be a live, laid-out visual.
+        /// Snapshots <paramref name="source"/> and shows the ghost following the cursor.
+        /// <paramref name="source"/> must be a live, laid-out visual. <paramref name="grabOffset"/>
+        /// is the grab point within the source (its own coordinates); null centres the ghost.
         /// </summary>
-        public void Begin(FrameworkElement source)
+        public void Begin(FrameworkElement source, Point? grabOffset = null)
         {
             End();
             if (source == null || source.ActualWidth < 1 || source.ActualHeight < 1) return;
@@ -41,6 +49,9 @@ namespace LemoineTools.Lemoine
             _size = new Size(source.ActualWidth, source.ActualHeight);
             var img = Snapshot(source, _size);
             if (img == null) return;
+
+            Point a = grabOffset ?? new Point(_size.Width / 2.0, _size.Height / 2.0);
+            _anchor = new Point(Clamp(a.X, 0, _size.Width), Clamp(a.Y, 0, _size.Height));
 
             // Adorn the WINDOW's top-level content, not the source itself: GetAdornerLayer(source)
             // returns the nearest layer, which inside a ScrollViewer is clipped to that viewport
@@ -52,12 +63,15 @@ namespace LemoineTools.Lemoine
             if (_layer == null) { _adorned = source; _layer = AdornerLayer.GetAdornerLayer(source); }
             if (_layer == null || _adorned == null) { _adorned = null; return; }
 
-            _adorner = new GhostAdorner(_adorned, img, _size);
+            var backing = (source.TryFindResource("LemoineRaised") as Brush)
+                       ?? (source.TryFindResource("LemoineBg") as Brush);
+
+            _adorner = new GhostAdorner(_adorned, img, _size, backing);
             _layer.Add(_adorner);
             Update();
         }
 
-        /// <summary>Re-centres the ghost on the current cursor. Safe to call when inactive.</summary>
+        /// <summary>Re-positions the ghost under the current cursor. Safe to call when inactive.</summary>
         public void Update()
         {
             if (_adorner == null || _adorned == null) return;
@@ -65,7 +79,7 @@ namespace LemoineTools.Lemoine
             // PointFromScreen takes physical screen pixels (what GetCursorPos returns) and maps
             // them into the adorned element's own coordinate space, DPI included.
             var local = _adorned.PointFromScreen(new Point(pt.X, pt.Y));
-            _adorner.MoveTo(new Point(local.X - _size.Width / 2.0, local.Y - _size.Height / 2.0));
+            _adorner.MoveTo(new Point(local.X - _anchor.X, local.Y - _anchor.Y));
         }
 
         /// <summary>Removes the ghost. Safe to call when inactive (idempotent).</summary>
@@ -76,6 +90,9 @@ namespace LemoineTools.Lemoine
             _layer   = null;
             _adorned = null;
         }
+
+        private static double Clamp(double v, double lo, double hi)
+            => v < lo ? lo : (v > hi ? hi : v);
 
         private static ImageSource? Snapshot(FrameworkElement el, Size size)
         {
@@ -92,17 +109,19 @@ namespace LemoineTools.Lemoine
             return rtb;
         }
 
-        // ── Adorner that paints the frozen snapshot at a movable offset ──────────
+        // ── Adorner that paints a solid backing + the frozen snapshot at a movable offset ──
         private sealed class GhostAdorner : Adorner
         {
             private readonly ImageSource _img;
             private readonly Size        _size;
+            private readonly Brush?      _backing;
             private Point                _topLeft;
 
-            public GhostAdorner(UIElement adorned, ImageSource img, Size size) : base(adorned)
+            public GhostAdorner(UIElement adorned, ImageSource img, Size size, Brush? backing) : base(adorned)
             {
                 _img             = img;
                 _size            = size;
+                _backing         = backing;
                 IsHitTestVisible = false;
                 Opacity          = 0.85;
             }
@@ -115,7 +134,9 @@ namespace LemoineTools.Lemoine
 
             protected override void OnRender(DrawingContext dc)
             {
-                dc.DrawImage(_img, new Rect(_topLeft, _size));
+                var rect = new Rect(_topLeft, _size);
+                if (_backing != null) dc.DrawRectangle(_backing, null, rect);
+                dc.DrawImage(_img, rect);
             }
         }
     }

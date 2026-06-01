@@ -47,7 +47,7 @@ namespace LemoineTools.Lemoine
                 QueryContinueDragEventHandler upd = (fs, fe) => _ghost.Update();
                 try
                 {
-                    _ghost.Begin(row);
+                    _ghost.Begin(row, e.GetPosition(row));   // anchor at the grab point
                     row.QueryContinueDrag += upd;
                     DragDrop.DoDragDrop(row, new DataObject(Fmt, index), DragDropEffects.Move);
                 }

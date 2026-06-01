@@ -112,7 +112,7 @@ namespace LemoineTools.Lemoine.Controls
                     try
                     {
                         // Cursor-following snapshot ghost for the whole-group drag.
-                        _ghost.Begin(card);
+                        _ghost.Begin(card, args.GetPosition(card));
                         ghostUpdater = (fs, fe) => _ghost.Update();
                         card.QueryContinueDrag += ghostUpdater;
 
