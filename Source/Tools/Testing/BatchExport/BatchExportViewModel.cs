@@ -852,40 +852,13 @@ namespace LemoineTools.Tools.Testing
 
         private void BuildFolderPicker(StackPanel parent)
         {
-            var pathBox = new WpfTextBox
+            var folder = new LemoineFolderBrowser
             {
-                Text            = _outputFolder,
-                Padding         = new Thickness(8, 4, 8, 4),
-                BorderThickness = new Thickness(1),
+                Path        = _outputFolder,
+                DialogTitle = "Select output folder",
             };
-            pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-            pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            pathBox.TextChanged += (s, e) => { _outputFolder = pathBox.Text; Fire(); };
-
-            var browseBtn = LemoineControlStyles.BuildButton("Browse…");
-            browseBtn.Margin = new Thickness(0, 4, 0, 0);
-            browseBtn.Click += (s, e) =>
-            {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog
-                {
-                    Description         = "Select output folder",
-                    SelectedPath        = _outputFolder,
-                    ShowNewFolderButton = true,
-                };
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    pathBox.Text  = dlg.SelectedPath;
-                    _outputFolder = dlg.SelectedPath;
-                    Fire();
-                }
-            };
-
-            parent.Children.Add(pathBox);
-            parent.Children.Add(browseBtn);
+            folder.PathChanged += p => { _outputFolder = p; Fire(); };
+            parent.Children.Add(folder);
         }
 
         private void AddReviewCard(WpfGrid grid, CardDef def, int row, int col)

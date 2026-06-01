@@ -102,39 +102,13 @@ namespace LemoineTools.Tools.Ceilings
                 desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 inner.Children.Add(desc);
 
-                var pathBox = new WpfTextBox
+                var folder = new LemoineFolderBrowser
                 {
-                    Text            = _folderPath,
-                    Padding         = new Thickness(8, 4, 8, 4),
-                    BorderThickness = new Thickness(1),
+                    Path        = _folderPath,
+                    DialogTitle = "Select DWG Export Folder",
                 };
-                pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-                pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-                pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-                pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-                pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-                pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-                pathBox.TextChanged += (s, e) => { _folderPath = pathBox.Text; OnValidationChanged(); };
-                inner.Children.Add(pathBox);
-
-                var browseBtn = LemoineControlStyles.BuildButton("Browse…");
-                browseBtn.Margin = new Thickness(0, 4, 0, 0);
-                browseBtn.Click += (s, e) =>
-                {
-                    var dlg = new System.Windows.Forms.FolderBrowserDialog
-                    {
-                        Description         = "Select DWG Export Folder",
-                        SelectedPath        = _folderPath,
-                        ShowNewFolderButton = false,
-                    };
-                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                    {
-                        pathBox.Text  = dlg.SelectedPath;
-                        _folderPath   = dlg.SelectedPath;
-                        OnValidationChanged();
-                    }
-                };
-                inner.Children.Add(browseBtn);
+                folder.PathChanged += p => { _folderPath = p; OnValidationChanged(); };
+                inner.Children.Add(folder);
 
                 _pickerHost.Child = inner;
             }
