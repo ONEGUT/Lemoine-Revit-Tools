@@ -54,6 +54,7 @@ namespace LemoineTools.Lemoine
         private Border?  _dragSourceBorder;
         private int      _dragSourceOrigIdx;
         private Point    _dragGhostClickOffset;
+        private readonly LemoineDragGhost _ruleGhost = new LemoineDragGhost();   // rule-row drag ghost
         private Border?  _dragReadyBorder;
         private bool     _isRefreshingEditor;
 

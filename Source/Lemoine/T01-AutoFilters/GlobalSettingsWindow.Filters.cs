@@ -787,21 +787,21 @@ namespace LemoineTools.Lemoine
                     return;
                 }
 
-                // Build ghost from rule data instead of snapshotting the element.
-                // Element snapshots fail for non-active rows because their background
-                // is Brushes.Transparent, producing an invisible bitmap.
-                ShowDragGhost(rule.Name, BuildSubtext(), rule.SurfColor ?? trade.Color, rule.Enabled);
+                // Window-space adorner ghost (no Popup → no off-screen nudge / right-side drift),
+                // anchored at the grab point. The ghost paints a themed backing behind the snapshot,
+                // so a transparent-background inactive row still reads as a solid card.
+                _ruleGhost.Begin(rowBorder, _dragGhostClickOffset);
                 rowBorder.Opacity = 0;
                 // IsHitTestVisible intentionally left true so the invisible (Opacity=0)
                 // source pill can still receive Drop when the user releases in the gap.
 
-                QueryContinueDragEventHandler ghostHandler = (fs, fe) => UpdateDragGhostPos();
+                QueryContinueDragEventHandler ghostHandler = (fs, fe) => _ruleGhost.Update();
                 rowBorder.QueryContinueDrag += ghostHandler;
                 DragDrop.DoDragDrop(rowBorder,
                     new DataObject(DataFormats.StringFormat, "RULE:" + rule.Id),
                     DragDropEffects.Move);
                 rowBorder.QueryContinueDrag -= ghostHandler;
-                HideDragGhost();
+                _ruleGhost.End();
                 _dragReadyBorder = null;
 
                 if (_dragSourceBorder != null) // Drop never fired — drag was cancelled
