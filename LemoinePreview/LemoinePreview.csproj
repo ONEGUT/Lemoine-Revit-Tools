@@ -17,7 +17,9 @@
     <Compile Include="..\Source\Lemoine\BrushHelper.cs" />
     <Compile Include="..\Source\Lemoine\ILemoineTool.cs" />
     <Compile Include="..\Source\Lemoine\ILemoineToolSettings.cs" />
+    <Compile Include="..\Source\Lemoine\IStepAware.cs" />
     <Compile Include="..\Source\Lemoine\LemoineControlStyles.cs" />
+    <Compile Include="..\Source\Lemoine\LemoineLog.cs" />
     <Compile Include="..\Source\Lemoine\LemoineIcons.cs" />
     <Compile Include="..\Source\Lemoine\LemoineSettings.cs" />
     <Compile Include="..\Source\Lemoine\LemoineTheme.cs" />

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -16,6 +17,15 @@ namespace LemoineTools.Lemoine.Controls
     {
         private LegendLayoutConfig    _layout = new LegendLayoutConfig();
         private List<LegendRowConfig> _rows   = new List<LegendRowConfig>();
+
+        // The legend stores swatch/gap sizes in paper inches and the font in points
+        // (see LegendCreatorEventHandler: feet = paper_inches / 12 × viewScale).
+        // The preview renders at true paper scale (1 in = 96 px) so its spacing,
+        // sizing and proportions match the generated legend. View scale only affects
+        // model-space placement, not paper appearance, so it is not applied here.
+        private const double PxPerInch = 96.0;
+        private static double InPx(double inches) => inches * PxPerInch;
+        private static double PtPx(double pt)     => Math.Max(1.0, pt / 72.0 * PxPerInch);
 
         public LemoineLegendPreview()
         {
@@ -53,7 +63,7 @@ namespace LemoineTools.Lemoine.Controls
                 };
                 t.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 t.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                t.FontSize = _layout.FontPt + 4;
+                t.FontSize = PtPx(_layout.FontPt) * 1.4;
                 Grid.SetRow(t, r++);
                 _root.Children.Add(t);
             }
@@ -63,7 +73,7 @@ namespace LemoineTools.Lemoine.Controls
                 var s = new TextBlock { Text = _layout.Subtitle, Margin = new Thickness(0, 0, 0, 6) };
                 s.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
                 s.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                s.FontSize = _layout.FontPt;
+                s.FontSize = PtPx(_layout.FontPt);
                 Grid.SetRow(s, r++);
                 _root.Children.Add(s);
             }
@@ -75,7 +85,7 @@ namespace LemoineTools.Lemoine.Controls
                 var rowPanel = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
-                    Margin = new Thickness(0, 2, 0, _layout.Gap),
+                    Margin = new Thickness(0, 2, 0, InPx(_layout.Gap)),
                 };
                 foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     rowPanel.Children.Add(RenderGroup(grp));
@@ -102,7 +112,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             titleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             titleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            titleTb.FontSize = _layout.FontPt;
+            titleTb.FontSize = PtPx(_layout.FontPt);
             titleRow.Children.Add(titleTb);
 
             // Underline
@@ -139,8 +149,8 @@ namespace LemoineTools.Lemoine.Controls
                 Kind        = b.Kind ?? "square",
                 Fill        = b.Fill ?? "solid",
                 SwatchColor = ResolveBlockColor(b),
-                GlyphWidth  = _layout.SwatchW,
-                GlyphHeight = _layout.SwatchH,
+                GlyphWidth  = InPx(_layout.SwatchW),
+                GlyphHeight = InPx(_layout.SwatchH),
                 Margin      = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -152,7 +162,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            label.FontSize = _layout.FontPt;
+            label.FontSize = PtPx(_layout.FontPt);
             row.Children.Add(label);
             return row;
         }

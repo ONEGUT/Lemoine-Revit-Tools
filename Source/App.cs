@@ -225,18 +225,13 @@ namespace LemoineTools
                 "\uE74d"));  // Segoe MDL2: Delete
 
             // ── T01B — Legend ─────────────────────────────────────────────────
-            // Large: Legend Creation
-            // Large: Legend Settings
+            // Large: Legend Creation (single entry — opens the window where
+            // legends are built, created, and updated)
             var legendPanel = application.CreateRibbonPanel("Lemoine Tools", "T01B  Legend");
 
             legendPanel.AddItem(Btn(
-                "LT_AutoFiltersLegend", "Legend\nCreation", "AutoFiltersLegendLaunchCommand",
-                "Create or update a Legend view from the current Legend Creator settings.",
-                "\uE8FD"));  // Segoe MDL2: Color / Solid
-
-            legendPanel.AddItem(Btn(
-                "LT_LegendSettings", "Legend\nSettings", "OpenLegendSettingsCommand",
-                "Open the Legend Creator settings window.",
+                "LT_LegendSettings", "Legend\nCreation", "OpenLegendSettingsCommand",
+                "Open the Legend Creation window to build, create, and update Legend views.",
                 "\uE713"));  // Segoe MDL2: Settings gear
 
             // ── T02 — Ceilings ────────────────────────────────────────────────

@@ -155,6 +155,8 @@ The Edit tool cannot match C# string literals that contain `\uXXXX` escape seque
 
 The same failure applies to literal Private Use Area (PUA) characters already in source (e.g. Segoe MDL2 Assets glyphs stored directly as Unicode chars). Additionally, Segoe MDL2 `Text` fields can be silently empty strings `""` in source — not a corrupt escape sequence, just never written. Always verify Segoe MDL2 glyph fields with Python before assuming they render correctly. Use Python `str.replace()` for any edit that inserts or modifies a Segoe MDL2 glyph.
 
+When writing *new* code that needs a Segoe MDL2 glyph, prefer `char.ConvertFromUtf32(0xE74D)` (e.g. `Text = char.ConvertFromUtf32(0xE74D)` for the trash icon) over embedding the literal glyph. The codepoint is plain ASCII in source, so the Edit tool handles it normally and no Python pass is needed.
+
 ---
 
 ## Known Compile Error Patterns
@@ -185,6 +187,10 @@ Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`
 ### Access modifiers across partial files
 
 Methods shared between partial class files must be `internal`, not `private`. A `private` method in one partial file is invisible to another — CS0122.
+
+### CS0176 — enum/static shadowed by a `Window` instance property
+
+Inside a `Window` (or other control) subclass, `Visibility.Visible` fails to compile: `Window.Visibility` is an **instance** property, so the bare name `Visibility` binds to it rather than the enum, and accessing a static/enum member through an instance is CS0176. Use the alias — `WpfVisibility.Visible`. The same shadowing can hit any enum whose name matches an inherited instance member.
 
 ### XmlSerializer requires public types
 
@@ -229,6 +235,7 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 | `PDFExportOptions.Zoom` | `PDFExportOptions.ZoomPercentage` |
 | `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
 | `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
+| App-level "font pt" field sizes generated text | A TextNote's size comes from its assigned `TextNoteType` (`TEXT_SIZE` param); a font-pt value can only drive a WPF preview, never the Revit output. Don't expose it as if it changed the legend. |
 
 ---
 
