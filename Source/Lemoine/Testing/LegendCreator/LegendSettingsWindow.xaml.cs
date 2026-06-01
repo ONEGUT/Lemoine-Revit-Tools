@@ -572,6 +572,67 @@ namespace LemoineTools.Lemoine
             saveBtn.Click += (s, e) => Commit();
             panel.Children.Add(saveBtn);
 
+            // ── Duplicate / Delete actions (mirrors the Auto Filters trade editor) ──
+            // The legend popup is StaysOpen=true (StaysOpen=false crashes Revit), so
+            // the delete confirmation is shown inline rather than as a nested popup.
+            var actionSep = new Border { Height = 1, Margin = new Thickness(0, 10, 0, 8) };
+            actionSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            panel.Children.Add(actionSep);
+
+            var actionHost = new WpfGrid();
+            panel.Children.Add(actionHost);
+
+            void ShowActionButtons()
+            {
+                actionHost.Children.Clear();
+                var row = new WpfGrid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var dupBtn = LemoineControlStyles.BuildSmallButton(
+                    "Duplicate", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                dupBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+                WpfGrid.SetColumn(dupBtn, 0);
+                dupBtn.Click += (s, e) => { popup.IsOpen = false; DuplicateLegend(entry); };
+                row.Children.Add(dupBtn);
+
+                var delBtn = BuildTrashButton();
+                delBtn.Margin = new Thickness(6, 0, 0, 0);
+                delBtn.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowDeleteConfirm(); };
+                WpfGrid.SetColumn(delBtn, 1);
+                row.Children.Add(delBtn);
+
+                actionHost.Children.Add(row);
+            }
+
+            void ShowDeleteConfirm()
+            {
+                actionHost.Children.Clear();
+                var row = new WpfGrid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var confirmBtn = LemoineControlStyles.BuildSmallButton(
+                    "Delete legend", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                confirmBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+                confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
+                confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
+                WpfGrid.SetColumn(confirmBtn, 0);
+                confirmBtn.Click += (s, e) => { popup.IsOpen = false; DeleteLegend(entry); };
+                row.Children.Add(confirmBtn);
+
+                var cancelBtn = LemoineControlStyles.BuildSmallButton(
+                    "Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                cancelBtn.Margin = new Thickness(6, 0, 0, 0);
+                WpfGrid.SetColumn(cancelBtn, 1);
+                cancelBtn.Click += (s, e) => ShowActionButtons();
+                row.Children.Add(cancelBtn);
+
+                actionHost.Children.Add(row);
+            }
+
+            ShowActionButtons();
+
             void OnKey(object s, KeyEventArgs e)
             {
                 if (e.Key == Key.Return)      { Commit();            e.Handled = true; }
@@ -594,6 +655,85 @@ namespace LemoineTools.Lemoine
 
             Dispatcher.BeginInvoke(new Action(() => { titleBox.Focus(); titleBox.SelectAll(); }),
                 DispatcherPriority.Input);
+        }
+
+        // Trash-icon button mirroring the Auto Filters delete affordance. The glyph
+        // is the Segoe MDL2 "Delete" (U+E74D); built via ConvertFromUtf32 so no PUA
+        // literal lives in source.
+        private static Border BuildTrashButton()
+        {
+            var icon = new TextBlock
+            {
+                Text                = char.ConvertFromUtf32(0xE74D),
+                FontFamily          = new FontFamily("Segoe MDL2 Assets"),
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            var btn = new Border
+            {
+                Cursor            = Cursors.Hand,
+                Padding           = new Thickness(8, 5, 8, 5),
+                BorderThickness   = new Thickness(1),
+                CornerRadius      = new CornerRadius(3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background        = Brushes.Transparent,
+                Child             = icon,
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            btn.MouseEnter += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineRed");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            };
+            btn.MouseLeave += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineBorder");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            };
+            return btn;
+        }
+
+        // Inserts a deep copy of the legend after the original and selects it. The
+        // copy is unlinked from the original's Revit view so it creates a fresh one.
+        private void DuplicateLegend(LegendEntry entry)
+        {
+            var list = LegendCreatorSettings.Instance.Legends;
+            int idx  = list.IndexOf(entry);
+            if (idx < 0) return;
+
+            var copy = entry.Clone();
+            copy.Id          = LegendIdGen.New("legend");
+            copy.RevitViewId = -1;
+            copy.DisplayName = null;
+            if (copy.Layout == null) copy.Layout = new LegendLayoutConfig();
+            copy.Layout.Title = (entry.Layout?.Title ?? "Legend") + " (copy)";
+
+            list.Insert(idx + 1, copy);
+            LegendCreatorSettings.Instance.Save();
+            ActivateTab(idx + 1);
+        }
+
+        // Removes the legend (and its cached builder), keeping at least one legend.
+        private void DeleteLegend(LegendEntry entry)
+        {
+            var list = LegendCreatorSettings.Instance.Legends;
+            int idx  = list.IndexOf(entry);
+            if (idx < 0) return;
+
+            _builders.Remove(entry.Id);
+            list.RemoveAt(idx);
+            LegendCreatorSettings.Instance.Save();
+
+            if (list.Count == 0)
+            {
+                AddLegend();   // never leave the window with zero legends
+                return;
+            }
+            ActivateTab(Math.Min(idx, list.Count - 1));
         }
 
         private static TextBlock MakeEditLabel(string text)
