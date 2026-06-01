@@ -44,6 +44,7 @@ namespace LemoineTools.Lemoine
         private Border?                 _previewPill;      // floating bottom-right Preview (above Create)
         private TextBlock?              _previewPillLabel;
         private StackPanel?             _tabStack;
+        private LemoineListReorder?     _tabReorder;   // drag-to-reorder legend tabs
         private ScrollViewer?           _tabScroll;   // auto-scroll to newly-added legend
         private LemoineLegendPalette?   _palette;
         private ContentControl?         _builderSlot;
@@ -407,8 +408,26 @@ namespace LemoineTools.Lemoine
             _tabStack.Children.Clear();
 
             var entries = LegendCreatorSettings.Instance.Legends;
+
+            // Drag-to-reorder the legend tabs (whole tab is the handle, ghost included), like the
+            // Auto Filters trade tabs. Order is persisted; the active legend follows its tab.
+            if (_tabReorder == null)
+                _tabReorder = new LemoineListReorder(_tabStack, (from, to) =>
+                {
+                    var legends = LegendCreatorSettings.Instance.Legends;
+                    var active  = (_activeIndex >= 0 && _activeIndex < legends.Count) ? legends[_activeIndex] : null;
+                    LemoineListReorder.Move(legends, from, to);
+                    if (active != null) _activeIndex = legends.IndexOf(active);
+                    LegendCreatorSettings.Instance.Save();
+                    RebuildTabStack();
+                });
+
             for (int i = 0; i < entries.Count; i++)
-                _tabStack.Children.Add(BuildTabItem(entries[i], i));
+            {
+                var tab = BuildTabItem(entries[i], i);
+                _tabStack.Children.Add(tab);
+                _tabReorder.Arm(tab, i);
+            }
 
             // "＋ Add Legend" floats as the last item in the list
             _tabStack.Children.Add(
@@ -798,36 +817,18 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private UIElement BuildRightPanel()
         {
-            // [cards scroll (capped)] over [palette fills] — see the design decision:
-            // SIZING + TEXT STYLES are scrollable rounded cards on top; the palette
-            // (drag source / bulk-block editor) fills and keeps its own scroll.
-            var grid = new WpfGrid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 160 });
+            // Single shared scroll: SIZING + TEXT STYLES cards over the PALETTE, all stacked.
+            // The palette renders full-height (ExpandList) with no inner scroll, so it is "maxed"
+            // — you can scroll the one column all the way to the last filter.
+            if (_palette != null) _palette.ExpandList = true;
 
             _sizingSlot     = new ContentControl();
             _textStylesSlot = new ContentControl();
 
-            var cardsStack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-            cardsStack.Children.Add(_sizingSlot);
-            cardsStack.Children.Add(_textStylesSlot);
-
-            var cardsScroll = new ScrollViewer
-            {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content                       = cardsStack,
-            };
-            LemoineControlStyles.WireBubblingScroll(cardsScroll);
-            // Cap the cards region to ~half the column so the palette always claims space.
-            grid.SizeChanged += (s, e) => cardsScroll.MaxHeight = Math.Max(120, e.NewSize.Height * 0.5);
-            WpfGrid.SetRow(cardsScroll, 0);
-            grid.Children.Add(cardsScroll);
-
             // PALETTE card (the control renders its own "PALETTE" header internally).
             _paletteCard = new Border
             {
-                Margin          = new Thickness(10, 0, 10, 10),
+                Margin          = new Thickness(10, 8, 10, 10),
                 BorderThickness = new Thickness(1),
             };
             _paletteCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
@@ -835,10 +836,20 @@ namespace LemoineTools.Lemoine
             _paletteCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
             _paletteSlot = new ContentControl { Content = _palette };
             _paletteCard.Child = _paletteSlot;
-            WpfGrid.SetRow(_paletteCard, 1);
-            grid.Children.Add(_paletteCard);
 
-            return grid;
+            var stack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            stack.Children.Add(_sizingSlot);
+            stack.Children.Add(_textStylesSlot);
+            stack.Children.Add(_paletteCard);
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content                       = stack,
+            };
+            LemoineControlStyles.WireBubblingScroll(scroll);
+            return scroll;
         }
 
         // Section label + rounded card wrapper shared by the right-panel sections.
