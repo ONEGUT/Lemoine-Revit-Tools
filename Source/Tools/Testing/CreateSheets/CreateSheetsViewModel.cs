@@ -342,7 +342,7 @@ namespace LemoineTools.Tools.Testing
                 Step                = 1,
                 HorizontalAlignment = HorizontalAlignment.Left,
             };
-            numStepper.ValueChanged += v => { _startingNumber = v; OnValidationChanged(); };
+            numStepper.ValueChanged += (s, v) => { _startingNumber = v; OnValidationChanged(); };
             outer.Children.Add(numStepper);
 
             // ── Naming Pattern ────────────────────────────────────────────────
