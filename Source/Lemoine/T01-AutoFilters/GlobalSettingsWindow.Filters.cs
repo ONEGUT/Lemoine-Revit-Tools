@@ -414,7 +414,7 @@ namespace LemoineTools.Lemoine
         // ── In-place selection — swaps visual highlight without rebuilding the list ──
         // This keeps every rowBorder in the panel so drag-and-drop can always
         // find the source border via Children.IndexOf, and the border's ActualWidth
-        // is always valid when ShowDragGhostFromElement snapshots it.
+        // is always valid when the drag ghost snapshots it.
         private void SelectRuleInPlace(Border newRowBorder, string ruleId,
                                        TextBlock? newNameTb = null)
         {
