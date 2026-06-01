@@ -29,6 +29,14 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlAttribute] public string Color { get; set; } = "#888888";
 
         /// <summary>
+        /// When <see langword="true"/>, this trade's filters are created and maintained by
+        /// another tool (e.g. the Ceiling Heatmap) using a non-keyword match. The generic
+        /// "Create Filters" engine skips these trades — it cannot regenerate their filters —
+        /// but they still appear in the rules list and group correctly in the filter pickers.
+        /// </summary>
+        [XmlAttribute] public bool ExternallyManaged { get; set; } = false;
+
+        /// <summary>
         /// V3+: Rules live directly on the trade (no category wrapper).
         /// </summary>
         [XmlArray("Rules")]
@@ -289,6 +297,60 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArray("CreatedFilters")]
         [XmlArrayItem("Filter")]
         public List<string> CreatedFilterNames { get; set; } = new List<string>();
+
+        // ── Filter naming + grouping helpers ──────────────────────────────────
+
+        /// <summary>
+        /// Builds the canonical ParameterFilterElement name for a rule:
+        /// <c>{tradeId}_{RULE_NAME}</c> with spaces replaced by underscores and uppercased.
+        /// Single source of truth for the convention used by the filter engine, the
+        /// Ceiling Heatmap tool, and the filter pickers.
+        /// </summary>
+        public static string MakeFilterName(string tradeId, string ruleName)
+            => (tradeId ?? "") + "_"
+               + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant();
+
+        /// <summary>
+        /// Groups the supplied Revit filter names by the trade that owns the rule which
+        /// produced each filter. Filters that map to no current rule are collected into a
+        /// single <c>"Others"</c> group. Trade groups are emitted in config order with
+        /// <c>"Others"</c> always last, so the picker tab order is deterministic.
+        /// </summary>
+        public static Dictionary<string, List<string>> GroupFilterNamesByTrade(
+            IReadOnlyList<string> filterNames)
+        {
+            const string OthersKey = "Others";
+
+            // Expected filter name → trade label, computed from the current rules.
+            var nameToTrade = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var trade in Instance.Trades ?? new List<FilterTradeConfig>())
+                foreach (var rule in trade.Rules ?? new List<FilterRuleConfig>())
+                    nameToTrade[MakeFilterName(trade.Id, rule.Name)] = trade.Label;
+
+            // Bin each filter under its trade label, or "Others" if unmatched.
+            var unordered = new Dictionary<string, List<string>>();
+            foreach (var name in filterNames ?? new List<string>())
+            {
+                string key = nameToTrade.TryGetValue(name, out var label) && !string.IsNullOrEmpty(label)
+                    ? label
+                    : OthersKey;
+                if (!unordered.TryGetValue(key, out var list))
+                    unordered[key] = list = new List<string>();
+                list.Add(name);
+            }
+
+            // Re-emit in trade config order, then "Others" last.
+            var ordered = new Dictionary<string, List<string>>();
+            foreach (var trade in Instance.Trades ?? new List<FilterTradeConfig>())
+            {
+                if (!ordered.ContainsKey(trade.Label)
+                    && unordered.TryGetValue(trade.Label, out var list))
+                    ordered[trade.Label] = list;
+            }
+            if (unordered.TryGetValue(OthersKey, out var others))
+                ordered[OthersKey] = others;
+            return ordered;
+        }
 
         // ── Known lookup values ───────────────────────────────────────────────
 

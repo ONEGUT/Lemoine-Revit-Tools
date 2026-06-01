@@ -229,18 +229,9 @@ namespace LemoineTools.Tools.AutoFilters
         private bool GetOpt(string key) =>
             _optionState.TryGetValue(key, out bool v) ? v : key == "color";
 
+        // Group by the trade that owns the matching rule; unmatched → "Others".
         private static Dictionary<string, List<string>> BuildFilterGroups(
             IReadOnlyList<string> names)
-        {
-            var groups = new Dictionary<string, List<string>>();
-            foreach (var name in names)
-            {
-                int sep  = name.IndexOf(" - ");
-                string g = sep >= 0 ? name.Substring(0, sep).Trim() : "Other";
-                if (!groups.ContainsKey(g)) groups[g] = new List<string>();
-                groups[g].Add(name);
-            }
-            return groups;
-        }
+            => AutoFiltersSettings.GroupFilterNamesByTrade(names);
     }
 }

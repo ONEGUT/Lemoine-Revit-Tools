@@ -124,7 +124,8 @@ namespace LemoineTools.Tools.AutoFilters
 
             // ── Count total enabled rules to size progress bar ────────────────
             int totalRules = trades.Sum(t =>
-                (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label))
+                (!t.ExternallyManaged
+                 && (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label)))
                     ? t.Rules.Count(r => r.Enabled && (r.MatchType == "all" || r.Match.Count > 0))
                     : 0);
             if (totalRules == 0)
@@ -167,10 +168,11 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 foreach (var t in trades)
                 {
+                    if (t.ExternallyManaged) continue;
                     foreach (var r in t.Rules)
                     {
                         if (!r.Enabled || (r.MatchType != "all" && r.Match.Count == 0)) continue;
-                        expectedFilterNames.Add(t.Id + "_" + r.Name.Trim().Replace(" ", "_").ToUpperInvariant());
+                        expectedFilterNames.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
                     }
                 }
             }
@@ -215,6 +217,10 @@ namespace LemoineTools.Tools.AutoFilters
 
                 foreach (var trade in trades)
                 {
+                    // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
+                    // matching and are maintained by their own tool — never regenerate here.
+                    if (trade.ExternallyManaged) continue;
+
                     if (selectedTradeSet.Count > 0 && !selectedTradeSet.Contains(trade.Label))
                     {
                         skip++;
@@ -296,8 +302,7 @@ namespace LemoineTools.Tools.AutoFilters
                 return;
             }
 
-            string filterName = trade.Id + "_"
-                + rule.Name.Trim().Replace(" ", "_").ToUpperInvariant();
+            string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
 
             try
             {

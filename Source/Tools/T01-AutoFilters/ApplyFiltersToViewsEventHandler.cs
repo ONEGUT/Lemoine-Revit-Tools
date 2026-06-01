@@ -184,8 +184,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 foreach (var rule in trade.Rules)
                 {
-                    string expected = trade.Id + "_"
-                        + rule.Name.Trim().Replace(" ", "_").ToUpperInvariant();
+                    string expected = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
                     if (string.Equals(filterName, expected, StringComparison.OrdinalIgnoreCase))
                     {
                         label = rule.Name;
