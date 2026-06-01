@@ -107,12 +107,6 @@ namespace LemoineTools.Tools.Testing
             d == "Categories" ? "Categories" : d == "Select Elements" ? "Elements" : "Rules";
 
         // ── Named struct (no anonymous tuple arrays) ──────────────────────────
-        private struct CardDef
-        {
-            public string       Label;
-            public Func<string> Value;
-            public CardDef(string label, Func<string> value) { Label = label; Value = value; }
-        }
 
         // ── Constructor ───────────────────────────────────────────────────────
         public ClashDimensionViewModel(
@@ -827,38 +821,6 @@ namespace LemoineTools.Tools.Testing
             parent.Children.Add(lbl);
         }
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> valueFn, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = valueFn();
-            ValidationChanged += (s, e) => val.Text = valueFn();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         private static void AddDivider(StackPanel parent)
         {

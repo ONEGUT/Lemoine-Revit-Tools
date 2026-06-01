@@ -222,38 +222,6 @@ namespace LemoineTools.Tools.ModifyElements
         }
 
 
-        private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 0 ? 0 : 4, row == 0 ? 0 : 4, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-            };
-            card.SetResourceReference(Border.PaddingProperty,     "LemoineTh_CardPad");
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            valText.Text = val();
-            ValidationChanged += (s, e) => valText.Text = val();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run

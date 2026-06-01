@@ -493,12 +493,6 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         // ── S3: Review & Run ───────────────────────────────────────────
-        private struct CardDef
-        {
-            public string Label; public Func<string> Val; public int Row; public int Col;
-            public CardDef(string l, Func<string> v, int r, int c)
-            { Label = l; Val = v; Row = r; Col = c; }
-        }
 
         // ── S3: View Naming ────────────────────────────────────────────
         // Naming token options for LVL

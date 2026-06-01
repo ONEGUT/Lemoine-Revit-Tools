@@ -563,12 +563,6 @@ namespace LemoineTools.Tools.LinkViews
         }
 
                 // ── S5: Review & Run ───────────────────────────────────────────
-        private struct CardDef
-        {
-            public string Label; public Func<string> Val; public int Row; public int Col;
-            public CardDef(string l, Func<string> v, int r, int c)
-            { Label = l; Val = v; Row = r; Col = c; }
-        }
 
         // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>

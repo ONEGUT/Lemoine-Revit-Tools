@@ -99,16 +99,6 @@ namespace LemoineTools.Tools.AutoFilters
             return null;
         }
 
-        // ── CardDef struct ───────────────────────────────────────────────────────
-        private struct CardDef
-        {
-            public string       Label;
-            public Func<string> Val;
-            public int          Row;
-            public int          Col;
-            public CardDef(string label, Func<string> val, int row, int col)
-            { Label = label; Val = val; Row = row; Col = col; }
-        }
 
                 // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>

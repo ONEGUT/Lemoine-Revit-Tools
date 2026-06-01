@@ -459,47 +459,6 @@ namespace LemoineTools.Tools.Ceilings
         public string?        ReviewNote    => null;
         public string?        ReviewWarning => null;
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> val, int row, int col)
-        {
-            while (grid.RowDefinitions.Count <= row)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var capturedVal = val;
-            var valText = new TextBlock
-            {
-                Text         = capturedVal(),
-                FontWeight   = FontWeights.Medium,
-                TextWrapping = TextWrapping.Wrap,
-            };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         // IsValid

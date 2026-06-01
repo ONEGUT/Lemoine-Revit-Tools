@@ -501,38 +501,6 @@ namespace LemoineTools.Tools.Testing
             "configured category. The estimated string count is approximate.";
         public string?        ReviewWarning => null;
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> valueFn, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = valueFn();
-            ValidationChanged += (s, e) => val.Text = valueFn();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         private static void AddDivider(System.Windows.Controls.Panel parent)
         {
