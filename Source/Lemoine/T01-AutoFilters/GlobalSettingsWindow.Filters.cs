@@ -1379,91 +1379,21 @@ namespace LemoineTools.Lemoine
                 FrameworkElement? weightContainer = null;
                 if (showWeight && getWeight != null && setWeight != null)
                 {
-                    // Outer border clips and frames the whole stepper as one unit
-                    var stepperOuter = new Border
+                    var stepper = new LemoineInlineStepper
                     {
-                        BorderThickness   = new Thickness(1),
-                        CornerRadius      = new CornerRadius(4),
-                        ClipToBounds      = true,
+                        Value             = getWeight(),
+                        MinValue          = 1,
+                        MaxValue          = 14,
+                        Step              = 1,
+                        Decimals          = 0,
+                        ValueWidth        = 32,
                         VerticalAlignment = VerticalAlignment.Center,
-                        Margin            = new Thickness(0, 0, 0, 0),
                     };
-                    stepperOuter.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
-                    stepperOuter.SetResourceReference(Border.BorderBrushProperty,      "LemoineBorder");
-
-                    // Three sections side-by-side: [−] | value | [+]
-                    var stepPanel = new StackPanel { Orientation = Orientation.Horizontal };
-
-                    Border MakeStepBtn(string text, bool rightSep)
-                    {
-                        var b = new Border
-                        {
-                            Padding           = new Thickness(7, 0, 7, 0),
-                            Cursor            = Cursors.Hand,
-                            VerticalAlignment = VerticalAlignment.Stretch,
-                        };
-                        b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                        var tb = new TextBlock
-                        {
-                            Text                = text,
-                            TextAlignment       = TextAlignment.Center,
-                            VerticalAlignment   = VerticalAlignment.Center,
-                            IsHitTestVisible    = false,
-                        };
-                        tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                        tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                        tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                        b.Child = tb;
-                        b.MouseEnter += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                        b.MouseLeave += (s2, e2) => b.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-                        return b;
-                    }
-
-                    var minusBtn = MakeStepBtn("−", true);
-
-                    var sepL = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-                    sepL.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-                    var valueTb = new TextBlock
-                    {
-                        Text                = getWeight().ToString(),
-                        Width               = 28,
-                        TextAlignment       = TextAlignment.Center,
-                        VerticalAlignment   = VerticalAlignment.Center,
-                    };
-                    valueTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    valueTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                    valueTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-                    var sepR = new Border { Width = 1, VerticalAlignment = VerticalAlignment.Stretch };
-                    sepR.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-                    var plusBtn = MakeStepBtn("+", false);
-
-                    stepPanel.Children.Add(minusBtn);
-                    stepPanel.Children.Add(sepL);
-                    stepPanel.Children.Add(valueTb);
-                    stepPanel.Children.Add(sepR);
-                    stepPanel.Children.Add(plusBtn);
-                    stepperOuter.Child = stepPanel;
-
-                    minusBtn.MouseLeftButtonUp += (s, e) =>
-                    {
-                        int cur = getWeight();
-                        if (cur > 1) { setWeight(cur - 1); valueTb.Text = (cur - 1).ToString(); }
-                        e.Handled = true;
-                    };
-                    plusBtn.MouseLeftButtonUp += (s, e) =>
-                    {
-                        int cur = getWeight();
-                        if (cur < 14) { setWeight(cur + 1); valueTb.Text = (cur + 1).ToString(); }
-                        e.Handled = true;
-                    };
-
-                    Grid.SetRow(stepperOuter, rowIdx);
-                    Grid.SetColumn(stepperOuter, 3);
-                    colorGrid.Children.Add(stepperOuter);
-                    weightContainer = stepperOuter;
+                    stepper.ValueChanged += (s2, v) => setWeight((int)v);
+                    Grid.SetRow(stepper, rowIdx);
+                    Grid.SetColumn(stepper, 3);
+                    colorGrid.Children.Add(stepper);
+                    weightContainer = stepper;
                 }
 
                 // ── Apply enabled state visuals ───────────────────────────────
