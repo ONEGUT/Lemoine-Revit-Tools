@@ -428,7 +428,7 @@ namespace LemoineTools.Lemoine
             // overlaps the canvas's 1px left border to connect tab → content.
             var tab = new Border
             {
-                CornerRadius    = isActive ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(6),
+                CornerRadius    = isActive ? new CornerRadius(10, 0, 0, 10) : new CornerRadius(10),
                 BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
                 Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
                 Padding         = new Thickness(8, 6, 8, 6),

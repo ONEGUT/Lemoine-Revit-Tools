@@ -276,7 +276,7 @@ namespace LemoineTools.Lemoine
             // the rule list's 1px left border to create a visual connection between tab and content.
             var rowBorder = new Border
             {
-                CornerRadius    = isActive ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(6),
+                CornerRadius    = isActive ? new CornerRadius(10, 0, 0, 10) : new CornerRadius(10),
                 BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
                 Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
                 Padding         = new Thickness(8, 6, 8, 6),
@@ -2328,7 +2328,7 @@ namespace LemoineTools.Lemoine
                 var row = new Border
                 {
                     Padding         = new Thickness(10, 4, 12, 4),
-                    CornerRadius    = new CornerRadius(12),
+                    CornerRadius    = new CornerRadius(10),
                     BorderThickness = new Thickness(1),
                     Margin          = new Thickness(4, 2, 4, 2),
                     Cursor          = disabled ? Cursors.Arrow : Cursors.Hand,
@@ -2422,7 +2422,7 @@ namespace LemoineTools.Lemoine
                     // Pill chip wrapper
                     var pillBorder = new Border
                     {
-                        CornerRadius    = new CornerRadius(12),
+                        CornerRadius    = new CornerRadius(10),
                         BorderThickness = new Thickness(1),
                         Margin          = new Thickness(4, 2, 4, 2),
                         Cursor          = Cursors.Hand,
@@ -2594,7 +2594,7 @@ namespace LemoineTools.Lemoine
                 var btn = new Border
                 {
                     Padding         = new Thickness(10, 4, 12, 4),
-                    CornerRadius    = new CornerRadius(12),
+                    CornerRadius    = new CornerRadius(10),
                     BorderThickness = new Thickness(1),
                     Cursor          = Cursors.Hand,
                     Margin          = new Thickness(4, 2, 4, 2),
@@ -2675,7 +2675,7 @@ namespace LemoineTools.Lemoine
             var restoreRow = new Border
             {
                 Padding         = new Thickness(10, 4, 12, 4),
-                CornerRadius    = new CornerRadius(12),
+                CornerRadius    = new CornerRadius(10),
                 BorderThickness = new Thickness(1),
                 Margin          = new Thickness(4, 2, 4, 2),
                 Cursor          = Cursors.Hand,
