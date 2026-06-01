@@ -796,8 +796,13 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLine != null && vLine != null)
                 {
-                    hRef = hLine.GeometryCurve.GetEndPointReference(1);
-                    vRef = vLine.GeometryCurve.GetEndPointReference(1);
+                    // Measure to the clash centre, not an arm tip: an X-measuring dimension
+                    // (HRef) must reference a point at x = cx — that is the VERTICAL line
+                    // (all its points share x = cx). A Y-measuring dimension (VRef) must
+                    // reference y = cy — the HORIZONTAL line. Referencing each line's own
+                    // axis instead would land the witness line on the arm edge.
+                    hRef = vLine.GeometryCurve.GetEndPointReference(1);
+                    vRef = hLine.GeometryCurve.GetEndPointReference(1);
                 }
             }
 
