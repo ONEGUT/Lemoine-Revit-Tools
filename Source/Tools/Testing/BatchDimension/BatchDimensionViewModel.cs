@@ -324,6 +324,7 @@ namespace LemoineTools.Tools.Testing
             catCombo.SetResourceReference(WpfComboBox.ForegroundProperty, "LemoineText");
             catCombo.SetResourceReference(WpfComboBox.FontFamilyProperty, "LemoineUiFont");
             catCombo.SetResourceReference(WpfComboBox.FontSizeProperty,   "LemoineFS_MD");
+            LemoineControlStyles.WireComboWheelBubbling(catCombo); // don't eat page scroll when closed
 
             var removeBtn = LemoineControlStyles.BuildButton("×");
             removeBtn.Margin = new Thickness(6, 0, 0, 0);
@@ -369,6 +370,7 @@ namespace LemoineTools.Tools.Testing
             {
                 if (refCombo.SelectedItem is string val) { cat.ReferencePlane = val; Fire(); }
             };
+            LemoineControlStyles.WireComboWheelBubbling(refCombo);
             settingsPanel.Children.Add(refCombo);
 
             // Tie condition
@@ -397,6 +399,7 @@ namespace LemoineTools.Tools.Testing
             {
                 if (tieCombo.SelectedItem is string val) { cat.TieCondition = val; Fire(); }
             };
+            LemoineControlStyles.WireComboWheelBubbling(tieCombo);
             settingsPanel.Children.Add(tieCombo);
 
             // Offset

@@ -687,6 +687,7 @@ namespace LemoineTools.Lemoine
             combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
             combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
             combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
 
             foreach (var (_, name) in _textTypes)
                 combo.Items.Add(name);

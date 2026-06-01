@@ -1144,6 +1144,7 @@ namespace LemoineTools.Tools.Testing
             combo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
             combo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineUiFont");
             combo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_MD");
+            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
             combo.SelectionChanged += (s, e) =>
             {
                 if (combo.SelectedItem is string val) onChange(val);
