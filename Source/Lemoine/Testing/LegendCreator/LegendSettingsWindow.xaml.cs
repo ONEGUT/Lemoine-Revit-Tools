@@ -962,12 +962,12 @@ namespace LemoineTools.Lemoine
             // legend comes from the assigned Text Styles, so there is no "Font pt" row.
             AddScaleDropdownRow(grid, 0, layout.ViewScale,
                 denom => { layout.ViewScale = denom; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 1, "Swatch W", layout.SwatchW.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchW = d; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 2, "Swatch H", layout.SwatchH.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchH = d; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 3, "Gap", layout.Gap.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d >= 0) { layout.Gap = d; builder.NotifyLayoutChanged(); } });
+            AddSizingRow(grid, 1, "Swatch W", layout.SwatchW, 0.05, 3.0, 0.05,
+                d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 2, "Swatch H", layout.SwatchH, 0.02, 2.0, 0.05,
+                d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 3, "Gap", layout.Gap, 0.0, 1.0, 0.01,
+                d => { layout.Gap = d; builder.NotifyLayoutChanged(); });
 
             return WrapCard("SIZING", grid);
         }
@@ -1035,7 +1035,8 @@ namespace LemoineTools.Lemoine
             grid.Children.Add(combo);
         }
 
-        private void AddSizingRow(WpfGrid grid, int row, string label, string value, Action<string> onCommit)
+        private void AddSizingRow(WpfGrid grid, int row, string label,
+                                  double value, double min, double max, double step, Action<double> onCommit)
         {
             var lbl = new TextBlock
             {
@@ -1047,30 +1048,23 @@ namespace LemoineTools.Lemoine
             lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var tb = new TextBox
+            var stepper = new LemoineInlineStepper
             {
-                Text            = value,
-                Padding         = new Thickness(4, 3, 4, 3),
-                BorderThickness = new Thickness(1),
-                Margin          = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = 2,
+                ValueWidth          = 48,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
             };
-            tb.SetResourceReference(TextBox.ForegroundProperty,    "LemoineText");
-            tb.SetResourceReference(TextBox.FontFamilyProperty,    "LemoineMonoFont");
-            tb.SetResourceReference(TextBox.FontSizeProperty,      "LemoineFS_SM");
-            tb.SetResourceReference(TextBox.BorderBrushProperty,   "LemoineBorder");
-            tb.SetResourceReference(TextBox.BackgroundProperty,    "LemoineSelectBg");
-            tb.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
+            stepper.ValueChanged += (s, v) => onCommit(v);
 
-            tb.LostFocus += (s, e) => onCommit(tb.Text.Trim());
-            tb.KeyDown   += (s, e) =>
-            {
-                if (e.Key == Key.Return) { onCommit(tb.Text.Trim()); Keyboard.ClearFocus(); e.Handled = true; }
-            };
-
-            WpfGrid.SetRow(lbl, row); WpfGrid.SetColumn(lbl, 0);
-            WpfGrid.SetRow(tb,  row); WpfGrid.SetColumn(tb,  2);
+            WpfGrid.SetRow(lbl,     row); WpfGrid.SetColumn(lbl,     0);
+            WpfGrid.SetRow(stepper, row); WpfGrid.SetColumn(stepper, 2);
             grid.Children.Add(lbl);
-            grid.Children.Add(tb);
+            grid.Children.Add(stepper);
         }
 
         // ─────────────────────────────────────────────────────────────────────

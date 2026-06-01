@@ -334,15 +334,17 @@ namespace LemoineTools.Tools.Testing
             numLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(numLabel);
 
-            var numStepper = new LemoineNumberStepper
+            var numStepper = new LemoineInlineStepper
             {
                 Value               = _startingNumber,
                 MinValue            = 1,
                 MaxValue            = 99999,
                 Step                = 1,
+                Decimals            = 0,
+                ValueWidth          = 56,
                 HorizontalAlignment = HorizontalAlignment.Left,
             };
-            numStepper.ValueChanged += (s, v) => { _startingNumber = v; OnValidationChanged(); };
+            numStepper.ValueChanged += (s, v) => { _startingNumber = (int)v; OnValidationChanged(); };
             outer.Children.Add(numStepper);
 
             // ── Naming Pattern ────────────────────────────────────────────────

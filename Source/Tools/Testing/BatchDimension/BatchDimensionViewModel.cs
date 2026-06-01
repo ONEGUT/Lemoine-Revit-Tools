@@ -409,24 +409,19 @@ namespace LemoineTools.Tools.Testing
             offLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             settingsPanel.Children.Add(offLbl);
 
-            var offsetBox = new WpfTextBox
+            var offsetStepper = new LemoineInlineStepper
             {
-                Text    = cat.Offset.ToString("F0"),
-                Padding = new Thickness(6, 3, 6, 3),
-                Margin  = new Thickness(0, 0, 0, 4),
+                Value               = cat.Offset,
+                MinValue            = 0,
+                MaxValue            = 1000,
+                Step                = 1,
+                Decimals            = 0,
+                ValueWidth          = 56,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 4),
             };
-            offsetBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            offsetBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            offsetBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            offsetBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            offsetBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-            offsetBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            offsetBox.TextChanged += (s, e) =>
-            {
-                if (double.TryParse(offsetBox.Text, out double val) && val >= 0)
-                { cat.Offset = val; Fire(); }
-            };
-            settingsPanel.Children.Add(offsetBox);
+            offsetStepper.ValueChanged += (s, v) => { cat.Offset = v; Fire(); };
+            settingsPanel.Children.Add(offsetStepper);
 
             // Wire category change → update ref plane options
             catCombo.SelectionChanged += (s, e) =>

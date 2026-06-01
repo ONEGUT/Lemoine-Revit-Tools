@@ -689,13 +689,13 @@ namespace LemoineTools.Tools.Testing
 
             AddSettingRow(outer, "Clash Tolerance (mm)",
                 "Extra margin added to each side of the clash bounding box annotation.",
-                _toleranceMm.ToString("F1"),
-                val => { if (double.TryParse(val, out double d) && d >= 0) { _toleranceMm = d; Fire(); } });
+                _toleranceMm, 0, 100, 0.5, 1,
+                d => { _toleranceMm = d; Fire(); });
 
             AddSettingRow(outer, "Dimension Line Offset (mm)",
                 "Distance the dimension string sits away from the cross annotation centre.",
-                _dimLineOffsetMm.ToString("F0"),
-                val => { if (double.TryParse(val, out double d) && d >= 0) { _dimLineOffsetMm = d; Fire(); } });
+                _dimLineOffsetMm, 0, 1000, 1, 0,
+                d => { _dimLineOffsetMm = d; Fire(); });
 
             AddDivider(outer);
             AddLabel(outer, "Dimension Style");
@@ -750,8 +750,8 @@ namespace LemoineTools.Tools.Testing
             AddDivider(outer);
             AddSettingRow(outer, "Max Clashes",
                 "Stop detecting after this many clashes. Raise if clashes are being missed.",
-                _maxClashes.ToString(),
-                val => { if (int.TryParse(val, out int n) && n > 0) { _maxClashes = n; Fire(); } });
+                _maxClashes, 1, 100000, 1, 0,
+                d => { _maxClashes = (int)d; Fire(); });
 
             return WrapInScroll(outer, maxHeight: 800);
         }
@@ -785,6 +785,32 @@ namespace LemoineTools.Tools.Testing
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             parent.Children.Add(tb);
+        }
+
+        // Numeric overload — a typeable inline stepper instead of a free-text box.
+        private void AddSettingRow(StackPanel parent, string label, string hint,
+                                   double value, double min, double max, double step, int decimals, Action<double> onChange)
+        {
+            var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 2) };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            parent.Children.Add(lbl);
+
+            var stepper = new LemoineInlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = decimals,
+                ValueWidth          = 56,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 8),
+                ToolTip             = hint,
+            };
+            stepper.ValueChanged += (s, v) => onChange(v);
+            parent.Children.Add(stepper);
         }
 
         private void AddSettingRow(StackPanel parent, string label, string hint, string initial, Action<string> onChange)

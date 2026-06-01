@@ -701,8 +701,8 @@ namespace LemoineTools.Tools.Testing
                 Margin      = new Thickness(0, 4, 0, 8),
                 Visibility  = _zoomSetting == "Scale %" ? WpfVisibility.Visible : WpfVisibility.Collapsed,
             };
-            var stepper = new LemoineNumberStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5 };
-            stepper.ValueChanged += (s, v) => { _zoomPct = v; Fire(); };
+            var stepper = new LemoineInlineStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5, Decimals = 0, ValueWidth = 48 };
+            stepper.ValueChanged += (s, v) => { _zoomPct = (int)v; Fire(); };
             var pctLabel = new TextBlock
             {
                 Text              = "%",

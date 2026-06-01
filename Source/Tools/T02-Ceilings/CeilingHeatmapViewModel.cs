@@ -405,22 +405,19 @@ namespace LemoineTools.Tools.Ceilings
 
             var tolRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            double displayInches = Math.Round(_elevTolerance * 12.0, 4);
-            var tolBox = new WpfTextBox { Text = displayInches.ToString(), TextAlignment = TextAlignment.Right };
-            tolBox.SetResourceReference(WpfTextBox.WidthProperty,      "LemoineW_NumInput");
-            tolBox.SetResourceReference(WpfTextBox.MinHeightProperty,  "LemoineH_Input");
-            tolBox.SetResourceReference(WpfTextBox.PaddingProperty,    "LemoineTh_InputPad");
-            tolBox.SetResourceReference(WpfTextBox.BackgroundProperty, "LemoineSelectBg");
-            tolBox.SetResourceReference(WpfTextBox.ForegroundProperty, "LemoineText");
-            tolBox.SetResourceReference(WpfTextBox.FontFamilyProperty, "LemoineMonoFont");
-            tolBox.SetResourceReference(WpfTextBox.FontSizeProperty,   "LemoineFS_MD");
-            tolBox.SetResourceReference(WpfTextBox.BorderBrushProperty,"LemoineBorderMid");
-            tolBox.LostFocus += (s, e) =>
+            double displayInches = Math.Round(_elevTolerance * 12.0, 2);
+            var tolStepper = new LemoineInlineStepper
             {
-                if (double.TryParse(tolBox.Text, out double val))
-                    _elevTolerance = val / 12.0;
+                Value             = displayInches,
+                MinValue          = 0,
+                MaxValue          = 24,
+                Step              = 0.25,
+                Decimals          = 2,
+                ValueWidth        = 56,
+                VerticalAlignment = VerticalAlignment.Center,
             };
-            tolRow.Children.Add(tolBox);
+            tolStepper.ValueChanged += (s, v) => _elevTolerance = v / 12.0;
+            tolRow.Children.Add(tolStepper);
 
             var tolUnit = new TextBlock { Text = "  in", VerticalAlignment = VerticalAlignment.Center };
             tolUnit.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
