@@ -277,17 +277,20 @@ namespace LemoineTools.Lemoine
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280), MinWidth = 280 });
 
-            // Sidebar
-            var sidebarBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0) };
-            sidebarBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            // Sidebar — no right border; the divider lives on the canvas's left
+            // edge instead so the active tab can overlap it (matches Auto Filters).
+            var sidebarBorder = new Border { BorderThickness = new Thickness(0) };
             sidebarBorder.Child = BuildSidebar();
             WpfGrid.SetColumn(sidebarBorder, 0);
             grid.Children.Add(sidebarBorder);
 
-            // Center builder slot
+            // Center builder slot — wrapped in a 1px-left-border so the active tab
+            // overlaps it, visually connecting the selected tab to its content.
             _builderSlot = new ContentControl();
-            WpfGrid.SetColumn(_builderSlot, 1);
-            grid.Children.Add(_builderSlot);
+            var builderWrapper = new Border { BorderThickness = new Thickness(1, 0, 0, 0), Child = _builderSlot };
+            builderWrapper.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            WpfGrid.SetColumn(builderWrapper, 1);
+            grid.Children.Add(builderWrapper);
 
             // Splitter between canvas and right editor
             var splitter = new GridSplitter
@@ -321,30 +324,24 @@ namespace LemoineTools.Lemoine
         private UIElement BuildSidebar()
         {
             var dp = new DockPanel { LastChildFill = true };
+            dp.SetResourceReference(DockPanel.BackgroundProperty, "LemoineSurface");
 
-            // Templates pill at top
+            // Templates chip at top (matches the Auto Filters sidebar pill)
             var templatesPill = BuildTemplatesPill();
             DockPanel.SetDock(templatesPill, Dock.Top);
             dp.Children.Add(templatesPill);
 
-            // "LEGENDS" section header
-            var legendsLabel = new TextBlock
-            {
-                Text   = "LEGENDS",
-                Margin = new Thickness(10, 12, 10, 6),
-            };
-            legendsLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            legendsLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            legendsLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            DockPanel.SetDock(legendsLabel, Dock.Top);
-            dp.Children.Add(legendsLabel);
+            // Separator between templates chip and the tab list
+            var templSep = new Border { Height = 1, Margin = new Thickness(0, 4, 0, 0) };
+            templSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            DockPanel.SetDock(templSep, Dock.Top);
+            dp.Children.Add(templSep);
 
-            // "＋ Add Legend" now floats as the last item inside the tab list
-            // (AppendAddLegendPill, called from RebuildTabStack) — no sticky bar.
-            // Create/Update moved to the floating bottom-right pill.
+            // "＋ Add Legend" floats as the last item inside the tab list
+            // (RebuildTabStack) — no sticky bar. Create/Update is the floating pill.
 
             // Tab list (fills remaining space)
-            _tabStack = new StackPanel { Orientation = Orientation.Vertical };
+            _tabStack = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 4, 0, 0) };
             var scroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
@@ -359,28 +356,43 @@ namespace LemoineTools.Lemoine
 
         private Border BuildTemplatesPill()
         {
+            // Rounded chip identical to the Auto Filters sidebar Templates button.
             var pill = new Border
             {
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding         = new Thickness(10),
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(10, 5, 10, 5),
                 Cursor          = Cursors.Hand,
+                Margin          = new Thickness(8, 8, 8, 4),
             };
-            pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            pill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            pill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            pill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            pill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
 
-            var pillText = new TextBlock { Text = "TEMPLATES ˅" };
-            pillText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            pillText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            var inner = new StackPanel
+            {
+                Orientation         = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            var pillText = new TextBlock { Text = "Templates", VerticalAlignment = VerticalAlignment.Center };
             pillText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            pill.Child = pillText;
+            pillText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            pillText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var caret = new TextBlock { Text = "˅", Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            caret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            inner.Children.Add(pillText);
+            inner.Children.Add(caret);
+            pill.Child = inner;
 
             pill.MouseEnter += (s, e) =>
-                pill.SetResourceReference(Border.BackgroundProperty, "LemoineSelectBg");
+                pill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
             pill.MouseLeave += (s, e) =>
                 pill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
 
             pill.MouseLeftButtonUp += (s, e) =>
             {
+                e.Handled = true;
                 var entries = LegendCreatorSettings.Instance.Legends;
                 if (_activeIndex >= 0 && _activeIndex < entries.Count)
                     GetOrCreateBuilder(entries[_activeIndex]).ShowTemplatesPopup(pill);
@@ -411,29 +423,42 @@ namespace LemoineTools.Lemoine
         {
             bool isActive = index == _activeIndex;
 
-            // Structured to mirror the Auto Filters trade tabs: a left accent bar
-            // marks the active item; an inline ✎ opens the editor. (Legends have no
-            // single representative colour, so the filters' colour dot is omitted.)
+            // Identical chrome to the Auto Filters trade tab: active tab is rounded
+            // on the left only, drops its right border, and a -1px right margin
+            // overlaps the canvas's 1px left border to connect tab → content.
             var tab = new Border
             {
-                Padding = new Thickness(10, 8, 10, 8),
-                Margin  = new Thickness(0, 0, 0, 2),
-                Cursor  = isActive ? Cursors.Arrow : Cursors.Hand,
+                CornerRadius    = isActive ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(6),
+                BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
+                Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
+                Padding         = new Thickness(8, 6, 8, 6),
+                Cursor          = isActive ? Cursors.Arrow : Cursors.Hand,
             };
-
+            tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             if (isActive)
-            {
-                tab.BorderThickness = new Thickness(3, 0, 0, 0);
-                tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                tab.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
-            }
+                tab.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
             else
+                tab.Background = Brushes.Transparent;
+
+            int capturedIndex = index;
+            if (!isActive)
             {
-                tab.BorderThickness = new Thickness(3, 0, 0, 0);
-                tab.BorderBrush     = Brushes.Transparent;
+                tab.MouseEnter += (s, e) =>
+                    tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                tab.MouseLeave += (s, e) =>
+                {
+                    tab.Background = Brushes.Transparent;
+                    tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                };
+                tab.MouseLeftButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    ActivateTab(capturedIndex);
+                };
             }
 
-            // [ label ] .......... [ ✎ ]
+            // Row: [* label | Auto edit] — legends have no single representative
+            // colour, so the filters' leading colour swatch is intentionally omitted.
             var grid = new WpfGrid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -441,54 +466,70 @@ namespace LemoineTools.Lemoine
             var nameDisplay = new TextBlock
             {
                 Text              = entry.GetDisplayName(),
+                FontWeight        = isActive ? FontWeights.SemiBold : FontWeights.Normal,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming      = TextTrimming.CharacterEllipsis,
             };
-            nameDisplay.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            nameDisplay.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            nameDisplay.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "LemoineAccent" : "LemoineText");
             nameDisplay.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            nameDisplay.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             WpfGrid.SetColumn(nameDisplay, 0);
             grid.Children.Add(nameDisplay);
 
-            // Edit pencil (✎) — opens the Title / Subtitle editor moved here from
-            // the builder's old top layout bar.
-            var editBtn = new TextBlock
+            // Edit pencil (✎) — bordered hover button matching the filters trade edit.
+            // Opens the Title / Subtitle editor moved here from the builder's old bar.
+            var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
+            editBtn.ToolTip = "Edit legend title and subtitle";
+            editBtn.Margin  = new Thickness(4, 0, 0, 0);
+            editBtn.MouseLeftButtonUp += (s, e) =>
             {
-                Text              = "✎",
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor            = Cursors.Hand,
-                Margin            = new Thickness(6, 0, 0, 0),
+                e.Handled = true;
+                ShowLegendEditPopup(editBtn, entry, nameDisplay);
             };
-            editBtn.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            editBtn.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            editBtn.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             WpfGrid.SetColumn(editBtn, 1);
             grid.Children.Add(editBtn);
 
-            // Handle Down (not Up) and mark it handled so the click never bubbles to
-            // the tab's activate handler — otherwise activating rebuilds the tab list
-            // and detaches the popup's anchor before it opens.
-            editBtn.MouseLeftButtonDown += (s, e) =>
-            {
-                e.Handled = true;
-                ShowLegendEditPopup(tab, entry, nameDisplay);
-            };
-
             tab.Child = grid;
-
-            int capturedIndex = index;
-            tab.MouseLeftButtonDown += (s, e) =>
-            {
-                if (capturedIndex != _activeIndex)
-                    ActivateTab(capturedIndex);
-                else if (e.ClickCount == 2)
-                {
-                    ShowLegendEditPopup(tab, entry, nameDisplay);
-                    e.Handled = true;
-                }
-            };
-
             return tab;
+        }
+
+        // Bordered icon button matching the Auto Filters sidebar action buttons.
+        private static Border BuildSidebarActionBtn(string glyph, string fontResourceKey)
+        {
+            var icon = new TextBlock
+            {
+                Text              = glyph,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible  = false,
+            };
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            icon.SetResourceReference(TextBlock.FontFamilyProperty, fontResourceKey);
+
+            var btn = new Border
+            {
+                Cursor              = Cursors.Hand,
+                Padding             = new Thickness(5),
+                BorderThickness     = new Thickness(1),
+                CornerRadius        = new CornerRadius(3),
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background          = Brushes.Transparent,
+                Margin              = new Thickness(2, 0, 0, 0),
+                Child               = icon,
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            btn.MouseEnter += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineAccent");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            };
+            btn.MouseLeave += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineBorder");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            };
+            return btn;
         }
 
         // Title / Subtitle editor — moved here from the builder's old top layout bar
