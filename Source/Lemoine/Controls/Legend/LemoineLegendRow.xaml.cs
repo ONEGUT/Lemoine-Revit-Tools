@@ -28,6 +28,9 @@ namespace LemoineTools.Lemoine.Controls
         private HashSet<string> _selectionContext = new HashSet<string>();
         private string? _activeContext;
 
+        // Cursor-following drag ghost for whole-group drags.
+        private readonly LemoineDragGhost _ghost = new LemoineDragGhost();
+
         public LemoineLegendRow()
         {
             InitializeComponent();
@@ -105,8 +108,14 @@ namespace LemoineTools.Lemoine.Controls
                         What    = LegendDragPayload.Kind.Group,
                         GroupId = Row.Groups[idx].Id,
                     };
+                    QueryContinueDragEventHandler? ghostUpdater = null;
                     try
                     {
+                        // Cursor-following snapshot ghost for the whole-group drag.
+                        _ghost.Begin(card);
+                        ghostUpdater = (fs, fe) => _ghost.Update();
+                        card.QueryContinueDrag += ghostUpdater;
+
                         LegendDragSession.Begin(payload);
                         DragDrop.DoDragDrop(card,
                             new DataObject(LemoineLegendPalette.DragFormat, payload),
@@ -116,7 +125,12 @@ namespace LemoineTools.Lemoine.Controls
                     {
                         System.Diagnostics.Debug.WriteLine($"[Row] group drag fail: {ex.Message}");
                     }
-                    finally { LegendDragSession.End(); }
+                    finally
+                    {
+                        LegendDragSession.End();
+                        if (ghostUpdater != null) card.QueryContinueDrag -= ghostUpdater;
+                        _ghost.End();
+                    }
                 };
 
                 Grid.SetColumn(card, 1 + i * 2);

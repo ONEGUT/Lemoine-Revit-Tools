@@ -1,137 +1,116 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Interop;
+using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace LemoineTools.Lemoine
 {
     /// <summary>
-    /// Reusable cursor-following drag ghost — a transparent, click-through Popup that
-    /// mirrors the dragged item beside the cursor for the duration of a DragDrop. One
-    /// instance per active drag: <see cref="Begin"/> shows it, <see cref="Update"/>
-    /// repositions it (call from <c>QueryContinueDrag</c>), <see cref="End"/> tears it down.
-    /// Positioned in screen space via Win32 so it tracks the cursor across the whole window,
-    /// not just the source control's bounds. Revit-free so every layer can use it.
+    /// Reusable cursor-following drag ghost. Snapshots the element being dragged into a
+    /// frozen bitmap (a live view of its current appearance) and draws it on the window's
+    /// <see cref="AdornerLayer"/>, centred on the cursor. One instance per active drag:
+    /// <see cref="Begin"/> shows it, <see cref="Update"/> repositions it (call from
+    /// <c>QueryContinueDrag</c>), <see cref="End"/> removes it. Revit-free.
     ///
-    /// ⚠ The Popup keeps <c>StaysOpen</c> at its default (true). Never set it false here:
-    /// StaysOpen=false installs a ComponentDispatcher.ThreadFilterMessage hook that corrupts
-    /// Revit's message loop and crashes Revit (see CLAUDE.md "Revit Crash Constraints").
+    /// The adorner lives in window space (not a screen-space Popup), so it never gets nudged
+    /// back on-screen near a screen edge — the ghost tracks the cursor exactly. The snapshot
+    /// is a <see cref="RenderTargetBitmap"/> taken at grab time, so the source element may be
+    /// dimmed (Opacity=0) afterwards without the ghost going transparent.
     /// </summary>
     public sealed class LemoineDragGhost
     {
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint pt);
-        [DllImport("user32.dll")] private static extern int  GetWindowLong(IntPtr hWnd, int nIndex);
-        [DllImport("user32.dll")] private static extern int  SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-        private const int GWL_EXSTYLE       = -20;
-        private const int WS_EX_TRANSPARENT = 0x00000020;
         private struct NativePoint { public int X; public int Y; }
 
-        private Popup?            _popup;
-        private FrameworkElement? _anchor;
-        private Point             _clickOffset;
+        private GhostAdorner?     _adorner;
+        private AdornerLayer?     _layer;
+        private FrameworkElement? _source;
+        private Size              _size;
 
         /// <summary>
-        /// Shows the ghost at the cursor. <paramref name="anchor"/> must be a live
-        /// visual-tree element — it supplies the device→logical DPI transform.
-        /// <paramref name="content"/> is the pill to display (see <see cref="BuildPill"/>);
-        /// <paramref name="clickOffset"/> is the cursor-to-pill offset in logical units.
+        /// Snapshots <paramref name="source"/> and shows the ghost centred on the cursor.
+        /// <paramref name="source"/> must be a live, laid-out visual.
         /// </summary>
-        public void Begin(FrameworkElement anchor, FrameworkElement content, Point clickOffset)
+        public void Begin(FrameworkElement source)
         {
             End();
-            _anchor      = anchor;
-            _clickOffset = clickOffset;
-            var lpt = CursorLogical();
-            _popup = new Popup
-            {
-                AllowsTransparency = true,
-                IsHitTestVisible   = false,
-                Placement          = PlacementMode.AbsolutePoint,
-                HorizontalOffset   = lpt.X - clickOffset.X,
-                VerticalOffset     = lpt.Y - clickOffset.Y,
-                Child              = content,
-            };
-            _popup.Opened += MakeHwndTransparent;
-            _popup.IsOpen  = true;
+            if (source == null || source.ActualWidth < 1 || source.ActualHeight < 1) return;
+
+            _size = new Size(source.ActualWidth, source.ActualHeight);
+            var img = Snapshot(source, _size);
+            if (img == null) return;
+
+            _layer = AdornerLayer.GetAdornerLayer(source);
+            if (_layer == null) return;
+
+            _source  = source;
+            _adorner = new GhostAdorner(source, img, _size);
+            _layer.Add(_adorner);
+            Update();
         }
 
-        /// <summary>Repositions the ghost to the current cursor. Safe to call when inactive.</summary>
+        /// <summary>Re-centres the ghost on the current cursor. Safe to call when inactive.</summary>
         public void Update()
         {
-            if (_popup == null) return;
-            var lpt = CursorLogical();
-            _popup.HorizontalOffset = lpt.X - _clickOffset.X;
-            _popup.VerticalOffset   = lpt.Y - _clickOffset.Y;
+            if (_adorner == null || _source == null) return;
+            GetCursorPos(out var pt);
+            // PointFromScreen takes physical screen pixels (what GetCursorPos returns) and
+            // maps them into the adorned element's own coordinate space, DPI included.
+            var local = _source.PointFromScreen(new Point(pt.X, pt.Y));
+            _adorner.MoveTo(new Point(local.X - _size.Width / 2.0, local.Y - _size.Height / 2.0));
         }
 
-        /// <summary>Closes the ghost. Safe to call when inactive (idempotent).</summary>
+        /// <summary>Removes the ghost. Safe to call when inactive (idempotent).</summary>
         public void End()
         {
-            if (_popup != null) { _popup.IsOpen = false; _popup = null; }
-            _anchor = null;
+            if (_layer != null && _adorner != null) _layer.Remove(_adorner);
+            _adorner = null;
+            _layer   = null;
+            _source  = null;
         }
 
-        private Point CursorLogical()
+        private static ImageSource? Snapshot(FrameworkElement el, Size size)
         {
-            GetCursorPos(out var pt);
-            // ⚠ PresentationSource.FromVisual requires the anchor to be in the live tree.
-            var src = _anchor != null ? PresentationSource.FromVisual(_anchor) : null;
-            if (src?.CompositionTarget != null)
+            var src = PresentationSource.FromVisual(el);
+            double sx = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double sy = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+            int pw = (int)Math.Ceiling(size.Width  * sx);
+            int ph = (int)Math.Ceiling(size.Height * sy);
+            if (pw < 1 || ph < 1) return null;
+
+            var rtb = new RenderTargetBitmap(pw, ph, 96 * sx, 96 * sy, PixelFormats.Pbgra32);
+            rtb.Render(el);
+            rtb.Freeze();
+            return rtb;
+        }
+
+        // ── Adorner that paints the frozen snapshot at a movable offset ──────────
+        private sealed class GhostAdorner : Adorner
+        {
+            private readonly ImageSource _img;
+            private readonly Size        _size;
+            private Point                _topLeft;
+
+            public GhostAdorner(UIElement adorned, ImageSource img, Size size) : base(adorned)
             {
-                var m = src.CompositionTarget.TransformFromDevice;
-                return new Point(pt.X * m.M11, pt.Y * m.M22);
+                _img             = img;
+                _size            = size;
+                IsHitTestVisible = false;
+                Opacity          = 0.85;
             }
-            return new Point(pt.X, pt.Y);
-        }
 
-        private void MakeHwndTransparent(object? sender, EventArgs e)
-        {
-            if (_popup?.Child != null &&
-                PresentationSource.FromVisual(_popup.Child) is HwndSource hs)
+            public void MoveTo(Point topLeft)
             {
-                int ex = GetWindowLong(hs.Handle, GWL_EXSTYLE);
-                SetWindowLong(hs.Handle, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
+                _topLeft = topLeft;
+                InvalidateVisual();
             }
-        }
 
-        // ── Standard pill content ────────────────────────────────────────────────
-        /// <summary>
-        /// Builds the standard ghost pill — a colour swatch + name on a raised surface — so
-        /// every legend drag ghost looks identical. <paramref name="res"/> is any live tree
-        /// element used to resolve theme resources.
-        /// </summary>
-        public static Border BuildPill(FrameworkElement res, Color color, string name)
-        {
-            Brush      BrushRes (string key, Brush fb)  => res.TryFindResource(key) as Brush      ?? fb;
-            double     DoubleRes(string key, double fb) => res.TryFindResource(key) is double d   ? d : fb;
-            FontFamily FontRes  (string key)            => res.TryFindResource(key) as FontFamily ?? new FontFamily("Segoe UI");
-
-            var inner = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            inner.Children.Add(new Border
+            protected override void OnRender(DrawingContext dc)
             {
-                Width = 14, Height = 10, CornerRadius = new CornerRadius(2),
-                Background = new SolidColorBrush(color),
-                Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
-            });
-            inner.Children.Add(new TextBlock
-            {
-                Text = name, FontWeight = FontWeights.SemiBold,
-                Foreground = BrushRes("LemoineText", Brushes.White),
-                FontSize = DoubleRes("LemoineFS_SM", 12),
-                FontFamily = FontRes("LemoineUiFont"),
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            return new Border
-            {
-                CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 4, 8, 4),
-                Background  = BrushRes("LemoineRaised", new SolidColorBrush(Color.FromRgb(50, 50, 50))),
-                BorderBrush = BrushRes("LemoineBorder", Brushes.Gray),
-                Child = inner,
-            };
+                dc.DrawImage(_img, new Rect(_topLeft, _size));
+            }
         }
     }
 }

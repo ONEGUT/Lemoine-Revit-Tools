@@ -311,8 +311,8 @@ namespace LemoineTools.Lemoine.Controls
                         _dragBlockOrigIdx = _blockStack?.Children.IndexOf(row) ?? -1;
                         if (_dragBlockOrigIdx < 0) { _dragBlockRow = null; _dragBlockId = null; return; }
 
-                        row.Opacity = 0; // invisible — ghost represents it
-                        ShowBlockDragGhost(block);
+                        _ghost.Begin(row);   // snapshot the live row before dimming it
+                        row.Opacity = 0;     // invisible — the ghost represents it
 
                         // Dual payload: StringFormat for same-group live-snap,
                         // LegendDragPayload for cross-group and session pre-lighting
@@ -561,37 +561,10 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Ghost drag popup (mirrors GlobalSettingsWindow pattern)
+        // Ghost drag (shared cursor-following snapshot ghost)
         // ─────────────────────────────────────────────────────────────────────
-        private void ShowBlockDragGhost(LegendBlockConfig block)
-        {
-            // Resolve theme resources from a live tree element so TryFindResource works.
-            FrameworkElement res = _blockStack ?? (FrameworkElement)this;
-            var pill = LemoineDragGhost.BuildPill(
-                res, ResolveBlockColorForGhost(block), ResolveBlockNameForGhost(block));
-            _ghost.Begin(this, pill, new Point(16, 8));
-        }
-
         private void HideDragGhost()      => _ghost.End();
         private void UpdateDragGhostPos() => _ghost.Update();
-
-        private string ResolveBlockNameForGhost(LegendBlockConfig block)
-        {
-            if (block.Custom) return block.Name ?? "Custom";
-            if (block.NameOverride && !string.IsNullOrEmpty(block.Name)) return block.Name;
-            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == block.SourceTradeId);
-            return trade?.Rules?.FirstOrDefault(r => r.Id == block.SourceRuleId)?.Name ?? block.Name ?? "Block";
-        }
-
-        private Color ResolveBlockColorForGhost(LegendBlockConfig block)
-        {
-            Color fallback = LemoineTheme.FallbackGrey;
-            if (block.ColorOverride) return BrushHelper.ColorFromHex(block.Color, fallback);
-            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == block.SourceTradeId);
-            var rule  = trade?.Rules?.FirstOrDefault(r => r.Id == block.SourceRuleId);
-            if (rule != null) return BrushHelper.ColorFromHex(rule.SurfColor, fallback);
-            return BrushHelper.ColorFromHex(block.Color, fallback);
-        }
 
         // ─────────────────────────────────────────────────────────────────────
         // Drop targets

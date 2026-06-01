@@ -193,7 +193,7 @@ namespace LemoineTools.Lemoine.Controls
                         What          = LegendDragPayload.Kind.PaletteCategory,
                         SourceTradeId = _scope,
                     };
-                    StartDrag(tradePill, payload);
+                    StartDrag(tradePill, tradePill, payload);
                     e.Handled = true;
                 });
             }
@@ -297,7 +297,7 @@ namespace LemoineTools.Lemoine.Controls
                         What          = LegendDragPayload.Kind.PaletteCategory,
                         SourceTradeId = capturedId,
                     };
-                    StartDrag(this, payload);
+                    StartDrag(this, item, payload);
                     e.Handled = true;
                 });
 
@@ -418,7 +418,7 @@ namespace LemoineTools.Lemoine.Controls
                     SourceTradeId = capturedTradeId,
                     SourceRuleId  = capturedRuleId,
                 };
-                StartDrag(border, payload);
+                StartDrag(border, border, payload);
             });
             return border;
         }
@@ -442,17 +442,16 @@ namespace LemoineTools.Lemoine.Controls
             return LemoineTheme.DarkMono.Accent.Color;
         }
 
-        private void StartDrag(DependencyObject source, LegendDragPayload payload)
+        private void StartDrag(DependencyObject source, FrameworkElement ghostVisual, LegendDragPayload payload)
         {
             var src = source as UIElement;
             QueryContinueDragEventHandler? ghostUpdater = null;
             try
             {
-                // Cursor-following ghost so palette drags read the same as a group reorder.
-                var pill = TryBuildGhostPill(payload);
-                if (pill != null && src != null)
+                // Cursor-following snapshot ghost — same as the group-card block reorder.
+                if (ghostVisual != null && src != null)
                 {
-                    _ghost.Begin(this, pill, new Point(16, 8));
+                    _ghost.Begin(ghostVisual);
                     ghostUpdater = (s, e) => _ghost.Update();
                     src.QueryContinueDrag += ghostUpdater;
                 }
@@ -471,26 +470,6 @@ namespace LemoineTools.Lemoine.Controls
                 if (ghostUpdater != null && src != null) src.QueryContinueDrag -= ghostUpdater;
                 _ghost.End();
             }
-        }
-
-        /// <summary>Builds the ghost pill for a palette drag — a filter shows its surface
-        /// colour + name; a whole-trade (category) drag shows the trade label on accent.</summary>
-        private Border? TryBuildGhostPill(LegendDragPayload payload)
-        {
-            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == payload.SourceTradeId);
-            if (payload.What == LegendDragPayload.Kind.PaletteFilter)
-            {
-                var rule = trade?.Rules?.FirstOrDefault(r => r.Id == payload.SourceRuleId);
-                if (rule == null) return null;
-                var color = BrushHelper.ColorFromHex(rule.SurfColor, LemoineTheme.FallbackGrey);
-                return LemoineDragGhost.BuildPill(this, color, rule.Name ?? "Filter");
-            }
-            if (payload.What == LegendDragPayload.Kind.PaletteCategory)
-            {
-                string label = trade?.Label ?? trade?.Id ?? "All trades";
-                return LemoineDragGhost.BuildPill(this, GetThemeAccent(), label);
-            }
-            return null;
         }
     }
 
