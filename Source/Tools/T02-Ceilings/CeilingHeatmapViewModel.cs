@@ -45,7 +45,7 @@ namespace LemoineTools.Tools.Ceilings
 
         // Live-update handles for S_RAMP step
         private WpfRectangle? _gradientRect;
-        private WpfComboBox?  _rampCombo;
+        private LemoineSingleSelect?  _rampCombo;
 
         // ── Run options state ────────────────────────────────────────────────────
         private bool   _deleteExisting = true;
@@ -173,12 +173,7 @@ namespace LemoineTools.Tools.Ceilings
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             DockPanel.SetDock(loadBtn, Dock.Right);
 
-            _rampCombo = new WpfComboBox { IsEditable = false };
-            _rampCombo.SetResourceReference(WpfComboBox.BackgroundProperty,  "LemoineSelectBg");
-            _rampCombo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
-            _rampCombo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_SM");
-            _rampCombo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineMonoFont");
-            _rampCombo.SetResourceReference(WpfComboBox.BorderBrushProperty, "LemoineBorderMid");
+            _rampCombo = new LemoineSingleSelect();
             RefreshRampCombo();
 
             loadRow.Children.Add(deleteBtn);
@@ -323,9 +318,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (_rampCombo == null) return;
             var names = _rampStore.List().Select(t => t.Name).ToList();
-            _rampCombo.ItemsSource = names;
-            if (names.Count > 0 && _rampCombo.SelectedIndex < 0)
-                _rampCombo.SelectedIndex = 0;
+            _rampCombo.Items = names; // LemoineSingleSelect auto-selects the first entry
         }
 
         private void UpdateGradientPreview()
