@@ -72,15 +72,8 @@ namespace LemoineTools.Tools.AutoFilters
                     return none;
                 }
 
-                // Group by discipline prefix
-                var groups = new Dictionary<string, List<string>>();
-                foreach (var name in _allFilterNames)
-                {
-                    int sep  = name.IndexOf(" - ");
-                    string g = sep >= 0 ? name.Substring(0, sep).Trim() : "Other";
-                    if (!groups.ContainsKey(g)) groups[g] = new List<string>();
-                    groups[g].Add(name);
-                }
+                // Group by the trade that owns the matching rule; unmatched → "Others".
+                var groups = AutoFiltersSettings.GroupFilterNamesByTrade(_allFilterNames);
 
                 var tabs = new LemoineMultiSelectTabs();
                 tabs.SetGroups(groups);

@@ -5,11 +5,18 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.AutoFilters;
+using RevitColor = Autodesk.Revit.DB.Color;
 
 namespace LemoineTools.Tools.Ceilings
 {
     public class CeilingHeatmapEventHandler : IExternalEventHandler
     {
+        // ── Trade this tool registers its filters/rules under ─────────────────
+        private const string CHTradeId    = "CH";
+        private const string CHTradeLabel = "Ceiling Heatmap";
+        private const string CHTradeColor = "#3FA7FF";
+
         // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
         public List<ElementId>          SelectedViewIds { get; set; } = new List<ElementId>();
         public bool                     DeleteExisting  { get; set; } = true;
@@ -121,6 +128,10 @@ namespace LemoineTools.Tools.Ceilings
 
             int created = 0, reused = 0;
 
+            // Buckets that yielded a valid filter — used to rebuild the Ceiling Heatmap
+            // trade's rules after the transaction commits (rule ⇄ filter linked by name).
+            var chRules = new List<(double offset, string ruleName, RevitColor color)>();
+
             using (var tx = new Transaction(doc, "Ceiling Height Offset Heatmap"))
             {
                 ConfigureFailures(tx);
@@ -133,7 +144,10 @@ namespace LemoineTools.Tools.Ceilings
                     Autodesk.Revit.DB.Color color = rampColors[i];
 
                     double heightFt    = UnitUtils.ConvertFromInternalUnits(heightOffset, UnitTypeId.Feet);
-                    string filterName  = $"Ceiling Heatmap — {FormatFtIn(heightFt)} AFF";
+                    // Friendly rule name (e.g. 10'-0" AFF); the filter name is derived from it
+                    // via the shared convention so the rule and filter stay linked.
+                    string ruleName    = $"{FormatFtIn(heightFt)} AFF";
+                    string filterName  = AutoFiltersSettings.MakeFilterName(CHTradeId, ruleName);
 
                     ParameterFilterElement? pfe;
                     if (existingFilters.TryGetValue(filterName, out pfe))
@@ -190,12 +204,17 @@ namespace LemoineTools.Tools.Ceilings
                         }
                     }
 
+                    chRules.Add((heightOffset, ruleName, color));
                     pass++;
                     Progress(40 + (int)((i + 1) * 50.0 / total), pass, fail, skip);
                 }
 
                 tx.Commit();
             }
+
+            // Mirror the created filters into a "Ceiling Heatmap" trade so they appear in
+            // the rules list and group correctly in the filter pickers.
+            RegisterCeilingHeatmapTrade(chRules);
 
             // ── Phase 5: Place ceiling tags (90–98%) ──────────────────────────────
             if (PlaceTags)
@@ -556,10 +575,13 @@ namespace LemoineTools.Tools.Ceilings
 
         private void DeleteHeatmapFilters(Document doc, ref int fail)
         {
+            // Match the current "CH_" naming convention plus the legacy "Ceiling Heatmap — "
+            // names from earlier versions so re-runs clean up both.
             var heatmapFilters = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
                 .Cast<ParameterFilterElement>()
-                .Where(f => f.Name.StartsWith("Ceiling Heatmap — "))
+                .Where(f => f.Name.StartsWith(CHTradeId + "_")
+                         || f.Name.StartsWith("Ceiling Heatmap — "))
                 .ToList();
 
             if (heatmapFilters.Count == 0)
@@ -604,6 +626,65 @@ namespace LemoineTools.Tools.Ceilings
                 tx.Commit();
             }
         }
+
+        // ── Mirror created filters into the "Ceiling Heatmap" trade ───────────────
+        // Rebuilds the trade's rules every run so they always match the current buckets
+        // (per the rebuild-each-run decision). Each rule is linked to its Revit filter by
+        // the shared name convention. The trade is flagged ExternallyManaged so the generic
+        // AutoFilters "Create Filters" engine never tries to regenerate these numeric filters.
+        private void RegisterCeilingHeatmapTrade(
+            List<(double offset, string ruleName, RevitColor color)> chRules)
+        {
+            try
+            {
+                var settings = AutoFiltersSettings.Instance;
+
+                var trade = settings.Trades.FirstOrDefault(
+                    t => string.Equals(t.Id, CHTradeId, StringComparison.OrdinalIgnoreCase));
+                if (trade == null)
+                {
+                    trade = new FilterTradeConfig { Id = CHTradeId };
+                    settings.Trades.Add(trade);
+                }
+
+                trade.Label             = CHTradeLabel;
+                trade.Color             = CHTradeColor;
+                trade.ExternallyManaged = true;
+
+                // Rebuild rules from this run's buckets.
+                trade.Rules.Clear();
+                foreach (var (offset, ruleName, color) in chRules)
+                {
+                    string hex = ToHex(color);
+                    var rule = FilterRuleConfig.NewBlank();
+                    rule.Name              = ruleName;
+                    rule.Enabled           = true;
+                    rule.Parameter         = "Height Offset From Level";
+                    rule.BuiltInCategories = new List<string> { "OST_Ceilings" };
+                    rule.MatchType         = "equals";
+                    rule.Match             = new List<string> { offset.ToString("0.######") };
+                    rule.CutColor          = hex;
+                    rule.SurfColor         = hex;
+                    rule.LineColor         = hex;
+                    rule.Notes             = "Auto-generated by Ceiling Heatmap (numeric height match, " +
+                                             "± tolerance). Managed by the Ceiling Heatmap tool.";
+                    trade.Rules.Add(rule);
+                }
+
+                settings.Save();
+                Log($"Registered '{CHTradeLabel}' trade with {trade.Rules.Count} rule(s).", "info");
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: the Revit filters were already created/applied above. Surface the
+                // failure so the rules-list sync issue isn't hidden.
+                LemoineLog.Error("CeilingHeatmap: register Ceiling Heatmap trade", ex);
+                Log($"Filters applied, but could not update the rules list: {ex.Message}", "fail");
+            }
+        }
+
+        private static string ToHex(RevitColor c)
+            => $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}";
 
         private void AddBucket(List<double> buckets, double heightOffset)
         {
