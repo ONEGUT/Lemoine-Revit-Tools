@@ -26,7 +26,7 @@ namespace LemoineTools.Lemoine
 
         private GhostAdorner?     _adorner;
         private AdornerLayer?     _layer;
-        private FrameworkElement? _source;
+        private UIElement?        _adorned;   // element the adorner is attached to (for positioning)
         private Size              _size;
 
         /// <summary>
@@ -42,11 +42,17 @@ namespace LemoineTools.Lemoine
             var img = Snapshot(source, _size);
             if (img == null) return;
 
-            _layer = AdornerLayer.GetAdornerLayer(source);
-            if (_layer == null) return;
+            // Adorn the WINDOW's top-level content, not the source itself: GetAdornerLayer(source)
+            // returns the nearest layer, which inside a ScrollViewer is clipped to that viewport
+            // (the ghost would vanish the moment it left the palette scroll region). Starting from
+            // the window content yields the window-spanning AdornerDecorator layer.
+            var window = Window.GetWindow(source);
+            _adorned = (window?.Content as UIElement) ?? source;
+            _layer   = AdornerLayer.GetAdornerLayer(_adorned);
+            if (_layer == null) { _adorned = source; _layer = AdornerLayer.GetAdornerLayer(source); }
+            if (_layer == null || _adorned == null) { _adorned = null; return; }
 
-            _source  = source;
-            _adorner = new GhostAdorner(source, img, _size);
+            _adorner = new GhostAdorner(_adorned, img, _size);
             _layer.Add(_adorner);
             Update();
         }
@@ -54,11 +60,11 @@ namespace LemoineTools.Lemoine
         /// <summary>Re-centres the ghost on the current cursor. Safe to call when inactive.</summary>
         public void Update()
         {
-            if (_adorner == null || _source == null) return;
+            if (_adorner == null || _adorned == null) return;
             GetCursorPos(out var pt);
-            // PointFromScreen takes physical screen pixels (what GetCursorPos returns) and
-            // maps them into the adorned element's own coordinate space, DPI included.
-            var local = _source.PointFromScreen(new Point(pt.X, pt.Y));
+            // PointFromScreen takes physical screen pixels (what GetCursorPos returns) and maps
+            // them into the adorned element's own coordinate space, DPI included.
+            var local = _adorned.PointFromScreen(new Point(pt.X, pt.Y));
             _adorner.MoveTo(new Point(local.X - _size.Width / 2.0, local.Y - _size.Height / 2.0));
         }
 
@@ -68,7 +74,7 @@ namespace LemoineTools.Lemoine
             if (_layer != null && _adorner != null) _layer.Remove(_adorner);
             _adorner = null;
             _layer   = null;
-            _source  = null;
+            _adorned = null;
         }
 
         private static ImageSource? Snapshot(FrameworkElement el, Size size)
