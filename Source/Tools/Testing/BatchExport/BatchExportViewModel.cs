@@ -762,18 +762,13 @@ namespace LemoineTools.Tools.Testing
             // COMBINE ─────────────────────────────────────────────────────────
             AddSectionLabel(outer, "COMBINE");
 
-            var combineCb = new CheckBox
+            var combineToggle = new LemoineToggleSwitches();
+            combineToggle.SetItems(new List<ToggleItem>
             {
-                Content   = "Combine into one PDF",
-                IsChecked = _combinePdf,
-                Margin    = new Thickness(0, 0, 0, 4),
-            };
-            combineCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            combineCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            combineCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
-            combineCb.Checked   += (s, e) => { _combinePdf = true;  Fire(); };
-            combineCb.Unchecked += (s, e) => { _combinePdf = false; Fire(); };
-            outer.Children.Add(combineCb);
+                new ToggleItem { Id = "combine", Label = "Combine into one PDF", DefaultOn = _combinePdf },
+            });
+            combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
+            outer.Children.Add(combineToggle);
 
             if (HasActivePacks())
             {
@@ -834,18 +829,13 @@ namespace LemoineTools.Tools.Testing
             AddSectionLabel(outer, "OUTPUT FOLDER");
             BuildFolderPicker(outer);
 
-            var splitCb = new CheckBox
+            var splitToggle = new LemoineToggleSwitches { Margin = new Thickness(0, 6, 0, 0) };
+            splitToggle.SetItems(new List<ToggleItem>
             {
-                Content   = "Split output into subfolders by file format",
-                IsChecked = _splitByFormat,
-                Margin    = new Thickness(0, 6, 0, 0),
-            };
-            splitCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            splitCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            splitCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
-            splitCb.Checked   += (s, e) => { _splitByFormat = true;  Fire(); };
-            splitCb.Unchecked += (s, e) => { _splitByFormat = false; Fire(); };
-            outer.Children.Add(splitCb);
+                new ToggleItem { Id = "split", Label = "Split output into subfolders by file format", DefaultOn = _splitByFormat },
+            });
+            splitToggle.StateChanged += state => { state.TryGetValue("split", out _splitByFormat); Fire(); };
+            outer.Children.Add(splitToggle);
 
             return outer;
         }

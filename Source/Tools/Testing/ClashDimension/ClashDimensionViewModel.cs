@@ -745,20 +745,13 @@ namespace LemoineTools.Tools.Testing
             outer.Children.Add(lineSelect);
 
             AddDivider(outer);
-            var clearSp = new StackPanel { Orientation = Orientation.Horizontal };
-            var clearCb = new CheckBox { IsChecked = _clearPrevious, Margin = new Thickness(0, 0, 0, 4) };
-            clearCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            clearCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            clearCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_SM");
-            var clearLbl = new TextBlock { Text = "Clear previous clash annotations before placing new ones", VerticalAlignment = VerticalAlignment.Center };
-            clearLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            clearLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            clearLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            clearSp.Children.Add(clearCb);
-            clearSp.Children.Add(clearLbl);
-            outer.Children.Add(clearSp);
-            clearCb.Checked   += (s, e) => { _clearPrevious = true;  Fire(); };
-            clearCb.Unchecked += (s, e) => { _clearPrevious = false; Fire(); };
+            var clearToggle = new LemoineToggleSwitches();
+            clearToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "clear", Label = "Clear previous clash annotations before placing new ones", DefaultOn = _clearPrevious },
+            });
+            clearToggle.StateChanged += state => { state.TryGetValue("clear", out _clearPrevious); Fire(); };
+            outer.Children.Add(clearToggle);
 
             AddDivider(outer);
             AddSettingRow(outer, "Max Clashes",
