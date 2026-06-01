@@ -334,26 +334,16 @@ namespace LemoineTools.Tools.Testing
             numLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(numLabel);
 
-            var numBox = new WpfTextBox
+            var numStepper = new LemoineNumberStepper
             {
-                Text                = _startingNumber.ToString(),
-                MinWidth            = 80,
+                Value               = _startingNumber,
+                MinValue            = 1,
+                MaxValue            = 99999,
+                Step                = 1,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(8, 4, 8, 4),
             };
-            numBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            numBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            numBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            numBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
-            numBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            numBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            numBox.TextChanged += (s, e) =>
-            {
-                if (int.TryParse(numBox.Text, out int v) && v >= 1)
-                    _startingNumber = v;
-                OnValidationChanged();
-            };
-            outer.Children.Add(numBox);
+            numStepper.ValueChanged += v => { _startingNumber = v; OnValidationChanged(); };
+            outer.Children.Add(numStepper);
 
             // ── Naming Pattern ────────────────────────────────────────────────
             var patLabel = new TextBlock
