@@ -33,6 +33,9 @@ namespace LemoineTools.Lemoine.Controls
         private StackPanel? _scopeRow;
         private StackPanel? _filterList;
 
+        // Cursor-following drag ghost (shared with the group-card block reorder).
+        private readonly LemoineDragGhost _ghost = new LemoineDragGhost();
+
         public LemoineLegendPalette()
         {
             InitializeComponent();
@@ -441,8 +444,19 @@ namespace LemoineTools.Lemoine.Controls
 
         private void StartDrag(DependencyObject source, LegendDragPayload payload)
         {
+            var src = source as UIElement;
+            QueryContinueDragEventHandler? ghostUpdater = null;
             try
             {
+                // Cursor-following ghost so palette drags read the same as a group reorder.
+                var pill = TryBuildGhostPill(payload);
+                if (pill != null && src != null)
+                {
+                    _ghost.Begin(this, pill, new Point(16, 8));
+                    ghostUpdater = (s, e) => _ghost.Update();
+                    src.QueryContinueDrag += ghostUpdater;
+                }
+
                 LegendDragSession.Begin(payload);
                 var data = new DataObject(DragFormat, payload);
                 DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Move);
@@ -454,7 +468,29 @@ namespace LemoineTools.Lemoine.Controls
             finally
             {
                 LegendDragSession.End();
+                if (ghostUpdater != null && src != null) src.QueryContinueDrag -= ghostUpdater;
+                _ghost.End();
             }
+        }
+
+        /// <summary>Builds the ghost pill for a palette drag — a filter shows its surface
+        /// colour + name; a whole-trade (category) drag shows the trade label on accent.</summary>
+        private Border? TryBuildGhostPill(LegendDragPayload payload)
+        {
+            var trade = AutoFiltersSettings.Instance.Trades?.FirstOrDefault(t => t.Id == payload.SourceTradeId);
+            if (payload.What == LegendDragPayload.Kind.PaletteFilter)
+            {
+                var rule = trade?.Rules?.FirstOrDefault(r => r.Id == payload.SourceRuleId);
+                if (rule == null) return null;
+                var color = BrushHelper.ColorFromHex(rule.SurfColor, LemoineTheme.FallbackGrey);
+                return LemoineDragGhost.BuildPill(this, color, rule.Name ?? "Filter");
+            }
+            if (payload.What == LegendDragPayload.Kind.PaletteCategory)
+            {
+                string label = trade?.Label ?? trade?.Id ?? "All trades";
+                return LemoineDragGhost.BuildPill(this, GetThemeAccent(), label);
+            }
+            return null;
         }
     }
 
