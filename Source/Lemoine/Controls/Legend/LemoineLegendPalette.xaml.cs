@@ -43,6 +43,10 @@ namespace LemoineTools.Lemoine.Controls
             Unloaded += (s, e) => { /* no global subscription to detach */ };
         }
 
+        /// <summary>When true the filter list renders at full height with no inner scroll, so the
+        /// palette can sit inside a host's shared ScrollViewer (set before the control loads).</summary>
+        public bool ExpandList { get; set; }
+
         // External hook so a host can rebuild after AutoFiltersSettings.Save.
         public void Refresh()
         {
@@ -63,7 +67,12 @@ namespace LemoineTools.Lemoine.Controls
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // header
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // scope row
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // filters label
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // filters
+            // Filters row fills (own scroll) by default; in ExpandList mode it sizes to content
+            // so the host's shared scroll handles overflow.
+            _root.RowDefinitions.Add(new RowDefinition
+            {
+                Height = ExpandList ? GridLength.Auto : new GridLength(1, GridUnitType.Star),
+            });
 
             AddRow(0, MakeMonoLabel("PALETTE"));
 
@@ -76,16 +85,24 @@ namespace LemoineTools.Lemoine.Controls
 
             AddRow(2, MakeMonoLabel("FILTERS — drag into a group"));
 
-            var sv = new ScrollViewer
-            {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Margin = new Thickness(0, 4, 0, 8),
-            };
             _filterList = new StackPanel();
-            sv.Content = _filterList;
-            LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to parent at scroll limits
-            AddRow(3, sv);
+            if (ExpandList)
+            {
+                _filterList.Margin = new Thickness(0, 4, 0, 8);
+                AddRow(3, _filterList);
+            }
+            else
+            {
+                var sv = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Margin = new Thickness(0, 4, 0, 8),
+                };
+                sv.Content = _filterList;
+                LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to parent at scroll limits
+                AddRow(3, sv);
+            }
         }
 
         private void AddRow(int row, UIElement el)
@@ -373,7 +390,12 @@ namespace LemoineTools.Lemoine.Controls
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             border.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            // Grid [Auto glyph | * text]: the text column is bounded to the palette width so a
+            // long filter name ellipsizes in place instead of overflowing the row and stealing
+            // the click/drag area beyond the visible palette.
+            var row = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var glyph = new LemoineSwatchGlyph
             {
@@ -383,6 +405,7 @@ namespace LemoineTools.Lemoine.Controls
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            Grid.SetColumn(glyph, 0);
             row.Children.Add(glyph);
 
             var stack = new StackPanel { Orientation = Orientation.Vertical, MinWidth = 0 };
@@ -404,6 +427,7 @@ namespace LemoineTools.Lemoine.Controls
             subtitle.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             subtitle.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             stack.Children.Add(subtitle);
+            Grid.SetColumn(stack, 1);
             row.Children.Add(stack);
 
             border.Child = row;
