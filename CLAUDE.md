@@ -149,6 +149,8 @@ Before implementing any workflow, check whether it is practical:
 - If a workflow feels impractical, say so and propose an alternative before building it.
 - When adding secondary actions (copy, delete) to sidebar item rows, note that this may clutter the row and ask the user whether they'd prefer those actions consolidated into the primary edit popup instead.
 - Settings windows auto-save on change (theme/size on click, tool fields via `ApplySettings`). Do not add an "Apply" button — persistence is implicit per control.
+- In a drag-able row, a name/label hit box must shrink to its text (`HorizontalAlignment.Left`), not fill the row — otherwise it covers the bar and blocks grabbing the row to drag it. The leftover space stays row background and remains drag-able; long names ellipsize at the column width.
+- Rounding tokens: tabs and pills use `LemoineRadius_Card` (10) to match the add-trade button; small chips/inputs stay on `SM` (3) / `MD` (4). Don't introduce ad-hoc radius literals.
 
 ---
 
@@ -227,6 +229,13 @@ Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal`
 
 ---
 
+## Reusable Components — Prefer Over Hand-Rolling
+
+- **Numeric input:** `LemoineInlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.
+- **Drag ghost / list reorder:** use `LemoineDragGhost` and `LemoineListReorder` (see *WPF Drag Ghosts & Overlays*), never a bespoke Popup ghost or grip-handle reorder.
+
+---
+
 ## Revit Crash Constraints
 
 These patterns cause Revit to crash or hang. They have been discovered by breaking Revit in real sessions. Do not use them.
@@ -236,10 +245,15 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 | `Popup` with `StaysOpen=false` | `StaysOpen=true` + manual dismiss via `PreviewMouseDown` or a close button |
 | `SizeToContent="WidthAndHeight"` + `WindowStyle="None"` | `Width=N` (fixed) + `SizeToContent="Height"` |
 | `Autodesk.Windows.ComponentManager.ApplicationWindow` for window owner | Not referenced in this project — omit or use `WindowInteropHelper` with a Revit HWND |
+| Shared `static` WPF Freezable (CubicEase easing, brush) left unfrozen | `.Freeze()` it at init — each tool window runs on its own STA thread, and cross-thread use of an unfrozen shared static crashes Revit (root cause of the easing crash, commit `86887ff`) |
 
 ### Why `Popup StaysOpen=false` crashes Revit
 
 `StaysOpen=false` registers a `ComponentDispatcher.ThreadFilterMessage` hook to detect outside clicks. This fires on every Win32 message on Revit's main thread and corrupts the message loop.
+
+### Dismissing a `StaysOpen=true` popup on click-off
+
+Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **window-level `PreviewMouseDown` handler only while it is open** and closing when the click lands outside the popup content (`!popupRoot.IsMouseOver`); detach on `Closed`. The popup hosts its own hwnd, so its own clicks never tunnel through the window — no `ThreadFilterMessage` hook, no crash.
 
 ### Revit API gotchas (Revit 2024)
 
@@ -251,6 +265,16 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 | `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
 | `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
 | App-level "font pt" field sizes generated text | A TextNote's size comes from its assigned `TextNoteType` (`TEXT_SIZE` param); a font-pt value can only drive a WPF preview, never the Revit output. Don't expose it as if it changed the legend. |
+
+---
+
+## WPF Drag Ghosts & Overlays
+
+- A cursor-following drag ghost must be a window-space `AdornerLayer` overlay, **not** a `Popup`. `PlacementMode.AbsolutePoint` popups get nudged back on-screen near a screen edge, so the ghost drifts off the cursor (worst on the right).
+- `AdornerLayer.GetAdornerLayer(source)` returns the *nearest* layer, which inside a `ScrollViewer` is clipped to that viewport — adorn `Window.GetWindow(source).Content` so the ghost spans the whole window.
+- A `RenderTargetBitmap` / `VisualBrush` snapshot of an element whose `Background` is `Brushes.Transparent` captures only its text/borders on transparent pixels — paint a themed solid backing (`LemoineRaised`) behind the snapshot or it reads as invisible (this is why inactive, transparent-background tabs/rows showed no ghost).
+- Anchor the ghost at the **grab point** (`e.GetPosition(source)`), not its centre — centring a wide row reads as "off the mouse" when grabbed near an edge.
+- Don't hand-roll any of this: `LemoineDragGhost` (snapshot, grab-point anchored, solid backing) and `LemoineListReorder` (whole-row drag, persisted order) are the house mechanism.
 
 ---
 
