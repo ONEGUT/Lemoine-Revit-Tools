@@ -103,6 +103,10 @@ namespace LemoineTools.Lemoine.Controls
                 Placeholder = Block.Custom ? "Custom label" : "(rule name)",
                 FontSizeKey = "LemoineFS_MD",
                 VerticalAlignment = VerticalAlignment.Center,
+                // Shrink to the text so the name's hit box is only as wide as its label — the rest
+                // of the (Star) name column stays row background and remains grab-/drag-able. Long
+                // names still cap at the column width and ellipsize.
+                HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(6, 0, 6, 0),
             };
             name.TextCommitted += (s, t) =>
