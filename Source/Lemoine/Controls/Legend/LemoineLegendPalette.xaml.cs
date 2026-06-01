@@ -486,7 +486,7 @@ namespace LemoineTools.Lemoine.Controls
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LegendPalette] drag failed: {ex.Message}");
+                LemoineLog.Swallowed("LegendPalette: drag", ex);
             }
             finally
             {

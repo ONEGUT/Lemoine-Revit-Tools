@@ -335,7 +335,7 @@ namespace LemoineTools.Lemoine.Controls
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[BlockDrag] {ex.Message}");
+                            LemoineLog.Swallowed("LegendGroupCard: block drag", ex);
                         }
                         finally { LegendDragSession.End(); }
 

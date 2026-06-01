@@ -123,7 +123,7 @@ namespace LemoineTools.Lemoine.Controls
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Row] group drag fail: {ex.Message}");
+                        LemoineLog.Swallowed("LegendRow: group drag", ex);
                     }
                     finally
                     {
