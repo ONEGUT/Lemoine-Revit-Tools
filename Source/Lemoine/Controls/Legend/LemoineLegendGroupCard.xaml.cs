@@ -873,7 +873,8 @@ namespace LemoineTools.Lemoine.Controls
         {
             if (!_mouseDown) return;
             var p = e.GetPosition(this);
-            if (Math.Abs(p.X - _dragStart.X) > 6 || Math.Abs(p.Y - _dragStart.Y) > 6)
+            if (Math.Abs(p.X - _dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(p.Y - _dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
                 _mouseDown = false;
                 GroupDragInitiated?.Invoke(this, e);

@@ -183,36 +183,16 @@ namespace LemoineTools.Lemoine.Controls
             {
                 tradePill.ToolTip = "Click to change trade  ·  Drag to add as new group";
 
-                var dragStart  = new Point();
-                bool dragArmed = false;
-
-                tradePill.PreviewMouseLeftButtonDown += (s, e) =>
+                LemoineMotion.WireDragArm(tradePill, e =>
                 {
-                    dragArmed = true;
-                    dragStart = e.GetPosition(tradePill);
-                };
-                tradePill.PreviewMouseMove += (s, e) =>
-                {
-                    if (!dragArmed || e.LeftButton != MouseButtonState.Pressed)
+                    var payload = new LegendDragPayload
                     {
-                        dragArmed = false;
-                        return;
-                    }
-                    var pos = e.GetPosition(tradePill);
-                    if (Math.Abs(pos.X - dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                        Math.Abs(pos.Y - dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
-                    {
-                        dragArmed = false;
-                        var payload = new LegendDragPayload
-                        {
-                            What          = LegendDragPayload.Kind.PaletteCategory,
-                            SourceTradeId = _scope,
-                        };
-                        StartDrag(tradePill, payload);
-                        e.Handled = true;
-                    }
-                };
-                tradePill.PreviewMouseLeftButtonUp += (s, e) => dragArmed = false;
+                        What          = LegendDragPayload.Kind.PaletteCategory,
+                        SourceTradeId = _scope,
+                    };
+                    StartDrag(tradePill, payload);
+                    e.Handled = true;
+                });
             }
 
             _scopeRow.Children.Add(tradePill);
@@ -306,33 +286,17 @@ namespace LemoineTools.Lemoine.Controls
                 };
 
                 // Drag detection — drag from dropdown to add as new canvas group
-                var itemDragStart = new Point();
-                bool itemDragArmed = false;
-
-                item.PreviewMouseLeftButtonDown += (s, e) =>
+                LemoineMotion.WireDragArm(item, e =>
                 {
-                    itemDragArmed = true;
-                    itemDragStart = e.GetPosition(item);
-                };
-                item.PreviewMouseMove += (s, e) =>
-                {
-                    if (!itemDragArmed || e.LeftButton != MouseButtonState.Pressed) { itemDragArmed = false; return; }
-                    var pos = e.GetPosition(item);
-                    if (Math.Abs(pos.X - itemDragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                        Math.Abs(pos.Y - itemDragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    popup.IsOpen = false;
+                    var payload = new LegendDragPayload
                     {
-                        itemDragArmed = false;
-                        popup.IsOpen = false;
-                        var payload = new LegendDragPayload
-                        {
-                            What          = LegendDragPayload.Kind.PaletteCategory,
-                            SourceTradeId = capturedId,
-                        };
-                        StartDrag(this, payload);
-                        e.Handled = true;
-                    }
-                };
-                item.PreviewMouseLeftButtonUp += (s, e) => itemDragArmed = false;
+                        What          = LegendDragPayload.Kind.PaletteCategory,
+                        SourceTradeId = capturedId,
+                    };
+                    StartDrag(this, payload);
+                    e.Handled = true;
+                });
 
                 listPanel.Children.Add(item);
             }
@@ -443,7 +407,7 @@ namespace LemoineTools.Lemoine.Controls
 
             string capturedTradeId = t.Id;
             string capturedRuleId  = rule.Id;
-            border.PreviewMouseLeftButtonDown += (s, e) =>
+            LemoineMotion.WireDragArm(border, e =>
             {
                 var payload = new LegendDragPayload
                 {
@@ -452,7 +416,7 @@ namespace LemoineTools.Lemoine.Controls
                     SourceRuleId  = capturedRuleId,
                 };
                 StartDrag(border, payload);
-            };
+            });
             return border;
         }
 

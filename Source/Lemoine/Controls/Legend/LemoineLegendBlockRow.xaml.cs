@@ -24,10 +24,6 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler<MouseEventArgs>? DragInitiated;
         public event Action<string, bool, bool>? BlockClicked; // blockId, ctrl, shift
 
-        // ── State for click-vs-drag detection ──────────────────────────────
-        private Point _dragStart;
-        private bool  _mouseDown;
-
         public LemoineLegendBlockRow()
         {
             InitializeComponent();
@@ -175,31 +171,16 @@ namespace LemoineTools.Lemoine.Controls
             Grid.SetColumn(del, 5);
             _root.Children.Add(del);
 
-            // ── Click-selection + drag arming ─────────────────────────────
-            _outer.PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
-                bool ctrl  = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-                bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-                BlockClicked?.Invoke(Block.Id, ctrl, shift);
-                _mouseDown = true;
-                _dragStart = e.GetPosition(this);
-                // Do NOT set e.Handled — drag detection still needs the event
-            };
-            _outer.PreviewMouseMove += (s, e) =>
-            {
-                if (!_mouseDown || e.LeftButton != MouseButtonState.Pressed) { _mouseDown = false; return; }
-                if (e.OriginalSource is DependencyObject d && IsInsideInteractive(d)) return;
-                var p = e.GetPosition(this);
-                if (Math.Abs(p.X - _dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                    Math.Abs(p.Y - _dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+            // ── Click-selection + drag arming (shared threshold helper) ────
+            LemoineMotion.WireDragArm(_outer,
+                onDragStart: e => DragInitiated?.Invoke(this, e),
+                onPress: e =>
                 {
-                    _mouseDown = false;
-                    DragInitiated?.Invoke(this, e);
-                }
-            };
-            _outer.PreviewMouseLeftButtonUp += (s, e) => _mouseDown = false;
-            _outer.MouseLeave               += (s, e) => _mouseDown = false;
+                    bool ctrl  = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                    bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                    BlockClicked?.Invoke(Block.Id, ctrl, shift);
+                },
+                suppressWhen: IsInsideInteractive);
         }
 
         /// <summary>Don't start a drag if the user clicks an interactive child (button, textbox, etc.).</summary>

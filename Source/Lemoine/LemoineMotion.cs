@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
@@ -194,6 +195,59 @@ namespace LemoineTools.Lemoine
                 new DoubleAnimation(0, 1, Reveal) { EasingFunction = EaseOut });
             tt.BeginAnimation(TranslateTransform.YProperty,
                 new DoubleAnimation(fromY, 0, Reveal) { EasingFunction = EaseOut });
+        }
+
+        // ── Drag arming ─────────────────────────────────────────────────────────
+        /// <summary>
+        /// Arms a drag on <paramref name="source"/>: records the press point on
+        /// left-button-down and, once the pointer moves past the system drag threshold
+        /// (<see cref="SystemParameters.MinimumHorizontalDragDistance"/> /
+        /// <c>MinimumVerticalDragDistance</c>) with the button still held, fires
+        /// <paramref name="onDragStart"/> exactly once. Press and move use Preview handlers
+        /// and are never marked Handled, so an ordinary click still reaches the element.
+        /// Centralises the threshold logic so every Lemoine drag source arms identically.
+        ///
+        /// ⚠ Each call captures its own armed-state closure. Wire it on a freshly-built
+        /// element (one created per rebuild), not on a reused control that re-subscribes on
+        /// every rebuild — that would accumulate closures and start the drag multiple times.
+        /// For a reused drag handle use named handlers with a shared guard flag instead.
+        /// </summary>
+        /// <param name="onPress">Optional — runs on left-button-down before arming
+        /// (e.g. click-selection). Receives the down args.</param>
+        /// <param name="suppressWhen">Optional — return true for an <c>OriginalSource</c>
+        /// that must not start a drag (e.g. an interactive child like a button or textbox).</param>
+        public static void WireDragArm(
+            FrameworkElement source,
+            Action<MouseEventArgs> onDragStart,
+            Action<MouseButtonEventArgs>? onPress = null,
+            Func<DependencyObject, bool>? suppressWhen = null)
+        {
+            if (source == null || onDragStart == null) return;
+            var  start = new Point();
+            bool armed = false;
+
+            source.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (suppressWhen != null && e.OriginalSource is DependencyObject ds && suppressWhen(ds)) return;
+                onPress?.Invoke(e);
+                start = e.GetPosition(source);
+                armed = true;
+                // Do NOT set e.Handled — a click and the drag detection both need this event.
+            };
+            source.PreviewMouseMove += (s, e) =>
+            {
+                if (!armed || e.LeftButton != MouseButtonState.Pressed) { armed = false; return; }
+                if (suppressWhen != null && e.OriginalSource is DependencyObject dm && suppressWhen(dm)) return;
+                var p = e.GetPosition(source);
+                if (Math.Abs(p.X - start.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(p.Y - start.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    armed = false;
+                    onDragStart(e);
+                }
+            };
+            source.PreviewMouseLeftButtonUp += (s, e) => armed = false;
+            source.MouseLeave               += (s, e) => armed = false;
         }
 
         // ── internals ───────────────────────────────────────────────────────────
