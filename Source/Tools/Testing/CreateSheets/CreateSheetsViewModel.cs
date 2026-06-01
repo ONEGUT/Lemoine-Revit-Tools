@@ -15,7 +15,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class CreateSheetsViewModel : ILemoineTool, ILemoineToolSettings
+    public class CreateSheetsViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
     {
         // ── Constants ─────────────────────────────────────────────────────────
         private static readonly string[] Modes =
@@ -149,7 +149,7 @@ namespace LemoineTools.Tools.Testing
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildS3();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -334,26 +334,18 @@ namespace LemoineTools.Tools.Testing
             numLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(numLabel);
 
-            var numBox = new WpfTextBox
+            var numStepper = new LemoineInlineStepper
             {
-                Text                = _startingNumber.ToString(),
-                MinWidth            = 80,
+                Value               = _startingNumber,
+                MinValue            = 1,
+                MaxValue            = 99999,
+                Step                = 1,
+                Decimals            = 0,
+                ValueWidth          = 56,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(8, 4, 8, 4),
             };
-            numBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            numBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            numBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            numBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
-            numBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            numBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            numBox.TextChanged += (s, e) =>
-            {
-                if (int.TryParse(numBox.Text, out int v) && v >= 1)
-                    _startingNumber = v;
-                OnValidationChanged();
-            };
-            outer.Children.Add(numBox);
+            numStepper.ValueChanged += (s, v) => { _startingNumber = (int)v; OnValidationChanged(); };
+            outer.Children.Add(numStepper);
 
             // ── Naming Pattern ────────────────────────────────────────────────
             var patLabel = new TextBlock
@@ -530,71 +522,29 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── Step 3 — Review & Run ─────────────────────────────────────────────
-        private FrameworkElement BuildS3()
+                // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            ("mode",   "Source Mode"),
+            ("source", "Source"),
+            ("tb",     "Title Block"),
+            ("naming", "Naming / Numbering"),
+        };
 
-            AddCard(grid, "Source Mode",
-                () => _mode,
-                0, 0);
-
-            AddCard(grid, "Source",
-                () => _mode == "From CSV"
-                    ? (string.IsNullOrEmpty(_csvFilePath) ? "—" : Path.GetFileName(_csvFilePath))
-                    : (_selectedElementIds.Count == 0 ? "— (none selected)" : $"{_selectedElementIds.Count} element(s) selected"),
-                0, 1);
-
-            AddCard(grid, "Title Block",
-                () => string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
-                1, 0);
-
-            AddCard(grid, "Naming / Numbering",
-                () => _mode == "From CSV"
-                    ? "From CSV columns"
-                    : $"Pattern: {_namingPattern}  |  Start: {_startingNumber}",
-                1, 1);
-
-            outer.Children.Add(grid);
-            return outer;
-        }
-
-        private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 0 ? 0 : 4, row == 0 ? 0 : 4, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-            };
-            card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-            card.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            ["mode"]   = _mode,
+            ["source"] = _mode == "From CSV"
+                ? (string.IsNullOrEmpty(_csvFilePath) ? "—" : Path.GetFileName(_csvFilePath))
+                : (_selectedElementIds.Count == 0 ? "— (none selected)" : $"{_selectedElementIds.Count} element(s) selected"),
+            ["tb"]     = string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
+            ["naming"] = _mode == "From CSV" ? "From CSV columns" : $"Pattern: {_namingPattern}  |  Start: {_startingNumber}",
+        };
 
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
 
-            var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            valText.Text = val();
-            ValidationChanged += (s, e) => valText.Text = val();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run

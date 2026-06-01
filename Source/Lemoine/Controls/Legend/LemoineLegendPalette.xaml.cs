@@ -33,12 +33,19 @@ namespace LemoineTools.Lemoine.Controls
         private StackPanel? _scopeRow;
         private StackPanel? _filterList;
 
+        // Cursor-following drag ghost (shared with the group-card block reorder).
+        private readonly LemoineDragGhost _ghost = new LemoineDragGhost();
+
         public LemoineLegendPalette()
         {
             InitializeComponent();
             Loaded   += (s, e) => { Build(); Refresh(); };
             Unloaded += (s, e) => { /* no global subscription to detach */ };
         }
+
+        /// <summary>When true the filter list renders at full height with no inner scroll, so the
+        /// palette can sit inside a host's shared ScrollViewer (set before the control loads).</summary>
+        public bool ExpandList { get; set; }
 
         // External hook so a host can rebuild after AutoFiltersSettings.Save.
         public void Refresh()
@@ -60,7 +67,12 @@ namespace LemoineTools.Lemoine.Controls
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // header
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // scope row
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // filters label
-            _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // filters
+            // Filters row fills (own scroll) by default; in ExpandList mode it sizes to content
+            // so the host's shared scroll handles overflow.
+            _root.RowDefinitions.Add(new RowDefinition
+            {
+                Height = ExpandList ? GridLength.Auto : new GridLength(1, GridUnitType.Star),
+            });
 
             AddRow(0, MakeMonoLabel("PALETTE"));
 
@@ -73,15 +85,24 @@ namespace LemoineTools.Lemoine.Controls
 
             AddRow(2, MakeMonoLabel("FILTERS — drag into a group"));
 
-            var sv = new ScrollViewer
-            {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Margin = new Thickness(0, 4, 0, 8),
-            };
             _filterList = new StackPanel();
-            sv.Content = _filterList;
-            AddRow(3, sv);
+            if (ExpandList)
+            {
+                _filterList.Margin = new Thickness(0, 4, 0, 8);
+                AddRow(3, _filterList);
+            }
+            else
+            {
+                var sv = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Margin = new Thickness(0, 4, 0, 8),
+                };
+                sv.Content = _filterList;
+                LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to parent at scroll limits
+                AddRow(3, sv);
+            }
         }
 
         private void AddRow(int row, UIElement el)
@@ -138,6 +159,11 @@ namespace LemoineTools.Lemoine.Controls
                 tradePill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 tradePill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             }
+            LemoineMotion.WireHover(tradePill,
+                normalBgKey:     tradeActive ? "LemoineAccentDim" : "LemoineRaised",
+                hoverBgKey:      "LemoineAccentDim",
+                normalBorderKey: tradeActive ? "LemoineAccent" : "LemoineBorder",
+                hoverBorderKey:  "LemoineAccent");
 
             var tradePillInner = new StackPanel { Orientation = Orientation.Horizontal };
             var tradePillLabel = new TextBlock
@@ -177,36 +203,16 @@ namespace LemoineTools.Lemoine.Controls
             {
                 tradePill.ToolTip = "Click to change trade  ·  Drag to add as new group";
 
-                var dragStart  = new Point();
-                bool dragArmed = false;
-
-                tradePill.PreviewMouseLeftButtonDown += (s, e) =>
+                LemoineMotion.WireDragArm(tradePill, e =>
                 {
-                    dragArmed = true;
-                    dragStart = e.GetPosition(tradePill);
-                };
-                tradePill.PreviewMouseMove += (s, e) =>
-                {
-                    if (!dragArmed || e.LeftButton != MouseButtonState.Pressed)
+                    var payload = new LegendDragPayload
                     {
-                        dragArmed = false;
-                        return;
-                    }
-                    var pos = e.GetPosition(tradePill);
-                    if (Math.Abs(pos.X - dragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                        Math.Abs(pos.Y - dragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
-                    {
-                        dragArmed = false;
-                        var payload = new LegendDragPayload
-                        {
-                            What          = LegendDragPayload.Kind.PaletteCategory,
-                            SourceTradeId = _scope,
-                        };
-                        StartDrag(tradePill, payload);
-                        e.Handled = true;
-                    }
-                };
-                tradePill.PreviewMouseLeftButtonUp += (s, e) => dragArmed = false;
+                        What          = LegendDragPayload.Kind.PaletteCategory,
+                        SourceTradeId = _scope,
+                    };
+                    StartDrag(tradePill, tradePill, payload, e.GetPosition(tradePill));
+                    e.Handled = true;
+                });
             }
 
             _scopeRow.Children.Add(tradePill);
@@ -232,6 +238,11 @@ namespace LemoineTools.Lemoine.Controls
                 pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 pill.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             }
+            LemoineMotion.WireHover(pill,
+                normalBgKey:     active ? "LemoineAccentDim" : "LemoineRaised",
+                hoverBgKey:      "LemoineAccentDim",
+                normalBorderKey: active ? "LemoineAccent" : "LemoineBorder",
+                hoverBorderKey:  "LemoineAccent");
 
             var tb = new TextBlock
             {
@@ -295,33 +306,17 @@ namespace LemoineTools.Lemoine.Controls
                 };
 
                 // Drag detection — drag from dropdown to add as new canvas group
-                var itemDragStart = new Point();
-                bool itemDragArmed = false;
-
-                item.PreviewMouseLeftButtonDown += (s, e) =>
+                LemoineMotion.WireDragArm(item, e =>
                 {
-                    itemDragArmed = true;
-                    itemDragStart = e.GetPosition(item);
-                };
-                item.PreviewMouseMove += (s, e) =>
-                {
-                    if (!itemDragArmed || e.LeftButton != MouseButtonState.Pressed) { itemDragArmed = false; return; }
-                    var pos = e.GetPosition(item);
-                    if (Math.Abs(pos.X - itemDragStart.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                        Math.Abs(pos.Y - itemDragStart.Y) > SystemParameters.MinimumVerticalDragDistance)
+                    popup.IsOpen = false;
+                    var payload = new LegendDragPayload
                     {
-                        itemDragArmed = false;
-                        popup.IsOpen = false;
-                        var payload = new LegendDragPayload
-                        {
-                            What          = LegendDragPayload.Kind.PaletteCategory,
-                            SourceTradeId = capturedId,
-                        };
-                        StartDrag(this, payload);
-                        e.Handled = true;
-                    }
-                };
-                item.PreviewMouseLeftButtonUp += (s, e) => itemDragArmed = false;
+                        What          = LegendDragPayload.Kind.PaletteCategory,
+                        SourceTradeId = capturedId,
+                    };
+                    StartDrag(this, item, payload, e.GetPosition(item));
+                    e.Handled = true;
+                });
 
                 listPanel.Children.Add(item);
             }
@@ -395,7 +390,12 @@ namespace LemoineTools.Lemoine.Controls
             border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             border.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            // Grid [Auto glyph | * text]: the text column is bounded to the palette width so a
+            // long filter name ellipsizes in place instead of overflowing the row and stealing
+            // the click/drag area beyond the visible palette.
+            var row = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var glyph = new LemoineSwatchGlyph
             {
@@ -405,6 +405,7 @@ namespace LemoineTools.Lemoine.Controls
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            Grid.SetColumn(glyph, 0);
             row.Children.Add(glyph);
 
             var stack = new StackPanel { Orientation = Orientation.Vertical, MinWidth = 0 };
@@ -426,13 +427,14 @@ namespace LemoineTools.Lemoine.Controls
             subtitle.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             subtitle.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             stack.Children.Add(subtitle);
+            Grid.SetColumn(stack, 1);
             row.Children.Add(stack);
 
             border.Child = row;
 
             string capturedTradeId = t.Id;
             string capturedRuleId  = rule.Id;
-            border.PreviewMouseLeftButtonDown += (s, e) =>
+            LemoineMotion.WireDragArm(border, e =>
             {
                 var payload = new LegendDragPayload
                 {
@@ -440,8 +442,8 @@ namespace LemoineTools.Lemoine.Controls
                     SourceTradeId = capturedTradeId,
                     SourceRuleId  = capturedRuleId,
                 };
-                StartDrag(border, payload);
-            };
+                StartDrag(border, border, payload, e.GetPosition(border));
+            });
             return border;
         }
 
@@ -464,21 +466,33 @@ namespace LemoineTools.Lemoine.Controls
             return LemoineTheme.DarkMono.Accent.Color;
         }
 
-        private void StartDrag(DependencyObject source, LegendDragPayload payload)
+        private void StartDrag(DependencyObject source, FrameworkElement ghostVisual, LegendDragPayload payload, Point grabOffset)
         {
+            var src = source as UIElement;
+            QueryContinueDragEventHandler? ghostUpdater = null;
             try
             {
+                // Cursor-following snapshot ghost — same as the group-card block reorder.
+                if (ghostVisual != null && src != null)
+                {
+                    _ghost.Begin(ghostVisual, grabOffset);
+                    ghostUpdater = (s, e) => _ghost.Update();
+                    src.QueryContinueDrag += ghostUpdater;
+                }
+
                 LegendDragSession.Begin(payload);
                 var data = new DataObject(DragFormat, payload);
                 DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Move);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LegendPalette] drag failed: {ex.Message}");
+                LemoineLog.Swallowed("LegendPalette: drag", ex);
             }
             finally
             {
                 LegendDragSession.End();
+                if (ghostUpdater != null && src != null) src.QueryContinueDrag -= ghostUpdater;
+                _ghost.End();
             }
         }
     }

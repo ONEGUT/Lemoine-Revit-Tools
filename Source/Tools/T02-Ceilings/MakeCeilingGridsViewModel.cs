@@ -13,7 +13,7 @@ using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool
+    public class MakeCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
@@ -91,7 +91,7 @@ namespace LemoineTools.Tools.Ceilings
                 case "docs":   return BuildDocsStep();
                 case "filter": return BuildFilterStep();
                 case "export": return BuildExportStep();
-                case "run":    return BuildRunStep();
+                case "run":    return null; // framework renders review (ILemoineReviewable)
                 default:       return null;
             }
         }
@@ -426,88 +426,39 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── Step 5: Review & Run ───────────────────────────────────────────
-        private FrameworkElement BuildRunStep()
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
+            ("types",     "Ceiling Types"),
+            ("folder",    "Output Folder"),
+            ("subfolder", "Subfolder Mode"),
+            ("dwg",       "DWG Version"),
+            ("docs",      "Documents"),
+        };
 
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            AddReviewCard(grid, "Ceiling Types",
-                () =>
+        public IDictionary<string, string> ReviewValues
+        {
+            get
+            {
+                int total    = _ceilingTypes.Count;
+                int excluded = _excludedTypeKeys.Count;
+                return new Dictionary<string, string>
                 {
-                    int total    = _ceilingTypes.Count;
-                    int excluded = _excludedTypeKeys.Count;
-                    return total == 0 ? "Scan pending" : $"{total - excluded} / {total} included";
-                }, 0, 0);
-
-            AddReviewCard(grid, "Output Folder",
-                () => string.IsNullOrEmpty(_outputFolder) ? "—"
-                    : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
-                0, 1);
-
-            AddReviewCard(grid, "Subfolder Mode",
-                () => _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
-                1, 0);
-
-            AddReviewCard(grid, "DWG Version",
-                () => "DWG 2018",
-                1, 1);
-
-            AddReviewCard(grid, "Documents",
-                () => _selectedDocLabels.Count == 0 ? "None"
-                    : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
-                2, 0);
-
-            outer.Children.Add(grid);
-            return outer;
+                    ["types"]     = total == 0 ? "Scan pending" : $"{total - excluded} / {total} included",
+                    ["folder"]    = string.IsNullOrEmpty(_outputFolder) ? "—"
+                        : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
+                    ["subfolder"] = _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
+                    ["dwg"]       = "DWG 2018",
+                    ["docs"]      = _selectedDocLabels.Count == 0 ? "None"
+                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
+                };
+            }
         }
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> val, int row, int col)
-        {
-            while (grid.RowDefinitions.Count <= row)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
 
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var capturedVal = val;
-            var valText = new TextBlock
-            {
-                Text         = capturedVal(),
-                FontWeight   = FontWeights.Medium,
-                TextWrapping = TextWrapping.Wrap,
-            };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         // IsValid

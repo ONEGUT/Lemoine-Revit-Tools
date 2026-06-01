@@ -13,7 +13,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// Step 1 — select which filters to delete (grouped by discipline prefix).
     /// Step 2 — Review &amp; Run (with explicit warning card).
     /// </summary>
-    public class DeleteFiltersFromProjectViewModel : ILemoineTool
+    public class DeleteFiltersFromProjectViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Delete Filters from Project";
@@ -91,94 +91,32 @@ namespace LemoineTools.Tools.AutoFilters
             }
 
             if (stepId == "S2")
-                return BuildReviewPanel();
+                return null; // framework renders review (ILemoineReviewable)
 
             return null;
         }
 
-        // ── CardDef struct ───────────────────────────────────────────────────────
-        private struct CardDef
+
+                // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            public string       Label;
-            public Func<string> Val;
-            public int          Row;
-            public int          Col;
-            public CardDef(string label, Func<string> val, int row, int col)
-            { Label = label; Val = val; Row = row; Col = col; }
-        }
+            ("delete",    "Filters to Delete"),
+            ("remaining", "Remaining in Project"),
+            ("scope",     "Scope"),
+            ("action",    "Action"),
+        };
 
-        private FrameworkElement BuildReviewPanel()
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            var outer = new StackPanel();
+            ["delete"]    = $"{_selectedNames.Count} selected",
+            ["remaining"] = $"{_allFilterNames.Count - _selectedNames.Count} will remain",
+            ["scope"]     = "Entire project",
+            ["action"]    = "Permanent deletion (no undo)",
+        };
 
-            var warn = new LemoineWarnBanner(
-                $"⚠  This will permanently delete {_selectedNames.Count} " +
-                "filter(s) from the project. This cannot be undone.");
-            ValidationChanged += (s, e) =>
-                warn.Message = $"⚠  This will permanently delete {_selectedNames.Count} " +
-                               "filter(s) from the project. This cannot be undone.";
-            outer.Children.Add(warn);
-
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var cards = new[]
-            {
-                new CardDef("Filters to Delete",
-                    () => $"{_selectedNames.Count} selected",
-                    0, 0),
-                new CardDef("Remaining in Project",
-                    () => $"{_allFilterNames.Count - _selectedNames.Count} will remain",
-                    0, 1),
-                new CardDef("Scope",
-                    () => "Entire project",
-                    1, 0),
-                new CardDef("Action",
-                    () => "Permanent deletion (no undo)",
-                    1, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var captured = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = captured();
-                ValidationChanged += (s, e) => valText.Text = captured();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-
-                Grid.SetRow(card, c.Row);
-                Grid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-
-            outer.Children.Add(grid);
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => $"⚠  This will permanently delete {_selectedNames.Count} filter(s) from the project. This cannot be undone.";
 
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run

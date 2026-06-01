@@ -240,8 +240,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[LemoineTools] LegendCreatorSettings save failed: {ex.Message}");
+                LemoineLog.Error("LegendCreatorSettings: save failed", ex);
             }
         }
 
@@ -263,8 +262,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[LemoineTools] LegendCreatorSettings load failed: {ex.Message}");
+                LemoineLog.Error("LegendCreatorSettings: load failed", ex);
             }
             return DefaultSeed();
         }

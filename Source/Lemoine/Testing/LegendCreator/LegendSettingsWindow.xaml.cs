@@ -44,6 +44,7 @@ namespace LemoineTools.Lemoine
         private Border?                 _previewPill;      // floating bottom-right Preview (above Create)
         private TextBlock?              _previewPillLabel;
         private StackPanel?             _tabStack;
+        private LemoineListReorder?     _tabReorder;   // drag-to-reorder legend tabs
         private ScrollViewer?           _tabScroll;   // auto-scroll to newly-added legend
         private LemoineLegendPalette?   _palette;
         private ContentControl?         _builderSlot;
@@ -407,8 +408,26 @@ namespace LemoineTools.Lemoine
             _tabStack.Children.Clear();
 
             var entries = LegendCreatorSettings.Instance.Legends;
+
+            // Drag-to-reorder the legend tabs (whole tab is the handle, ghost included), like the
+            // Auto Filters trade tabs. Order is persisted; the active legend follows its tab.
+            if (_tabReorder == null)
+                _tabReorder = new LemoineListReorder(_tabStack, (from, to) =>
+                {
+                    var legends = LegendCreatorSettings.Instance.Legends;
+                    var active  = (_activeIndex >= 0 && _activeIndex < legends.Count) ? legends[_activeIndex] : null;
+                    LemoineListReorder.Move(legends, from, to);
+                    if (active != null) _activeIndex = legends.IndexOf(active);
+                    LegendCreatorSettings.Instance.Save();
+                    RebuildTabStack();
+                });
+
             for (int i = 0; i < entries.Count; i++)
-                _tabStack.Children.Add(BuildTabItem(entries[i], i));
+            {
+                var tab = BuildTabItem(entries[i], i);
+                _tabStack.Children.Add(tab);
+                _tabReorder.Arm(tab, i);
+            }
 
             // "＋ Add Legend" floats as the last item in the list
             _tabStack.Children.Add(
@@ -428,7 +447,7 @@ namespace LemoineTools.Lemoine
             // overlaps the canvas's 1px left border to connect tab → content.
             var tab = new Border
             {
-                CornerRadius    = isActive ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(6),
+                CornerRadius    = isActive ? new CornerRadius(10, 0, 0, 10) : new CornerRadius(10),
                 BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
                 Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
                 Padding         = new Thickness(8, 6, 8, 6),
@@ -651,6 +670,19 @@ namespace LemoineTools.Lemoine
             outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
             popup.Child  = outerBorder;
+
+            // Click-off dismiss without StaysOpen=false (which crashes Revit): while the
+            // popup is open, watch for a mouse-down anywhere in the owning window that lands
+            // outside the popup content and close it. The popup hosts its own hwnd, so its
+            // own clicks never tunnel through the window — outerBorder.IsMouseOver guards the
+            // rest. The handler is attached only for the popup's lifetime.
+            MouseButtonEventHandler outsideClick = (s, e) =>
+            {
+                if (popup.IsOpen && !outerBorder.IsMouseOver) popup.IsOpen = false;
+            };
+            popup.Opened += (s, e) => AddHandler(PreviewMouseDownEvent, outsideClick, true);
+            popup.Closed += (s, e) => RemoveHandler(PreviewMouseDownEvent, outsideClick);
+
             popup.IsOpen = true;
 
             Dispatcher.BeginInvoke(new Action(() => { titleBox.Focus(); titleBox.SelectAll(); }),
@@ -785,36 +817,18 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────────
         private UIElement BuildRightPanel()
         {
-            // [cards scroll (capped)] over [palette fills] — see the design decision:
-            // SIZING + TEXT STYLES are scrollable rounded cards on top; the palette
-            // (drag source / bulk-block editor) fills and keeps its own scroll.
-            var grid = new WpfGrid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 160 });
+            // Single shared scroll: SIZING + TEXT STYLES cards over the PALETTE, all stacked.
+            // The palette renders full-height (ExpandList) with no inner scroll, so it is "maxed"
+            // — you can scroll the one column all the way to the last filter.
+            if (_palette != null) _palette.ExpandList = true;
 
             _sizingSlot     = new ContentControl();
             _textStylesSlot = new ContentControl();
 
-            var cardsStack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-            cardsStack.Children.Add(_sizingSlot);
-            cardsStack.Children.Add(_textStylesSlot);
-
-            var cardsScroll = new ScrollViewer
-            {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content                       = cardsStack,
-            };
-            LemoineControlStyles.WireBubblingScroll(cardsScroll);
-            // Cap the cards region to ~half the column so the palette always claims space.
-            grid.SizeChanged += (s, e) => cardsScroll.MaxHeight = Math.Max(120, e.NewSize.Height * 0.5);
-            WpfGrid.SetRow(cardsScroll, 0);
-            grid.Children.Add(cardsScroll);
-
             // PALETTE card (the control renders its own "PALETTE" header internally).
             _paletteCard = new Border
             {
-                Margin          = new Thickness(10, 0, 10, 10),
+                Margin          = new Thickness(10, 8, 10, 10),
                 BorderThickness = new Thickness(1),
             };
             _paletteCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
@@ -822,10 +836,20 @@ namespace LemoineTools.Lemoine
             _paletteCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
             _paletteSlot = new ContentControl { Content = _palette };
             _paletteCard.Child = _paletteSlot;
-            WpfGrid.SetRow(_paletteCard, 1);
-            grid.Children.Add(_paletteCard);
 
-            return grid;
+            var stack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            stack.Children.Add(_sizingSlot);
+            stack.Children.Add(_textStylesSlot);
+            stack.Children.Add(_paletteCard);
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content                       = stack,
+            };
+            LemoineControlStyles.WireBubblingScroll(scroll);
+            return scroll;
         }
 
         // Section label + rounded card wrapper shared by the right-panel sections.
@@ -962,12 +986,12 @@ namespace LemoineTools.Lemoine
             // legend comes from the assigned Text Styles, so there is no "Font pt" row.
             AddScaleDropdownRow(grid, 0, layout.ViewScale,
                 denom => { layout.ViewScale = denom; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 1, "Swatch W", layout.SwatchW.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchW = d; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 2, "Swatch H", layout.SwatchH.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchH = d; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 3, "Gap", layout.Gap.ToString("F3"),
-                val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d >= 0) { layout.Gap = d; builder.NotifyLayoutChanged(); } });
+            AddSizingRow(grid, 1, "Swatch W", layout.SwatchW, 0.05, 3.0, 0.05,
+                d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 2, "Swatch H", layout.SwatchH, 0.02, 2.0, 0.05,
+                d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 3, "Gap", layout.Gap, 0.0, 1.0, 0.01,
+                d => { layout.Gap = d; builder.NotifyLayoutChanged(); });
 
             return WrapCard("SIZING", grid);
         }
@@ -1035,7 +1059,8 @@ namespace LemoineTools.Lemoine
             grid.Children.Add(combo);
         }
 
-        private void AddSizingRow(WpfGrid grid, int row, string label, string value, Action<string> onCommit)
+        private void AddSizingRow(WpfGrid grid, int row, string label,
+                                  double value, double min, double max, double step, Action<double> onCommit)
         {
             var lbl = new TextBlock
             {
@@ -1047,30 +1072,23 @@ namespace LemoineTools.Lemoine
             lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var tb = new TextBox
+            var stepper = new LemoineInlineStepper
             {
-                Text            = value,
-                Padding         = new Thickness(4, 3, 4, 3),
-                BorderThickness = new Thickness(1),
-                Margin          = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = 2,
+                ValueWidth          = 48,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
             };
-            tb.SetResourceReference(TextBox.ForegroundProperty,    "LemoineText");
-            tb.SetResourceReference(TextBox.FontFamilyProperty,    "LemoineMonoFont");
-            tb.SetResourceReference(TextBox.FontSizeProperty,      "LemoineFS_SM");
-            tb.SetResourceReference(TextBox.BorderBrushProperty,   "LemoineBorder");
-            tb.SetResourceReference(TextBox.BackgroundProperty,    "LemoineSelectBg");
-            tb.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
+            stepper.ValueChanged += (s, v) => onCommit(v);
 
-            tb.LostFocus += (s, e) => onCommit(tb.Text.Trim());
-            tb.KeyDown   += (s, e) =>
-            {
-                if (e.Key == Key.Return) { onCommit(tb.Text.Trim()); Keyboard.ClearFocus(); e.Handled = true; }
-            };
-
-            WpfGrid.SetRow(lbl, row); WpfGrid.SetColumn(lbl, 0);
-            WpfGrid.SetRow(tb,  row); WpfGrid.SetColumn(tb,  2);
+            WpfGrid.SetRow(lbl,     row); WpfGrid.SetColumn(lbl,     0);
+            WpfGrid.SetRow(stepper, row); WpfGrid.SetColumn(stepper, 2);
             grid.Children.Add(lbl);
-            grid.Children.Add(tb);
+            grid.Children.Add(stepper);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1126,6 +1144,7 @@ namespace LemoineTools.Lemoine
             combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
             combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
             combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
 
             foreach (var (_, name) in _textTypes)
                 combo.Items.Add(name);

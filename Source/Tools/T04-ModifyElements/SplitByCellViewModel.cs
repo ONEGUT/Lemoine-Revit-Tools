@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByCellViewModel : ILemoineTool
+    public class SplitByCellViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Split Elements by Cell";
         public string RunLabel => "Split in Revit →";
@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildReview();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -221,85 +221,36 @@ namespace LemoineTools.Tools.ModifyElements
             return outer;
         }
 
-        private FrameworkElement BuildReview()
-        {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddCard(grid, "Categories",
-                () => _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-                0, 0);
-            AddCard(grid, "Cell Size",
-                () => $"{_cellX:F2} ft × {_cellY:F2} ft",
-                0, 1);
-            AddCard(grid, "Grid Origin",
-                () => _useProjectOrigin ? "Project base point" : "Per-element bounding box",
-                1, 0);
-            AddCard(grid, "Scope",
-                () => _preSelectedIds.Count > 0
-                    ? $"From selection ({_preSelectedIds.Count} elements)"
-                    : "Active view",
-                1, 1);
-
-            outer.Children.Add(grid);
-
-            var note = new TextBlock
-            {
-                Text         = "Sketch-based elements in the active view will be split into a regular grid of cells. " +
-                               "Elements that fit within a single cell are skipped. Each element runs in its own transaction — " +
-                               "the entire operation collapses to a single Ctrl+Z undo step.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            return outer;
-        }
-
-        private void AddCard(WpfGrid grid, string label, Func<string> val, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 0 ? 0 : 4, row == 0 ? 0 : 4, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-            };
-            card.SetResourceReference(Border.PaddingProperty,     "LemoineTh_CardPad");
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            valText.Text = val();
-            ValidationChanged += (s, e) => valText.Text = val();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("cats",   "Categories"),
+            ("cell",   "Cell Size"),
+            ("origin", "Grid Origin"),
+            ("scope",  "Scope"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
+            ["cell"]   = $"{_cellX:F2} ft × {_cellY:F2} ft",
+            ["origin"] = _useProjectOrigin ? "Project base point" : "Per-element bounding box",
+            ["scope"]  = _preSelectedIds.Count > 0
+                ? $"From selection ({_preSelectedIds.Count} elements)"
+                : "Active view",
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Sketch-based elements in the active view will be split into a " +
+            "regular grid of cells. Elements that fit within a single cell are skipped. Each element runs in its " +
+            "own transaction — the entire operation collapses to a single Ctrl+Z undo step.";
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _preSelectedIds.Count > 0 || _selectedCats.Count > 0;

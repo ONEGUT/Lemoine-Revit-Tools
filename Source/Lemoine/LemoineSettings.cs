@@ -79,6 +79,8 @@ namespace LemoineTools.Lemoine
         public double AnimExpand   => 280;
         /// <summary>Duration in milliseconds for progress-bar fill animations (350 ms).</summary>
         public double AnimProgress => 350;
+        /// <summary>Duration in milliseconds for the press/tap scale feedback — snappy (90 ms).</summary>
+        public double AnimPress    => 90;
 
         // ── Convenience scaled helpers ────────────────────────────────────────
         /// <summary>Scales a raw design-pixel value by <see cref="Scale"/> and rounds to one decimal place.</summary>

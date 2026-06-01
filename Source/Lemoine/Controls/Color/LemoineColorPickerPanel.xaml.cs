@@ -1273,6 +1273,7 @@ namespace LemoineTools.Lemoine.Controls
                 SnapsToDevicePixels = true,
             };
             b.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+            LemoineMotion.WireSwatchHover(b, "LemoineBorderMid");
             return b;
         }
 
@@ -1299,6 +1300,7 @@ namespace LemoineTools.Lemoine.Controls
             plus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             plus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             b.Child = plus;
+            LemoineMotion.WireSwatchHover(b, "LemoineBorderMid");
             return b;
         }
     }

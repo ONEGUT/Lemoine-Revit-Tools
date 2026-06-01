@@ -13,7 +13,7 @@
 
             <!-- Left: group tabs -->
             <Border Grid.Column="0" BorderThickness="0,0,1,0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="_tabScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel x:Name="_tabStack" />
                 </ScrollViewer>
             </Border>
@@ -29,7 +29,7 @@
                           ShowsPreview="False" />
 
             <!-- Right: checkboxes for active group -->
-            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="8,8,8,4">
+            <ScrollViewer x:Name="_checkScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="8,8,8,4">
                 <StackPanel x:Name="_checkStack" />
             </ScrollViewer>
         </Grid>

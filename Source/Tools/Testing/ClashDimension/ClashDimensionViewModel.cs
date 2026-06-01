@@ -20,7 +20,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class ClashDimensionViewModel : ILemoineTool
+    public class ClashDimensionViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Clash Dimension";
         public string RunLabel => "Place Clash Annotations →";
@@ -31,7 +31,8 @@ namespace LemoineTools.Tools.Testing
             new StepDefinition("S2", "Group 1 — Source",          required: true),
             new StepDefinition("S3", "Group 2 — Target",          required: true),
             new StepDefinition("S4", "Grids & Slab References",   required: false),
-            new StepDefinition("S5", "Settings & Review",         required: false),
+            new StepDefinition("S5", "Settings",                  required: false),
+            new StepDefinition("S6", "Review & Run",              required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -114,12 +115,6 @@ namespace LemoineTools.Tools.Testing
             d == "Categories" ? "Categories" : d == "Select Elements" ? "Elements" : "Rules";
 
         // ── Named struct (no anonymous tuple arrays) ──────────────────────────
-        private struct CardDef
-        {
-            public string       Label;
-            public Func<string> Value;
-            public CardDef(string label, Func<string> value) { Label = label; Value = value; }
-        }
 
         // ── Constructor ───────────────────────────────────────────────────────
         public ClashDimensionViewModel(
@@ -321,13 +316,15 @@ namespace LemoineTools.Tools.Testing
 
         private static ScrollViewer WrapInScroll(FrameworkElement content, double maxHeight = 700)
         {
-            return new ScrollViewer
+            var sv = new ScrollViewer
             {
                 Content = content,
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = maxHeight,
             };
+            LemoineControlStyles.WireBubblingScroll(sv); // bubble wheel to the page at scroll limits
+            return sv;
         }
 
         // ── S1 — Select Views ─────────────────────────────────────────────────
@@ -700,13 +697,13 @@ namespace LemoineTools.Tools.Testing
 
             AddSettingRow(outer, "Clash Tolerance (mm)",
                 "Extra margin added to each side of the clash bounding box annotation.",
-                _toleranceMm.ToString("F1"),
-                val => { if (double.TryParse(val, out double d) && d >= 0) { _toleranceMm = d; Fire(); } });
+                _toleranceMm, 0, 100, 0.5, 1,
+                d => { _toleranceMm = d; Fire(); });
 
             AddSettingRow(outer, "Dimension Line Offset (mm)",
                 "Distance the dimension string sits away from the cross annotation centre.",
-                _dimLineOffsetMm.ToString("F0"),
-                val => { if (double.TryParse(val, out double d) && d >= 0) { _dimLineOffsetMm = d; Fire(); } });
+                _dimLineOffsetMm, 0, 1000, 1, 0,
+                d => { _dimLineOffsetMm = d; Fire(); });
 
             AddSettingRow(outer, "Group Tolerance (mm)",
                 "Clashes within this distance-to-edge of each other share one grouped dimension. 0 = one dimension per clash.",
@@ -773,26 +770,19 @@ namespace LemoineTools.Tools.Testing
             outer.Children.Add(lineSelect);
 
             AddDivider(outer);
-            var clearSp = new StackPanel { Orientation = Orientation.Horizontal };
-            var clearCb = new CheckBox { IsChecked = _clearPrevious, Margin = new Thickness(0, 0, 0, 4) };
-            clearCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            clearCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            clearCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_SM");
-            var clearLbl = new TextBlock { Text = "Clear previous clash annotations before placing new ones", VerticalAlignment = VerticalAlignment.Center };
-            clearLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            clearLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            clearLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            clearSp.Children.Add(clearCb);
-            clearSp.Children.Add(clearLbl);
-            outer.Children.Add(clearSp);
-            clearCb.Checked   += (s, e) => { _clearPrevious = true;  Fire(); };
-            clearCb.Unchecked += (s, e) => { _clearPrevious = false; Fire(); };
+            var clearToggle = new LemoineToggleSwitches();
+            clearToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "clear", Label = "Clear previous clash annotations before placing new ones", DefaultOn = _clearPrevious },
+            });
+            clearToggle.StateChanged += state => { state.TryGetValue("clear", out _clearPrevious); Fire(); };
+            outer.Children.Add(clearToggle);
 
             AddDivider(outer);
             AddSettingRow(outer, "Max Clashes",
                 "Stop detecting after this many clashes. Raise if clashes are being missed.",
-                _maxClashes.ToString(),
-                val => { if (int.TryParse(val, out int n) && n > 0) { _maxClashes = n; Fire(); } });
+                _maxClashes, 1, 100000, 1, 0,
+                d => { _maxClashes = (int)d; Fire(); });
 
             AddDivider(outer);
             AddLabel(outer, "Dimension Overlap");
@@ -819,39 +809,6 @@ namespace LemoineTools.Tools.Testing
 
             AddCheckRow(outer, "Probe also avoids existing annotations",
                 _avoidExisting, v => _avoidExisting = v);
-
-            AddDivider(outer);
-            var reviewHdr = new TextBlock { Text = "RUN SUMMARY", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
-            reviewHdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            reviewHdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            reviewHdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(reviewHdr);
-
-            var cardGrid = new WpfGrid();
-            cardGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            cardGrid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var cardDefs = new CardDef[]
-            {
-                new CardDef("Views",          () => $"{_selectedViewNames.Count} selected"),
-                new CardDef("Group 1",        () => $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}"),
-                new CardDef("Group 2",        () => $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}"),
-                new CardDef("Grids & Slabs",  () => $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}"),
-                new CardDef("Tolerance",      () => $"{_toleranceMm:F1} mm"),
-                new CardDef("Group Tol",      () => _groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "Off"),
-                new CardDef("Overlap",        () => _avoidOverlaps ? _overlapMode : "Off"),
-                new CardDef("Dim Reference",  () => _dimTarget),
-                new CardDef("Max Clashes",    () => _maxClashes.ToString()),
-            };
-
-            for (int i = 0; i < cardDefs.Length; i++)
-            {
-                int row = i / 2, col = i % 2;
-                if (cardGrid.RowDefinitions.Count <= row)
-                    cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(cardGrid, cardDefs[i].Label, cardDefs[i].Value, row, col);
-            }
-            outer.Children.Add(cardGrid);
 
             return WrapInScroll(outer, maxHeight: 800);
         }
@@ -885,6 +842,32 @@ namespace LemoineTools.Tools.Testing
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             parent.Children.Add(tb);
+        }
+
+        // Numeric overload — a typeable inline stepper instead of a free-text box.
+        private void AddSettingRow(StackPanel parent, string label, string hint,
+                                   double value, double min, double max, double step, int decimals, Action<double> onChange)
+        {
+            var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 2) };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            parent.Children.Add(lbl);
+
+            var stepper = new LemoineInlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = decimals,
+                ValueWidth          = 56,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 8),
+                ToolTip             = hint,
+            };
+            stepper.ValueChanged += (s, v) => onChange(v);
+            parent.Children.Add(stepper);
         }
 
         private void AddSettingRow(StackPanel parent, string label, string hint, string initial, Action<string> onChange)
@@ -939,38 +922,6 @@ namespace LemoineTools.Tools.Testing
             parent.Children.Add(lbl);
         }
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> valueFn, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = valueFn();
-            ValidationChanged += (s, e) => val.Text = valueFn();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         private static void AddDivider(StackPanel parent)
         {
@@ -982,6 +933,37 @@ namespace LemoineTools.Tools.Testing
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("views", "Views"),
+            ("g1",    "Group 1"),
+            ("g2",    "Group 2"),
+            ("grids", "Grids & Slabs"),
+            ("tol",   "Tolerance"),
+            ("grptol","Group Tol"),
+            ("ovl",   "Overlap"),
+            ("ref",   "Dim Reference"),
+            ("max",   "Max Clashes"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["views"] = $"{_selectedViewNames.Count} selected",
+            ["g1"]    = $"{ModeToDisplay(_g1.Mode)} · {GroupSummary(_g1)}",
+            ["g2"]    = $"{ModeToDisplay(_g2.Mode)} · {GroupSummary(_g2)}",
+            ["grids"] = $"{_selectedGridNames.Count} grid(s), floor: {_selectedFloorDisplay ?? "—"}",
+            ["tol"]   = $"{_toleranceMm:F1} mm",
+            ["grptol"] = _groupToleranceMm > 0 ? $"{_groupToleranceMm:F0} mm" : "Off",
+            ["ovl"]    = _avoidOverlaps ? _overlapMode : "Off",
+            ["ref"]   = _dimTarget,
+            ["max"]   = _maxClashes.ToString(),
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             switch (stepId)

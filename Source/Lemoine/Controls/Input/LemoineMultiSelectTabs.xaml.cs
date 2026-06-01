@@ -35,6 +35,10 @@ namespace LemoineTools.Lemoine.Controls
                 if (outer.Child is Grid g && g.Children[0] is Border leftBorder)
                     leftBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             }
+            // Both inner lists bubble the wheel to the page once they hit their scroll limit,
+            // so hovering a tab/checkbox list doesn't trap page scrolling.
+            LemoineControlStyles.WireBubblingScroll(_tabScroll);
+            LemoineControlStyles.WireBubblingScroll(_checkScroll);
         }
 
         public void SetGroups(Dictionary<string, List<string>> groups,
@@ -114,6 +118,7 @@ namespace LemoineTools.Lemoine.Controls
                 Tag             = new object[] { label, badgeBorder, badgeText, groupName },
             };
             tab.MouseLeftButtonDown += (s, e) => ActivateGroup(groupName);
+            LemoineMotion.WireToggleHover(tab, () => groupName == _activeGroup);
 
             SetTabStyle(tab, false);
             UpdateTabCounter(tab, groupName);
@@ -306,6 +311,8 @@ namespace LemoineTools.Lemoine.Controls
             };
             sp.Children.Add(cb);
             sp.Children.Add(lbl);
+
+            LemoineMotion.WireHover(sp, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
 
             cb.Checked   += (s, e) => onToggle(true);
             cb.Unchecked += (s, e) => onToggle(false);

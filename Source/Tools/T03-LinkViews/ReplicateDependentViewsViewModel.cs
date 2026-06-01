@@ -124,7 +124,7 @@ namespace LemoineTools.Tools.LinkViews
     /// scheme, and trigger the run handler that creates dependents on each target inside a
     /// Revit transaction.
     /// </summary>
-    public class ReplicateDependentViewsViewModel : ILemoineTool
+    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Identity ──────────────────────────────────────────────────
         /// <summary>Gets the title displayed in the step-flow window header.</summary>
@@ -233,9 +233,7 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S2") return LiveStep(() => _selectedSourceKey, BuildS2Content);
             if (stepId == "S3") return LiveStep(() => _selectedSourceKey, BuildS3Content);
             if (stepId == "S4") return BuildS4Naming();
-            if (stepId == "S5") return LiveStep(
-                () => (_selectedSourceKey ?? "") + "|" + _selectedTargetKeys.Count,
-                BuildReviewContent);
+            if (stepId == "S5") return null; // framework renders review (ILemoineReviewable)
             return null;
         }
 
@@ -565,87 +563,37 @@ namespace LemoineTools.Tools.LinkViews
         }
 
                 // ── S5: Review & Run ───────────────────────────────────────────
-        private struct CardDef
+
+        // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            public string Label; public Func<string> Val; public int Row; public int Col;
-            public CardDef(string l, Func<string> v, int r, int c)
-            { Label = l; Val = v; Row = r; Col = c; }
-        }
+            ("source",  "Source View"),
+            ("deps",    "Dependents to Copy"),
+            ("targets", "Target Views"),
+            ("create",  "Views to Create"),
+        };
 
-        private FrameworkElement BuildReviewContent()
+        public IDictionary<string, string> ReviewValues
         {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var cards = new[]
+            get
             {
-                new CardDef("Source View",
-                    () => SelectedSource?.Name ?? "—", 0, 0),
-                new CardDef("Dependents to Copy",
-                    () => (SelectedSource?.Deps?.Count ?? 0).ToString(), 0, 1),
-                new CardDef("Target Views",
-                    () => _selectedTargetKeys.Count > 0
-                          ? $"{_selectedTargetKeys.Count} view(s)" : "—", 1, 0),
-                new CardDef("Views to Create",
-                    () =>
-                    {
-                        int deps = SelectedSource?.Deps?.Count ?? 0;
-                        int tgts = _selectedTargetKeys.Count;
-                        return deps > 0 && tgts > 0 ? $"\u2264 {deps * tgts}" : "—";
-                    }, 1, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
+                int deps = SelectedSource?.Deps?.Count ?? 0;
+                int tgts = _selectedTargetKeys.Count;
+                return new Dictionary<string, string>
                 {
-                    Margin = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+                    ["source"]  = SelectedSource?.Name ?? "—",
+                    ["deps"]    = deps.ToString(),
+                    ["targets"] = tgts > 0 ? $"{tgts} view(s)" : "—",
+                    ["create"]  = deps > 0 && tgts > 0 ? $"≤ {deps * tgts}" : "—",
                 };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var capturedVal = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = capturedVal();
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl); sp.Children.Add(valText);
-                card.Child = sp;
-                WpfGrid.SetRow(card, c.Row); WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
             }
-
-            outer.Children.Add(grid);
-
-            var desc = new TextBlock
-            {
-                Text = "Creates one dependent view per target for each dependent on the source, " +
-                       "transferring crop region and view range. Targets with existing dependents " +
-                       "of the same name are skipped and logged.",
-                TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
-                Margin = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-            return outer;
         }
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Creates one dependent view per target for each dependent on the " +
+            "source, transferring crop region and view range. Targets with existing dependents of the same name " +
+            "are skipped and logged.";
+        public string?        ReviewWarning => null;
 
         // ── Helpers ────────────────────────────────────────────────────
         private SourceViewEntry? SelectedSource =>

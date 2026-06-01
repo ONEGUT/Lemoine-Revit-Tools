@@ -18,7 +18,7 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class BatchExportViewModel : ILemoineTool
+    public class BatchExportViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Batch Export";
@@ -30,7 +30,8 @@ namespace LemoineTools.Tools.Testing
             new StepDefinition("S2", "Build Packs",           required: false),
             new StepDefinition("S3", "Filename & Formats",    required: true),
             new StepDefinition("S4", "PDF Settings",          required: false),
-            new StepDefinition("S5", "Output & Review",       required: true),
+            new StepDefinition("S5", "Output",                required: true),
+            new StepDefinition("S6", "Review & Run",          required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -51,12 +52,6 @@ namespace LemoineTools.Tools.Testing
         };
 
         // ── Named struct for review cards (avoids anonymous Func<string> tuples) ──
-        private struct CardDef
-        {
-            internal string       Label;
-            internal Func<string> Value;
-            internal CardDef(string label, Func<string> value) { Label = label; Value = value; }
-        }
 
         // ── S1 state ──────────────────────────────────────────────────────────
         private string                        _exportMode    = "Sheets";
@@ -353,6 +348,11 @@ namespace LemoineTools.Tools.Testing
                         tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                         tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                     }
+                    LemoineMotion.WireHover(tab,
+                        normalBgKey:     captured == _activePack ? "LemoineSelectBg" : "LemoineRaised",
+                        hoverBgKey:      "LemoineAccentDim",
+                        normalBorderKey: captured == _activePack ? "LemoineAccent" : "LemoineBorder",
+                        hoverBorderKey:  "LemoineAccent");
 
                     var tabText = new TextBlock { Text = _packs[captured].PackName };
                     tabText.SetResourceReference(TextBlock.ForegroundProperty,
@@ -380,6 +380,9 @@ namespace LemoineTools.Tools.Testing
                 };
                 addBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineCanvas");
                 addBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+                LemoineMotion.WireHover(addBtn,
+                    normalBgKey:     "LemoineCanvas",  hoverBgKey:     "LemoineAccentDim",
+                    normalBorderKey: "LemoineBorderMid", hoverBorderKey: "LemoineAccent");
                 var addText = new TextBlock { Text = "+ New Pack" };
                 addText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 addText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -698,8 +701,8 @@ namespace LemoineTools.Tools.Testing
                 Margin      = new Thickness(0, 4, 0, 8),
                 Visibility  = _zoomSetting == "Scale %" ? WpfVisibility.Visible : WpfVisibility.Collapsed,
             };
-            var stepper = new LemoineNumberStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5 };
-            stepper.ValueChanged += (s, v) => { _zoomPct = v; Fire(); };
+            var stepper = new LemoineInlineStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5, Decimals = 0, ValueWidth = 48 };
+            stepper.ValueChanged += (s, v) => { _zoomPct = (int)v; Fire(); };
             var pctLabel = new TextBlock
             {
                 Text              = "%",
@@ -753,18 +756,13 @@ namespace LemoineTools.Tools.Testing
             // COMBINE ─────────────────────────────────────────────────────────
             AddSectionLabel(outer, "COMBINE");
 
-            var combineCb = new CheckBox
+            var combineToggle = new LemoineToggleSwitches();
+            combineToggle.SetItems(new List<ToggleItem>
             {
-                Content   = "Combine into one PDF",
-                IsChecked = _combinePdf,
-                Margin    = new Thickness(0, 0, 0, 4),
-            };
-            combineCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            combineCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            combineCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
-            combineCb.Checked   += (s, e) => { _combinePdf = true;  Fire(); };
-            combineCb.Unchecked += (s, e) => { _combinePdf = false; Fire(); };
-            outer.Children.Add(combineCb);
+                new ToggleItem { Id = "combine", Label = "Combine into one PDF", DefaultOn = _combinePdf },
+            });
+            combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
+            outer.Children.Add(combineToggle);
 
             if (HasActivePacks())
             {
@@ -825,125 +823,59 @@ namespace LemoineTools.Tools.Testing
             AddSectionLabel(outer, "OUTPUT FOLDER");
             BuildFolderPicker(outer);
 
-            var splitCb = new CheckBox
+            var splitToggle = new LemoineToggleSwitches { Margin = new Thickness(0, 6, 0, 0) };
+            splitToggle.SetItems(new List<ToggleItem>
             {
-                Content   = "Split output into subfolders by file format",
-                IsChecked = _splitByFormat,
-                Margin    = new Thickness(0, 6, 0, 0),
-            };
-            splitCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
-            splitCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
-            splitCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
-            splitCb.Checked   += (s, e) => { _splitByFormat = true;  Fire(); };
-            splitCb.Unchecked += (s, e) => { _splitByFormat = false; Fire(); };
-            outer.Children.Add(splitCb);
-
-            AddDivider(outer);
-            AddSectionLabel(outer, "REVIEW SUMMARY");
-
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            var cards = new CardDef[]
-            {
-                new CardDef("Sheets / Views",   () => _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected"),
-                new CardDef("Formats",          () => GetActiveFormats()),
-                new CardDef("Packs",            () => HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export"),
-                new CardDef("Quality",          () => _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled"),
-                new CardDef("Filename Pattern", () => string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern),
-                new CardDef("Output Folder",    () => _outputFolder.Length == 0 ? "—"
-                                                    : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
-                                                    : _outputFolder),
-            };
-
-            for (int i = 0; i < cards.Length; i++)
-            {
-                int row = i / 2;
-                int col = i % 2;
-                if (grid.RowDefinitions.Count <= row)
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(grid, cards[i], row, col);
-            }
-            outer.Children.Add(grid);
+                new ToggleItem { Id = "split", Label = "Split output into subfolders by file format", DefaultOn = _splitByFormat },
+            });
+            splitToggle.StateChanged += state => { state.TryGetValue("split", out _splitByFormat); Fire(); };
+            outer.Children.Add(splitToggle);
 
             return outer;
         }
 
         private void BuildFolderPicker(StackPanel parent)
         {
-            var pathBox = new WpfTextBox
+            var folder = new LemoineFolderBrowser
             {
-                Text            = _outputFolder,
-                Padding         = new Thickness(8, 4, 8, 4),
-                BorderThickness = new Thickness(1),
+                Path        = _outputFolder,
+                DialogTitle = "Select output folder",
             };
-            pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-            pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            pathBox.TextChanged += (s, e) => { _outputFolder = pathBox.Text; Fire(); };
-
-            var browseBtn = LemoineControlStyles.BuildButton("Browse…");
-            browseBtn.Margin = new Thickness(0, 4, 0, 0);
-            browseBtn.Click += (s, e) =>
-            {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog
-                {
-                    Description         = "Select output folder",
-                    SelectedPath        = _outputFolder,
-                    ShowNewFolderButton = true,
-                };
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    pathBox.Text  = dlg.SelectedPath;
-                    _outputFolder = dlg.SelectedPath;
-                    Fire();
-                }
-            };
-
-            parent.Children.Add(pathBox);
-            parent.Children.Add(browseBtn);
+            folder.PathChanged += p => { _outputFolder = p; Fire(); };
+            parent.Children.Add(folder);
         }
 
-        private void AddReviewCard(WpfGrid grid, CardDef def, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = def.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = def.Value();
-            ValidationChanged += (s, e) => val.Text = def.Value();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("sheets",  "Sheets / Views"),
+            ("formats", "Formats"),
+            ("packs",   "Packs"),
+            ("quality", "Quality"),
+            ("pattern", "Filename Pattern"),
+            ("folder",  "Output Folder"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["sheets"]  = _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected",
+            ["formats"] = GetActiveFormats(),
+            ["packs"]   = HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export",
+            ["quality"] = _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled",
+            ["pattern"] = string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern,
+            ["folder"]  = _outputFolder.Length == 0 ? "—"
+                : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
+                : _outputFolder,
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             switch (stepId)
@@ -1137,6 +1069,7 @@ namespace LemoineTools.Tools.Testing
             combo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
             combo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineUiFont");
             combo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_MD");
+            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
             combo.SelectionChanged += (s, e) =>
             {
                 if (combo.SelectedItem is string val) onChange(val);

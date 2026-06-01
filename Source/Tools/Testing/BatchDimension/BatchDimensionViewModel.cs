@@ -20,7 +20,7 @@ namespace LemoineTools.Tools.Testing
     /// View model for the Batch Dimension tool (Ty).
     /// 3-step wizard: Select Views → Categories &amp; Settings → Review &amp; Run.
     /// </summary>
-    public class BatchDimensionViewModel : ILemoineTool, ILemoineToolSettings
+    public class BatchDimensionViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
     {
         public string Title    => "Batch Dimension";
         public string RunLabel => "Place Dimensions in Revit →";
@@ -117,7 +117,7 @@ namespace LemoineTools.Tools.Testing
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return BuildS3();
+                case "S3": return null; // framework renders review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -324,6 +324,7 @@ namespace LemoineTools.Tools.Testing
             catCombo.SetResourceReference(WpfComboBox.ForegroundProperty, "LemoineText");
             catCombo.SetResourceReference(WpfComboBox.FontFamilyProperty, "LemoineUiFont");
             catCombo.SetResourceReference(WpfComboBox.FontSizeProperty,   "LemoineFS_MD");
+            LemoineControlStyles.WireComboWheelBubbling(catCombo); // don't eat page scroll when closed
 
             var removeBtn = LemoineControlStyles.BuildButton("×");
             removeBtn.Margin = new Thickness(6, 0, 0, 0);
@@ -369,6 +370,7 @@ namespace LemoineTools.Tools.Testing
             {
                 if (refCombo.SelectedItem is string val) { cat.ReferencePlane = val; Fire(); }
             };
+            LemoineControlStyles.WireComboWheelBubbling(refCombo);
             settingsPanel.Children.Add(refCombo);
 
             // Tie condition
@@ -397,6 +399,7 @@ namespace LemoineTools.Tools.Testing
             {
                 if (tieCombo.SelectedItem is string val) { cat.TieCondition = val; Fire(); }
             };
+            LemoineControlStyles.WireComboWheelBubbling(tieCombo);
             settingsPanel.Children.Add(tieCombo);
 
             // Offset
@@ -406,24 +409,19 @@ namespace LemoineTools.Tools.Testing
             offLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             settingsPanel.Children.Add(offLbl);
 
-            var offsetBox = new WpfTextBox
+            var offsetStepper = new LemoineInlineStepper
             {
-                Text    = cat.Offset.ToString("F0"),
-                Padding = new Thickness(6, 3, 6, 3),
-                Margin  = new Thickness(0, 0, 0, 4),
+                Value               = cat.Offset,
+                MinValue            = 0,
+                MaxValue            = 1000,
+                Step                = 1,
+                Decimals            = 0,
+                ValueWidth          = 56,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 4),
             };
-            offsetBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            offsetBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            offsetBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            offsetBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            offsetBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-            offsetBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            offsetBox.TextChanged += (s, e) =>
-            {
-                if (double.TryParse(offsetBox.Text, out double val) && val >= 0)
-                { cat.Offset = val; Fire(); }
-            };
-            settingsPanel.Children.Add(offsetBox);
+            offsetStepper.ValueChanged += (s, v) => { cat.Offset = v; Fire(); };
+            settingsPanel.Children.Add(offsetStepper);
 
             // Wire category change → update ref plane options
             catCombo.SelectionChanged += (s, e) =>
@@ -476,83 +474,28 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── Step 3 — Review & Run ─────────────────────────────────────────────
-        private FrameworkElement BuildS3()
+                // ── ILemoineReviewable (P3) — framework renders the review step ───
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
+            ("views", "Views Selected"),
+            ("cats",  "Categories"),
+            ("style", "Dimension Style"),
+            ("est",   "Estimated Strings"),
+        };
 
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-            int EstimateStringCount() => _selectedViewNames.Count * _categories.Count * 2;
-
-            var cardDefs = new (string Label, Func<string> Value)[]
-            {
-                ("Views Selected",    () => $"{_selectedViewNames.Count}"),
-                ("Categories",        () => _categories.Count == 0 ? "—"
-                    : string.Join(", ", _categories.Select(c => c.CategoryName))),
-                ("Dimension Style",   () => string.IsNullOrEmpty(_dimStyleName) ? "—" : _dimStyleName),
-                ("Estimated Strings", () => $"~{EstimateStringCount()} (approximate)"),
-            };
-
-            for (int i = 0; i < cardDefs.Length; i++)
-            {
-                int row = i / 2;
-                int col = i % 2;
-                if (grid.RowDefinitions.Count <= row)
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(grid, cardDefs[i].Label, cardDefs[i].Value, row, col);
-            }
-            outer.Children.Add(grid);
-
-            var note = new TextBlock
-            {
-                Text = "Dimension strings will be placed on each selected view for each configured category. " +
-                       "The estimated string count is approximate.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 10, 0, 0),
-            };
-            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            outer.Children.Add(note);
-
-            return outer;
-        }
-
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> valueFn, int row, int col)
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            ["views"] = $"{_selectedViewNames.Count}",
+            ["cats"]  = _categories.Count == 0 ? "—" : string.Join(", ", _categories.Select(c => c.CategoryName)),
+            ["style"] = string.IsNullOrEmpty(_dimStyleName) ? "—" : _dimStyleName,
+            ["est"]   = $"~{_selectedViewNames.Count * _categories.Count * 2} (approximate)",
+        };
 
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Dimension strings will be placed on each selected view for each " +
+            "configured category. The estimated string count is approximate.";
+        public string?        ReviewWarning => null;
 
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = valueFn();
-            ValidationChanged += (s, e) => val.Text = valueFn();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         private static void AddDivider(System.Windows.Controls.Panel parent)
         {

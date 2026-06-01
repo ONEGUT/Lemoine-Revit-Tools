@@ -597,6 +597,7 @@ namespace LemoineTools.Tools.AutoFilters
             paramCombo.SetResourceReference(ComboBox.FontSizeProperty,    "LemoineFS_SM");
             paramCombo.SetResourceReference(ComboBox.FontFamilyProperty,  "LemoineUiFont");
             paramCombo.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorder");
+            LemoineControlStyles.WireComboWheelBubbling(paramCombo); // don't eat page scroll when closed
             WpfGrid.SetColumn(paramCombo, 1);
             g.Children.Add(paramCombo);
 

@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Interop;  // HwndSource used in MakeGhostHwndTransparent
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Shapes;
@@ -36,6 +34,7 @@ namespace LemoineTools.Lemoine
         private Border?      _fEditorBorder;
         private Border?      _fTradesSidebar;
         private StackPanel?  _fTradeListPanel;
+        private LemoineListReorder? _fTradeReorder;   // drag-to-reorder trades
         private UIElement?   _fAddTradeAnchor;
         private TextBlock?   _fStatusText;
         private Border?      _fStatusChip;
@@ -53,27 +52,18 @@ namespace LemoineTools.Lemoine
         private Border?  _dragSourceBorder;
         private int      _dragSourceOrigIdx;
         private Point    _dragGhostClickOffset;
+        private readonly LemoineDragGhost _ruleGhost = new LemoineDragGhost();   // rule-row drag ghost
         private Border?  _dragReadyBorder;
         private bool     _isRefreshingEditor;
 
         // ── Drag state: trade reorder ────────────────────────────────────────
         private string?  _dragTradeId;
         private Point    _tradeDragStart;
-        private Popup?   _dragGhost;
 
         // ── Double-click rename timing ───────────────────────────────────────
         private DateTime _lastClickTime   = DateTime.MinValue;
         private string?  _lastClickItemId;
 
-        // P/Invoke for cursor position and ghost hit-test transparency
-        [DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out NativePoint pt);
-        [DllImport("user32.dll")] private static extern int  GetWindowLong(IntPtr hWnd, int nIndex);
-        [DllImport("user32.dll")] private static extern int  SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-        private const int GWL_EXSTYLE       = -20;
-        private const int WS_EX_TRANSPARENT = 0x00000020;
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativePoint { public int X; public int Y; }
 
         // ─────────────────────────────────────────────────────────────────────
         public FiltersSettingsWindow()
@@ -344,246 +334,6 @@ namespace LemoineTools.Lemoine
             };
 
             return combo;
-        }
-
-        // ── Drag ghost helpers ────────────────────────────────────────────────
-
-        private Point ToLogicalPoint(int physX, int physY)
-        {
-            var source = PresentationSource.FromVisual(this);
-            if (source?.CompositionTarget != null)
-            {
-                var m = source.CompositionTarget.TransformFromDevice;
-                return new Point(physX * m.M11, physY * m.M22);
-            }
-            return new Point(physX, physY);
-        }
-
-        private void ShowDragGhost(string label, string subtext, string colorHex, bool enabled = true)
-        {
-            FrameworkElement res = _fRuleListPanel ?? (FrameworkElement)this;
-            Brush BrushRes(string key, Brush fallback)
-                => res.TryFindResource(key) as Brush ?? fallback;
-            double DoubleRes(string key, double fallback)
-                => res.TryFindResource(key) is double d ? d : fallback;
-            FontFamily FontRes(string key)
-                => res.TryFindResource(key) as FontFamily ?? new FontFamily("Segoe UI");
-
-            var outerRow = new Grid();
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            outerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var dot = new Ellipse
-            {
-                Width = 16, Height = 16,
-                Fill = BrushFromHex(colorHex),
-                Stroke = BrushRes("LemoineBorder", Brushes.Gray),
-                StrokeThickness = 1.5,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 10, 0),
-            };
-            Grid.SetColumn(dot, 0);
-            outerRow.Children.Add(dot);
-
-            var nameTb = new TextBlock
-            {
-                Text = label,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = BrushRes("LemoineText", Brushes.Black),
-                FontSize = DoubleRes("LemoineFS_SM", 12),
-                FontFamily = FontRes("LemoineUiFont"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            nameStack.Children.Add(nameTb);
-            if (!string.IsNullOrEmpty(subtext))
-            {
-                var sub = new TextBlock
-                {
-                    Text = subtext,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = BrushRes("LemoineTextDim", Brushes.Gray),
-                    FontSize = DoubleRes("LemoineFS_XS", 11),
-                    FontFamily = FontRes("LemoineMonoFont"),
-                    Margin = new Thickness(0, 2, 0, 0),
-                };
-                nameStack.Children.Add(sub);
-            }
-            Grid.SetColumn(nameStack, 1);
-            outerRow.Children.Add(nameStack);
-
-            double pillW  = res.TryFindResource("LemoineH_Pill_W") is double pw ? pw : 32;
-            double pillH  = res.TryFindResource("LemoineH_Pill_H") is double ph ? ph : 18;
-            double knobSz = res.TryFindResource("LemoineH_Knob")   is double ks ? ks : 14;
-            var togglePill = new Border
-            {
-                Width = pillW, Height = pillH,
-                CornerRadius = new CornerRadius(pillH / 2),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 4, 0),
-                ClipToBounds = true,
-                Background = enabled ? BrushRes("LemoineAccent", Brushes.CornflowerBlue)
-                                     : BrushRes("LemoineBorder", Brushes.Gray),
-            };
-            var knob = new Ellipse
-            {
-                Width = knobSz, Height = knobSz,
-                Fill = BrushRes(enabled ? "LemoineKnobOn" : "LemoineKnobOff", Brushes.White),
-            };
-            var knobCanvas = new Canvas { Width = pillW, Height = pillH, ClipToBounds = true };
-            Canvas.SetLeft(knob, enabled ? pillW - knobSz - 2 : 2);
-            Canvas.SetTop(knob, (pillH - knobSz) / 2);
-            knobCanvas.Children.Add(knob);
-            togglePill.Child = knobCanvas;
-            Grid.SetColumn(togglePill, 2);
-            outerRow.Children.Add(togglePill);
-
-            var pencilTb = new TextBlock
-            {
-                Text = "✎",
-                FontSize = DoubleRes("LemoineFS_SM", 12),
-                FontFamily = FontRes("LemoineUiFont"),
-                Foreground = BrushRes("LemoineTextDim", Brushes.Gray),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 2, 0),
-            };
-            Grid.SetColumn(pencilTb, 3);
-            outerRow.Children.Add(pencilTb);
-
-            var trashTb = new TextBlock
-            {
-                Text = "",
-                FontSize = DoubleRes("LemoineFS_SM", 12),
-                FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                Foreground = BrushRes("LemoineTextDim", Brushes.Gray),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 0, 0),
-            };
-            Grid.SetColumn(trashTb, 4);
-            outerRow.Children.Add(trashTb);
-
-            double ghostWidth = _fRuleListPanel != null && _fRuleListPanel.ActualWidth > 40
-                ? _fRuleListPanel.ActualWidth - _fRuleListPanel.Margin.Left - _fRuleListPanel.Margin.Right
-                : 240;
-
-            var ghost = new Border
-            {
-                Child = outerRow,
-                Width = ghostWidth,
-                Padding = new Thickness(10, 8, 8, 8),
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                Opacity = 0.92,
-                Background = BrushRes("LemoineSurface", Brushes.White),
-                BorderBrush = BrushRes("LemoineAccent", Brushes.CornflowerBlue),
-                Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 12, Opacity = 0.35, ShadowDepth = 4, Direction = 270,
-                },
-            };
-
-            HideDragGhost();
-            GetCursorPos(out var pt);
-            var lpt = ToLogicalPoint(pt.X, pt.Y);
-            _dragGhost = new Popup
-            {
-                AllowsTransparency = true,
-                IsHitTestVisible   = false,
-                Placement          = PlacementMode.AbsolutePoint,
-                HorizontalOffset   = lpt.X - _dragGhostClickOffset.X,
-                VerticalOffset     = lpt.Y - _dragGhostClickOffset.Y,
-                StaysOpen          = true,
-                Child              = ghost,
-            };
-            _dragGhost.Opened += MakeGhostHwndTransparent;
-            _dragGhost.IsOpen = true;
-        }
-
-        private void ShowDragGhostFromElement(FrameworkElement element, Point clickOffset)
-        {
-            if (element.ActualWidth < 1 || element.ActualHeight < 1)
-            {
-                double availW = _fRuleListPanel?.ActualWidth > 0 ? _fRuleListPanel.ActualWidth : 300;
-                element.Measure(new Size(availW, double.PositiveInfinity));
-                element.Arrange(new Rect(element.DesiredSize));
-                if (element.ActualWidth < 1 || element.ActualHeight < 1) return;
-            }
-
-            double dpiX = 96, dpiY = 96;
-            var ps = PresentationSource.FromVisual(element);
-            if (ps?.CompositionTarget != null)
-            {
-                dpiX = 96 * ps.CompositionTarget.TransformToDevice.M11;
-                dpiY = 96 * ps.CompositionTarget.TransformToDevice.M22;
-            }
-            int pixW = Math.Max(1, (int)(element.ActualWidth  * dpiX / 96));
-            int pixH = Math.Max(1, (int)(element.ActualHeight * dpiY / 96));
-
-            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
-                pixW, pixH, dpiX, dpiY, System.Windows.Media.PixelFormats.Pbgra32);
-            bmp.Render(element);
-
-            var img = new System.Windows.Controls.Image
-            {
-                Source = bmp,
-                Width  = element.ActualWidth,
-                Height = element.ActualHeight,
-            };
-            var ghost = new Border
-            {
-                Child   = img,
-                Opacity = 0.82,
-                Effect  = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 14, Opacity = 0.40, ShadowDepth = 4, Direction = 270,
-                },
-            };
-
-            _dragGhostClickOffset = clickOffset;
-            HideDragGhost();
-            GetCursorPos(out var pt);
-            var lpt = ToLogicalPoint(pt.X, pt.Y);
-            _dragGhost = new Popup
-            {
-                AllowsTransparency = true,
-                IsHitTestVisible   = false,
-                Placement          = PlacementMode.AbsolutePoint,
-                HorizontalOffset   = lpt.X - clickOffset.X,
-                VerticalOffset     = lpt.Y - clickOffset.Y,
-                StaysOpen          = true,
-                Child              = ghost,
-            };
-            _dragGhost.Opened += MakeGhostHwndTransparent;
-            _dragGhost.IsOpen = true;
-        }
-
-        private void HideDragGhost()
-        {
-            if (_dragGhost != null) { _dragGhost.IsOpen = false; _dragGhost = null; }
-        }
-
-        // WS_EX_TRANSPARENT keeps the ghost Popup HWND from swallowing OLE drag hit-tests.
-        private void MakeGhostHwndTransparent(object sender, EventArgs e)
-        {
-            if (_dragGhost?.Child != null &&
-                PresentationSource.FromVisual(_dragGhost.Child) is HwndSource hs)
-            {
-                int ex = GetWindowLong(hs.Handle, GWL_EXSTYLE);
-                SetWindowLong(hs.Handle, GWL_EXSTYLE, ex | WS_EX_TRANSPARENT);
-            }
-        }
-
-        private void UpdateDragGhostPos()
-        {
-            if (_dragGhost == null) return;
-            GetCursorPos(out var pt);
-            var lpt = ToLogicalPoint(pt.X, pt.Y);
-            _dragGhost.HorizontalOffset = lpt.X - _dragGhostClickOffset.X;
-            _dragGhost.VerticalOffset   = lpt.Y - _dragGhostClickOffset.Y;
         }
 
         private UIElement BuildTrashConfirmButton(string confirmLabel, Action onConfirm)

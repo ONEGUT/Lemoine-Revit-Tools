@@ -166,6 +166,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             _rowsStack = new StackPanel { Orientation = Orientation.Vertical };
             _rowsScroll.Content = _rowsStack;
+            LemoineControlStyles.WireBubblingScroll(_rowsScroll); // bubble wheel to parent at scroll limits
             Grid.SetColumn(_rowsScroll, 1);
             innerGrid.Children.Add(_rowsScroll);
 
