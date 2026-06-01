@@ -814,21 +814,85 @@ namespace LemoineTools.Lemoine
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            for (int r = 0; r < 5; r++)
+            for (int r = 0; r < 4; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddSizingRow(grid, 0, "Scale 1:", layout.ViewScale.ToString(),
-                val => { if (int.TryParse(val, out int n) && n > 0) { layout.ViewScale = n; builder.NotifyLayoutChanged(); } });
+            // Scale is a dropdown of the standard Revit imperial scales (the legend
+            // view's Scale is just the 1:n denominator). Text size in the generated
+            // legend comes from the assigned Text Styles, so there is no "Font pt" row.
+            AddScaleDropdownRow(grid, 0, layout.ViewScale,
+                denom => { layout.ViewScale = denom; builder.NotifyLayoutChanged(); });
             AddSizingRow(grid, 1, "Swatch W", layout.SwatchW.ToString("F3"),
                 val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchW = d; builder.NotifyLayoutChanged(); } });
             AddSizingRow(grid, 2, "Swatch H", layout.SwatchH.ToString("F3"),
                 val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d > 0) { layout.SwatchH = d; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 3, "Font pt", layout.FontPt.ToString(),
-                val => { if (int.TryParse(val, out int n) && n > 0) { layout.FontPt = n; builder.NotifyLayoutChanged(); } });
-            AddSizingRow(grid, 4, "Gap", layout.Gap.ToString("F3"),
+            AddSizingRow(grid, 3, "Gap", layout.Gap.ToString("F3"),
                 val => { if (double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && d >= 0) { layout.Gap = d; builder.NotifyLayoutChanged(); } });
 
             return WrapCard("SIZING", grid);
+        }
+
+        // Standard Revit imperial view scales: label shown to the user → 1:n denominator
+        // stored in ViewScale. Mirrors Revit's own scale dropdown for drafting views.
+        private static readonly (string Label, int Denom)[] ImperialScales =
+        {
+            ("12\" = 1'-0\"",      1),
+            ("6\" = 1'-0\"",       2),
+            ("3\" = 1'-0\"",       4),
+            ("1 1/2\" = 1'-0\"",   8),
+            ("1\" = 1'-0\"",      12),
+            ("3/4\" = 1'-0\"",    16),
+            ("1/2\" = 1'-0\"",    24),
+            ("3/8\" = 1'-0\"",    32),
+            ("1/4\" = 1'-0\"",    48),
+            ("3/16\" = 1'-0\"",   64),
+            ("1/8\" = 1'-0\"",    96),
+            ("3/32\" = 1'-0\"",  128),
+            ("1/16\" = 1'-0\"",  192),
+            ("1/32\" = 1'-0\"",  384),
+        };
+
+        private void AddScaleDropdownRow(WpfGrid grid, int row, int currentDenom, Action<int> onChanged)
+        {
+            var lbl = new TextBlock
+            {
+                Text              = "Scale",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var combo = new ComboBox
+            {
+                IsEditable = false,
+                Margin     = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+
+            foreach (var (label, _) in ImperialScales)
+                combo.Items.Add(label);
+
+            // Select the entry matching the stored denominator; if the stored value
+            // isn't a standard scale, fall back to 1/4" = 1'-0" (1:48).
+            int initIdx = Array.FindIndex(ImperialScales, s => s.Denom == currentDenom);
+            if (initIdx < 0) initIdx = Array.FindIndex(ImperialScales, s => s.Denom == 48);
+            combo.SelectedIndex = initIdx;
+
+            combo.SelectionChanged += (s, e) =>
+            {
+                int idx = combo.SelectedIndex;
+                if (idx >= 0 && idx < ImperialScales.Length)
+                    onChanged(ImperialScales[idx].Denom);
+            };
+
+            WpfGrid.SetRow(lbl,   row); WpfGrid.SetColumn(lbl,   0);
+            WpfGrid.SetRow(combo, row); WpfGrid.SetColumn(combo, 2);
+            grid.Children.Add(lbl);
+            grid.Children.Add(combo);
         }
 
         private void AddSizingRow(WpfGrid grid, int row, string label, string value, Action<string> onCommit)
