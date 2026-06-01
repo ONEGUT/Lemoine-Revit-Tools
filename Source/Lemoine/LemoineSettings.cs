@@ -158,6 +158,7 @@ namespace LemoineTools.Lemoine
             r["LemoineRadius_SM"]   = new System.Windows.CornerRadius(3);
             r["LemoineRadius_MD"]   = new System.Windows.CornerRadius(4);
             r["LemoineRadius_Chip"] = new System.Windows.CornerRadius(10);
+            r["LemoineRadius_Card"] = new System.Windows.CornerRadius(10);
 
             // ── Thickness resources ───────────────────────────────────────────
             r["LemoineTh_ToolbarMar"]   = Th(14, 0, 14, 0);

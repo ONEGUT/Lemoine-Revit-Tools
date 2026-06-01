@@ -792,5 +792,144 @@ namespace LemoineTools.Lemoine
                 });
         };
     }
+
+    // ── Floating action pill ────────────────────────────────────────────────
+    /// <summary>
+    /// Builds a fully-rounded "pill" button (Border-based so the corner radius is
+    /// honoured) with a drop shadow, used for the floating bottom-right Create /
+    /// Preview actions. <paramref name="primary"/> = accent-filled; otherwise a
+    /// neutral surface pill.
+    /// </summary>
+    public static Border BuildActionPill(string label, bool primary, Action onClick)
+    {
+        var tb = new TextBlock
+        {
+            Text                = label,
+            VerticalAlignment   = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            IsHitTestVisible    = false,
+        };
+        tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+        tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+        tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+
+        var pill = new Border
+        {
+            Padding         = new Thickness(18, 9, 18, 9),
+            BorderThickness = new Thickness(1),
+            Cursor          = Cursors.Hand,
+            Child           = tb,
+            Effect          = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 14, Opacity = 0.32, ShadowDepth = 3, Direction = 270,
+            },
+        };
+        pill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+        pill.SetResourceReference(Border.BorderBrushProperty,  "LemoineAccent");
+        pill.SetResourceReference(Border.BackgroundProperty,   primary ? "LemoineAccentDim" : "LemoineSurface");
+        if (!primary)
+        {
+            pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+        }
+
+        pill.MouseEnter += (s, e) =>
+        {
+            pill.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+        };
+        pill.MouseLeave += (s, e) =>
+        {
+            pill.SetResourceReference(Border.BackgroundProperty, primary ? "LemoineAccentDim" : "LemoineSurface");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, primary ? "LemoineAccent" : "LemoineText");
+            if (!primary) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+        };
+        pill.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+        return pill;
+    }
+
+    // ── "Add" ghost pill (floats as last item in a list) ────────────────────
+    /// <summary>
+    /// Builds a rounded, dashed-feel "＋ Add …" affordance intended to sit as the
+    /// final child of a scrolling list panel (trades / rules / legends), replacing
+    /// the old sticky bottom bar.
+    /// </summary>
+    public static Border BuildAddPill(string label, Action onClick)
+    {
+        var lbl = new TextBlock
+        {
+            Text                = label,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+            IsHitTestVisible    = false,
+        };
+        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+        lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+        lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+        var border = new Border
+        {
+            Margin          = new Thickness(4, 6, 4, 6),
+            Padding         = new Thickness(10, 7, 10, 7),
+            BorderThickness = new Thickness(1),
+            Cursor          = Cursors.Hand,
+            Background      = Brushes.Transparent,
+            Child           = lbl,
+        };
+        border.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+        border.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+
+        border.MouseEnter += (s, e) =>
+        {
+            border.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            border.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty,  "LemoineText");
+        };
+        border.MouseLeave += (s, e) =>
+        {
+            border.Background = Brushes.Transparent;
+            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty,  "LemoineTextDim");
+        };
+        border.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+        return border;
+    }
+
+    // ── Floating status chip ────────────────────────────────────────────────
+    /// <summary>
+    /// Builds a rounded surface chip (collapsed by default) wrapping a green,
+    /// italic status <see cref="TextBlock"/>. Used in the floating action area so
+    /// status messages stay legible over content. Toggle the returned Border's
+    /// Visibility and set <paramref name="text"/>.Text to show a message.
+    /// </summary>
+    public static Border BuildStatusChip(out TextBlock text)
+    {
+        text = new TextBlock
+        {
+            Text              = "",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontStyle         = FontStyles.Italic,
+            IsHitTestVisible  = false,
+        };
+        text.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+        text.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+        text.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+        var chip = new Border
+        {
+            Padding         = new Thickness(10, 5, 10, 5),
+            BorderThickness = new Thickness(1),
+            Visibility      = Visibility.Collapsed,
+            Child           = text,
+            Effect          = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 10, Opacity = 0.25, ShadowDepth = 2, Direction = 270,
+            },
+        };
+        chip.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+        chip.SetResourceReference(Border.BackgroundProperty,   "LemoineSurface");
+        chip.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+        return chip;
+    }
 }
 }
