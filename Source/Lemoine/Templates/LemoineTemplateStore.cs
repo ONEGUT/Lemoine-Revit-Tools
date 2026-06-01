@@ -143,8 +143,57 @@ namespace LemoineTools.Lemoine.Templates
             }
             catch (Exception __lex) { LemoineLog.Swallowed("TemplateStore: list templates (directory unreadable)", __lex); }
 
-            result.Sort((a, b) => b.Created.CompareTo(a.Created)); // newest first
+            var order = ReadOrder();
+            if (order.Count > 0)
+            {
+                // Honour the saved manual order; templates absent from the index (newly
+                // saved) fall to the end, newest first.
+                result.Sort((a, b) =>
+                {
+                    int ia = order.IndexOf(SlugOf(a)), ib = order.IndexOf(SlugOf(b));
+                    if (ia < 0 && ib < 0) return b.Created.CompareTo(a.Created);
+                    if (ia < 0) return 1;
+                    if (ib < 0) return -1;
+                    return ia.CompareTo(ib);
+                });
+            }
+            else
+            {
+                result.Sort((a, b) => b.Created.CompareTo(a.Created)); // newest first
+            }
             return result;
+        }
+
+        private static string SlugOf(LemoineTemplateInfo info)
+            => Path.GetFileNameWithoutExtension(info.FilePath);
+
+        // Sidecar index ('.order', not a *.xml template) holding the manual display order
+        // as one slug per line. Templates support drag-to-reorder; this persists it.
+        private string OrderFilePath => Path.Combine(Directory, ".order");
+
+        /// <summary>Persists a manual display order (by template slug) so it survives restarts.</summary>
+        public void SaveOrder(IEnumerable<LemoineTemplateInfo> orderedTemplates)
+        {
+            try
+            {
+                var slugs = new List<string>();
+                foreach (var t in orderedTemplates) slugs.Add(SlugOf(t));
+                File.WriteAllLines(OrderFilePath, slugs);
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("TemplateStore: save order", ex); }
+        }
+
+        private List<string> ReadOrder()
+        {
+            try
+            {
+                if (!File.Exists(OrderFilePath)) return new List<string>();
+                var list = new List<string>();
+                foreach (var line in File.ReadAllLines(OrderFilePath))
+                    if (!string.IsNullOrWhiteSpace(line)) list.Add(line);
+                return list;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("TemplateStore: read order", ex); return new List<string>(); }
         }
 
         /// <summary>

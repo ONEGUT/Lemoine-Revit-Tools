@@ -251,8 +251,21 @@ namespace LemoineTools.Lemoine
                 return;
             }
 
-            foreach (var t in trades)
-                _fTradeListPanel.Children.Add(BuildTradeRow(t));
+            // Drag-to-reorder (whole row is the handle, like the legend rule rows). The
+            // working copy is reordered in place; the window persists it on apply/close.
+            if (_fTradeReorder == null)
+                _fTradeReorder = new LemoineListReorder(_fTradeListPanel, (from, to) =>
+                {
+                    LemoineListReorder.Move(_filterTrades!, from, to);
+                    FRefreshTradesSidebar();
+                });
+
+            for (int i = 0; i < trades.Count; i++)
+            {
+                var rowEl = BuildTradeRow(trades[i]);
+                _fTradeListPanel.Children.Add(rowEl);
+                if (rowEl is FrameworkElement fe) _fTradeReorder.Arm(fe, i);
+            }
 
             AppendAddTradePill();
         }
@@ -2393,11 +2406,23 @@ namespace LemoineTools.Lemoine
 
             var templates = store.List();
             var templateListPanel = new StackPanel();
+            LemoineListReorder? templateReorder = null;
 
             void RebuildTemplateList()
             {
                 templateListPanel.Children.Clear();
                 var current = store.List();
+
+                // Drag-to-reorder (whole pill is the handle); the new order is persisted to
+                // the store's sidecar index so it survives restarts.
+                if (templateReorder == null)
+                    templateReorder = new LemoineListReorder(templateListPanel, (from, to) =>
+                    {
+                        var ordered = store.List();
+                        LemoineListReorder.Move(ordered, from, to);
+                        store.SaveOrder(ordered);
+                        RebuildTemplateList();
+                    });
 
                 if (current.Count == 0)
                 {
@@ -2414,6 +2439,7 @@ namespace LemoineTools.Lemoine
                     return;
                 }
 
+                int idx = 0;
                 foreach (var tmpl in current)
                 {
                     // Capture for lambda closure
@@ -2513,6 +2539,8 @@ namespace LemoineTools.Lemoine
 
                     pillBorder.Child = rowGrid;
                     templateListPanel.Children.Add(pillBorder);
+                    templateReorder.Arm(pillBorder, idx);
+                    idx++;
                 }
             }
 

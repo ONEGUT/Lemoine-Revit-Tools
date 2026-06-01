@@ -36,6 +36,7 @@ namespace LemoineTools.Lemoine
         private Border?      _fEditorBorder;
         private Border?      _fTradesSidebar;
         private StackPanel?  _fTradeListPanel;
+        private LemoineListReorder? _fTradeReorder;   // drag-to-reorder trades
         private UIElement?   _fAddTradeAnchor;
         private TextBlock?   _fStatusText;
         private Border?      _fStatusChip;
