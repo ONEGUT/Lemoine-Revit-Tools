@@ -17,6 +17,21 @@ namespace LemoineTools.Tools.Testing
         public double ToleranceMm       { get; set; } = 25.4;
         public string DimStyleName      { get; set; } = "";
         public double DimLineOffsetMm   { get; set; } = 100.0;
+        // Max difference (mm) in distance-to-edge for clashes to share one grouped
+        // dimension. 0 disables grouping (one dimension per clash, as before).
+        public double GroupToleranceMm  { get; set; } = 50.0;
+        // Along-edge gap (mm) that splits a parallel run into separate dimensions, so
+        // equidistant clashes far apart along an edge are not merged. 0 = never split.
+        public double ClusterGapMm      { get; set; } = 1000.0;
+        // Colour shown for clashes that match no Auto Filter rule (hex, with hatch fill).
+        public string FallbackColorHex  { get; set; } = "#FF00FF";
+        // Overlap avoidance for placed dimensions (keeps them off each other, the clash
+        // markers, and optionally pre-existing annotations).
+        public bool   AvoidOverlaps     { get; set; } = true;
+        public string OverlapMode       { get; set; } = "Stagger"; // "Stagger" | "Probe"
+        public double StaggerFactor     { get; set; } = 2.5;
+        public int    MaxLanes          { get; set; } = 6;
+        public bool   AvoidExisting     { get; set; } = true;
         public string DimTarget         { get; set; } = "Edge";   // "Edge" | "Centre"
         public string FillStyle         { get; set; } = "Solid";  // "Solid" | "Outline"
         public string CrossLineTypeName { get; set; } = "";

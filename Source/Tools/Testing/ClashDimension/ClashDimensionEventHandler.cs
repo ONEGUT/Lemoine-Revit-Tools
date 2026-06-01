@@ -23,6 +23,18 @@ namespace LemoineTools.Tools.Testing
         public double          ToleranceMm       { get; set; } = 25.4;
         public string          DimStyleName      { get; set; } = "";
         public double          DimLineOffsetMm   { get; set; } = 100.0;
+        public double          GroupToleranceMm  { get; set; } = 50.0;
+        // Along-edge gap that splits a parallel run (mm); 0 = never split.
+        public double          ClusterGapMm      { get; set; } = 1000.0;
+        // Colour for clashes matching no Auto Filter rule (hex, rendered with a hatch fill).
+        public string          FallbackColorHex  { get; set; } = "#FF00FF";
+        // Overlap avoidance: keep placed dimensions off each other, the clash markers,
+        // and (optionally) pre-existing annotations in the view.
+        public bool            AvoidOverlaps     { get; set; } = true;
+        public string          OverlapMode       { get; set; } = "Stagger";  // "Stagger" | "Probe"
+        public double          StaggerFactor     { get; set; } = 2.5;        // lane height = textH × scale × factor
+        public int             MaxLanes          { get; set; } = 6;          // probe retry cap
+        public bool            AvoidExisting     { get; set; } = true;       // probe also dodges existing annotations
         public string          DimTarget         { get; set; } = "Edge";
         public string          FillStyle         { get; set; } = "Solid";
         public string          CrossLineTypeName { get; set; } = "";
@@ -35,9 +47,9 @@ namespace LemoineTools.Tools.Testing
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashDimensionEventHandler";
 
-        // Default colours for Categories / Elements modes (no owning filter rule).
-        private const string DefaultColor1 = "#E78F36";
-        private const string DefaultColor2 = "#3FB3D9";
+        // Smallest dimension segment we will attempt (~3 mm); below this Revit rejects
+        // the dimension as zero-length, so coincident/on-edge references are dropped.
+        private const double MinSegFt = 0.01;
 
         // ── BIP map for fast parameter resolution ─────────────────────────────
         private static readonly Dictionary<string, BuiltInParameter> BipMap =
@@ -60,6 +72,7 @@ namespace LemoineTools.Tools.Testing
             public ElementId          Id            = ElementId.InvalidElementId;
             public string             Label         = "";
             public string             ColorHex      = "#888888";
+            public bool               RuleColored   = true;   // false → coloured by fallback, not a rule
             public BoundingBoxXYZ     HostBBox      = null!;
             public Solid?             HostSolid;
             public bool               SolidTried;
@@ -113,8 +126,8 @@ namespace LemoineTools.Tools.Testing
             Progress(10, pass, fail, skip);
 
             // 2. Scan each group per its mode
-            var group1Elements = ScanGroupSpec(doc, Group1Spec, sources, DefaultColor1, "Group 1");
-            var group2Elements = ScanGroupSpec(doc, Group2Spec, sources, DefaultColor2, "Group 2");
+            var group1Elements = ScanGroupSpec(doc, Group1Spec, sources, "Group 1");
+            var group2Elements = ScanGroupSpec(doc, Group2Spec, sources, "Group 2");
             Log($"Group 1: {group1Elements.Count} element(s)   Group 2: {group2Elements.Count} element(s)", "info");
 
             if (group1Elements.Count == 0)
@@ -151,6 +164,10 @@ namespace LemoineTools.Tools.Testing
                 ? $"Found {clashes.Count} clash(es) — limit of {MaxClashes} reached. Increase Max Clashes to detect more."
                 : $"Found {clashes.Count} clash(es).", "info");
 
+            int unruled = clashes.Count(c => !c.Group1.RuleColored);
+            if (unruled > 0)
+                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {FallbackColorHex} with a hatch fill.", "info");
+
             Progress(40, pass, fail, skip);
 
             // 4. Resolve dimension type
@@ -167,6 +184,12 @@ namespace LemoineTools.Tools.Testing
                 ElementId lineStyleId = ResolveLineStyleId(doc);
                 var regionTypeCache = new Dictionary<string, ElementId?>();
 
+                // Filled regions + cross lines are placed per clash (unchanged); the
+                // returned markers feed the grouped dimension pass that follows.
+                var markersByView = new Dictionary<ElementId, List<ClashMarker>>();
+                foreach (var viewId in ViewIds)
+                    markersByView[viewId] = new List<ClashMarker>();
+
                 int done = 0;
                 foreach (var clash in clashes)
                 {
@@ -177,8 +200,9 @@ namespace LemoineTools.Tools.Testing
 
                         try
                         {
-                            CreateClashAnnotation(doc, view, clash, dimType,
+                            var marker = CreateClashMarker(doc, view, clash,
                                 lineStyleId, toleranceFt, regionTypeCache);
+                            if (marker != null) markersByView[viewId].Add(marker.Value);
                             pass++;
                         }
                         catch (Exception ex)
@@ -189,13 +213,36 @@ namespace LemoineTools.Tools.Testing
                     }
 
                     done++;
-                    Progress(40 + (int)(done * 55.0 / clashes.Count), pass, fail, skip);
+                    Progress(40 + (int)(done * 50.0 / clashes.Count), pass, fail, skip);
                 }
 
-                tx.Commit();
-            }
+                // Grouped dimension placement (one pass per view, after all markers exist).
+                double dimLineOffsetFt = DimLineOffsetMm / 304.8;
+                double groupTolFt      = GroupToleranceMm / 304.8;
+                int    dimCount        = 0;
+                foreach (var viewId in ViewIds)
+                {
+                    var view = doc.GetElement(viewId) as View;
+                    if (view == null) continue;
 
-            Log($"Done — {pass} annotation(s) placed, {fail} failed.", pass > 0 ? "pass" : "fail");
+                    try
+                    {
+                        dimCount += PlaceGroupedDimensions(doc, view, markersByView[viewId],
+                            dimType, dimLineOffsetFt, groupTolFt);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Dimensions in '{view.Name}': {ex.Message}", "fail");
+                        fail++;
+                    }
+                }
+                Progress(95, pass, fail, skip);
+
+                tx.Commit();
+
+                Log($"Done — {pass} marker(s), {dimCount} dimension(s) placed, {fail} failed.",
+                    pass > 0 ? "pass" : "fail");
+            }
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────
@@ -203,14 +250,14 @@ namespace LemoineTools.Tools.Testing
         private List<ClashElement> ScanGroupSpec(
             Document hostDoc, ClashGroupSpec spec,
             List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
-            string defaultColor, string label)
+            string label)
         {
             switch (spec.Mode)
             {
                 case "Categories":
-                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds), defaultColor);
+                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds));
                 case "Elements":
-                    return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources, defaultColor);
+                    return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources);
                 default:
                     var rules = ResolveRules(spec.RuleKeys);
                     if (rules.Count == 0)
@@ -296,8 +343,7 @@ namespace LemoineTools.Tools.Testing
 
         private List<ClashElement> ScanCategories(
             List<string> osts,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources,
-            string color)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources)
         {
             var result = new List<ClashElement>();
             foreach (var ostStr in osts ?? new List<string>())
@@ -322,6 +368,7 @@ namespace LemoineTools.Tools.Testing
                     {
                         var bb = GetHostBBox(el, tx);
                         if (bb == null) continue;
+                        string? ruleColor = ResolveRuleColor(el);
                         result.Add(new ClashElement
                         {
                             Doc           = srcDoc,
@@ -329,7 +376,8 @@ namespace LemoineTools.Tools.Testing
                             HostTransform = tx,
                             Id            = el.Id,
                             Label         = ostStr,
-                            ColorHex      = color,
+                            ColorHex      = ruleColor ?? FallbackColorHex,
+                            RuleColored   = ruleColor != null,
                             HostBBox      = bb,
                         });
                         srcCount++;
@@ -343,8 +391,7 @@ namespace LemoineTools.Tools.Testing
 
         private List<ClashElement> ScanElements(
             List<long> elemIds, List<long> elemLinkIds,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
-            string color)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources)
         {
             var result = new List<ClashElement>();
             // Map linkInstId → (doc, link, tx)
@@ -361,6 +408,7 @@ namespace LemoineTools.Tools.Testing
                 var bb = GetHostBBox(el, src.tx);
                 if (bb == null) continue;
 
+                string? ruleColor = ResolveRuleColor(el);
                 result.Add(new ClashElement
                 {
                     Doc           = src.doc,
@@ -368,7 +416,8 @@ namespace LemoineTools.Tools.Testing
                     HostTransform = src.tx,
                     Id            = el.Id,
                     Label         = el.Name ?? "(element)",
-                    ColorHex      = color,
+                    ColorHex      = ruleColor ?? FallbackColorHex,
+                    RuleColored   = ruleColor != null,
                     HostBBox      = bb,
                 });
             }
@@ -387,6 +436,39 @@ namespace LemoineTools.Tools.Testing
                     if (keySet.Contains($"{trade.Id}::{rule.Id}"))
                         result.Add((trade, rule));
             return result;
+        }
+
+        // Resolves the surface colour an element would receive from the Auto Filter rules,
+        // regardless of how its group was defined (Rules, Categories, or direct Elements).
+        // Returns null when the element matches no enabled rule → caller uses the fallback.
+        private static string? ResolveRuleColor(Element el)
+        {
+            string? bic = ElementBicName(el);
+            if (bic == null) return null;
+
+            foreach (var trade in AutoFiltersSettings.Instance.Trades)
+            {
+                if (trade?.Rules == null) continue;
+                foreach (var rule in trade.Rules)
+                {
+                    if (rule == null || !rule.Enabled) continue;
+                    if (rule.BuiltInCategories == null || !rule.BuiltInCategories.Contains(bic)) continue;
+                    if (!MatchesRule(el, rule)) continue;
+                    if (string.IsNullOrEmpty(rule.SurfColor)) continue;
+                    return rule.SurfColor;
+                }
+            }
+            return null;
+        }
+
+        // Returns the element's category as its OST_* enum name (e.g. "OST_PipeCurves"),
+        // matching how rules store their categories. Null for elements without a category.
+        private static string? ElementBicName(Element el)
+        {
+            var cat = el.Category;
+            if (cat == null) return null;
+            try { return ((BuiltInCategory)cat.Id.Value).ToString(); }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: resolve element category", __lex); return null; }
         }
 
         private static bool MatchesRule(Element el, FilterRuleConfig rule)
@@ -620,9 +702,29 @@ namespace LemoineTools.Tools.Testing
 
         // ── Annotation creation ───────────────────────────────────────────────
 
-        private void CreateClashAnnotation(
+        // A placed clash marker (filled region + cross lines). Carries the cross-arm
+        // references used when dimensioning this clash to grids/slab edges:
+        //   HRef → used by X-measuring (horizontal) dimensions
+        //   VRef → used by Y-measuring (vertical) dimensions
+        private struct ClashMarker
+        {
+            public double Cx;
+            public double Cy;
+            public Reference HRef;
+            public Reference VRef;
+            // Drawn XY extents (circle + cross arms) so overlap avoidance can dodge
+            // the marker without any geometry query.
+            public double MinX;
+            public double MinY;
+            public double MaxX;
+            public double MaxY;
+        }
+
+        // Places the filled region + cross lines for one clash and returns its marker.
+        // Returns null if the clash zone is degenerate or the cross lines failed.
+        private ClashMarker? CreateClashMarker(
             Document doc, View view, ClashResult clash,
-            DimensionType? dimType, ElementId lineStyleId,
+            ElementId lineStyleId,
             double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
         {
             var zone = clash.OverlapBBox;
@@ -631,7 +733,7 @@ namespace LemoineTools.Tools.Testing
             double minY = zone.Min.Y - toleranceFt;
             double maxY = zone.Max.Y + toleranceFt;
 
-            if (maxX - minX < 0.001 || maxY - minY < 0.001) return;
+            if (maxX - minX < 0.001 || maxY - minY < 0.001) return null;
 
             double cx     = (minX + maxX) / 2.0;
             double cy     = (minY + maxY) / 2.0;
@@ -642,12 +744,15 @@ namespace LemoineTools.Tools.Testing
             double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
             // ── FilledRegion (circular) ───────────────────────────────────────
+            bool fallback   = !clash.Group1.RuleColored;
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
-            string cacheKey = $"{hexColor}_{FillStyle}";
+            string cacheKey = fallback ? $"{hexColor}_FB" : $"{hexColor}_{FillStyle}";
             if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
             {
-                typeId = GetOrCreateFilledRegionType(doc, hexColor);
+                typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
                 regionTypeCache[cacheKey] = typeId;
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
             }
 
             if (typeId != null && typeId != ElementId.InvalidElementId)
@@ -667,8 +772,9 @@ namespace LemoineTools.Tools.Testing
                 catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: create clash filled region", __lex); }
             }
 
-            // ── Cross lines + dimensions ─────────────────────────────────────
-            double dimLineOffsetFt = DimLineOffsetMm / 304.8;
+            // ── Cross lines ───────────────────────────────────────────────────
+            Reference? hRef = null;
+            Reference? vRef = null;
 
             if (DimTarget == "Centre")
             {
@@ -679,10 +785,8 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLeft != null && hRight != null && vBot != null && vTop != null)
                 {
-                    var hCentreRef = hLeft.GeometryCurve.GetEndPointReference(1);
-                    var vCentreRef = vBot.GeometryCurve.GetEndPointReference(1);
-                    CreateGridAndFloorDimensions(doc, view, hCentreRef, vCentreRef,
-                        cx, cy, dimLineOffsetFt, dimType, isFromCenter: true);
+                    hRef = hLeft.GeometryCurve.GetEndPointReference(1);
+                    vRef = vBot.GeometryCurve.GetEndPointReference(1);
                 }
             }
             else
@@ -692,237 +796,420 @@ namespace LemoineTools.Tools.Testing
 
                 if (hLine != null && vLine != null)
                 {
-                    var hRightRef = hLine.GeometryCurve.GetEndPointReference(1);
-                    var vTopRef   = vLine.GeometryCurve.GetEndPointReference(1);
-                    CreateGridAndFloorDimensions(doc, view, hRightRef, vTopRef,
-                        cx, cy, dimLineOffsetFt, dimType, isFromCenter: false);
+                    // Measure to the clash centre, not an arm tip: an X-measuring dimension
+                    // (HRef) must reference a point at x = cx — that is the VERTICAL line
+                    // (all its points share x = cx). A Y-measuring dimension (VRef) must
+                    // reference y = cy — the HORIZONTAL line. Referencing each line's own
+                    // axis instead would land the witness line on the arm edge.
+                    hRef = vLine.GeometryCurve.GetEndPointReference(1);
+                    vRef = hLine.GeometryCurve.GetEndPointReference(1);
                 }
             }
+
+            if (hRef == null || vRef == null) return null;
+            double ext = Math.Max(radius, armLen);   // drawn footprint half-size
+            return new ClashMarker
+            {
+                Cx = cx, Cy = cy, HRef = hRef, VRef = vRef,
+                MinX = cx - ext, MaxX = cx + ext,
+                MinY = cy - ext, MaxY = cy + ext,
+            };
         }
 
-        private void CreateGridAndFloorDimensions(
-            Document doc, View view,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType, bool isFromCenter)
+        // ── Grouped dimension placement ───────────────────────────────────────
+
+        // One clash reference + its centre, queued for dimensioning to a single edge.
+        private struct DimItem
         {
+            public Reference Ref;   // HRef (X-measuring) or VRef (Y-measuring)
+            public double    Mx;
+            public double    My;
+        }
+
+        // Selects the single nearest X-measuring reference (vertical grid / X-facing slab face)
+        // and the single nearest Y-measuring reference (horizontal grid / Y-facing slab face)
+        // across all selected grids and floors, then places at most 2 dimensions — one per axis.
+        private int PlaceGroupedDimensions(
+            Document doc, View view, List<ClashMarker> markers,
+            DimensionType? dimType, double dimLineOffsetFt, double groupTolFt)
+        {
+            if (dimType == null)
+            {
+                if (markers.Count > 0)
+                    Log("No dimension type available — dimensions skipped.", "info");
+                return 0;
+            }
+            if (markers.Count == 0) return 0;
+
+            // Marker centroid — used to choose the nearest reference per axis.
+            double centX = markers.Average(m => m.Cx);
+            double centY = markers.Average(m => m.Cy);
+
+            var xCandidates = new List<(Reference r, double edgeCoord, string label)>();
+            var yCandidates = new List<(Reference r, double edgeCoord, string label)>();
+
+            // ── Grids ─────────────────────────────────────────────────────────
             for (int i = 0; i < GridIds.Count; i++)
             {
                 long linkId = (i < GridLinkIds.Count) ? GridLinkIds[i] : 0L;
                 RevitLinkInstance? linkInst = null;
                 Grid? grid;
-
                 if (linkId == 0)
-                {
                     grid = doc.GetElement(new ElementId(GridIds[i])) as Grid;
-                }
                 else
                 {
                     linkInst = doc.GetElement(new ElementId(linkId)) as RevitLinkInstance;
                     var ld   = linkInst?.GetLinkDocument();
                     grid     = ld?.GetElement(new ElementId(GridIds[i])) as Grid;
                 }
-
                 if (grid == null) continue;
-                CreateGridDimension(doc, view, grid, linkInst, hRef, vRef, cx, cy, dimLineOffsetFt, dimType);
+
+                var gridCurve = grid.Curve as Line;
+                if (gridCurve == null) continue;
+                var tx  = linkInst?.GetTotalTransform() ?? Transform.Identity;
+                XYZ dir = tx.OfVector(gridCurve.Direction).Normalize();
+                bool mX = Math.Abs(dir.Y) > Math.Abs(dir.X);   // vertical grid → measure X
+                XYZ gp  = tx.OfPoint(gridCurve.GetEndPoint(0));
+
+                Reference gridRef = new Reference(grid);
+                if (linkInst != null) gridRef = gridRef.CreateLinkReference(linkInst);
+
+                if (mX) xCandidates.Add((gridRef, gp.X, $"Grid {grid.Name}"));
+                else    yCandidates.Add((gridRef, gp.Y, $"Grid {grid.Name}"));
             }
 
+            // ── Floors ────────────────────────────────────────────────────────
             for (int i = 0; i < FloorIds.Count; i++)
             {
                 long linkId = (i < FloorLinkIds.Count) ? FloorLinkIds[i] : 0L;
                 RevitLinkInstance? linkInst = null;
                 Floor? floor;
-
                 if (linkId == 0)
-                {
                     floor = doc.GetElement(new ElementId(FloorIds[i])) as Floor;
-                }
                 else
                 {
                     linkInst = doc.GetElement(new ElementId(linkId)) as RevitLinkInstance;
                     var ld   = linkInst?.GetLinkDocument();
                     floor    = ld?.GetElement(new ElementId(FloorIds[i])) as Floor;
                 }
-
                 if (floor == null) continue;
-                CreateFloorDimension(doc, view, floor, linkInst, hRef, vRef, cx, cy, dimLineOffsetFt, dimType);
-            }
-        }
 
-        private void CreateGridDimension(
-            Document doc, View view, Grid grid, RevitLinkInstance? linkInst,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType)
-        {
-            try
-            {
-                var gridCurve = grid.Curve as Line;
-                if (gridCurve == null) return;
-
-                XYZ dir = gridCurve.Direction.Normalize();
-                if (linkInst != null)
-                    dir = linkInst.GetTotalTransform().OfVector(dir).Normalize();
-                bool isVGrid = Math.Abs(dir.Y) > Math.Abs(dir.X);
-
-                Reference gridRef = new Reference(grid);
-                if (linkInst != null)
-                    gridRef = gridRef.CreateLinkReference(linkInst);
-
-                var refs = new ReferenceArray();
-                Line dimLine;
-                double extent = 1000.0;
-
-                if (isVGrid)
+                try
                 {
-                    double dimY = cy + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
-                    refs.Append(hRef);
-                    refs.Append(gridRef);
-                }
-                else
-                {
-                    double dimX = cx + dimLineOffsetFt;
-                    dimLine = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
-                    refs.Append(vRef);
-                    refs.Append(gridRef);
-                }
+                    var geomOpts = new Options { ComputeReferences = true };
+                    var geom = floor.get_Geometry(geomOpts);
+                    var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
 
-                if (dimType != null)
-                {
-                    var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                    dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                }
-                else
-                {
-                    Log($"Grid dim ({grid.Name}): no dimension type available — skipped.", "info");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"Grid dim ({grid.Name}): {ex.Message}", "info");
-            }
-        }
-
-        private void CreateFloorDimension(
-            Document doc, View view, Floor floor, RevitLinkInstance? linkInst,
-            Reference hRef, Reference vRef,
-            double cx, double cy, double dimLineOffsetFt,
-            DimensionType? dimType)
-        {
-            try
-            {
-                var geomOpts = new Options { ComputeReferences = true };
-                var geom = floor.get_Geometry(geomOpts);
-                var tx   = linkInst?.GetTotalTransform() ?? Transform.Identity;
-
-                // One closest face per direction: Y-facing (→ horizontal dim) and X-facing (→ vertical dim)
-                Reference? bestYRef = null; double bestYDist = double.MaxValue;
-                Reference? bestXRef = null; double bestXDist = double.MaxValue;
-
-                foreach (GeometryObject obj in geom)
-                {
-                    if (!(obj is Solid solid)) continue;
-                    foreach (Face face in solid.Faces)
+                    foreach (GeometryObject gobj in geom)
                     {
-                        if (!(face is PlanarFace pf)) continue;
-                        if (Math.Abs(pf.FaceNormal.Z) > 0.1) continue;  // skip horizontal faces
-                        var faceRef = pf.Reference;
-                        if (faceRef == null) continue;
-                        if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
-
-                        XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
-                        double dist = FaceClosestDist2D(pf, tx, cx, cy);
-
-                        if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
+                        if (!(gobj is Solid solid)) continue;
+                        foreach (Face face in solid.Faces)
                         {
-                            if (dist < bestYDist) { bestYDist = dist; bestYRef = faceRef; }
-                        }
-                        else
-                        {
-                            if (dist < bestXDist) { bestXDist = dist; bestXRef = faceRef; }
+                            if (!(face is PlanarFace pf)) continue;
+                            if (Math.Abs(pf.FaceNormal.Z) > 0.1) continue;
+                            var faceRef = pf.Reference;
+                            if (faceRef == null) continue;
+                            if (linkInst != null) faceRef = faceRef.CreateLinkReference(linkInst);
+                            XYZ faceN = tx.OfVector(pf.FaceNormal).Normalize();
+                            XYZ o     = tx.OfPoint(pf.Origin);
+                            if (Math.Abs(faceN.Y) > Math.Abs(faceN.X))
+                                yCandidates.Add((faceRef, o.Y, $"Floor {floor.Name} (Y)"));
+                            else
+                                xCandidates.Add((faceRef, o.X, $"Floor {floor.Name} (X)"));
                         }
                     }
                 }
-
-                if (bestYRef == null && bestXRef == null)
-                {
-                    Log($"Floor dim ({floor.Name}): no vertical slab faces found — skipped.", "info");
-                    return;
-                }
-
-                double extent = 1000.0;
-
-                if (bestYRef != null && dimType != null)
-                {
-                    try
-                    {
-                        var refs = new ReferenceArray();
-                        refs.Append(hRef);
-                        refs.Append(bestYRef);
-                        double dimY   = cy + dimLineOffsetFt;
-                        var dimLine   = Line.CreateBound(new XYZ(cx - extent, dimY, 0), new XYZ(cx + extent, dimY, 0));
-                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                    }
-                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), Y-face: {ex.Message}", "info"); }
-                }
-
-                if (bestXRef != null && dimType != null)
-                {
-                    try
-                    {
-                        var refs = new ReferenceArray();
-                        refs.Append(vRef);
-                        refs.Append(bestXRef);
-                        double dimX   = cx + dimLineOffsetFt;
-                        var dimLine   = Line.CreateBound(new XYZ(dimX, cy - extent, 0), new XYZ(dimX, cy + extent, 0));
-                        var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
-                        dim?.LookupParameter("Mark")?.Set("LemoineCD");
-                    }
-                    catch (Exception ex) { Log($"Floor dim ({floor.Name}), X-face: {ex.Message}", "info"); }
-                }
+                catch (Exception ex) { Log($"Floor candidates ({floor.Name}): {ex.Message}", "info"); }
             }
-            catch (Exception ex)
+
+            if (xCandidates.Count == 0 && yCandidates.Count == 0) return 0;
+
+            // Pick the single nearest candidate per axis to the marker centroid.
+            (Reference r, double edgeCoord, string label)? bestX = null, bestY = null;
+            double dBX = double.MaxValue, dBY = double.MaxValue;
+            foreach (var c in xCandidates) { double d = Math.Abs(centX - c.edgeCoord); if (d < dBX) { dBX = d; bestX = c; } }
+            foreach (var c in yCandidates) { double d = Math.Abs(centY - c.edgeCoord); if (d < dBY) { dBY = d; bestY = c; } }
+
+            // Overlap-avoidance context: lane height + obstacle set (markers, then each
+            // placed dimension is added so the second axis avoids the first).
+            double stepFt = AvoidOverlaps ? DimStepFt(view, dimType, StaggerFactor) : 0.0;
+            var obstacles = AvoidOverlaps ? BuildObstacles(doc, view, markers) : new List<BoundingBoxXYZ>();
+
+            int placed = 0;
+            if (bestX != null)
             {
-                Log($"Floor dim ({floor.Name}): {ex.Message}", "info");
+                var xItems = markers.Select(m => new DimItem { Ref = m.HRef, Mx = m.Cx, My = m.Cy }).ToList();
+                placed += EmitEdgeDimensions(doc, view, dimType, bestX.Value.r, true, bestX.Value.edgeCoord,
+                    xItems, dimLineOffsetFt, groupTolFt, stepFt, obstacles, bestX.Value.label);
             }
+            if (bestY != null)
+            {
+                var yItems = markers.Select(m => new DimItem { Ref = m.VRef, Mx = m.Cx, My = m.Cy }).ToList();
+                placed += EmitEdgeDimensions(doc, view, dimType, bestY.Value.r, false, bestY.Value.edgeCoord,
+                    yItems, dimLineOffsetFt, groupTolFt, stepFt, obstacles, bestY.Value.label);
+            }
+            return placed;
         }
 
-        // Returns the minimum 2-D (XY) distance from (cx, cy) to the nearest point on
-        // any boundary edge of the face, after applying the link transform tx.
-        private static double FaceClosestDist2D(PlanarFace pf, Transform tx, double cx, double cy)
+        // Lane height for staggering / probing, in model feet. TEXT_SIZE is paper-space
+        // feet (Revit internal units); multiply by view scale to reach model space, then
+        // by the user's StaggerFactor so lanes clear text height + arrowheads.
+        private static double DimStepFt(View view, DimensionType dimType, double factor)
         {
-            double minDist = double.MaxValue;
-            foreach (EdgeArray loop in pf.EdgeLoops)
+            int scale = view.Scale > 0 ? view.Scale : 50;
+            try
             {
-                foreach (Edge edge in loop)
+                double h = dimType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+                if (h > 0) return h * scale * Math.Max(0.5, factor);
+            }
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: read dimension text size", __lex); }
+            return (5.0 / 304.8) * scale * Math.Max(0.5, factor);   // ~5 mm paper fallback
+        }
+
+        // Obstacle XY boxes the placed dimensions should avoid: the clash markers always,
+        // plus pre-existing annotations in the view when AvoidExisting is on. Our own
+        // freshly-tagged elements are skipped via the LemoineCD mark.
+        private List<BoundingBoxXYZ> BuildObstacles(Document doc, View view, List<ClashMarker> markers)
+        {
+            var list = new List<BoundingBoxXYZ>(markers.Count + 8);
+            foreach (var m in markers)
+                list.Add(new BoundingBoxXYZ
                 {
-                    var pts = edge.Tessellate();
-                    for (int i = 0; i < pts.Count - 1; i++)
-                    {
-                        XYZ p0 = tx.OfPoint(pts[i]);
-                        XYZ p1 = tx.OfPoint(pts[i + 1]);
-                        double segDx = p1.X - p0.X, segDy = p1.Y - p0.Y;
-                        double len2  = segDx * segDx + segDy * segDy;
-                        double t     = len2 < 1e-10 ? 0.0
-                                       : Math.Max(0.0, Math.Min(1.0,
-                                           ((cx - p0.X) * segDx + (cy - p0.Y) * segDy) / len2));
-                        double ex = p0.X + t * segDx - cx;
-                        double ey = p0.Y + t * segDy - cy;
-                        double d  = Math.Sqrt(ex * ex + ey * ey);
-                        if (d < minDist) minDist = d;
-                    }
+                    Min = new XYZ(m.MinX, m.MinY, -1),
+                    Max = new XYZ(m.MaxX, m.MaxY,  1),
+                });
+
+            if (!AvoidExisting) return list;
+            try
+            {
+                var cats = new List<BuiltInCategory>
+                {
+                    BuiltInCategory.OST_Dimensions,
+                    BuiltInCategory.OST_TextNotes,
+                    BuiltInCategory.OST_GenericAnnotation,
+                };
+                var filter = new ElementMulticategoryFilter(cats);
+                foreach (var e in new FilteredElementCollector(doc, view.Id)
+                             .WherePasses(filter)
+                             .WhereElementIsNotElementType())
+                {
+                    if (e.LookupParameter("Mark")?.AsString() == "LemoineCD") continue;
+                    var bb = e.get_BoundingBox(view);
+                    if (bb != null) list.Add(bb);
                 }
             }
-            return minDist;
+            catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: collect existing annotations for overlap avoidance", __lex); }
+            return list;
+        }
+
+        // True if a's XY box overlaps any obstacle box (Z ignored — plan view).
+        private static bool Overlaps2D(BoundingBoxXYZ a, List<BoundingBoxXYZ> obstacles)
+        {
+            foreach (var b in obstacles)
+                if (a.Min.X <= b.Max.X && a.Max.X >= b.Min.X
+                 && a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y)
+                    return true;
+            return false;
+        }
+
+        // Places dimensions from one edge to a set of clash references, grouping clashes
+        // that line up with the edge so they share a single dimension instead of stacking:
+        //   • Run PARALLEL to the edge (same perpendicular distance, spread along it)
+        //       → one single dimension for the group.
+        //   • Run PERPENDICULAR to the edge (one line, varying distance)
+        //       → one chained dimension (edge → each clash).
+        //   • Anything else (skew / isolated) → a plain single dimension per clash.
+        // measureIsX selects a horizontal dimension line (measuring X to a constant-X edge)
+        // vs a vertical one (measuring Y to a constant-Y edge). edgeCoord is the edge's
+        // coordinate on the measured axis; signed distance to it keeps opposite sides apart.
+        // Returns the number of dimensions actually placed.
+        private int EmitEdgeDimensions(
+            Document doc, View view, DimensionType dimType,
+            Reference edgeRef, bool measureIsX, double edgeCoord,
+            List<DimItem> items, double dimLineOffsetFt, double groupTolFt,
+            double stepFt, List<BoundingBoxXYZ> obstacles, string ctx)
+        {
+            int n = items.Count;
+            if (n == 0) return 0;
+
+            // measure = signed distance to the edge; along = position parallel to the edge.
+            var measure = new double[n];
+            var along   = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                measure[i] = (measureIsX ? items[i].Mx : items[i].My) - edgeCoord;
+                along[i]   =  measureIsX ? items[i].My : items[i].Mx;
+            }
+
+            var used   = new bool[n];
+            int placed = 0;
+            // Along-edge gap that breaks a parallel run; 0 (or less) = never split.
+            double clusterBreakFt = ClusterGapMm > 0 ? ClusterGapMm / 304.8 : double.MaxValue;
+
+            if (groupTolFt > 0)
+            {
+                // PARALLEL groups: same signed distance band, split into clusters along the
+                // edge so far-apart rows do not collapse into one dimension.
+                foreach (var g in Enumerable.Range(0, n)
+                             .GroupBy(i => (int)Math.Round(measure[i] / groupTolFt)))
+                {
+                    var band = g.ToList();
+                    if (band.Count < 2) continue;
+                    band.Sort((a, b) => along[a].CompareTo(along[b]));
+
+                    int start = 0;
+                    for (int k = 1; k <= band.Count; k++)
+                    {
+                        bool boundary = k == band.Count
+                                     || along[band[k]] - along[band[k - 1]] > clusterBreakFt;
+                        if (!boundary) continue;
+
+                        int cnt = k - start;
+                        if (cnt >= 2 && along[band[k - 1]] - along[band[start]] > groupTolFt)
+                        {
+                            int rep = band[start + cnt / 2];   // representative near the cluster's middle
+                            placed += EmitSingle(doc, view, dimType, edgeRef, items[rep], measure[rep],
+                                                 measureIsX, dimLineOffsetFt, stepFt, obstacles, placed, ctx);
+                            for (int j = start; j < k; j++) used[band[j]] = true;
+                        }
+                        start = k;
+                    }
+                }
+
+                // PERPENDICULAR groups: same along-edge band, varying distance → chain.
+                foreach (var g in Enumerable.Range(0, n).Where(i => !used[i])
+                             .GroupBy(i => (int)Math.Round(along[i] / groupTolFt)))
+                {
+                    var idx = g.ToList();
+                    if (idx.Count < 2) continue;
+                    idx.Sort((a, b) => measure[a].CompareTo(measure[b]));
+
+                    // Drop references on the edge (zero gap) and collapse near-coincident
+                    // positions so Revit does not see a zero-length segment.
+                    var chain = new List<int>();
+                    double last = double.NaN;
+                    foreach (var i in idx)
+                    {
+                        if (Math.Abs(measure[i]) < MinSegFt) continue;
+                        if (!double.IsNaN(last) && Math.Abs(measure[i] - last) < MinSegFt) continue;
+                        chain.Add(i);
+                        last = measure[i];
+                    }
+                    if (chain.Count < 2) continue;
+                    if (measure[chain[chain.Count - 1]] - measure[chain[0]] <= groupTolFt) continue;
+
+                    var refs = new ReferenceArray();
+                    refs.Append(edgeRef);
+                    foreach (var i in chain) refs.Append(items[i].Ref);
+
+                    double alongAbs   = chain.Average(i => along[i]);
+                    double measureAbs = edgeCoord + chain.Average(i => measure[i]);
+                    int got = EmitChain(doc, view, dimType, refs, measureIsX, alongAbs, measureAbs,
+                        dimLineOffsetFt, stepFt, obstacles, placed, ctx);
+                    placed += got;
+                    if (got > 0) foreach (var i in idx) used[i] = true;
+                }
+            }
+
+            // Remaining clashes (skew / isolated, or grouping disabled): one dim each.
+            for (int i = 0; i < n; i++)
+                if (!used[i])
+                    placed += EmitSingle(doc, view, dimType, edgeRef, items[i], measure[i],
+                                         measureIsX, dimLineOffsetFt, stepFt, obstacles, placed, ctx);
+
+            return placed;
+        }
+
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int EmitSingle(
+            Document doc, View view, DimensionType dimType,
+            Reference edgeRef, DimItem it, double measureSigned, bool measureIsX,
+            double dimLineOffsetFt, double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
+        {
+            if (Math.Abs(measureSigned) < MinSegFt) return 0;   // clash sits on the edge → no measurable gap
+            var refs = new ReferenceArray();
+            refs.Append(it.Ref);
+            refs.Append(edgeRef);
+            double alongStart    = (measureIsX ? it.My : it.Mx) + dimLineOffsetFt;
+            double measureCentre =  measureIsX ? it.Mx : it.My;
+            return PlaceWithAvoidance(doc, view, dimType, refs, measureIsX,
+                alongStart, measureCentre, stepFt, obstacles, ordinal, ctx);
+        }
+
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int EmitChain(
+            Document doc, View view, DimensionType dimType,
+            ReferenceArray refs, bool measureIsX,
+            double alongAbs, double measureCentre,
+            double dimLineOffsetFt, double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
+        {
+            double alongStart = alongAbs + dimLineOffsetFt;
+            return PlaceWithAvoidance(doc, view, dimType, refs, measureIsX,
+                alongStart, measureCentre, stepFt, obstacles, ordinal, $"{ctx} (chain)");
+        }
+
+        // Places one dimension and keeps it off the obstacle set:
+        //   • AvoidOverlaps off  → place once at the base offset (original behaviour).
+        //   • Stagger mode       → shift the start offset by ordinal × step (cheap, no query).
+        //   • Probe mode         → place, Regenerate, read the real bbox, and push the line
+        //                          out one lane at a time until it clears (capped at MaxLanes);
+        //                          the final bbox is added to the obstacle set for later dims.
+        // Returns 1 if a dimension was placed, 0 otherwise.
+        private int PlaceWithAvoidance(
+            Document doc, View view, DimensionType dimType, ReferenceArray refs,
+            bool measureIsX, double alongStart, double measureCentre,
+            double stepFt, List<BoundingBoxXYZ> obstacles, int ordinal, string ctx)
+        {
+            try
+            {
+                double along = alongStart;
+                if (AvoidOverlaps && OverlapMode == "Stagger" && stepFt > 0)
+                    along += ordinal * stepFt;
+
+                var dimLine = MakeDimLine(measureIsX, along, measureCentre);
+                var dim = doc.Create.NewDimension(view, dimLine, refs, dimType);
+                if (dim == null) { Log($"{ctx}: dimension not created (null result).", "info"); return 0; }
+                dim.LookupParameter("Mark")?.Set("LemoineCD");
+
+                if (AvoidOverlaps && OverlapMode == "Probe" && stepFt > 0)
+                {
+                    XYZ shift = measureIsX ? new XYZ(0, stepFt, 0) : new XYZ(stepFt, 0, 0);
+                    doc.Regenerate();
+                    var db = dim.get_BoundingBox(view);
+                    int lane = 0;
+                    while (db != null && Overlaps2D(db, obstacles) && lane < MaxLanes)
+                    {
+                        ElementTransformUtils.MoveElement(doc, dim.Id, shift);
+                        doc.Regenerate();
+                        db = dim.get_BoundingBox(view);
+                        lane++;
+                    }
+                    if (db != null && Overlaps2D(db, obstacles))
+                        Log($"{ctx}: could not fully clear overlap after {MaxLanes} lane(s).", "info");
+                    if (db != null) obstacles.Add(db);
+                }
+                return 1;
+            }
+            catch (Exception ex) { Log($"{ctx}: {ex.Message}", "info"); return 0; }
+        }
+
+        // Builds the dimension line. Horizontal (measures X) sits at a fixed Y; vertical
+        // (measures Y) sits at a fixed X. The line is run long so it spans all references.
+        private static Line MakeDimLine(bool measureIsX, double alongFixed, double measureCentre)
+        {
+            const double extent = 1000.0;
+            return measureIsX
+                ? Line.CreateBound(new XYZ(measureCentre - extent, alongFixed, 0), new XYZ(measureCentre + extent, alongFixed, 0))
+                : Line.CreateBound(new XYZ(alongFixed, measureCentre - extent, 0), new XYZ(alongFixed, measureCentre + extent, 0));
         }
 
         // ── FilledRegionType management ───────────────────────────────────────
 
-        private ElementId? GetOrCreateFilledRegionType(Document doc, string hexColor)
+        // fallback = element matched no rule: force a hatch pattern (not solid/outline) so
+        // unruled clashes are obvious even at a glance, independent of the FillStyle setting.
+        private ElementId? GetOrCreateFilledRegionType(Document doc, string hexColor, bool fallback)
         {
-            string suffix   = FillStyle == "Solid" ? "S" : "O";
+            string suffix   = fallback ? "FB" : (FillStyle == "Solid" ? "S" : "O");
             string typeName = $"LemoineClash_{hexColor}_{suffix}";
 
             var existing = new FilteredElementCollector(doc)
@@ -946,7 +1233,13 @@ namespace LemoineTools.Tools.Testing
             if (clr != null)
                 newType.ForegroundPatternColor = clr;
 
-            if (FillStyle == "Solid")
+            if (fallback)
+            {
+                // Hatch if the document has one; otherwise solid so the colour still reads.
+                var hatchId = GetHatchFillId(doc);
+                newType.ForegroundPatternId = hatchId != ElementId.InvalidElementId ? hatchId : GetSolidFillId(doc);
+            }
+            else if (FillStyle == "Solid")
             {
                 var solidId = GetSolidFillId(doc);
                 if (solidId != ElementId.InvalidElementId)
@@ -1082,6 +1375,23 @@ namespace LemoineTools.Tools.Testing
             {
                 try { if (fp.GetFillPattern().IsSolidFill) return fp.Id; }
                 catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: inspect fill pattern", __lex); }
+            }
+            return ElementId.InvalidElementId;
+        }
+
+        // First drafting, non-solid fill pattern — used to mark unruled (fallback) clashes.
+        private static ElementId GetHatchFillId(Document doc)
+        {
+            foreach (var fp in new FilteredElementCollector(doc)
+                .OfClass(typeof(FillPatternElement))
+                .Cast<FillPatternElement>())
+            {
+                try
+                {
+                    var pat = fp.GetFillPattern();
+                    if (!pat.IsSolidFill && pat.Target == FillPatternTarget.Drafting) return fp.Id;
+                }
+                catch (Exception __lex) { LemoineLog.Swallowed("ClashDimension: inspect hatch fill pattern", __lex); }
             }
             return ElementId.InvalidElementId;
         }
