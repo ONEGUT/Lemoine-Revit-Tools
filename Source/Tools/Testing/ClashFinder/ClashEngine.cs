@@ -752,6 +752,10 @@ namespace LemoineTools.Tools.Testing
             double radius = Math.Max(0.25, Math.Max(halfW, halfH));
             double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
+            // One id shared by this clash's region + every cross line, so the dimension pass can
+            // re-group the 2–4 lines back into a single clash and dimension it once (not per line).
+            string clashGroup = Guid.NewGuid().ToString("N");
+
             // ── FilledRegion (circular) ───────────────────────────────────────
             bool fallback   = !clash.Group1.RuleColored;
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
@@ -775,7 +779,7 @@ namespace LemoineTools.Tools.Testing
                     loop.Append(arc1);
                     loop.Append(arc2);
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
-                    ClashTagSchema.StampTag(fr);
+                    ClashTagSchema.StampTag(fr, clashGroup);
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region", ex); }
             }
@@ -783,16 +787,16 @@ namespace LemoineTools.Tools.Testing
             // ── Cross lines (tagged so the discovery pass can re-find them) ────
             if (_opts.DimTarget == "Centre")
             {
-                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0));
-                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0));
-                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0));
-                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armLen, 0));
+                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0), clashGroup);
+                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup);
+                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0), clashGroup);
+                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armLen, 0), clashGroup);
                 return hLeft != null && hRight != null && vBot != null && vTop != null;
             }
             else
             {
-                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0));
-                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0));
+                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup);
+                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup);
                 return hLine != null && vLine != null;
             }
         }
@@ -843,11 +847,11 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── Detail line creation (tagged) ─────────────────────────────────────
-        private static DetailCurve? CreateLine(Document doc, View view, ElementId lineStyleId, XYZ start, XYZ end)
+        private static DetailCurve? CreateLine(Document doc, View view, ElementId lineStyleId, XYZ start, XYZ end, string group)
         {
             var line = Line.CreateBound(start, end);
             var dc   = doc.Create.NewDetailCurve(view, line);
-            ClashTagSchema.StampTag(dc);
+            ClashTagSchema.StampTag(dc, group);
 
             if (lineStyleId != ElementId.InvalidElementId)
             {

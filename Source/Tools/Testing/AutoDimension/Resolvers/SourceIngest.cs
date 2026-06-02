@@ -42,46 +42,126 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 return result;
             }
 
+            // Group the cross lines back into clashes. Every line of one clash carries the same
+            // group id (stamped at marking); lines without one (legacy markers) fall back to one
+            // source per line. Grouped → exactly one source per clash, anchored at the centre.
+            var grouped   = new Dictionary<string, List<DetailCurve>>();
+            var ungrouped = new List<DetailCurve>();
             foreach (var dc in curves)
             {
-                string key = dc.Id.IntegerValue.ToString();
-                Curve? gc = null;
-                try { gc = dc.GeometryCurve; }
-                catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: read geometry curve", ex); }
+                string g = ClashTagSchema.ReadGroup(dc);
+                if (string.IsNullOrEmpty(g)) { ungrouped.Add(dc); continue; }
+                if (!grouped.TryGetValue(g, out var list)) grouped[g] = list = new List<DetailCurve>();
+                list.Add(dc);
+            }
 
-                Reference? sref = null;
-                XYZ? anchor = null;
-                if (gc != null)
-                {
-                    try
-                    {
-                        sref   = gc.GetEndPointReference(1);
-                        anchor = gc.GetEndPoint(1);
-                    }
-                    catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
-                }
+            foreach (var g in grouped.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            {
+                var src = BuildClashSource(g, grouped[g], projection, unresolved);
+                if (src != null) result.Add(src);
+            }
 
-                if (sref == null || anchor == null)
-                {
-                    unresolved.Add(new Core.UnresolvedTarget
-                    {
-                        SourceKey = key,
-                        Reason    = "source cross-line carries no usable endpoint reference",
-                    });
-                    continue;
-                }
-
-                result.Add(new SourceLine
-                {
-                    SourceKey = key,
-                    Id        = dc.Id,
-                    SourceRef = sref,
-                    Anchor3d  = anchor,
-                    Anchor2d  = projection.To2D(anchor),
-                });
+            // Legacy / un-grouped markers: one source per line at its endpoint (old behaviour).
+            foreach (var dc in ungrouped)
+            {
+                var src = BuildSingleLineSource(dc.Id.IntegerValue.ToString(), dc, projection, unresolved);
+                if (src != null) result.Add(src);
             }
 
             return result;
+        }
+
+        /// <summary>One source for a whole clash: the centre is the centroid of all its lines'
+        /// endpoints; the reference is the endpoint nearest that centre (in centre-mode markers an
+        /// arm meets exactly at the centre, so the dimension attaches at the clash point).</summary>
+        private static SourceLine? BuildClashSource(
+            string key, List<DetailCurve> lines, ViewProjection projection, List<Core.UnresolvedTarget> unresolved)
+        {
+            XYZ sum = XYZ.Zero;
+            int count = 0;
+            foreach (var dc in lines)
+            {
+                Curve? gc = SafeGeometry(dc);
+                if (gc == null) continue;
+                sum += gc.GetEndPoint(0);
+                sum += gc.GetEndPoint(1);
+                count += 2;
+            }
+            if (count == 0)
+            {
+                unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "clash marker has no readable line geometry" });
+                return null;
+            }
+            XYZ centre = sum.Divide(count);
+
+            // Nearest endpoint to the centroid → its reference + point. Deterministic by Id then index.
+            Reference? bestRef = null;
+            XYZ? bestPt = null;
+            double bestDist = double.MaxValue;
+            foreach (var dc in lines.OrderBy(d => d.Id.IntegerValue))
+            {
+                Curve? gc = SafeGeometry(dc);
+                if (gc == null) continue;
+                for (int idx = 0; idx <= 1; idx++)
+                {
+                    XYZ p = gc.GetEndPoint(idx);
+                    double d = p.DistanceTo(centre);
+                    if (d >= bestDist) continue;
+                    Reference? r = null;
+                    try { r = gc.GetEndPointReference(idx); }
+                    catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
+                    if (r == null) continue;
+                    bestDist = d; bestRef = r; bestPt = p;
+                }
+            }
+
+            if (bestRef == null || bestPt == null)
+            {
+                unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "clash marker carries no usable endpoint reference" });
+                return null;
+            }
+
+            return new SourceLine
+            {
+                SourceKey = key,
+                Id        = lines[0].Id,
+                SourceRef = bestRef,
+                Anchor3d  = bestPt,
+                Anchor2d  = projection.To2D(bestPt),
+            };
+        }
+
+        /// <summary>Legacy path: one source from a single line's endpoint(1).</summary>
+        private static SourceLine? BuildSingleLineSource(
+            string key, DetailCurve dc, ViewProjection projection, List<Core.UnresolvedTarget> unresolved)
+        {
+            Curve? gc = SafeGeometry(dc);
+            Reference? sref = null;
+            XYZ? anchor = null;
+            if (gc != null)
+            {
+                try { sref = gc.GetEndPointReference(1); anchor = gc.GetEndPoint(1); }
+                catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
+            }
+            if (sref == null || anchor == null)
+            {
+                unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "source cross-line carries no usable endpoint reference" });
+                return null;
+            }
+            return new SourceLine
+            {
+                SourceKey = key,
+                Id        = dc.Id,
+                SourceRef = sref,
+                Anchor3d  = anchor,
+                Anchor2d  = projection.To2D(anchor),
+            };
+        }
+
+        private static Curve? SafeGeometry(DetailCurve dc)
+        {
+            try { return dc.GeometryCurve; }
+            catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: read geometry curve", ex); return null; }
         }
     }
 }
