@@ -138,7 +138,7 @@ namespace LemoineTools.Tools.Testing
 
             int unruled = clashes.Count(c => !c.Group1.RuleColored);
             if (unruled > 0)
-                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {_opts.FallbackColorHex} with a hatch fill.", "info");
+                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {_opts.FallbackColorHex} with a solid fill.", "info");
 
             // 4. Place markers (inside the caller's transaction)
             ElementId lineStyleId = ResolveLineStyleId(doc);
@@ -699,8 +699,9 @@ namespace LemoineTools.Tools.Testing
 
             if (fallback)
             {
-                var hatchId = GetHatchFillId(doc);
-                newType.ForegroundPatternId = hatchId != ElementId.InvalidElementId ? hatchId : GetSolidFillId(doc);
+                var solidId = GetSolidFillId(doc);
+                if (solidId != ElementId.InvalidElementId)
+                    newType.ForegroundPatternId = solidId;
             }
             else if (_opts.FillStyle == "Solid")
             {
@@ -760,21 +761,6 @@ namespace LemoineTools.Tools.Testing
             {
                 try { if (fp.GetFillPattern().IsSolidFill) return fp.Id; }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: inspect fill pattern", ex); }
-            }
-            return ElementId.InvalidElementId;
-        }
-
-        private static ElementId GetHatchFillId(Document doc)
-        {
-            foreach (var fp in new FilteredElementCollector(doc)
-                .OfClass(typeof(FillPatternElement)).Cast<FillPatternElement>())
-            {
-                try
-                {
-                    var pat = fp.GetFillPattern();
-                    if (!pat.IsSolidFill && pat.Target == FillPatternTarget.Drafting) return fp.Id;
-                }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: inspect hatch fill pattern", ex); }
             }
             return ElementId.InvalidElementId;
         }

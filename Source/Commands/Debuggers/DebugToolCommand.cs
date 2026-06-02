@@ -22,11 +22,13 @@ namespace LemoineTools.Commands
         {
             if (_window != null && _window.IsVisible) { _window.Activate(); return Result.Succeeded; }
 
-            // Crash isolated (cross-thread CubicEase) — back to the motion/feature harness.
-            // Swap to `new CrashProbeViewModel()` to re-run the lazy-build crash probe.
-            var vm = new MotionTestViewModel();
+            // Active investigation: "Auto-Dimension found no lines". Gather the source-ingest
+            // diagnostic snapshot HERE (Revit main thread, read-only) so the display harness
+            // stays Revit-free. Swap to `new MotionTestViewModel()` / `new CrashProbeViewModel()`
+            // to re-run the earlier harnesses.
+            var report = SourceIngestProbe.Collect(commandData.Application);
+            var vm = new SourceIngestProbeViewModel(report);
             _window = new StepFlowWindow(vm);
-            _window.RegisterLogTab("notes", "Notes", vm.BuildNotesTab());
             _window.Closed += (s, e) => _window = null;
             _window.Show();
             return Result.Succeeded;
