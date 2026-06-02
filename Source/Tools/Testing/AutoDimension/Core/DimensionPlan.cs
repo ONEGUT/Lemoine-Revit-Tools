@@ -74,6 +74,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
     public sealed class AmbiguousTarget
     {
         public string SourceKey { get; set; } = "";
+        public TargetType TargetType { get; set; }
         public string CandidateA { get; set; } = "";
         public string CandidateB { get; set; } = "";
         public double ScoreA { get; set; }
