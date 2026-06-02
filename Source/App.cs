@@ -80,6 +80,8 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashPickEvent        { get; private set; }
         internal static ClashFinderEventHandler?    ClashFinderHandler    { get; private set; }
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
+        internal static LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler? AutoDimensionHandler { get; private set; }
+        internal static ExternalEvent?              AutoDimensionEvent    { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -166,6 +168,8 @@ namespace LemoineTools
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
+            AutoDimensionHandler  = new LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler();
+            AutoDimensionEvent    = ExternalEvent.Create(AutoDimensionHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
 
@@ -379,6 +383,10 @@ namespace LemoineTools
                 "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
                 "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and optionally run the dimension discovery pass.",
                 "\uE721"));  // Segoe MDL2: Zoom (find)
+
+            testingPanel.AddItem(Btn(
+                "LT_AutoDimension", "Auto\nDimension", "AutoDimensionCommand",
+                "Place collision-aware dimensions from the Clash Finder's tagged cross-lines out to the nearest grid or slab edge (host and linked)."));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
