@@ -48,8 +48,9 @@ namespace LemoineTools.Tools.Testing
         private bool _showAllDocuments = false;
         private bool _runDimensionPass = false;
         private double _storeyMarginMm = 600.0;   // sub-floor depth still counted as a level's storey (slabs/structure)
+        private double _roundSizeMm    = 0.0;     // round marker diameter; 0 = auto-fit to the clash
 
-        // Dimension-pass destination, seeded from the shared auto-dimension config.
+        // Dimension-pass destination + chaining, seeded from the shared auto-dimension config.
         private const string GridDisplay   = "To Grid";
         private const string SlabDisplay   = "To Slab Edge";
         private const string ManualDisplay = "To Picked Edge";
@@ -57,6 +58,9 @@ namespace LemoineTools.Tools.Testing
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
           : "Grid";
+        private bool   _chainAligned     = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
+        private double _chainGapMm       = AutoDimension.AutoDimensionConfig.Instance.ChainMaxGapMm;
+        private double _chainCollinearMm = AutoDimension.AutoDimensionConfig.Instance.ChainCollinearToleranceMm;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -192,12 +196,15 @@ namespace LemoineTools.Tools.Testing
                                  Desc = "Overrides each definition's saved source documents and scans every loaded model.", DefaultOn = _showAllDocuments },
                 new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
                                  Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
+                new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
+                                 Desc = "Merge collinear clashes that sit close together into one multi-segment string instead of separate dimensions.", DefaultOn = _chainAligned },
             });
             toggles.StateChanged += state =>
             {
                 state.TryGetValue("clear",   out _clearPrevious);
                 state.TryGetValue("allDocs", out _showAllDocuments);
                 state.TryGetValue("dimPass", out _runDimensionPass);
+                state.TryGetValue("chain",   out _chainAligned);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -208,6 +215,13 @@ namespace LemoineTools.Tools.Testing
                 "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
                 _storeyMarginMm, min: 0, max: 3000, step: 50, decimals: 0,
                 v => { _storeyMarginMm = v; Fire(); });
+
+            AddDivider(outer);
+            AddStepperRow(outer,
+                "Round marker size (mm, 0 = auto-fit)",
+                "Diameter of the round drawn at each clash. 0 fits the round to the clash; set a value to force every round to a fixed size — e.g. the opening needed for the pipe.",
+                _roundSizeMm, min: 0, max: 1000, step: 25, decimals: 0,
+                v => { _roundSizeMm = v; Fire(); });
 
             AddDivider(outer);
             AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
@@ -224,6 +238,18 @@ namespace LemoineTools.Tools.Testing
             outer.Children.Add(destPicker);
             if (_dimTargetType == "ManualDatum")
                 AddDim(outer, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
+
+            AddDivider(outer);
+            AddStepperRow(outer,
+                "Chain max gap (mm)",
+                "Clashes farther apart than this along a run are not chained into the same string.",
+                _chainGapMm, min: 0, max: 10000, step: 100, decimals: 0,
+                v => { _chainGapMm = v; Fire(); });
+            AddStepperRow(outer,
+                "Chain alignment tolerance (mm)",
+                "How far a clash may sit off the shared baseline and still count as in line for chaining.",
+                _chainCollinearMm, min: 0, max: 2000, step: 25, decimals: 0,
+                v => { _chainCollinearMm = v; Fire(); });
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -253,9 +279,9 @@ namespace LemoineTools.Tools.Testing
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
                     bits.Add(_runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
+                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? " · chained" : "")}"
                         : "dim pass off");
-                    bits.Add($"margin {_storeyMarginMm:F0} mm");
+                    bits.Add(_roundSizeMm > 0 ? $"round {_roundSizeMm:F0} mm" : "round auto");
                     return string.Join(" · ", bits);
                 default: return "—";
             }
@@ -282,6 +308,10 @@ namespace LemoineTools.Tools.Testing
             _handler.RunDimensionPass = _runDimensionPass;
             _handler.DimTargetType    = _dimTargetType;
             _handler.StoreyMarginMm   = _storeyMarginMm;
+            _handler.RoundSizeMm        = _roundSizeMm;
+            _handler.DimChainAligned    = _chainAligned;
+            _handler.DimChainMaxGapMm   = _chainGapMm;
+            _handler.DimChainCollinearMm = _chainCollinearMm;
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;

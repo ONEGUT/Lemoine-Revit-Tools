@@ -42,8 +42,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         private List<string> _selectedViewNames = new List<string>();
         private string _targetType   = "Grid";          // "Grid" | "SlabEdge" | "ManualDatum"
         private bool   _includeLinks  = true;
-        private bool   _bothAxes      = true;
-        private bool   _chainAligned  = true;
+        private bool   _bothAxes         = true;
+        private bool   _chainAligned     = true;
+        private double _chainGapMm       = 1500.0;
+        private double _chainCollinearMm = 150.0;
 
         private const string GridDisplay   = "To Grid";
         private const string SlabDisplay   = "To Slab Edge";
@@ -66,8 +68,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             var cfg = AutoDimensionConfig.Instance;
             _targetType   = NormalizeTarget(cfg.TargetType);
             _includeLinks = cfg.IncludeLinks;
-            _bothAxes     = cfg.DimensionBothAxes;
-            _chainAligned = cfg.ChainAligned;
+            _bothAxes         = cfg.DimensionBothAxes;
+            _chainAligned     = cfg.ChainAligned;
+            _chainGapMm       = cfg.ChainMaxGapMm;
+            _chainCollinearMm = cfg.ChainCollinearToleranceMm;
 
             foreach (var v in _allViews)
                 if (!_viewNameToId.ContainsKey(v.Name))
@@ -189,6 +193,18 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             };
             outer.Children.Add(toggles);
 
+            AddDivider(outer);
+            AddStepperRow(outer,
+                "Chain max gap (mm)",
+                "Clashes farther apart than this along a run are not chained into the same string.",
+                _chainGapMm, min: 0, max: 10000, step: 100, decimals: 0,
+                v => { _chainGapMm = v; Fire(); });
+            AddStepperRow(outer,
+                "Chain alignment tolerance (mm)",
+                "How far a clash may sit off the shared baseline and still count as in line for chaining.",
+                _chainCollinearMm, min: 0, max: 2000, step: 25, decimals: 0,
+                v => { _chainCollinearMm = v; Fire(); });
+
             if (_targetType == "ManualDatum")
                 AddDim(outer, "Manual: you'll be prompted to pick one datum edge per view when the run starts.");
 
@@ -232,8 +248,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             var cfg = AutoDimensionConfig.Instance;
             cfg.TargetType        = _targetType;
             cfg.IncludeLinks      = _includeLinks;
-            cfg.DimensionBothAxes = _bothAxes;
-            cfg.ChainAligned      = _chainAligned;
+            cfg.DimensionBothAxes        = _bothAxes;
+            cfg.ChainAligned             = _chainAligned;
+            cfg.ChainMaxGapMm            = _chainGapMm;
+            cfg.ChainCollinearToleranceMm = _chainCollinearMm;
             cfg.Save();
 
             _handler.ViewIds = _selectedViewNames
@@ -272,6 +290,28 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 8, 0, 8) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             parent.Children.Add(sep);
+        }
+
+        private static void AddStepperRow(StackPanel parent, string label, string hint,
+            double value, double min, double max, double step, int decimals, Action<double> onChange)
+        {
+            AddLabel(parent, label);
+
+            var stepper = new LemoineInlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = decimals,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 2),
+                ToolTip             = hint,
+            };
+            stepper.ValueChanged += (s, v) => onChange(v);
+            parent.Children.Add(stepper);
+
+            AddDim(parent, hint);
         }
     }
 }

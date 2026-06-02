@@ -24,8 +24,12 @@ namespace LemoineTools.Tools.Testing
         public bool                 ClearPrevious    { get; set; } = true;
         public bool                 ShowAllDocuments { get; set; } = false;
         public bool                 RunDimensionPass { get; set; } = false;
-        public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge"
+        public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
         public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
+        public double               RoundSizeMm      { get; set; } = 0.0;    // round marker diameter; 0 = auto-fit
+        public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
+        public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
+        public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -78,6 +82,7 @@ namespace LemoineTools.Tools.Testing
                                 DimTarget         = def.DimTarget,
                                 MaxClashes        = def.MaxClashes,
                                 StoreyMarginMm    = StoreyMarginMm,
+                                RoundSizeMm       = RoundSizeMm,
                             };
 
                             var engine = new ClashEngine(opts, (t, s) => Log(t, s));
@@ -102,7 +107,10 @@ namespace LemoineTools.Tools.Testing
                         Log("Running dimension pass…", "info");
 
                         var dimCfg = AutoDimensionConfig.Instance;
-                        dimCfg.TargetType = DimTargetType;   // run-level override from the Clash Finder option
+                        dimCfg.TargetType                = DimTargetType;   // run-level overrides from the Clash Finder options
+                        dimCfg.ChainAligned              = DimChainAligned;
+                        dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
+                        dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
 
                         // Manual-datum mode: pick one datum edge per view (on the main thread) first.
                         System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;

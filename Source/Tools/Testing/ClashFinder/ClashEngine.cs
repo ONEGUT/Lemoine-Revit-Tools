@@ -19,6 +19,7 @@ namespace LemoineTools.Tools.Testing
         public string DimTarget;          // "Edge" | "Centre"
         public int    MaxClashes;
         public double StoreyMarginMm;     // depth below a level still counted as its storey (slabs/structure)
+        public double RoundSizeMm;        // round marker diameter; 0 = auto-fit to the clash bbox
     }
 
     /// <summary>Aggregate result of one engine run.</summary>
@@ -749,7 +750,10 @@ namespace LemoineTools.Tools.Testing
             double cy     = (minY + maxY) / 2.0;
             double halfW  = (maxX - minX) / 2.0;
             double halfH  = (maxY - minY) / 2.0;
-            double radius = Math.Max(0.25, Math.Max(halfW, halfH));
+            // Round marker: a fixed per-run diameter when set, else auto-fit (circumscribe the clash).
+            double radius = _opts.RoundSizeMm > 0
+                ? (_opts.RoundSizeMm / 2.0) / 304.8
+                : Math.Max(0.25, Math.Max(halfW, halfH));
             double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
             // One id shared by this clash's region + every cross line, so the dimension pass can
