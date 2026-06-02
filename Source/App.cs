@@ -78,6 +78,8 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashDimensionEvent   { get; private set; }
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
         internal static ExternalEvent?              ClashPickEvent        { get; private set; }
+        internal static ClashFinderEventHandler?    ClashFinderHandler    { get; private set; }
+        internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -162,6 +164,8 @@ namespace LemoineTools
             ClashDimensionEvent   = ExternalEvent.Create(ClashDimensionHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
+            ClashFinderHandler    = new ClashFinderEventHandler();
+            ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
 
@@ -367,9 +371,14 @@ namespace LemoineTools
                     "Create one 3D view per link with a section box, with optional combined views per discipline."));
 
             testingPanel.AddItem(Btn(
-                "LT_ClashDimension", "Clash\nDimension", "ClashDimensionCommand",
-                "Detect solid clashes between two element groups (filter rules, categories, or picked elements, in the host or links), annotate each clash with a coloured filled region and cross, and place locating dimensions to selected grids and slab edges.",
-                ""));
+                "LT_ClashDefinitions", "Clash\nDefinitions", "OpenClashDefinitionsCommand",
+                "Build and manage a library of named clash definitions (two element groups plus marking settings).",
+                "\uE71C"));  // Segoe MDL2: Filter
+
+            testingPanel.AddItem(Btn(
+                "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
+                "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and optionally run the dimension discovery pass.",
+                "\uE721"));  // Segoe MDL2: Zoom (find)
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
