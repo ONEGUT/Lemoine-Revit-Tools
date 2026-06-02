@@ -22,6 +22,7 @@ namespace LemoineTools.Tools.Testing
         public bool                 ClearPrevious    { get; set; } = true;
         public bool                 ShowAllDocuments { get; set; } = false;
         public bool                 RunDimensionPass { get; set; } = false;
+        public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -73,6 +74,7 @@ namespace LemoineTools.Tools.Testing
                                 CrossLineTypeName = def.CrossLineTypeName,
                                 DimTarget         = def.DimTarget,
                                 MaxClashes        = def.MaxClashes,
+                                StoreyMarginMm    = StoreyMarginMm,
                             };
 
                             var engine = new ClashEngine(opts, (t, s) => Log(t, s));

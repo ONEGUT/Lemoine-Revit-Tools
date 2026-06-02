@@ -18,6 +18,7 @@ namespace LemoineTools.Tools.Testing
         public string CrossLineTypeName;  // "" = default line style
         public string DimTarget;          // "Edge" | "Centre"
         public int    MaxClashes;
+        public double StoreyMarginMm;     // depth below a level still counted as its storey (slabs/structure)
     }
 
     /// <summary>Aggregate result of one engine run.</summary>
@@ -152,13 +153,14 @@ namespace LemoineTools.Tools.Testing
             var levelElevs = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level)).Cast<Level>()
                 .Select(l => l.Elevation).OrderBy(z => z).ToList();
+            double storeyMarginFt = Math.Max(0.0, _opts.StoreyMarginMm) / 304.8;
 
             var viewBoxes     = new Dictionary<ElementId, (BoundingBoxXYZ box, bool gated)>();
             var skippedByView = new Dictionary<ElementId, int>();
             foreach (var viewId in viewIds)
             {
                 if (!(doc.GetElement(viewId) is View v)) continue;
-                bool gated = TryGetViewWorldBox(v, levelElevs, out BoundingBoxXYZ box);
+                bool gated = TryGetViewWorldBox(v, levelElevs, storeyMarginFt, out BoundingBoxXYZ box);
                 viewBoxes[viewId] = (box, gated);
             }
 
@@ -201,8 +203,7 @@ namespace LemoineTools.Tools.Testing
         }
 
         // ── View-volume gate (keeps other levels' / off-crop clashes off this view) ───
-        private const double StoreyBelowMarginFt = 2.0;   // catch slabs/structure hanging just under a level
-        private const double DefaultStoreyFt     = 14.0;  // top-most level (no level above) fallback height
+        private const double DefaultStoreyFt = 14.0;  // top-most level (no level above) fallback height
 
         /// <summary>
         /// True, with the view's world-space box (unbounded axes stay at double.Max/MinValue), when the view can be
@@ -210,7 +211,7 @@ namespace LemoineTools.Tools.Testing
         /// level to the next level up; 3D views use an active section box. Returns false (no gate)
         /// for un-scopable views — an uncropped section/elevation — so they are never over-filtered.
         /// </summary>
-        private static bool TryGetViewWorldBox(View view, List<double> sortedLevelElevs, out BoundingBoxXYZ box)
+        private static bool TryGetViewWorldBox(View view, List<double> sortedLevelElevs, double storeyMarginFt, out BoundingBoxXYZ box)
         {
             // double.Max/MinValue stand in for "unbounded" on un-scoped axes (XYZ rejects non-finite).
             box = new BoundingBoxXYZ
@@ -247,7 +248,7 @@ namespace LemoineTools.Tools.Testing
             catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read view crop box", ex); }
 
             // Z from the storey band [Li - margin, Lnext - margin) for plan views.
-            if (view is ViewPlan plan && TryGetStoreyZBand(plan, sortedLevelElevs, out double zMin, out double zMax))
+            if (view is ViewPlan plan && TryGetStoreyZBand(plan, sortedLevelElevs, storeyMarginFt, out double zMin, out double zMax))
             {
                 box.Min = new XYZ(box.Min.X, box.Min.Y, zMin);
                 box.Max = new XYZ(box.Max.X, box.Max.Y, zMax);
@@ -260,7 +261,7 @@ namespace LemoineTools.Tools.Testing
         /// <summary>Storey-height world-Z band for a plan view: from its level (less a margin for
         /// sub-floor structure) up to the next level above, or a default height when it is the top
         /// level. False when the plan has no associated level.</summary>
-        private static bool TryGetStoreyZBand(ViewPlan plan, List<double> sortedLevelElevs, out double zMin, out double zMax)
+        private static bool TryGetStoreyZBand(ViewPlan plan, List<double> sortedLevelElevs, double storeyMarginFt, out double zMin, out double zMax)
         {
             zMin = double.NegativeInfinity;
             zMax = double.PositiveInfinity;
@@ -276,8 +277,8 @@ namespace LemoineTools.Tools.Testing
                 .Select(e => (double?)e)
                 .FirstOrDefault();
 
-            zMin = baseElev - StoreyBelowMarginFt;
-            zMax = (nextAbove ?? baseElev + DefaultStoreyFt) - StoreyBelowMarginFt;
+            zMin = baseElev - storeyMarginFt;
+            zMax = (nextAbove ?? baseElev + DefaultStoreyFt) - storeyMarginFt;
             return true;
         }
 

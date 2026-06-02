@@ -47,6 +47,7 @@ namespace LemoineTools.Tools.Testing
         private bool _clearPrevious    = true;
         private bool _showAllDocuments = false;
         private bool _runDimensionPass = false;
+        private double _storeyMarginMm = 600.0;   // sub-floor depth still counted as a level's storey (slabs/structure)
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -193,6 +194,13 @@ namespace LemoineTools.Tools.Testing
             outer.Children.Add(toggles);
 
             AddDivider(outer);
+            AddStepperRow(outer,
+                "Storey depth margin (mm)",
+                "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
+                _storeyMarginMm, min: 0, max: 3000, step: 50, decimals: 0,
+                v => { _storeyMarginMm = v; Fire(); });
+
+            AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
 
             return WrapInScroll(outer);
@@ -220,6 +228,7 @@ namespace LemoineTools.Tools.Testing
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
                     bits.Add(_runDimensionPass ? "dim pass on" : "dim pass off");
+                    bits.Add($"margin {_storeyMarginMm:F0} mm");
                     return string.Join(" · ", bits);
                 default: return "—";
             }
@@ -244,6 +253,7 @@ namespace LemoineTools.Tools.Testing
             _handler.ClearPrevious    = _clearPrevious;
             _handler.ShowAllDocuments = _showAllDocuments;
             _handler.RunDimensionPass = _runDimensionPass;
+            _handler.StoreyMarginMm   = _storeyMarginMm;
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;
@@ -275,6 +285,28 @@ namespace LemoineTools.Tools.Testing
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 8, 0, 8) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             parent.Children.Add(sep);
+        }
+
+        private static void AddStepperRow(StackPanel parent, string label, string hint,
+            double value, double min, double max, double step, int decimals, Action<double> onChange)
+        {
+            AddLabel(parent, label);
+
+            var stepper = new LemoineInlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = decimals,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 2),
+                ToolTip             = hint,
+            };
+            stepper.ValueChanged += (s, v) => onChange(v);
+            parent.Children.Add(stepper);
+
+            AddDim(parent, hint);
         }
     }
 }
