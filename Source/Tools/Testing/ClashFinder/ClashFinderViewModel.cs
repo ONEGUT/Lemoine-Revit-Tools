@@ -49,6 +49,13 @@ namespace LemoineTools.Tools.Testing
         private bool _runDimensionPass = false;
         private double _storeyMarginMm = 600.0;   // sub-floor depth still counted as a level's storey (slabs/structure)
 
+        // Dimension-pass destination, seeded from the shared auto-dimension config.
+        private const string GridDisplay = "To Grid";
+        private const string SlabDisplay = "To Slab Edge";
+        private string _dimTargetType =
+            string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase)
+                ? "SlabEdge" : "Grid";
+
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
             ExternalEvent?           externalEvent,
@@ -181,8 +188,8 @@ namespace LemoineTools.Tools.Testing
                                  Desc = "Removes earlier Lemoine clash markers in the selected views first.", DefaultOn = _clearPrevious },
                 new ToggleItem { Id = "allDocs", Label = "Scan all documents (ignore saved source filter)",
                                  Desc = "Overrides each definition's saved source documents and scans every loaded model.", DefaultOn = _showAllDocuments },
-                new ToggleItem { Id = "dimPass", Label = "Run dimension pass after marking",
-                                 Desc = "Re-finds the tagged cross lines and reports them (discovery only — no dimensions placed yet).", DefaultOn = _runDimensionPass },
+                new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
+                                 Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
             });
             toggles.StateChanged += state =>
             {
@@ -199,6 +206,18 @@ namespace LemoineTools.Tools.Testing
                 "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
                 _storeyMarginMm, min: 0, max: 3000, step: 50, decimals: 0,
                 v => { _storeyMarginMm = v; Fire(); });
+
+            AddDivider(outer);
+            AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
+            var destPicker = new LemoineSingleSelect { Label = "Destination" };
+            destPicker.Items = new List<string> { GridDisplay, SlabDisplay };
+            destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay : GridDisplay;
+            destPicker.SelectionChanged += sel =>
+            {
+                _dimTargetType = sel == SlabDisplay ? "SlabEdge" : "Grid";
+                Fire();
+            };
+            outer.Children.Add(destPicker);
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -227,7 +246,9 @@ namespace LemoineTools.Tools.Testing
                     var bits = new List<string>();
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
-                    bits.Add(_runDimensionPass ? "dim pass on" : "dim pass off");
+                    bits.Add(_runDimensionPass
+                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : "grid")}"
+                        : "dim pass off");
                     bits.Add($"margin {_storeyMarginMm:F0} mm");
                     return string.Join(" · ", bits);
                 default: return "—";
@@ -253,6 +274,7 @@ namespace LemoineTools.Tools.Testing
             _handler.ClearPrevious    = _clearPrevious;
             _handler.ShowAllDocuments = _showAllDocuments;
             _handler.RunDimensionPass = _runDimensionPass;
+            _handler.DimTargetType    = _dimTargetType;
             _handler.StoreyMarginMm   = _storeyMarginMm;
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;

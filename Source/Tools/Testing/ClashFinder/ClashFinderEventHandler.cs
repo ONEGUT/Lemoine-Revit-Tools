@@ -4,13 +4,15 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.Testing.AutoDimension;
 
 namespace LemoineTools.Tools.Testing
 {
     /// <summary>
     /// Runs the Clash Finder: for each selected <see cref="ClashDefinition"/> it detects clashes
     /// and places coloured, ES-tagged markers (one transaction for the whole run). When the
-    /// dimension-pass checkbox is set, it then runs the read-only discovery pass and reports it.
+    /// dimension-pass checkbox is set, it then runs the auto-dimension engine to place dimensions
+    /// from each clash marker out to the chosen target (grids or slab edges).
     /// Clear-previous is run-level (applied once, before the definition loop) so multi-definition
     /// runs never wipe earlier markers.
     /// </summary>
@@ -22,6 +24,7 @@ namespace LemoineTools.Tools.Testing
         public bool                 ClearPrevious    { get; set; } = true;
         public bool                 ShowAllDocuments { get; set; } = false;
         public bool                 RunDimensionPass { get; set; } = false;
+        public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge"
         public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
 
         public Action<string, string>?     PushLog    { get; set; }
@@ -90,12 +93,22 @@ namespace LemoineTools.Tools.Testing
                         Log($"Marking done — {pass} marker(s), {fail} failure(s).", pass > 0 ? "pass" : "fail");
                     }
 
-                    // Dimension pass runs after marking, read-only (no transaction).
+                    // Dimension pass: place auto-dimensions from each clash marker out to the
+                    // chosen target. Runs after the marking transaction has committed, so the
+                    // freshly placed cross-lines are queryable; the runner opens its own transaction.
                     if (RunDimensionPass)
                     {
                         Progress(85, pass, fail, skip);
-                        Log("Running dimension pass (discovery)…", "info");
-                        ClashDimensionPass.Run(doc, ViewIds, (t, s) => Log(t, s));
+                        Log("Running dimension pass…", "info");
+
+                        var dimCfg = AutoDimensionConfig.Instance;
+                        dimCfg.TargetType = DimTargetType;   // run-level override from the Clash Finder option
+                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s));
+
+                        pass += dimResult.Placed;
+                        fail += dimResult.Failures;
+                        Log($"Dimension pass — {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
+                            dimResult.Placed > 0 ? "pass" : "fail");
                     }
                 }
             }
