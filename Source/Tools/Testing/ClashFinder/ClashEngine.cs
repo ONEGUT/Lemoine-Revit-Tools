@@ -144,17 +144,22 @@ namespace LemoineTools.Tools.Testing
             ElementId lineStyleId = ResolveLineStyleId(doc);
             var regionTypeCache = new Dictionary<string, ElementId?>();
 
-            // Per-view visible Z-range, computed once. A clash is drawn in a view only if its
-            // elevation falls within that view's depth range, so other levels' clashes (common
-            // in identical stacked-level models) don't bleed onto this view. Link elements are
-            // already in host world coordinates (GetHostBBox), so the gate is link-agnostic.
-            var viewRanges    = new Dictionary<ElementId, (double zMin, double zMax, bool gated)>();
+            // Per-view world box, computed once. A clash is drawn in a view only when its overlap
+            // region falls inside that view's volume — crop box in XY, a storey-height band in Z —
+            // so other levels' clashes (common in identical stacked-level models) don't bleed onto
+            // this view. Overlap bboxes are already in host world coordinates (SolidWorldBBox), so
+            // the gate is link-agnostic. Levels are resolved once for the storey-band lookup.
+            var levelElevs = new FilteredElementCollector(doc)
+                .OfClass(typeof(Level)).Cast<Level>()
+                .Select(l => l.Elevation).OrderBy(z => z).ToList();
+
+            var viewBoxes     = new Dictionary<ElementId, (BoundingBoxXYZ box, bool gated)>();
             var skippedByView = new Dictionary<ElementId, int>();
             foreach (var viewId in viewIds)
             {
                 if (!(doc.GetElement(viewId) is View v)) continue;
-                bool gated = TryGetViewZRange(v, out double zMin, out double zMax);
-                viewRanges[viewId] = (zMin, zMax, gated);
+                bool gated = TryGetViewWorldBox(v, levelElevs, out BoundingBoxXYZ box);
+                viewBoxes[viewId] = (box, gated);
             }
 
             foreach (var clash in clashes)
@@ -164,16 +169,12 @@ namespace LemoineTools.Tools.Testing
                     var view = doc.GetElement(viewId) as View;
                     if (view == null) continue;
 
-                    if (viewRanges.TryGetValue(viewId, out var vr) && vr.gated)
+                    if (viewBoxes.TryGetValue(viewId, out var vb) && vb.gated
+                        && !BBoxOverlapTol(clash.OverlapBBox, vb.box, toleranceFt))
                     {
-                        double oMin = clash.OverlapBBox.Min.Z;
-                        double oMax = clash.OverlapBBox.Max.Z;
-                        if (oMax < vr.zMin - toleranceFt || oMin > vr.zMax + toleranceFt)
-                        {
-                            skippedByView.TryGetValue(viewId, out int s);
-                            skippedByView[viewId] = s + 1;
-                            continue;
-                        }
+                        skippedByView.TryGetValue(viewId, out int s);
+                        skippedByView[viewId] = s + 1;
+                        continue;
                     }
 
                     try
@@ -193,70 +194,100 @@ namespace LemoineTools.Tools.Testing
             {
                 if (kv.Value <= 0) continue;
                 var view = doc.GetElement(kv.Key) as View;
-                Log($"View '{view?.Name ?? kv.Key.ToString()}': {kv.Value} clash(es) outside the view's depth range — skipped.", "info");
+                Log($"View '{view?.Name ?? kv.Key.ToString()}': {kv.Value} clash(es) outside the view volume — skipped.", "info");
             }
 
             return result;
         }
 
-        // ── View depth gate (keeps other levels' clashes off this view) ───────
+        // ── View-volume gate (keeps other levels' / off-crop clashes off this view) ───
+        private const double StoreyBelowMarginFt = 2.0;   // catch slabs/structure hanging just under a level
+        private const double DefaultStoreyFt     = 14.0;  // top-most level (no level above) fallback height
+
         /// <summary>
-        /// True, with the view's visible world-Z interval, when it can be bounded: plan views via
-        /// their view range (top clip → view depth), 3D views via an active section box. Returns
-        /// false for sections / elevations / unbounded plans so those are never wrongly filtered.
+        /// True, with the view's world-space box (unbounded axes stay at double.Max/MinValue), when the view can be
+        /// scoped: plan views get crop-box XY (when cropped) and a storey-height Z band from their
+        /// level to the next level up; 3D views use an active section box. Returns false (no gate)
+        /// for un-scopable views — an uncropped section/elevation — so they are never over-filtered.
         /// </summary>
-        private static bool TryGetViewZRange(View view, out double zMin, out double zMax)
+        private static bool TryGetViewWorldBox(View view, List<double> sortedLevelElevs, out BoundingBoxXYZ box)
         {
-            zMin = double.NegativeInfinity;
-            zMax = double.PositiveInfinity;
-
-            if (view is ViewPlan plan)
+            // double.Max/MinValue stand in for "unbounded" on un-scoped axes (XYZ rejects non-finite).
+            box = new BoundingBoxXYZ
             {
-                PlanViewRange range;
-                try { range = plan.GetViewRange(); }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: get plan view range", ex); return false; }
-                if (range == null) return false;
-
-                double? top    = ResolvePlaneZ(view.Document, range, PlanViewPlane.TopClipPlane);
-                double? bottom = ResolvePlaneZ(view.Document, range, PlanViewPlane.ViewDepthPlane)
-                              ?? ResolvePlaneZ(view.Document, range, PlanViewPlane.BottomClipPlane);
-
-                if (top.HasValue)    zMax = top.Value;
-                if (bottom.HasValue) zMin = bottom.Value;
-                return top.HasValue || bottom.HasValue;
-            }
+                Min = new XYZ(double.MinValue, double.MinValue, double.MinValue),
+                Max = new XYZ(double.MaxValue, double.MaxValue, double.MaxValue),
+            };
 
             if (view is View3D v3 && v3.IsSectionBoxActive)
             {
                 try
                 {
-                    var sb    = v3.GetSectionBox();
-                    var world = WorldAabb(BoxCorners(sb.Min, sb.Max), sb.Transform);
-                    zMin = world.Min.Z;
-                    zMax = world.Max.Z;
+                    var sb = v3.GetSectionBox();
+                    box = WorldAabb(BoxCorners(sb.Min, sb.Max), sb.Transform);
                     return true;
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: get 3D section box", ex); return false; }
             }
 
-            return false; // sections, elevations, unbounded plans → no gate
-        }
+            bool bounded = false;
 
-        /// <summary>Absolute world Z of a plan-view-range plane, or null when the plane is
-        /// unlimited / relative (its level id doesn't resolve to a concrete <see cref="Level"/>).</summary>
-        private static double? ResolvePlaneZ(Document doc, PlanViewRange range, PlanViewPlane plane)
-        {
-            ElementId levelId;
-            double    offset;
+            // XY from the crop box (corners → world) when the view is cropped.
             try
             {
-                levelId = range.GetLevelId(plane);
-                offset  = range.GetOffset(plane);
+                if (view.CropBoxActive && view.CropBox != null)
+                {
+                    var cb    = view.CropBox;
+                    var world = WorldAabb(BoxCorners(cb.Min, cb.Max), cb.Transform);
+                    box.Min = new XYZ(world.Min.X, world.Min.Y, box.Min.Z);
+                    box.Max = new XYZ(world.Max.X, world.Max.Y, box.Max.Z);
+                    bounded = true;
+                }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read plan view-range plane", ex); return null; }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read view crop box", ex); }
 
-            if (!(doc.GetElement(levelId) is Level level)) return null;
-            return level.Elevation + offset;
+            // Z from the storey band [Li - margin, Lnext - margin) for plan views.
+            if (view is ViewPlan plan && TryGetStoreyZBand(plan, sortedLevelElevs, out double zMin, out double zMax))
+            {
+                box.Min = new XYZ(box.Min.X, box.Min.Y, zMin);
+                box.Max = new XYZ(box.Max.X, box.Max.Y, zMax);
+                bounded = true;
+            }
+
+            return bounded;
+        }
+
+        /// <summary>Storey-height world-Z band for a plan view: from its level (less a margin for
+        /// sub-floor structure) up to the next level above, or a default height when it is the top
+        /// level. False when the plan has no associated level.</summary>
+        private static bool TryGetStoreyZBand(ViewPlan plan, List<double> sortedLevelElevs, out double zMin, out double zMax)
+        {
+            zMin = double.NegativeInfinity;
+            zMax = double.PositiveInfinity;
+
+            Level? genLevel;
+            try { genLevel = plan.GenLevel; }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read plan GenLevel", ex); return false; }
+            if (genLevel == null) return false;
+
+            double baseElev = genLevel.Elevation;
+            double? nextAbove = sortedLevelElevs
+                .Where(e => e > baseElev + 1e-6)
+                .Select(e => (double?)e)
+                .FirstOrDefault();
+
+            zMin = baseElev - StoreyBelowMarginFt;
+            zMax = (nextAbove ?? baseElev + DefaultStoreyFt) - StoreyBelowMarginFt;
+            return true;
+        }
+
+        /// <summary>AABB overlap test tolerant of an inflation on each axis; double.Max/MinValue
+        /// bounds (unbounded box axes) always pass — the ± tol never overflows them.</summary>
+        private static bool BBoxOverlapTol(BoundingBoxXYZ a, BoundingBoxXYZ b, double tol)
+        {
+            return a.Min.X <= b.Max.X + tol && a.Max.X >= b.Min.X - tol
+                && a.Min.Y <= b.Max.Y + tol && a.Max.Y >= b.Min.Y - tol
+                && a.Min.Z <= b.Max.Z + tol && a.Max.Z >= b.Min.Z - tol;
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────

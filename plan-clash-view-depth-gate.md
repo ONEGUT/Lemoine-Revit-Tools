@@ -25,7 +25,28 @@ keyed on the clash's host-world Z is link-robust and needs no link-visibility
 logic. (A view-scoped collector — the rejected alternative — would return zero
 linked elements.)
 
-## Change
+## Revision — view-volume box (replaces thin view-range gate)
+
+The first cut gated on the plan's *view range* (print band ≈ view depth → top
+clip). That dropped slab/penetration clashes, which sit at or just below the
+level line — too restrictive (zero clashes). Replace it with a **per-view world
+box**:
+
+- **XY:** the view crop box (corners transformed to world) when `CropBoxActive`,
+  else unbounded.
+- **Z (plan):** a storey band `[Lᵢ − margin, Lᵢ₊₁ − margin)` from the plan's
+  `GenLevel` to the next level above (sorted level elevations). The shared
+  margin makes the bands a clean partition: every clash maps to exactly one
+  storey, and slabs hanging just under a level still count as that storey. Top
+  level falls back to `Lᵢ + DefaultStoreyFt`.
+- **Z (3D with section box):** the section-box world Z (unchanged).
+- Other view types: crop XY only, Z unbounded; if no crop, no gate.
+
+A clash is shown in a view iff its `OverlapBBox` intersects that view's world
+box (AABB test, X/Y/Z). Filtering by *overlap location* (not by element) keeps
+boundary clashes whose partner sits out of view, and stays link-safe.
+
+## Change (original — superseded above)
 
 Add a **per-view visible Z-range gate** to the marker loop: a clash is drawn in
 a view only if its overlap Z-interval intersects that view's visible Z-range.
