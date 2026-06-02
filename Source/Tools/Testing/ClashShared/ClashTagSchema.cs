@@ -53,8 +53,10 @@ namespace LemoineTools.Tools.Testing
             try
             {
                 var schema = GetOrCreateTagSchema();
+                var field  = ResolveTagField(schema);
+                if (field == null) { LemoineLog.Error("ClashTagSchema: stamp clash tag", new InvalidOperationException("schema has no usable string field")); return; }
                 var entity = new Entity(schema);
-                entity.Set(FieldName, TagValue);
+                entity.Set(field, TagValue);
                 element.SetEntity(entity);
             }
             catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: stamp clash tag", ex); }
@@ -74,11 +76,31 @@ namespace LemoineTools.Tools.Testing
                 // schema is registered this session. Registration needs no transaction.
                 var schema = GetOrCreateTagSchema();
                 if (schema == null) return false;
+                var field = ResolveTagField(schema);
+                if (field == null) return false;
                 var entity = element.GetEntity(schema);
                 if (entity == null || !entity.IsValid()) return false;
-                return entity.Get<string>(FieldName) == TagValue;
+                return entity.Get<string>(field) == TagValue;
             }
             catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash tag", ex); return false; }
+        }
+
+        /// <summary>
+        /// Returns the string field to read/write the tag value through. Prefers the field named
+        /// <see cref="FieldName"/>, but falls back to the schema's first string field — older builds
+        /// stored this schema (same GUID) under a different field name (e.g. lowercase "tag"), and
+        /// the stored definition wins on <see cref="Schema.Lookup"/>. Without this fallback, Set/Get
+        /// against the hardcoded name throw and are swallowed, so tagging silently fails on any
+        /// document that carries the legacy schema.
+        /// </summary>
+        private static Field? ResolveTagField(Schema? schema)
+        {
+            if (schema == null) return null;
+            var named = schema.GetField(FieldName);
+            if (named != null && named.ValueType == typeof(string)) return named;
+            foreach (var f in schema.ListFields())
+                if (f.ValueType == typeof(string)) return f;
+            return null;
         }
 
         /// <summary>Alias for <see cref="IsOurs"/> — reads more naturally at some call sites.</summary>
