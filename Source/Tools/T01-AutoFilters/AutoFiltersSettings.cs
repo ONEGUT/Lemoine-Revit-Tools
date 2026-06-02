@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine.Templates;
 using LemoineTools.Lemoine;
@@ -159,10 +160,13 @@ namespace LemoineTools.Tools.AutoFilters
         /// <summary>Human-readable display name for this rule (e.g. "Supply Air").</summary>
         [XmlAttribute] public string Name         { get; set; } = "New Rule";
         /// <summary>
-        /// Keyword matching mode: <c>"contains"</c>, <c>"equals"</c>, or <c>"all"</c>
-        /// (match every element regardless of parameter value).
+        /// Keyword matching mode. One of: <c>"contains"</c>, <c>"does not contain"</c>,
+        /// <c>"equals"</c>, <c>"does not equal"</c>, <c>"begins with"</c>, <c>"ends with"</c>,
+        /// <c>"has a value"</c>, <c>"has no value"</c>. The legacy value <c>"all"</c> is
+        /// treated as <c>"has a value"</c>. The "has a value" / "has no value" modes carry
+        /// no keywords and match on parameter presence.
         /// </summary>
-        [XmlAttribute] public string MatchType    { get; set; } = "contains"; // "contains" | "equals" | "all"
+        [XmlAttribute] public string MatchType    { get; set; } = "contains";
 
         // ── V3 fields: moved up from FilterCategoryConfig ─────────────────────
 
@@ -495,15 +499,29 @@ namespace LemoineTools.Tools.AutoFilters
         };
 
         /// <summary>
+        /// Parameters available on every element regardless of category. Always offered
+        /// in the rule editor so any category can be filtered by workset or phase.
+        /// </summary>
+        public static readonly string[] UniversalParameters =
+        {
+            "Workset", "Phase Created", "Phase Demolished",
+        };
+
+        /// <summary>
         /// Returns the parameter list to show for a given OST_* category string.
-        /// Falls back to KnownParameters if no specific mapping exists.
+        /// Falls back to KnownParameters if no specific mapping exists. The universal
+        /// element parameters (Workset, Phase Created, Phase Demolished) are always
+        /// appended so they can be selected for any category.
         /// </summary>
         public static string[] GetParametersFor(string ostCategory)
         {
-            if (!string.IsNullOrEmpty(ostCategory) &&
+            string[] baseList = (!string.IsNullOrEmpty(ostCategory) &&
                 ParametersForCategory.TryGetValue(ostCategory, out var specific))
-                return specific;
-            return KnownParameters;
+                ? specific
+                : KnownParameters;
+
+            var missing = UniversalParameters.Where(u => Array.IndexOf(baseList, u) < 0).ToArray();
+            return missing.Length == 0 ? baseList : baseList.Concat(missing).ToArray();
         }
 
         /// <summary>

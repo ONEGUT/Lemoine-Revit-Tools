@@ -75,8 +75,9 @@ namespace LemoineTools.Tools.AutoFilters
         // explicit match keywords, matchType, and graphic overrides.
         //
         // Filter name pattern: {Trade.Id}_{Rule.Name.Replace(" ","_").ToUpper()}
-        // One ParameterFilterElement per enabled Rule (unless matchType == "all" where
-        // a HasValue rule is used to match all elements with any value for the parameter).
+        // One ParameterFilterElement per enabled Rule. The "has a value" / "has no value"
+        // match types (and the legacy "all" alias) carry no keywords and match on whether
+        // the parameter has any value; all other types match the rule's keyword(s).
         //
         private void Run(UIApplication app, Document doc, View view,
             ref int pass, ref int fail, ref int skip, ref int removed)
@@ -118,6 +119,11 @@ namespace LemoineTools.Tools.AutoFilters
                 ["Type Name"]             = BuiltInParameter.ALL_MODEL_TYPE_NAME,
                 ["Family Name"]           = BuiltInParameter.ELEM_FAMILY_PARAM,
                 ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
+                // Workset is stored as an integer workset id; phases as a Phase ElementId.
+                // Map them explicitly so they resolve without any live element in the model.
+                ["Workset"]               = BuiltInParameter.ELEM_PARTITION_PARAM,
+                ["Phase Created"]         = BuiltInParameter.PHASE_CREATED,
+                ["Phase Demolished"]      = BuiltInParameter.PHASE_DEMOLISHED,
             };
 
             Progress(5, pass, fail, skip);
@@ -126,7 +132,7 @@ namespace LemoineTools.Tools.AutoFilters
             int totalRules = trades.Sum(t =>
                 (!t.ExternallyManaged
                  && (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label)))
-                    ? t.Rules.Count(r => r.Enabled && (r.MatchType == "all" || r.Match.Count > 0))
+                    ? t.Rules.Count(r => r.Enabled && (IsValuelessMatch(r.MatchType) || r.Match.Count > 0))
                     : 0);
             if (totalRules == 0)
             {
@@ -171,7 +177,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (t.ExternallyManaged) continue;
                     foreach (var r in t.Rules)
                     {
-                        if (!r.Enabled || (r.MatchType != "all" && r.Match.Count == 0)) continue;
+                        if (!r.Enabled || (!IsValuelessMatch(r.MatchType) && r.Match.Count == 0)) continue;
                         expectedFilterNames.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
                     }
                 }
@@ -215,6 +221,12 @@ namespace LemoineTools.Tools.AutoFilters
                     .GroupBy(m => m.Name)
                     .ToDictionary(g => g.Key, g => g.First().Id);
 
+                // Workset name → integer workset id, and phase name → Phase ElementId.
+                // Filtering on ELEM_PARTITION_PARAM / PHASE_* requires the id, not the name,
+                // so resolve the user-entered name here (same approach as Structural Material).
+                var worksetMap = BuildWorksetMap(doc);
+                var phaseMap   = BuildPhaseMap(doc);
+
                 foreach (var trade in trades)
                 {
                     // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
@@ -230,6 +242,7 @@ namespace LemoineTools.Tools.AutoFilters
                     foreach (var rule in trade.Rules)
                     {
                         ProcessRule(doc, view, trade, rule, bipMap, matMap,
+                            worksetMap, phaseMap,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
                             createOnly, overwriteDef,
@@ -257,6 +270,8 @@ namespace LemoineTools.Tools.AutoFilters
             FilterTradeConfig trade, FilterRuleConfig rule,
             Dictionary<string, BuiltInParameter> bipMap,
             Dictionary<string, ElementId> matMap,
+            Dictionary<string, int> worksetMap,
+            Dictionary<string, ElementId> phaseMap,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
@@ -278,7 +293,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 Log($"[{trade.Id}/{rule.Name}] No BuiltInCategory resolved — skipped.", "info");
                 skip++;
-                if (rule.Enabled && (rule.MatchType == "all" || rule.Match.Count > 0)) rulesDone++;
+                if (rule.Enabled && (IsValuelessMatch(rule.MatchType) || rule.Match.Count > 0)) rulesDone++;
                 return;
             }
 
@@ -287,16 +302,18 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 Log($"[{trade.Id}/{rule.Name}] Could not resolve parameter '{rule.Parameter}'.", "fail");
                 fail++;
-                if (rule.Enabled && (rule.MatchType == "all" || rule.Match.Count > 0)) rulesDone++;
+                if (rule.Enabled && (IsValuelessMatch(rule.MatchType) || rule.Match.Count > 0)) rulesDone++;
                 return;
             }
 
             bool isFab       = rule.Parameter == "Fabrication Service";
             bool isStructMat = rule.Parameter == "Structural Material";
+            bool isWorkset   = rule.Parameter == "Workset";
+            bool isPhase     = rule.Parameter == "Phase Created" || rule.Parameter == "Phase Demolished";
             string matchType = (rule.MatchType ?? "contains").ToLowerInvariant();
             bool hasKeywords = rule.Match.Count > 0;
 
-            if (!rule.Enabled || (!hasKeywords && matchType != "all"))
+            if (!rule.Enabled || (!hasKeywords && !IsValuelessMatch(matchType)))
             {
                 skip++;
                 return;
@@ -332,7 +349,8 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     // Build element filter based on matchType
                     ElementFilter? elementFilter = BuildElementFilter(
-                        paramId!, rule, isFab, isStructMat, matMap, doc, matchType);
+                        paramId!, rule, isFab, isStructMat, isWorkset, isPhase,
+                        matMap, worksetMap, phaseMap, doc, matchType);
 
                     if (elementFilter == null)
                     {
@@ -371,27 +389,36 @@ namespace LemoineTools.Tools.AutoFilters
         // ── Build an ElementFilter from a rule config ─────────────────────────
         private static ElementFilter? BuildElementFilter(
             ElementId paramId, FilterRuleConfig ruleConf,
-            bool isFab, bool isStructMat,
-            Dictionary<string, ElementId> matMap, Document doc,
-            string matchType)
+            bool isFab, bool isStructMat, bool isWorkset, bool isPhase,
+            Dictionary<string, ElementId> matMap,
+            Dictionary<string, int> worksetMap,
+            Dictionary<string, ElementId> phaseMap,
+            Document doc, string matchType)
         {
-            if (matchType == "all")
+            // Value-less match types ignore keywords entirely.
+            if (matchType == "all" || matchType == "has a value")
             {
-                // Matches every element that has this parameter (any value)
                 var hasValueRule = ParameterFilterRuleFactory.CreateHasValueParameterRule(paramId);
                 return new ElementParameterFilter(hasValueRule);
+            }
+            if (matchType == "has no value")
+            {
+                var noValueRule = ParameterFilterRuleFactory.CreateHasNoValueParameterRule(paramId);
+                return new ElementParameterFilter(noValueRule);
             }
 
             if (ruleConf.Match.Count == 1)
             {
                 var singleRule = BuildRuleForKeyword(
-                    paramId, ruleConf.Match[0], isFab, isStructMat, matMap, doc, matchType);
+                    paramId, ruleConf.Match[0], isFab, isStructMat, isWorkset, isPhase,
+                    matMap, worksetMap, phaseMap, doc, matchType);
                 if (singleRule == null) return null;
                 return new ElementParameterFilter(singleRule);
             }
 
             var subFilters = ruleConf.Match
-                .Select(kw => BuildRuleForKeyword(paramId, kw, isFab, isStructMat, matMap, doc, matchType))
+                .Select(kw => BuildRuleForKeyword(paramId, kw, isFab, isStructMat, isWorkset, isPhase,
+                    matMap, worksetMap, phaseMap, doc, matchType))
                 .Where(r => r != null)
                 .Select(r => (ElementFilter)new ElementParameterFilter(r!))
                 .ToList();
@@ -403,24 +430,88 @@ namespace LemoineTools.Tools.AutoFilters
         // ── Build a single Revit FilterRule for one keyword ───────────────────
         private static FilterRule? BuildRuleForKeyword(
             ElementId paramId, string keyword,
-            bool isFab, bool isStructMat,
-            Dictionary<string, ElementId> matMap, Document doc,
-            string matchType)
+            bool isFab, bool isStructMat, bool isWorkset, bool isPhase,
+            Dictionary<string, ElementId> matMap,
+            Dictionary<string, int> worksetMap,
+            Dictionary<string, ElementId> phaseMap,
+            Document doc, string matchType)
         {
+            // Negated text match types map to "not equals" for id-backed parameters.
+            bool negate = matchType == "does not equal" || matchType == "does not contain";
+
+            // Material, workset and phase store an id (not text), so the user-entered name
+            // is resolved to the matching id and compared with an equals / not-equals rule.
             if (isStructMat)
             {
                 if (matMap.TryGetValue(keyword, out ElementId mid))
                     return ParameterFilterRuleFactory.CreateEqualsRule(paramId, mid);
                 return null;
             }
+            if (isWorkset)
+            {
+                if (worksetMap.TryGetValue(keyword, out int wsId))
+                    return negate
+                        ? ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, wsId)
+                        : ParameterFilterRuleFactory.CreateEqualsRule(paramId, wsId);
+                return null;
+            }
+            if (isPhase)
+            {
+                if (phaseMap.TryGetValue(keyword, out ElementId phId))
+                    return negate
+                        ? ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, phId)
+                        : ParameterFilterRuleFactory.CreateEqualsRule(paramId, phId);
+                return null;
+            }
 
             switch (matchType)
             {
-                case "equals":
-                    return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
+                case "equals":           return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
+                case "does not equal":   return ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, keyword);
+                case "does not contain": return ParameterFilterRuleFactory.CreateNotContainsRule(paramId, keyword);
+                case "begins with":      return ParameterFilterRuleFactory.CreateBeginsWithRule(paramId, keyword);
+                case "ends with":        return ParameterFilterRuleFactory.CreateEndsWithRule(paramId, keyword);
                 default: // "contains"
                     return ParameterFilterRuleFactory.CreateContainsRule(paramId, keyword);
             }
+        }
+
+        /// <summary>
+        /// True for match types that match on parameter presence rather than a keyword
+        /// value: <c>has a value</c>, <c>has no value</c>, and the legacy <c>all</c> alias.
+        /// These rules are valid with an empty keyword list.
+        /// </summary>
+        private static bool IsValuelessMatch(string? matchType)
+        {
+            string m = (matchType ?? "").ToLowerInvariant();
+            return m == "all" || m == "has a value" || m == "has no value";
+        }
+
+        /// <summary>Builds a user-workset name → integer workset id lookup (empty if not workshared).</summary>
+        private static Dictionary<string, int> BuildWorksetMap(Document doc)
+        {
+            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (!doc.IsWorkshared) return map;
+                foreach (Workset ws in new FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset))
+                    if (!map.ContainsKey(ws.Name)) map[ws.Name] = ws.Id.IntegerValue;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoFilters: build workset map", ex); }
+            return map;
+        }
+
+        /// <summary>Builds a phase name → Phase ElementId lookup.</summary>
+        private static Dictionary<string, ElementId> BuildPhaseMap(Document doc)
+        {
+            var map = new Dictionary<string, ElementId>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (Phase ph in doc.Phases)
+                    if (ph != null && !map.ContainsKey(ph.Name)) map[ph.Name] = ph.Id;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoFilters: build phase map", ex); }
+            return map;
         }
 
         // ── Apply graphic override from a FilterRuleConfig ────────────────────

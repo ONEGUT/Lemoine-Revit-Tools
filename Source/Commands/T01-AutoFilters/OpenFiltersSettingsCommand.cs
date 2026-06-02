@@ -41,6 +41,10 @@ namespace LemoineTools.Commands
             var fillNames = new List<string>();
             var lineNames = new List<string> { "Solid" };
 
+            // Live workset / phase names for the Workset & Phase rule-value dropdowns
+            var worksetNames = new List<string>();
+            var phaseNames   = new List<string>();
+
             var doc = commandData.Application.ActiveUIDocument?.Document;
             if (doc != null)
             {
@@ -57,6 +61,16 @@ namespace LemoineTools.Commands
                         .Cast<LinePatternElement>()
                         .Select(lp => lp.Name)
                         .OrderBy(n => n, System.StringComparer.OrdinalIgnoreCase));
+
+                if (doc.IsWorkshared)
+                    worksetNames.AddRange(
+                        new FilteredWorksetCollector(doc)
+                            .OfKind(WorksetKind.UserWorkset)
+                            .Select(ws => ws.Name)
+                            .OrderBy(n => n, System.StringComparer.OrdinalIgnoreCase));
+
+                foreach (Phase ph in doc.Phases)
+                    if (ph != null) phaseNames.Add(ph.Name);
             }
 
             // Open window on dedicated STA thread
@@ -67,6 +81,7 @@ namespace LemoineTools.Commands
             {
                 win = new FiltersSettingsWindow();
                 win.SetPatternLists(fillNames, lineNames);
+                win.SetWorksetPhaseLists(worksetNames, phaseNames);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

@@ -1158,20 +1158,19 @@ namespace LemoineTools.Lemoine
                 MaxItems      = 1,
                 Placeholder   = "Add parameter…",
             };
-            paramChip.Changed += (s, e) =>
-            {
-                markDirty?.Invoke("logic.parameter");
-                rule.Parameter = paramSelected.FirstOrDefault() ?? "";
-            };
 
-            // ── SEARCH STRING row ─────────────────────────────────────────────
+            // ── SEARCH STRING / VALUE row ─────────────────────────────────────
+            // Workset & Phase parameters offer the live model values as a dropdown;
+            // every other parameter stays free-text. Free-text is always allowed so the
+            // in-tool gear entry point (which has no live document) still works.
+            var (valItems, valPlaceholder) = ValueSuggestionsFor(rule.Parameter);
             var valSelected = new ObservableCollection<string>(rule.Match);
             var valChip = new LemoineTagChipInput
             {
-                ItemsSource   = Array.Empty<string>(),   // free-text only
+                ItemsSource   = valItems,
                 SelectedItems = valSelected,
                 AllowFreeText = true,
-                Placeholder   = "Add keyword…",
+                Placeholder   = valPlaceholder,
             };
             valChip.Changed += (s, e) =>
             {
@@ -1180,7 +1179,18 @@ namespace LemoineTools.Lemoine
                 FRefreshRuleList();
             };
 
-            // Match type dropdown (CONTAINS / EQUALS / ALL / etc.)
+            paramChip.Changed += (s, e) =>
+            {
+                markDirty?.Invoke("logic.parameter");
+                rule.Parameter = paramSelected.FirstOrDefault() ?? "";
+
+                // Re-point the value chip's suggestions at the new parameter.
+                var (items, ph) = ValueSuggestionsFor(rule.Parameter);
+                valChip.ItemsSource = items;
+                valChip.Placeholder = ph;
+            };
+
+            // Match type dropdown (contains / equals / has a value / etc.)
             var matchTypes = new[]
             {
                 "contains", "does not contain",
@@ -1239,6 +1249,22 @@ namespace LemoineTools.Lemoine
         {
             var firstOst  = rule.BuiltInCategories.FirstOrDefault() ?? "";
             chip.ItemsSource = AutoFiltersSettings.GetParametersFor(firstOst);
+        }
+
+        // Value-chip suggestions per parameter. Workset & Phase surface the live model
+        // values pushed in via SetWorksetPhaseLists; everything else is free-text only.
+        private (string[] items, string placeholder) ValueSuggestionsFor(string? parameter)
+        {
+            switch (parameter)
+            {
+                case "Workset":
+                    return (WorksetNames.ToArray(), "Add workset…");
+                case "Phase Created":
+                case "Phase Demolished":
+                    return (PhaseNames.ToArray(), "Add phase…");
+                default:
+                    return (Array.Empty<string>(), "Add keyword…");
+            }
         }
 
         // ── Override Style section ────────────────────────────────────────────

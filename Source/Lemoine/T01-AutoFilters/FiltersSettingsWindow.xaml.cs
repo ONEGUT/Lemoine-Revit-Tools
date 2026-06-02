@@ -26,6 +26,16 @@ namespace LemoineTools.Lemoine
             LinePatternNames = new ReadOnlyCollection<string>(linePatterns.ToList());
         }
 
+        // ── Live project workset / phase lists (for Workset & Phase rule values) ──
+        internal IReadOnlyList<string> WorksetNames { get; private set; } = Array.Empty<string>();
+        internal IReadOnlyList<string> PhaseNames   { get; private set; } = Array.Empty<string>();
+
+        internal void SetWorksetPhaseLists(IEnumerable<string> worksets, IEnumerable<string> phases)
+        {
+            WorksetNames = new ReadOnlyCollection<string>(worksets.ToList());
+            PhaseNames   = new ReadOnlyCollection<string>(phases.ToList());
+        }
+
         // ── Filter state ─────────────────────────────────────────────────────
         private List<FilterTradeConfig>? _filterTrades;
         private string? _fActiveTradeId;
