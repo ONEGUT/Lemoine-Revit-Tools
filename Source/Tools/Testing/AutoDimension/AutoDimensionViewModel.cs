@@ -40,11 +40,19 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
         // ── State ─────────────────────────────────────────────────────────────
         private List<string> _selectedViewNames = new List<string>();
-        private string _targetType  = "Grid";          // "Grid" | "SlabEdge"
-        private bool   _includeLinks = true;
+        private string _targetType   = "Grid";          // "Grid" | "SlabEdge" | "ManualDatum"
+        private bool   _includeLinks  = true;
+        private bool   _bothAxes      = true;
+        private bool   _chainAligned  = true;
 
-        private const string GridDisplay = "To Grid";
-        private const string SlabDisplay = "To Slab Edge";
+        private const string GridDisplay   = "To Grid";
+        private const string SlabDisplay   = "To Slab Edge";
+        private const string ManualDisplay = "To Picked Edge";
+
+        private static string NormalizeTarget(string t) =>
+            string.Equals(t, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
+          : string.Equals(t, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
+          : "Grid";
 
         public AutoDimensionViewModel(
             AutoDimensionEventHandler? handler,
@@ -56,8 +64,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             _allViews = allViews ?? new List<View>();
 
             var cfg = AutoDimensionConfig.Instance;
-            _targetType   = string.Equals(cfg.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge" : "Grid";
+            _targetType   = NormalizeTarget(cfg.TargetType);
             _includeLinks = cfg.IncludeLinks;
+            _bothAxes     = cfg.DimensionBothAxes;
+            _chainAligned = cfg.ChainAligned;
 
             foreach (var v in _allViews)
                 if (!_viewNameToId.ContainsKey(v.Name))
@@ -135,11 +145,13 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             AddLabel(outer, "Choose what each dimension measures out to.");
 
             var picker = new LemoineSingleSelect { Label = "Destination" };
-            picker.Items = new List<string> { GridDisplay, SlabDisplay };
-            picker.SelectedItem = _targetType == "SlabEdge" ? SlabDisplay : GridDisplay;
+            picker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
+            picker.SelectedItem = _targetType == "SlabEdge" ? SlabDisplay
+                                : _targetType == "ManualDatum" ? ManualDisplay : GridDisplay;
             picker.SelectionChanged += sel =>
             {
-                _targetType = sel == SlabDisplay ? "SlabEdge" : "Grid";
+                _targetType = sel == SlabDisplay ? "SlabEdge"
+                            : sel == ManualDisplay ? "ManualDatum" : "Grid";
                 Fire();
             };
             outer.Children.Add(picker);
@@ -151,6 +163,18 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             {
                 new ToggleItem
                 {
+                    Id = "bothAxes", Label = "Dimension in X and Y",
+                    Desc = "Measure each clash both across and up the view, not only horizontally.",
+                    DefaultOn = _bothAxes,
+                },
+                new ToggleItem
+                {
+                    Id = "chain", Label = "Chain aligned clashes",
+                    Desc = "Merge collinear clashes that sit close together into one multi-segment string.",
+                    DefaultOn = _chainAligned,
+                },
+                new ToggleItem
+                {
                     Id = "links", Label = "Include linked models as targets",
                     Desc = "Resolve grids / slab edges that live in loaded Revit links (coordination models).",
                     DefaultOn = _includeLinks,
@@ -158,13 +182,19 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             });
             toggles.StateChanged += state =>
             {
-                state.TryGetValue("links", out _includeLinks);
+                state.TryGetValue("bothAxes", out _bothAxes);
+                state.TryGetValue("chain",    out _chainAligned);
+                state.TryGetValue("links",    out _includeLinks);
                 Fire();
             };
             outer.Children.Add(toggles);
 
+            if (_targetType == "ManualDatum")
+                AddDim(outer, "Manual: you'll be prompted to pick one datum edge per view when the run starts.");
+
             AddDivider(outer);
-            AddDim(outer, $"{_selectedViewNames.Count} view(s) selected · {(_targetType == "SlabEdge" ? "slab edge" : "grid")} targets.");
+            string destLabel = _targetType == "SlabEdge" ? "slab edge" : _targetType == "ManualDatum" ? "picked edge" : "grid";
+            AddDim(outer, $"{_selectedViewNames.Count} view(s) selected · {destLabel} targets.");
 
             return WrapInScroll(outer);
         }
@@ -184,7 +214,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             switch (stepId)
             {
                 case "S1": return _selectedViewNames.Count == 0 ? "—" : $"{_selectedViewNames.Count} view(s)";
-                case "S2": return $"{(_targetType == "SlabEdge" ? "slab edge" : "grid")}{(_includeLinks ? " · links" : "")}";
+                case "S2":
+                    string dest = _targetType == "SlabEdge" ? "slab edge" : _targetType == "ManualDatum" ? "picked edge" : "grid";
+                    return $"{dest}{(_bothAxes ? " · X+Y" : "")}{(_chainAligned ? " · chained" : "")}";
                 default:   return "—";
             }
         }
@@ -198,8 +230,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             if (_handler == null || _event == null) return;
 
             var cfg = AutoDimensionConfig.Instance;
-            cfg.TargetType   = _targetType;
-            cfg.IncludeLinks = _includeLinks;
+            cfg.TargetType        = _targetType;
+            cfg.IncludeLinks      = _includeLinks;
+            cfg.DimensionBothAxes = _bothAxes;
+            cfg.ChainAligned      = _chainAligned;
             cfg.Save();
 
             _handler.ViewIds = _selectedViewNames

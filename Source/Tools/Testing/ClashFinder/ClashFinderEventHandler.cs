@@ -103,7 +103,13 @@ namespace LemoineTools.Tools.Testing
 
                         var dimCfg = AutoDimensionConfig.Instance;
                         dimCfg.TargetType = DimTargetType;   // run-level override from the Clash Finder option
-                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s));
+
+                        // Manual-datum mode: pick one datum edge per view (on the main thread) first.
+                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
+                        if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
+                            datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
+
+                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums);
 
                         pass += dimResult.Placed;
                         fail += dimResult.Failures;

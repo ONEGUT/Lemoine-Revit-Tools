@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
@@ -12,8 +11,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension
     /// (serializable) plan so the plan itself stays Revit-free.</summary>
     public sealed class PlannedRefBundle
     {
-        public Reference Source { get; set; } = null!;
-        public Reference Target { get; set; } = null!;
+        /// <summary>All references for one dimension, ordered along its line (sources then target).
+        /// A two-entry list is a plain dimension; more entries make a native chained string.</summary>
+        public List<Reference> Ordered { get; set; } = new List<Reference>();
     }
 
     /// <summary>Output of the read-side engine: the abstract plan plus the Revit data the commit
@@ -37,7 +37,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         private readonly Action<string, string> _log;
         public AutoDimensionEngine(Action<string, string> log) { _log = log ?? ((a, b) => { }); }
 
-        public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg)
+        public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg,
+            List<Resolvers.ManualDatum>? datums = null)
         {
             var output = new EngineOutput();
             var plan = output.Plan;
@@ -55,6 +56,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 Projection = projection,
                 Config     = cfg,
                 ReportMissingLink = m => { if (!plan.MissingLinkRefs.Contains(m)) plan.MissingLinkRefs.Add(m); },
+                Datums = datums ?? new List<Resolvers.ManualDatum>(),
             };
             ctx.Sources.Add(new SourceDoc { Doc = doc, Link = null, Transform = Transform.Identity });
             if (cfg.IncludeLinks)
@@ -78,52 +80,79 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 return output;
             }
 
-            // ── 2. Resolve targets (Part A) ───────────────────────────────────
-            bool slab = string.Equals(cfg.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
-            ITargetResolver resolver = slab ? new SlabEdgeTargetResolver() : (ITargetResolver)new GridTargetResolver();
+            // ── 2. Resolve targets (Part A) — once per measurement axis ───────
+            string tt   = cfg.TargetType ?? "Grid";
+            bool slab    = string.Equals(tt, "SlabEdge", StringComparison.OrdinalIgnoreCase);
+            bool manual  = string.Equals(tt, "ManualDatum", StringComparison.OrdinalIgnoreCase);
+            ITargetResolver resolver = manual ? new ManualDatumResolver()
+                                     : slab   ? new SlabEdgeTargetResolver()
+                                     : (ITargetResolver)new GridTargetResolver();
+            Core.TargetType ttEnum = manual ? Core.TargetType.ManualDatum
+                                   : slab   ? Core.TargetType.SlabEdge
+                                   : Core.TargetType.Grid;
             output.DimTypeId = ResolveDimType(doc, cfg.DimensionTypeName);
 
-            Core.Vec2 axis = projection.HorizontalAxis;
             double scale = view.Scale <= 0 ? 1 : view.Scale;
             var coreCfg = BuildCoreConfig(cfg.Layout, scale);
             output.CoreConfig = coreCfg;
 
-            var dims = new List<Core.PlannedDimension>();
+            var axes = cfg.DimensionBothAxes
+                ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
+                : new[] { new Core.Vec2(1, 0) };
+
+            var resolved        = new List<ResolvedItem>();
+            var resolvedSources = new HashSet<string>();
+            var firstFailReason = new Dictionary<string, string>();   // sourceKey → reason, used only if no axis resolved
+
             foreach (var src in sources)
             {
-                var res = resolver.Resolve(src, ctx);
-                if (!res.Success)
+                foreach (var ax in axes)
                 {
-                    if (res.Ambiguity != null) { res.Ambiguity.TargetType = slab ? Core.TargetType.SlabEdge : Core.TargetType.Grid; plan.Ambiguities.Add(res.Ambiguity); }
-                    else if (res.Unresolved != null) plan.Unresolved.Add(res.Unresolved);
-                    continue;
+                    ctx.Axis = ax;
+                    var res = resolver.Resolve(src, ctx);
+                    if (res.Success)
+                    {
+                        resolved.Add(new ResolvedItem
+                        {
+                            SourceKey  = src.SourceKey,
+                            SourceRef  = src.SourceRef,
+                            Source2d   = src.Anchor2d,
+                            Axis       = ax,
+                            TargetRef  = res.TargetRef!,
+                            Target2d   = res.TargetPoint2d,
+                            TargetKey  = res.TargetKey,
+                            TargetType = ttEnum,
+                        });
+                        resolvedSources.Add(src.SourceKey);
+                    }
+                    else if (res.Ambiguity != null)
+                    {
+                        res.Ambiguity.TargetType = ttEnum;
+                        plan.Ambiguities.Add(res.Ambiguity);
+                    }
+                    else if (res.Unresolved != null && !firstFailReason.ContainsKey(src.SourceKey))
+                    {
+                        firstFailReason[src.SourceKey] = res.Unresolved.Reason;
+                    }
                 }
-
-                double axialLen = Math.Abs((res.TargetPoint2d - src.Anchor2d).Dot(axis));
-                var seg = new Core.PlannedSegment
-                {
-                    LengthFt    = axialLen,
-                    TextWidthFt = EstimateTextWidth(axialLen, coreCfg.TextHeightFt),
-                };
-
-                dims.Add(new Core.PlannedDimension
-                {
-                    SourceKey   = src.SourceKey,
-                    TargetKey   = res.TargetKey,
-                    TargetType  = slab ? Core.TargetType.SlabEdge : Core.TargetType.Grid,
-                    SourcePoint = src.Anchor2d,
-                    TargetPoint = res.TargetPoint2d,
-                    AxisDir     = axis,
-                    Side        = Core.DimSide.Positive,
-                    OffsetFt    = coreCfg.FirstOffsetFt,
-                    Segments    = new List<Core.PlannedSegment> { seg },
-                });
-
-                output.Refs[src.SourceKey] = new PlannedRefBundle { Source = src.SourceRef, Target = res.TargetRef! };
             }
 
-            _log($"Resolved {dims.Count}/{sources.Count} target(s) — {plan.Unresolved.Count} unresolved, {plan.Ambiguities.Count} ambiguous.",
-                dims.Count > 0 ? "info" : "fail");
+            foreach (var kv in firstFailReason)
+                if (!resolvedSources.Contains(kv.Key))
+                    plan.Unresolved.Add(new Core.UnresolvedTarget { SourceKey = kv.Key, TargetType = ttEnum, Reason = kv.Value });
+
+            _log($"Resolved {resolved.Count} dimension(s) over {axes.Length} axis/axes from {sources.Count} source(s) — {plan.Unresolved.Count} unresolved, {plan.Ambiguities.Count} ambiguous.",
+                resolved.Count > 0 ? "info" : "fail");
+
+            // ── 2b. Chain collinear, adjacent clashes into multi-segment strings ──
+            double chainGapFt  = cfg.ChainMaxGapMm / 304.8;
+            double collinearFt = cfg.ChainCollinearToleranceMm / 304.8;
+            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt);
+            var dims = chained.Dims;
+            output.Refs = chained.Refs;
+
+            int chainedStrings = dims.Count(d => d.Segments.Count > 1);
+            if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
             var obstacles = CollectObstacles(doc, view, projection);
@@ -166,14 +195,6 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 PlateauEpsilon      = paper.PlateauEpsilon,
                 MaxOffsetSteps      = paper.MaxOffsetSteps,
             };
-        }
-
-        private static double EstimateTextWidth(double valueFt, double textHeightModelFt)
-        {
-            // Rough value string ("12.34'") → character count → width at ~0.6× height per glyph.
-            string s = valueFt.ToString("0.##", CultureInfo.InvariantCulture) + "'";
-            int chars = Math.Max(3, s.Length);
-            return chars * textHeightModelFt * 0.6;
         }
 
         private static ElementId ResolveDimType(Document doc, string name)

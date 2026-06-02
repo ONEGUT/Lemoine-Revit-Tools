@@ -50,11 +50,13 @@ namespace LemoineTools.Tools.Testing
         private double _storeyMarginMm = 600.0;   // sub-floor depth still counted as a level's storey (slabs/structure)
 
         // Dimension-pass destination, seeded from the shared auto-dimension config.
-        private const string GridDisplay = "To Grid";
-        private const string SlabDisplay = "To Slab Edge";
+        private const string GridDisplay   = "To Grid";
+        private const string SlabDisplay   = "To Slab Edge";
+        private const string ManualDisplay = "To Picked Edge";
         private string _dimTargetType =
-            string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase)
-                ? "SlabEdge" : "Grid";
+            string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
+          : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
+          : "Grid";
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -210,14 +212,18 @@ namespace LemoineTools.Tools.Testing
             AddDivider(outer);
             AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
             var destPicker = new LemoineSingleSelect { Label = "Destination" };
-            destPicker.Items = new List<string> { GridDisplay, SlabDisplay };
-            destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay : GridDisplay;
+            destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
+            destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay
+                                    : _dimTargetType == "ManualDatum" ? ManualDisplay : GridDisplay;
             destPicker.SelectionChanged += sel =>
             {
-                _dimTargetType = sel == SlabDisplay ? "SlabEdge" : "Grid";
+                _dimTargetType = sel == SlabDisplay ? "SlabEdge"
+                               : sel == ManualDisplay ? "ManualDatum" : "Grid";
                 Fire();
             };
             outer.Children.Add(destPicker);
+            if (_dimTargetType == "ManualDatum")
+                AddDim(outer, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -247,7 +253,7 @@ namespace LemoineTools.Tools.Testing
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
                     bits.Add(_runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : "grid")}"
+                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
                         : "dim pass off");
                     bits.Add($"margin {_storeyMarginMm:F0} mm");
                     return string.Join(" · ", bits);

@@ -37,6 +37,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 }
                 else
                 {
+                    // Manual-datum mode: pick one datum edge per view (main thread) before building.
+                    Dictionary<ElementId, List<Resolvers.ManualDatum>>? datums = null;
+                    if (string.Equals(Config.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
+                        datums = ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, Log);
+
                     // ── Read side: build a plan per view (no element changes) ──
                     var built = new List<(View view, EngineOutput output)>();
                     var engine = new AutoDimensionEngine(Log);
@@ -47,8 +52,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                         var view = doc.GetElement(viewId) as View;
                         if (view == null) { skip++; n++; continue; }
 
+                        List<Resolvers.ManualDatum>? viewDatums = null;
+                        datums?.TryGetValue(viewId, out viewDatums);
+
                         Log($"— View '{view.Name}' —", "info");
-                        var output = engine.BuildPlan(doc, view, Config);
+                        var output = engine.BuildPlan(doc, view, Config, viewDatums);
                         ReportPlan(view, output.Plan);
                         built.Add((view, output));
                         n++;

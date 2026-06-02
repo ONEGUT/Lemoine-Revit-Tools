@@ -18,11 +18,23 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         /// <summary>Config schema version. v1 from first release.</summary>
         public int SchemaVersion { get; set; } = 1;
 
-        /// <summary>Destination type for this run: "Grid" or "SlabEdge".</summary>
+        /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
 
         /// <summary>Include loaded Revit links as target sources (coordination slabs/grids).</summary>
         public bool IncludeLinks { get; set; } = true;
+
+        /// <summary>Measure each clash in both the view's X and Y directions (two dimensions/clash).</summary>
+        public bool DimensionBothAxes { get; set; } = true;
+
+        /// <summary>Merge collinear, adjacent clashes that share a target into one chained string.</summary>
+        public bool ChainAligned { get; set; } = true;
+
+        /// <summary>Max along-axis gap between adjacent clashes that still chain (mm).</summary>
+        public double ChainMaxGapMm { get; set; } = 1500.0;
+
+        /// <summary>How far a clash may sit off the shared baseline and still count as "in line" (mm).</summary>
+        public double ChainCollinearToleranceMm { get; set; } = 150.0;
 
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";

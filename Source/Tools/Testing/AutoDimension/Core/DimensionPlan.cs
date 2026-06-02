@@ -2,8 +2,8 @@ using System.Collections.Generic;
 
 namespace LemoineTools.Tools.Testing.AutoDimension.Core
 {
-    /// <summary>Which destination a dimension measures out to. Both are first-class peers.</summary>
-    public enum TargetType { Grid, SlabEdge }
+    /// <summary>Which destination a dimension measures out to. All are first-class peers.</summary>
+    public enum TargetType { Grid, SlabEdge, ManualDatum }
 
     /// <summary>Per-segment text placement chosen by the layout core to manage density.</summary>
     public enum SegmentTextState { Inline, Flipped, Staggered, LeaderOut }

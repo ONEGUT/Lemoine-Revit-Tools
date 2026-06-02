@@ -12,6 +12,19 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         public Transform Transform { get; set; } = Transform.Identity;
     }
 
+    /// <summary>A datum the user picked manually for one view (edge reference + its world line).</summary>
+    public sealed class ManualDatum
+    {
+        /// <summary>Host-usable reference to dimension out to (works for host or linked edges).</summary>
+        public Reference Ref { get; set; } = null!;
+        /// <summary>A world point on the datum (the pick's global point).</summary>
+        public XYZ WorldPoint { get; set; } = XYZ.Zero;
+        /// <summary>World direction of the datum edge; null when it could not be read.</summary>
+        public XYZ? WorldDir { get; set; }
+        /// <summary>Stable identity for stale cleanup / chaining grouping.</summary>
+        public string Key { get; set; } = "";
+    }
+
     /// <summary>Everything a target resolver needs, gathered once per run on the Revit thread.</summary>
     public sealed class ResolveContext
     {
@@ -20,6 +33,12 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         public ViewProjection Projection { get; set; } = null!;
         public List<SourceDoc> Sources { get; set; } = new List<SourceDoc>();
         public AutoDimensionConfig Config { get; set; } = new AutoDimensionConfig();
+
+        /// <summary>Measurement axis for the current resolve pass (view-2D unit; +X or +Y).</summary>
+        public Core.Vec2 Axis { get; set; } = new Core.Vec2(1, 0);
+
+        /// <summary>User-picked datums for this view (manual-datum target mode only).</summary>
+        public List<ManualDatum> Datums { get; set; } = new List<ManualDatum>();
 
         /// <summary>Sink for "couldn't get a link reference" reports (non-fatal).</summary>
         public Action<string> ReportMissingLink { get; set; } = _ => { };

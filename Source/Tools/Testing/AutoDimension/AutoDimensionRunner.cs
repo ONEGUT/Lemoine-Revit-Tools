@@ -17,7 +17,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension
     {
         public static CommitResult Run(
             Document doc, IList<ElementId> viewIds, AutoDimensionConfig cfg,
-            Action<string, string> log, Action<int>? progress = null)
+            Action<string, string> log, Action<int>? progress = null,
+            IDictionary<ElementId, List<Resolvers.ManualDatum>>? datums = null)
         {
             log = log ?? ((a, b) => { });
             var total = new CommitResult();
@@ -33,8 +34,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 var view = doc.GetElement(viewId) as View;
                 if (view == null) { n++; continue; }
 
+                List<Resolvers.ManualDatum>? viewDatums = null;
+                datums?.TryGetValue(viewId, out viewDatums);
+
                 log($"— Dimensioning '{view.Name}' —", "info");
-                var output = engine.BuildPlan(doc, view, cfg);
+                var output = engine.BuildPlan(doc, view, cfg, viewDatums);
                 ReportPlan(view, output.Plan, log);
                 built.Add((view, output));
                 n++;

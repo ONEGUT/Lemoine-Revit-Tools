@@ -16,7 +16,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
     {
         public ResolvedTarget Resolve(SourceLine source, ResolveContext ctx)
         {
-            Core.Vec2 axis = ctx.Projection.HorizontalAxis;
+            Core.Vec2 axis = ctx.Axis;
             double srcAxial = source.Anchor2d.Dot(axis);
 
             double bestDist = double.MaxValue;
