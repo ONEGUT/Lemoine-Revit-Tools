@@ -144,12 +144,38 @@ namespace LemoineTools.Tools.Testing
             ElementId lineStyleId = ResolveLineStyleId(doc);
             var regionTypeCache = new Dictionary<string, ElementId?>();
 
+            // Per-view visible Z-range, computed once. A clash is drawn in a view only if its
+            // elevation falls within that view's depth range, so other levels' clashes (common
+            // in identical stacked-level models) don't bleed onto this view. Link elements are
+            // already in host world coordinates (GetHostBBox), so the gate is link-agnostic.
+            var viewRanges    = new Dictionary<ElementId, (double zMin, double zMax, bool gated)>();
+            var skippedByView = new Dictionary<ElementId, int>();
+            foreach (var viewId in viewIds)
+            {
+                if (!(doc.GetElement(viewId) is View v)) continue;
+                bool gated = TryGetViewZRange(v, out double zMin, out double zMax);
+                viewRanges[viewId] = (zMin, zMax, gated);
+            }
+
             foreach (var clash in clashes)
             {
                 foreach (var viewId in viewIds)
                 {
                     var view = doc.GetElement(viewId) as View;
                     if (view == null) continue;
+
+                    if (viewRanges.TryGetValue(viewId, out var vr) && vr.gated)
+                    {
+                        double oMin = clash.OverlapBBox.Min.Z;
+                        double oMax = clash.OverlapBBox.Max.Z;
+                        if (oMax < vr.zMin - toleranceFt || oMin > vr.zMax + toleranceFt)
+                        {
+                            skippedByView.TryGetValue(viewId, out int s);
+                            skippedByView[viewId] = s + 1;
+                            continue;
+                        }
+                    }
+
                     try
                     {
                         if (CreateClashGraphics(doc, view, clash, lineStyleId, toleranceFt, regionTypeCache))
@@ -163,7 +189,74 @@ namespace LemoineTools.Tools.Testing
                 }
             }
 
+            foreach (var kv in skippedByView)
+            {
+                if (kv.Value <= 0) continue;
+                var view = doc.GetElement(kv.Key) as View;
+                Log($"View '{view?.Name ?? kv.Key.ToString()}': {kv.Value} clash(es) outside the view's depth range — skipped.", "info");
+            }
+
             return result;
+        }
+
+        // ── View depth gate (keeps other levels' clashes off this view) ───────
+        /// <summary>
+        /// True, with the view's visible world-Z interval, when it can be bounded: plan views via
+        /// their view range (top clip → view depth), 3D views via an active section box. Returns
+        /// false for sections / elevations / unbounded plans so those are never wrongly filtered.
+        /// </summary>
+        private static bool TryGetViewZRange(View view, out double zMin, out double zMax)
+        {
+            zMin = double.NegativeInfinity;
+            zMax = double.PositiveInfinity;
+
+            if (view is ViewPlan plan)
+            {
+                PlanViewRange range;
+                try { range = plan.GetViewRange(); }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: get plan view range", ex); return false; }
+                if (range == null) return false;
+
+                double? top    = ResolvePlaneZ(view.Document, range, PlanViewPlane.TopClipPlane);
+                double? bottom = ResolvePlaneZ(view.Document, range, PlanViewPlane.ViewDepthPlane)
+                              ?? ResolvePlaneZ(view.Document, range, PlanViewPlane.BottomClipPlane);
+
+                if (top.HasValue)    zMax = top.Value;
+                if (bottom.HasValue) zMin = bottom.Value;
+                return top.HasValue || bottom.HasValue;
+            }
+
+            if (view is View3D v3 && v3.IsSectionBoxActive)
+            {
+                try
+                {
+                    var sb    = v3.GetSectionBox();
+                    var world = WorldAabb(BoxCorners(sb.Min, sb.Max), sb.Transform);
+                    zMin = world.Min.Z;
+                    zMax = world.Max.Z;
+                    return true;
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: get 3D section box", ex); return false; }
+            }
+
+            return false; // sections, elevations, unbounded plans → no gate
+        }
+
+        /// <summary>Absolute world Z of a plan-view-range plane, or null when the plane is
+        /// unlimited / relative (its level id doesn't resolve to a concrete <see cref="Level"/>).</summary>
+        private static double? ResolvePlaneZ(Document doc, PlanViewRange range, PlanViewPlane plane)
+        {
+            ElementId levelId;
+            double    offset;
+            try
+            {
+                levelId = range.GetLevelId(plane);
+                offset  = range.GetOffset(plane);
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read plan view-range plane", ex); return null; }
+
+            if (!(doc.GetElement(levelId) is Level level)) return null;
+            return level.Elevation + offset;
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────
