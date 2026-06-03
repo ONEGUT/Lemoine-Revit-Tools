@@ -305,10 +305,59 @@ namespace LemoineTools.Tools.AutoFilters
         /// <c>{tradeId}_{RULE_NAME}</c> with spaces replaced by underscores and uppercased.
         /// Single source of truth for the convention used by the filter engine, the
         /// Ceiling Heatmap tool, and the filter pickers.
+        ///
+        /// The result is sanitised of characters Revit prohibits in element names
+        /// (e.g. the ':' in a system name like "HVAC: EXHAUST AIR"), which otherwise make
+        /// <c>ParameterFilterElement.Create</c> throw "name cannot include prohibited
+        /// characters". Because every caller routes through this method the sanitised name
+        /// stays consistent across creation, orphan cleanup, colour matching, and grouping.
         /// </summary>
         public static string MakeFilterName(string tradeId, string ruleName)
-            => (tradeId ?? "") + "_"
-               + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant();
+            => SanitizeFilterName(
+                   (tradeId ?? "") + "_"
+                   + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant());
+
+        /// <summary>
+        /// Characters Revit forbids in element names. Sourced from the Revit API error
+        /// "name cannot include prohibited characters, such as { } [ ] | ; &lt; &gt; ? ` ~"
+        /// plus backslash and colon, which are also rejected.
+        /// </summary>
+        private static readonly char[] ProhibitedNameChars =
+            { '\\', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '`', '~' };
+
+        /// <summary>
+        /// Replaces every Revit-prohibited character with '_', collapses runs of
+        /// underscores, and trims leading/trailing underscores so the result is a legal,
+        /// stable element name. Deterministic so it can be recomputed for name matching.
+        /// </summary>
+        public static string SanitizeFilterName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name ?? "";
+
+            var chars = name.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+                if (Array.IndexOf(ProhibitedNameChars, chars[i]) >= 0)
+                    chars[i] = '_';
+
+            // Collapse consecutive underscores so "HVAC:_EXHAUST" → "HVAC_EXHAUST"
+            // (rather than a double underscore) and trim the edges.
+            var sb = new System.Text.StringBuilder(chars.Length);
+            bool prevUnderscore = false;
+            foreach (char c in chars)
+            {
+                if (c == '_')
+                {
+                    if (!prevUnderscore) sb.Append(c);
+                    prevUnderscore = true;
+                }
+                else
+                {
+                    sb.Append(c);
+                    prevUnderscore = false;
+                }
+            }
+            return sb.ToString().Trim('_');
+        }
 
         /// <summary>
         /// Groups the supplied Revit filter names by the trade that owns the rule which
