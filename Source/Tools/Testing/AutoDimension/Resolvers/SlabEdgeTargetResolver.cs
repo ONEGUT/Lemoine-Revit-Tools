@@ -67,7 +67,6 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
 
                 double delta = (f.Origin2d - source.Anchor2d).Dot(axis);
                 double projDist = Math.Abs(delta);
-                if (projDist > ctx.Config.MaxDistanceFt) continue;
                 if (projDist < 1e-4) continue; // coincident — not a meaningful offset
 
                 // Radial (straight-line) distance to the edge segment, not just the along-axis
@@ -75,6 +74,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 // genuinely closer edge wins even when its along-axis offset is larger. Equals
                 // projDist when the source sits within the edge's perpendicular span.
                 double radialDist = DistanceToSegment(source.Anchor2d, f.SegA, f.SegB);
+
+                // The cap bounds how FAR the edge is, not how long the dimension is — an edge that
+                // is genuinely near is dimensioned however long that turns out to be.
+                if (radialDist > ctx.Config.MaxDistanceFt) continue;
 
                 double axisDevDeg = Math.Acos(Math.Min(1.0, axisDot)) * 180.0 / Math.PI;
                 double score = radialDist
@@ -95,7 +98,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
 
             if (candidates.Count == 0)
                 return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
-                    "no slab/opening termination face within distance cap on the measurement axis");
+                    "no slab/opening termination face on the measurement axis within the distance cap");
 
             // Deterministic ordering: score, then stable key.
             candidates.Sort((a, b) =>
