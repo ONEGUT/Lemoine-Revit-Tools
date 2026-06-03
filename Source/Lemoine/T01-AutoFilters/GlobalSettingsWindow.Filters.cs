@@ -1164,10 +1164,43 @@ namespace LemoineTools.Lemoine
                 MaxItems      = 1,
                 Placeholder   = "Add parameter…",
             };
+            // Link-safety hint shown under the parameter row (see UpdateParamHint).
+            var paramHint = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 3, 0, 0),
+            };
+            paramHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            paramHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            void UpdateParamHint()
+            {
+                // Whole-category always matches linked elements (keys off the Category param).
+                if (string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    paramHint.Text = "✓ Whole category applies to linked models.";
+                    paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                    return;
+                }
+                string p = rule.Parameter ?? "";
+                if (string.IsNullOrEmpty(p)) { paramHint.Text = ""; return; }
+                if (AutoFiltersSettings.IsLinkSafeParameter(p))
+                {
+                    paramHint.Text = "✓ Built-in parameter — applies to linked models.";
+                    paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                }
+                else
+                {
+                    paramHint.Text = "⚠ May not affect linked models unless this is a shared parameter. Prefer a built-in parameter or Whole category.";
+                    paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineWarnText");
+                }
+            }
+
             paramChip.Changed += (s, e) =>
             {
                 markDirty?.Invoke("logic.parameter");
                 rule.Parameter = paramSelected.FirstOrDefault() ?? "";
+                UpdateParamHint();
             };
 
             // ── SEARCH STRING row ─────────────────────────────────────────────
@@ -1267,13 +1300,15 @@ namespace LemoineTools.Lemoine
                 }
                 markDirty?.Invoke("logic.matchtype");
                 ApplyWholeCategory(on);
+                UpdateParamHint();
                 FRefreshRuleList();
             });
             cardStack.Children.Add(wholeCatToggle);
 
-            paramRow  = AddRow("PARAMETER", paramChip);
+            paramRow  = AddRow("PARAMETER", paramChip, paramHint);
             searchRow = AddRow("SEARCH STRING", valChip, matchDd);
             ApplyWholeCategory(wholeCatOn);
+            UpdateParamHint();
 
             card.Child = cardStack;
             outer.Children.Add(card);

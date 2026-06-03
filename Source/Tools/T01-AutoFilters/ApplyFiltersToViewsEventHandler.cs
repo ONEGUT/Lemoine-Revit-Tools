@@ -89,6 +89,11 @@ namespace LemoineTools.Tools.AutoFilters
 
             Log($"{filterMap.Count} filter(s), {viewList.Count} view(s) — beginning apply…", "info");
 
+            // View filters only override linked elements when the link is displayed
+            // "By Host View". Warn once per link shown "By Linked View" so the user knows
+            // why a filter appears to do nothing on a linked model.
+            WarnLinksNotByHostView(doc, viewList);
+
             ElementId solidFillId = GetSolidFillId(doc);
             ElementId solidLineId = GetSolidLineId();
 
@@ -174,6 +179,35 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        // Warns (once per link) when a loaded RevitLinkInstance is displayed "By Linked
+        // View" in any target view, because host view filters cannot override its elements.
+        private void WarnLinksNotByHostView(Document doc, IEnumerable<View> views)
+        {
+            var links = new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>().ToList();
+            if (links.Count == 0) return;
+
+            var warned = new HashSet<long>();
+            foreach (var view in views)
+            {
+                foreach (var li in links)
+                {
+                    if (warned.Contains(li.Id.Value)) continue;
+                    try
+                    {
+                        var ovr = view.GetLinkOverrides(li.Id);
+                        if (ovr != null && ovr.LinkVisibilityType == LinkVisibility.ByLinkView)
+                        {
+                            string title = li.GetLinkDocument()?.Title ?? li.Name;
+                            Log($"⚠ Link '{title}' is shown 'By Linked View' in '{view.Name}' — host filters won't affect it. Set its display to 'By Host View' to apply overrides.", "info");
+                            warned.Add(li.Id.Value);
+                        }
+                    }
+                    catch (Exception ex) { LemoineLog.Swallowed("ApplyFilters: read link display override", ex); }
+                }
+            }
+        }
 
         private static RevitColor? MatchColor(string filterName, out string? label)
         {

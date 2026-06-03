@@ -218,6 +218,10 @@ namespace LemoineTools.Tools.AutoFilters
                     .GroupBy(m => m.Name)
                     .ToDictionary(g => g.Key, g => g.First().Id);
 
+                // Resolved-parameter cache: avoids re-scanning links for the same
+                // (parameter × category-set) across many rules.
+                var paramCache = new Dictionary<string, ParamResolve>(StringComparer.Ordinal);
+
                 foreach (var trade in trades)
                 {
                     // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
@@ -232,7 +236,7 @@ namespace LemoineTools.Tools.AutoFilters
 
                     foreach (var rule in trade.Rules)
                     {
-                        ProcessRule(doc, sourceDocs, view, trade, rule, bipMap, matMap,
+                        ProcessRule(doc, sourceDocs, view, trade, rule, bipMap, matMap, paramCache,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
                             createOnly, overwriteDef,
@@ -272,6 +276,7 @@ namespace LemoineTools.Tools.AutoFilters
             FilterTradeConfig trade, FilterRuleConfig rule,
             Dictionary<string, BuiltInParameter> bipMap,
             Dictionary<string, ElementId> matMap,
+            Dictionary<string, ParamResolve> paramCache,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
@@ -315,13 +320,18 @@ namespace LemoineTools.Tools.AutoFilters
             ElementId? paramId = null;
             if (!wholeCat)
             {
-                paramId = ResolveParamId(sourceDocs, rule.Parameter, catIds, bipMap);
-                if (paramId == null)
+                var pr = ResolveParamId(doc, sourceDocs, rule.Parameter, catIds, bipMap, paramCache);
+                if (pr.Id == null)
                 {
                     Log($"[{trade.Id}/{rule.Name}] Could not resolve parameter '{rule.Parameter}'.", "fail");
                     fail++; rulesDone++;
                     return;
                 }
+                paramId = pr.Id;
+                // Tell the user when a rule's parameter cannot reliably drive a filter
+                // over linked elements — the most common "filter created but does nothing".
+                if (pr.Warn != null)
+                    Log($"[{trade.Id}/{rule.Name}] {pr.Warn}", "info");
             }
 
             bool isFab       = rule.Parameter == "Fabrication Service";
@@ -583,50 +593,132 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private static ElementId? ResolveParamId(IList<Document> sourceDocs, string paramName,
+        /// <summary>
+        /// Result of resolving a rule's parameter to a filterable id, plus whether that
+        /// parameter reliably matches elements inside linked models.
+        /// </summary>
+        private readonly struct ParamResolve
+        {
+            public readonly ElementId? Id;
+            public readonly bool       LinkSafe;
+            public readonly string?    Warn;
+            public ParamResolve(ElementId? id, bool linkSafe, string? warn)
+            { Id = id; LinkSafe = linkSafe; Warn = warn; }
+            public static readonly ParamResolve None = new ParamResolve(null, false, null);
+        }
+
+        // Cached wrapper around ResolveParamIdCore keyed by parameter × category-set.
+        private static ParamResolve ResolveParamId(
+            Document host, IList<Document> sourceDocs, string paramName,
+            IList<ElementId> catIds, Dictionary<string, BuiltInParameter> bipMap,
+            Dictionary<string, ParamResolve> cache)
+        {
+            string key = paramName + "|" +
+                string.Join(",", catIds.Select(c => c.Value).OrderBy(v => v));
+            if (cache.TryGetValue(key, out var hit)) return hit;
+            var res = ResolveParamIdCore(host, sourceDocs, paramName, catIds, bipMap);
+            cache[key] = res;
+            return res;
+        }
+
+        private static ParamResolve ResolveParamIdCore(
+            Document host, IList<Document> sourceDocs, string paramName,
             IList<ElementId> catIds, Dictionary<string, BuiltInParameter> bipMap)
         {
-            // 1. BIP map first — works even when no elements exist in the model
+            // 1. Built-in parameter — universal id, matches host and linked elements alike.
             if (bipMap.TryGetValue(paramName, out var bip))
             {
-                try { return new ElementId((long)(int)bip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve built-in parameter id", __lex); }
+                try { return new ParamResolve(new ElementId((long)(int)bip), true, null); }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve built-in parameter id", __lex); }
             }
 
             // 1b. "System Type" maps to a category-specific BuiltInParameter (duct vs pipe),
             //     so pick the one matching the rule's categories. Resolvable with no elements.
             if (string.Equals(paramName, "System Type", StringComparison.OrdinalIgnoreCase))
             {
-                var systemTypeBip = ResolveSystemTypeBip(catIds);
-                if (systemTypeBip != null)
-                    try { return new ElementId((long)(int)systemTypeBip.Value); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve system-type parameter id", __lex); }
+                var stBip = ResolveSystemTypeBip(catIds);
+                if (stBip != null)
+                    try { return new ParamResolve(new ElementId((long)(int)stBip.Value), true, null); }
+                    catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve system-type parameter id", __lex); }
             }
 
-            // 2. Scan live elements in the category. Geometry frequently lives in linked
-            //    models, so scan the host AND every selected link document — not just host.
+            // 2. Host-side SHARED parameter. Shared parameters match across documents by
+            //    GUID, so resolving the host-valid id here is the reliable way to filter
+            //    linked elements even when the host has no elements of the category.
+            foreach (SharedParameterElement spe in new FilteredElementCollector(host)
+                .OfClass(typeof(SharedParameterElement)).Cast<SharedParameterElement>())
+            {
+                string defName;
+                try { defName = spe.GetDefinition()?.Name ?? ""; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read host shared-parameter definition", __lex); continue; }
+                if (string.Equals(defName, paramName, StringComparison.Ordinal))
+                    return new ParamResolve(spe.Id, true, null);
+            }
+
+            // 3. Live elements across host + selected links (instance → type → loop).
             foreach (var src in sourceDocs)
             {
+                bool isLink = !src.Equals(host);
                 foreach (var catId in catIds)
                 {
                     var el = new FilteredElementCollector(src)
                         .OfCategoryId(catId).WhereElementIsNotElementType().FirstElement();
                     if (el == null) continue;
-                    var p = el.LookupParameter(paramName);
-                    if (p != null) return p.Id;
-                    foreach (Parameter pp in el.Parameters)
-                    {
-                        try { if (pp.Definition.Name == paramName) return pp.Id; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: match project parameter name", __lex); }
-                    }
+
+                    var found = MatchParamOnElement(src, el, paramName);
+                    if (found != null) return ClassifyScannedParam(found, paramName, isLink);
                 }
             }
 
-            // 3. Try matching a BuiltInParameter by name as a last resort
+            // 4. Last resort: built-in parameter by mangled name.
             if (Enum.TryParse<BuiltInParameter>(
-                    paramName.Replace(" ", "_").ToUpperInvariant(), out var fallbackBip))
+                    paramName.Replace(" ", "_").ToUpperInvariant(), out var fbBip))
             {
-                try { return new ElementId((long)(int)fallbackBip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve fallback parameter id", __lex); }
+                try { return new ParamResolve(new ElementId((long)(int)fbBip), true, null); }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve fallback parameter id", __lex); }
             }
 
+            return ParamResolve.None;
+        }
+
+        // Finds a parameter by display name on an element: instance first, then the
+        // element's type (#1 — many identity/MEP params live on the type), then a
+        // definition-name scan of the instance's parameters.
+        private static Parameter? MatchParamOnElement(Document src, Element el, string paramName)
+        {
+            var p = el.LookupParameter(paramName);
+            if (p != null) return p;
+
+            var typeEl = src.GetElement(el.GetTypeId());
+            if (typeEl != null)
+            {
+                var tp = typeEl.LookupParameter(paramName);
+                if (tp != null) return tp;
+            }
+
+            foreach (Parameter pp in el.Parameters)
+            {
+                try { if (pp.Definition?.Name == paramName) return pp; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: match instance parameter name", __lex); }
+            }
             return null;
+        }
+
+        // Classifies a parameter discovered by scanning elements and attaches a warning
+        // when it cannot reliably drive a filter over linked models.
+        private static ParamResolve ClassifyScannedParam(Parameter p, string paramName, bool isLink)
+        {
+            bool shared;
+            try { shared = p.IsShared; }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read parameter IsShared", __lex); shared = false; }
+
+            if (shared)
+                return new ParamResolve(p.Id, true, isLink
+                    ? $"⚠ '{paramName}' was found only in a link — make sure the same shared parameter exists in the host so the filter binds to linked elements."
+                    : null);
+
+            return new ParamResolve(p.Id, false,
+                $"⚠ '{paramName}' is a project parameter — view filters cannot match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
         }
 
         // "System Type" is RBS_DUCT_SYSTEM_TYPE_PARAM for duct categories and

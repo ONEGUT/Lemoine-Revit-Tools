@@ -45,3 +45,17 @@ way to select an entire category.
 - Cannot build on Linux (net48 + WPF). Static review + API existence confirmed
   against `libs/RevitAPI.dll` (all methods/params present).
 - Post-change silent-failure scan per CLAUDE.md.
+
+## Follow-up — linked-model robustness (approved improvements 1,2,3,5,6)
+- **#1 Type-parameter fallback** in resolution (`MatchParamOnElement`):
+  instance → element type → instance parameter scan.
+- **#2 Host-side shared-parameter resolution** (`SharedParameterElement`) for
+  host-valid ids; classify scanned params and **warn** when a rule uses a
+  project parameter (or a link-only shared parameter) that may not affect
+  linked elements.
+- **#3 Rule-editor link-safety hint** under the PARAMETER row + shared
+  `AutoFiltersSettings.LinkSafeParameters` set / `IsLinkSafeParameter`.
+- **#5 Link-display warning** in `ApplyFiltersToViewsEventHandler`: warn once
+  per link shown "By Linked View" (`View.GetLinkOverrides` →
+  `LinkVisibility.ByLinkView`) because host filters can't override it.
+- **#6 Parameter-resolution cache** keyed by parameter × category-set.

@@ -401,6 +401,24 @@ namespace LemoineTools.Tools.AutoFilters
             "Solid","Dash","Dash dot","Dash dot dot","Dot","Long dash","Center","Hidden",
         };
 
+        /// <summary>
+        /// Parameter display names backed by a BuiltInParameter, so a host view filter
+        /// using them reliably matches elements inside LINKED models (universal ids /
+        /// duct-pipe System Type). Other parameters depend on shared-parameter bindings
+        /// and may not affect linked elements — the rule editor flags them.
+        /// </summary>
+        public static readonly HashSet<string> LinkSafeParameters =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "System Classification", "System Name", "System Type",
+                "Fabrication Service", "Type Name", "Family Name",
+                "Structural Material", "Mark", "Comments",
+            };
+
+        /// <summary>True when <paramref name="paramName"/> reliably matches linked elements.</summary>
+        public static bool IsLinkSafeParameter(string? paramName) =>
+            !string.IsNullOrEmpty(paramName) && LinkSafeParameters.Contains(paramName!);
+
         /// <summary>All parameters available across all categories (union set).</summary>
         public static readonly string[] KnownParameters =
         {
