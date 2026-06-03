@@ -34,10 +34,19 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
                 try
                 {
-                    log($"ACTION — view '{view.Name}': click the slab/floor to dimension to in the Revit view (Esc = scan all floors).", "info");
-                    var r = uidoc.Selection.PickObject(ObjectType.Element, filter,
-                        $"Pick the slab/floor to dimension to for view '{view.Name}' (Esc to scan all floors).");
-                    var scope = ResolveScope(doc, r, out string name);
+                    // A single PickObject can't reach both host and linked floors, so the in-canvas
+                    // flow cascades on Esc: host floor → linked floor → scan all floors.
+                    log($"ACTION — view '{view.Name}': click a HOST floor to dimension to (Esc = pick from a link instead).", "info");
+                    var scope = PickFloor(uidoc, filter, ObjectType.Element,
+                        $"Pick a HOST floor for view '{view.Name}' (Esc to pick from a link).", out string name);
+
+                    if (scope == null)
+                    {
+                        log($"ACTION — view '{view.Name}': click a LINKED floor to dimension to (Esc = scan all floors).", "info");
+                        scope = PickFloor(uidoc, filter, ObjectType.LinkedElement,
+                            $"Pick a LINKED floor for view '{view.Name}' (Esc to scan all floors).", out name);
+                    }
+
                     if (scope != null)
                     {
                         map[viewId] = new List<SlabScope> { scope };
@@ -45,12 +54,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                     }
                     else
                     {
-                        log($"View '{view.Name}': picked element is not a floor — scanning all floors.", "info");
+                        log($"View '{view.Name}': no floor picked — scanning all floors.", "info");
                     }
-                }
-                catch (Autodesk.Revit.Exceptions.OperationCanceledException)
-                {
-                    log($"View '{view.Name}': no floor picked — scanning all floors.", "info");
                 }
                 catch (Exception ex)
                 {
@@ -59,6 +64,26 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 }
             }
             return map;
+        }
+
+        /// <summary>
+        /// Runs one PickObject in the given mode (<see cref="ObjectType.Element"/> for host floors,
+        /// <see cref="ObjectType.LinkedElement"/> to drill into a link) and resolves it to a scope.
+        /// Returns null when the user presses Esc or picks a non-floor; genuine pick errors bubble up.
+        /// </summary>
+        private static SlabScope? PickFloor(
+            UIDocument uidoc, FloorFilter filter, ObjectType objectType, string prompt, out string name)
+        {
+            name = "";
+            try
+            {
+                var r = uidoc.Selection.PickObject(objectType, filter, prompt);
+                return ResolveScope(uidoc.Document, r, out name);
+            }
+            catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+            {
+                return null;   // Esc — caller cascades to the next stage.
+            }
         }
 
         /// <summary>Resolves a picked reference to a floor scope (host or linked), with a display
