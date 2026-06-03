@@ -846,7 +846,21 @@ namespace LemoineTools.Tools.AutoFilters
             catch { return ElementId.InvalidElementId; }
         }
 
-        private void Log(string text, string status) => PushLog?.Invoke(text, status);
+        // Routes a run message to the (optional) UI callback AND mirrors it to the
+        // durable diagnostic log. The Filters window runs with PushLog == null, so
+        // without this mirror every per-rule failure reason was silently discarded —
+        // the user saw a "N failed" count but never *why*. "fail" maps to Warn (a
+        // handled, non-fatal per-rule failure that still counts as an issue); every
+        // other status is informational.
+        private void Log(string text, string status)
+        {
+            PushLog?.Invoke(text, status);
+
+            if (status == "fail")
+                LemoineLog.Warn("AutoFilters", text);
+            else
+                LemoineLog.Info("AutoFilters", text);
+        }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s, int r = 0) => OnComplete?.Invoke(p, f, s, r);
     }

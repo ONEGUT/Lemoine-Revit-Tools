@@ -385,7 +385,17 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private void Log(string msg, string status) => PushLog?.Invoke(msg, status);
+        // Mirror to the durable diagnostic log so failure reasons survive the session
+        // even when the UI log is closed. "fail" maps to Warn; everything else is info.
+        private void Log(string msg, string status)
+        {
+            PushLog?.Invoke(msg, status);
+
+            if (status == "fail")
+                LemoineLog.Warn("AutoFilters.Discover", msg);
+            else
+                LemoineLog.Info("AutoFilters.Discover", msg);
+        }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s)          => OnComplete?.Invoke(p, f, s);
     }
