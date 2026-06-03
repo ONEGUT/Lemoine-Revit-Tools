@@ -40,11 +40,22 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public bool OverwriteFilterDefinition { get; set; } = false;
 
+        /// <summary>
+        /// When true, a Revit TaskDialog summarising any filter-creation failures is shown
+        /// at the end of <see cref="Execute"/>. Used by the auto-create-on-close path, where
+        /// the originating window has already closed and cannot surface failures itself.
+        /// </summary>
+        public bool ShowFailureDialog { get; set; } = false;
+
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?        PushLog    { get; set; }
         public Action<int, int, int, int>?    OnProgress { get; set; }
         /// <summary>Invoked on Revit's main thread with (pass, fail, skip, removed).</summary>
         public Action<int, int, int, int>?    OnComplete { get; set; }
+
+        // Per-run accumulation of failure messages, surfaced via the TaskDialog when
+        // ShowFailureDialog is set. Cleared at the start of every Execute().
+        private readonly List<string> _failures = new List<string>();
 
         public string GetName() => "LemoineTools.Tools.AutoFilters.AutoFiltersEventHandler";
 
@@ -53,6 +64,7 @@ namespace LemoineTools.Tools.AutoFilters
             var doc  = app.ActiveUIDocument.Document;
             var view = doc.ActiveView;
             int pass = 0, fail = 0, skip = 0, removed = 0;
+            _failures.Clear();
 
             try
             {
@@ -66,6 +78,38 @@ namespace LemoineTools.Tools.AutoFilters
 
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip, removed);
+
+            if (ShowFailureDialog && fail > 0)
+                ShowFailureSummary(fail);
+        }
+
+        // Surfaces a run's per-filter failures as a Revit TaskDialog. Runs on Revit's main
+        // thread (inside Execute), so it is safe even though the originating window — opened
+        // on its own STA thread — has already closed by the time the auto-create pass runs.
+        private void ShowFailureSummary(int fail)
+        {
+            try
+            {
+                var dlg = new TaskDialog("Auto Filters")
+                {
+                    MainInstruction = fail == 1
+                        ? "1 filter could not be created."
+                        : $"{fail} filters could not be created.",
+                    MainContent     = "The remaining filters were created or left unchanged.",
+                    ExpandedContent = string.Join("\n", _failures),
+                    CommonButtons   = TaskDialogCommonButtons.Close,
+                };
+                dlg.AddCommandLink(TaskDialogCommandLinkId.CommandLink1,
+                    "Open diagnostics log", "Shows the full per-rule failure detail.");
+                if (dlg.Show() == TaskDialogResult.CommandLink1)
+                    LemoineLog.OpenInDefaultViewer();
+            }
+            catch (Exception ex)
+            {
+                // Never let a reporting popup take down the run — the failures are already
+                // in the diagnostics log via Log().
+                LemoineLog.Swallowed("AutoFilters: failure dialog", ex);
+            }
         }
 
         // ── Core logic ────────────────────────────────────────────────────────
@@ -82,7 +126,10 @@ namespace LemoineTools.Tools.AutoFilters
             ref int pass, ref int fail, ref int skip, ref int removed)
         {
             bool createOnly   = CreateOnly;
-            bool overwriteDef = createOnly || OverwriteFilterDefinition;
+            // createOnly no longer forces an overwrite. Existing filters are updated in place
+            // (SetCategories / SetElementFilter) rather than deleted and recreated, so their
+            // ElementIds — and therefore their view assignments and legend links — survive.
+            bool overwriteDef = OverwriteFilterDefinition;
 
             if (!createOnly && !view.AreGraphicsOverridesAllowed())
             {
@@ -129,7 +176,7 @@ namespace LemoineTools.Tools.AutoFilters
             int totalRules = trades.Sum(t =>
                 (!t.ExternallyManaged
                  && (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label)))
-                    ? t.Rules.Count(r => r.Enabled && RuleProducesFilter(r))
+                    ? t.Rules.Count(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r))
                     : 0);
             if (totalRules == 0)
             {
@@ -166,19 +213,9 @@ namespace LemoineTools.Tools.AutoFilters
             int reused = 0;
 
             // Build the expected filter name set from current settings (used for orphan cleanup)
-            var expectedFilterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (createOnly)
-            {
-                foreach (var t in trades)
-                {
-                    if (t.ExternallyManaged) continue;
-                    foreach (var r in t.Rules)
-                    {
-                        if (!r.Enabled || !RuleProducesFilter(r)) continue;
-                        expectedFilterNames.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
-                    }
-                }
-            }
+            var expectedFilterNames = createOnly
+                ? AutoFiltersSettings.ComputeExpectedFilterNames(trades)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             string txName = createOnly ? "Auto Filters — Create" : "Auto Filters — Create & Color";
             using (var tx = new Transaction(doc, txName))
@@ -261,14 +298,6 @@ namespace LemoineTools.Tools.AutoFilters
             string removeMsg = removed > 0 ? $", {removed} removed" : "";
             Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped{removeMsg}.", "pass");
             pass += reused;
-        }
-
-        // A rule yields a ParameterFilterElement when it matches the whole category,
-        // uses a value predicate (has/has-no value), or has at least one keyword.
-        private static bool RuleProducesFilter(FilterRuleConfig r)
-        {
-            string mt = (r.MatchType ?? "contains").ToLowerInvariant();
-            return mt == "all" || mt == "has a value" || mt == "has no value" || r.Match.Count > 0;
         }
 
         private void ProcessRule(
@@ -354,36 +383,50 @@ namespace LemoineTools.Tools.AutoFilters
 
             string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
 
+            // Refresh the definition of an existing filter (in CreateOnly mode, or when the
+            // caller explicitly asked to overwrite). The refresh updates the element in place
+            // rather than deleting and recreating it, so the filter keeps its ElementId and
+            // stays attached to any views and legends that reference it.
+            bool refreshDef = createOnly || overwriteDef;
+
             try
             {
-                ParameterFilterElement? pfe = null;
+                // Build the element filter once — used to create a new filter or to update
+                // an existing one's definition.
+                ElementFilter? elementFilter = BuildElementFilter(
+                    paramId, rule, isFab, isStructMat, matMap, doc, matchType);
 
-                // Delete and recreate if definition has changed (or in CreateOnly mode)
-                if (overwriteDef && existingFilters.TryGetValue(filterName, out var oldPfe))
-                {
-                    doc.Delete(oldPfe.Id);
-                    existingFilters.Remove(filterName);
-                    existingViewFilterIds.Remove(oldPfe.Id.Value);
-                }
-
-                if (!overwriteDef && existingFilters.TryGetValue(filterName, out pfe))
+                ParameterFilterElement? pfe;
+                if (existingFilters.TryGetValue(filterName, out pfe))
                 {
                     reused++;
 
-                    // If keeping existing overrides, don't re-apply them
-                    if (KeepExistingOverrides)
+                    if (refreshDef)
                     {
+                        // Update categories + rules in place (preserves ElementId). If the
+                        // filter rule can't be built, leave the existing definition untouched
+                        // rather than break a working filter.
+                        if (elementFilter != null)
+                        {
+                            pfe.SetCategories(catIds);
+                            pfe.SetElementFilter(elementFilter);
+                        }
+                        else
+                        {
+                            Log($"Kept '{filterName}': could not rebuild filter rule, left unchanged.", "info");
+                        }
+                    }
+                    else if (KeepExistingOverrides)
+                    {
+                        // Reuse untouched and preserve any manually-adjusted overrides —
+                        // leave the view exactly as it is.
                         rulesDone++;
                         Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
                         return;
                     }
                 }
-                else if (pfe == null)
+                else
                 {
-                    // Build element filter based on matchType
-                    ElementFilter? elementFilter = BuildElementFilter(
-                        paramId, rule, isFab, isStructMat, matMap, doc, matchType);
-
                     if (elementFilter == null)
                     {
                         Log($"Skip '{filterName}': could not build filter rule.", "info");
@@ -945,7 +988,10 @@ namespace LemoineTools.Tools.AutoFilters
             PushLog?.Invoke(text, status);
 
             if (status == "fail")
+            {
+                _failures.Add(text);
                 LemoineLog.Warn("AutoFilters", text);
+            }
             else
                 LemoineLog.Info("AutoFilters", text);
         }

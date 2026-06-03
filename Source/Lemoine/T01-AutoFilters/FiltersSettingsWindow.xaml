@@ -27,7 +27,7 @@
             <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
             <Grid Grid.Row="1">
                 <Border x:Name="_contentBorder" />
-                <!-- Floating bottom-right action pills (Create / status). -->
+                <!-- Floating bottom-right transient status chip. -->
                 <ContentControl x:Name="_floatingSlot"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                 Panel.ZIndex="50" Margin="0,0,16,16" />
