@@ -62,8 +62,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 log($"Cleared {result.DeletedPrior} prior auto-dimension(s) ({result.StaleDeleted} stale).", "info");
 
             // ── 2. Place the new plan ─────────────────────────────────────────
+            if (plan.Dimensions.Count > 0)
+                log($"Placing {plan.Dimensions.Count} dimension(s) in '{view.Name}'…", "info");
+
+            int processed = 0;
             foreach (var pd in plan.Dimensions)
             {
+                if (++processed % 200 == 0)
+                    log($"  …{processed}/{plan.Dimensions.Count} dimension(s) committed", "info");
+
                 // Axis/perp are per-dimension now that X and Y strings coexist in one plan.
                 Core.Vec2 axis = pd.AxisDir.Normalized();
                 Core.Vec2 perp = axis.Perp();

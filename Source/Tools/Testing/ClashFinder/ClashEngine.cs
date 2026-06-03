@@ -165,8 +165,13 @@ namespace LemoineTools.Tools.Testing
                 viewBoxes[viewId] = (box, gated);
             }
 
+            Log($"Placing markers for {clashes.Count} clash(es) across {viewIds.Count} view(s)…", "info");
+            int markedClash = 0;
             foreach (var clash in clashes)
             {
+                if (++markedClash % 200 == 0)
+                    Log($"  …{markedClash}/{clashes.Count} clash(es) marked", "info");
+
                 foreach (var viewId in viewIds)
                 {
                     var view = doc.GetElement(viewId) as View;

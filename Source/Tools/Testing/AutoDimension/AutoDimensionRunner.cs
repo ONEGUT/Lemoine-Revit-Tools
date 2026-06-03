@@ -25,6 +25,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             if (doc == null || viewIds == null || viewIds.Count == 0) return total;
 
             // ── Read side: build a plan per view (no element changes) ─────────
+            log($"Auto-dimension: building plans for {viewIds.Count} view(s)…", "info");
             var engine = new AutoDimensionEngine(log);
             var built  = new List<(View view, EngineOutput output)>();
             int n = 0;
@@ -45,6 +46,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             }
 
             // ── Commit side: one transaction for every view's plan ────────────
+            log($"Committing dimensions for {built.Count} view(s) in one transaction…", "info");
             using (var tx = new Transaction(doc, "Lemoine - Auto Dimension"))
             {
                 tx.Start();

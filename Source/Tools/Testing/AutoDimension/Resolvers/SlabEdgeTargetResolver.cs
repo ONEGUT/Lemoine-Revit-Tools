@@ -183,6 +183,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 }
             }
 
+            ctx.Log($"Target cache: {list.Count} slab side-face(s) scanned across {ctx.Sources.Count} document(s).", "info");
             _cache = list;
             _cacheCtx = ctx;
             return list;

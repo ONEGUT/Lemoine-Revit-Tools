@@ -42,6 +42,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
 
         /// <summary>Sink for "couldn't get a link reference" reports (non-fatal).</summary>
         public Action<string> ReportMissingLink { get; set; } = _ => { };
+
+        /// <summary>Progress/step log sink (text, status) — resolvers report cache build here.</summary>
+        public Action<string, string> Log { get; set; } = (_, __) => { };
     }
 
     /// <summary>Outcome of resolving one source line's target. Exactly one state is set.</summary>

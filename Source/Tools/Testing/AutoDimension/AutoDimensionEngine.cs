@@ -57,6 +57,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 Config     = cfg,
                 ReportMissingLink = m => { if (!plan.MissingLinkRefs.Contains(m)) plan.MissingLinkRefs.Add(m); },
                 Datums = datums ?? new List<Resolvers.ManualDatum>(),
+                Log = _log,
             };
             ctx.Sources.Add(new SourceDoc { Doc = doc, Link = null, Transform = Transform.Identity });
             if (cfg.IncludeLinks)
@@ -104,6 +105,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             var resolvedSources = new HashSet<string>();
             var firstFailReason = new Dictionary<string, string>();   // sourceKey → reason, used only if no axis resolved
 
+            _log($"Resolving {sources.Count} clash(es) × {axes.Length} axis/axes to {tt} target(s)…", "info");
+            int processed = 0;
             foreach (var src in sources)
             {
                 foreach (var ax in axes)
@@ -135,6 +138,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                         firstFailReason[src.SourceKey] = res.Unresolved.Reason;
                     }
                 }
+                if (++processed % 200 == 0)
+                    _log($"  …{processed}/{sources.Count} clash(es) resolved", "info");
             }
 
             foreach (var kv in firstFailReason)
@@ -147,18 +152,22 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             // ── 2b. Chain collinear, adjacent clashes into multi-segment strings ──
             double chainGapFt  = cfg.ChainMaxGapMm / 304.8;
             double collinearFt = cfg.ChainCollinearToleranceMm / 304.8;
+            _log($"Chaining aligned clashes ({(cfg.ChainAligned ? "on" : "off")})…", "info");
             var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt);
             var dims = chained.Dims;
             output.Refs = chained.Refs;
 
             int chainedStrings = dims.Count(d => d.Segments.Count > 1);
+            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
             if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
+            _log($"Collecting obstacles + laying out {dims.Count} dimension(s) (collision-aware, ≤{coreCfg.TimeCapMs} ms)…", "info");
             var obstacles = CollectObstacles(doc, view, projection);
             var scorer = new Core.LayoutScorer(coreCfg, null /* crop scoring optional in Tier 1 */);
             var layout = new Core.GreedyLayoutEngine(coreCfg, scorer);
             layout.Arrange(dims, obstacles);
+            _log($"Layout done ({obstacles.Count} obstacle(s) considered).", "info");
 
             int leadered = Core.GreedyLayoutEngine.LeaderedCount(dims);
             if (leadered > 0) plan.Notes.Add($"{leadered} segment(s) leadered to fit dense text.");
