@@ -13,9 +13,18 @@ namespace LemoineTools.Tools.Ceilings
         // ── Inputs ────────────────────────────────────────────────────────────
         public bool                   IncludeHost   { get; set; } = true;
         public List<ElementId>        LinkInstIds   { get; set; } = new List<ElementId>();
-        public List<CeilingTypeEntry> IncludedTypes { get; set; } = new List<CeilingTypeEntry>();
+
+        /// <summary>
+        /// Family/Type name pairs the user unchecked. Ceilings whose Family Name AND
+        /// Type Name match a pair are hidden in every RCP view — host and linked alike —
+        /// via a name-based <see cref="ParameterFilterElement"/>.
+        /// </summary>
+        public List<(string Family, string Type)> ExcludedTypeNames { get; set; } = new List<(string, string)>();
+
         public string                 OutputFolder             { get; set; } = "";
         public bool                   UseCeilingGridsSubfolder { get; set; } = false;
+
+        private const string HideFilterName = "Lemoine — Hidden Ceiling Types";
 
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -40,17 +49,17 @@ namespace LemoineTools.Tools.Ceilings
 
                 Log($"Found {levels.Count} level(s).", "info");
 
-                // Build set of included host type IDs
-                var allHostTypeIds = new FilteredElementCollector(doc)
-                    .OfClass(typeof(CeilingType))
-                    .Cast<CeilingType>()
-                    .Select(t => t.Id.Value)
-                    .ToHashSet();
+                // Name-keyed exclusion set: "Family|Type". Used for the host-side
+                // per-instance fallback hide (the name filter covers links).
+                var excludedNameKeys = new HashSet<string>(
+                    ExcludedTypeNames.Select(p => $"{p.Family}|{p.Type}"), StringComparer.Ordinal);
 
-                var includedHostIds = new HashSet<long>(
-                    IncludedTypes.Where(t => !t.IsLinked).Select(t => t.TypeIdValue));
-
-                var excludedTypeIds = allHostTypeIds.Except(includedHostIds).ToHashSet();
+                // Build (or recreate) the single name-based hide filter once. Adding it to
+                // each view and turning its visibility off hides matching ceilings in the
+                // host AND in links shown "By Host View" (the default for new RCP views).
+                ElementId hideFilterId = ElementId.InvalidElementId;
+                if (ExcludedTypeNames.Count > 0)
+                    hideFilterId = EnsureHideFilter(doc);
 
                 // Find a CeilingPlan ViewFamilyType once
                 var vft = new FilteredElementCollector(doc)
@@ -102,8 +111,14 @@ namespace LemoineTools.Tools.Ceilings
                             ConfigureFailures(tx);
                             tx.Start();
                             SetCeilingOnlyVisibility(doc, view);
-                            if (excludedTypeIds.Count > 0)
-                                HideExcludedCeilingTypes(doc, view, excludedTypeIds);
+                            if (excludedNameKeys.Count > 0)
+                            {
+                                if (hideFilterId != ElementId.InvalidElementId)
+                                    ApplyHideFilter(view, hideFilterId);
+                                // Host-only safety net by name — covers host ceilings even
+                                // if the view filter could not be created.
+                                HideExcludedHostCeilings(doc, view, excludedNameKeys);
+                            }
                             tx.Commit();
                         }
 
@@ -173,12 +188,120 @@ namespace LemoineTools.Tools.Ceilings
             }
         }
 
-        private static void HideExcludedCeilingTypes(Document doc, View view, HashSet<long> excludedTypeIds)
+        // ── Name-based hide filter ──────────────────────────────────────────────
+        //
+        // Creates a single ParameterFilterElement on OST_Ceilings that matches every
+        // excluded (Family Name, Type Name) pair, OR'd together. Mirrors the proven
+        // parameter mapping in AutoFiltersEventHandler: ELEM_FAMILY_PARAM for Family
+        // Name and ALL_MODEL_TYPE_NAME for Type Name. Any existing filter of the same
+        // name is deleted first so the definition reflects the current selection.
+        //
+        // Returns InvalidElementId (with a logged failure) if Revit refuses to create
+        // the filter even after falling back to Type-Name-only matching.
+        private ElementId EnsureHideFilter(Document doc)
+        {
+            ElementId result = ElementId.InvalidElementId;
+
+            using (var tx = new Transaction(doc, "Ceiling Hide Filter"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                var existing = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ParameterFilterElement))
+                    .Cast<ParameterFilterElement>()
+                    .FirstOrDefault(f => f.Name == HideFilterName);
+                if (existing != null)
+                {
+                    try { doc.Delete(existing.Id); }
+                    catch (Exception __lex) { LemoineLog.Swallowed("MakeCeilingGrids: delete stale hide filter", __lex); }
+                }
+
+                var catIds = new List<ElementId> { new ElementId((long)(int)BuiltInCategory.OST_Ceilings) };
+
+                // Attempt 1: match Family Name AND Type Name. Attempt 2 (fallback): Type Name only.
+                try
+                {
+                    var pfe = ParameterFilterElement.Create(doc, HideFilterName, catIds, BuildExcludedFilter(false));
+                    result = pfe.Id;
+                }
+                catch (Exception exBoth)
+                {
+                    LemoineLog.Swallowed("MakeCeilingGrids: family+type hide filter failed — retrying type-name only", exBoth);
+                    try
+                    {
+                        var pfe = ParameterFilterElement.Create(doc, HideFilterName, catIds, BuildExcludedFilter(true));
+                        result = pfe.Id;
+                    }
+                    catch (Exception exType)
+                    {
+                        LemoineLog.Error("MakeCeilingGrids: could not create ceiling hide filter", exType);
+                        Log($"Could not create ceiling hide filter: {exType.Message}. Host ceilings are still hidden; linked ceilings may remain visible.", "fail");
+                    }
+                }
+
+                tx.Commit();
+            }
+
+            return result;
+        }
+
+        // Builds the OR-of-(Family AND Type) element filter for the excluded pairs.
+        // When typeNameOnly is true, each clause matches Type Name alone.
+        private ElementFilter BuildExcludedFilter(bool typeNameOnly)
+        {
+            var familyParam = new ElementId((long)(int)BuiltInParameter.ELEM_FAMILY_PARAM);
+            var typeParam   = new ElementId((long)(int)BuiltInParameter.ALL_MODEL_TYPE_NAME);
+
+            var clauses = new List<ElementFilter>();
+            foreach (var (family, type) in ExcludedTypeNames)
+            {
+                var typeRule = new ElementParameterFilter(
+                    ParameterFilterRuleFactory.CreateEqualsRule(typeParam, type));
+
+                if (typeNameOnly)
+                {
+                    clauses.Add(typeRule);
+                }
+                else
+                {
+                    var famRule = new ElementParameterFilter(
+                        ParameterFilterRuleFactory.CreateEqualsRule(familyParam, family));
+                    clauses.Add(new LogicalAndFilter(famRule, typeRule));
+                }
+            }
+
+            return clauses.Count == 1 ? clauses[0] : new LogicalOrFilter(clauses);
+        }
+
+        private static void ApplyHideFilter(View view, ElementId filterId)
+        {
+            if (!view.AreGraphicsOverridesAllowed())
+            {
+                LemoineLog.Warn("MakeCeilingGrids",
+                    $"View '{view.Name}' does not allow graphic overrides — linked ceilings of excluded types may remain visible (host ceilings are still hidden).");
+                return;
+            }
+            if (!view.GetFilters().Any(id => id.Value == filterId.Value))
+                view.AddFilter(filterId);
+            view.SetFilterVisibility(filterId, false);
+        }
+
+        // Host-only fallback: hide host ceiling instances whose Family|Type name is
+        // excluded. The name filter above is the primary mechanism (and the only one
+        // that reaches linked ceilings); this guarantees host hiding even if the filter
+        // could not be created.
+        private static void HideExcludedHostCeilings(Document doc, View view, HashSet<string> excludedNameKeys)
         {
             var toHide = new FilteredElementCollector(doc, view.Id)
                 .OfClass(typeof(Ceiling))
                 .Cast<Ceiling>()
-                .Where(c => excludedTypeIds.Contains(c.GetTypeId().Value))
+                .Where(c =>
+                {
+                    var ct = doc.GetElement(c.GetTypeId()) as CeilingType;
+                    return ct != null &&
+                           excludedNameKeys.Contains($"{ct.FamilyName}|{ct.Name}");
+                })
                 .Select(c => c.Id)
                 .ToList();
 
