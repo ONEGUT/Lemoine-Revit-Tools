@@ -268,7 +268,14 @@ namespace LemoineTools.Tools.AutoFilters
             catch { return ElementId.InvalidElementId; }
         }
 
-        private void Log(string text, string status) => PushLog?.Invoke(text, status);
+        private void Log(string text, string status)
+        {
+            PushLog?.Invoke(text, status);
+            if (status == "fail")
+                LemoineLog.Warn("AutoFilters.Apply", text);
+            else
+                LemoineLog.Info("AutoFilters.Apply", text);
+        }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
     }

@@ -111,7 +111,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             // BIP map — parameter display name → BuiltInParameter for fast resolution
             // Works even when no elements of that category exist in the model.
-            var bipMap = new Dictionary<string, BuiltInParameter>(StringComparer.Ordinal)
+            var bipMap = new Dictionary<string, BuiltInParameter>(StringComparer.OrdinalIgnoreCase)
             {
                 ["System Classification"] = BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM,
                 ["System Name"]           = BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
@@ -484,14 +484,29 @@ namespace LemoineTools.Tools.AutoFilters
                     : ParameterFilterRuleFactory.CreateEqualsRule(paramId, mid);
             }
 
-            switch (matchType)
+            // String-based rules require StorageType.String. An ElementId parameter (e.g.
+            // System Type, which stores a MEP system type ElementId) will throw from the
+            // factory. Catch that here and return null so the caller logs a clean skip
+            // instead of letting an opaque Revit exception propagate.
+            try
             {
-                case "equals":           return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
-                case "does not equal":   return ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, keyword);
-                case "does not contain": return ParameterFilterRuleFactory.CreateNotContainsRule(paramId, keyword);
-                case "begins with":      return ParameterFilterRuleFactory.CreateBeginsWithRule(paramId, keyword);
-                case "ends with":        return ParameterFilterRuleFactory.CreateEndsWithRule(paramId, keyword);
-                default:                 return ParameterFilterRuleFactory.CreateContainsRule(paramId, keyword);
+                switch (matchType)
+                {
+                    case "equals":           return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
+                    case "does not equal":   return ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, keyword);
+                    case "does not contain": return ParameterFilterRuleFactory.CreateNotContainsRule(paramId, keyword);
+                    case "begins with":      return ParameterFilterRuleFactory.CreateBeginsWithRule(paramId, keyword);
+                    case "ends with":        return ParameterFilterRuleFactory.CreateEndsWithRule(paramId, keyword);
+                    default:                 return ParameterFilterRuleFactory.CreateContainsRule(paramId, keyword);
+                }
+            }
+            catch (Exception __lex)
+            {
+                // Most likely cause: the parameter's StorageType doesn't support string comparison
+                // (e.g. "System Type" is ElementId-based). Return null so BuildElementFilter
+                // skips this keyword with a "could not build filter rule" message.
+                LemoineLog.Swallowed($"AutoFilters: build string filter rule for '{keyword}'", __lex);
+                return null;
             }
         }
 
