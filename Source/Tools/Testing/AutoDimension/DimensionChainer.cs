@@ -37,7 +37,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
         public static Result Build(
             IReadOnlyList<ResolvedItem> items, Core.LayoutConfig cfg,
-            bool chain, double maxGapFt, double collinearTolFt)
+            bool chain, double maxGapFt, double collinearTolFt, double duplicateTolFt = 0.0)
         {
             var result = new Result();
             if (items == null || items.Count == 0) return result;
@@ -85,7 +85,64 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 }
             }
 
+            if (duplicateTolFt > 0) CollapseDuplicates(result, duplicateTolFt);
             return result;
+        }
+
+        /// <summary>
+        /// Drops dimensions that are visually identical to one already kept: same axis and the same
+        /// ordered witness-line positions (within tolerance), regardless of how far apart the two sit
+        /// perpendicular to the run. Three parallel 11'-6" dimensions to the same edge become one.
+        /// Operates on the final dims so legitimate chained strings (which differ in witness layout)
+        /// are preserved; only true parallel copies are removed. Deterministic — keeps the first.
+        /// </summary>
+        private static void CollapseDuplicates(Result result, double tolFt)
+        {
+            var kept = new List<Core.PlannedDimension>();
+            var keptSigs = new List<(string axis, List<double> axials)>();
+
+            foreach (var d in result.Dims)
+            {
+                string tag = AxisTag(d.AxisDir);
+                List<double> axials = WitnessAxials(d);
+                bool dup = false;
+                foreach (var s in keptSigs)
+                    if (s.axis == tag && SameLayout(s.axials, axials, tolFt)) { dup = true; break; }
+
+                if (dup)
+                {
+                    result.Refs.Remove(d.SourceKey);   // drop its references too — it won't be placed
+                    continue;
+                }
+                kept.Add(d);
+                keptSigs.Add((tag, axials));
+            }
+
+            if (kept.Count != result.Dims.Count)
+            {
+                result.Dims.Clear();
+                result.Dims.AddRange(kept);
+            }
+        }
+
+        /// <summary>Ordered along-axis witness positions of a dimension, measured from its near end.
+        /// Works for both singles (two positions) and chained strings (one per reference).</summary>
+        private static List<double> WitnessAxials(Core.PlannedDimension d)
+        {
+            Core.Vec2 axis = d.AxisDir.Normalized();
+            double minA = Math.Min(d.SourcePoint.Dot(axis), d.TargetPoint.Dot(axis));
+            var list = new List<double> { minA };
+            double acc = minA;
+            foreach (var seg in d.Segments) { acc += seg.LengthFt; list.Add(acc); }
+            return list;
+        }
+
+        private static bool SameLayout(List<double> a, List<double> b, double tolFt)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+                if (Math.Abs(a[i] - b[i]) > tolFt) return false;
+            return true;
         }
 
         private static void EmitSingle(ResolvedItem it, Core.Vec2 axis, Core.LayoutConfig cfg, Result result)

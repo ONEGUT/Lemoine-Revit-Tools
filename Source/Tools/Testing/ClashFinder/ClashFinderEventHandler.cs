@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.Testing
         public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
         public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
         public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"
+        public double               DimDuplicateTolMm   { get; set; } = 25.0;  // merge identical parallel dims within this
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
@@ -113,6 +114,7 @@ namespace LemoineTools.Tools.Testing
                         dimCfg.ChainAligned              = DimChainAligned;
                         dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
                         dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
+                        dimCfg.DuplicateToleranceMm      = DimDuplicateTolMm;
 
                         // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
                         // the slab the user picked up front in the wizard (empty → scan all floors).

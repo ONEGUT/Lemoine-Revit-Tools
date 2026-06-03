@@ -155,13 +155,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             // ── 2b. Chain collinear, adjacent clashes into multi-segment strings ──
             double chainGapFt  = cfg.ChainMaxGapMm / 304.8;
             double collinearFt = cfg.ChainCollinearToleranceMm / 304.8;
+            double dupTolFt    = cfg.DuplicateToleranceMm / 304.8;
             _log($"Chaining aligned clashes ({(cfg.ChainAligned ? "on" : "off")})…", "info");
-            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt);
+            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt, dupTolFt);
             var dims = chained.Dims;
             output.Refs = chained.Refs;
 
             int chainedStrings = dims.Count(d => d.Segments.Count > 1);
-            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
+            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained){(cfg.DuplicateToleranceMm > 0 ? $", duplicate-merge ≤{cfg.DuplicateToleranceMm:0} mm" : "")}.", "info");
             if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────

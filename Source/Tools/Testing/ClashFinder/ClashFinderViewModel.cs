@@ -67,6 +67,7 @@ namespace LemoineTools.Tools.Testing
         private bool   _chainAligned     = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
         private double _chainGapMm       = AutoDimension.AutoDimensionConfig.Instance.ChainMaxGapMm;
         private double _chainCollinearMm = AutoDimension.AutoDimensionConfig.Instance.ChainCollinearToleranceMm;
+        private double _dupTolMm         = AutoDimension.AutoDimensionConfig.Instance.DuplicateToleranceMm;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -287,6 +288,11 @@ namespace LemoineTools.Tools.Testing
                 "How far a clash may sit off the shared baseline and still count as in line for chaining.",
                 _chainCollinearMm, min: 0, max: 2000, step: 25, decimals: 0,
                 v => { _chainCollinearMm = v; Fire(); });
+            AddStepperRow(outer,
+                "Duplicate merge tolerance (mm)",
+                "Collapse parallel dimensions on the same axis whose witness lines coincide within this into one. 0 = off.",
+                _dupTolMm, min: 0, max: 2000, step: 25, decimals: 0,
+                v => { _dupTolMm = v; Fire(); });
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -349,6 +355,7 @@ namespace LemoineTools.Tools.Testing
             _handler.DimChainAligned    = _chainAligned;
             _handler.DimChainMaxGapMm   = _chainGapMm;
             _handler.DimChainCollinearMm = _chainCollinearMm;
+            _handler.DimDuplicateTolMm   = _dupTolMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
                 : new List<AutoDimension.Resolvers.SlabScope>();

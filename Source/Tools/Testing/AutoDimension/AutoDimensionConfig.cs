@@ -36,6 +36,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         /// <summary>How far a clash may sit off the shared baseline and still count as "in line" (mm).</summary>
         public double ChainCollinearToleranceMm { get; set; } = 150.0;
 
+        /// <summary>Collapse parallel dimensions on the same axis whose witness lines coincide within
+        /// this tolerance into a single dimension (mm). 0 disables the merge.</summary>
+        public double DuplicateToleranceMm { get; set; } = 25.0;
+
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";
 
