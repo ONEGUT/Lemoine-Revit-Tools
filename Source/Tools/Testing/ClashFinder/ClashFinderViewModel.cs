@@ -33,6 +33,12 @@ namespace LemoineTools.Tools.Testing
         // ── Revit wiring ──────────────────────────────────────────────────────
         private readonly ClashFinderEventHandler? _handler;
         private readonly ExternalEvent?           _event;
+        private readonly AutoDimension.SlabPickEventHandler? _slabPickHandler;
+        private readonly ExternalEvent?                      _slabPickEvent;
+
+        // Up-front slab pick (slab-edge mode): chosen before running.
+        private AutoDimension.Resolvers.SlabScope? _pickedSlab;
+        private string _pickedSlabName = "";
 
         // ── Data ──────────────────────────────────────────────────────────────
         private readonly List<View> _allViews;
@@ -66,10 +72,14 @@ namespace LemoineTools.Tools.Testing
             ClashFinderEventHandler? handler,
             ExternalEvent?           externalEvent,
             List<View>               allViews,
-            List<ClashDefinition>    definitions)
+            List<ClashDefinition>    definitions,
+            AutoDimension.SlabPickEventHandler? slabPickHandler = null,
+            ExternalEvent?                      slabPickEvent   = null)
         {
-            _handler     = handler;
-            _event       = externalEvent;
+            _handler          = handler;
+            _event            = externalEvent;
+            _slabPickHandler  = slabPickHandler;
+            _slabPickEvent    = slabPickEvent;
             _allViews    = allViews ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
 
@@ -239,6 +249,29 @@ namespace LemoineTools.Tools.Testing
             if (_dimTargetType == "ManualDatum")
                 AddDim(outer, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
 
+            // Up-front slab pick — used in slab-edge mode; applies to every selected view.
+            AddDivider(outer);
+            AddLabel(outer, "Slab to dimension to (slab-edge mode).");
+            var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+            slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            slabStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            Action refreshSlab = () => slabStatus.Text = _pickedSlab == null
+                ? "No slab picked — scans all floors (nearest edge per axis)."
+                : $"Slab: {_pickedSlabName}";
+            refreshSlab();
+
+            var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var pickBtn = LemoineControlStyles.BuildButton("Pick slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
+            pickBtn.Margin = new Thickness(0, 0, 8, 0);
+            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab);
+            var clearBtn = LemoineControlStyles.BuildButton("Clear", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
+            slabRow.Children.Add(pickBtn);
+            slabRow.Children.Add(clearBtn);
+            outer.Children.Add(slabRow);
+            outer.Children.Add(slabStatus);
+
             AddDivider(outer);
             AddStepperRow(outer,
                 "Chain max gap (mm)",
@@ -312,11 +345,31 @@ namespace LemoineTools.Tools.Testing
             _handler.DimChainAligned    = _chainAligned;
             _handler.DimChainMaxGapMm   = _chainGapMm;
             _handler.DimChainCollinearMm = _chainCollinearMm;
+            _handler.SlabScopes = _pickedSlab != null
+                ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
+                : new List<AutoDimension.Resolvers.SlabScope>();
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;
 
             _event.Raise();
+        }
+
+        // Raises the slab-pick external event; the picked floor (host or linked) comes back on
+        // Revit's main thread and is marshalled to this window's dispatcher.
+        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh)
+        {
+            if (_slabPickHandler == null || _slabPickEvent == null) return;
+            _slabPickHandler.OnPicked = (scope, name) =>
+                disp.BeginInvoke(new Action(() =>
+                {
+                    if (scope == null) return;   // cancelled / not a floor — keep the prior choice
+                    _pickedSlab = scope;
+                    _pickedSlabName = name;
+                    refresh();
+                    Fire();
+                }));
+            _slabPickEvent.Raise();
         }
 
         // ── UI helpers ────────────────────────────────────────────────────────

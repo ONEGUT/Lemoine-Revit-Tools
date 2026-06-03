@@ -82,6 +82,8 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
         internal static LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler? AutoDimensionHandler { get; private set; }
         internal static ExternalEvent?              AutoDimensionEvent    { get; private set; }
+        internal static LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
+        internal static ExternalEvent?              SlabPickEvent         { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -170,6 +172,8 @@ namespace LemoineTools
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
             AutoDimensionHandler  = new LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler();
             AutoDimensionEvent    = ExternalEvent.Create(AutoDimensionHandler);
+            SlabPickHandler       = new LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler();
+            SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
 

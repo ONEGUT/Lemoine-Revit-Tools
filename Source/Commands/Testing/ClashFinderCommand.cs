@@ -52,7 +52,8 @@ namespace LemoineTools.Commands
                 ?? new List<ClashDefinition>();
 
             var vm = new ClashFinderViewModel(
-                App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions);
+                App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions,
+                App.SlabPickHandler, App.SlabPickEvent);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

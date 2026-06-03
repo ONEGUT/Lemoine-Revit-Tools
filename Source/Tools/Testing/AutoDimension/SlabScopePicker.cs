@@ -37,11 +37,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                     log($"ACTION — view '{view.Name}': click the slab/floor to dimension to in the Revit view (Esc = scan all floors).", "info");
                     var r = uidoc.Selection.PickObject(ObjectType.Element, filter,
                         $"Pick the slab/floor to dimension to for view '{view.Name}' (Esc to scan all floors).");
-                    var scope = BuildScope(doc, r, log, view.Name);
+                    var scope = ResolveScope(doc, r, out string name);
                     if (scope != null)
                     {
                         map[viewId] = new List<SlabScope> { scope };
-                        log($"View '{view.Name}': slab scoped to one floor.", "info");
+                        log($"View '{view.Name}': slab scoped to {name}.", "info");
+                    }
+                    else
+                    {
+                        log($"View '{view.Name}': picked element is not a floor — scanning all floors.", "info");
                     }
                 }
                 catch (Autodesk.Revit.Exceptions.OperationCanceledException)
@@ -57,8 +61,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             return map;
         }
 
-        private static SlabScope? BuildScope(Document doc, Reference r, Action<string, string> log, string viewName)
+        /// <summary>Resolves a picked reference to a floor scope (host or linked), with a display
+        /// name. Returns null when the reference is not a floor.</summary>
+        internal static SlabScope? ResolveScope(Document doc, Reference r, out string name)
         {
+            name = "";
             if (r == null) return null;
             try
             {
@@ -66,22 +73,30 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 {
                     var li = doc.GetElement(r.ElementId) as RevitLinkInstance;
                     var le = li?.GetLinkDocument()?.GetElement(r.LinkedElementId);
-                    if (le is Floor)
+                    if (le is Floor f)
+                    {
+                        name = $"{SafeName(f)} (linked: {SafeName(li)})";
                         return new SlabScope { LinkInstanceId = r.ElementId, FloorId = r.LinkedElementId };
+                    }
                 }
-                else if (doc.GetElement(r.ElementId) is Floor)
+                else if (doc.GetElement(r.ElementId) is Floor f)
                 {
+                    name = SafeName(f);
                     return new SlabScope { LinkInstanceId = ElementId.InvalidElementId, FloorId = r.ElementId };
                 }
             }
             catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: resolve picked floor", ex); }
-
-            log($"View '{viewName}': picked element is not a floor — scanning all floors.", "info");
             return null;
         }
 
+        private static string SafeName(Element? e)
+        {
+            try { return string.IsNullOrWhiteSpace(e?.Name) ? (e?.Id.ToString() ?? "?") : e!.Name; }
+            catch { return "?"; }
+        }
+
         /// <summary>Allows host floors directly, and linked floors via their reference.</summary>
-        private sealed class FloorFilter : ISelectionFilter
+        internal sealed class FloorFilter : ISelectionFilter
         {
             private readonly Document _doc;
             public FloorFilter(Document doc) { _doc = doc; }

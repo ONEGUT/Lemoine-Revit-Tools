@@ -30,6 +30,8 @@ namespace LemoineTools.Tools.Testing
         public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
         public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
         public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"
+        public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
+            = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -112,14 +114,14 @@ namespace LemoineTools.Tools.Testing
                         dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
                         dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
 
-                        // Pick steps (main thread) before the read-only plan build:
-                        // ManualDatum → one datum edge per view; SlabEdge → one floor per view.
+                        // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
+                        // the slab the user picked up front in the wizard (empty → scan all floors).
                         System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
                         System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
                         if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                             datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
-                        else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase))
-                            slabScopes = AutoDimension.SlabScopePicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
+                        else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) && SlabScopes.Count > 0)
+                            slabScopes = ViewIds.ToDictionary(v => v, v => SlabScopes);
 
                         var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
 
