@@ -817,13 +817,13 @@ namespace LemoineTools.Tools.AutoFilters
         public static List<FilterTradeConfig> BuildDefaultTrades()
         {
             FilterRuleConfig R(string name, string[] match, string cut, string? surf,
-                               string[] osts, string param) =>
+                               string[] osts, string param, string matchType = "contains") =>
                 new FilterRuleConfig
                 {
                     Id                = Guid.NewGuid().ToString("N").Substring(0, 8),
                     Enabled           = true,
                     Name              = name,
-                    MatchType         = "contains",
+                    MatchType         = matchType,
                     Match             = new List<string>(match),
                     CutColor          = cut,
                     SurfColor         = surf ?? cut,
@@ -903,8 +903,10 @@ namespace LemoineTools.Tools.AutoFilters
                 new FilterTradeConfig { Id="EL", Label="Electrical", Color="#F4F406",
                     Rules = new List<FilterRuleConfig>
                     {
-                        R("Cable Tray",    new[]{"Electrical","Power","Normal","Emergency","ELEC"}, "#F4F406", null, new[]{"OST_CableTray","OST_CableTrayFitting"}, "Service Type"),
-                        R("Conduit",       new[]{"Electrical","Power","Normal","Emergency","ELEC"}, "#F4F406", null, new[]{"OST_Conduit","OST_ConduitFitting"}, "Service Type"),
+                        // Cable tray / conduit carry no reliably-resolvable system parameter,
+                        // so colour the whole category ("all") rather than by keyword.
+                        R("Cable Tray",    System.Array.Empty<string>(), "#F4F406", null, new[]{"OST_CableTray","OST_CableTrayFitting"}, "Type Name", "all"),
+                        R("Conduit",       System.Array.Empty<string>(), "#F4F406", null, new[]{"OST_Conduit","OST_ConduitFitting"}, "Type Name", "all"),
                         R("Equipment",     new[]{"ELEC","Electrical","Panel","Switchboard"},        "#F4F406", null, new[]{"OST_ElectricalEquipment"}, "System Classification"),
                         R("Lighting",      new[]{"Lighting","Light","ELEC"},                        "#F4F406", null, new[]{"OST_LightingFixtures"}, "System Classification"),
                     }

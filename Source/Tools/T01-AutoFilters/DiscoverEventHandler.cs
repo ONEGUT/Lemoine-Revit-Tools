@@ -357,7 +357,10 @@ namespace LemoineTools.Tools.AutoFilters
                     else
                     {
                         rule.Parameter = spec.Parameter;
-                        rule.MatchType = "equals";
+                        // "contains" (not "equals"): discovered values can surface only via
+                        // AsValueString (formatted with units/separators), which an exact
+                        // equals rule would never match against the underlying value.
+                        rule.MatchType = "contains";
                         rule.Match     = new List<string> { spec.ParameterValue };
 
                         // Persist colour choice so future scans remember it

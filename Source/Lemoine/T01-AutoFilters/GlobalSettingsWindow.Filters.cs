@@ -656,18 +656,24 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(colorDot, 0);
             outerRow.Children.Add(colorDot);
 
-            // Subtext: category display names (or "(all categories)" if none set)
+            // Subtext: category display names (or "(all categories)" if none set),
+            // suffixed with "· whole category" when the rule matches everything.
             string BuildSubtext()
             {
+                string cats;
                 if (rule.BuiltInCategories.Count > 0)
                 {
                     var names = rule.BuiltInCategories
                         .Select(ost => AutoFiltersSettings.KnownCategoryMap
                             .FirstOrDefault(kv => kv.Value == ost).Key ?? ost)
                         .Where(n => !string.IsNullOrEmpty(n));
-                    return string.Join(", ", names);
+                    cats = string.Join(", ", names);
                 }
-                return "(all categories)";
+                else cats = "(all categories)";
+
+                return string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase)
+                    ? cats + "  ·  whole category"
+                    : cats;
             }
             var subtextTb = new TextBlock
             {
@@ -1212,7 +1218,7 @@ namespace LemoineTools.Lemoine
                 }
             };
 
-            void AddRow(string label, UIElement ctrl, UIElement? extra = null)
+            StackPanel AddRow(string label, UIElement ctrl, UIElement? extra = null)
             {
                 var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 2) };
                 lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
@@ -1224,11 +1230,50 @@ namespace LemoineTools.Lemoine
                 wrap.Children.Add(ctrl);
                 if (extra != null) wrap.Children.Add(extra);
                 cardStack.Children.Add(wrap);
+                return wrap;
             }
 
-            AddRow("CATEGORY",  catChip);
-            AddRow("PARAMETER", paramChip);
-            AddRow("SEARCH STRING", valChip, matchDd);
+            AddRow("CATEGORY", catChip);
+
+            // ── WHOLE-CATEGORY toggle ─────────────────────────────────────────
+            // Makes it unambiguous when a rule selects EVERY element in the chosen
+            // categories (MatchType == "all"). When on, the parameter and search-string
+            // rows are disabled because they no longer affect the result.
+            StackPanel? paramRow  = null;
+            StackPanel? searchRow = null;
+
+            void ApplyWholeCategory(bool on)
+            {
+                if (paramRow != null)  { paramRow.IsEnabled  = !on; paramRow.Opacity  = on ? 0.4 : 1.0; }
+                if (searchRow != null) { searchRow.IsEnabled = !on; searchRow.Opacity = on ? 0.4 : 1.0; }
+            }
+
+            bool wholeCatOn = string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase);
+            string lastKeywordMatch = wholeCatOn ? "contains" : (rule.MatchType ?? "contains");
+
+            var wholeCatToggle = BuildWholeCategoryToggle(wholeCatOn, on =>
+            {
+                if (on)
+                {
+                    if (!string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase))
+                        lastKeywordMatch = rule.MatchType ?? "contains";
+                    rule.MatchType = "all";
+                }
+                else
+                {
+                    rule.MatchType = lastKeywordMatch;
+                    matchDd.SelectedItem = matchDd.Items.Contains(lastKeywordMatch)
+                        ? lastKeywordMatch : "contains";
+                }
+                markDirty?.Invoke("logic.matchtype");
+                ApplyWholeCategory(on);
+                FRefreshRuleList();
+            });
+            cardStack.Children.Add(wholeCatToggle);
+
+            paramRow  = AddRow("PARAMETER", paramChip);
+            searchRow = AddRow("SEARCH STRING", valChip, matchDd);
+            ApplyWholeCategory(wholeCatOn);
 
             card.Child = cardStack;
             outer.Children.Add(card);
@@ -1239,6 +1284,81 @@ namespace LemoineTools.Lemoine
         {
             var firstOst  = rule.BuiltInCategories.FirstOrDefault() ?? "";
             chip.ItemsSource = AutoFiltersSettings.GetParametersFor(firstOst);
+        }
+
+        // ── "Whole category" toggle ───────────────────────────────────────────
+        // A labelled pill that flips a rule into match-everything mode. Styled to
+        // match the appearance-section toggles (MakeAppToggle).
+        private UIElement BuildWholeCategoryToggle(bool initial, Action<bool> onChange)
+        {
+            bool on = initial;
+
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 66 });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var toggleBtn = new Border
+            {
+                CornerRadius      = new CornerRadius(4),
+                BorderThickness   = new Thickness(1),
+                Padding           = new Thickness(8, 3, 8, 3),
+                Margin            = new Thickness(0, 0, 8, 0),
+                Cursor            = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip           = "Select every element in the chosen categories",
+            };
+            var toggleTb = new TextBlock
+            {
+                Text                = "All",
+                TextAlignment       = TextAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            toggleTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            toggleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            toggleBtn.Child = toggleTb;
+
+            void ApplyState(bool isOn)
+            {
+                if (isOn)
+                {
+                    toggleBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
+                    toggleBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    toggleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+                }
+                else
+                {
+                    toggleBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                    toggleBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    toggleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                }
+            }
+            ApplyState(on);
+
+            toggleBtn.MouseLeftButtonUp += (s, e) =>
+            {
+                on = !on;
+                ApplyState(on);
+                onChange(on);
+                e.Handled = true;
+            };
+
+            Grid.SetColumn(toggleBtn, 0);
+            row.Children.Add(toggleBtn);
+
+            var descTb = new TextBlock
+            {
+                Text              = "Whole category — match every element (ignores parameter & keywords)",
+                TextWrapping      = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            descTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            descTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            descTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            Grid.SetColumn(descTb, 1);
+            row.Children.Add(descTb);
+
+            return row;
         }
 
         // ── Override Style section ────────────────────────────────────────────
