@@ -251,7 +251,7 @@ namespace LemoineTools.Tools.Testing
 
             // Up-front slab pick — used in slab-edge mode; applies to every selected view.
             AddDivider(outer);
-            AddLabel(outer, "Slab to dimension to (slab-edge mode).");
+            AddLabel(outer, "Slab to dimension to (slab-edge mode). Pick a host floor, or a floor inside a Revit link.");
             var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
             slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -262,12 +262,16 @@ namespace LemoineTools.Tools.Testing
             refreshSlab();
 
             var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var pickBtn = LemoineControlStyles.BuildButton("Pick slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var pickBtn = LemoineControlStyles.BuildButton("Pick host slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
             pickBtn.Margin = new Thickness(0, 0, 8, 0);
-            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab);
+            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: false);
+            var pickLinkBtn = LemoineControlStyles.BuildButton("Pick linked slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
+            pickLinkBtn.Margin = new Thickness(0, 0, 8, 0);
+            pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: true);
             var clearBtn = LemoineControlStyles.BuildButton("Clear", LemoineControlStyles.LemoineButtonVariant.Ghost);
             clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
             slabRow.Children.Add(pickBtn);
+            slabRow.Children.Add(pickLinkBtn);
             slabRow.Children.Add(clearBtn);
             outer.Children.Add(slabRow);
             outer.Children.Add(slabStatus);
@@ -357,9 +361,10 @@ namespace LemoineTools.Tools.Testing
 
         // Raises the slab-pick external event; the picked floor (host or linked) comes back on
         // Revit's main thread and is marshalled to this window's dispatcher.
-        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh)
+        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh, bool inLinks)
         {
             if (_slabPickHandler == null || _slabPickEvent == null) return;
+            _slabPickHandler.InLinks = inLinks;
             _slabPickHandler.OnPicked = (scope, name) =>
                 disp.BeginInvoke(new Action(() =>
                 {
