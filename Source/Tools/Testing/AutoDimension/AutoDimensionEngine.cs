@@ -94,8 +94,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             output.DimTypeId = ResolveDimType(doc, cfg.DimensionTypeName);
 
             double scale = view.Scale <= 0 ? 1 : view.Scale;
-            var coreCfg = BuildCoreConfig(cfg.Layout, scale);
+            double textPaperFt = ReadDimTextSizeFt(doc, output.DimTypeId) ?? cfg.Layout.TextHeightFt;
+            var coreCfg = BuildCoreConfig(cfg.Layout, scale, textPaperFt);
             output.CoreConfig = coreCfg;
+            _log($"Text size: {textPaperFt * 12.0:0.###}\" paper × 1:{scale:0} → {coreCfg.TextHeightFt:0.##} ft model (cramped + stagger basis).", "info");
 
             var axes = cfg.DimensionBothAxes
                 ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
@@ -182,17 +184,18 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
         // ── Helpers ────────────────────────────────────────────────────────────
 
-        private static Core.LayoutConfig BuildCoreConfig(Core.LayoutConfig paper, double scale)
+        private static Core.LayoutConfig BuildCoreConfig(Core.LayoutConfig paper, double scale, double textHeightPaperFt)
         {
             // Spacing/offset/text are paper-space; multiply by the view scale to mix with the
-            // model-space source/target points the projection produced.
+            // model-space source/target points the projection produced. Text height comes from the
+            // actual DimensionType (textHeightPaperFt) so cramped-detection + stagger match reality.
             return new Core.LayoutConfig
             {
                 SchemaVersion       = paper.SchemaVersion,
                 StringSpacingFt     = paper.StringSpacingFt * scale,
                 FirstOffsetFt       = paper.FirstOffsetFt * scale,
                 PrecisionFt         = paper.PrecisionFt,            // display tolerance, model-space
-                TextHeightFt        = paper.TextHeightFt * scale,
+                TextHeightFt        = textHeightPaperFt * scale,
                 OverlapWeight       = paper.OverlapWeight,
                 OffCropWeight       = paper.OffCropWeight,
                 WitnessCrossWeight  = paper.WitnessCrossWeight,
@@ -204,6 +207,25 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 PlateauEpsilon      = paper.PlateauEpsilon,
                 MaxOffsetSteps      = paper.MaxOffsetSteps,
             };
+        }
+
+        /// <summary>Paper-space text height (ft) of the resolved dimension type, or null to fall
+        /// back to the config default. Drives cramped-detection and stagger spacing.</summary>
+        private static double? ReadDimTextSizeFt(Document doc, ElementId dimTypeId)
+        {
+            if (dimTypeId == ElementId.InvalidElementId) return null;
+            try
+            {
+                var dt = doc.GetElement(dimTypeId) as DimensionType;
+                var p  = dt?.get_Parameter(BuiltInParameter.TEXT_SIZE);
+                if (p != null && p.StorageType == StorageType.Double)
+                {
+                    double v = p.AsDouble();
+                    if (v > 1e-6) return v;
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: read dim text size", ex); }
+            return null;
         }
 
         private static ElementId ResolveDimType(Document doc, string name)
