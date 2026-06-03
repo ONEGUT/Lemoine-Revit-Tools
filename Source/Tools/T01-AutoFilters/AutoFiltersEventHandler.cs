@@ -332,6 +332,21 @@ namespace LemoineTools.Tools.AutoFilters
                 // over linked elements — the most common "filter created but does nothing".
                 if (pr.Warn != null)
                     Log($"[{trade.Id}/{rule.Name}] {pr.Warn}", "info");
+
+                // Narrow categories to the ones the parameter can actually filter.
+                // ParameterFilterElement.Create requires the parameter to apply to EVERY
+                // category, so a rule that lists even one incompatible category fails
+                // entirely ("parameter does not apply to this filter's categories"). Creating
+                // the filter for the compatible subset turns that failure into a working
+                // filter. When the query reports NO compatible categories we leave catIds
+                // untouched and let Create try anyway — the utility and Create occasionally
+                // disagree, and falling through avoids regressing filters that work today.
+                var filterableCats = NarrowToFilterable(doc, paramId!, catIds);
+                if (filterableCats.Count > 0 && filterableCats.Count < catIds.Count)
+                {
+                    Log($"[{trade.Id}/{rule.Name}] Parameter '{rule.Parameter}' applies to {filterableCats.Count} of {catIds.Count} categories — creating filter for the compatible ones.", "info");
+                    catIds = filterableCats;
+                }
             }
 
             bool isFab       = rule.Parameter == "Fabrication Service";
@@ -666,7 +681,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (el == null) continue;
 
                     var found = MatchParamOnElement(src, el, paramName);
-                    if (found != null) return ClassifyScannedParam(found, paramName, isLink);
+                    if (found != null) return ResolveScannedToHost(host, found, paramName, isLink);
                 }
             }
 
@@ -704,19 +719,50 @@ namespace LemoineTools.Tools.AutoFilters
             return null;
         }
 
-        // Classifies a parameter discovered by scanning elements and attaches a warning
-        // when it cannot reliably drive a filter over linked models.
-        private static ParamResolve ClassifyScannedParam(Parameter p, string paramName, bool isLink)
+        // Maps a parameter discovered by scanning an element to a HOST-valid id.
+        //
+        // A FilterRule created in the host references its parameter by ElementId, and that
+        // id must be valid in the HOST document. A built-in parameter's id is a universal
+        // negative id, but a shared/project parameter has a different ElementId in every
+        // document — returning the link's id produces "the referenced object is not valid,
+        // possibly because it has been deleted" at ParameterFilterElement.Create.
+        private static ParamResolve ResolveScannedToHost(Document host, Parameter p, string paramName, bool isLink)
         {
+            // Built-in parameter — universal id, valid in host and links alike.
+            try
+            {
+                if (p.Definition is InternalDefinition idef && idef.BuiltInParameter != BuiltInParameter.INVALID)
+                    return new ParamResolve(new ElementId((long)(int)idef.BuiltInParameter), true, null);
+            }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read scanned built-in parameter", __lex); }
+
             bool shared;
             try { shared = p.IsShared; }
             catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read parameter IsShared", __lex); shared = false; }
 
             if (shared)
-                return new ParamResolve(p.Id, true, isLink
-                    ? $"⚠ '{paramName}' was found only in a link — make sure the same shared parameter exists in the host so the filter binds to linked elements."
-                    : null);
+            {
+                // Shared parameters bind across documents by GUID — re-resolve to the HOST's
+                // SharedParameterElement so the filter references a host-valid id. If the host
+                // never bound this shared parameter, a host filter cannot reference it at all.
+                Guid g;
+                try { g = p.GUID; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read scanned shared GUID", __lex); return ParamResolve.None; }
 
+                var hostSpe = SharedParameterElement.Lookup(host, g);
+                if (hostSpe != null)
+                    return new ParamResolve(hostSpe.Id, true, null);
+
+                return new ParamResolve(null, false,
+                    $"⚠ '{paramName}' is a shared parameter present in a link but not bound in the host — add it to the host's shared-parameter bindings so the filter can match linked elements.");
+            }
+
+            // Non-shared project/family parameter: its id is document-specific.
+            if (isLink)
+                return new ParamResolve(null, false,
+                    $"⚠ '{paramName}' is a project parameter that exists only in a link — host view filters cannot reference or match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
+
+            // Host project parameter: usable on host elements, but won't match linked ones.
             return new ParamResolve(p.Id, false,
                 $"⚠ '{paramName}' is a project parameter — view filters cannot match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
         }
@@ -743,12 +789,39 @@ namespace LemoineTools.Tools.AutoFilters
                     case BuiltInCategory.OST_PipeAccessory:
                     case BuiltInCategory.OST_FlexPipeCurves:
                     case BuiltInCategory.OST_Sprinklers:
+                    case BuiltInCategory.OST_PlumbingFixtures:
                         anyPipe = true; break;
                 }
             }
             if (anyDuct) return BuiltInParameter.RBS_DUCT_SYSTEM_TYPE_PARAM;
             if (anyPipe) return BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM;
             return null;
+        }
+
+        // Returns the subset of catIds for which paramId is a valid filterable parameter.
+        // Filterability is driven by category schema (not element presence), so this works
+        // even when the host model contains no elements of the category.
+        private static List<ElementId> NarrowToFilterable(
+            Document doc, ElementId paramId, IList<ElementId> catIds)
+        {
+            var keep = new List<ElementId>();
+            foreach (var cat in catIds)
+            {
+                try
+                {
+                    var common = ParameterFilterUtilities
+                        .GetFilterableParametersInCommon(doc, new List<ElementId> { cat });
+                    if (common.Contains(paramId)) keep.Add(cat);
+                }
+                catch (Exception __lex)
+                {
+                    // Be permissive on a query failure: keep the category so Create can
+                    // still try, rather than silently dropping a possibly-valid category.
+                    LemoineLog.Swallowed($"AutoFilters: filterable-parameter check for category {cat.Value}", __lex);
+                    keep.Add(cat);
+                }
+            }
+            return keep;
         }
 
         private static string? ReadParamValue(Element el, string paramName,
