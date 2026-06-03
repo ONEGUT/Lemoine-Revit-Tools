@@ -138,19 +138,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         }
 
         /// <summary>
-        /// Realizes the layout's per-segment text decisions on the placed Revit dimension:
-        /// cramped segments flagged LeaderOut / Staggered have their text dragged outward along
-        /// the string's perpendicular so dense runs stay readable (the "drag compacted strings off
-        /// to the side" behaviour). Each move is independently guarded — a Revit rejection on one
-        /// segment never loses the dimension or the rest of the run.
+        /// Realizes the layout's per-segment text decisions on the placed Revit dimension. Like a
+        /// drafter, each value stays on its OWN segment: a moved (cramped) segment's text is nudged
+        /// straight out perpendicular by a small amount at its own along-axis position — a short
+        /// straight leader, not a far side-column with a crossing arc. Adjacent moved tags alternate
+        /// their nudge so they don't collide. Each move is independently guarded.
         /// </summary>
-        // Moved tags are placed in a single column to ONE side of the run (ColumnMargin before the
-        // run start), stacked outward from the dimension line in segment order (LaneBase + n·LaneStep,
-        // text-height multiples). Because the stack order matches the marks' along-axis order, the
-        // leaders arc to the marks without crossing one another.
-        private const double ColumnMarginHeights = 4.0;
-        private const double LaneBaseHeights      = 2.0;
-        private const double LaneStepHeights      = 2.6;
+        private const double StaggerNudgeHeights = 1.2;  // perpendicular nudge for a staggered tag
+        private const double LeaderNudgeHeights  = 2.2;  // perpendicular nudge for a leadered tag (now rare)
+        private const double AltStepHeights      = 1.3;  // extra height on every other moved tag (anti-collision)
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
@@ -159,13 +155,17 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             double th = cfg.TextHeightFt;
             if (th <= 0) return;
 
-            Core.Vec2 axis = pd.AxisDir.Normalized();
-            double sign = pd.Side == Core.DimSide.Positive ? 1.0 : -1.0;
+            // World perpendicular (outward, on the dimension's offset side) to nudge text along.
+            XYZ worldPerp;
+            try
+            {
+                worldPerp = projection.From2D(perp) - projection.From2D(new Core.Vec2(0, 0));
+                if (worldPerp.GetLength() < 1e-9) return;
+                worldPerp = worldPerp.Normalize();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: perp direction", ex); return; }
 
-            // Column position in view-2D: one side of the run, on the dimension line's offset side.
-            double runStart    = Math.Min(pd.SourcePoint.Dot(axis), pd.TargetPoint.Dot(axis));
-            double colAxial     = runStart - ColumnMarginHeights * th;
-            double dimLinePerp  = pd.SourcePoint.Dot(perp) + sign * pd.OffsetFt;
+            double sign = pd.Side == Core.DimSide.Positive ? 1.0 : -1.0;
 
             // Multi-segment chain → per-segment text; single span → the whole-dimension text.
             DimensionSegmentArray? segs = null;
@@ -175,29 +175,35 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             if (segs != null && segs.Size > 0)
             {
                 int n = Math.Min(segs.Size, pd.Segments.Count);
-                int lane = 0;   // counts only moved tags, so each gets its own column slot
+                int moved = 0;
                 for (int k = 0; k < n; k++)
                 {
-                    if (!IsMoved(pd.Segments[k].TextState)) continue;
-                    double perpVal = dimLinePerp + sign * (LaneBaseHeights + lane * LaneStepHeights) * th;
-                    lane++;
+                    var state = pd.Segments[k].TextState;
+                    if (!IsMoved(state)) continue;
+                    double nudge = (state == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
+                    if ((moved & 1) == 1) nudge += AltStepHeights * th;   // alternate so neighbours don't overlap
+                    moved++;
                     try
                     {
                         var seg = segs.get_Item(k);
-                        if (seg == null) continue;
-                        seg.TextPosition = projection.From2D(axis * colAxial + perp * perpVal);   // ⚠ leader appearance depends on the DimensionType
+                        if (seg?.TextPosition == null) continue;
+                        // Keep the text on its own segment (Revit's default midpoint), just push it out.
+                        seg.TextPosition = seg.TextPosition + worldPerp * (sign * nudge);   // ⚠ leader appearance depends on the DimensionType
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: place segment text", ex); }
+                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
                 }
             }
             else if (pd.Segments.Count > 0 && IsMoved(pd.Segments[0].TextState))
             {
                 try
                 {
-                    double perpVal = dimLinePerp + sign * LaneBaseHeights * th;
-                    dim.TextPosition = projection.From2D(axis * colAxial + perp * perpVal);   // ⚠ verify on Windows
+                    if (dim.TextPosition != null)
+                    {
+                        double nudge = (pd.Segments[0].TextState == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
+                        dim.TextPosition = dim.TextPosition + worldPerp * (sign * nudge);   // ⚠ verify on Windows
+                    }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: place dimension text", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
             }
         }
 
