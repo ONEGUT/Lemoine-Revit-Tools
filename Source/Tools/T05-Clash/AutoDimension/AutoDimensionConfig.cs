@@ -16,8 +16,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension
     public sealed class AutoDimensionConfig
     {
         /// <summary>Config schema version. v1 first release; v2 refreshes the layout/chaining
-        /// numbers to match hand-drafted output (Load() migrates older files).</summary>
-        public int SchemaVersion { get; set; } = 2;
+        /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
+        /// the clash (Load() migrates older files).</summary>
+        public int SchemaVersion { get; set; } = 3;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -106,6 +107,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                         var c = (AutoDimensionConfig)xs.Deserialize(r)!;
                         if (c.Layout == null) c.Layout = new CoreLayout();
                         if (c.SchemaVersion < 2) MigrateToV2(c);
+                        if (c.SchemaVersion < 3) MigrateToV3(c);
                         return c;
                     }
                 }
@@ -127,6 +129,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             c.ChainMaxGapMm            = def.ChainMaxGapMm;
             c.ChainCollinearToleranceMm = def.ChainCollinearToleranceMm;
             c.SchemaVersion = 2;
+        }
+
+        /// <summary>v2 → v3: halve FirstOffset so the dimension string sits closer to the clash, the
+        /// way the hand drawing does. Leaves every other persisted value alone.</summary>
+        private static void MigrateToV3(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.Layout.FirstOffsetFt = def.Layout.FirstOffsetFt;
+            c.SchemaVersion = 3;
         }
     }
 }

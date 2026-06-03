@@ -14,8 +14,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
         /// <summary>Paper-space gap between stacked dimension strings. Default 1/2".</summary>
         public double StringSpacingFt { get; set; } = (1.0 / 2.0) / 12.0;
 
-        /// <summary>First string's offset from the source run. Default 1/2".</summary>
-        public double FirstOffsetFt { get; set; } = (1.0 / 2.0) / 12.0;
+        /// <summary>First string's offset from the source run. Default 1/4" — the dimension sits
+        /// close to the clash (halved from 1/2" to match the hand drawing).</summary>
+        public double FirstOffsetFt { get; set; } = (1.0 / 4.0) / 12.0;
 
         /// <summary>Rounding precision applied to displayed values. Default 1/8".</summary>
         public double PrecisionFt { get; set; } = (1.0 / 8.0) / 12.0;

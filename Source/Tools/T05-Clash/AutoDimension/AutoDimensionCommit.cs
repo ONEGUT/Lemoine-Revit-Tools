@@ -140,13 +140,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         /// <summary>
         /// Realizes the layout's per-segment text decisions on the placed Revit dimension. Like a
         /// drafter, each value stays on its OWN segment: a moved (cramped) segment's text is nudged
-        /// straight out perpendicular by a small amount at its own along-axis position — a short
-        /// straight leader, not a far side-column with a crossing arc. Adjacent moved tags alternate
-        /// their nudge so they don't collide. Each move is independently guarded.
+        /// straight out perpendicular at its own along-axis position. The nudge is sized to clear the
+        /// leader arc — the whole glyph box lands on the OUTER side of the arc, readable, not straddling
+        /// it. All same-side tags share ONE uniform nudge so their arcs stay parallel and never cross
+        /// (neighbours that would collide are separated by the layout onto opposite sides, not by a
+        /// different distance on the same side). Each move is independently guarded.
+        /// NOTE: these heights are Windows-tunable — verify the text clears the arc on a real plot.
         /// </summary>
-        private const double StaggerNudgeHeights = 1.2;  // perpendicular nudge for a staggered tag
-        private const double LeaderNudgeHeights  = 2.2;  // perpendicular nudge for a leadered tag (now rare)
-        private const double AltStepHeights      = 1.3;  // extra height on every other moved tag (anti-collision)
+        private const double StaggerNudgeHeights = 2.2;  // outward nudge for a staggered tag (clears the arc)
+        private const double LeaderNudgeHeights  = 3.0;  // outward nudge for a leadered tag (now rare)
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
@@ -175,14 +177,13 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             if (segs != null && segs.Size > 0)
             {
                 int n = Math.Min(segs.Size, pd.Segments.Count);
-                int moved = 0;
                 for (int k = 0; k < n; k++)
                 {
                     var state = pd.Segments[k].TextState;
                     if (!IsMoved(state)) continue;
+                    // Uniform outward nudge on this side — same length for every same-side tag, so the
+                    // leader arcs stay parallel and never cross. The magnitude clears the arc.
                     double nudge = (state == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
-                    if ((moved & 1) == 1) nudge += AltStepHeights * th;   // alternate so neighbours don't overlap
-                    moved++;
                     try
                     {
                         var seg = segs.get_Item(k);
