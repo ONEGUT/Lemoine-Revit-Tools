@@ -379,6 +379,9 @@ namespace LemoineTools.Tools.AutoFilters
                 }
             }
 
+            // Guard against any duplicate trade Ids before persisting so the rules editor
+            // never treats two discovered trades as one.
+            AutoFiltersSettings.EnsureUniqueTradeIds(settings.Trades);
             settings.Save();
             Log($"Done — {pass} rule(s) added, {skip} skipped, {fail} failed.", pass > 0 ? "pass" : "info");
         }

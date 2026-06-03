@@ -52,16 +52,26 @@ namespace LemoineTools.Tools.AutoFilters
         public List<FilterCategoryConfig> Categories { get; set; } = new List<FilterCategoryConfig>();
 
         /// <summary>
-        /// Creates a new <see cref="FilterTradeConfig"/> with a time-derived Id,
+        /// Creates a new <see cref="FilterTradeConfig"/> with a unique Id,
         /// a default label, and a placeholder color.
         /// </summary>
         /// <returns>A blank <see cref="FilterTradeConfig"/> ready for user editing.</returns>
         public static FilterTradeConfig NewBlank() => new FilterTradeConfig
         {
-            Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3),
+            Id    = NewTradeId(),
             Label = "New Trade",
             Color = "#569cd6",
         };
+
+        /// <summary>
+        /// Generates a short, collision-resistant trade Id (e.g. "T3F9A1").
+        /// GUID-derived rather than time-derived: the Discover tool commits many trades
+        /// in one tight loop, and the previous <c>Ticks.Substring(11,3)</c> scheme produced
+        /// identical Ids within the same millisecond. Because the rules editor identifies
+        /// the open trade solely by Id, duplicate Ids made several trades open as one.
+        /// </summary>
+        internal static string NewTradeId()
+            => "T" + Guid.NewGuid().ToString("N").Substring(0, 5).ToUpperInvariant();
     }
 
     /// <summary>
@@ -198,7 +208,7 @@ namespace LemoineTools.Tools.AutoFilters
         /// <summary>Line pattern name applied to matching elements (e.g. "Solid", "Dash").</summary>
         [XmlAttribute] public string LinePattern  { get; set; } = "Solid";
         /// <summary>Line weight (pen weight index) applied to matching elements.</summary>
-        [XmlAttribute] public int    LineWeight   { get; set; } = 4;
+        [XmlAttribute] public int    LineWeight   { get; set; } = 1;
         /// <summary>When <see langword="true"/> the halftone override is applied to matching elements.</summary>
         [XmlAttribute] public bool   Halftone     { get; set; } = false;
         /// <summary>Surface transparency percentage (0–100) applied to matching elements.</summary>
@@ -220,7 +230,7 @@ namespace LemoineTools.Tools.AutoFilters
 
         /// <summary>
         /// Creates a new <see cref="FilterRuleConfig"/> with a random Id and sensible defaults
-        /// (enabled, contains-matching, solid grey line, weight 4, visible, filter on).
+        /// (enabled, contains-matching, solid grey line, weight 1, visible, filter on).
         /// </summary>
         /// <returns>A blank <see cref="FilterRuleConfig"/> ready for user editing.</returns>
         public static FilterRuleConfig NewBlank() => new FilterRuleConfig
@@ -238,7 +248,7 @@ namespace LemoineTools.Tools.AutoFilters
             LineColor         = "#888888",
             OverrideLine      = true,
             LinePattern       = "Solid",
-            LineWeight        = 4,
+            LineWeight        = 1,
             Visible           = true,
             FilterOn          = true,
         };
@@ -297,6 +307,37 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArray("CreatedFilters")]
         [XmlArrayItem("Filter")]
         public List<string> CreatedFilterNames { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Guarantees every trade has a non-empty, unique Id, rewriting any empty or
+        /// duplicate Id to a fresh unique value. Trades the Discover tool created in bulk
+        /// previously shared a time-derived Id, which made the rules editor treat them as a
+        /// single trade (clicking one opened both, and only the top one was viewable).
+        /// User-set unique Ids (e.g. "MD", "EL") are left untouched.
+        /// Returns <see langword="true"/> if any Id was changed.
+        /// </summary>
+        public static bool EnsureUniqueTradeIds(List<FilterTradeConfig> trades)
+        {
+            if (trades == null) return false;
+
+            var seen    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool changed = false;
+
+            foreach (var t in trades)
+            {
+                string id = (t.Id ?? "").Trim();
+                if (id.Length == 0 || seen.Contains(id))
+                {
+                    string fresh;
+                    do { fresh = FilterTradeConfig.NewTradeId(); } while (seen.Contains(fresh));
+                    t.Id    = fresh;
+                    id      = fresh;
+                    changed = true;
+                }
+                seen.Add(id);
+            }
+            return changed;
+        }
 
         // ── Filter naming + grouping helpers ──────────────────────────────────
 
@@ -739,6 +780,8 @@ namespace LemoineTools.Tools.AutoFilters
                         var s = (AutoFiltersSettings)xs.Deserialize(r)!;
                         if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
                         MigrateToV3(s);
+                        // Repair any duplicate/empty trade Ids left by older bulk-create runs.
+                        if (EnsureUniqueTradeIds(s.Trades)) s.Save();
                         return s;
                     }
                 }
@@ -807,6 +850,7 @@ namespace LemoineTools.Tools.AutoFilters
                     var s = (AutoFiltersSettings)xs.Deserialize(r)!;
                     if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
                     MigrateToV3(s);
+                    EnsureUniqueTradeIds(s.Trades);
                     _instance = s;
                     _instance.Save();
                 }
@@ -895,7 +939,7 @@ namespace LemoineTools.Tools.AutoFilters
                     CutColor          = cut,
                     SurfColor         = surf ?? cut,
                     LinePattern       = "Solid",
-                    LineWeight        = 4,
+                    LineWeight        = 1,
                     Visible           = true,
                     FilterOn          = true,
                     BuiltInCategories = new List<string>(osts),
