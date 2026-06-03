@@ -52,16 +52,26 @@ namespace LemoineTools.Tools.AutoFilters
         public List<FilterCategoryConfig> Categories { get; set; } = new List<FilterCategoryConfig>();
 
         /// <summary>
-        /// Creates a new <see cref="FilterTradeConfig"/> with a time-derived Id,
+        /// Creates a new <see cref="FilterTradeConfig"/> with a unique Id,
         /// a default label, and a placeholder color.
         /// </summary>
         /// <returns>A blank <see cref="FilterTradeConfig"/> ready for user editing.</returns>
         public static FilterTradeConfig NewBlank() => new FilterTradeConfig
         {
-            Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3),
+            Id    = NewTradeId(),
             Label = "New Trade",
             Color = "#569cd6",
         };
+
+        /// <summary>
+        /// Generates a short, collision-resistant trade Id (e.g. "T3F9A1").
+        /// GUID-derived rather than time-derived: the Discover tool commits many trades
+        /// in one tight loop, and the previous <c>Ticks.Substring(11,3)</c> scheme produced
+        /// identical Ids within the same millisecond. Because the rules editor identifies
+        /// the open trade solely by Id, duplicate Ids made several trades open as one.
+        /// </summary>
+        internal static string NewTradeId()
+            => "T" + Guid.NewGuid().ToString("N").Substring(0, 5).ToUpperInvariant();
     }
 
     /// <summary>
@@ -198,7 +208,7 @@ namespace LemoineTools.Tools.AutoFilters
         /// <summary>Line pattern name applied to matching elements (e.g. "Solid", "Dash").</summary>
         [XmlAttribute] public string LinePattern  { get; set; } = "Solid";
         /// <summary>Line weight (pen weight index) applied to matching elements.</summary>
-        [XmlAttribute] public int    LineWeight   { get; set; } = 4;
+        [XmlAttribute] public int    LineWeight   { get; set; } = 1;
         /// <summary>When <see langword="true"/> the halftone override is applied to matching elements.</summary>
         [XmlAttribute] public bool   Halftone     { get; set; } = false;
         /// <summary>Surface transparency percentage (0–100) applied to matching elements.</summary>
@@ -220,7 +230,7 @@ namespace LemoineTools.Tools.AutoFilters
 
         /// <summary>
         /// Creates a new <see cref="FilterRuleConfig"/> with a random Id and sensible defaults
-        /// (enabled, contains-matching, solid grey line, weight 4, visible, filter on).
+        /// (enabled, contains-matching, solid grey line, weight 1, visible, filter on).
         /// </summary>
         /// <returns>A blank <see cref="FilterRuleConfig"/> ready for user editing.</returns>
         public static FilterRuleConfig NewBlank() => new FilterRuleConfig
@@ -238,7 +248,7 @@ namespace LemoineTools.Tools.AutoFilters
             LineColor         = "#888888",
             OverrideLine      = true,
             LinePattern       = "Solid",
-            LineWeight        = 4,
+            LineWeight        = 1,
             Visible           = true,
             FilterOn          = true,
         };
@@ -298,6 +308,37 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArrayItem("Filter")]
         public List<string> CreatedFilterNames { get; set; } = new List<string>();
 
+        /// <summary>
+        /// Guarantees every trade has a non-empty, unique Id, rewriting any empty or
+        /// duplicate Id to a fresh unique value. Trades the Discover tool created in bulk
+        /// previously shared a time-derived Id, which made the rules editor treat them as a
+        /// single trade (clicking one opened both, and only the top one was viewable).
+        /// User-set unique Ids (e.g. "MD", "EL") are left untouched.
+        /// Returns <see langword="true"/> if any Id was changed.
+        /// </summary>
+        public static bool EnsureUniqueTradeIds(List<FilterTradeConfig> trades)
+        {
+            if (trades == null) return false;
+
+            var seen    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool changed = false;
+
+            foreach (var t in trades)
+            {
+                string id = (t.Id ?? "").Trim();
+                if (id.Length == 0 || seen.Contains(id))
+                {
+                    string fresh;
+                    do { fresh = FilterTradeConfig.NewTradeId(); } while (seen.Contains(fresh));
+                    t.Id    = fresh;
+                    id      = fresh;
+                    changed = true;
+                }
+                seen.Add(id);
+            }
+            return changed;
+        }
+
         // ── Filter naming + grouping helpers ──────────────────────────────────
 
         /// <summary>
@@ -305,10 +346,59 @@ namespace LemoineTools.Tools.AutoFilters
         /// <c>{tradeId}_{RULE_NAME}</c> with spaces replaced by underscores and uppercased.
         /// Single source of truth for the convention used by the filter engine, the
         /// Ceiling Heatmap tool, and the filter pickers.
+        ///
+        /// The result is sanitised of characters Revit prohibits in element names
+        /// (e.g. the ':' in a system name like "HVAC: EXHAUST AIR"), which otherwise make
+        /// <c>ParameterFilterElement.Create</c> throw "name cannot include prohibited
+        /// characters". Because every caller routes through this method the sanitised name
+        /// stays consistent across creation, orphan cleanup, colour matching, and grouping.
         /// </summary>
         public static string MakeFilterName(string tradeId, string ruleName)
-            => (tradeId ?? "") + "_"
-               + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant();
+            => SanitizeFilterName(
+                   (tradeId ?? "") + "_"
+                   + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant());
+
+        /// <summary>
+        /// Characters Revit forbids in element names. Sourced from the Revit API error
+        /// "name cannot include prohibited characters, such as { } [ ] | ; &lt; &gt; ? ` ~"
+        /// plus backslash and colon, which are also rejected.
+        /// </summary>
+        private static readonly char[] ProhibitedNameChars =
+            { '\\', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '`', '~' };
+
+        /// <summary>
+        /// Replaces every Revit-prohibited character with '_', collapses runs of
+        /// underscores, and trims leading/trailing underscores so the result is a legal,
+        /// stable element name. Deterministic so it can be recomputed for name matching.
+        /// </summary>
+        public static string SanitizeFilterName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name ?? "";
+
+            var chars = name.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+                if (Array.IndexOf(ProhibitedNameChars, chars[i]) >= 0)
+                    chars[i] = '_';
+
+            // Collapse consecutive underscores so "HVAC:_EXHAUST" → "HVAC_EXHAUST"
+            // (rather than a double underscore) and trim the edges.
+            var sb = new System.Text.StringBuilder(chars.Length);
+            bool prevUnderscore = false;
+            foreach (char c in chars)
+            {
+                if (c == '_')
+                {
+                    if (!prevUnderscore) sb.Append(c);
+                    prevUnderscore = true;
+                }
+                else
+                {
+                    sb.Append(c);
+                    prevUnderscore = false;
+                }
+            }
+            return sb.ToString().Trim('_');
+        }
 
         /// <summary>
         /// Groups the supplied Revit filter names by the trade that owns the rule which
@@ -400,6 +490,24 @@ namespace LemoineTools.Tools.AutoFilters
         {
             "Solid","Dash","Dash dot","Dash dot dot","Dot","Long dash","Center","Hidden",
         };
+
+        /// <summary>
+        /// Parameter display names backed by a BuiltInParameter, so a host view filter
+        /// using them reliably matches elements inside LINKED models (universal ids /
+        /// duct-pipe System Type). Other parameters depend on shared-parameter bindings
+        /// and may not affect linked elements — the rule editor flags them.
+        /// </summary>
+        public static readonly HashSet<string> LinkSafeParameters =
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "System Classification", "System Name", "System Type",
+                "Fabrication Service", "Type Name", "Family Name",
+                "Structural Material", "Mark", "Comments",
+            };
+
+        /// <summary>True when <paramref name="paramName"/> reliably matches linked elements.</summary>
+        public static bool IsLinkSafeParameter(string? paramName) =>
+            !string.IsNullOrEmpty(paramName) && LinkSafeParameters.Contains(paramName!);
 
         /// <summary>All parameters available across all categories (union set).</summary>
         public static readonly string[] KnownParameters =
@@ -672,6 +780,8 @@ namespace LemoineTools.Tools.AutoFilters
                         var s = (AutoFiltersSettings)xs.Deserialize(r)!;
                         if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
                         MigrateToV3(s);
+                        // Repair any duplicate/empty trade Ids left by older bulk-create runs.
+                        if (EnsureUniqueTradeIds(s.Trades)) s.Save();
                         return s;
                     }
                 }
@@ -740,6 +850,7 @@ namespace LemoineTools.Tools.AutoFilters
                     var s = (AutoFiltersSettings)xs.Deserialize(r)!;
                     if (s.Trades == null) s.Trades = new List<FilterTradeConfig>();
                     MigrateToV3(s);
+                    EnsureUniqueTradeIds(s.Trades);
                     _instance = s;
                     _instance.Save();
                 }
@@ -817,18 +928,18 @@ namespace LemoineTools.Tools.AutoFilters
         public static List<FilterTradeConfig> BuildDefaultTrades()
         {
             FilterRuleConfig R(string name, string[] match, string cut, string? surf,
-                               string[] osts, string param) =>
+                               string[] osts, string param, string matchType = "contains") =>
                 new FilterRuleConfig
                 {
                     Id                = Guid.NewGuid().ToString("N").Substring(0, 8),
                     Enabled           = true,
                     Name              = name,
-                    MatchType         = "contains",
+                    MatchType         = matchType,
                     Match             = new List<string>(match),
                     CutColor          = cut,
                     SurfColor         = surf ?? cut,
                     LinePattern       = "Solid",
-                    LineWeight        = 4,
+                    LineWeight        = 1,
                     Visible           = true,
                     FilterOn          = true,
                     BuiltInCategories = new List<string>(osts),
@@ -903,8 +1014,10 @@ namespace LemoineTools.Tools.AutoFilters
                 new FilterTradeConfig { Id="EL", Label="Electrical", Color="#F4F406",
                     Rules = new List<FilterRuleConfig>
                     {
-                        R("Cable Tray",    new[]{"Electrical","Power","Normal","Emergency","ELEC"}, "#F4F406", null, new[]{"OST_CableTray","OST_CableTrayFitting"}, "Service Type"),
-                        R("Conduit",       new[]{"Electrical","Power","Normal","Emergency","ELEC"}, "#F4F406", null, new[]{"OST_Conduit","OST_ConduitFitting"}, "Service Type"),
+                        // Cable tray / conduit carry no reliably-resolvable system parameter,
+                        // so colour the whole category ("all") rather than by keyword.
+                        R("Cable Tray",    System.Array.Empty<string>(), "#F4F406", null, new[]{"OST_CableTray","OST_CableTrayFitting"}, "Type Name", "all"),
+                        R("Conduit",       System.Array.Empty<string>(), "#F4F406", null, new[]{"OST_Conduit","OST_ConduitFitting"}, "Type Name", "all"),
                         R("Equipment",     new[]{"ELEC","Electrical","Panel","Switchboard"},        "#F4F406", null, new[]{"OST_ElectricalEquipment"}, "System Classification"),
                         R("Lighting",      new[]{"Lighting","Light","ELEC"},                        "#F4F406", null, new[]{"OST_LightingFixtures"}, "System Classification"),
                     }

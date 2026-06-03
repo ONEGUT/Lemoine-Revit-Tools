@@ -111,13 +111,16 @@ namespace LemoineTools.Tools.AutoFilters
 
             // BIP map — parameter display name → BuiltInParameter for fast resolution
             // Works even when no elements of that category exist in the model.
-            var bipMap = new Dictionary<string, BuiltInParameter>(StringComparer.Ordinal)
+            var bipMap = new Dictionary<string, BuiltInParameter>(StringComparer.OrdinalIgnoreCase)
             {
                 ["System Classification"] = BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM,
+                ["System Name"]           = BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
                 ["Fabrication Service"]   = BuiltInParameter.FABRICATION_SERVICE_NAME,
                 ["Type Name"]             = BuiltInParameter.ALL_MODEL_TYPE_NAME,
                 ["Family Name"]           = BuiltInParameter.ELEM_FAMILY_PARAM,
                 ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
+                ["Mark"]                  = BuiltInParameter.ALL_MODEL_MARK,
+                ["Comments"]              = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,
             };
 
             Progress(5, pass, fail, skip);
@@ -126,7 +129,7 @@ namespace LemoineTools.Tools.AutoFilters
             int totalRules = trades.Sum(t =>
                 (!t.ExternallyManaged
                  && (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label)))
-                    ? t.Rules.Count(r => r.Enabled && (r.MatchType == "all" || r.Match.Count > 0))
+                    ? t.Rules.Count(r => r.Enabled && RuleProducesFilter(r))
                     : 0);
             if (totalRules == 0)
             {
@@ -171,7 +174,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (t.ExternallyManaged) continue;
                     foreach (var r in t.Rules)
                     {
-                        if (!r.Enabled || (r.MatchType != "all" && r.Match.Count == 0)) continue;
+                        if (!r.Enabled || !RuleProducesFilter(r)) continue;
                         expectedFilterNames.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
                     }
                 }
@@ -215,6 +218,10 @@ namespace LemoineTools.Tools.AutoFilters
                     .GroupBy(m => m.Name)
                     .ToDictionary(g => g.Key, g => g.First().Id);
 
+                // Resolved-parameter cache: avoids re-scanning links for the same
+                // (parameter × category-set) across many rules.
+                var paramCache = new Dictionary<string, ParamResolve>(StringComparer.Ordinal);
+
                 foreach (var trade in trades)
                 {
                     // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
@@ -229,7 +236,7 @@ namespace LemoineTools.Tools.AutoFilters
 
                     foreach (var rule in trade.Rules)
                     {
-                        ProcessRule(doc, view, trade, rule, bipMap, matMap,
+                        ProcessRule(doc, sourceDocs, view, trade, rule, bipMap, matMap, paramCache,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,
                             createOnly, overwriteDef,
@@ -240,10 +247,14 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            // Persist updated manifest so future runs know which filters we own
+            // Persist updated manifest so future runs know which filters we own.
+            // Record only filters that actually exist in the document now — a rule
+            // whose creation failed must not be claimed as owned (it would otherwise
+            // never be cleaned up as an orphan).
             if (createOnly)
             {
-                AutoFiltersSettings.Instance.CreatedFilterNames = expectedFilterNames.ToList();
+                AutoFiltersSettings.Instance.CreatedFilterNames =
+                    expectedFilterNames.Where(existingFilters.ContainsKey).ToList();
                 AutoFiltersSettings.Instance.Save();
             }
 
@@ -252,11 +263,20 @@ namespace LemoineTools.Tools.AutoFilters
             pass += reused;
         }
 
+        // A rule yields a ParameterFilterElement when it matches the whole category,
+        // uses a value predicate (has/has-no value), or has at least one keyword.
+        private static bool RuleProducesFilter(FilterRuleConfig r)
+        {
+            string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+            return mt == "all" || mt == "has a value" || mt == "has no value" || r.Match.Count > 0;
+        }
+
         private void ProcessRule(
-            Document doc, View view,
+            Document doc, IList<Document> sourceDocs, View view,
             FilterTradeConfig trade, FilterRuleConfig rule,
             Dictionary<string, BuiltInParameter> bipMap,
             Dictionary<string, ElementId> matMap,
+            Dictionary<string, ParamResolve> paramCache,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
@@ -266,6 +286,20 @@ namespace LemoineTools.Tools.AutoFilters
             ref int pass, ref int fail, ref int skip, ref int reused,
             ref int rulesDone, int totalRules)
         {
+            string matchType   = (rule.MatchType ?? "contains").ToLowerInvariant();
+            bool   wholeCat     = matchType == "all";
+            bool   valuePredicate = matchType == "has a value" || matchType == "has no value";
+            bool   hasKeywords  = rule.Match.Count > 0;
+
+            // ── Gate first: an intentionally-disabled or empty rule is a SKIP, never a
+            //    failure. Resolve nothing for it (previously a disabled rule with an
+            //    unresolvable parameter was wrongly counted as a failure). ──────────
+            if (!rule.Enabled || (!wholeCat && !valuePredicate && !hasKeywords))
+            {
+                skip++;
+                return;
+            }
+
             // V3: each rule owns its own BuiltInCategories and Parameter
             var catIds = new List<ElementId>();
             foreach (var bicStr in rule.BuiltInCategories ?? new List<string>())
@@ -277,30 +311,46 @@ namespace LemoineTools.Tools.AutoFilters
             if (catIds.Count == 0)
             {
                 Log($"[{trade.Id}/{rule.Name}] No BuiltInCategory resolved — skipped.", "info");
-                skip++;
-                if (rule.Enabled && (rule.MatchType == "all" || rule.Match.Count > 0)) rulesDone++;
+                skip++; rulesDone++;
                 return;
             }
 
-            ElementId? paramId = ResolveParamId(doc, rule.Parameter, catIds, bipMap);
-            if (paramId == null)
+            // Whole-category ("all") matches every element via the always-present
+            // Category parameter, so it needs no per-trade parameter resolution.
+            ElementId? paramId = null;
+            if (!wholeCat)
             {
-                Log($"[{trade.Id}/{rule.Name}] Could not resolve parameter '{rule.Parameter}'.", "fail");
-                fail++;
-                if (rule.Enabled && (rule.MatchType == "all" || rule.Match.Count > 0)) rulesDone++;
-                return;
+                var pr = ResolveParamId(doc, sourceDocs, rule.Parameter, catIds, bipMap, paramCache);
+                if (pr.Id == null)
+                {
+                    Log($"[{trade.Id}/{rule.Name}] Could not resolve parameter '{rule.Parameter}'.", "fail");
+                    fail++; rulesDone++;
+                    return;
+                }
+                paramId = pr.Id;
+                // Tell the user when a rule's parameter cannot reliably drive a filter
+                // over linked elements — the most common "filter created but does nothing".
+                if (pr.Warn != null)
+                    Log($"[{trade.Id}/{rule.Name}] {pr.Warn}", "info");
+
+                // Narrow categories to the ones the parameter can actually filter.
+                // ParameterFilterElement.Create requires the parameter to apply to EVERY
+                // category, so a rule that lists even one incompatible category fails
+                // entirely ("parameter does not apply to this filter's categories"). Creating
+                // the filter for the compatible subset turns that failure into a working
+                // filter. When the query reports NO compatible categories we leave catIds
+                // untouched and let Create try anyway — the utility and Create occasionally
+                // disagree, and falling through avoids regressing filters that work today.
+                var filterableCats = NarrowToFilterable(doc, paramId!, catIds);
+                if (filterableCats.Count > 0 && filterableCats.Count < catIds.Count)
+                {
+                    Log($"[{trade.Id}/{rule.Name}] Parameter '{rule.Parameter}' applies to {filterableCats.Count} of {catIds.Count} categories — creating filter for the compatible ones.", "info");
+                    catIds = filterableCats;
+                }
             }
 
             bool isFab       = rule.Parameter == "Fabrication Service";
             bool isStructMat = rule.Parameter == "Structural Material";
-            string matchType = (rule.MatchType ?? "contains").ToLowerInvariant();
-            bool hasKeywords = rule.Match.Count > 0;
-
-            if (!rule.Enabled || (!hasKeywords && matchType != "all"))
-            {
-                skip++;
-                return;
-            }
 
             string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
 
@@ -332,7 +382,7 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     // Build element filter based on matchType
                     ElementFilter? elementFilter = BuildElementFilter(
-                        paramId!, rule, isFab, isStructMat, matMap, doc, matchType);
+                        paramId, rule, isFab, isStructMat, matMap, doc, matchType);
 
                     if (elementFilter == null)
                     {
@@ -354,6 +404,10 @@ namespace LemoineTools.Tools.AutoFilters
                         existingViewFilterIds.Add(pfe.Id.Value);
                     }
 
+                    // Honor the rule's "filter active in view" flag (FilterOn). A disabled
+                    // filter stays attached to the view but has no effect.
+                    view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
+
                     // Apply graphic overrides (colors, line style, halftone, transparency)
                     ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
                 }
@@ -368,27 +422,38 @@ namespace LemoineTools.Tools.AutoFilters
             Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
         }
 
+        // Match types whose keyword rules are negative (element must NOT match).
+        // Multiple negative keywords combine with AND ("not A AND not B"); positive
+        // keywords combine with OR ("A OR B").
+        private static bool IsNegativeMatch(string matchType) =>
+            matchType == "does not contain" || matchType == "does not equal";
+
         // ── Build an ElementFilter from a rule config ─────────────────────────
         private static ElementFilter? BuildElementFilter(
-            ElementId paramId, FilterRuleConfig ruleConf,
+            ElementId? paramId, FilterRuleConfig ruleConf,
             bool isFab, bool isStructMat,
             Dictionary<string, ElementId> matMap, Document doc,
             string matchType)
         {
+            // Whole category — match every element in the filter's categories.
+            // Uses the Category parameter (present on every element) so no per-trade
+            // parameter resolution is required and link-only categories still work.
             if (matchType == "all")
             {
-                // Matches every element that has this parameter (any value)
-                var hasValueRule = ParameterFilterRuleFactory.CreateHasValueParameterRule(paramId);
-                return new ElementParameterFilter(hasValueRule);
+                var catParam = new ElementId((long)(int)BuiltInParameter.ELEM_CATEGORY_PARAM);
+                return new ElementParameterFilter(
+                    ParameterFilterRuleFactory.CreateHasValueParameterRule(catParam));
             }
 
-            if (ruleConf.Match.Count == 1)
-            {
-                var singleRule = BuildRuleForKeyword(
-                    paramId, ruleConf.Match[0], isFab, isStructMat, matMap, doc, matchType);
-                if (singleRule == null) return null;
-                return new ElementParameterFilter(singleRule);
-            }
+            if (paramId == null) return null;
+
+            // Parameter-level predicates ignore keywords entirely.
+            if (matchType == "has a value")
+                return new ElementParameterFilter(
+                    ParameterFilterRuleFactory.CreateHasValueParameterRule(paramId));
+            if (matchType == "has no value")
+                return new ElementParameterFilter(
+                    ParameterFilterRuleFactory.CreateHasNoValueParameterRule(paramId));
 
             var subFilters = ruleConf.Match
                 .Select(kw => BuildRuleForKeyword(paramId, kw, isFab, isStructMat, matMap, doc, matchType))
@@ -397,7 +462,10 @@ namespace LemoineTools.Tools.AutoFilters
                 .ToList();
 
             if (subFilters.Count == 0) return null;
-            return subFilters.Count == 1 ? subFilters[0] : new LogicalOrFilter(subFilters);
+            if (subFilters.Count == 1) return subFilters[0];
+            return IsNegativeMatch(matchType)
+                ? (ElementFilter)new LogicalAndFilter(subFilters)
+                : new LogicalOrFilter(subFilters);
         }
 
         // ── Build a single Revit FilterRule for one keyword ───────────────────
@@ -407,19 +475,38 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> matMap, Document doc,
             string matchType)
         {
+            // Structural Material matches an element id, so only equals/not-equals apply.
             if (isStructMat)
             {
-                if (matMap.TryGetValue(keyword, out ElementId mid))
-                    return ParameterFilterRuleFactory.CreateEqualsRule(paramId, mid);
-                return null;
+                if (!matMap.TryGetValue(keyword, out ElementId mid)) return null;
+                return matchType == "does not equal"
+                    ? ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, mid)
+                    : ParameterFilterRuleFactory.CreateEqualsRule(paramId, mid);
             }
 
-            switch (matchType)
+            // String-based rules require StorageType.String. An ElementId parameter (e.g.
+            // System Type, which stores a MEP system type ElementId) will throw from the
+            // factory. Catch that here and return null so the caller logs a clean skip
+            // instead of letting an opaque Revit exception propagate.
+            try
             {
-                case "equals":
-                    return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
-                default: // "contains"
-                    return ParameterFilterRuleFactory.CreateContainsRule(paramId, keyword);
+                switch (matchType)
+                {
+                    case "equals":           return ParameterFilterRuleFactory.CreateEqualsRule(paramId, keyword);
+                    case "does not equal":   return ParameterFilterRuleFactory.CreateNotEqualsRule(paramId, keyword);
+                    case "does not contain": return ParameterFilterRuleFactory.CreateNotContainsRule(paramId, keyword);
+                    case "begins with":      return ParameterFilterRuleFactory.CreateBeginsWithRule(paramId, keyword);
+                    case "ends with":        return ParameterFilterRuleFactory.CreateEndsWithRule(paramId, keyword);
+                    default:                 return ParameterFilterRuleFactory.CreateContainsRule(paramId, keyword);
+                }
+            }
+            catch (Exception __lex)
+            {
+                // Most likely cause: the parameter's StorageType doesn't support string comparison
+                // (e.g. "System Type" is ElementId-based). Return null so BuildElementFilter
+                // skips this keyword with a "could not build filter rule" message.
+                LemoineLog.Swallowed($"AutoFilters: build string filter rule for '{keyword}'", __lex);
+                return null;
             }
         }
 
@@ -429,7 +516,7 @@ namespace LemoineTools.Tools.AutoFilters
         // This is the ONLY call to SetFilterVisibility — there is no separate FilterOn call,
         // which previously caused a race condition where the visibility was set twice.
         //
-        private static void ApplyRuleOverride(View view, ElementId filterId,
+        internal static void ApplyRuleOverride(View view, ElementId filterId,
             FilterRuleConfig rule,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,
@@ -536,37 +623,220 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private static ElementId? ResolveParamId(Document doc, string paramName,
+        /// <summary>
+        /// Result of resolving a rule's parameter to a filterable id, plus whether that
+        /// parameter reliably matches elements inside linked models.
+        /// </summary>
+        private readonly struct ParamResolve
+        {
+            public readonly ElementId? Id;
+            public readonly bool       LinkSafe;
+            public readonly string?    Warn;
+            public ParamResolve(ElementId? id, bool linkSafe, string? warn)
+            { Id = id; LinkSafe = linkSafe; Warn = warn; }
+            public static readonly ParamResolve None = new ParamResolve(null, false, null);
+        }
+
+        // Cached wrapper around ResolveParamIdCore keyed by parameter × category-set.
+        private static ParamResolve ResolveParamId(
+            Document host, IList<Document> sourceDocs, string paramName,
+            IList<ElementId> catIds, Dictionary<string, BuiltInParameter> bipMap,
+            Dictionary<string, ParamResolve> cache)
+        {
+            string key = paramName + "|" +
+                string.Join(",", catIds.Select(c => c.Value).OrderBy(v => v));
+            if (cache.TryGetValue(key, out var hit)) return hit;
+            var res = ResolveParamIdCore(host, sourceDocs, paramName, catIds, bipMap);
+            cache[key] = res;
+            return res;
+        }
+
+        private static ParamResolve ResolveParamIdCore(
+            Document host, IList<Document> sourceDocs, string paramName,
             IList<ElementId> catIds, Dictionary<string, BuiltInParameter> bipMap)
         {
-            // 1. BIP map first — works even when no elements exist in the model
+            // 1. Built-in parameter — universal id, matches host and linked elements alike.
             if (bipMap.TryGetValue(paramName, out var bip))
             {
-                try { return new ElementId((long)(int)bip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve built-in parameter id", __lex); }
+                try { return new ParamResolve(new ElementId((long)(int)bip), true, null); }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve built-in parameter id", __lex); }
             }
 
-            // 2. Scan live elements in the category
-            foreach (var catId in catIds)
+            // 1b. "System Type" maps to a category-specific BuiltInParameter (duct vs pipe),
+            //     so pick the one matching the rule's categories. Resolvable with no elements.
+            if (string.Equals(paramName, "System Type", StringComparison.OrdinalIgnoreCase))
             {
-                var el = new FilteredElementCollector(doc)
-                    .OfCategoryId(catId).WhereElementIsNotElementType().FirstElement();
-                if (el == null) continue;
-                var p = el.LookupParameter(paramName);
-                if (p != null) return p.Id;
-                foreach (Parameter pp in el.Parameters)
+                var stBip = ResolveSystemTypeBip(catIds);
+                if (stBip != null)
+                    try { return new ParamResolve(new ElementId((long)(int)stBip.Value), true, null); }
+                    catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve system-type parameter id", __lex); }
+            }
+
+            // 2. Host-side SHARED parameter. Shared parameters match across documents by
+            //    GUID, so resolving the host-valid id here is the reliable way to filter
+            //    linked elements even when the host has no elements of the category.
+            foreach (SharedParameterElement spe in new FilteredElementCollector(host)
+                .OfClass(typeof(SharedParameterElement)).Cast<SharedParameterElement>())
+            {
+                string defName;
+                try { defName = spe.GetDefinition()?.Name ?? ""; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read host shared-parameter definition", __lex); continue; }
+                if (string.Equals(defName, paramName, StringComparison.Ordinal))
+                    return new ParamResolve(spe.Id, true, null);
+            }
+
+            // 3. Live elements across host + selected links (instance → type → loop).
+            foreach (var src in sourceDocs)
+            {
+                bool isLink = !src.Equals(host);
+                foreach (var catId in catIds)
                 {
-                    try { if (pp.Definition.Name == paramName) return pp.Id; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: match project parameter name", __lex); }
+                    var el = new FilteredElementCollector(src)
+                        .OfCategoryId(catId).WhereElementIsNotElementType().FirstElement();
+                    if (el == null) continue;
+
+                    var found = MatchParamOnElement(src, el, paramName);
+                    if (found != null) return ResolveScannedToHost(host, found, paramName, isLink);
                 }
             }
 
-            // 3. Try matching a BuiltInParameter by name as a last resort
+            // 4. Last resort: built-in parameter by mangled name.
             if (Enum.TryParse<BuiltInParameter>(
-                    paramName.Replace(" ", "_").ToUpperInvariant(), out var fallbackBip))
+                    paramName.Replace(" ", "_").ToUpperInvariant(), out var fbBip))
             {
-                try { return new ElementId((long)(int)fallbackBip); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve fallback parameter id", __lex); }
+                try { return new ParamResolve(new ElementId((long)(int)fbBip), true, null); }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: resolve fallback parameter id", __lex); }
             }
 
+            return ParamResolve.None;
+        }
+
+        // Finds a parameter by display name on an element: instance first, then the
+        // element's type (#1 — many identity/MEP params live on the type), then a
+        // definition-name scan of the instance's parameters.
+        private static Parameter? MatchParamOnElement(Document src, Element el, string paramName)
+        {
+            var p = el.LookupParameter(paramName);
+            if (p != null) return p;
+
+            var typeEl = src.GetElement(el.GetTypeId());
+            if (typeEl != null)
+            {
+                var tp = typeEl.LookupParameter(paramName);
+                if (tp != null) return tp;
+            }
+
+            foreach (Parameter pp in el.Parameters)
+            {
+                try { if (pp.Definition?.Name == paramName) return pp; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: match instance parameter name", __lex); }
+            }
             return null;
+        }
+
+        // Maps a parameter discovered by scanning an element to a HOST-valid id.
+        //
+        // A FilterRule created in the host references its parameter by ElementId, and that
+        // id must be valid in the HOST document. A built-in parameter's id is a universal
+        // negative id, but a shared/project parameter has a different ElementId in every
+        // document — returning the link's id produces "the referenced object is not valid,
+        // possibly because it has been deleted" at ParameterFilterElement.Create.
+        private static ParamResolve ResolveScannedToHost(Document host, Parameter p, string paramName, bool isLink)
+        {
+            // Built-in parameter — universal id, valid in host and links alike.
+            try
+            {
+                if (p.Definition is InternalDefinition idef && idef.BuiltInParameter != BuiltInParameter.INVALID)
+                    return new ParamResolve(new ElementId((long)(int)idef.BuiltInParameter), true, null);
+            }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read scanned built-in parameter", __lex); }
+
+            bool shared;
+            try { shared = p.IsShared; }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read parameter IsShared", __lex); shared = false; }
+
+            if (shared)
+            {
+                // Shared parameters bind across documents by GUID — re-resolve to the HOST's
+                // SharedParameterElement so the filter references a host-valid id. If the host
+                // never bound this shared parameter, a host filter cannot reference it at all.
+                Guid g;
+                try { g = p.GUID; }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read scanned shared GUID", __lex); return ParamResolve.None; }
+
+                var hostSpe = SharedParameterElement.Lookup(host, g);
+                if (hostSpe != null)
+                    return new ParamResolve(hostSpe.Id, true, null);
+
+                return new ParamResolve(null, false,
+                    $"⚠ '{paramName}' is a shared parameter present in a link but not bound in the host — add it to the host's shared-parameter bindings so the filter can match linked elements.");
+            }
+
+            // Non-shared project/family parameter: its id is document-specific.
+            if (isLink)
+                return new ParamResolve(null, false,
+                    $"⚠ '{paramName}' is a project parameter that exists only in a link — host view filters cannot reference or match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
+
+            // Host project parameter: usable on host elements, but won't match linked ones.
+            return new ParamResolve(p.Id, false,
+                $"⚠ '{paramName}' is a project parameter — view filters cannot match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
+        }
+
+        // "System Type" is RBS_DUCT_SYSTEM_TYPE_PARAM for duct categories and
+        // RBS_PIPING_SYSTEM_TYPE_PARAM for pipe categories. Choose by category so the
+        // parameter resolves without any live elements in the host document.
+        private static BuiltInParameter? ResolveSystemTypeBip(IList<ElementId> catIds)
+        {
+            bool anyPipe = false, anyDuct = false;
+            foreach (var catId in catIds)
+            {
+                var bic = (BuiltInCategory)(int)catId.Value;
+                switch (bic)
+                {
+                    case BuiltInCategory.OST_DuctCurves:
+                    case BuiltInCategory.OST_DuctFitting:
+                    case BuiltInCategory.OST_DuctAccessory:
+                    case BuiltInCategory.OST_DuctTerminal:
+                    case BuiltInCategory.OST_FlexDuctCurves:
+                        anyDuct = true; break;
+                    case BuiltInCategory.OST_PipeCurves:
+                    case BuiltInCategory.OST_PipeFitting:
+                    case BuiltInCategory.OST_PipeAccessory:
+                    case BuiltInCategory.OST_FlexPipeCurves:
+                    case BuiltInCategory.OST_Sprinklers:
+                    case BuiltInCategory.OST_PlumbingFixtures:
+                        anyPipe = true; break;
+                }
+            }
+            if (anyDuct) return BuiltInParameter.RBS_DUCT_SYSTEM_TYPE_PARAM;
+            if (anyPipe) return BuiltInParameter.RBS_PIPING_SYSTEM_TYPE_PARAM;
+            return null;
+        }
+
+        // Returns the subset of catIds for which paramId is a valid filterable parameter.
+        // Filterability is driven by category schema (not element presence), so this works
+        // even when the host model contains no elements of the category.
+        private static List<ElementId> NarrowToFilterable(
+            Document doc, ElementId paramId, IList<ElementId> catIds)
+        {
+            var keep = new List<ElementId>();
+            foreach (var cat in catIds)
+            {
+                try
+                {
+                    var common = ParameterFilterUtilities
+                        .GetFilterableParametersInCommon(doc, new List<ElementId> { cat });
+                    if (common.Contains(paramId)) keep.Add(cat);
+                }
+                catch (Exception __lex)
+                {
+                    // Be permissive on a query failure: keep the category so Create can
+                    // still try, rather than silently dropping a possibly-valid category.
+                    LemoineLog.Swallowed($"AutoFilters: filterable-parameter check for category {cat.Value}", __lex);
+                    keep.Add(cat);
+                }
+            }
+            return keep;
         }
 
         private static string? ReadParamValue(Element el, string paramName,
@@ -664,7 +934,21 @@ namespace LemoineTools.Tools.AutoFilters
             catch { return ElementId.InvalidElementId; }
         }
 
-        private void Log(string text, string status) => PushLog?.Invoke(text, status);
+        // Routes a run message to the (optional) UI callback AND mirrors it to the
+        // durable diagnostic log. The Filters window runs with PushLog == null, so
+        // without this mirror every per-rule failure reason was silently discarded —
+        // the user saw a "N failed" count but never *why*. "fail" maps to Warn (a
+        // handled, non-fatal per-rule failure that still counts as an issue); every
+        // other status is informational.
+        private void Log(string text, string status)
+        {
+            PushLog?.Invoke(text, status);
+
+            if (status == "fail")
+                LemoineLog.Warn("AutoFilters", text);
+            else
+                LemoineLog.Info("AutoFilters", text);
+        }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s, int r = 0) => OnComplete?.Invoke(p, f, s, r);
     }

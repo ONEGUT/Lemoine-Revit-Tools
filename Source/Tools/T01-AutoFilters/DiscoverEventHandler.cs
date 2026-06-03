@@ -357,7 +357,10 @@ namespace LemoineTools.Tools.AutoFilters
                     else
                     {
                         rule.Parameter = spec.Parameter;
-                        rule.MatchType = "equals";
+                        // "contains" (not "equals"): discovered values can surface only via
+                        // AsValueString (formatted with units/separators), which an exact
+                        // equals rule would never match against the underlying value.
+                        rule.MatchType = "contains";
                         rule.Match     = new List<string> { spec.ParameterValue };
 
                         // Persist colour choice so future scans remember it
@@ -376,13 +379,26 @@ namespace LemoineTools.Tools.AutoFilters
                 }
             }
 
+            // Guard against any duplicate trade Ids before persisting so the rules editor
+            // never treats two discovered trades as one.
+            AutoFiltersSettings.EnsureUniqueTradeIds(settings.Trades);
             settings.Save();
             Log($"Done — {pass} rule(s) added, {skip} skipped, {fail} failed.", pass > 0 ? "pass" : "info");
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private void Log(string msg, string status) => PushLog?.Invoke(msg, status);
+        // Mirror to the durable diagnostic log so failure reasons survive the session
+        // even when the UI log is closed. "fail" maps to Warn; everything else is info.
+        private void Log(string msg, string status)
+        {
+            PushLog?.Invoke(msg, status);
+
+            if (status == "fail")
+                LemoineLog.Warn("AutoFilters.Discover", msg);
+            else
+                LemoineLog.Info("AutoFilters.Discover", msg);
+        }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s)          => OnComplete?.Invoke(p, f, s);
     }
