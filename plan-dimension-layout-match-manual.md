@@ -115,3 +115,58 @@ code defaults alone won't reach them.
 3. **Finding 4** — only if still needed after 1–3.
 
 Each is independent and reversible; we can stop after any step once it looks right.
+
+---
+
+# Round 2 — feedback after the first Windows check
+
+Four new observations on the placed dimensions. All four are about how the **value text /
+leader arc** sits and how far the dimension line is from the clash. No UI work.
+
+### R1. Text is on the wrong side of the leader arc
+> "leader lines are about right but the text location is the wrong way … the centre of the
+> text isn't moved to where it needs to be to be readable. They need to be on the **outside
+> side of the arc**."
+
+- **Cause:** `ApplyTextStates` nudges text only ~1.2–2.2 text-heights out, landing the text
+  *centre* on/near the arc so the arc cuts across the glyphs.
+- **Fix:** push the text centre a full glyph-box clear of the arc end (≈ `leader +
+  ½ text-height`) so the whole value sits on the **outer** side of the arc. Keep the leader
+  length itself ("about right").
+
+### R2. Leader arcs cross each other
+> "some overlapping the arcs. Arcs should not cross one another."
+
+- **Cause:** `AltStepHeights` pushes *every other* moved tag further out **in the same
+  direction**, so adjacent arcs are different lengths from adjacent points and cross.
+- **Fix:** remove the same-direction alternating distance; give all same-side tags one
+  uniform leader length (parallel arcs, never crossing). Neighbour separation comes from
+  putting alternating tags on **opposite sides** of the line instead (R4).
+
+### R3. Dimension sits too far from the clash — about half
+> "the distance the dimension is from the clash is too far … about half."
+
+- **Fix:** `LayoutConfig.FirstOffsetFt` 1/2″ → **1/4″**; bump `AutoDimensionConfig`
+  `SchemaVersion` 2→3 and migrate `FirstOffsetFt` so existing users get it. `StringSpacingFt`
+  (gap *between* stacked strings) left alone.
+
+### R4. Everything stacks in one direction *(the one design decision)*
+> "preference for dimensions to always move towards the top of the text … they all stack in
+> the same direction. This could be mitigated by … move the dimensions to where the bottom
+> of the text is and dragging the text below the dimension."
+
+- **Fix:** alternate moved tags **above** vs **below** the dimension line. Above = text on the
+  outer side (R1). Below = drop the line to the text-bottom and hang the text under it — the
+  `Flipped` state (exists in the enum, currently treated as inline). De-stacks the run and is
+  what gives R2 its no-cross separation.
+  - `ResolveSegments` (`GreedyLayoutEngine.cs`): alternate `Staggered`/`Flipped` on adjacent
+    moved segments instead of all `Staggered`.
+  - `ApplyTextStates`: `Flipped` → nudge text to the opposite (below) side by the same clear
+    distance.
+
+## Files (round 2)
+- `Core/LayoutConfig.cs` — `FirstOffsetFt` 1/2″→1/4″.
+- `AutoDimensionConfig.cs` — `SchemaVersion` 2→3 + migrate `FirstOffsetFt`.
+- `Core/GreedyLayoutEngine.cs` — `ResolveSegments` alternates Staggered/Flipped.
+- `AutoDimensionCommit.cs` — `ApplyTextStates`: clear-the-arc nudge (R1), uniform same-side
+  leader (R2), Flipped→below-line placement (R4).

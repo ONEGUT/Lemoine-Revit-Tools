@@ -15,8 +15,10 @@ namespace LemoineTools.Tools.Testing.AutoDimension
     [XmlRoot("AutoDimension")]
     public sealed class AutoDimensionConfig
     {
-        /// <summary>Config schema version. v1 from first release.</summary>
-        public int SchemaVersion { get; set; } = 1;
+        /// <summary>Config schema version. v1 first release; v2 refreshes the layout/chaining
+        /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
+        /// the clash (Load() migrates older files).</summary>
+        public int SchemaVersion { get; set; } = 3;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -30,11 +32,12 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         /// <summary>Merge collinear, adjacent clashes that share a target into one chained string.</summary>
         public bool ChainAligned { get; set; } = true;
 
-        /// <summary>Max along-axis gap between adjacent clashes that still chain (mm).</summary>
-        public double ChainMaxGapMm { get; set; } = 1500.0;
+        /// <summary>Max along-axis gap between adjacent clashes that still chain (mm). Wide so
+        /// penetrations spread across a bay consolidate into one run to the edge, like the manual.</summary>
+        public double ChainMaxGapMm { get; set; } = 3000.0;
 
         /// <summary>How far a clash may sit off the shared baseline and still count as "in line" (mm).</summary>
-        public double ChainCollinearToleranceMm { get; set; } = 150.0;
+        public double ChainCollinearToleranceMm { get; set; } = 250.0;
 
         /// <summary>Collapse parallel dimensions on the same axis whose witness lines coincide within
         /// this tolerance into a single dimension (mm). 0 disables the merge.</summary>
@@ -103,12 +106,38 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                     {
                         var c = (AutoDimensionConfig)xs.Deserialize(r)!;
                         if (c.Layout == null) c.Layout = new CoreLayout();
+                        if (c.SchemaVersion < 2) MigrateToV2(c);
+                        if (c.SchemaVersion < 3) MigrateToV3(c);
                         return c;
                     }
                 }
             }
             catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionConfig: load (using defaults)", ex); }
             return new AutoDimensionConfig();
+        }
+
+        /// <summary>v1 → v2: refresh the layout + chaining numbers a v1 file still carries to the new
+        /// manual-matching defaults so the tuning reaches existing users. Leaves user-chosen target,
+        /// links, and dimension-type alone.</summary>
+        private static void MigrateToV2(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.Layout.LeaderWeight      = def.Layout.LeaderWeight;
+            c.Layout.CrampedWeight     = def.Layout.CrampedWeight;
+            c.Layout.FirstOffsetFt     = def.Layout.FirstOffsetFt;
+            c.Layout.StringSpacingFt   = def.Layout.StringSpacingFt;
+            c.ChainMaxGapMm            = def.ChainMaxGapMm;
+            c.ChainCollinearToleranceMm = def.ChainCollinearToleranceMm;
+            c.SchemaVersion = 2;
+        }
+
+        /// <summary>v2 → v3: halve FirstOffset so the dimension string sits closer to the clash, the
+        /// way the hand drawing does. Leaves every other persisted value alone.</summary>
+        private static void MigrateToV3(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.Layout.FirstOffsetFt = def.Layout.FirstOffsetFt;
+            c.SchemaVersion = 3;
         }
     }
 }
