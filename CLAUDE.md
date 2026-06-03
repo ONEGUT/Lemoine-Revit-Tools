@@ -223,6 +223,13 @@ Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal`
 
 ---
 
+## Dimension Text & Leader Placement
+
+- A Revit dimension's text leader is drawn by its **DimensionType** (the auto-dimension types here use **Arc** leaders). `Dimension.TextPosition` / `DimensionSegment.TextPosition` is the **only** handle — moving it both repositions the value text *and* lengthens the leader; there is no separate arc-vs-text control. To place moved value text readably, offset it **perpendicular** (to clear the arc) **and sideways along the measurement axis** so it sits beside the segment, not straight over it.
+- Moved tags need their **own tag-vs-tag clash test at commit time**. The Revit-free layout core only models the dimension *band* (line + offset), so realized `LeaderOut`/`Staggered` text boxes can still overlap each other or other dimensions — build each moved tag's view-2D box and slide it further along-axis until it clears the tags already placed this run.
+
+---
+
 ## LemoineMultiSelectTabs Contract
 
 `SetGroups` fires `SelectionChanged` once at the end of setup. Any ViewModel that mirrors tab selection into a private field must subscribe to `SelectionChanged` **before** calling `SetGroups` — that callback is the only mechanism that populates the mirror field on initialisation.
