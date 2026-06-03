@@ -131,13 +131,24 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
             {
                 if (sd.Link != null && !ctx.Config.IncludeLinks) continue;
 
+                // When the user picked floor(s), only scan those — and only in the doc they belong to.
+                HashSet<int>? allowedFloors = null;
+                if (ctx.SlabScopes.Count > 0)
+                {
+                    ElementId sdLink = sd.Link?.Id ?? ElementId.InvalidElementId;
+                    allowedFloors = new HashSet<int>(ctx.SlabScopes
+                        .Where(s => s.LinkInstanceId == sdLink)
+                        .Select(s => s.FloorId.IntegerValue));
+                    if (allowedFloors.Count == 0) continue; // no picked floor lives in this source
+                }
+
                 List<Floor> floors;
                 try
                 {
-                    floors = new FilteredElementCollector(sd.Doc)
-                        .OfClass(typeof(Floor)).Cast<Floor>()
-                        .OrderBy(f => f.Id.IntegerValue)
-                        .ToList();
+                    var q = new FilteredElementCollector(sd.Doc)
+                        .OfClass(typeof(Floor)).Cast<Floor>();
+                    if (allowedFloors != null) q = q.Where(f => allowedFloors.Contains(f.Id.IntegerValue));
+                    floors = q.OrderBy(f => f.Id.IntegerValue).ToList();
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: collect floors", ex); continue; }
 

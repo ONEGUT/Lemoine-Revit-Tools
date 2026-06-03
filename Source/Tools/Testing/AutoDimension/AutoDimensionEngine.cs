@@ -38,7 +38,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         public AutoDimensionEngine(Action<string, string> log) { _log = log ?? ((a, b) => { }); }
 
         public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg,
-            List<Resolvers.ManualDatum>? datums = null)
+            List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null)
         {
             var output = new EngineOutput();
             var plan = output.Plan;
@@ -57,6 +57,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 Config     = cfg,
                 ReportMissingLink = m => { if (!plan.MissingLinkRefs.Contains(m)) plan.MissingLinkRefs.Add(m); },
                 Datums = datums ?? new List<Resolvers.ManualDatum>(),
+                SlabScopes = slabScopes ?? new List<Resolvers.SlabScope>(),
                 Log = _log,
             };
             ctx.Sources.Add(new SourceDoc { Doc = doc, Link = null, Transform = Transform.Identity });

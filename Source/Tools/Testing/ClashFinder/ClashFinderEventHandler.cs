@@ -112,12 +112,16 @@ namespace LemoineTools.Tools.Testing
                         dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
                         dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
 
-                        // Manual-datum mode: pick one datum edge per view (on the main thread) first.
+                        // Pick steps (main thread) before the read-only plan build:
+                        // ManualDatum → one datum edge per view; SlabEdge → one floor per view.
                         System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
+                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
                         if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                             datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
+                        else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase))
+                            slabScopes = AutoDimension.SlabScopePicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
 
-                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums);
+                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
 
                         pass += dimResult.Placed;
                         fail += dimResult.Failures;

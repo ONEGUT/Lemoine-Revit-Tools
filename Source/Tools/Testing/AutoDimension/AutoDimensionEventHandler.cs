@@ -37,10 +37,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 }
                 else
                 {
-                    // Manual-datum mode: pick one datum edge per view (main thread) before building.
+                    // Pick steps (main thread) before building: ManualDatum → one edge per view;
+                    // SlabEdge → one floor per view (scopes slab targeting to that element).
                     Dictionary<ElementId, List<Resolvers.ManualDatum>>? datums = null;
+                    Dictionary<ElementId, List<Resolvers.SlabScope>>? slabScopes = null;
                     if (string.Equals(Config.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                         datums = ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, Log);
+                    else if (string.Equals(Config.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase))
+                        slabScopes = SlabScopePicker.PickForViews(app.ActiveUIDocument, ViewIds, Log);
 
                     // ── Read side: build a plan per view (no element changes) ──
                     var built = new List<(View view, EngineOutput output)>();
@@ -54,9 +58,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
                         List<Resolvers.ManualDatum>? viewDatums = null;
                         datums?.TryGetValue(viewId, out viewDatums);
+                        List<Resolvers.SlabScope>? viewScopes = null;
+                        slabScopes?.TryGetValue(viewId, out viewScopes);
 
                         Log($"— View '{view.Name}' —", "info");
-                        var output = engine.BuildPlan(doc, view, Config, viewDatums);
+                        var output = engine.BuildPlan(doc, view, Config, viewDatums, viewScopes);
                         ReportPlan(view, output.Plan);
                         built.Add((view, output));
                         n++;

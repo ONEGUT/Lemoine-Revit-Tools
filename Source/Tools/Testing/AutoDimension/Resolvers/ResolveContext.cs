@@ -25,6 +25,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         public string Key { get; set; } = "";
     }
 
+    /// <summary>A floor the user picked to scope slab-edge targeting to (host or linked).</summary>
+    public sealed class SlabScope
+    {
+        /// <summary>Owning link instance id, or InvalidElementId for a host floor.</summary>
+        public ElementId LinkInstanceId { get; set; } = ElementId.InvalidElementId;
+        /// <summary>The floor's element id within its document.</summary>
+        public ElementId FloorId { get; set; } = ElementId.InvalidElementId;
+    }
+
     /// <summary>Everything a target resolver needs, gathered once per run on the Revit thread.</summary>
     public sealed class ResolveContext
     {
@@ -39,6 +48,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
 
         /// <summary>User-picked datums for this view (manual-datum target mode only).</summary>
         public List<ManualDatum> Datums { get; set; } = new List<ManualDatum>();
+
+        /// <summary>User-picked floors to scope slab-edge targeting to (empty = scan all floors).</summary>
+        public List<SlabScope> SlabScopes { get; set; } = new List<SlabScope>();
 
         /// <summary>Sink for "couldn't get a link reference" reports (non-fatal).</summary>
         public Action<string> ReportMissingLink { get; set; } = _ => { };
