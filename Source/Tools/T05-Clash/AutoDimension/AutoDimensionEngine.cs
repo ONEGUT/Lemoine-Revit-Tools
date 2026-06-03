@@ -196,7 +196,6 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 SchemaVersion       = paper.SchemaVersion,
                 StringSpacingFt     = paper.StringSpacingFt * scale,
                 FirstOffsetFt       = paper.FirstOffsetFt * scale,
-                ChainProximityPushFt = paper.ChainProximityPushFt * scale,
                 PrecisionFt         = paper.PrecisionFt,            // display tolerance, model-space
                 TextHeightFt        = textHeightPaperFt * scale,
                 OverlapWeight       = paper.OverlapWeight,

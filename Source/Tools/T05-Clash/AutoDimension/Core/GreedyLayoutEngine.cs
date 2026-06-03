@@ -28,9 +28,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
         {
             if (dims == null || dims.Count == 0) return;
 
-            // Deterministic processing order: side, then axial start, then source key.
+            // Processing order is placement priority: each dimension takes the closest offset that
+            // clears the ones placed before it, so whoever goes first claims the close spots. Longer
+            // chains are placed first and keep the near-source locations; shorter strings and lone
+            // spans yield and step outward to avoid them. Side/axial/key tie-break keeps it deterministic.
             dims.Sort((a, b) =>
             {
+                int seg = b.Segments.Count.CompareTo(a.Segments.Count);   // more segments first
+                if (seg != 0) return seg;
                 int s = a.Side.CompareTo(b.Side);
                 if (s != 0) return s;
                 int c = DimGeometry.AxialStart(a).CompareTo(DimGeometry.AxialStart(b));
@@ -74,18 +79,12 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
             // sides rather than always piling toward the top.
             DimSide original  = d.Side;
             DimSide bestSide   = original;
-
-            // Per-dimension base offset: a lone span is pushed clear; the longer the chain the closer
-            // it starts to the source clash (push tapers as 1/segmentCount).
-            int segCount = d.Segments.Count < 1 ? 1 : d.Segments.Count;
-            double baseOffset = _cfg.FirstOffsetFt + _cfg.ChainProximityPushFt / segCount;
-
-            double  bestOffset = baseOffset;
+            double  bestOffset = _cfg.FirstOffsetFt;
             double  bestHard   = double.MaxValue;
 
             for (int step = 0; step < _cfg.MaxOffsetSteps; step++)
             {
-                double offset = baseOffset + step * _cfg.StringSpacingFt;
+                double offset = _cfg.FirstOffsetFt + step * _cfg.StringSpacingFt;
 
                 foreach (var side in new[] { original, Flip(original) })
                 {
