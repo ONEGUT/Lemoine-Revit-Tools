@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 if (!output.Refs.TryGetValue(pd.SourceKey, out var bundle) || bundle?.Ordered == null || bundle.Ordered.Count < 2)
                 {
                     result.Failures++;
-                    log($"Source {pd.SourceKey}: missing reference bundle — skipped.", "fail");
+                    log($"Source {pd.SourceKey} → {pd.TargetKey}: missing reference bundle ({bundle?.Ordered?.Count ?? 0} ref) — skipped.", "fail");
                     continue;
                 }
 
@@ -87,10 +87,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 XYZ p0 = output.Projection.From2D(pd.SourcePoint + off);
                 XYZ p1 = output.Projection.From2D(pd.TargetPoint + off);
 
-                if (p0.DistanceTo(p1) < 1e-4)
+                // Revit rejects any curve below ShortCurveTolerance — guard against that exact bound
+                // (the old 1e-4 ft guard let sub-tolerance lines through, throwing on CreateBound).
+                double lenFt   = p0.DistanceTo(p1);
+                double shortFt = doc.Application.ShortCurveTolerance;
+                if (lenFt < shortFt)
                 {
                     result.Failures++;
-                    log($"Source {pd.SourceKey}: degenerate dimension line — skipped.", "fail");
+                    log($"Source {pd.SourceKey} → {pd.TargetKey}: dimension too short ({lenFt * 304.8:0.#} mm < {shortFt * 304.8:0.##} mm tol) — skipped.", "fail");
                     continue;
                 }
 
@@ -107,7 +111,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                     if (dim == null)
                     {
                         result.Failures++;
-                        log($"Source {pd.SourceKey}: NewDimension returned null.", "fail");
+                        log($"Source {pd.SourceKey} → {pd.TargetKey}: NewDimension returned null ({bundle.Ordered.Count} refs).", "fail");
                         continue;
                     }
 
@@ -126,7 +130,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 {
                     result.Failures++;
                     LemoineLog.Error("AutoDimensionCommit: place dimension", ex);
-                    log($"Source {pd.SourceKey}: {ex.Message}", "fail");
+                    log($"Source {pd.SourceKey} → {pd.TargetKey} ({bundle.Ordered.Count} refs, {lenFt * 304.8:0} mm, axis {(Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y")}): {ex.Message}", "fail");
                 }
             }
 
