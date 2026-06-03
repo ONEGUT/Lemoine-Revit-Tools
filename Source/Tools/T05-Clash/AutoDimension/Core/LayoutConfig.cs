@@ -18,6 +18,11 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
         /// close to the clash (halved from 1/2" to match the hand drawing).</summary>
         public double FirstOffsetFt { get; set; } = (1.0 / 4.0) / 12.0;
 
+        /// <summary>Extra outward offset for a SINGLE-span dimension, tapering as 1/segmentCount so a
+        /// longer chain stays closer to the source clash and lone dimensions are pushed clear. Default
+        /// 3/4" (single → +3/4", 2-chain → +3/8", 3-chain → +1/4", long chain → ~0).</summary>
+        public double ChainProximityPushFt { get; set; } = (3.0 / 4.0) / 12.0;
+
         /// <summary>Rounding precision applied to displayed values. Default 1/8".</summary>
         public double PrecisionFt { get; set; } = (1.0 / 8.0) / 12.0;
 

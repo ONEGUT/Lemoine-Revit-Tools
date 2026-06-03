@@ -74,12 +74,18 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Core
             // sides rather than always piling toward the top.
             DimSide original  = d.Side;
             DimSide bestSide   = original;
-            double  bestOffset = _cfg.FirstOffsetFt;
+
+            // Per-dimension base offset: a lone span is pushed clear; the longer the chain the closer
+            // it starts to the source clash (push tapers as 1/segmentCount).
+            int segCount = d.Segments.Count < 1 ? 1 : d.Segments.Count;
+            double baseOffset = _cfg.FirstOffsetFt + _cfg.ChainProximityPushFt / segCount;
+
+            double  bestOffset = baseOffset;
             double  bestHard   = double.MaxValue;
 
             for (int step = 0; step < _cfg.MaxOffsetSteps; step++)
             {
-                double offset = _cfg.FirstOffsetFt + step * _cfg.StringSpacingFt;
+                double offset = baseOffset + step * _cfg.StringSpacingFt;
 
                 foreach (var side in new[] { original, Flip(original) })
                 {
