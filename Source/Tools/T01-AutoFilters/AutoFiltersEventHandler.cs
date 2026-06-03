@@ -516,7 +516,7 @@ namespace LemoineTools.Tools.AutoFilters
         // This is the ONLY call to SetFilterVisibility — there is no separate FilterOn call,
         // which previously caused a race condition where the visibility was set twice.
         //
-        private static void ApplyRuleOverride(View view, ElementId filterId,
+        internal static void ApplyRuleOverride(View view, ElementId filterId,
             FilterRuleConfig rule,
             ElementId solidFillId, ElementId solidLineId,
             Dictionary<string, ElementId> fillPatternMap,

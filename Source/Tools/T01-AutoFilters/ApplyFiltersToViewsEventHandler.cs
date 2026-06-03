@@ -4,7 +4,6 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
-using RevitColor = Autodesk.Revit.DB.Color;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
@@ -97,6 +96,17 @@ namespace LemoineTools.Tools.AutoFilters
             ElementId solidFillId = GetSolidFillId(doc);
             ElementId solidLineId = GetSolidLineId();
 
+            // Pattern lookup maps so a rule's named fill/line patterns resolve by name —
+            // same maps the Create engine builds. Used only by ApplyRuleOverride below.
+            var fillPatternMap = new FilteredElementCollector(doc)
+                .OfClass(typeof(FillPatternElement)).Cast<FillPatternElement>()
+                .GroupBy(fp => fp.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+            var linePatternMap = new FilteredElementCollector(doc)
+                .OfClass(typeof(LinePatternElement)).Cast<LinePatternElement>()
+                .GroupBy(lp => lp.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+
             int totalOps = filterMap.Count * viewList.Count;
             int done     = 0;
 
@@ -130,33 +140,23 @@ namespace LemoineTools.Tools.AutoFilters
                                 view.AddFilter(filterId);
                                 existingIds.Add(filterId.Value);
                             }
-                            view.SetFilterVisibility(filterId, true);
 
-                            if (ApplyColorOverrides)
+                            // Every override + visibility/enabled value comes from the owning
+                            // rule via the shared engine. A filter with no matching rule (or one
+                            // whose override flags are all off) is left as "no override" —
+                            // nothing is fabricated here.
+                            var rule = MatchRule(filterName);
+                            if (rule != null)
                             {
-                                RevitColor? color = MatchColor(filterName, out string? label);
-                                if (color != null)
-                                {
-                                    var ogs = new OverrideGraphicSettings();
-                                    if (solidFillId != ElementId.InvalidElementId)
-                                    {
-                                        ogs.SetSurfaceForegroundPatternId(solidFillId);
-                                        ogs.SetSurfaceForegroundPatternColor(color);
-                                        ogs.SetSurfaceForegroundPatternVisible(true);
-                                    }
-                                    var black = new RevitColor(0, 0, 0);
-                                    ogs.SetProjectionLineColor(black);
-                                    ogs.SetProjectionLineWeight(2);
-                                    ogs.SetCutLineColor(black);
-                                    ogs.SetCutLineWeight(2);
-                                    if (solidLineId != ElementId.InvalidElementId)
-                                    {
-                                        ogs.SetProjectionLinePatternId(solidLineId);
-                                        ogs.SetCutLinePatternId(solidLineId);
-                                    }
-                                    if (label == "Insulation") ogs.SetSurfaceTransparency(75);
-                                    view.SetFilterOverrides(filterId, ogs);
-                                }
+                                view.SetIsFilterEnabled(filterId, rule.FilterOn);
+                                if (ApplyColorOverrides)
+                                    AutoFiltersEventHandler.ApplyRuleOverride(
+                                        view, filterId, rule,
+                                        solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                            }
+                            else
+                            {
+                                Log($"No current rule owns '{filterName}' — added without overrides.", "info");
                             }
 
                             pass++;
@@ -209,37 +209,17 @@ namespace LemoineTools.Tools.AutoFilters
             }
         }
 
-        private static RevitColor? MatchColor(string filterName, out string? label)
+        // Finds the FilterRuleConfig whose generated name matches the Revit filter name.
+        // Returns null when no current rule owns the filter, in which case the caller
+        // leaves the filter untouched (no fabricated override).
+        private static FilterRuleConfig? MatchRule(string filterName)
         {
-            // V3: look up the rule in Trade→Rule by matching the filter name pattern.
-            // Filter name pattern is {TradeId}_{RuleName.Replace(" ","_").ToUpper()}.
-            // Falls back to MepColorMap for filters created before V2.
             foreach (var trade in AutoFiltersSettings.Instance.Trades ?? new System.Collections.Generic.List<FilterTradeConfig>())
-            {
-                foreach (var rule in trade.Rules)
-                {
-                    string expected = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
-                    if (string.Equals(filterName, expected, StringComparison.OrdinalIgnoreCase))
-                    {
-                        label = rule.Name;
-                        return HexToRevitColor(rule.CutColor);
-                    }
-                }
-            }
-            // Fallback for V1-era filter names
-            return MepColorMap.Match(filterName, out label);
-        }
-
-        private static RevitColor? HexToRevitColor(string hex)
-        {
-            try
-            {
-                hex = (hex ?? "").TrimStart('#');
-                if (hex.Length == 6 && int.TryParse(hex,
-                    System.Globalization.NumberStyles.HexNumber, null, out int v))
-                    return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
-            }
-            catch (Exception __lex) { LemoineLog.Swallowed("ApplyFilters: parse colour hex", __lex); }
+                foreach (var rule in trade.Rules ?? new System.Collections.Generic.List<FilterRuleConfig>())
+                    if (string.Equals(filterName,
+                            AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name),
+                            StringComparison.OrdinalIgnoreCase))
+                        return rule;
             return null;
         }
 
