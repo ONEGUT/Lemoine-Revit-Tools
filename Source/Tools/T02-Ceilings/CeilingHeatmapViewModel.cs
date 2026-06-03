@@ -50,7 +50,6 @@ namespace LemoineTools.Tools.Ceilings
         // ── Run options state ────────────────────────────────────────────────────
         private bool   _deleteExisting = true;
         private bool   _placeTags      = CeilingHeatmapSettings.Instance.PlaceTags;
-        private bool   _includeLinks   = CeilingHeatmapSettings.Instance.IncludeLinks;
         private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
 
         // ── View selection state ─────────────────────────────────────────────────
@@ -372,13 +371,6 @@ namespace LemoineTools.Tools.Ceilings
                 },
                 new ToggleItem
                 {
-                    Id        = "links",
-                    Label     = "Include linked ceilings",
-                    Desc      = "Scan Revit link instances visible in each selected view.",
-                    DefaultOn = _includeLinks,
-                },
-                new ToggleItem
-                {
                     Id        = "tags",
                     Label     = "Place ceiling tags",
                     Desc      = "Place a Ceiling Tag at the centroid of each ceiling after applying the heatmap. Ceilings that already carry a tag are skipped.",
@@ -388,7 +380,6 @@ namespace LemoineTools.Tools.Ceilings
             tog.StateChanged += state =>
             {
                 _deleteExisting = state.TryGetValue("delete", out bool dv) && dv;
-                _includeLinks   = state.TryGetValue("links",  out bool lv) && lv;
                 _placeTags      = state.TryGetValue("tags",   out bool tv) && tv;
                 OnValidationChanged();
             };
@@ -450,7 +441,6 @@ namespace LemoineTools.Tools.Ceilings
             ("views",  "Views Selected"),
             ("ramp",   "Color Ramp"),
             ("delete", "Delete Existing Filters"),
-            ("links",  "Include Linked Ceilings"),
             ("tags",   "Place Ceiling Tags"),
             ("tol",    "Elevation Tolerance"),
         };
@@ -461,15 +451,15 @@ namespace LemoineTools.Tools.Ceilings
                 : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
             ["ramp"]   = $"{_colorLow} → {_colorMid} → {_colorHigh}",
             ["delete"] = _deleteExisting ? "Yes" : "No",
-            ["links"]  = _includeLinks ? "Yes" : "No",
             ["tags"]   = _placeTags ? "Yes" : "No",
             ["tol"]    = $"{Math.Round(_elevTolerance * 12.0, 4)} in",
         };
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => "Selected ceiling plan views will be scanned for \"Height Offset " +
-            "From Level\" data. One view filter is created per distinct height offset bucket and applied to every " +
-            "selected view as a solid surface color override.";
+            "From Level\" data in both the host model and every visible link. One view filter is created per " +
+            "distinct height offset bucket and applied to every selected view as a solid surface color override. " +
+            "Linked ceilings are colored only where the link is displayed \"By Host View\".";
         public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════════
@@ -492,7 +482,6 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var parts = new List<string>();
                 if (_deleteExisting) parts.Add("Delete existing");
-                if (_includeLinks)   parts.Add("Include links");
                 if (_placeTags)      parts.Add("Place tags");
                 parts.Add($"Tol {Math.Round(_elevTolerance * 12.0, 4)} in");
                 return string.Join(" · ", parts);
@@ -508,7 +497,6 @@ namespace LemoineTools.Tools.Ceilings
         {
             // Persist run options back to settings
             CeilingHeatmapSettings.Instance.PlaceTags     = _placeTags;
-            CeilingHeatmapSettings.Instance.IncludeLinks  = _includeLinks;
             CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
             SaveColorsToSettings();
 
@@ -518,7 +506,6 @@ namespace LemoineTools.Tools.Ceilings
                 .ToList();
             _handler.DeleteExisting  = _deleteExisting;
             _handler.PlaceTags       = _placeTags;
-            _handler.IncludeLinks    = _includeLinks;
             _handler.ElevTolerance   = _elevTolerance;
             _handler.ColorLow        = ParseRevitColor(_colorLow,  0,   0, 255);
             _handler.ColorMid        = ParseRevitColor(_colorMid,  0, 255,   0);

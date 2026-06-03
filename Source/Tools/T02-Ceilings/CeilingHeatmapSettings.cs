@@ -37,9 +37,6 @@ namespace LemoineTools.Tools.Ceilings
         /// </summary>
         public double ElevTolerance { get; set; } = 1.0 / 96.0;
 
-        /// <summary>Whether to include ceilings from Revit link instances.</summary>
-        public bool   IncludeLinks  { get; set; } = false;
-
         /// <summary>Whether to place a ceiling tag at the centroid of each ceiling.</summary>
         public bool   PlaceTags     { get; set; } = false;
 
