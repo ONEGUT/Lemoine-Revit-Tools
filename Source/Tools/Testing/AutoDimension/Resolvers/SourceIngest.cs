@@ -77,38 +77,37 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         private static SourceLine? BuildClashSource(
             string key, List<DetailCurve> lines, ViewProjection projection, List<Core.UnresolvedTarget> unresolved)
         {
-            XYZ sum = XYZ.Zero;
-            int count = 0;
-            foreach (var dc in lines)
-            {
-                Curve? gc = SafeGeometry(dc);
-                if (gc == null) continue;
-                sum += gc.GetEndPoint(0);
-                sum += gc.GetEndPoint(1);
-                count += 2;
-            }
-            if (count == 0)
-            {
-                unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "clash marker has no readable line geometry" });
-                return null;
-            }
-            XYZ centre = sum.Divide(count);
-
-            // Nearest endpoint to the centroid → its reference + point. Deterministic by Id then index.
-            Reference? bestRef = null;
-            XYZ? bestPt = null;
-            double bestDist = double.MaxValue;
+            // Read each line's geometry exactly once (Id-ordered for deterministic tie-breaks).
+            var geos = new List<(Curve gc, XYZ p0, XYZ p1)>();
             foreach (var dc in lines.OrderBy(d => d.Id.IntegerValue))
             {
                 Curve? gc = SafeGeometry(dc);
                 if (gc == null) continue;
+                geos.Add((gc, gc.GetEndPoint(0), gc.GetEndPoint(1)));
+            }
+            if (geos.Count == 0)
+            {
+                unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "clash marker has no readable line geometry" });
+                return null;
+            }
+
+            XYZ sum = XYZ.Zero;
+            foreach (var g in geos) { sum += g.p0; sum += g.p1; }
+            XYZ centre = sum.Divide(geos.Count * 2);
+
+            // Nearest endpoint to the centroid → its reference + point.
+            Reference? bestRef = null;
+            XYZ? bestPt = null;
+            double bestDist = double.MaxValue;
+            foreach (var g in geos)
+            {
                 for (int idx = 0; idx <= 1; idx++)
                 {
-                    XYZ p = gc.GetEndPoint(idx);
+                    XYZ p = idx == 0 ? g.p0 : g.p1;
                     double d = p.DistanceTo(centre);
                     if (d >= bestDist) continue;
                     Reference? r = null;
-                    try { r = gc.GetEndPointReference(idx); }
+                    try { r = g.gc.GetEndPointReference(idx); }
                     catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
                     if (r == null) continue;
                     bestDist = d; bestRef = r; bestPt = p;
