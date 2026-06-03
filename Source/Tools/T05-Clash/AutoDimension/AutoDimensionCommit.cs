@@ -66,6 +66,9 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 log($"Placing {plan.Dimensions.Count} dimension(s) in '{view.Name}'…", "info");
 
             int processed = 0;
+            // Realized text-box footprints (view-2D) of every moved tag placed so far, so a later
+            // tag can be slid sideways until it clears earlier ones — cross-dimension clash avoidance.
+            var placedTags = new List<Core.Box2>();
             foreach (var pd in plan.Dimensions)
             {
                 if (++processed % 200 == 0)
@@ -123,7 +126,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                         continue;
                     }
 
-                    ApplyTextStates(dim, pd, output.Projection, perp, output.CoreConfig, log);
+                    ApplyTextStates(dim, pd, output.Projection, axis, perp, output.CoreConfig, placedTags, log);
                     result.Placed++;
                 }
                 catch (Exception ex)
@@ -138,34 +141,39 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         }
 
         /// <summary>
-        /// Realizes the layout's per-segment text decisions on the placed Revit dimension. Like a
-        /// drafter, each value stays on its OWN segment: a moved (cramped) segment's text is nudged
-        /// straight out perpendicular at its own along-axis position. The nudge is sized to clear the
-        /// leader arc — the whole glyph box lands on the OUTER side of the arc, readable, not straddling
-        /// it. All same-side tags share ONE uniform nudge so their arcs stay parallel and never cross
-        /// (neighbours that would collide are separated by the layout onto opposite sides, not by a
-        /// different distance on the same side). Each move is independently guarded.
+        /// Realizes the layout's per-segment text decisions on the placed Revit dimension. A moved
+        /// (cramped) tag is pushed OUT perpendicular (to clear the leader arc) AND sideways along the
+        /// dimension axis, so the value sits beside the segment centre — on the side the arc sweeps to —
+        /// instead of straight above it. Before committing each tag, its realized text box is tested
+        /// against every tag already placed this run and slid further along-axis until it clears, so
+        /// neighbouring arced tags no longer overlap. Each move is independently guarded.
         /// NOTE: these heights are Windows-tunable — verify the text clears the arc on a real plot.
         /// </summary>
-        private const double StaggerNudgeHeights = 2.2;  // outward nudge for a staggered tag (clears the arc)
-        private const double LeaderNudgeHeights  = 3.0;  // outward nudge for a leadered tag (now rare)
+        private const double StaggerNudgeHeights = 2.2;  // perpendicular nudge for a staggered tag (clears the arc)
+        private const double LeaderNudgeHeights  = 3.0;  // perpendicular nudge for a leadered tag (now rare)
+        private const double AlongBaseHeights    = 0.75; // sideways offset past the text's own half-width
+        private const int    MaxAlongSteps       = 12;   // clash-avoidance tries before giving up
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
-            Core.Vec2 perp, Core.LayoutConfig cfg, Action<string, string> log)
+            Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, List<Core.Box2> placedTags,
+            Action<string, string> log)
         {
             double th = cfg.TextHeightFt;
             if (th <= 0) return;
 
-            // World perpendicular (outward, on the dimension's offset side) to nudge text along.
-            XYZ worldPerp;
+            // World perpendicular (outward, on the offset side) and axial (the reading direction).
+            XYZ worldPerp, worldAxis;
             try
             {
-                worldPerp = projection.From2D(perp) - projection.From2D(new Core.Vec2(0, 0));
-                if (worldPerp.GetLength() < 1e-9) return;
+                XYZ origin = projection.From2D(new Core.Vec2(0, 0));
+                worldPerp = projection.From2D(perp) - origin;
+                worldAxis = projection.From2D(axis) - origin;
+                if (worldPerp.GetLength() < 1e-9 || worldAxis.GetLength() < 1e-9) return;
                 worldPerp = worldPerp.Normalize();
+                worldAxis = worldAxis.Normalize();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: perp direction", ex); return; }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: tag directions", ex); return; }
 
             double sign = pd.Side == Core.DimSide.Positive ? 1.0 : -1.0;
 
@@ -179,17 +187,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 int n = Math.Min(segs.Size, pd.Segments.Count);
                 for (int k = 0; k < n; k++)
                 {
-                    var state = pd.Segments[k].TextState;
-                    if (!IsMoved(state)) continue;
-                    // Uniform outward nudge on this side — same length for every same-side tag, so the
-                    // leader arcs stay parallel and never cross. The magnitude clears the arc.
-                    double nudge = (state == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
+                    var ps = pd.Segments[k];
+                    if (!IsMoved(ps.TextState)) continue;
                     try
                     {
                         var seg = segs.get_Item(k);
                         if (seg?.TextPosition == null) continue;
-                        // Keep the text on its own segment (Revit's default midpoint), just push it out.
-                        seg.TextPosition = seg.TextPosition + worldPerp * (sign * nudge);   // ⚠ leader appearance depends on the DimensionType
+                        seg.TextPosition = PlaceTag(seg.TextPosition, ps, worldPerp, worldAxis, sign, th,
+                                                    projection, axis, perp, placedTags);
                     }
                     catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
                 }
@@ -199,13 +204,47 @@ namespace LemoineTools.Tools.Testing.AutoDimension
                 try
                 {
                     if (dim.TextPosition != null)
-                    {
-                        double nudge = (pd.Segments[0].TextState == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
-                        dim.TextPosition = dim.TextPosition + worldPerp * (sign * nudge);   // ⚠ verify on Windows
-                    }
+                        dim.TextPosition = PlaceTag(dim.TextPosition, pd.Segments[0], worldPerp, worldAxis,
+                                                    sign, th, projection, axis, perp, placedTags);
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
             }
+        }
+
+        /// <summary>
+        /// Computes the final world text position for one moved tag: perpendicular out to clear the arc,
+        /// then sideways along the axis so it sits beside the segment centre. Slides further along-axis
+        /// in text-width steps until the tag's view-2D box clears every tag already in
+        /// <paramref name="placedTags"/>, then records its box. Returns the chosen world position.
+        /// </summary>
+        private static XYZ PlaceTag(
+            XYZ defaultPos, Core.PlannedSegment ps, XYZ worldPerp, XYZ worldAxis, double sign, double th,
+            Resolvers.ViewProjection projection, Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags)
+        {
+            double perpNudge = (ps.TextState == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
+            double halfAlong = Math.Max(ps.TextWidthFt, th) * 0.5;   // along the reading direction
+            double halfPerp  = th * 0.5;
+            double alongBase = halfAlong + AlongBaseHeights * th;    // clear the segment centre
+            double alongStep = halfAlong * 2.0 + th * 0.5;           // one text width per clash bump
+
+            // View-2D half extents of the (axis-aligned) tag box.
+            double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
+            double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
+
+            XYZ pos = defaultPos;
+            Core.Box2 box = default;
+            for (int t = 0; t < MaxAlongSteps; t++)
+            {
+                double along = alongBase + t * alongStep;
+                pos = defaultPos + worldPerp * (sign * perpNudge) + worldAxis * along;
+                box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
+                bool clash = false;
+                for (int i = 0; i < placedTags.Count; i++)
+                    if (box.Intersects(placedTags[i])) { clash = true; break; }
+                if (!clash) break;
+            }
+            placedTags.Add(box);
+            return pos;   // ⚠ leader appearance depends on the DimensionType — verify on Windows
         }
 
         private static bool IsMoved(Core.SegmentTextState s) =>
