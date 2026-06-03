@@ -20,7 +20,6 @@ namespace LemoineTools.Tools.Ceilings
         // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
         public List<ElementId>          SelectedViewIds { get; set; } = new List<ElementId>();
         public bool                     DeleteExisting  { get; set; } = true;
-        public bool                     IncludeLinks    { get; set; } = false;
         public bool                     PlaceTags       { get; set; } = false;
         public double                   ElevTolerance   { get; set; } = 1.0 / 96.0; // 1/8 in → ft
         public Autodesk.Revit.DB.Color  ColorLow        { get; set; } = new Autodesk.Revit.DB.Color(0,   0,   255);
@@ -62,9 +61,10 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             // ── Phase 1: Scan ceiling height offsets (0–20%) ─────────────────────
-            Log("Scanning ceiling height offsets from level…", "info");
+            Log("Scanning ceiling height offsets from level (host + linked models)…", "info");
 
             var heightBuckets = new List<double>();
+            int hostCeilings = 0, linkedCeilings = 0;
 
             int viewCount = SelectedViewIds.Count;
             for (int vi = 0; vi < viewCount; vi++)
@@ -80,17 +80,26 @@ namespace LemoineTools.Tools.Ceilings
                     double heightAbove = el.get_Parameter(
                         BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
                     AddBucket(heightBuckets, heightAbove);
+                    hostCeilings++;
                 }
 
-                if (IncludeLinks)
-                    ScanLinkedCeilings(doc, vp, heightBuckets);
+                // Linked ceilings are always scanned — in this project ceilings
+                // typically live in linked architectural models, not the host.
+                linkedCeilings += ScanLinkedCeilings(doc, vp, heightBuckets);
 
                 Progress((int)((vi + 1) * 20.0 / viewCount), pass, fail, skip);
             }
 
+            Log($"Scanned {hostCeilings} host ceiling(s) and {linkedCeilings} linked ceiling(s).", "info");
+            LemoineLog.Info("CeilingHeatmap",
+                $"scan complete — {hostCeilings} host + {linkedCeilings} linked ceilings across "
+                + $"{viewCount} view(s); {heightBuckets.Count} height bucket(s).");
+
             if (heightBuckets.Count == 0)
             {
-                Log("No ceiling height offsets found in the selected views.", "fail");
+                Log("No ceiling height offsets found in the selected views (checked the host model and every visible link).", "fail");
+                LemoineLog.Warn("CeilingHeatmap",
+                    "no ceilings found in host or links for the selected views — nothing to bucket.");
                 fail++; return;
             }
 
@@ -98,12 +107,16 @@ namespace LemoineTools.Tools.Ceilings
             Log($"Found {heightBuckets.Count} distinct height offset bucket{(heightBuckets.Count == 1 ? "" : "s")}.", "info");
 
             // ── Phase 2: Resolve Revit parameters (20–30%) ───────────────────────
+            // "Height Offset From Level" is a built-in parameter, so its ElementId is
+            // always valid — it does NOT depend on a host ceiling existing. (The old
+            // host-only sample check failed whenever every ceiling lived in a link.)
             ElementId ceilingCatId  = new ElementId(BuiltInCategory.OST_Ceilings);
-            ElementId heightParamId = GetCeilingHeightParamId(doc);
-            if (heightParamId == null || heightParamId == ElementId.InvalidElementId)
-            {
-                Log("Could not resolve the ceiling height parameter.", "fail"); fail++; return;
-            }
+            ElementId heightParamId = new ElementId(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+
+            // Diagnostic: host view filters only cascade onto a link when that link is
+            // displayed "By Host View". Report any link that isn't, so the user knows
+            // why its ceilings won't be colored (we don't change the link's display).
+            ReportLinkDisplayModes(doc);
 
             ElementId solidFillId = GetSolidFillPatternId(doc);
             if (solidFillId == ElementId.InvalidElementId)
@@ -693,7 +706,10 @@ namespace LemoineTools.Tools.Ceilings
             buckets.Add(heightOffset);
         }
 
-        private void ScanLinkedCeilings(
+        /// <summary>Scans every visible link in <paramref name="view"/> for ceilings,
+        /// adding their height offsets to <paramref name="buckets"/>. Returns the number
+        /// of linked ceilings scanned.</summary>
+        private int ScanLinkedCeilings(
             Document hostDoc, ViewPlan view,
             List<double> buckets)
         {
@@ -703,6 +719,7 @@ namespace LemoineTools.Tools.Ceilings
                 .Where(li => li.GetLinkDocument() != null)
                 .ToList();
 
+            int scanned = 0;
             foreach (RevitLinkInstance link in links)
             {
                 Document?  linkDoc   = link.GetLinkDocument();
@@ -719,20 +736,64 @@ namespace LemoineTools.Tools.Ceilings
                     double heightAbove = el.get_Parameter(
                         BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
                     AddBucket(buckets, heightAbove);
+                    scanned++;
                 }
             }
+            return scanned;
         }
 
-        private static ElementId GetCeilingHeightParamId(Document doc)
+        /// <summary>
+        /// Diagnostic only — host view filters cascade onto a link's elements only when
+        /// the link is displayed "By Host View" in that view. For every selected view ×
+        /// visible link, log the link's display mode and warn (in the step log and
+        /// diagnostics.log) about any link that won't be colored. Does NOT change the
+        /// link's display settings.
+        /// </summary>
+        private void ReportLinkDisplayModes(Document doc)
         {
-            var bipId = new ElementId(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
-            Element? sample = new FilteredElementCollector(doc)
-                .OfClass(typeof(Ceiling))
-                .WhereElementIsNotElementType()
-                .FirstOrDefault();
-            if (sample?.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM) != null)
-                return bipId;
-            return ElementId.InvalidElementId;
+            int notCascading = 0;
+
+            foreach (ElementId viewId in SelectedViewIds)
+            {
+                if (!(doc.GetElement(viewId) is View view)) continue;
+
+                foreach (RevitLinkInstance link in new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(RevitLinkInstance))
+                    .Cast<RevitLinkInstance>()
+                    .Where(li => li.GetLinkDocument() != null))
+                {
+                    LinkVisibility mode;
+                    try
+                    {
+                        // GetLinkOverrides returns null when the link uses the default
+                        // display (By Host View) and was never customized in this view.
+                        RevitLinkGraphicsSettings? gs = view.GetLinkOverrides(link.Id);
+                        mode = gs?.LinkVisibilityType ?? LinkVisibility.ByHostView;
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("CeilingHeatmap: read link display mode", ex);
+                        continue;
+                    }
+
+                    if (mode != LinkVisibility.ByHostView)
+                    {
+                        notCascading++;
+                        string linkName = link.Name;
+                        Log($"Link \"{linkName}\" in view \"{view.Name}\" is displayed "
+                            + $"\"{mode}\", not \"By Host View\" — its ceilings will not be "
+                            + "colored. Set it to \"By Host View\" in Visibility/Graphics to include them.",
+                            "fail");
+                        LemoineLog.Warn("CeilingHeatmap",
+                            $"link '{linkName}' in view '{view.Name}' display={mode}; "
+                            + "host filters will not cascade onto its ceilings.");
+                    }
+                }
+            }
+
+            if (notCascading == 0)
+                LemoineLog.Info("CeilingHeatmap",
+                    "all visible links display By Host View — heatmap filters will cascade onto linked ceilings.");
         }
 
         private static ElementId GetSolidFillPatternId(Document doc)
