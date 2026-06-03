@@ -355,11 +355,13 @@ namespace LemoineTools
 
             clashPanel.AddItem(Btn(
                 "LT_ClashDefinitions", "Clash\nDefinitions", "OpenClashDefinitionsCommand",
-                "Build and manage a library of named clash definitions (two element groups plus marking settings)."));
+                "Build and manage a library of named clash definitions (two element groups plus marking settings).",
+                char.ConvertFromUtf32(0xE71C)));  // Segoe MDL2: Filter
 
             clashPanel.AddItem(Btn(
                 "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
-                "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and dimension them out to grids or slab edges."));
+                "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and dimension them out to grids or slab edges.",
+                char.ConvertFromUtf32(0xE721)));  // Segoe MDL2: Zoom (find)
 
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
