@@ -73,15 +73,11 @@ namespace LemoineTools
         internal static BatchDimensionEventHandler? BatchDimensionHandler { get; private set; }
         internal static ExternalEvent?              BatchDimensionEvent   { get; private set; }
 
-        // ── Testing — Clash Dimension ───────────────────────────────────────────────
-        internal static ClashDimensionEventHandler? ClashDimensionHandler { get; private set; }
-        internal static ExternalEvent?              ClashDimensionEvent   { get; private set; }
+        // ── T05 — Clash (Definitions + Finder & Dimensioning) ───────────────────────
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
         internal static ExternalEvent?              ClashPickEvent        { get; private set; }
         internal static ClashFinderEventHandler?    ClashFinderHandler    { get; private set; }
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
-        internal static LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler? AutoDimensionHandler { get; private set; }
-        internal static ExternalEvent?              AutoDimensionEvent    { get; private set; }
         internal static LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
 
@@ -164,14 +160,10 @@ namespace LemoineTools
             BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
             BatchDimensionHandler = new BatchDimensionEventHandler();
             BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
-            ClashDimensionHandler = new ClashDimensionEventHandler();
-            ClashDimensionEvent   = ExternalEvent.Create(ClashDimensionHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
-            AutoDimensionHandler  = new LemoineTools.Tools.Testing.AutoDimension.AutoDimensionEventHandler();
-            AutoDimensionEvent    = ExternalEvent.Create(AutoDimensionHandler);
             SlabPickHandler       = new LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
@@ -358,6 +350,17 @@ namespace LemoineTools
                 "Set the top constraint of walls that extend above the ceiling to the next level up.",
                 "\uE898"));  // Segoe MDL2: Sort Ascending / Up
 
+            // ── T05 — Clash ───────────────────────────────────────────────────
+            var clashPanel = application.CreateRibbonPanel("Lemoine Tools", "T05  Clash");
+
+            clashPanel.AddItem(Btn(
+                "LT_ClashDefinitions", "Clash\nDefinitions", "OpenClashDefinitionsCommand",
+                "Build and manage a library of named clash definitions (two element groups plus marking settings)."));
+
+            clashPanel.AddItem(Btn(
+                "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
+                "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and dimension them out to grids or slab edges."));
+
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
 
@@ -377,20 +380,6 @@ namespace LemoineTools
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
                     "Create one 3D view per link with a section box, with optional combined views per discipline."));
-
-            testingPanel.AddItem(Btn(
-                "LT_ClashDefinitions", "Clash\nDefinitions", "OpenClashDefinitionsCommand",
-                "Build and manage a library of named clash definitions (two element groups plus marking settings).",
-                "\uE71C"));  // Segoe MDL2: Filter
-
-            testingPanel.AddItem(Btn(
-                "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
-                "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and optionally run the dimension discovery pass.",
-                "\uE721"));  // Segoe MDL2: Zoom (find)
-
-            testingPanel.AddItem(Btn(
-                "LT_AutoDimension", "Auto\nDimension", "AutoDimensionCommand",
-                "Place collision-aware dimensions from the Clash Finder's tagged cross-lines out to the nearest grid or slab edge (host and linked)."));
 
             // ── Settings / Developer — one compact stacked panel ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");

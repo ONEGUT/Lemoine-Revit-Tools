@@ -33,8 +33,7 @@ namespace LemoineTools.Tools.Testing
     /// <summary>
     /// Detection + marking engine for the Clash Finder: scans two groups, finds solid
     /// intersections, and draws a coloured filled region + tagged cross lines per clash.
-    /// Copied/adapted from <c>ClashDimensionEventHandler</c> (the old tool), trimmed to
-    /// detection + marking only — all dimension placement lives elsewhere.
+    /// Detection + marking only — all dimension placement lives in the AutoDimension engine.
     ///
     /// <see cref="Run"/> executes inside the caller's open transaction; it never opens or
     /// commits one. Markers are tagged via <see cref="ClashTagSchema"/>.

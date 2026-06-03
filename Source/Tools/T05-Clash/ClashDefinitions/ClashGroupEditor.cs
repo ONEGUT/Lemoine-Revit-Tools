@@ -19,9 +19,8 @@ namespace LemoineTools.Tools.Testing
     /// Select Elements), a source-document picker, and the matching body, writing every
     /// change straight back into the supplied spec.
     ///
-    /// Adapted from <c>ClashDimensionViewModel.BuildGroupStep</c> so the definitions library
-    /// reuses the exact group-selection UI; it operates on persist keys (not display keys)
-    /// directly on the spec.
+    /// The definitions library's group-selection UI; it operates on persist keys (not display
+    /// keys) directly on the spec.
     /// </summary>
     public sealed class ClashGroupEditor
     {
