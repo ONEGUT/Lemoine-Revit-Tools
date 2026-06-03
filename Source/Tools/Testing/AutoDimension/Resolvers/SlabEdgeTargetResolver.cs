@@ -27,6 +27,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
             public Reference Ref = null!;
             public Core.Vec2 Normal2d;   // projected, normalized world face normal (in view plane)
             public Core.Vec2 Origin2d;   // projected world point on the face
+            public Core.Vec2 SegA;       // 2D extent of the edge in plan (the face reads as a line segment)
+            public Core.Vec2 SegB;
             public double Area;
             public string Key = "";
         }
@@ -34,7 +36,8 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         private sealed class Candidate
         {
             public double Score;
-            public double ProjDist;
+            public double ProjDist;       // |offset| along the measurement axis (the dimension length)
+            public double RadialDist;     // straight-line distance from the source to the edge segment
             public double Delta;          // signed offset along the axis (sign distinguishes sides)
             public Reference Ref = null!;
             public Core.Vec2 TargetPoint;
@@ -67,8 +70,14 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 if (projDist > ctx.Config.MaxDistanceFt) continue;
                 if (projDist < 1e-4) continue; // coincident — not a meaningful offset
 
+                // Radial (straight-line) distance to the edge segment, not just the along-axis
+                // offset: an edge near on this axis but far off to the side reads as far away, so a
+                // genuinely closer edge wins even when its along-axis offset is larger. Equals
+                // projDist when the source sits within the edge's perpendicular span.
+                double radialDist = DistanceToSegment(source.Anchor2d, f.SegA, f.SegB);
+
                 double axisDevDeg = Math.Acos(Math.Min(1.0, axisDot)) * 180.0 / Math.PI;
-                double score = projDist
+                double score = radialDist
                              + ctx.Config.SlabAxisWeight * axisDevDeg
                              - ctx.Config.SlabLengthWeight * f.Area;
 
@@ -76,6 +85,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 {
                     Score       = score,
                     ProjDist    = projDist,
+                    RadialDist  = radialDist,
                     Delta       = delta,
                     Ref         = f.Ref,
                     TargetPoint = source.Anchor2d + axis * delta,
@@ -108,7 +118,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
             if (distinct.Count >= 2)
             {
                 var second = distinct[1];
-                if (Math.Abs(best.ProjDist - second.ProjDist) < ctx.Config.AmbiguityThresholdFt)
+                if (Math.Abs(best.RadialDist - second.RadialDist) < ctx.Config.AmbiguityThresholdFt)
                 {
                     return new ResolvedTarget
                     {
@@ -195,11 +205,16 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                                 if (r == null) continue;
                             }
 
+                            Core.Vec2 origin2d = ctx.Projection.To2D(sd.Transform.OfPoint(pf.Origin));
+                            ProjectSegment(pf, sd.Transform, ctx.Projection, origin2d, out Core.Vec2 segA, out Core.Vec2 segB);
+
                             list.Add(new FaceCand
                             {
                                 Ref      = r,
                                 Normal2d = ctx.Projection.Dir2D(wn).Normalized(),
-                                Origin2d = ctx.Projection.To2D(sd.Transform.OfPoint(pf.Origin)),
+                                Origin2d = origin2d,
+                                SegA     = segA,
+                                SegB     = segB,
                                 Area     = pf.Area,
                                 Key      = $"slab:{(sd.Link != null ? sd.Link.Id.IntegerValue + ":" : "")}{floor.Id.IntegerValue}:{thisIndex}",
                             });
@@ -212,6 +227,51 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
             _cache = list;
             _cacheCtx = ctx;
             return list;
+        }
+
+        /// <summary>
+        /// A vertical face reads as a line segment in plan. Projects the face's vertices into 2D and
+        /// returns its extreme endpoints along the in-plane tangent, so the matcher can measure the
+        /// real distance to the edge rather than to a single arbitrary origin point. Falls back to a
+        /// zero-length segment at <paramref name="origin2d"/> when the face can't be triangulated.
+        /// </summary>
+        private static void ProjectSegment(
+            PlanarFace pf, Transform transform, ViewProjection projection, Core.Vec2 origin2d,
+            out Core.Vec2 a, out Core.Vec2 b)
+        {
+            a = origin2d;
+            b = origin2d;
+            try
+            {
+                Mesh? mesh = pf.Triangulate();
+                if (mesh == null || mesh.Vertices.Count == 0) return;
+
+                // The face projects to a line; its direction is the in-plane normal turned 90°.
+                Core.Vec2 tangent = projection.Dir2D(transform.OfVector(pf.FaceNormal)).Normalized().Perp();
+                double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+                foreach (XYZ v in mesh.Vertices)
+                {
+                    Core.Vec2 p = projection.To2D(transform.OfPoint(v));
+                    double t = p.Dot(tangent);
+                    if (t < lo) { lo = t; a = p; }
+                    if (t > hi) { hi = t; b = p; }
+                }
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("SlabEdgeTargetResolver: project face segment", ex);
+            }
+        }
+
+        /// <summary>Shortest distance from a point to a finite segment (point when degenerate).</summary>
+        private static double DistanceToSegment(Core.Vec2 p, Core.Vec2 a, Core.Vec2 b)
+        {
+            Core.Vec2 ab = b - a;
+            double len2 = ab.Dot(ab);
+            if (len2 < 1e-12) return (p - a).Length;
+            double t = (p - a).Dot(ab) / len2;
+            t = t < 0 ? 0 : (t > 1 ? 1 : t);
+            return (p - (a + ab * t)).Length;
         }
     }
 }
