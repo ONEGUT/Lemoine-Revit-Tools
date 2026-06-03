@@ -35,10 +35,15 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
         {
             public double Score;
             public double ProjDist;
+            public double Delta;          // signed offset along the axis (sign distinguishes sides)
             public Reference Ref = null!;
             public Core.Vec2 TargetPoint;
             public string Key = "";
         }
+
+        // Faces whose along-axis offset matches this closely resolve to the same edge location
+        // (e.g. identical stacked-level slabs) and are collapsed, not treated as an ambiguity.
+        private const double SameEdgeTolFt = 0.005;
 
         private List<FaceCand>? _cache;
         private ResolveContext? _cacheCtx;
@@ -71,6 +76,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 {
                     Score       = score,
                     ProjDist    = projDist,
+                    Delta       = delta,
                     Ref         = f.Ref,
                     TargetPoint = source.Anchor2d + axis * delta,
                     Key         = f.Key,
@@ -88,12 +94,20 @@ namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
                 return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key);
             });
 
-            var best = candidates[0];
+            // Collapse faces that resolve to the same edge location (identical stacked-level slabs,
+            // coincident perimeters) — they would draw the same dimension, so they are not an
+            // ambiguity. Distinct edges (different along-axis offset) survive for the guard below.
+            var distinct = new List<Candidate>();
+            foreach (var c in candidates)
+                if (!distinct.Any(d => Math.Abs(d.Delta - c.Delta) < SameEdgeTolFt))
+                    distinct.Add(c);
 
-            // AMBIGUITY: if the top two are within threshold, do not guess.
-            if (candidates.Count >= 2)
+            var best = distinct[0];
+
+            // AMBIGUITY: two genuinely different edges within threshold — don't guess which side.
+            if (distinct.Count >= 2)
             {
-                var second = candidates[1];
+                var second = distinct[1];
                 if (Math.Abs(best.ProjDist - second.ProjDist) < ctx.Config.AmbiguityThresholdFt)
                 {
                     return new ResolvedTarget

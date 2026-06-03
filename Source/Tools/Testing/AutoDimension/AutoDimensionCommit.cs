@@ -140,32 +140,28 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         /// to the side" behaviour). Each move is independently guarded — a Revit rejection on one
         /// segment never loses the dimension or the rest of the run.
         /// </summary>
-        // Stagger lanes (in text-height multiples): each successive moved tag steps further out on
-        // the perpendicular and fans slightly back along the axis, so a dense run reads as a
-        // diagonal ladder instead of all tags landing on one spot.
-        private const double LaneBaseHeights = 3.0;
-        private const double LaneStepHeights = 2.4;
-        private const double AxialFanHeights = 1.4;
+        // Moved tags are placed in a single column to ONE side of the run (ColumnMargin before the
+        // run start), stacked outward from the dimension line in segment order (LaneBase + n·LaneStep,
+        // text-height multiples). Because the stack order matches the marks' along-axis order, the
+        // leaders arc to the marks without crossing one another.
+        private const double ColumnMarginHeights = 4.0;
+        private const double LaneBaseHeights      = 2.0;
+        private const double LaneStepHeights      = 2.6;
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
             Core.Vec2 perp, Core.LayoutConfig cfg, Action<string, string> log)
         {
-            // World directions of the string's perpendicular (drag-out) and axis (fan) for text.
-            XYZ worldPerp, worldAxis;
-            try
-            {
-                XYZ o = projection.From2D(new Core.Vec2(0, 0));
-                worldPerp = projection.From2D(perp) - o;
-                worldAxis = projection.From2D(pd.AxisDir.Normalized()) - o;
-                if (worldPerp.GetLength() < 1e-9) return;
-                worldPerp = worldPerp.Normalize();
-                worldAxis = worldAxis.GetLength() < 1e-9 ? XYZ.Zero : worldAxis.Normalize();
-            }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: drag directions", ex); return; }
+            double th = cfg.TextHeightFt;
+            if (th <= 0) return;
 
+            Core.Vec2 axis = pd.AxisDir.Normalized();
             double sign = pd.Side == Core.DimSide.Positive ? 1.0 : -1.0;
-            double th   = cfg.TextHeightFt;
+
+            // Column position in view-2D: one side of the run, on the dimension line's offset side.
+            double runStart    = Math.Min(pd.SourcePoint.Dot(axis), pd.TargetPoint.Dot(axis));
+            double colAxial     = runStart - ColumnMarginHeights * th;
+            double dimLinePerp  = pd.SourcePoint.Dot(perp) + sign * pd.OffsetFt;
 
             // Multi-segment chain → per-segment text; single span → the whole-dimension text.
             DimensionSegmentArray? segs = null;
@@ -175,32 +171,29 @@ namespace LemoineTools.Tools.Testing.AutoDimension
             if (segs != null && segs.Size > 0)
             {
                 int n = Math.Min(segs.Size, pd.Segments.Count);
-                int lane = 0;   // counts only moved tags, so each gets its own outward step
+                int lane = 0;   // counts only moved tags, so each gets its own column slot
                 for (int k = 0; k < n; k++)
                 {
                     if (!IsMoved(pd.Segments[k].TextState)) continue;
-                    double perpDrag  = th * (LaneBaseHeights + lane * LaneStepHeights);
-                    double axialFan  = th * lane * AxialFanHeights;
+                    double perpVal = dimLinePerp + sign * (LaneBaseHeights + lane * LaneStepHeights) * th;
                     lane++;
                     try
                     {
                         var seg = segs.get_Item(k);
-                        if (seg?.TextPosition == null) continue;
-                        seg.TextPosition = seg.TextPosition
-                                         + worldPerp * (sign * perpDrag)
-                                         - worldAxis * axialFan;          // ⚠ leader appearance depends on the DimensionType
+                        if (seg == null) continue;
+                        seg.TextPosition = projection.From2D(axis * colAxial + perp * perpVal);   // ⚠ leader appearance depends on the DimensionType
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: drag segment text", ex); }
+                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: place segment text", ex); }
                 }
             }
             else if (pd.Segments.Count > 0 && IsMoved(pd.Segments[0].TextState))
             {
                 try
                 {
-                    if (dim.TextPosition != null)
-                        dim.TextPosition = dim.TextPosition + worldPerp * (sign * th * LaneBaseHeights);   // ⚠ verify on Windows
+                    double perpVal = dimLinePerp + sign * LaneBaseHeights * th;
+                    dim.TextPosition = projection.From2D(axis * colAxial + perp * perpVal);   // ⚠ verify on Windows
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: drag dimension text", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: place dimension text", ex); }
             }
         }
 

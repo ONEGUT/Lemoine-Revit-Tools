@@ -34,6 +34,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
 
                 try
                 {
+                    log($"ACTION — view '{view.Name}': click the slab/floor to dimension to in the Revit view (Esc = scan all floors).", "info");
                     var r = uidoc.Selection.PickObject(ObjectType.Element, filter,
                         $"Pick the slab/floor to dimension to for view '{view.Name}' (Esc to scan all floors).");
                     var scope = BuildScope(doc, r, log, view.Name);
