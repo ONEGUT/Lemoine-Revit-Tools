@@ -272,6 +272,14 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 
 Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **window-level `PreviewMouseDown` handler only while it is open** and closing when the click lands outside the popup content (`!popupRoot.IsMouseOver`); detach on `Closed`. The popup hosts its own hwnd, so its own clicks never tunnel through the window — no `ThreadFilterMessage` hook, no crash.
 
+### Popup / dropdown scroll-wheel behaviour
+
+These were discovered fixing the "category pill dropdown scrolls down but not up" bug.
+
+- Inside an `AllowsTransparency=true` `Popup` (Revit's WPF hosting), the default `ScrollViewer` mouse-wheel handling is **unreliable and asymmetric** — it delivers down-scrolls but drops up-scrolls. Don't rely on it: handle `PreviewMouseWheel`, drive the offset yourself with `ScrollToVerticalOffset` (clamped to `[0, ScrollableHeight]`), and set `e.Handled = true`. Manual scrolling is symmetric by construction.
+- A `Popup`'s routed events **bubble up into the owner window's element tree**, so a popup-hosted scroller that re-raises the wheel to its parent lets the *page's* scroll position govern the dropdown (the page being at the top blocks scrolling the popup up). Popup/dropdown scrollers must be **self-contained** — consume the wheel, never bubble it out to the page behind them. In-page nested scrollers are the opposite: they *should* bubble to the page at their limits (`LemoineControlStyles.WireBubblingScroll`).
+- Visual-tree popup detection (walking `VisualTreeHelper` parents up to a `PopupRoot`) is **unreliable under Revit's hosting**. Tag popup scrollers authoritatively with `LemoineControlStyles.SetSelfContainedScroll(sv, true)`; the `PresentationSource.RootVisual == PopupRoot` check is only a backstop.
+
 ### Revit API gotchas (Revit 2024)
 
 | Wrong | Correct |
@@ -280,12 +288,23 @@ Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **wi
 | `RasterQualityType.Draft` | `RasterQualityType.Low` (Draft removed in 2024) |
 | `PDFExportOptions.Zoom` | `PDFExportOptions.ZoomPercentage` |
 | `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
+| Filter rule on `BuiltInParameter.ELEM_CATEGORY_PARAM` ("Category") | Rejected — *"parameter does not apply to this filter's categories"*. Build whole-category filters **rule-less** via the 3-arg `ParameterFilterElement.Create(doc, name, categories)` (matches every element in the categories, references no parameter) |
+| Family Name filter on `ELEM_FAMILY_PARAM` (ElementId storage) | `ALL_MODEL_FAMILY_NAME` (String storage) — a string contains/equals rule can't be built on an ElementId parameter; the rule is silently dropped and the filter never matches |
 | `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
 | App-level "font pt" field sizes generated text | A TextNote's size comes from its assigned `TextNoteType` (`TEXT_SIZE` param); a font-pt value can only drive a WPF preview, never the Revit output. Don't expose it as if it changed the legend. |
 | `PickObject(ObjectType.Element)` to select an element **inside a link** | `PickObject(ObjectType.LinkedElement)` — `ObjectType.Element` returns the whole `RevitLinkInstance` (its `LinkedElementId` is unset), so the linked sub-element never resolves |
 | `collector.Where(t => t.Category.Id == new ElementId(OST_SpotElevations))` to list spot-elevation types | `ElementType.Category` reads as **null** for annotation types and silently drops every match — enumerate with `new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_SpotElevations).OfClass(typeof(SpotDimensionType))` instead |
 | Reading `…_DIAMETER` before width/height to classify an MEP cross-section | A rectangular duct can also expose an *equivalent-diameter* parameter, so test `RBS_CURVE_WIDTH_PARAM` + `RBS_CURVE_HEIGHT_PARAM` **first**; only fall back to a `…_DIAMETER` param when both are absent |
 | `Document.Create.NewSpotElevation(view, ref, …)` with no real geometry reference | The `Reference` must come from actual geometry — anchor it to a detail line via `CurveElement.GeometryCurve.Reference` (fallback `new Reference(element)`) |
+| Read a value to filter on via the **property-palette display** (`LookupParameter`) | Read it through the **same built-in the filter binds** — a view filter's string-rule keyword is compared against the *bound* parameter's value, not the palette. The palette "Fabrication Service" is a composite (`<abbreviation>: <name>`, e.g. `DVG - MP: Chilled Water Supply`) but `FABRICATION_SERVICE_NAME` holds only the name (`Chilled Water Supply`), so a keyword carrying the prefix never matches |
+| String filter rule against an **ElementId-storage** parameter (e.g. `ELEM_FAMILY_PARAM`) | `ParameterFilterRuleFactory.CreateContainsRule`/string rules require **String storage** — an ElementId param throws and the keyword is silently dropped (filter never created). For a string Family Name filter bind `ALL_MODEL_FAMILY_NAME`, not `ELEM_FAMILY_PARAM` |
+
+---
+
+## ParameterFilterElement Lifecycle (AutoFilters)
+
+- **Update in place, don't churn.** To change an existing `ParameterFilterElement`, call `SetCategories` / `SetElementFilter` — this preserves its `ElementId`, so view assignments and legend links survive. Delete + recreate mints a new `ElementId` and silently detaches the filter from every view that referenced it. Rebuild (delete + recreate) **only** when an in-place edit can't yield the correct definition (e.g. converting a keyword rule to whole-category — old rules can't be cleared in place; or a category/parameter change incompatible with the current state). A rule-less filter reports `GetElementFilter() == null`, which is how you detect it still carries stale rules.
+- **Discover must read the filter's parameter.** When a discover/scan captures keyword values, read them through the **same** `BuiltInParameter` the generated filter binds (e.g. `FABRICATION_SERVICE_NAME`), not the property-palette composite value — otherwise the captured `contains` keyword never matches what the view filter compares against.
 
 ---
 
@@ -296,6 +315,16 @@ Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **wi
 - A `RenderTargetBitmap` / `VisualBrush` snapshot of an element whose `Background` is `Brushes.Transparent` captures only its text/borders on transparent pixels — paint a themed solid backing (`LemoineRaised`) behind the snapshot or it reads as invisible (this is why inactive, transparent-background tabs/rows showed no ghost).
 - Anchor the ghost at the **grab point** (`e.GetPosition(source)`), not its centre — centring a wide row reads as "off the mouse" when grabbed near an edge.
 - Don't hand-roll any of this: `LemoineDragGhost` (snapshot, grab-point anchored, solid backing) and `LemoineListReorder` (whole-row drag, persisted order) are the house mechanism.
+
+---
+
+## View Filters & Linked Models
+
+Discovered while making **Make Ceiling Grids** hide linked ceilings.
+
+- **Host view filters only affect linked elements when the link is displayed "By Host View"** in that view. To hide or override linked elements, apply a `ParameterFilterElement` on the host view — do **not** rely on per-instance `view.HideElements`, because `FilteredElementCollector(doc, viewId)` (the host-view collector) never returns elements that live inside links, so it silently misses every linked ceiling. Warn the user about any link not set to "By Host View" (see `ReportLinkDisplayModes`) rather than changing the link's display.
+- **A `ParameterFilterElement` rule matches a single parameter** — family AND type cannot be AND-combined in one rule. Match ceiling types by the link-safe built-in `ALL_MODEL_TYPE_NAME` ("Type Name"); link-safe built-in parameters are listed in `AutoFiltersSettings.LinkSafeParameters`.
+- **Prefer the Ceiling Heatmap filter mechanism for any filter-driven tool.** Register an `ExternallyManaged` trade (`FilterTradeConfig`) with one rule per item, create one matching `ParameterFilterElement` per rule (reuse-by-name via `AutoFiltersSettings.MakeFilterName`), apply per-view inside a single transaction, and call `ReportLinkDisplayModes` — rather than hand-rolling a combined filter. `CeilingHeatmapEventHandler.RegisterCeilingHeatmapTrade` is the reference.
 
 ---
 

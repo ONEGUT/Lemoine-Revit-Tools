@@ -48,6 +48,29 @@ namespace LemoineTools.Tools.Testing
         // ── DWG ───────────────────────────────────────────────────────────────
         public string DwgExportSetupName { get; set; } = "";
 
+        // ── NWC options ───────────────────────────────────────────────────────
+        public bool ExportNwc { get; set; } = false;
+
+        // All NavisworksExportOptions properties — persisted so they survive Revit sessions
+        public string NwcCoordinates           { get; set; } = "Shared";   // "Shared" | "Internal"
+        public string NwcParameters            { get; set; } = "All";      // "All" | "Elements" | "None"
+        public bool   NwcConvertElementProps   { get; set; } = true;
+        public bool   NwcDivideByLevel         { get; set; } = false;
+        public bool   NwcExportLinks           { get; set; } = true;
+        public bool   NwcExportParts           { get; set; } = false;
+        public bool   NwcExportElementIds      { get; set; } = true;
+        public bool   NwcExportUrls            { get; set; } = false;
+        public bool   NwcFindMissingMaterials  { get; set; } = false;
+        public bool   NwcExportRoomGeometry    { get; set; } = false;
+        public bool   NwcExportRoomAsAttribute { get; set; } = false;
+        public bool   NwcConvertLights         { get; set; } = false;
+        public bool   NwcConvertLinkedCad      { get; set; } = false;
+        public double NwcFacetingFactor        { get; set; } = 1.0;        // 0.5–5.0
+
+        // ── IFC options ───────────────────────────────────────────────────────
+        public bool   ExportIfc  { get; set; } = false;
+        public string IfcVersion { get; set; } = "IFC2x3"; // "IFC2x3" | "IFC4"
+
         // ── Saved packs ───────────────────────────────────────────────────────
         [XmlArray("SavedPacks")]
         [XmlArrayItem("Pack")]

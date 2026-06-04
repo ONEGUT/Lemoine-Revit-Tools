@@ -280,6 +280,24 @@ namespace LemoineTools.Tools.AutoFilters
                 var fs = el.Document.GetElement(el.GetTypeId()) as FamilySymbol;
                 return fs?.FamilyName;
             }
+            if (paramName == "Fabrication Service")
+            {
+                // Read the SAME built-in the generated filter binds (FABRICATION_SERVICE_NAME),
+                // so the captured keyword matches what the view filter actually compares against.
+                // LookupParameter("Fabrication Service") returns the property-palette composite
+                // ("DVG - MP: Chilled Water Supply"); the FABRICATION_SERVICE_NAME filter only
+                // ever sees the service-name portion ("Chilled Water Supply"), so a keyword that
+                // carries the "DVG - MP:" abbreviation prefix can never match.
+                var fp = el.get_Parameter(BuiltInParameter.FABRICATION_SERVICE_NAME);
+                if (fp != null && fp.HasValue)
+                {
+                    string? fv = fp.AsString();
+                    if (!string.IsNullOrWhiteSpace(fv)) return fv;
+                    fv = fp.AsValueString();
+                    if (!string.IsNullOrWhiteSpace(fv)) return fv;
+                }
+                return null;
+            }
 
             // Instance parameter
             var p = el.LookupParameter(paramName);

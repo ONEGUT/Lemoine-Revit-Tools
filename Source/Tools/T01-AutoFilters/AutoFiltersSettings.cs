@@ -359,6 +359,41 @@ namespace LemoineTools.Tools.AutoFilters
                    + (ruleName ?? "").Trim().Replace(" ", "_").ToUpperInvariant());
 
         /// <summary>
+        /// True when a rule yields a ParameterFilterElement: it matches the whole category,
+        /// uses a value predicate (has / has-no value), or carries at least one keyword.
+        /// Single source of truth shared by the filter engine and the auto-create-on-close
+        /// change detection.
+        /// </summary>
+        public static bool RuleProducesFilter(FilterRuleConfig r)
+        {
+            if (r == null) return false;
+            string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+            return mt == "all" || mt == "has a value" || mt == "has no value" || r.Match.Count > 0;
+        }
+
+        /// <summary>
+        /// Builds the set of filter names the current trade configuration is expected to own:
+        /// every enabled, filter-producing rule of every non-externally-managed trade.
+        /// Used both to drive orphan cleanup and to decide whether the auto-create-on-close
+        /// pass has anything to do.
+        /// </summary>
+        public static HashSet<string> ComputeExpectedFilterNames(IEnumerable<FilterTradeConfig> trades)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (trades == null) return names;
+            foreach (var t in trades)
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules)
+                {
+                    if (!r.Enabled || !RuleProducesFilter(r)) continue;
+                    names.Add(MakeFilterName(t.Id, r.Name));
+                }
+            }
+            return names;
+        }
+
+        /// <summary>
         /// Characters Revit forbids in element names. Sourced from the Revit API error
         /// "name cannot include prohibited characters, such as { } [ ] | ; &lt; &gt; ? ` ~"
         /// plus backslash and colon, which are also rejected.

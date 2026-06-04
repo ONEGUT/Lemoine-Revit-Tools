@@ -36,7 +36,7 @@ namespace LemoineTools.Lemoine
         private StackPanel?  _fTradeListPanel;
         private LemoineListReorder? _fTradeReorder;   // drag-to-reorder trades
         private UIElement?   _fAddTradeAnchor;
-        private TextBlock?   _fStatusText;
+        private TextBlock?   _fStatusText;     // transient status (template load/save/import/export)
         private Border?      _fStatusChip;
         private ScrollViewer? _fRuleScroll;     // for auto-scroll-to-new on add
         private ScrollViewer? _fTradeScroll;
@@ -98,20 +98,100 @@ namespace LemoineTools.Lemoine
             UpdateRowHeights();
             BuildToolbar();
             _contentBorder.Child = BuildFiltersContent();
-            BuildFloatingActions();
+            BuildFloatingStatus();
         }
 
-        // Persist buffered edits when the window closes — the footer Apply button
-        // was removed, so this is the catch-all save path (Create also saves).
-        // Only writes when the buffer actually changed since load (dirty check).
+        // Persist buffered edits and auto-create the project's filters when the window closes.
+        // There is no Create button anymore — closing the window is the single commit point.
+        // Filters are (re)generated only when something changed since load, or when the saved
+        // manifest no longer matches the rules (missing or orphaned filters). Generation runs
+        // on Revit's main thread via the external event; any failures are reported there by a
+        // TaskDialog, because this STA window is already tearing down.
         protected override void OnClosed(EventArgs e)
         {
-            if (_filterTrades != null && SerializeTrades(_filterTrades) != _filtersSnapshot)
+            if (_filterTrades != null)
             {
-                AutoFiltersSettings.Instance.Trades = _filterTrades;
-                AutoFiltersSettings.Instance.Save();
+                bool dirty = SerializeTrades(_filterTrades) != _filtersSnapshot;
+                if (dirty)
+                {
+                    AutoFiltersSettings.Instance.Trades = _filterTrades;
+                    AutoFiltersSettings.Instance.Save();
+                }
+
+                var expected     = AutoFiltersSettings.ComputeExpectedFilterNames(_filterTrades);
+                bool manifestStale = !expected.SetEquals(
+                    AutoFiltersSettings.Instance.CreatedFilterNames ?? new List<string>());
+
+                if ((dirty || manifestStale) && expected.Count > 0)
+                    RaiseAutoCreate();
             }
+
             base.OnClosed(e);
+        }
+
+        // Queues the filter-creation pass for Revit's main thread. Raise() returns immediately;
+        // Revit runs the handler at its next idle moment, after this window has closed — which
+        // is why failures are surfaced by the handler's own TaskDialog (ShowFailureDialog),
+        // never marshalled back to this dispatcher.
+        private void RaiseAutoCreate()
+        {
+            var handler = App.AutoFiltersHandler;
+            var evt     = App.AutoFiltersEvent;
+            if (handler == null || evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Auto-create skipped: event handler unavailable.");
+                return;
+            }
+
+            handler.CreateOnly          = true;
+            handler.ShowFailureDialog   = true;
+            handler.SelectedDisciplines = new List<string>();
+            handler.SelectedLinkTitles  = new List<string>();
+            handler.PushLog             = null;
+            handler.OnProgress          = null;
+            handler.OnComplete          = null;
+
+            evt.Raise();
+        }
+
+        // ── Floating bottom-right status chip ───────────────────────────────────
+        // The Create pill was removed (filters auto-create on close); the chip remains
+        // to surface transient template messages (load / save / import / export).
+        private void BuildFloatingStatus()
+        {
+            _fStatusChip = LemoineControlStyles.BuildStatusChip(out _fStatusText);
+            _fStatusChip.HorizontalAlignment = HorizontalAlignment.Right;
+            _fStatusChip.VerticalAlignment   = VerticalAlignment.Bottom;
+            _fStatusChip.Visibility          = Visibility.Collapsed;
+
+            _floatingSlot.Content = _fStatusChip;
+
+            // Reserve space at the bottom of the editor so its last card clears the chip.
+            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
+            ApplyFloatingInset(_floatingSlot.ActualHeight);
+        }
+
+        // Insets the editor's bottom so content isn't hidden behind the floating chip.
+        private void ApplyFloatingInset(double chipHeight)
+        {
+            if (_fEditorBorder == null) return;
+            double inset = Math.Max(0, chipHeight) + 16;
+            _fEditorBorder.Padding = new Thickness(0, 0, 0, inset);
+        }
+
+        private void FlashStatus(string msg)
+        {
+            if (_fStatusText == null) return;
+            _fStatusText.Text = msg;
+            if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Visible;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            timer.Tick += (s, e) =>
+            {
+                _fStatusText.Text = "";
+                if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Collapsed;
+                timer.Stop();
+            };
+            timer.Start();
         }
 
         // Serializes the trade buffer for a cheap structural dirty comparison.
@@ -143,7 +223,7 @@ namespace LemoineTools.Lemoine
 
         // ── Toolbar ───────────────────────────────────────────────────────────
         // Identical structure to the Legend window: [⚙ icon + title] … [× close].
-        // The "Create Filters" action moved to the floating bottom-right pill.
+        // Filters are created automatically on close — there is no Create action here.
         private void BuildToolbar()
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
@@ -165,100 +245,6 @@ namespace LemoineTools.Lemoine
                 IconGlyph    = "⚙",
                 RightContent = rightPanel,
             };
-        }
-
-        private void CreateFilters()
-        {
-            // Save current edits to settings before firing the event
-            if (_filterTrades != null)
-            {
-                AutoFiltersSettings.Instance.Trades = _filterTrades;
-                AutoFiltersSettings.Instance.Save();
-            }
-
-            var handler = App.AutoFiltersHandler;
-            var evt     = App.AutoFiltersEvent;
-            if (handler == null || evt == null)
-            {
-                FlashStatus("Event handler unavailable.");
-                return;
-            }
-
-            handler.CreateOnly          = true;
-            handler.SelectedDisciplines = new List<string>();
-            handler.SelectedLinkTitles  = new List<string>();
-            handler.PushLog             = null;
-            handler.OnProgress          = null;
-
-            // ⚠ OnComplete is invoked on Revit's main thread — marshal back to this STA dispatcher.
-            var windowDispatcher = Dispatcher;
-            handler.OnComplete = (pass, fail, skip, removed) =>
-                windowDispatcher.BeginInvoke(new Action(() =>
-                {
-                    string removedSuffix = removed > 0 ? $", {removed} removed." : ".";
-                    if (fail == 0 && pass > 0)
-                        FlashStatus($"{pass} filter(s) created{removedSuffix}");
-                    else if (fail == 0 && removed > 0)
-                        FlashStatus($"{removed} filter(s) removed.");
-                    else if (fail == 0)
-                        FlashStatus("Filters up to date.");
-                    else if (pass > 0)
-                        FlashStatus($"{pass} created, {fail} failed{removedSuffix}");
-                    else
-                        FlashStatus("Failed — check Revit journal.");
-                }));
-
-            evt.Raise();
-            FlashStatus("Creating filters…");
-        }
-
-        // ── Floating bottom-right action pills ──────────────────────────────────
-        private void BuildFloatingActions()
-        {
-            _fStatusChip = LemoineControlStyles.BuildStatusChip(out _fStatusText);
-            _fStatusChip.HorizontalAlignment = HorizontalAlignment.Right;
-            _fStatusChip.Margin              = new Thickness(0, 0, 0, 6);
-
-            var createPill = LemoineControlStyles.BuildActionPill("Create Filters", primary: true, () => CreateFilters());
-            createPill.ToolTip = "Create/update the project's view filters from these trades";
-
-            var stack = new StackPanel
-            {
-                Orientation         = Orientation.Vertical,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment   = VerticalAlignment.Bottom,
-            };
-            stack.Children.Add(_fStatusChip);
-            stack.Children.Add(createPill);
-
-            _floatingSlot.Content = stack;
-
-            // Reserve space at the bottom of the editor so its last card clears the pill.
-            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
-            ApplyFloatingInset(_floatingSlot.ActualHeight);
-        }
-
-        // Insets the editor's bottom so content isn't hidden behind the floating pill.
-        private void ApplyFloatingInset(double pillsHeight)
-        {
-            if (_fEditorBorder == null) return;
-            double inset = Math.Max(0, pillsHeight) + 16;
-            _fEditorBorder.Padding = new Thickness(0, 0, 0, inset);
-        }
-
-        private void FlashStatus(string msg)
-        {
-            if (_fStatusText == null) return;
-            _fStatusText.Text = msg;
-            if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Visible;
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            timer.Tick += (s, e) =>
-            {
-                _fStatusText.Text = "";
-                if (_fStatusChip != null) _fStatusChip.Visibility = Visibility.Collapsed;
-                timer.Stop();
-            };
-            timer.Start();
         }
 
         // ═════════════════════════════════════════════════════════════════════
