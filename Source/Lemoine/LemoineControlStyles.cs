@@ -26,6 +26,7 @@ namespace LemoineTools.Lemoine
         /// <param name="scrollBarWidth">Scrollbar width in pixels. StepFlow = 5, Settings = 8.</param>
         public static void InjectInto(ResourceDictionary resources, int scrollBarWidth = 5)
         {
+            EnsureGlobalScrollBubbling();
             int scaledWidth = (int)Math.Round(scrollBarWidth * LemoineSettings.Instance.Scale);
             resources[typeof(ScrollBar)]    = ParseStyle(ScrollBarXaml(scaledWidth))!;
             resources[typeof(ComboBox)]     = ParseStyle(ComboBoxXaml)!;
@@ -754,6 +755,11 @@ namespace LemoineTools.Lemoine
     {
         inner.PreviewMouseWheel += (s, e) =>
         {
+            // A scroller hosted in a Popup (dropdown, tag-picker) is self-contained — its
+            // wheel must never escape into the parent window, or the page's scroll position
+            // ends up governing the popup (the "only the parent window scrolls it" bug).
+            if (IsInsidePopup(inner)) return;
+
             bool atTop    = inner.VerticalOffset <= 0;
             bool atBottom = inner.VerticalOffset >= inner.ScrollableHeight - 0.5;
             bool up   = e.Delta > 0;
@@ -791,6 +797,139 @@ namespace LemoineTools.Lemoine
                     Source      = combo,
                 });
         };
+    }
+
+    // ── Global scroll bubbling (auto-wired, no per-call-site needed) ───────────
+    private static bool _scrollBubblingRegistered;
+
+    /// <summary>
+    /// Marks a ScrollViewer as "self-contained": the wheel scrolls it directly and never
+    /// escapes to an outer scroller, regardless of visual-tree topology. Set this on scrollers
+    /// hosted in a Popup (dropdown, tag-picker) where popup-by-tree detection can be unreliable
+    /// in Revit's WPF hosting — it is the authoritative signal that overrides ancestor checks.
+    /// </summary>
+    public static readonly DependencyProperty SelfContainedScrollProperty =
+        DependencyProperty.RegisterAttached(
+            "SelfContainedScroll", typeof(bool), typeof(LemoineControlStyles),
+            new PropertyMetadata(false));
+
+    public static void SetSelfContainedScroll(DependencyObject o, bool value) =>
+        o.SetValue(SelfContainedScrollProperty, value);
+
+    public static bool GetSelfContainedScroll(DependencyObject o) =>
+        (bool)o.GetValue(SelfContainedScrollProperty);
+
+    /// <summary>
+    /// Registers AppDomain-wide class handlers (once) so that EVERY ScrollViewer and
+    /// ComboBox bubbles the mouse wheel to its parent when it can't scroll further —
+    /// without each call site having to call <see cref="WireBubblingScroll"/> /
+    /// <see cref="WireComboWheelBubbling"/>. A WPF ScrollViewer (and a closed ComboBox)
+    /// marks the wheel event handled even at its scroll limit, which traps the wheel and
+    /// prevents the page behind it from scrolling (the "scroll down but not up" bug).
+    /// Called from <see cref="InjectInto"/>, so it is live for every Lemoine window.
+    /// </summary>
+    internal static void EnsureGlobalScrollBubbling()
+    {
+        if (_scrollBubblingRegistered) return;
+        _scrollBubblingRegistered = true;
+
+        EventManager.RegisterClassHandler(typeof(ScrollViewer),
+            UIElement.PreviewMouseWheelEvent,
+            new MouseWheelEventHandler(OnScrollViewerWheel), handledEventsToo: false);
+
+        EventManager.RegisterClassHandler(typeof(ComboBox),
+            UIElement.PreviewMouseWheelEvent,
+            new MouseWheelEventHandler(OnComboWheel), handledEventsToo: false);
+    }
+
+    private static void OnScrollViewerWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        var sv = (ScrollViewer)sender;
+
+        // A scroller that is explicitly tagged self-contained, or detected as living inside a
+        // Popup (dropdown / tag-picker / open ComboBox list), scrolls itself and the wheel must
+        // NOT escape into the parent window. The tag is authoritative — the tree-walk popup
+        // check is unreliable under Revit's WPF hosting, which let the page's scroll position
+        // govern the dropdown (the reported "checks the outside before the inside"). We drive the
+        // offset directly: manual scrolling is symmetric by construction and consuming the event
+        // keeps the page behind the popup from moving.
+        if (GetSelfContainedScroll(sv) || IsInsidePopup(sv))
+        {
+            e.Handled = true;                          // swallow — never reaches the page
+            if (sv.ScrollableHeight <= 0) return;      // nothing to scroll
+            double step   = e.Delta / 120.0 * 48.0;    // 3 lines (~48px) per wheel notch
+            double target = sv.VerticalOffset - step;
+            sv.ScrollToVerticalOffset(Math.Max(0, Math.Min(sv.ScrollableHeight, target)));
+            return;
+        }
+
+        // PreviewMouseWheel tunnels outer→inner, so this fires on every ScrollViewer
+        // ancestor. Only the innermost ScrollViewer under the cursor should act — otherwise
+        // an outer scroller at its own limit would steal the wheel before the inner one
+        // gets to scroll. Let the deeper scroller handle it on its own tunnelling pass.
+        if (FindAncestorScrollViewer(e.OriginalSource as DependencyObject) != sv) return;
+
+        bool atTop    = sv.VerticalOffset <= 0;
+        bool atBottom = sv.VerticalOffset >= sv.ScrollableHeight - 0.5;
+        bool up   = e.Delta > 0;
+        bool down = e.Delta < 0;
+
+        // The inner scroller can still move in this direction → let it scroll normally.
+        if (!((atTop && up) || (atBottom && down))) return;
+
+        // At the limit → pass the wheel through to the parent scroller / page.
+        e.Handled = true;
+        (VisualTreeHelper.GetParent(sv) as UIElement)?.RaiseEvent(
+            new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = sv,
+            });
+    }
+
+    private static void OnComboWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        var combo = (ComboBox)sender;
+        if (combo.IsDropDownOpen) return; // open list scrolls normally
+
+        // A closed ComboBox eats the wheel (and changes its selection) by default —
+        // pass it through to the parent so the page scrolls instead.
+        e.Handled = true;
+        (VisualTreeHelper.GetParent(combo) as UIElement)?.RaiseEvent(
+            new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = combo,
+            });
+    }
+
+    /// <summary>Walks up the visual tree from <paramref name="start"/> to the nearest ScrollViewer.</summary>
+    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject? start)
+    {
+        for (var node = start; node != null; node = VisualTreeHelper.GetParent(node))
+            if (node is ScrollViewer sv) return sv;
+        return null;
+    }
+
+    /// <summary>
+    /// True if <paramref name="element"/> lives inside a Popup. A Popup hosts its content in its
+    /// own visual tree rooted at a PopupRoot. We check the hosting PresentationSource's RootVisual
+    /// first (robust even when a visual-parent walk is broken mid-tree), then fall back to walking
+    /// visual parents to the top. Primarily a backstop — popup scrollers we build also carry the
+    /// authoritative <see cref="SelfContainedScrollProperty"/> tag.
+    /// </summary>
+    private static bool IsInsidePopup(DependencyObject element)
+    {
+        var root = PresentationSource.FromDependencyObject(element)?.RootVisual;
+        if (root != null && root.GetType().Name == "PopupRoot") return true;
+
+        DependencyObject node = element;
+        DependencyObject parent;
+        while ((parent = VisualTreeHelper.GetParent(node)) != null)
+            node = parent;
+        return node.GetType().Name == "PopupRoot";
     }
 
     // ── Floating action pill ────────────────────────────────────────────────
