@@ -71,7 +71,9 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashPickEvent        { get; private set; }
         internal static ClashFinderEventHandler?    ClashFinderHandler    { get; private set; }
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
-        internal static LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
+        internal static ClashElevationFinderEventHandler? ClashElevationFinderHandler { get; private set; }
+        internal static ExternalEvent?              ClashElevationFinderEvent   { get; private set; }
+        internal static LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
@@ -151,7 +153,9 @@ namespace LemoineTools
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
-            SlabPickHandler       = new LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler();
+            ClashElevationFinderHandler = new ClashElevationFinderEventHandler();
+            ClashElevationFinderEvent   = ExternalEvent.Create(ClashElevationFinderHandler);
+            SlabPickHandler       = new LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
@@ -351,6 +355,11 @@ namespace LemoineTools
                 "LT_ClashFinder", "Clash Finder\n& Dimension", "ClashFinderCommand",
                 "Run saved clash definitions across selected views: detect clashes, place coloured tagged markers, and dimension them out to grids or slab edges.",
                 char.ConvertFromUtf32(0xE721)));  // Segoe MDL2: Zoom (find)
+
+            clashPanel.AddItem(Btn(
+                "LT_ClashElevationFinder", "Clash Finder\n& Elevation", "ClashElevationFinderCommand",
+                "Run saved clash definitions across selected sections and elevations: detect clashes, place coloured round markers, and tag each with a spot elevation at the top, centre, or bottom of the round.",
+                char.ConvertFromUtf32(0xE898)));  // Segoe MDL2: Up (elevation/height)
 
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");

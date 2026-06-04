@@ -299,7 +299,7 @@ namespace LemoineTools.Lemoine
             var g1Editor = new ClashGroupEditor(def.Group1, _docs, _pickHandler, _pickEvent, null);
             panel.Children.Add(new LemoineSectionCard
             {
-                Header      = "Group 1 — Source",
+                Header      = "Group 1 — Source (sets marker colour & size)",
                 CardContent = g1Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
@@ -307,7 +307,7 @@ namespace LemoineTools.Lemoine
             var g2Editor = new ClashGroupEditor(def.Group2, _docs, _pickHandler, _pickEvent, null);
             panel.Children.Add(new LemoineSectionCard
             {
-                Header      = "Group 2 — Target",
+                Header      = "Group 2 — Target (tested against Group 1)",
                 CardContent = g2Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
