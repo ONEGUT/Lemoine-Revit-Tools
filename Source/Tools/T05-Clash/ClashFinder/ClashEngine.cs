@@ -113,7 +113,8 @@ namespace LemoineTools.Tools.Testing
             // 2. Scan each group per its mode
             var group1Elements = ScanGroupSpec(group1Spec, sources, "Group 1");
             var group2Elements = ScanGroupSpec(group2Spec, sources, "Group 2");
-            Log($"Group 1: {group1Elements.Count} element(s)   Group 2: {group2Elements.Count} element(s)", "info");
+            int group1Rect = group1Elements.Count(e => e.IsRectangular);
+            Log($"Group 1: {group1Elements.Count} element(s) ({group1Rect} rectangular)   Group 2: {group2Elements.Count} element(s)", "info");
 
             if (group1Elements.Count == 0)
             {
@@ -598,14 +599,22 @@ namespace LemoineTools.Tools.Testing
         /// </summary>
         private static (bool IsRect, double W, double H) ComputeElementShape(Element el)
         {
+            // Rectangular first: a duct / cable tray that reports BOTH a width and a height is
+            // rectangular — even when it also exposes an (equivalent) diameter parameter, which would
+            // otherwise mis-classify it as round.
+            double w = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_WIDTH_PARAM);
+            double h = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_HEIGHT_PARAM);
+            if (w <= 0) w = ReadNamedDoubleParam(el, "Width");
+            if (h <= 0) h = ReadNamedDoubleParam(el, "Height");
+            if (w > 1e-6 && h > 1e-6) return (true, w, h);
+
+            // Round pipe / round duct outer diameter (orientation-independent, exact).
             double d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_OUTER_DIAMETER);
             if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
             if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_DIAMETER_PARAM);
+            if (d <= 0) d = ReadNamedDoubleParam(el, "Diameter");
             if (d > 1e-6) return (false, d, d);
 
-            double w = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_WIDTH_PARAM);
-            double h = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_HEIGHT_PARAM);
-            if (w > 1e-6 && h > 1e-6) return (true, w, h);        // rectangular duct
             if (w > 1e-6 || h > 1e-6) { double s = Math.Max(w, h); return (false, s, s); }
 
             try
@@ -657,6 +666,19 @@ namespace LemoineTools.Tools.Testing
                 if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
             }
             catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read double parameter", ex); }
+            return 0.0;
+        }
+
+        // Fallback for content whose width/height/diameter is not on the expected built-in parameter
+        // (e.g. cable trays, some duct families). Name-based, so it only resolves in matching locales.
+        private static double ReadNamedDoubleParam(Element el, string name)
+        {
+            try
+            {
+                var p = el.LookupParameter(name);
+                if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read named double parameter", ex); }
             return 0.0;
         }
 
