@@ -26,7 +26,7 @@ namespace LemoineTools.Tools.Testing
         public bool                 RunDimensionPass { get; set; } = false;
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
         public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
-        public double               RoundSizeMm      { get; set; } = 0.0;    // round marker diameter; 0 = auto-fit
+        public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
         public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
         public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
         public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"

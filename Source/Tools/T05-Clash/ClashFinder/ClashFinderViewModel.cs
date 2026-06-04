@@ -229,8 +229,8 @@ namespace LemoineTools.Tools.Testing
 
             AddDivider(outer);
             AddStepperRow(outer,
-                "Round marker size (mm, 0 = match Group 1 element)",
-                "Diameter of the round drawn at each clash. 0 matches the Group 1 element's own size (e.g. the pipe diameter); set a value to force every round to a fixed size — e.g. the opening needed for the pipe.",
+                "Marker oversize (mm, 0 = exact element size)",
+                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much — e.g. 50 makes a 100 mm pipe a 150 mm round and adds 50 mm to a duct's width and height.",
                 _roundSizeMm, min: 0, max: 1000, step: 25, decimals: 0,
                 v => { _roundSizeMm = v; Fire(); });
 
@@ -324,7 +324,7 @@ namespace LemoineTools.Tools.Testing
                     bits.Add(_runDimensionPass
                         ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? " · chained" : "")}"
                         : "dim pass off");
-                    bits.Add(_roundSizeMm > 0 ? $"round {_roundSizeMm:F0} mm" : "round auto");
+                    bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm:F0} mm" : "exact size");
                     return string.Join(" · ", bits);
                 default: return "—";
             }

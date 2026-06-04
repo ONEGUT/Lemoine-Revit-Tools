@@ -24,7 +24,7 @@ namespace LemoineTools.Tools.Testing
         public bool                  ShowAllDocuments { get; set; } = false;
         public string                AnchorMode       { get; set; } = "Centre";  // "Top" | "Centre" | "Bottom"
         public ElementId             SpotTypeId       { get; set; } = ElementId.InvalidElementId;
-        public double                RoundSizeMm      { get; set; } = 0.0;       // round marker diameter; 0 = auto-fit
+        public double                RoundSizeMm      { get; set; } = 0.0;       // marker oversize added to the Group 1 element size; 0 = exact
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
