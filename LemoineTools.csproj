@@ -41,9 +41,8 @@
       Source\Tools\T04-ModifyElements\    — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
       Source\Tools\Debuggers\             — Debug view-models (ns: LemoineTools.Tools.Debuggers)
       Source\Tools\Testing\               — Experimental tools, one subfolder each
-                                            (BatchDimension, BatchExport, CoordSet,
-                                            CreateSheets, LegendCreator, SheetPack;
-                                            ns: LemoineTools.Tools.Testing.*)
+                                            (BatchExport, CreateSheets, LegendCreator,
+                                            SheetPack; ns: LemoineTools.Tools.Testing.*)
       Source\Lemoine\                     — library (StepFlowWindow, GlobalSettingsWindow, controls)
       Source\Lemoine\Controls\            — shared WPF controls (Color, Input, Layout, Legend)
       Source\Lemoine\Templates\           — template store

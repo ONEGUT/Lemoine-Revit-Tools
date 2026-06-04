@@ -5,7 +5,6 @@ using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
-using LemoineTools.Tools.Testing.CoordSet;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 using System;
@@ -61,17 +60,9 @@ namespace LemoineTools
         internal static ReplicateDependentViewsRunHandler? ReplicateDependentViewsRunHandler { get; private set; }
         internal static ExternalEvent?                     ReplicateDependentViewsRunEvent   { get; private set; }
 
-        // ── Coordination Drawing Set ────────────────────────────────────────────────
-        internal static CoordSetRunHandler? CoordSetRunHandler { get; private set; }
-        internal static ExternalEvent?      CoordSetRunEvent   { get; private set; }
-
         // ── Testing — Batch Export ──────────────────────────────────────────────────
         internal static BatchExportEventHandler?   BatchExportHandler   { get; private set; }
         internal static ExternalEvent?             BatchExportEvent     { get; private set; }
-
-        // ── Testing — Batch Dimension ───────────────────────────────────────────────
-        internal static BatchDimensionEventHandler? BatchDimensionHandler { get; private set; }
-        internal static ExternalEvent?              BatchDimensionEvent   { get; private set; }
 
         // ── T05 — Clash (Definitions + Finder & Dimensioning) ───────────────────────
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
@@ -151,15 +142,9 @@ namespace LemoineTools
             ReplicateDependentViewsRunHandler = new ReplicateDependentViewsRunHandler();
             ReplicateDependentViewsRunEvent   = ExternalEvent.Create(ReplicateDependentViewsRunHandler);
 
-            // ── Coordination Drawing Set ──────────────────────────────────────
-            CoordSetRunHandler = new CoordSetRunHandler();
-            CoordSetRunEvent   = ExternalEvent.Create(CoordSetRunHandler);
-
             // ── Testing — new tools ───────────────────────────────────────────
             BatchExportHandler   = new BatchExportEventHandler();
             BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
-            BatchDimensionHandler = new BatchDimensionEventHandler();
-            BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
@@ -366,18 +351,9 @@ namespace LemoineTools
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
 
-            testingPanel.AddItem(Btn(
-                "LT_CoordSet", "Coord\nDrawing Set", "CoordSetCommand",
-                "Generate a complete coordination drawing set: filters, discipline views, legend, dependent views, and sheets.",
-                "\uE7C3"));  // Segoe MDL2: Page
-
             testingPanel.AddStackedItems(
-                Btn("LT_BatchExport",    "Batch Export",    "BatchExportCommand",
+                Btn("LT_BatchExport",         "Batch Export",  "BatchExportCommand",
                     "Export sheets and views to PDF or DWG in bulk with token-based filenames."),
-                Btn("LT_BatchDimension", "Batch Dimension", "BatchDimensionCommand",
-                    "Apply dimension strings across multiple views at once."));
-
-            testingPanel.AddStackedItems(
                 Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",

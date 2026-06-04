@@ -122,7 +122,6 @@ namespace LemoineTools.Lemoine
         {
             ("general", "General"),
             ("t04",     "Link Views"),
-            ("ty",      "Batch Dimension"),
             ("tz",      "Create Sheets"),
         };
 
@@ -225,7 +224,6 @@ namespace LemoineTools.Lemoine
                 case "general":  content = BuildGeneralContent();  break;
                 case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
-                case "ty":       content = BuildSpecContent(new BatchDimensionViewModel(null, null, null, null), "Batch Dimension"); break;
                 case "tz":       content = BuildSpecContent(new CreateSheetsViewModel(), "Create Sheets"); break;
                 default:         content = BuildNoSettingsContent(); break;
             }
