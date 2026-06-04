@@ -419,12 +419,46 @@ namespace LemoineTools.Tools.AutoFilters
 
                     if (refreshDef && !buildFailed)
                     {
-                        // Update categories in place (preserves ElementId, so view assignments
-                        // and legend links survive). Rule-based filters also get their rules
-                        // refreshed; a whole-category filter has no rules to set.
-                        pfe.SetCategories(catIds);
-                        if (elementFilter != null)
-                            pfe.SetElementFilter(elementFilter);
+                        // Refresh the existing filter in place where possible (preserves the
+                        // ElementId, so view assignments and legend links survive). When an
+                        // in-place edit can't yield the correct definition, rebuild it fresh.
+                        if (wholeCat)
+                        {
+                            // Target is a rule-less filter. If this element still carries rules
+                            // from a previous keyword definition, rebuild it so it truly matches
+                            // the whole category — the rules can't be cleared in place. A filter
+                            // that is already rule-less just gets its categories refreshed.
+                            bool hasRules;
+                            try { hasRules = pfe.GetElementFilter() != null; }
+                            catch (Exception ex)
+                            {
+                                // Unknown state — don't risk churning a working rule-less filter.
+                                LemoineLog.Swallowed("AutoFilters: read element filter", ex);
+                                hasRules = false;
+                            }
+
+                            if (hasRules)
+                                pfe = RebuildFilter(doc, filterName, catIds, null, pfe,
+                                                    existingFilters, existingViewFilterIds);
+                            else
+                                pfe.SetCategories(catIds);
+                        }
+                        else
+                        {
+                            // Rule-based: update in place, but if the new categories/parameter
+                            // are incompatible with the element's current state, rebuild it.
+                            try
+                            {
+                                pfe.SetCategories(catIds);
+                                pfe.SetElementFilter(elementFilter!);
+                            }
+                            catch (Exception ex)
+                            {
+                                LemoineLog.Swallowed("AutoFilters: in-place update incompatible, rebuilding", ex);
+                                pfe = RebuildFilter(doc, filterName, catIds, elementFilter, pfe,
+                                                    existingFilters, existingViewFilterIds);
+                            }
+                        }
                     }
                     else if (refreshDef)
                     {
@@ -482,6 +516,28 @@ namespace LemoineTools.Tools.AutoFilters
 
             rulesDone++;
             Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
+        }
+
+        // Deletes an existing filter and recreates it with the given categories and element
+        // filter (null = rule-less whole-category). Used when an in-place edit can't produce
+        // the correct definition (e.g. converting a keyword rule to whole-category, or an
+        // incompatible category/parameter change). The recreated element has a new ElementId,
+        // so any view assignment is lost and must be re-applied — that's the accepted trade-off
+        // for guaranteeing the definition is correct.
+        private static ParameterFilterElement RebuildFilter(
+            Document doc, string filterName, ICollection<ElementId> catIds,
+            ElementFilter? elementFilter, ParameterFilterElement old,
+            Dictionary<string, ParameterFilterElement> existingFilters,
+            HashSet<long> existingViewFilterIds)
+        {
+            existingViewFilterIds.Remove(old.Id.Value);
+            doc.Delete(old.Id);
+
+            var pfe = elementFilter == null
+                ? ParameterFilterElement.Create(doc, filterName, catIds)
+                : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+            existingFilters[filterName] = pfe;
+            return pfe;
         }
 
         // Match types whose keyword rules are negative (element must NOT match).
