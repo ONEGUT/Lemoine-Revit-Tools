@@ -108,7 +108,11 @@
     <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="GitCommit" />
     </Exec>
+    <!-- git on Windows emits "value\r\n"; ConsoleOutput keeps the trailing CR, which would
+         become a newline inside the generated string literal (CS1010). Trim it off first. -->
     <PropertyGroup>
+      <GitBranch>$(GitBranch.Trim())</GitBranch>
+      <GitCommit>$(GitCommit.Trim())</GitCommit>
       <GitBranch Condition="'$(GitBranch)' == ''">unknown</GitBranch>
       <GitCommit Condition="'$(GitCommit)' == ''">unknown</GitCommit>
       <GitInfoFile>$(IntermediateOutputPath)GitInfo.g.cs</GitInfoFile>
