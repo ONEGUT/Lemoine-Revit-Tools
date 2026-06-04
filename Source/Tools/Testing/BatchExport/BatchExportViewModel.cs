@@ -41,6 +41,14 @@ namespace LemoineTools.Tools.Testing
         private static readonly string[] NwcFacetingLabels = { "Low — 0.5", "Standard — 1.0", "High — 2.0", "Ultra — 5.0" };
         private static readonly double[] NwcFacetingValues = { 0.5, 1.0, 2.0, 5.0 };
 
+        // Named struct required — anonymous tuple arrays with Func<string> are forbidden (net48 constraint)
+        private struct CardDef
+        {
+            internal string        Label;
+            internal Func<string>  Value;
+            internal CardDef(string label, Func<string> value) { Label = label; Value = value; }
+        }
+
         // ── Token definitions ─────────────────────────────────────────────────
         private static readonly (string Label, string Token)[] ExportTokens =
         {
@@ -681,15 +689,15 @@ namespace LemoineTools.Tools.Testing
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition());
 
-            var cardDefs = new (string Label, Func<string> Value)[]
+            var cardDefs = new CardDef[]
             {
-                ("Sheets / Views", () => _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected"),
-                ("Formats",        () => GetActiveFormats()),
-                ("Filename Pattern", () => string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern),
-                ("Output Folder",  () => _outputFolder.Length > 40
+                new CardDef("Sheets / Views",   () => _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected"),
+                new CardDef("Formats",          () => GetActiveFormats()),
+                new CardDef("Filename Pattern", () => string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern),
+                new CardDef("Output Folder",    () => _outputFolder.Length > 40
                     ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
                     : (_outputFolder.Length == 0 ? "—" : _outputFolder)),
-                ("Combine PDF",    () => _combinePdf ? "Yes" : "No"),
+                new CardDef("Combine PDF",      () => _combinePdf ? "Yes" : "No"),
             };
 
             for (int i = 0; i < cardDefs.Length; i++)
@@ -749,11 +757,11 @@ namespace LemoineTools.Tools.Testing
             {
                 Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
                 Padding         = new Thickness(10, 7, 10, 7),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,    "LemoineRaised");
+            card.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty,  "LemoineRadius_SM");
 
             var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
             lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
