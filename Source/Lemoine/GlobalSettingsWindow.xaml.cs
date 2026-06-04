@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -257,14 +259,48 @@ namespace LemoineTools.Lemoine
             var closeBtn = BuildFlatButton("Close");
             closeBtn.Click += (s, e) => Close();
 
+            // Build stamp — the compiled DLL's write time, so a fresh deploy shows a fresh
+            // value. Lets us confirm at a glance that the latest build is actually loaded.
+            var buildText = new TextBlock
+            {
+                Text              = BuildStamp(),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 12, 0),
+            };
+            buildText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            buildText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            buildText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            DockPanel.SetDock(buildText, Dock.Left);
+
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
             var btnStack = new StackPanel { Orientation = Orientation.Horizontal };
             btnStack.Children.Add(closeBtn);
             DockPanel.SetDock(btnStack, Dock.Right);
             dp.Children.Add(btnStack);
+            dp.Children.Add(buildText);
             dp.Children.Add(_fStatusText);
 
             _footerBorder.Child = dp;
+        }
+
+        /// <summary>
+        /// "Build yyyy-MM-dd HH:mm" from the loaded assembly's last-write time. Reading the
+        /// timestamp can fail (single-file/in-memory load, locked path) — fall back to a clear
+        /// "unknown" rather than crashing the footer, and log the cause so it isn't silent.
+        /// </summary>
+        private static string BuildStamp()
+        {
+            try
+            {
+                var path = Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    return "Build " + File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("GlobalSettingsWindow.BuildStamp", ex);
+            }
+            return "Build unknown";
         }
 
         private void FlashStatus(string msg)
