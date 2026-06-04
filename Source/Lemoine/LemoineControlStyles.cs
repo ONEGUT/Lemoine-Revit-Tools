@@ -755,6 +755,11 @@ namespace LemoineTools.Lemoine
     {
         inner.PreviewMouseWheel += (s, e) =>
         {
+            // A scroller hosted in a Popup (dropdown, tag-picker) is self-contained — its
+            // wheel must never escape into the parent window, or the page's scroll position
+            // ends up governing the popup (the "only the parent window scrolls it" bug).
+            if (IsInsidePopup(inner)) return;
+
             bool atTop    = inner.VerticalOffset <= 0;
             bool atBottom = inner.VerticalOffset >= inner.ScrollableHeight - 0.5;
             bool up   = e.Delta > 0;
@@ -825,6 +830,13 @@ namespace LemoineTools.Lemoine
         if (e.Handled) return;
         var sv = (ScrollViewer)sender;
 
+        // A scroller inside a Popup (dropdown / tag-picker / open ComboBox list) is
+        // self-contained: it scrolls within itself and stops at its limits, and the wheel
+        // must NOT bubble into the parent window. Popups route their events up into the
+        // owning window's tree, so bubbling here would let the page's scroll position
+        // control the popup — exactly the reported "only the parent window scrolls it" bug.
+        if (IsInsidePopup(sv)) return;
+
         // PreviewMouseWheel tunnels outer→inner, so this fires on every ScrollViewer
         // ancestor. Only the innermost ScrollViewer under the cursor should act — otherwise
         // an outer scroller at its own limit would steal the wheel before the inner one
@@ -872,6 +884,20 @@ namespace LemoineTools.Lemoine
         for (var node = start; node != null; node = VisualTreeHelper.GetParent(node))
             if (node is ScrollViewer sv) return sv;
         return null;
+    }
+
+    /// <summary>
+    /// True if <paramref name="element"/> lives inside a Popup. A Popup hosts its content in a
+    /// separate visual tree whose root is a PopupRoot, so walking visual parents to the top and
+    /// checking the root type reliably distinguishes popup content from in-window content.
+    /// </summary>
+    private static bool IsInsidePopup(DependencyObject element)
+    {
+        DependencyObject node = element;
+        DependencyObject parent;
+        while ((parent = VisualTreeHelper.GetParent(node)) != null)
+            node = parent;
+        return node.GetType().Name == "PopupRoot";
     }
 
     // ── Floating action pill ────────────────────────────────────────────────
