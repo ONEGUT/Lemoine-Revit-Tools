@@ -243,6 +243,12 @@ Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal`
 
 ---
 
+## WPF Hit-Testing
+
+- A `TextBlock` or `Grid` with a null `Background` is only hit-testable on its rendered glyphs/borders, not its empty bounds. An element meant as a click target (a button label, a clickable row, the inner panel of a custom button) will respond only on the text unless you set `Background = Brushes.Transparent` (direct assignment — never via `SetResourceReference`). This was the "only the text is clickable" bug on the colour-picker set dropdown.
+
+---
+
 ## Revit Crash Constraints
 
 These patterns cause Revit to crash or hang. They have been discovered by breaking Revit in real sessions. Do not use them.
