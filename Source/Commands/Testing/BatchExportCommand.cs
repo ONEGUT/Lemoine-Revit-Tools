@@ -46,15 +46,13 @@ namespace LemoineTools.Commands
                 .OrderBy(s => s.SheetNumber)
                 .ToList();
 
-            // Collect non-template, non-excluded views
+            // Collect non-template views including 3D views (required for NWC/IFC export)
             var allViews = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate
                          && v.ViewType != ViewType.Schedule
-                         && v.ViewType != ViewType.Legend
-                         && v.ViewType != ViewType.ThreeD
-                         && !(v is View3D))
+                         && v.ViewType != ViewType.Legend)
                 .OrderBy(v => v.Name)
                 .ToList();
 
