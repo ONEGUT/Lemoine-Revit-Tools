@@ -26,6 +26,7 @@ namespace LemoineTools.Lemoine
         /// <param name="scrollBarWidth">Scrollbar width in pixels. StepFlow = 5, Settings = 8.</param>
         public static void InjectInto(ResourceDictionary resources, int scrollBarWidth = 5)
         {
+            EnsureGlobalScrollBubbling();
             int scaledWidth = (int)Math.Round(scrollBarWidth * LemoineSettings.Instance.Scale);
             resources[typeof(ScrollBar)]    = ParseStyle(ScrollBarXaml(scaledWidth))!;
             resources[typeof(ComboBox)]     = ParseStyle(ComboBoxXaml)!;
@@ -791,6 +792,86 @@ namespace LemoineTools.Lemoine
                     Source      = combo,
                 });
         };
+    }
+
+    // ── Global scroll bubbling (auto-wired, no per-call-site needed) ───────────
+    private static bool _scrollBubblingRegistered;
+
+    /// <summary>
+    /// Registers AppDomain-wide class handlers (once) so that EVERY ScrollViewer and
+    /// ComboBox bubbles the mouse wheel to its parent when it can't scroll further —
+    /// without each call site having to call <see cref="WireBubblingScroll"/> /
+    /// <see cref="WireComboWheelBubbling"/>. A WPF ScrollViewer (and a closed ComboBox)
+    /// marks the wheel event handled even at its scroll limit, which traps the wheel and
+    /// prevents the page behind it from scrolling (the "scroll down but not up" bug).
+    /// Called from <see cref="InjectInto"/>, so it is live for every Lemoine window.
+    /// </summary>
+    internal static void EnsureGlobalScrollBubbling()
+    {
+        if (_scrollBubblingRegistered) return;
+        _scrollBubblingRegistered = true;
+
+        EventManager.RegisterClassHandler(typeof(ScrollViewer),
+            UIElement.PreviewMouseWheelEvent,
+            new MouseWheelEventHandler(OnScrollViewerWheel), handledEventsToo: false);
+
+        EventManager.RegisterClassHandler(typeof(ComboBox),
+            UIElement.PreviewMouseWheelEvent,
+            new MouseWheelEventHandler(OnComboWheel), handledEventsToo: false);
+    }
+
+    private static void OnScrollViewerWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        var sv = (ScrollViewer)sender;
+
+        // PreviewMouseWheel tunnels outer→inner, so this fires on every ScrollViewer
+        // ancestor. Only the innermost ScrollViewer under the cursor should act — otherwise
+        // an outer scroller at its own limit would steal the wheel before the inner one
+        // gets to scroll. Let the deeper scroller handle it on its own tunnelling pass.
+        if (FindAncestorScrollViewer(e.OriginalSource as DependencyObject) != sv) return;
+
+        bool atTop    = sv.VerticalOffset <= 0;
+        bool atBottom = sv.VerticalOffset >= sv.ScrollableHeight - 0.5;
+        bool up   = e.Delta > 0;
+        bool down = e.Delta < 0;
+
+        // The inner scroller can still move in this direction → let it scroll normally.
+        if (!((atTop && up) || (atBottom && down))) return;
+
+        // At the limit → pass the wheel through to the parent scroller / page.
+        e.Handled = true;
+        (VisualTreeHelper.GetParent(sv) as UIElement)?.RaiseEvent(
+            new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = sv,
+            });
+    }
+
+    private static void OnComboWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        var combo = (ComboBox)sender;
+        if (combo.IsDropDownOpen) return; // open list scrolls normally
+
+        // A closed ComboBox eats the wheel (and changes its selection) by default —
+        // pass it through to the parent so the page scrolls instead.
+        e.Handled = true;
+        (VisualTreeHelper.GetParent(combo) as UIElement)?.RaiseEvent(
+            new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source      = combo,
+            });
+    }
+
+    /// <summary>Walks up the visual tree from <paramref name="start"/> to the nearest ScrollViewer.</summary>
+    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject? start)
+    {
+        for (var node = start; node != null; node = VisualTreeHelper.GetParent(node))
+            if (node is ScrollViewer sv) return sv;
+        return null;
     }
 
     // ── Floating action pill ────────────────────────────────────────────────
