@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.Clash;
 
 namespace LemoineTools.Tools.Testing.ElevationTag
 {

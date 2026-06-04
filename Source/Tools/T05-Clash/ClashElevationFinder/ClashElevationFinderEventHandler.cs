@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.Testing.ElevationTag;
 
 namespace LemoineTools.Tools.Testing
