@@ -395,7 +395,13 @@ namespace LemoineTools.Tools.Testing
 
                                 debug.Log("IFC", $"Calling doc.Export({outDir}, {safeName}, opts)  Version={opts.FileVersion}  FilterViewId={opts.FilterViewId}");
 
-                                doc.Export(outDir, safeName, opts);
+                                // IFC export writes IFC-specific data to the document and requires a transaction
+                                using (var t = new Transaction(doc, "Batch IFC Export"))
+                                {
+                                    t.Start();
+                                    doc.Export(outDir, safeName, opts);
+                                    t.Commit();
+                                }
                                 pass++;
                                 pushLog($"IFC: {safeName}.ifc", "pass");
                                 debug.Log("IFC", $"OK: {safeName}.ifc");

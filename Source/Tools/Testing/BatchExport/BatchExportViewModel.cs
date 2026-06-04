@@ -338,7 +338,7 @@ namespace LemoineTools.Tools.Testing
                 {
                     ViewFamily.FloorPlan, ViewFamily.CeilingPlan,
                     ViewFamily.Section,   ViewFamily.Elevation,
-                    ViewFamily.Detail,
+                    ViewFamily.Detail,    ViewFamily.ThreeDimensional,
                 };
 
                 foreach (var view in _allViews)
@@ -373,6 +373,7 @@ namespace LemoineTools.Tools.Testing
 
         private static ViewFamily GetViewFamily(View v)
         {
+            if (v is View3D)    return ViewFamily.ThreeDimensional;
             if (v is ViewPlan vp) return vp.ViewType == ViewType.CeilingPlan
                 ? ViewFamily.CeilingPlan : ViewFamily.FloorPlan;
             if (v is ViewSection) return v.ViewType == ViewType.Elevation
@@ -382,6 +383,7 @@ namespace LemoineTools.Tools.Testing
 
         private static string GetViewGroupName(View v)
         {
+            if (v is View3D)    return "3D Views";
             if (v is ViewPlan vp)
                 return vp.ViewType == ViewType.CeilingPlan ? "Reflected Ceiling Plans" : "Floor Plans";
             if (v is ViewSection)
