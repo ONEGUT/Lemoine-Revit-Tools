@@ -20,6 +20,8 @@ namespace LemoineTools.Tools.Testing
         public int    MaxClashes;
         public double StoreyMarginMm;     // depth below a level still counted as its storey (slabs/structure)
         public double RoundSizeMm;        // round marker diameter; 0 = auto-fit to the clash bbox
+        public bool   ElevationMode;      // true → draw the round in the view's vertical plane (sections/elevations)
+                                          // with a single tagged diameter line for the spot-elevation pass
     }
 
     /// <summary>Aggregate result of one engine run.</summary>
@@ -742,6 +744,10 @@ namespace LemoineTools.Tools.Testing
             Document doc, View view, ClashResult clash,
             ElementId lineStyleId, double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
         {
+            // Section / elevation views draw the round in the view's vertical cut plane.
+            if (_opts.ElevationMode)
+                return CreateClashGraphicsVertical(doc, view, clash, lineStyleId, toleranceFt, regionTypeCache);
+
             var zone = clash.OverlapBBox;
             double minX = zone.Min.X - toleranceFt;
             double maxX = zone.Max.X + toleranceFt;
@@ -807,6 +813,81 @@ namespace LemoineTools.Tools.Testing
                 var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup);
                 return hLine != null && vLine != null;
             }
+        }
+
+        // ── Marker creation for vertical views (section / elevation) ──────────
+        // The round fill lives in the view's cut plane (built from RightDirection / UpDirection),
+        // with ONE tagged vertical diameter line spanning the round top→bottom. The elevation-tag
+        // pass re-finds that line and anchors a spot elevation at its top / centre / bottom point.
+        private bool CreateClashGraphicsVertical(
+            Document doc, View view, ClashResult clash,
+            ElementId lineStyleId, double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
+        {
+            var zone = clash.OverlapBBox;
+            var c = new XYZ((zone.Min.X + zone.Max.X) / 2.0,
+                            (zone.Min.Y + zone.Max.Y) / 2.0,
+                            (zone.Min.Z + zone.Max.Z) / 2.0);
+
+            XYZ right  = view.RightDirection.Normalize();
+            XYZ up     = view.UpDirection.Normalize();
+            XYZ normal = view.ViewDirection.Normalize();
+            XYZ origin = view.Origin;
+
+            // Project the clash centre onto the view's cut plane (drop the view-direction component).
+            double depth = (c - origin).DotProduct(normal);
+            XYZ cp = c - normal.Multiply(depth);
+
+            // In-plane half extents of the clash (project the 8 bbox corners onto right / up).
+            double halfU = 0, halfV = 0;
+            foreach (var corner in BoxCorners(zone.Min, zone.Max))
+            {
+                var d = corner - cp;
+                halfU = Math.Max(halfU, Math.Abs(d.DotProduct(right)));
+                halfV = Math.Max(halfV, Math.Abs(d.DotProduct(up)));
+            }
+            halfU += toleranceFt;
+            halfV += toleranceFt;
+
+            double radius = _opts.RoundSizeMm > 0
+                ? (_opts.RoundSizeMm / 2.0) / 304.8
+                : Math.Max(0.25, Math.Max(halfU, halfV));
+
+            // One id shared by this clash's region + diameter line, so the spot-elevation pass can
+            // carry the group through to its placed tag.
+            string clashGroup = Guid.NewGuid().ToString("N");
+
+            // ── FilledRegion (circular, in the view plane) ────────────────────
+            bool fallback   = !clash.Group1.RuleColored;
+            string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
+            string cacheKey = fallback ? $"{hexColor}_FB" : $"{hexColor}_{_opts.FillStyle}";
+            if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
+            {
+                typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
+                regionTypeCache[cacheKey] = typeId;
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
+            }
+
+            if (typeId != null && typeId != ElementId.InvalidElementId)
+            {
+                try
+                {
+                    var arc1 = Arc.Create(cp, radius, 0,       Math.PI,     right, up);
+                    var arc2 = Arc.Create(cp, radius, Math.PI, 2 * Math.PI, right, up);
+                    var loop = new CurveLoop();
+                    loop.Append(arc1);
+                    loop.Append(arc2);
+                    var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
+                    ClashTagSchema.StampTag(fr, clashGroup);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region (vertical)", ex); }
+            }
+
+            // ── Vertical diameter line (top→bottom of the round), tagged for the spot-elevation pass ──
+            var bottom = cp - up.Multiply(radius);
+            var top    = cp + up.Multiply(radius);
+            var line   = CreateLine(doc, view, lineStyleId, bottom, top, clashGroup);
+            return line != null;
         }
 
         // ── FilledRegionType management ───────────────────────────────────────
