@@ -842,9 +842,59 @@ namespace LemoineTools.Lemoine
 
         private void AnimateContent(Border b, bool expand)
         {
-            var a = new DoubleAnimation { To = expand ? 1200 : 0, Duration = TimeSpan.FromMilliseconds(expand ? LemoineSettings.Instance.AnimExpand : LemoineSettings.Instance.AnimMed), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-            b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
-            if (expand) LemoineMotion.FadeSlideIn(b);   // content fades up as the step opens
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+            if (expand)
+            {
+                // Measure the content's natural height so the step isn't capped at a
+                // fixed ceiling. MaxHeight animates 0 → measured height, then is released
+                // to unbounded on completion so tall content is never clipped and can
+                // reflow freely afterwards (validation text, content refresh, etc.).
+                double target = MeasureContentHeight(b);
+
+                var a = new DoubleAnimation
+                {
+                    To             = target,
+                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimExpand),
+                    EasingFunction = ease,
+                };
+                a.Completed += (s, e) =>
+                {
+                    b.BeginAnimation(FrameworkElement.MaxHeightProperty, null); // drop the animation hold
+                    b.MaxHeight = double.PositiveInfinity;                      // no ceiling once open
+                };
+                b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+                LemoineMotion.FadeSlideIn(b);   // content fades up as the step opens
+            }
+            else
+            {
+                // Collapsing: MaxHeight may currently be PositiveInfinity (released on a
+                // prior expand), so pin a concrete From before animating down to 0.
+                var a = new DoubleAnimation
+                {
+                    From           = b.ActualHeight,
+                    To             = 0,
+                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimMed),
+                    EasingFunction = ease,
+                };
+                b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+            }
+        }
+
+        // Natural (uncapped) height of a step's content border, used as the expand
+        // animation target. Measures the inner child against the border's laid-out
+        // width plus its vertical padding; falls back to a generous default if the
+        // border hasn't been laid out yet (e.g. first activation during construction).
+        private double MeasureContentHeight(Border b)
+        {
+            if (b.Child is FrameworkElement child)
+            {
+                double width = b.ActualWidth > 0 ? b.ActualWidth : 1000;
+                child.Measure(new Size(width, double.PositiveInfinity));
+                double h = child.DesiredSize.Height + b.Padding.Top + b.Padding.Bottom;
+                if (h > 0) return h;
+            }
+            return 1200;
         }
 
         // ═══════════════════════════════════════ RUN / RESET ══════════════════
