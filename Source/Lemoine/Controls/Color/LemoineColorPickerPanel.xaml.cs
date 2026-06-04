@@ -25,6 +25,7 @@ namespace LemoineTools.Lemoine.Controls
         private const int ProjectSwatchSize = 30;
         private const int RecentSwatchSize  = 22;
         private const int RightColWidth     = 204;  // 6 × (30px swatch + 4px margin)
+        private const int HexLength         = 6;     // RRGGBB — the hex box accepts exactly this many digits
 
         private static readonly string PersistPath =
             IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -427,12 +428,22 @@ namespace LemoineTools.Lemoine.Controls
                 Background               = Brushes.Transparent,
                 Padding                  = new Thickness(0, 7, 8, 7),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                MaxLength                = 8,
+                MaxLength                = HexLength,   // exactly 6 RGB hex digits — no more, no less
             };
             _hexBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
             _hexBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
             _hexBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
             _hexBox.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            // Select the whole value on focus so a paste overwrites it wholesale.
+            _hexBox.GotKeyboardFocus        += (s, e) => _hexBox.SelectAll();
+            _hexBox.GotMouseCapture         += (s, e) => _hexBox.SelectAll();
+            _hexBox.PreviewMouseLeftButtonDown += HexBox_PreviewMouseLeftButtonDown;
+            // Only allow hex digits to be typed.
+            _hexBox.PreviewTextInput        += (s, e) => { if (!IsHexText(e.Text)) e.Handled = true; };
+            // Sanitise paste: strip '#'/non-hex, keep at most HexLength digits.
+            DataObject.AddPastingHandler(_hexBox, HexBox_OnPaste);
+            // Live-update the colour the instant the value becomes a complete hex — no Enter needed.
+            _hexBox.TextChanged += HexBox_TextChanged;
             _hexBox.LostFocus += (s, e) => CommitHex();
             _hexBox.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitHex(); e.Handled = true; } };
             hexInner.Children.Add(hashLbl);
@@ -1082,6 +1093,42 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         // Commit text inputs
         // ─────────────────────────────────────────────────────────────────────
+        // First click into the (unfocused) box focuses it and selects everything,
+        // so the next paste/keystroke overwrites the value rather than inserting.
+        private void HexBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_hexBox == null || _hexBox.IsKeyboardFocusWithin) return;
+            e.Handled = true;
+            _hexBox.Focus();
+            _hexBox.SelectAll();
+        }
+
+        private void HexBox_OnPaste(object sender, DataObjectPastingEventArgs e)
+        {
+            if (e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true))
+            {
+                var raw      = e.SourceDataObject.GetData(DataFormats.UnicodeText) as string ?? "";
+                var cleaned  = new string(raw.Where(IsHexChar).ToArray());
+                if (cleaned.Length > HexLength) cleaned = cleaned.Substring(0, HexLength);
+
+                // SelectAll on focus means the box is empty of selection-survivors; replace wholesale.
+                if (_hexBox != null) _hexBox.SelectedText = cleaned;
+            }
+            e.CancelCommand(); // we have already applied the sanitised text
+        }
+
+        private void HexBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // Only react to user edits; programmatic RefreshAll updates happen while unfocused.
+            if (_hexBox == null || !_hexBox.IsKeyboardFocusWithin) return;
+            if (_hexBox.Text?.Length == HexLength) CommitHex();
+        }
+
+        private static bool IsHexChar(char c) =>
+            (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
+        private static bool IsHexText(string s) => !string.IsNullOrEmpty(s) && s.All(IsHexChar);
+
         private void CommitHex()
         {
             if (_hexBox == null) return;
