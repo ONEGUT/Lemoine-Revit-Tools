@@ -286,6 +286,16 @@ Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **wi
 
 ---
 
+## View Filters & Linked Models
+
+Discovered while making **Make Ceiling Grids** hide linked ceilings.
+
+- **Host view filters only affect linked elements when the link is displayed "By Host View"** in that view. To hide or override linked elements, apply a `ParameterFilterElement` on the host view — do **not** rely on per-instance `view.HideElements`, because `FilteredElementCollector(doc, viewId)` (the host-view collector) never returns elements that live inside links, so it silently misses every linked ceiling. Warn the user about any link not set to "By Host View" (see `ReportLinkDisplayModes`) rather than changing the link's display.
+- **A `ParameterFilterElement` rule matches a single parameter** — family AND type cannot be AND-combined in one rule. Match ceiling types by the link-safe built-in `ALL_MODEL_TYPE_NAME` ("Type Name"); link-safe built-in parameters are listed in `AutoFiltersSettings.LinkSafeParameters`.
+- **Prefer the Ceiling Heatmap filter mechanism for any filter-driven tool.** Register an `ExternallyManaged` trade (`FilterTradeConfig`) with one rule per item, create one matching `ParameterFilterElement` per rule (reuse-by-name via `AutoFiltersSettings.MakeFilterName`), apply per-view inside a single transaction, and call `ReportLinkDisplayModes` — rather than hand-rolling a combined filter. `CeilingHeatmapEventHandler.RegisterCeilingHeatmapTrade` is the reference.
+
+---
+
 ## Build Environment
 
 This project cannot be built on Linux. `UseWPF=true` + `net48` requires `Microsoft.NET.Sdk.WindowsDesktop`, which is Windows-only — neither the Linux .NET SDK nor Mono can satisfy it. Do not attempt Linux CI or cloud builds. Build and test on Windows only.
