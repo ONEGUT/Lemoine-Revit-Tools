@@ -97,4 +97,32 @@
     <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
+  <!-- Stamp the current git branch + short commit into the assembly as metadata, so the
+       settings footer can show exactly which source the deployed DLL was built from. Runs
+       before compile; if git is missing the values fall back to "unknown" and the build
+       still succeeds. WriteOnlyWhenDifferent keeps incremental builds clean. -->
+  <Target Name="StampGitInfo" BeforeTargets="CoreCompile">
+    <Exec Command="git rev-parse --abbrev-ref HEAD" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitBranch" />
+    </Exec>
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommit" />
+    </Exec>
+    <PropertyGroup>
+      <GitBranch Condition="'$(GitBranch)' == ''">unknown</GitBranch>
+      <GitCommit Condition="'$(GitCommit)' == ''">unknown</GitCommit>
+      <GitInfoFile>$(IntermediateOutputPath)GitInfo.g.cs</GitInfoFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <_GitInfoLines Include="[assembly: System.Reflection.AssemblyMetadata(&quot;GitBranch&quot;, &quot;$(GitBranch)&quot;)]" />
+      <_GitInfoLines Include="[assembly: System.Reflection.AssemblyMetadata(&quot;GitCommit&quot;, &quot;$(GitCommit)&quot;)]" />
+    </ItemGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(GitInfoFile)" Lines="@(_GitInfoLines)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(GitInfoFile)" />
+      <FileWrites Include="$(GitInfoFile)" />
+    </ItemGroup>
+  </Target>
+
 </Project>
