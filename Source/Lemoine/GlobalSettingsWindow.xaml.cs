@@ -11,7 +11,6 @@ using System.Windows.Automation;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Ceilings;
-using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Lemoine
@@ -121,7 +120,6 @@ namespace LemoineTools.Lemoine
         private static readonly (string Id, string Label)[] _navDefs =
         {
             ("general", "General"),
-            ("t04",     "Link Views"),
             ("tz",      "Create Sheets"),
         };
 
@@ -222,7 +220,6 @@ namespace LemoineTools.Lemoine
             switch (tabId)
             {
                 case "general":  content = BuildGeneralContent();  break;
-                case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
                 case "tz":       content = BuildSpecContent(new CreateSheetsViewModel(), "Create Sheets"); break;
                 default:         content = BuildNoSettingsContent(); break;
