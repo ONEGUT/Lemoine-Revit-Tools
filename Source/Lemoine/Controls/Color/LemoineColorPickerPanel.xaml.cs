@@ -648,8 +648,9 @@ namespace LemoineTools.Lemoine.Controls
                 var capturedIdx = setIndex;
 
                 var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-                row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition());                           // name / rename field
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // Edit
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // Delete
 
                 var nameTb = MakeLabel(cs.Name);
                 nameTb.Margin = new Thickness(4, 4, 4, 4);
@@ -660,6 +661,68 @@ namespace LemoineTools.Lemoine.Controls
                 };
                 Grid.SetColumn(nameTb, 0);
                 row.Children.Add(nameTb);
+
+                // Inline rename field — hidden until Edit is pressed.
+                var renameBox = new TextBox
+                {
+                    Text            = cs.Name,
+                    Padding         = new Thickness(6, 4, 6, 4),
+                    BorderThickness = new Thickness(1),
+                    MaxLength       = 32,
+                    Visibility      = Visibility.Collapsed,
+                };
+                renameBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+                renameBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+                renameBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+                renameBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
+                renameBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
+                renameBox.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+                Grid.SetColumn(renameBox, 0);
+                row.Children.Add(renameBox);
+
+                var editBtn = LemoineControlStyles.BuildSmallButton(
+                    "Edit", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                editBtn.Margin = new Thickness(4, 2, 2, 2);
+                Grid.SetColumn(editBtn, 1);
+                row.Children.Add(editBtn);
+
+                bool committing = false;
+                Action commitRename = () =>
+                {
+                    if (committing) return;
+                    committing = true;
+                    var newName = renameBox.Text?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(newName))
+                    {
+                        RenameSet(capturedIdx, newName);   // rebuilds the dropdown
+                    }
+                    else
+                    {
+                        renameBox.Visibility = Visibility.Collapsed;
+                        nameTb.Visibility    = Visibility.Visible;
+                    }
+                };
+
+                editBtn.Click += (s, e) =>
+                {
+                    nameTb.Visibility    = Visibility.Collapsed;
+                    renameBox.Visibility = Visibility.Visible;
+                    renameBox.Text       = cs.Name;
+                    renameBox.Focus();
+                    renameBox.SelectAll();
+                    e.Handled = true;
+                };
+                renameBox.LostFocus += (s, e) => commitRename();
+                renameBox.KeyDown   += (s, e) =>
+                {
+                    if (e.Key == Key.Enter)  { commitRename(); e.Handled = true; }
+                    else if (e.Key == Key.Escape)
+                    {
+                        renameBox.Visibility = Visibility.Collapsed;
+                        nameTb.Visibility    = Visibility.Visible;
+                        e.Handled = true;
+                    }
+                };
 
                 if (_colorSets.Count > 1)
                 {
@@ -699,7 +762,7 @@ namespace LemoineTools.Lemoine.Controls
                         _removePopup.IsOpen = true;
                         e.Handled = true;
                     };
-                    Grid.SetColumn(deleteBtn, 1);
+                    Grid.SetColumn(deleteBtn, 2);
                     row.Children.Add(deleteBtn);
                 }
 
@@ -807,6 +870,15 @@ namespace LemoineTools.Lemoine.Controls
             SavePersisted();
             RefreshProjectGrid();
             RefreshDropdownLabel();
+        }
+
+        private void RenameSet(int idx, string name)
+        {
+            if (idx < 0 || idx >= _colorSets.Count) return;
+            _colorSets[idx].Name = name;
+            SavePersisted();
+            RefreshDropdownLabel();
+            RefreshDropdownContent();
         }
 
         private void DeleteSet(int idx)
