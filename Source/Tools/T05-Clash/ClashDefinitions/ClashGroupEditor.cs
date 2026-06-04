@@ -11,7 +11,7 @@ using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Reusable WPF builder for editing one <see cref="ClashGroupSpec"/> (Group 1 or

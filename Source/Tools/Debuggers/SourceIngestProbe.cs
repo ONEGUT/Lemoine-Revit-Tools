@@ -6,7 +6,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.Clash;
 
 namespace LemoineTools.Tools.Debuggers
 {

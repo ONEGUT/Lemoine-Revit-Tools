@@ -2,21 +2,21 @@
 using System;
 using System.IO;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
-    internal sealed class BatchExportDebugLogger : IDisposable
+    internal sealed class BulkExportDebugLogger : IDisposable
     {
         private StreamWriter? _w;
         private bool _disposed;
 
-        internal BatchExportDebugLogger(string outputFolder)
+        internal BulkExportDebugLogger(string outputFolder)
         {
             try
             {
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string path = Path.Combine(outputFolder, $"BatchExportDebug_{timestamp}.log");
+                string path = Path.Combine(outputFolder, $"BulkExportDebug_{timestamp}.log");
                 _w = new StreamWriter(path, append: false) { AutoFlush = true };
-                _w.WriteLine($"=== Batch Export Debug Log — {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+                _w.WriteLine($"=== Bulk Export Debug Log — {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
                 _w.WriteLine($"Machine: {Environment.MachineName}  User: {Environment.UserName}");
                 _w.WriteLine($"CLR: {Environment.Version}  OS: {Environment.OSVersion}");
                 _w.WriteLine();

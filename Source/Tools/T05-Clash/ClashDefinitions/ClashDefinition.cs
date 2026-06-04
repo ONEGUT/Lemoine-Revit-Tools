@@ -1,7 +1,7 @@
 using System;
 using System.Xml.Serialization;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// A saved, named clash definition: two element groups (Group 1 vs Group 2) plus the

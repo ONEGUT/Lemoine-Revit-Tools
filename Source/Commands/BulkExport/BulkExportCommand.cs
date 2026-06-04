@@ -6,13 +6,13 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.BulkExport;
 
 namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class BatchExportCommand : IExternalCommand
+    public class BulkExportCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -64,8 +64,8 @@ namespace LemoineTools.Commands
                 .OrderBy(n => n)
                 .ToList();
 
-            var vm    = new BatchExportViewModel(
-                App.BatchExportHandler!, App.BatchExportEvent!,
+            var vm    = new BulkExportViewModel(
+                App.BulkExportHandler!, App.BulkExportEvent!,
                 dwgSetupNames, allSheets, allViews);
 
             var ready = new ManualResetEventSlim(false);

@@ -1,6 +1,6 @@
 using Autodesk.Revit.DB;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// Maps world XYZ points and directions into the view's 2D paper plane using the view's

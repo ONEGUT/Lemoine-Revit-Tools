@@ -40,9 +40,10 @@
       Source\Tools\T03-LinkViews\         — Link Views view-models + settings (ns: LemoineTools.Tools.LinkViews)
       Source\Tools\T04-ModifyElements\    — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
       Source\Tools\Debuggers\             — Debug view-models (ns: LemoineTools.Tools.Debuggers)
+      Source\Tools\BulkExport\            — Bulk Export (PDF/DWG/NWC/IFC) + SheetPack (ns: LemoineTools.Tools.BulkExport)
       Source\Tools\Testing\               — Experimental tools, one subfolder each
-                                            (BatchExport, CreateSheets, LegendCreator,
-                                            SheetPack; ns: LemoineTools.Tools.Testing.*)
+                                            (CreateSheets, LegendCreator;
+                                            ns: LemoineTools.Tools.Testing.*)
       Source\Lemoine\                     — library (StepFlowWindow, GlobalSettingsWindow, controls)
       Source\Lemoine\Controls\            — shared WPF controls (Color, Input, Layout, Legend)
       Source\Lemoine\Templates\           — template store

@@ -4,18 +4,18 @@ using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
-    [XmlRoot("BatchExportSettings")]
-    public sealed class BatchExportSettings
+    [XmlRoot("BulkExportSettings")]
+    public sealed class BulkExportSettings
     {
         // ── Singleton ─────────────────────────────────────────────────────────
-        private static readonly Lazy<BatchExportSettings> _lazy =
-            new Lazy<BatchExportSettings>(Load);
+        private static readonly Lazy<BulkExportSettings> _lazy =
+            new Lazy<BulkExportSettings>(Load);
 
-        public static BatchExportSettings Instance => _lazy.Value;
+        public static BulkExportSettings Instance => _lazy.Value;
 
-        public BatchExportSettings() { }
+        public BulkExportSettings() { }
 
         // ── Output ────────────────────────────────────────────────────────────
         public string OutputFolder  { get; set; } = "";
@@ -84,8 +84,8 @@ namespace LemoineTools.Tools.Testing
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings: create config directory", __lex); }
-                return Path.Combine(dir, "BatchExportSettings.xml");
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings: create config directory", __lex); }
+                return Path.Combine(dir, "BulkExportSettings.xml");
             }
         }
 
@@ -93,27 +93,59 @@ namespace LemoineTools.Tools.Testing
         {
             try
             {
-                var xs = new XmlSerializer(typeof(BatchExportSettings));
+                var xs = new XmlSerializer(typeof(BulkExportSettings));
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings.Save", __lex); }
+            catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings.Save", __lex); }
         }
 
-        private static BatchExportSettings Load()
+        // Legacy file written before this tool graduated from "Batch Export".
+        private static string LegacyFilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "LemoineTools", "BatchExportSettings.xml");
+
+        // One-time migration: read the old BatchExportSettings.xml (root element
+        // "BatchExportSettings") into this type, then persist under the new name so
+        // users keep their saved packs and preferences after the rename.
+        private static BulkExportSettings? MigrateFromLegacy()
+        {
+            try
+            {
+                if (!File.Exists(LegacyFilePath)) return null;
+                var xs = new XmlSerializer(typeof(BulkExportSettings),
+                                           new XmlRootAttribute("BatchExportSettings"));
+                BulkExportSettings migrated;
+                using (var r = new StreamReader(LegacyFilePath))
+                    migrated = (BulkExportSettings)xs.Deserialize(r)!;
+                migrated.Save();   // write to the new BulkExportSettings.xml
+                return migrated;
+            }
+            catch (Exception __lex)
+            {
+                LemoineLog.Swallowed("BulkExportSettings.MigrateFromLegacy", __lex);
+                return null;
+            }
+        }
+
+        private static BulkExportSettings Load()
         {
             try
             {
                 string path = FilePath;
                 if (File.Exists(path))
                 {
-                    var xs = new XmlSerializer(typeof(BatchExportSettings));
+                    var xs = new XmlSerializer(typeof(BulkExportSettings));
                     using (var r = new StreamReader(path))
-                        return (BatchExportSettings)xs.Deserialize(r)!;
+                        return (BulkExportSettings)xs.Deserialize(r)!;
                 }
+
+                // No new-format file yet — migrate the legacy Batch Export file if present.
+                var migrated = MigrateFromLegacy();
+                if (migrated != null) return migrated;
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings.Load", __lex); }
-            return new BatchExportSettings();
+            catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings.Load", __lex); }
+            return new BulkExportSettings();
         }
     }
 }

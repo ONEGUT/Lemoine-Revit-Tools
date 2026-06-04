@@ -5,6 +5,8 @@ using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
+using LemoineTools.Tools.BulkExport;
+using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 using System;
@@ -60,16 +62,16 @@ namespace LemoineTools
         internal static ReplicateDependentViewsRunHandler? ReplicateDependentViewsRunHandler { get; private set; }
         internal static ExternalEvent?                     ReplicateDependentViewsRunEvent   { get; private set; }
 
-        // ── Testing — Batch Export ──────────────────────────────────────────────────
-        internal static BatchExportEventHandler?   BatchExportHandler   { get; private set; }
-        internal static ExternalEvent?             BatchExportEvent     { get; private set; }
+        // ── T03 — Bulk Export ───────────────────────────────────────────────────────
+        internal static BulkExportEventHandler?   BulkExportHandler   { get; private set; }
+        internal static ExternalEvent?             BulkExportEvent     { get; private set; }
 
         // ── T05 — Clash (Definitions + Finder & Dimensioning) ───────────────────────
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
         internal static ExternalEvent?              ClashPickEvent        { get; private set; }
         internal static ClashFinderEventHandler?    ClashFinderHandler    { get; private set; }
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
-        internal static LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
+        internal static LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
@@ -143,13 +145,13 @@ namespace LemoineTools
             ReplicateDependentViewsRunEvent   = ExternalEvent.Create(ReplicateDependentViewsRunHandler);
 
             // ── Testing — new tools ───────────────────────────────────────────
-            BatchExportHandler   = new BatchExportEventHandler();
-            BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
+            BulkExportHandler   = new BulkExportEventHandler();
+            BulkExportEvent     = ExternalEvent.Create(BulkExportHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
-            SlabPickHandler       = new LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler();
+            SlabPickHandler       = new LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
@@ -213,12 +215,9 @@ namespace LemoineTools
                 "Permanently delete selected ParameterFilterElements from the project.",
                 "\uE74d"));  // Segoe MDL2: Delete
 
-            // ── T01B — Legend ─────────────────────────────────────────────────
-            // Large: Legend Creation (single entry — opens the window where
-            // legends are built, created, and updated)
-            var legendPanel = application.CreateRibbonPanel("Lemoine Tools", "T01B  Legend");
-
-            legendPanel.AddItem(Btn(
+            // Legend Creation — lives in T01, furthest right (opens the window
+            // where legends are built, created, and updated).
+            filtersPanel.AddItem(Btn(
                 "LT_LegendSettings", "Legend\nCreation", "OpenLegendSettingsCommand",
                 "Open the Legend Creation window to build, create, and update Legend views.",
                 "\uE713"));  // Segoe MDL2: Settings gear
@@ -282,6 +281,11 @@ namespace LemoineTools
                 "LT_ReplicateDependentViews", "Replicate\nDep. Views", "ReplicateDependentViewsCommand",
                 "Copy dependent views and their crop regions from a source view onto one or more target views.",
                 "\uE8C8"));  // Segoe MDL2: Copy
+
+            linkViewsPanel.AddItem(Btn(
+                "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
+                "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
+                char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
@@ -352,8 +356,6 @@ namespace LemoineTools
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
 
             testingPanel.AddStackedItems(
-                Btn("LT_BatchExport",         "Batch Export",  "BatchExportCommand",
-                    "Export sheets and views to PDF or DWG in bulk with token-based filenames."),
                 Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",

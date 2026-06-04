@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>A source document the resolvers scan — the host plus every loaded link.</summary>
     public sealed class SourceDoc

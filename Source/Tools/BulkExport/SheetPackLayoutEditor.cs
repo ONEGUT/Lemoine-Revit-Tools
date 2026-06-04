@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
     /// <summary>
     /// Code-behind-only UserControl that renders a sheet-pack layout editor.

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Xml.Serialization;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
     /// <summary>
     /// A named pack — an ordered list of sheet numbers exported together as one combined PDF.

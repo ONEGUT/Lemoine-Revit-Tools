@@ -7,7 +7,7 @@ using LemoineTools.Tools.AutoFilters;
 
 using RevitColor = Autodesk.Revit.DB.Color;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>Marking options for one clash definition (lifted from ClashDimensionSettings).</summary>
     public struct ClashMarkingOptions

@@ -4,9 +4,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension.Resolvers;
+using LemoineTools.Tools.Clash.AutoDimension.Resolvers;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Manual-datum target mode: prompts the user to pick one datum edge per view (host or linked

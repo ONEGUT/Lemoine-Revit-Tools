@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
     /// Pluggable, injected collision predicate. The layout core knows nothing about Revit;

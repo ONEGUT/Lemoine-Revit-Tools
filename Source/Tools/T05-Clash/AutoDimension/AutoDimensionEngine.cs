@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension.Resolvers;
+using LemoineTools.Tools.Clash.AutoDimension.Resolvers;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>The Revit references for one planned dimension, kept parallel to the
     /// (serializable) plan so the plan itself stays Revit-free.</summary>

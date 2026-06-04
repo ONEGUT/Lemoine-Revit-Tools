@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>Which destination a dimension measures out to. All are first-class peers.</summary>
     public enum TargetType { Grid, SlabEdge, ManualDatum }

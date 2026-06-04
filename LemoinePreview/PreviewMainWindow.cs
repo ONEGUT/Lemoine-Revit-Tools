@@ -13,6 +13,7 @@ using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
+using LemoineTools.Tools.BulkExport;
 using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Testing.LegendCreator;
 
@@ -1057,7 +1058,7 @@ namespace LemoineTools.Preview
                 ("t03",     "Ceiling Heatmap"),
                 ("t04",     "Link Views"),
                 ("t08",     "Legend Creator"),
-                ("tx",      "Batch Export"),
+                ("tx",      "Bulk Export"),
                 ("tz",      "Create Sheets"),
             };
             const int pillNavVisible = 6;
@@ -1222,7 +1223,7 @@ namespace LemoineTools.Preview
                 case "t03":      content = BuildSpecContent(BuildCeilingHeatmapProxy(), "Ceiling Heatmap");   break;
                 case "t04":      content = BuildSpecContent(BuildLinkViewsProxy(),      "Link Views");        break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this);                        break;
-                case "tx":       content = BuildSpecContent(BuildBatchExportProxy(),    "Batch Export");      break;
+                case "tx":       content = BuildSpecContent(BuildBulkExportProxy(),    "Bulk Export");      break;
                 case "tz":       content = BuildSpecContent(BuildCreateSheetsProxy(),   "Create Sheets");     break;
                 default:         content = BuildGeneralContent();                                             break;
             }
@@ -1588,13 +1589,13 @@ namespace LemoineTools.Preview
                 });
         }
 
-        private ILemoineToolSettings BuildBatchExportProxy()
+        private ILemoineToolSettings BuildBulkExportProxy()
         {
-            var s = BatchExportSettings.Instance;
+            var s = BulkExportSettings.Instance;
             return new SpecProxy(
                 new LemoineToolSettingsSpec
                 {
-                    Id = "tx", Label = "Batch Export", Icon = "Tx",
+                    Id = "tx", Label = "Bulk Export", Icon = "Tx",
                     Description = "Export sheets and views to PDF and DWG with parametric filenames.",
                     Groups = new List<LemoineSettingsGroup>
                     {

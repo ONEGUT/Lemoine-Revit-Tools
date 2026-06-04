@@ -1,6 +1,6 @@
 using System;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
     /// Minimal 2D vector of doubles. Revit-free so the layout core is unit-testable on
