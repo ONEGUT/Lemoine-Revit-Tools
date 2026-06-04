@@ -573,7 +573,7 @@ namespace LemoineTools.Lemoine.Controls
             btn.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
             btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var inner = new Grid();
+            var inner = new Grid { Background = Brushes.Transparent }; // hit-testable across the whole button, not just the text
             inner.ColumnDefinitions.Add(new ColumnDefinition());
             inner.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -609,7 +609,27 @@ namespace LemoineTools.Lemoine.Controls
             {
                 RefreshDropdownContent();
                 _setDropdownPanel.Visibility = Visibility.Visible;
+
+                // Close the dropdown when the user clicks anywhere outside it.
+                // Window-level PreviewMouseDown (detached on collapse) is the crash-safe
+                // alternative to a StaysOpen=false popup hook.
+                var win = Window.GetWindow(this);
+                if (win != null)
+                {
+                    win.PreviewMouseDown -= OnWindowPreviewMouseDown_Dropdown; // guard against double-attach
+                    win.PreviewMouseDown += OnWindowPreviewMouseDown_Dropdown;
+                }
             }
+        }
+
+        private void OnWindowPreviewMouseDown_Dropdown(object sender, MouseButtonEventArgs e)
+        {
+            if (_setDropdownPanel == null || _setDropdownPanel.Visibility != Visibility.Visible) return;
+
+            bool insidePanel  = _setDropdownPanel.IsMouseOver;
+            bool insideButton = _dropdownBtn != null && _dropdownBtn.IsMouseOver;
+            if (!insidePanel && !insideButton)
+                CollapseDropdown();
         }
 
         private FrameworkElement BuildSetDropdownPanel()
@@ -636,6 +656,10 @@ namespace LemoineTools.Lemoine.Controls
         {
             if (_setDropdownPanel != null)
                 _setDropdownPanel.Visibility = Visibility.Collapsed;
+
+            var win = Window.GetWindow(this);
+            if (win != null)
+                win.PreviewMouseDown -= OnWindowPreviewMouseDown_Dropdown;
         }
 
         private void RefreshDropdownContent()
@@ -654,8 +678,9 @@ namespace LemoineTools.Lemoine.Controls
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // Delete
 
                 var nameTb = MakeLabel(cs.Name);
-                nameTb.Margin = new Thickness(4, 4, 4, 4);
-                nameTb.Cursor = Cursors.Hand;
+                nameTb.Margin     = new Thickness(4, 4, 4, 4);
+                nameTb.Cursor     = Cursors.Hand;
+                nameTb.Background  = Brushes.Transparent; // make the full column width clickable, not just the glyphs
                 nameTb.MouseLeftButtonUp += (s, e) =>
                 {
                     SwitchToSet(capturedIdx);
