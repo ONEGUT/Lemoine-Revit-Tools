@@ -349,8 +349,8 @@ namespace LemoineTools.Tools.AutoFilters
                 return;
             }
 
-            // Whole-category ("all") matches every element via the always-present
-            // Category parameter, so it needs no per-trade parameter resolution.
+            // Whole-category ("all") is a rule-less, categories-only filter, so it needs no
+            // per-trade parameter resolution.
             ElementId? paramId = null;
             if (!wholeCat)
             {
@@ -396,30 +396,41 @@ namespace LemoineTools.Tools.AutoFilters
 
             try
             {
-                // Build the element filter once — used to create a new filter or to update
-                // an existing one's definition.
-                ElementFilter? elementFilter = BuildElementFilter(
-                    paramId, rule, isFab, isStructMat, matMap, doc, matchType);
+                // Whole-category rules ("all") match every element in their categories via a
+                // RULE-LESS ParameterFilterElement — never a rule on the Category parameter.
+                // ELEM_CATEGORY_PARAM is not a valid filter parameter for these category sets,
+                // so a HasValue rule on it throws "parameter does not apply to this filter's
+                // categories" and the filter is never created. A categories-only filter (the
+                // 3-arg ParameterFilterElement.Create) is the canonical "everything in these
+                // categories" filter and references no parameter. Every other match type
+                // builds a rule-based filter as usual.
+                ElementFilter? elementFilter = wholeCat
+                    ? null
+                    : BuildElementFilter(paramId, rule, isFab, isStructMat, matMap, doc, matchType);
+
+                // A non-whole-category rule that yields no filter is a genuine build failure;
+                // a whole-category rule legitimately has no element filter.
+                bool buildFailed = !wholeCat && elementFilter == null;
 
                 ParameterFilterElement? pfe;
                 if (existingFilters.TryGetValue(filterName, out pfe))
                 {
                     reused++;
 
-                    if (refreshDef)
+                    if (refreshDef && !buildFailed)
                     {
-                        // Update categories + rules in place (preserves ElementId). If the
-                        // filter rule can't be built, leave the existing definition untouched
-                        // rather than break a working filter.
+                        // Update categories in place (preserves ElementId, so view assignments
+                        // and legend links survive). Rule-based filters also get their rules
+                        // refreshed; a whole-category filter has no rules to set.
+                        pfe.SetCategories(catIds);
                         if (elementFilter != null)
-                        {
-                            pfe.SetCategories(catIds);
                             pfe.SetElementFilter(elementFilter);
-                        }
-                        else
-                        {
-                            Log($"Kept '{filterName}': could not rebuild filter rule, left unchanged.", "info");
-                        }
+                    }
+                    else if (refreshDef)
+                    {
+                        // buildFailed — leave the existing definition untouched rather than
+                        // break a working filter.
+                        Log($"Kept '{filterName}': could not rebuild filter rule, left unchanged.", "info");
                     }
                     else if (KeepExistingOverrides)
                     {
@@ -432,14 +443,17 @@ namespace LemoineTools.Tools.AutoFilters
                 }
                 else
                 {
-                    if (elementFilter == null)
+                    if (buildFailed)
                     {
                         Log($"Skip '{filterName}': could not build filter rule.", "info");
                         skip++; rulesDone++;
                         return;
                     }
 
-                    pfe = ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+                    // Whole-category → rule-less filter (3-arg Create); otherwise rule-based.
+                    pfe = elementFilter == null
+                        ? ParameterFilterElement.Create(doc, filterName, catIds)
+                        : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
                     existingFilters[filterName] = pfe;
                     pass++;
                 }
@@ -483,16 +497,10 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> matMap, Document doc,
             string matchType)
         {
-            // Whole category — match every element in the filter's categories.
-            // Uses the Category parameter (present on every element) so no per-trade
-            // parameter resolution is required and link-only categories still work.
-            if (matchType == "all")
-            {
-                var catParam = new ElementId((long)(int)BuiltInParameter.ELEM_CATEGORY_PARAM);
-                return new ElementParameterFilter(
-                    ParameterFilterRuleFactory.CreateHasValueParameterRule(catParam));
-            }
-
+            // Note: whole-category ("all") rules never reach here — ProcessRule builds them as
+            // rule-less ParameterFilterElements (no element filter), because a rule on the
+            // Category parameter is rejected by Revit ("parameter does not apply to this
+            // filter's categories").
             if (paramId == null) return null;
 
             // Parameter-level predicates ignore keywords entirely.
