@@ -48,14 +48,25 @@ namespace LemoineTools.Commands
                 .OrderBy(v => v.Name)
                 .ToList();
 
-            // Spot elevation types available to tag with.
-            var spotElevCatId = new ElementId(BuiltInCategory.OST_SpotElevations);
+            // Spot elevation types available to tag with. Filter via the collector's category
+            // filter (reading SpotDimensionType.Category directly can return null for annotation
+            // types, which silently dropped every type); fall back to every spot dimension type so
+            // the picker is never empty when the project does have types.
             var spotTypes = new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_SpotElevations)
                 .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
-                .Where(t => t.Category != null && t.Category.Id == spotElevCatId)
                 .OrderBy(t => t.Name)
                 .Select(t => (Name: t.Name, Id: t.Id))
                 .ToList();
+
+            if (spotTypes.Count == 0)
+            {
+                spotTypes = new FilteredElementCollector(doc)
+                    .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
+                    .OrderBy(t => t.Name)
+                    .Select(t => (Name: t.Name, Id: t.Id))
+                    .ToList();
+            }
 
             var definitions = ClashDefinitionsSettings.Instance.Definitions
                 ?? new List<ClashDefinition>();
