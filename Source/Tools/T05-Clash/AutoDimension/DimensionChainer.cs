@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>One resolved clash→target pair on a single axis, before chaining. Revit-aware
     /// (carries the references), so it lives here rather than in the Revit-free layout core.</summary>

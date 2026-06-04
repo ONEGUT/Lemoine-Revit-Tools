@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// SLAB_EDGE target resolver — the real complexity, quarantined here so the GRID path never

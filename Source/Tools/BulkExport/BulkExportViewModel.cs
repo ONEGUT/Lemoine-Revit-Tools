@@ -16,12 +16,12 @@ using WpfComboBox   = System.Windows.Controls.ComboBox;
 using WpfVisibility = System.Windows.Visibility;
 using WpfBrushes    = System.Windows.Media.Brushes;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
-    public class BatchExportViewModel : ILemoineTool, ILemoineReviewable
+    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
-        public string Title    => "Batch Export";
+        public string Title    => "Bulk Export";
         public string RunLabel => "Export in Revit →";
 
         public StepDefinition[] Steps => new[]
@@ -73,46 +73,46 @@ namespace LemoineTools.Tools.Testing
         private int                            _activePack = 0;
 
         // ── S3 state (filename & formats) ────────────────────────────────────
-        private string             _filenamePattern = BatchExportSettings.Instance.FilenamePattern;
-        private bool               _pdfOn           = BatchExportSettings.Instance.ExportPdf;
-        private bool               _dwgOn           = BatchExportSettings.Instance.ExportDwg;
-        private bool               _nwcOn           = BatchExportSettings.Instance.ExportNwc;
-        private bool               _ifcOn           = BatchExportSettings.Instance.ExportIfc;
-        private string             _ifcVersion      = BatchExportSettings.Instance.IfcVersion;
-        private string             _dwgSetup        = BatchExportSettings.Instance.DwgExportSetupName;
+        private string             _filenamePattern = BulkExportSettings.Instance.FilenamePattern;
+        private bool               _pdfOn           = BulkExportSettings.Instance.ExportPdf;
+        private bool               _dwgOn           = BulkExportSettings.Instance.ExportDwg;
+        private bool               _nwcOn           = BulkExportSettings.Instance.ExportNwc;
+        private bool               _ifcOn           = BulkExportSettings.Instance.ExportIfc;
+        private string             _ifcVersion      = BulkExportSettings.Instance.IfcVersion;
+        private string             _dwgSetup        = BulkExportSettings.Instance.DwgExportSetupName;
         private LemoineTokenInput? _tokenInput;
 
         // ── NWC option state (all NavisworksExportOptions properties) ─────────
-        private string _nwcCoordinates         = BatchExportSettings.Instance.NwcCoordinates;
-        private string _nwcParameters          = BatchExportSettings.Instance.NwcParameters;
-        private bool   _nwcConvertElementProps  = BatchExportSettings.Instance.NwcConvertElementProps;
-        private bool   _nwcDivideByLevel        = BatchExportSettings.Instance.NwcDivideByLevel;
-        private bool   _nwcExportLinks          = BatchExportSettings.Instance.NwcExportLinks;
-        private bool   _nwcExportParts          = BatchExportSettings.Instance.NwcExportParts;
-        private bool   _nwcExportElementIds     = BatchExportSettings.Instance.NwcExportElementIds;
-        private bool   _nwcExportUrls           = BatchExportSettings.Instance.NwcExportUrls;
-        private bool   _nwcFindMissingMaterials = BatchExportSettings.Instance.NwcFindMissingMaterials;
-        private bool   _nwcExportRoomGeometry   = BatchExportSettings.Instance.NwcExportRoomGeometry;
-        private bool   _nwcExportRoomAsAttr     = BatchExportSettings.Instance.NwcExportRoomAsAttribute;
-        private bool   _nwcConvertLights        = BatchExportSettings.Instance.NwcConvertLights;
-        private bool   _nwcConvertLinkedCad     = BatchExportSettings.Instance.NwcConvertLinkedCad;
-        private double _nwcFacetingFactor       = BatchExportSettings.Instance.NwcFacetingFactor;
+        private string _nwcCoordinates         = BulkExportSettings.Instance.NwcCoordinates;
+        private string _nwcParameters          = BulkExportSettings.Instance.NwcParameters;
+        private bool   _nwcConvertElementProps  = BulkExportSettings.Instance.NwcConvertElementProps;
+        private bool   _nwcDivideByLevel        = BulkExportSettings.Instance.NwcDivideByLevel;
+        private bool   _nwcExportLinks          = BulkExportSettings.Instance.NwcExportLinks;
+        private bool   _nwcExportParts          = BulkExportSettings.Instance.NwcExportParts;
+        private bool   _nwcExportElementIds     = BulkExportSettings.Instance.NwcExportElementIds;
+        private bool   _nwcExportUrls           = BulkExportSettings.Instance.NwcExportUrls;
+        private bool   _nwcFindMissingMaterials = BulkExportSettings.Instance.NwcFindMissingMaterials;
+        private bool   _nwcExportRoomGeometry   = BulkExportSettings.Instance.NwcExportRoomGeometry;
+        private bool   _nwcExportRoomAsAttr     = BulkExportSettings.Instance.NwcExportRoomAsAttribute;
+        private bool   _nwcConvertLights        = BulkExportSettings.Instance.NwcConvertLights;
+        private bool   _nwcConvertLinkedCad     = BulkExportSettings.Instance.NwcConvertLinkedCad;
+        private double _nwcFacetingFactor       = BulkExportSettings.Instance.NwcFacetingFactor;
 
         // ── S4 state (PDF settings) ───────────────────────────────────────────
-        private string _pdfPlacement    = BatchExportSettings.Instance.PdfPaperPlacement;
-        private string _zoomSetting     = BatchExportSettings.Instance.ZoomSetting;
-        private int    _zoomPct         = BatchExportSettings.Instance.ZoomPercent;
-        private string _colorDepth      = BatchExportSettings.Instance.ColorDepth;
-        private string _rasterQuality   = BatchExportSettings.Instance.RasterQuality;
-        private string _hiddenLines     = BatchExportSettings.Instance.HiddenLinesVector
+        private string _pdfPlacement    = BulkExportSettings.Instance.PdfPaperPlacement;
+        private string _zoomSetting     = BulkExportSettings.Instance.ZoomSetting;
+        private int    _zoomPct         = BulkExportSettings.Instance.ZoomPercent;
+        private string _colorDepth      = BulkExportSettings.Instance.ColorDepth;
+        private string _rasterQuality   = BulkExportSettings.Instance.RasterQuality;
+        private string _hiddenLines     = BulkExportSettings.Instance.HiddenLinesVector
                                           ? "Vector Processing" : "Raster Processing";
-        private bool   _combinePdf      = BatchExportSettings.Instance.CombinePdf;
-        private bool   _viewLinksBlue   = BatchExportSettings.Instance.ViewLinksInBlue;
-        private bool   _replaceHalftone = BatchExportSettings.Instance.ReplaceHalftoneWithThinLines;
+        private bool   _combinePdf      = BulkExportSettings.Instance.CombinePdf;
+        private bool   _viewLinksBlue   = BulkExportSettings.Instance.ViewLinksInBlue;
+        private bool   _replaceHalftone = BulkExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
         // ── S5 state (output) ─────────────────────────────────────────────────
-        private string _outputFolder  = BatchExportSettings.Instance.OutputFolder;
-        private bool   _splitByFormat = BatchExportSettings.Instance.SplitByFormat;
+        private string _outputFolder  = BulkExportSettings.Instance.OutputFolder;
+        private bool   _splitByFormat = BulkExportSettings.Instance.SplitByFormat;
 
         // ── Revit data ────────────────────────────────────────────────────────
         private readonly List<ViewSheet>             _allSheets;
@@ -125,12 +125,12 @@ namespace LemoineTools.Tools.Testing
         private string _previewSheetName   = "Ground Floor";
 
         // ── Revit wiring ──────────────────────────────────────────────────────
-        private readonly BatchExportEventHandler? _handler;
+        private readonly BulkExportEventHandler? _handler;
         private readonly ExternalEvent?           _event;
 
         // ── Constructor ───────────────────────────────────────────────────────
-        public BatchExportViewModel(
-            BatchExportEventHandler? handler,
+        public BulkExportViewModel(
+            BulkExportEventHandler? handler,
             ExternalEvent?           externalEvent,
             List<string>             dwgSetupNames,
             List<ViewSheet>          allSheets,
@@ -164,7 +164,7 @@ namespace LemoineTools.Tools.Testing
             }
 
             // Restore saved packs
-            var saved = BatchExportSettings.Instance.SavedPacks;
+            var saved = BulkExportSettings.Instance.SavedPacks;
             if (saved.Count > 0)
                 foreach (var p in saved) _packs.Add(p.Clone());
             else
@@ -1064,7 +1064,7 @@ namespace LemoineTools.Tools.Testing
             if (_handler == null || _event == null) return;
 
             // Persist settings
-            var s = BatchExportSettings.Instance;
+            var s = BulkExportSettings.Instance;
             s.FilenamePattern              = _filenamePattern;
             s.OutputFolder                 = _outputFolder;
             s.SplitByFormat                = _splitByFormat;
@@ -1155,11 +1155,11 @@ namespace LemoineTools.Tools.Testing
         // ═════════════════════════════════════════════════════════════════════
         public LemoineToolSettingsSpec? GetSettingsSpec()
         {
-            var s = BatchExportSettings.Instance;
+            var s = BulkExportSettings.Instance;
             return new LemoineToolSettingsSpec
             {
                 Id          = "tx",
-                Label       = "Batch Export",
+                Label       = "Bulk Export",
                 Icon        = "Tx",
                 Description = "Export sheets and views to PDF, DWG, NWC and IFC with parametric filenames.",
                 Groups      = new List<LemoineSettingsGroup>
@@ -1273,7 +1273,7 @@ namespace LemoineTools.Tools.Testing
 
         public void ApplySettings(string groupId, string settingId, object value)
         {
-            var s = BatchExportSettings.Instance;
+            var s = BulkExportSettings.Instance;
             switch (settingId)
             {
                 case "outdir":          s.OutputFolder               = value as string ?? "";                      break;

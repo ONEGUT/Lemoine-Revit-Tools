@@ -3,9 +3,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension.Resolvers;
+using LemoineTools.Tools.Clash.AutoDimension.Resolvers;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Lets the wizard pick ONE slab/floor (host or linked) up front, before the run. PickObject
@@ -25,7 +25,7 @@ namespace LemoineTools.Tools.Testing.AutoDimension
         public Action<SlabScope?, string>? OnPicked { get; set; }
         public Action<string, string>? PushLog { get; set; }
 
-        public string GetName() => "LemoineTools.Tools.Testing.AutoDimension.SlabPickEventHandler";
+        public string GetName() => "LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler";
 
         public void Execute(UIApplication app)
         {

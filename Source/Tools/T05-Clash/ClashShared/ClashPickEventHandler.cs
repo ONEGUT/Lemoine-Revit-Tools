@@ -4,7 +4,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Lets the user pick elements (in the host model or inside links) for a clash
@@ -22,7 +22,7 @@ namespace LemoineTools.Tools.Testing
 
         public Action<string, string>? PushLog { get; set; }
 
-        public string GetName() => "LemoineTools.Tools.Testing.ClashPickEventHandler";
+        public string GetName() => "LemoineTools.Tools.Clash.ClashPickEventHandler";
 
         public void Execute(UIApplication app)
         {

@@ -15,11 +15,16 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class CreateSheetsViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
+    public class CreateSheetsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Constants ─────────────────────────────────────────────────────────
         private static readonly string[] Modes =
             { "By Level", "By Room", "By Scope Box", "From CSV" };
+
+        // Locked defaults — Create Sheets has no editable settings page. These seed
+        // the per-run controls in S2 and are never persisted or overwritten.
+        private const int    LockedStartingNumber = 1;
+        private const string LockedNamingScheme   = "{LevelName}";
 
         private static readonly (string Label, string Token)[] SheetNamingTokens =
         {
@@ -57,8 +62,8 @@ namespace LemoineTools.Tools.Testing
         private readonly Dictionary<string, ElementId> _titleblockMap;
         private string _selectedTitleblock = "";
 
-        private int    _startingNumber = 1;
-        private string _namingPattern  = "{LevelName}";
+        private int    _startingNumber = LockedStartingNumber;
+        private string _namingPattern  = LockedNamingScheme;
         private string _csvFilePath    = "";
 
         // ── Revit wiring ──────────────────────────────────────────────────────
@@ -93,16 +98,12 @@ namespace LemoineTools.Tools.Testing
                 }
             }
 
-            // Pre-select from saved settings
-            var settings = CreateSheetsSettings.Instance;
-            if (!string.IsNullOrEmpty(settings.DefaultTitleblockName) &&
-                _titleblockNames.Contains(settings.DefaultTitleblockName))
-                _selectedTitleblock = settings.DefaultTitleblockName;
-            else if (_titleblockNames.Count > 0)
+            // Seed per-run controls from locked defaults (no editable settings page).
+            if (_titleblockNames.Count > 0)
                 _selectedTitleblock = _titleblockNames[0];
 
-            _startingNumber = settings.DefaultStartingNumber;
-            _namingPattern  = settings.DefaultNamingScheme;
+            _startingNumber = LockedStartingNumber;
+            _namingPattern  = LockedNamingScheme;
 
             // ── Level map ─────────────────────────────────────────────────────
             _levelMap = new Dictionary<string, ElementId>();
@@ -589,14 +590,6 @@ namespace LemoineTools.Tools.Testing
         {
             if (_handler == null || _event == null) return;
 
-            // Persist defaults
-            var s = CreateSheetsSettings.Instance;
-            if (!string.IsNullOrEmpty(_selectedTitleblock))
-                s.DefaultTitleblockName = _selectedTitleblock;
-            s.DefaultNamingScheme   = _namingPattern;
-            s.DefaultStartingNumber = _startingNumber;
-            s.Save();
-
             _handler.SourceMode       = _mode;
             _handler.SourceElementIds = new List<ElementId>(_selectedElementIds);
             _handler.TitleBlockTypeId = _titleblockMap.TryGetValue(_selectedTitleblock, out var tbId)
@@ -611,84 +604,5 @@ namespace LemoineTools.Tools.Testing
             _event.Raise();
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        //  ILemoineToolSettings
-        // ═════════════════════════════════════════════════════════════════════
-        public LemoineToolSettingsSpec GetSettingsSpec()
-        {
-            var s = CreateSheetsSettings.Instance;
-            return new LemoineToolSettingsSpec
-            {
-                Id          = "tz",
-                Label       = "Create Sheets",
-                Icon        = "",
-                Description = "Title block, naming scheme, and starting number defaults.",
-                Groups = new List<LemoineSettingsGroup>
-                {
-                    new LemoineSettingsGroup
-                    {
-                        Id            = "G1",
-                        Title         = "Create Sheets Defaults",
-                        OpenByDefault = true,
-                        Settings      = new List<LemoineSettingDef>
-                        {
-                            new LemoineSettingDef
-                            {
-                                Id      = "titleblock",
-                                Label   = "Default Title Block",
-                                Hint    = "Pre-selected title block family when opening the tool.",
-                                Kind    = "text",
-                                Default = s.DefaultTitleblockName,
-                                Options = new TextOpts { Placeholder = "Family : Type" },
-                            },
-                            new LemoineSettingDef
-                            {
-                                Id      = "namingScheme",
-                                Label   = "Default Naming Scheme",
-                                Hint    = "Token pattern used to name sheets, e.g. {LevelName}.",
-                                Kind    = "text",
-                                Default = s.DefaultNamingScheme,
-                                Options = new TextOpts { Placeholder = "{LevelName}", Mono = true },
-                            },
-                            new LemoineSettingDef
-                            {
-                                Id      = "startingNumber",
-                                Label   = "Default Starting Number",
-                                Hint    = "Sheet numbering begins at this value.",
-                                Kind    = "number",
-                                Default = (double)s.DefaultStartingNumber,
-                                Options = new NumberOpts { Min = 1, Max = 9999, Step = 1 },
-                            },
-                        },
-                    },
-                },
-            };
-        }
-
-        public void ApplySettings(string groupId, string settingId, object value)
-        {
-            var s   = CreateSheetsSettings.Instance;
-            var str = value?.ToString() ?? "";
-            switch (settingId)
-            {
-                case "titleblock":
-                    s.DefaultTitleblockName = str;
-                    if (_titleblockNames.Contains(str)) _selectedTitleblock = str;
-                    break;
-                case "namingScheme":
-                    s.DefaultNamingScheme = str;
-                    _namingPattern = str;
-                    break;
-                case "startingNumber":
-                    if (int.TryParse(str, out int n) && n >= 1)
-                    {
-                        s.DefaultStartingNumber = n;
-                        _startingNumber = n;
-                    }
-                    break;
-            }
-            s.Save();
-            OnValidationChanged();
-        }
     }
 }

@@ -75,9 +75,27 @@ namespace LemoineTools.Tools.LinkViews
         // ═══════════════════════════════════════════════════════════════
         public FrameworkElement? GetStepContent(string stepId)
         {
-            if (stepId == "S1") return BuildS1();
+            if (stepId == "S1") return BuildRevit2025Notice();
             if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
             return null;
+        }
+
+        // ── Revit 2025 gate ────────────────────────────────────────────
+        // This tool currently only works on Revit 2025. Show a notice on the
+        // first step and keep its Continue button disabled (IsValid("S1") => false).
+        private FrameworkElement BuildRevit2025Notice()
+        {
+            var notice = new TextBlock
+            {
+                Text         = "This tool only works on Revit 2025.",
+                TextWrapping = TextWrapping.Wrap,
+                FontWeight   = FontWeights.SemiBold,
+                Margin       = new Thickness(0, 4, 0, 0),
+            };
+            notice.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            notice.SetResourceReference(TextBlock.ForegroundProperty, "LemoineWarning");
+            notice.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return notice;
         }
 
         // ── S1: Discipline Assignment ──────────────────────────────────
@@ -333,7 +351,8 @@ namespace LemoineTools.Tools.LinkViews
         // ═══════════════════════════════════════════════════════════════
         public bool IsValid(string stepId)
         {
-            if (stepId == "S1") return _assignments.Values.Any(v => v != "SKIP");
+            // Revit 2025 gate: keep the first step's Continue button disabled.
+            if (stepId == "S1") return false;
             return true;
         }
 

@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Ownership marker for dimensions the auto-dimension engine places. Distinct from

@@ -4,9 +4,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension.Resolvers;
+using LemoineTools.Tools.Clash.AutoDimension.Resolvers;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Slab-edge target mode: prompts the user to pick ONE floor element per view (host or linked).

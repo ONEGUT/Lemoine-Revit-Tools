@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine;
-using CoreLayout = LemoineTools.Tools.Testing.AutoDimension.Core.LayoutConfig;
+using CoreLayout = LemoineTools.Tools.Clash.AutoDimension.Core.LayoutConfig;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Versioned, XML-backed configuration for the auto-dimension engine. Wraps the Revit-free

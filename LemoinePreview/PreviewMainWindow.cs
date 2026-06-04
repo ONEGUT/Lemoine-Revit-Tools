@@ -13,6 +13,7 @@ using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
+using LemoineTools.Tools.BulkExport;
 using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Testing.LegendCreator;
 
@@ -1057,8 +1058,7 @@ namespace LemoineTools.Preview
                 ("t03",     "Ceiling Heatmap"),
                 ("t04",     "Link Views"),
                 ("t08",     "Legend Creator"),
-                ("tx",      "Batch Export"),
-                ("ty",      "Batch Dimension"),
+                ("tx",      "Bulk Export"),
                 ("tz",      "Create Sheets"),
             };
             const int pillNavVisible = 6;
@@ -1223,8 +1223,7 @@ namespace LemoineTools.Preview
                 case "t03":      content = BuildSpecContent(BuildCeilingHeatmapProxy(), "Ceiling Heatmap");   break;
                 case "t04":      content = BuildSpecContent(BuildLinkViewsProxy(),      "Link Views");        break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this);                        break;
-                case "tx":       content = BuildSpecContent(BuildBatchExportProxy(),    "Batch Export");      break;
-                case "ty":       content = BuildSpecContent(BuildBatchDimensionProxy(), "Batch Dimension");   break;
+                case "tx":       content = BuildSpecContent(BuildBulkExportProxy(),    "Bulk Export");      break;
                 case "tz":       content = BuildSpecContent(BuildCreateSheetsProxy(),   "Create Sheets");     break;
                 default:         content = BuildGeneralContent();                                             break;
             }
@@ -1590,13 +1589,13 @@ namespace LemoineTools.Preview
                 });
         }
 
-        private ILemoineToolSettings BuildBatchExportProxy()
+        private ILemoineToolSettings BuildBulkExportProxy()
         {
-            var s = BatchExportSettings.Instance;
+            var s = BulkExportSettings.Instance;
             return new SpecProxy(
                 new LemoineToolSettingsSpec
                 {
-                    Id = "tx", Label = "Batch Export", Icon = "Tx",
+                    Id = "tx", Label = "Bulk Export", Icon = "Tx",
                     Description = "Export sheets and views to PDF and DWG with parametric filenames.",
                     Groups = new List<LemoineSettingsGroup>
                     {
@@ -1670,50 +1669,6 @@ namespace LemoineTools.Preview
                         case "placement":   s.PdfPaperPlacement = val as string ?? "Center";       break;
                         case "hiddenlines": s.HiddenLinesVector = val as string == "Vector Processing"; break;
                         case "dwgsetup":    s.DwgExportSetupName = val as string ?? "";            break;
-                    }
-                    s.Save();
-                });
-        }
-
-        private ILemoineToolSettings BuildBatchDimensionProxy()
-        {
-            var s = BatchDimensionSettings.Instance;
-            return new SpecProxy(
-                new LemoineToolSettingsSpec
-                {
-                    Id = "ty", Label = "Batch Dimension", Icon = "Ty",
-                    Description = "Place dimension strings across multiple views by element category.",
-                    Groups = new List<LemoineSettingsGroup>
-                    {
-                        new LemoineSettingsGroup
-                        {
-                            Id = "G1", Title = "Defaults", OpenByDefault = true,
-                            Settings = new List<LemoineSettingDef>
-                            {
-                                new LemoineSettingDef { Id="dimstyle", Kind="text", Label="Default dimension style name",
-                                    Options=new TextOpts { Placeholder="Linear Dimension Style" }, Default=s.DefaultDimStyleName },
-                                new LemoineSettingDef { Id="refplane", Kind="single", Label="Default reference plane (Walls)",
-                                    Options=new SingleSelectOpts { Items=new List<string>
-                                        { "Face of Core Exterior", "Face of Core Interior", "Center of Wall",
-                                          "Face of Finish Exterior", "Face of Finish Interior" } },
-                                    Default=s.DefaultReferencePlane },
-                                new LemoineSettingDef { Id="tiecond", Kind="single", Label="Default tie condition",
-                                    Options=new SingleSelectOpts { Items=new List<string> { "Tie to Nearest Grid", "None" } },
-                                    Default=s.DefaultTieCondition },
-                                new LemoineSettingDef { Id="offset", Kind="number", Label="Default string offset",
-                                    Options=new NumberOpts { Unit="mm", Min=0, Max=500, Step=1 }, Default=s.DefaultOffset },
-                            }
-                        }
-                    }
-                },
-                (groupId, sid, val) =>
-                {
-                    switch (sid)
-                    {
-                        case "dimstyle": s.DefaultDimStyleName   = val as string ?? ""; break;
-                        case "refplane": s.DefaultReferencePlane = val as string ?? ""; break;
-                        case "tiecond":  s.DefaultTieCondition   = val as string ?? ""; break;
-                        case "offset":   if (val is double dv) s.DefaultOffset = dv;    break;
                     }
                     s.Save();
                 });

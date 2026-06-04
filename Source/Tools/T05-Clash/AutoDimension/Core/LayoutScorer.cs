@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>Separated hard/soft score. The layout loop drives <see cref="Hard"/> to zero
     /// then minimises <see cref="Soft"/> to a plateau.</summary>

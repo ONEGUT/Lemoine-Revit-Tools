@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Defines how one clash group (Group 1 or Group 2) selects its elements.

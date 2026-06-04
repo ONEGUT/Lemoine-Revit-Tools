@@ -9,7 +9,7 @@ namespace LemoineTools.Lemoine.Controls
     /// <summary>
     /// Folder-path picker — the directory twin of <see cref="LemoineFileBrowser"/>.
     /// Replaces the hand-rolled TextBox + FolderBrowserDialog blocks scattered across
-    /// tools (BatchExport, MakeCeilingGrids, Preview) with one themed control.
+    /// tools (BulkExport, MakeCeilingGrids, Preview) with one themed control.
     ///
     /// API mirrors LemoineFileBrowser:
     ///   Label        — optional caption above the field

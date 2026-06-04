@@ -5,7 +5,8 @@ using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
-using LemoineTools.Tools.Testing.CoordSet;
+using LemoineTools.Tools.BulkExport;
+using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 using System;
@@ -61,17 +62,9 @@ namespace LemoineTools
         internal static ReplicateDependentViewsRunHandler? ReplicateDependentViewsRunHandler { get; private set; }
         internal static ExternalEvent?                     ReplicateDependentViewsRunEvent   { get; private set; }
 
-        // ── Coordination Drawing Set ────────────────────────────────────────────────
-        internal static CoordSetRunHandler? CoordSetRunHandler { get; private set; }
-        internal static ExternalEvent?      CoordSetRunEvent   { get; private set; }
-
-        // ── Testing — Batch Export ──────────────────────────────────────────────────
-        internal static BatchExportEventHandler?   BatchExportHandler   { get; private set; }
-        internal static ExternalEvent?             BatchExportEvent     { get; private set; }
-
-        // ── Testing — Batch Dimension ───────────────────────────────────────────────
-        internal static BatchDimensionEventHandler? BatchDimensionHandler { get; private set; }
-        internal static ExternalEvent?              BatchDimensionEvent   { get; private set; }
+        // ── T03 — Bulk Export ───────────────────────────────────────────────────────
+        internal static BulkExportEventHandler?   BulkExportHandler   { get; private set; }
+        internal static ExternalEvent?             BulkExportEvent     { get; private set; }
 
         // ── T05 — Clash (Definitions + Finder & Dimensioning) ───────────────────────
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
@@ -153,15 +146,9 @@ namespace LemoineTools
             ReplicateDependentViewsRunHandler = new ReplicateDependentViewsRunHandler();
             ReplicateDependentViewsRunEvent   = ExternalEvent.Create(ReplicateDependentViewsRunHandler);
 
-            // ── Coordination Drawing Set ──────────────────────────────────────
-            CoordSetRunHandler = new CoordSetRunHandler();
-            CoordSetRunEvent   = ExternalEvent.Create(CoordSetRunHandler);
-
             // ── Testing — new tools ───────────────────────────────────────────
-            BatchExportHandler   = new BatchExportEventHandler();
-            BatchExportEvent     = ExternalEvent.Create(BatchExportHandler);
-            BatchDimensionHandler = new BatchDimensionEventHandler();
-            BatchDimensionEvent   = ExternalEvent.Create(BatchDimensionHandler);
+            BulkExportHandler   = new BulkExportEventHandler();
+            BulkExportEvent     = ExternalEvent.Create(BulkExportHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
@@ -232,12 +219,9 @@ namespace LemoineTools
                 "Permanently delete selected ParameterFilterElements from the project.",
                 "\uE74d"));  // Segoe MDL2: Delete
 
-            // ── T01B — Legend ─────────────────────────────────────────────────
-            // Large: Legend Creation (single entry — opens the window where
-            // legends are built, created, and updated)
-            var legendPanel = application.CreateRibbonPanel("Lemoine Tools", "T01B  Legend");
-
-            legendPanel.AddItem(Btn(
+            // Legend Creation — lives in T01, furthest right (opens the window
+            // where legends are built, created, and updated).
+            filtersPanel.AddItem(Btn(
                 "LT_LegendSettings", "Legend\nCreation", "OpenLegendSettingsCommand",
                 "Open the Legend Creation window to build, create, and update Legend views.",
                 "\uE713"));  // Segoe MDL2: Settings gear
@@ -301,6 +285,11 @@ namespace LemoineTools
                 "LT_ReplicateDependentViews", "Replicate\nDep. Views", "ReplicateDependentViewsCommand",
                 "Copy dependent views and their crop regions from a source view onto one or more target views.",
                 "\uE8C8"));  // Segoe MDL2: Copy
+
+            linkViewsPanel.AddItem(Btn(
+                "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
+                "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
+                char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
@@ -375,34 +364,26 @@ namespace LemoineTools
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
 
-            testingPanel.AddItem(Btn(
-                "LT_CoordSet", "Coord\nDrawing Set", "CoordSetCommand",
-                "Generate a complete coordination drawing set: filters, discipline views, legend, dependent views, and sheets.",
-                "\uE7C3"));  // Segoe MDL2: Page
-
-            testingPanel.AddStackedItems(
-                Btn("LT_BatchExport",    "Batch Export",    "BatchExportCommand",
-                    "Export sheets and views to PDF or DWG in bulk with token-based filenames."),
-                Btn("LT_BatchDimension", "Batch Dimension", "BatchDimensionCommand",
-                    "Apply dimension strings across multiple views at once."));
-
             testingPanel.AddStackedItems(
                 Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
                     "Create one 3D view per link with a section box, with optional combined views per discipline."));
 
-            // ── Settings / Developer — one compact stacked panel ──────────────
+            // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
 
-            settingsPanel.AddStackedItems(
+            settingsPanel.AddItem(
                 new PushButtonData("LT_OpenSettings", "Settings", dll,
                     "LemoineTools.Commands.OpenSettingsCommand")
                 {
-                    ToolTip = "Open Lemoine Tools global settings — themes, UI size, and per-tool options.",
-                    Image   = CreateGearBitmap(16),
-                },
-                Btn("LT_DebugTool", "UI Debug", "DebugToolCommand",
+                    ToolTip    = "Open Lemoine Tools global settings — themes, UI size, and per-tool options.",
+                    LargeImage = CreateGearBitmap(32),
+                    Image      = CreateGearBitmap(16),
+                });
+
+            settingsPanel.AddItem(
+                Btn("LT_DebugTool", "UI\nDebug", "DebugToolCommand",
                     "Exercise every Lemoine input control and UI element.", "\uE7B3"));
 
             return Result.Succeeded;

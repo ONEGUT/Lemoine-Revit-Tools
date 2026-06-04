@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// GRID target resolver (~95% of cases). Picks the nearest grid whose line runs across the

@@ -1,6 +1,6 @@
 using Autodesk.Revit.DB;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// One ingested source cross-line (the tagged DetailCurve output by the Clash Finder) with

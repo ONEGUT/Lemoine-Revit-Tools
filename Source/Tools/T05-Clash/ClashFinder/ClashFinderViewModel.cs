@@ -8,7 +8,7 @@ using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Clash Finder &amp; Dimension wizard: pick saved definition(s) + views, detect clashes

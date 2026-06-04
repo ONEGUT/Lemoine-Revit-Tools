@@ -1,4 +1,4 @@
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
     /// Pure geometry helpers shared by the scorer and layout engine. Recomputes a planned

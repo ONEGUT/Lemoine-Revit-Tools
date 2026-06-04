@@ -20,10 +20,11 @@ using LemoineTools.Tools.LinkViews;
 
 namespace LemoineTools.Lemoine
 {
-    // Link Views tab (t04) — BuildSpecContent shared with Ceiling Heatmap tab (t03) lives in GlobalSettingsWindow.CeilingHeatmap.cs.
-    // Add any Link Views-specific GlobalSettingsWindow methods here in future.
+    // Link Views no longer has a global settings tab — its View Geometry settings
+    // (XY buffer, cluster threshold, cut plane offset) are now per-run controls in
+    // the tool's S1 "Source Documents" step. This partial is kept as a home for any
+    // future Link Views-specific GlobalSettingsWindow methods.
     public partial class GlobalSettingsWindow
     {
-        // Link Views tab — placeholder for future tab-specific methods
     }
 }

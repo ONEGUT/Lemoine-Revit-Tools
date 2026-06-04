@@ -6,13 +6,13 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.BulkExport;
 
 namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class BatchDimensionCommand : IExternalCommand
+    public class BulkExportCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -38,29 +38,35 @@ namespace LemoineTools.Commands
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 
-            // Collect dimension style names on the main thread
-            var dimStyleNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(DimensionType))
-                .Cast<DimensionType>()
-                .Select(dt => dt.Name)
-                .OrderBy(n => n)
+            // Collect all sheets
+            var allSheets = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewSheet))
+                .Cast<ViewSheet>()
+                .Where(s => !s.IsTemplate)
+                .OrderBy(s => s.SheetNumber)
                 .ToList();
 
-            // Collect eligible views on the main thread
+            // Collect non-template views including 3D views (required for NWC/IFC export)
             var allViews = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate
-                         && v.ViewType != ViewType.Legend
                          && v.ViewType != ViewType.Schedule
-                         && v.ViewType != ViewType.ThreeD
-                         && !(v is View3D))
+                         && v.ViewType != ViewType.Legend)
                 .OrderBy(v => v.Name)
                 .ToList();
 
-            var vm    = new BatchDimensionViewModel(
-                App.BatchDimensionHandler!, App.BatchDimensionEvent!,
-                dimStyleNames, allViews);
+            // Collect DWG export setup names
+            var dwgSetupNames = new FilteredElementCollector(doc)
+                .OfClass(typeof(ExportDWGSettings))
+                .Cast<ExportDWGSettings>()
+                .Select(s => s.Name)
+                .OrderBy(n => n)
+                .ToList();
+
+            var vm    = new BulkExportViewModel(
+                App.BulkExportHandler!, App.BulkExportEvent!,
+                dwgSetupNames, allSheets, allViews);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

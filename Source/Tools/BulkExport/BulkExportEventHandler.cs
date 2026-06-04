@@ -6,13 +6,13 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine.Controls;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.BulkExport
 {
     /// <summary>
     /// Executes the bulk export on the Revit API thread.
     /// Set all properties before calling ExternalEvent.Raise().
     /// </summary>
-    public class BatchExportEventHandler : IExternalEventHandler
+    public class BulkExportEventHandler : IExternalEventHandler
     {
         // ── Inputs (set by ViewModel before Raise) ────────────────────────────
         public List<ElementId>        SelectedIds                  { get; set; } = new List<ElementId>();
@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.Testing
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
 
-        public string GetName() => "BatchExport";
+        public string GetName() => "BulkExport";
 
         public void Execute(UIApplication app)
         {
@@ -73,7 +73,7 @@ namespace LemoineTools.Tools.Testing
             int pass = 0, fail = 0, skip = 0;
 
             // TEMPORARY DEBUG — remove before release once NWC/IFC export is stable
-            using var debug = new BatchExportDebugLogger(OutputFolder);
+            using var debug = new BulkExportDebugLogger(OutputFolder);
 
             try
             {
@@ -209,7 +209,7 @@ namespace LemoineTools.Tools.Testing
             catch (Exception ex)
             {
                 debug.Log("FATAL", "Unhandled exception in Execute()", $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                pushLog($"Batch Export error: {ex.Message}", "fail");
+                pushLog($"Bulk Export error: {ex.Message}", "fail");
                 onComplete(pass, 1, skip);
             }
         }

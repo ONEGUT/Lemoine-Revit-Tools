@@ -1,4 +1,4 @@
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
     /// Revit-free layout + scoring configuration. All distances are in feet (model units);

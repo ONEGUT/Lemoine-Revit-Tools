@@ -4,9 +4,9 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension;
+using LemoineTools.Tools.Clash.AutoDimension;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Runs the Clash Finder: for each selected <see cref="ClashDefinition"/> it detects clashes
@@ -38,7 +38,7 @@ namespace LemoineTools.Tools.Testing
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
 
-        public string GetName() => "LemoineTools.Tools.Testing.ClashFinderEventHandler";
+        public string GetName() => "LemoineTools.Tools.Clash.ClashFinderEventHandler";
 
         public void Execute(UIApplication app)
         {

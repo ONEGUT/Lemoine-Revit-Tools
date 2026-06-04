@@ -12,7 +12,7 @@ namespace LemoineTools.Lemoine.Controls
     /// clickable token chip Buttons below it.  Clicking a chip inserts its token
     /// string at the current cursor position.
     ///
-    /// Used by Batch Export (filename pattern) and Create Sheets (sheet naming scheme).
+    /// Used by Bulk Export (filename pattern) and Create Sheets (sheet naming scheme).
     /// </summary>
     public class LemoineTokenInput : UserControl
     {

@@ -3,7 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Single source of truth for tagging clash markers (filled regions + cross lines)

@@ -4,7 +4,7 @@ using System.IO;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing
+namespace LemoineTools.Tools.Clash
 {
     /// <summary>
     /// Singleton, XML-backed library of saved <see cref="ClashDefinition"/>s.

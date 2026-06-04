@@ -17,7 +17,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
+    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Views by Level";
@@ -157,7 +157,73 @@ namespace LemoineTools.Tools.LinkViews
                     { "Documents", _availableDocs.Select(d => d.Label).ToList() }
                 },
                 _selectedDocLabels); // pre-select all
-            return tabs;
+
+            var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            outer.Children.Add(tabs);
+
+            // ── View Geometry (per-run) ───────────────────────────────
+            // Persisted to LinkViewsLevelSettings.Instance, which the run handler
+            // reads directly — so each run picks up whatever is set here.
+            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 14, 0, 10) };
+            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
+            outer.Children.Add(sep);
+
+            var geoHeader = new TextBlock { Text = "VIEW GEOMETRY", Margin = new Thickness(0, 0, 0, 6) };
+            geoHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            geoHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            geoHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(geoHeader);
+
+            var s = LinkViewsLevelSettings.Instance;
+            AddGeometryStepperRow(outer, "XY buffer (ft)",
+                "Margin added around each building cluster crop box.",
+                s.BufferXY, 0, 200, 1, 0,
+                v => { LinkViewsLevelSettings.Instance.BufferXY = v; LinkViewsLevelSettings.Instance.Save(); });
+            AddGeometryStepperRow(outer, "Cluster threshold (ft)",
+                "Maximum room-edge gap for union-find building cluster merging.",
+                s.ClusterThreshold, 0, 500, 1, 0,
+                v => { LinkViewsLevelSettings.Instance.ClusterThreshold = v; LinkViewsLevelSettings.Instance.Save(); });
+            AddGeometryStepperRow(outer, "Cut plane offset (ft)",
+                "Height above level elevation for the floor/ceiling plan cut plane.",
+                s.CutOffset, 0, 30, 0.5, 1,
+                v => { LinkViewsLevelSettings.Instance.CutOffset = v; LinkViewsLevelSettings.Instance.Save(); });
+
+            return outer;
+        }
+
+        // One per-run numeric row: label, house stepper, dim hint.
+        private static void AddGeometryStepperRow(
+            StackPanel parent, string label, string hint,
+            double value, double min, double max, double step, int decimals,
+            Action<double> onChange)
+        {
+            var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 4),
+                                      TextWrapping = TextWrapping.Wrap };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            parent.Children.Add(lbl);
+
+            var stepper = new LemoineInlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = decimals,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, 0, 0, 2),
+                ToolTip             = hint,
+            };
+            stepper.ValueChanged += (s, v) => onChange(v);
+            parent.Children.Add(stepper);
+
+            var dim = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap,
+                                      Margin = new Thickness(0, 0, 0, 10) };
+            dim.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            dim.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            dim.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            parent.Children.Add(dim);
         }
 
         // ── S2: Levels & View Types ────────────────────────────────────
@@ -809,58 +875,5 @@ namespace LemoineTools.Tools.LinkViews
             pushLog("Raising Revit ExternalEvent…", "info");
             _runEvent!.Raise();
         }
-
-        // ═══════════════════════════════════════════════════════════════
-        // ILemoineToolSettings — declarative spec
-        // ═══════════════════════════════════════════════════════════════
-        public LemoineToolSettingsSpec GetSettingsSpec()
-        {
-            var s = LinkViewsLevelSettings.Instance;
-            return new LemoineToolSettingsSpec
-            {
-                Id          = "T04a",
-                Label       = "Link Views \u2014 Level",
-                Icon        = "04",
-                Description = "Clustering and view geometry settings for Link Views Level.",
-                Groups = new List<LemoineSettingsGroup>
-                {
-                    new LemoineSettingsGroup
-                    {
-                        Id = "G1", Title = "View Geometry", OpenByDefault = true,
-                        Settings = new List<LemoineSettingDef>
-                        {
-                            new LemoineSettingDef { Id="bufferXY", Kind="number",
-                                Label="XY buffer",
-                                Hint="Margin added around each building cluster crop box (feet).",
-                                Options=new NumberOpts { Unit="ft", Min=0, Max=200, Step=1 },
-                                Default=s.BufferXY },
-                            new LemoineSettingDef { Id="clusterThreshold", Kind="number",
-                                Label="Cluster threshold",
-                                Hint="Maximum room-edge gap for union-find building cluster merging (feet).",
-                                Options=new NumberOpts { Unit="ft", Min=0, Max=500, Step=1 },
-                                Default=s.ClusterThreshold },
-                            new LemoineSettingDef { Id="cutOffset", Kind="number",
-                                Label="Cut plane offset",
-                                Hint="Height above level elevation for the floor/ceiling plan cut plane (feet).",
-                                Options=new NumberOpts { Unit="ft", Min=0, Max=30, Step=0.5 },
-                                Default=s.CutOffset },
-                        }
-                    }
-                }
-            };
-        }
-
-        public void ApplySettings(string groupId, string settingId, object value)
-        {
-            var s = LinkViewsLevelSettings.Instance;
-            if (groupId == "G1")
-            {
-                if (settingId == "bufferXY"         && value is double bxy)  s.BufferXY         = bxy;
-                if (settingId == "clusterThreshold" && value is double ct)   s.ClusterThreshold = ct;
-                if (settingId == "cutOffset"        && value is double co)   s.CutOffset        = co;
-            }
-            s.Save();
-        }
-
     }
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension
+namespace LemoineTools.Tools.Clash.AutoDimension
 {
     /// <summary>
     /// Orchestrates a full auto-dimension run: build a <see cref="Core.DimensionPlan"/> per view

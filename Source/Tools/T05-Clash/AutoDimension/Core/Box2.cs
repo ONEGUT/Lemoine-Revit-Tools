@@ -1,6 +1,6 @@
 using System;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Core
+namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
     /// Axis-aligned 2D bounding box of doubles. Used for paper-space collision tests in the

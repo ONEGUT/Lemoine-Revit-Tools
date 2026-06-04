@@ -1,6 +1,6 @@
 using System;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// MANUAL_DATUM resolver — the user picked one or more datum edges per view; every clash

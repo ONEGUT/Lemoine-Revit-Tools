@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// Step 1 of the pipeline: find the Clash Finder's tagged cross-line markers in a view and

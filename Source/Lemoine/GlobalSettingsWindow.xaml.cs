@@ -9,9 +9,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Tools.Testing;
 using LemoineTools.Tools.Ceilings;
-using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Lemoine
@@ -121,9 +119,6 @@ namespace LemoineTools.Lemoine
         private static readonly (string Id, string Label)[] _navDefs =
         {
             ("general", "General"),
-            ("t04",     "Link Views"),
-            ("ty",      "Batch Dimension"),
-            ("tz",      "Create Sheets"),
         };
 
         private void BuildTabNav()
@@ -223,10 +218,8 @@ namespace LemoineTools.Lemoine
             switch (tabId)
             {
                 case "general":  content = BuildGeneralContent();  break;
-                case "t04":      content = BuildSpecContent(new LinkViewsLevelViewModel(null, null, null, null, null), "Link Views"); break;
                 case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
-                case "ty":       content = BuildSpecContent(new BatchDimensionViewModel(null, null, null, null), "Batch Dimension"); break;
-                case "tz":       content = BuildSpecContent(new CreateSheetsViewModel(), "Create Sheets"); break;
+                // (Create Sheets settings tab removed — values are now per-run in the tool.)
                 default:         content = BuildNoSettingsContent(); break;
             }
 

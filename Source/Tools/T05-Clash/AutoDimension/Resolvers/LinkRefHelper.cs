@@ -2,7 +2,7 @@ using System;
 using Autodesk.Revit.DB;
 using LemoineTools.Lemoine;
 
-namespace LemoineTools.Tools.Testing.AutoDimension.Resolvers
+namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 {
     /// <summary>
     /// Converts a reference obtained inside a linked document into a host-resolvable
