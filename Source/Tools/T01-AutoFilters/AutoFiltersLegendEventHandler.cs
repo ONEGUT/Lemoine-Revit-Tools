@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -42,7 +43,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters legend: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
@@ -88,7 +89,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (c.IsValid && !(c.Red == 0 && c.Green == 0 && c.Blue == 0))
                         rgb = (c.Red, c.Green, c.Blue);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: read surface foreground colour", __lex); }
 
                 if (rgb == null)
                 {
@@ -98,7 +99,7 @@ namespace LemoineTools.Tools.AutoFilters
                         if (c.IsValid && !(c.Red == 0 && c.Green == 0 && c.Blue == 0))
                             rgb = (c.Red, c.Green, c.Blue);
                     }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: read projection line colour", __lex); }
                 }
 
                 string name = pfe.Name;
@@ -209,7 +210,7 @@ namespace LemoineTools.Tools.AutoFilters
                         newFRT.ForegroundPatternColor = new Color(
                             (byte)rgb.R, (byte)rgb.G, (byte)rgb.B);
                         newFRT.BackgroundPatternId = ElementId.InvalidElementId;
-                        try { newFRT.LineWeight = 1; } catch { }
+                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: set filled-region line weight", __lex); }
                         colorTypeMap[rgb] = newFRT.Id;
                         frtByName[tname]  = newFRT.Id;
                     }
@@ -227,7 +228,7 @@ namespace LemoineTools.Tools.AutoFilters
                 dv!.Name = legendName;
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
-                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: set text-note alignment", __lex); }
 
                 double cy = 0.0;
                 int totalRows = rows.Count;
@@ -284,13 +285,13 @@ namespace LemoineTools.Tools.AutoFilters
         // ── Helpers ─────────────────────────────────────────────────────────────
         private static string? SafeName(Element el)
         {
-            try { return el.Name; } catch { }
+            try { return el.Name; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: read element name", __lex); }
             try
             {
                 var p = el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM);
                 if (p != null) return p.AsString();
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: read symbol name parameter", __lex); }
             return null;
         }
 

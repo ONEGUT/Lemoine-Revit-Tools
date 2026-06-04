@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.LegendCreator
 {
@@ -22,27 +23,29 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         private const double LabelWidth = 4.00;   // proven-safe TextNote width ceiling (feet)
 
         // ── Callbacks ───────────────────────────────────────────────────────
-        public Action<string, string>?    PushLog    { get; set; }
-        public Action<int, int, int, int>? OnProgress { get; set; }
-        public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<string, string>?    PushLog         { get; set; }
+        public Action<int, int, int, int>? OnProgress     { get; set; }
+        public Action<int, int, int>?      OnComplete     { get; set; }
+        /// <summary>Fired after a successful Create (not Update) with the new view's ElementId.</summary>
+        public Action<ElementId>?          OnLegendCreated { get; set; }
 
-        // Set by the step-flow launcher to pin which legend view is duplicated.
+        // Layout and rows to render — set by the caller before raising the event.
+        public LegendLayoutConfig?    Layout { get; set; }
+        public List<LegendRowConfig>? Rows   { get; set; }
+
         // Null → fall back to the first legend view found in the project.
         public ElementId? TemplateLegendId { get; set; }
 
-        // Set by LegendCreatorUpdateCommand after the user picks a legend view.
         // Null → fall back to matching by Layout.Title name.
         public ElementId? TargetLegendId { get; set; }
 
         /// <summary>
         /// False (default) → duplicate a template legend and create a new view.
-        /// True            → update the view specified by TargetLegendId (or the first view
-        ///                   whose name matches Layout.Title), clearing and redrawing in place.
+        /// True            → update the view specified by TargetLegendId.
         /// </summary>
         public bool UpdateMode { get; set; }
 
-        // Per-role TextNoteType element IDs set by the step-flow launcher.
-        // Null → fall back to the first TextNoteType found in the document.
+        // Per-role TextNoteType element IDs. Null → fall back to first in document.
         public ElementId? TitleTypeId       { get; set; }
         public ElementId? SubtitleTypeId    { get; set; }
         public ElementId? GroupHeaderTypeId { get; set; }
@@ -61,7 +64,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             }
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(uidoc.Document, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { Log($"Fatal: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }
@@ -71,9 +74,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         // ─────────────────────────────────────────────────────────────────────
         private void CreateLegend(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            var settings = LegendCreatorSettings.Instance;
-            var layout   = settings.Layout ?? new LegendLayoutConfig();
-            var rows     = settings.Rows   ?? new List<LegendRowConfig>();
+            var layout = this.Layout ?? new LegendLayoutConfig();
+            var rows   = this.Rows   ?? new List<LegendRowConfig>();
 
             // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
             double scale   = layout.ViewScale > 0 ? (double)layout.ViewScale : 48.0;
@@ -140,7 +142,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     foreach (var rule in trade.Rules)
                         if (!ruleMap.ContainsKey(rule.Id)) ruleMap[rule.Id] = rule;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: load AutoFilters rule map", __lex); }
 
             // ── Collect needed (colorHex, fill) pairs → display name for FRT ──
             // First block with a given (color, fill) pair wins the name slot.
@@ -223,7 +225,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         newFRT.ForegroundPatternColor = new Color(
                             (byte)rgb.Value.R, (byte)rgb.Value.G, (byte)rgb.Value.B);
                         newFRT.BackgroundPatternId = ElementId.InvalidElementId;
-                        try { newFRT.LineWeight = 1; } catch { }
+                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set filled-region line weight", __lex); }
                         frtMap[(colorHex, fill)] = newFRT.Id;
                         frtByKey[tname]          = newFRT.Id;
                     }
@@ -255,8 +257,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
                     foreach (var id in toDelete)
-                        try { doc.Delete(id); } catch { }
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
+                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete temp element", __lex); }
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
                 }
                 else
                 {
@@ -264,14 +266,14 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     dv = doc.GetElement(newLegendId) as View;
                     if (dv == null) { fail++; tx.Commit(); return; }
                     dv.Name = legendName;
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch { }
+                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
                     // Clear any content carried over from the template legend before drawing.
                     var templateElems = new FilteredElementCollector(doc, dv.Id)
                         .WherePasses(new LogicalOrFilter(
                             new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
-                    foreach (var id in templateElems) try { doc.Delete(id); } catch { }
+                    foreach (var id in templateElems) try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete template element", __lex); }
                 }
 
                 // ── Resolve per-role TextNoteType IDs ────────────────────────
@@ -308,10 +310,10 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 {
                     if (string.IsNullOrEmpty(text)) return;
                     var o = new TextNoteOptions { TypeId = typeId };
-                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
                     double w = NoteWidth(text, fontH);
                     try   { TextNote.Create(doc, viewId, origin, w,          text, o); return; }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: create legend text note", __lex); }
                     try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, o); }
                     catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
                 }
@@ -398,6 +400,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 tx.Commit();
                 pass++;
+
+                // Notify caller of the newly created view's id (Create mode only).
+                if (!UpdateMode) OnLegendCreated?.Invoke(dv.Id);
             }
 
             foreach (var l in logMsgs) Log(l, "info");
@@ -520,8 +525,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
         private static string? SafeName(Element el)
         {
-            try { return el.Name; } catch { }
-            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch { }
+            try { return el.Name; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read element name", __lex); }
+            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read symbol name parameter", __lex); }
             return null;
         }
 
@@ -539,7 +544,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 double h = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
                 if (h > 0) return h * scale;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read text-note type size", __lex); }
             return fallbackPt / 72.0 / 12.0 * scale;
         }
 

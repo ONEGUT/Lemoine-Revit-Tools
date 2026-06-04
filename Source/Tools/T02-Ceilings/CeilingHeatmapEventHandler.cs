@@ -4,15 +4,22 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
+using LemoineTools.Tools.AutoFilters;
+using RevitColor = Autodesk.Revit.DB.Color;
 
 namespace LemoineTools.Tools.Ceilings
 {
     public class CeilingHeatmapEventHandler : IExternalEventHandler
     {
+        // ── Trade this tool registers its filters/rules under ─────────────────
+        private const string CHTradeId    = "CH";
+        private const string CHTradeLabel = "Ceiling Heatmap";
+        private const string CHTradeColor = "#3FA7FF";
+
         // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
         public List<ElementId>          SelectedViewIds { get; set; } = new List<ElementId>();
         public bool                     DeleteExisting  { get; set; } = true;
-        public bool                     IncludeLinks    { get; set; } = false;
         public bool                     PlaceTags       { get; set; } = false;
         public double                   ElevTolerance   { get; set; } = 1.0 / 96.0; // 1/8 in → ft
         public Autodesk.Revit.DB.Color  ColorLow        { get; set; } = new Autodesk.Revit.DB.Color(0,   0,   255);
@@ -37,7 +44,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                Log($"Fatal error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingHeatmap: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
@@ -54,9 +61,10 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             // ── Phase 1: Scan ceiling height offsets (0–20%) ─────────────────────
-            Log("Scanning ceiling height offsets from level…", "info");
+            Log("Scanning ceiling height offsets from level (host + linked models)…", "info");
 
             var heightBuckets = new List<double>();
+            int hostCeilings = 0, linkedCeilings = 0;
 
             int viewCount = SelectedViewIds.Count;
             for (int vi = 0; vi < viewCount; vi++)
@@ -72,17 +80,26 @@ namespace LemoineTools.Tools.Ceilings
                     double heightAbove = el.get_Parameter(
                         BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
                     AddBucket(heightBuckets, heightAbove);
+                    hostCeilings++;
                 }
 
-                if (IncludeLinks)
-                    ScanLinkedCeilings(doc, vp, heightBuckets);
+                // Linked ceilings are always scanned — in this project ceilings
+                // typically live in linked architectural models, not the host.
+                linkedCeilings += ScanLinkedCeilings(doc, vp, heightBuckets);
 
                 Progress((int)((vi + 1) * 20.0 / viewCount), pass, fail, skip);
             }
 
+            Log($"Scanned {hostCeilings} host ceiling(s) and {linkedCeilings} linked ceiling(s).", "info");
+            LemoineLog.Info("CeilingHeatmap",
+                $"scan complete — {hostCeilings} host + {linkedCeilings} linked ceilings across "
+                + $"{viewCount} view(s); {heightBuckets.Count} height bucket(s).");
+
             if (heightBuckets.Count == 0)
             {
-                Log("No ceiling height offsets found in the selected views.", "fail");
+                Log("No ceiling height offsets found in the selected views (checked the host model and every visible link).", "fail");
+                LemoineLog.Warn("CeilingHeatmap",
+                    "no ceilings found in host or links for the selected views — nothing to bucket.");
                 fail++; return;
             }
 
@@ -90,12 +107,16 @@ namespace LemoineTools.Tools.Ceilings
             Log($"Found {heightBuckets.Count} distinct height offset bucket{(heightBuckets.Count == 1 ? "" : "s")}.", "info");
 
             // ── Phase 2: Resolve Revit parameters (20–30%) ───────────────────────
+            // "Height Offset From Level" is a built-in parameter, so its ElementId is
+            // always valid — it does NOT depend on a host ceiling existing. (The old
+            // host-only sample check failed whenever every ceiling lived in a link.)
             ElementId ceilingCatId  = new ElementId(BuiltInCategory.OST_Ceilings);
-            ElementId heightParamId = GetCeilingHeightParamId(doc);
-            if (heightParamId == null || heightParamId == ElementId.InvalidElementId)
-            {
-                Log("Could not resolve the ceiling height parameter.", "fail"); fail++; return;
-            }
+            ElementId heightParamId = new ElementId(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+
+            // Diagnostic: host view filters only cascade onto a link when that link is
+            // displayed "By Host View". Report any link that isn't, so the user knows
+            // why its ceilings won't be colored (we don't change the link's display).
+            ReportLinkDisplayModes(doc);
 
             ElementId solidFillId = GetSolidFillPatternId(doc);
             if (solidFillId == ElementId.InvalidElementId)
@@ -120,6 +141,10 @@ namespace LemoineTools.Tools.Ceilings
 
             int created = 0, reused = 0;
 
+            // Buckets that yielded a valid filter — used to rebuild the Ceiling Heatmap
+            // trade's rules after the transaction commits (rule ⇄ filter linked by name).
+            var chRules = new List<(double offset, string ruleName, RevitColor color)>();
+
             using (var tx = new Transaction(doc, "Ceiling Height Offset Heatmap"))
             {
                 ConfigureFailures(tx);
@@ -132,7 +157,10 @@ namespace LemoineTools.Tools.Ceilings
                     Autodesk.Revit.DB.Color color = rampColors[i];
 
                     double heightFt    = UnitUtils.ConvertFromInternalUnits(heightOffset, UnitTypeId.Feet);
-                    string filterName  = $"Ceiling Heatmap — {FormatFtIn(heightFt)} AFF";
+                    // Friendly rule name (e.g. 10'-0" AFF); the filter name is derived from it
+                    // via the shared convention so the rule and filter stay linked.
+                    string ruleName    = $"{FormatFtIn(heightFt)} AFF";
+                    string filterName  = AutoFiltersSettings.MakeFilterName(CHTradeId, ruleName);
 
                     ParameterFilterElement? pfe;
                     if (existingFilters.TryGetValue(filterName, out pfe))
@@ -189,12 +217,17 @@ namespace LemoineTools.Tools.Ceilings
                         }
                     }
 
+                    chRules.Add((heightOffset, ruleName, color));
                     pass++;
                     Progress(40 + (int)((i + 1) * 50.0 / total), pass, fail, skip);
                 }
 
                 tx.Commit();
             }
+
+            // Mirror the created filters into a "Ceiling Heatmap" trade so they appear in
+            // the rules list and group correctly in the filter pickers.
+            RegisterCeilingHeatmapTrade(chRules);
 
             // ── Phase 5: Place ceiling tags (90–98%) ──────────────────────────────
             if (PlaceTags)
@@ -257,7 +290,7 @@ namespace LemoineTools.Tools.Ceilings
                         .ToList())
                     {
                         try { doc.Delete(staleId); tagDeleted++; }
-                        catch { /* protected or already gone */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete element (protected or already gone)", __lex); }
                     }
 
                     foreach (Element el in new FilteredElementCollector(doc, viewId)
@@ -381,7 +414,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             finally
             {
-                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete temp image file", __lex); }
             }
         }
 
@@ -410,7 +443,7 @@ namespace LemoineTools.Tools.Ceilings
                             XYZ n = face.ComputeNormal(mid);
                             if (n.Z < -0.9) { bottomFace = face; break; }
                         }
-                        catch { /* malformed face — skip */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: skip malformed face", __lex); }
                     }
                     if (bottomFace != null) break;
                 }
@@ -494,7 +527,7 @@ namespace LemoineTools.Tools.Ceilings
                 if (nextLevel != null)
                     zMaxWorld = nextLevel.Elevation;
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: find next level elevation", __lex); }
 
             double zMin = invLinkXform.OfPoint(new XYZ(0, 0, levelElev - 1.0)).Z;
             double zMax = invLinkXform.OfPoint(new XYZ(0, 0, zMaxWorld)).Z;
@@ -523,7 +556,7 @@ namespace LemoineTools.Tools.Ceilings
                             got = true;
                         }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: compute ceiling bounds", __lex); }
 
             if (!got)
             {
@@ -555,10 +588,13 @@ namespace LemoineTools.Tools.Ceilings
 
         private void DeleteHeatmapFilters(Document doc, ref int fail)
         {
+            // Match the current "CH_" naming convention plus the legacy "Ceiling Heatmap — "
+            // names from earlier versions so re-runs clean up both.
             var heatmapFilters = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
                 .Cast<ParameterFilterElement>()
-                .Where(f => f.Name.StartsWith("Ceiling Heatmap — "))
+                .Where(f => f.Name.StartsWith(CHTradeId + "_")
+                         || f.Name.StartsWith("Ceiling Heatmap — "))
                 .ToList();
 
             if (heatmapFilters.Count == 0)
@@ -589,7 +625,7 @@ namespace LemoineTools.Tools.Ceilings
                             if (v.GetFilters().Contains(pfe.Id))
                                 v.RemoveFilter(pfe.Id);
                         }
-                        catch { /* view type may not support filters */ }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: apply filter (view type may not support filters)", __lex); }
                     }
 
                     try   { doc.Delete(pfe.Id); }
@@ -604,6 +640,65 @@ namespace LemoineTools.Tools.Ceilings
             }
         }
 
+        // ── Mirror created filters into the "Ceiling Heatmap" trade ───────────────
+        // Rebuilds the trade's rules every run so they always match the current buckets
+        // (per the rebuild-each-run decision). Each rule is linked to its Revit filter by
+        // the shared name convention. The trade is flagged ExternallyManaged so the generic
+        // AutoFilters "Create Filters" engine never tries to regenerate these numeric filters.
+        private void RegisterCeilingHeatmapTrade(
+            List<(double offset, string ruleName, RevitColor color)> chRules)
+        {
+            try
+            {
+                var settings = AutoFiltersSettings.Instance;
+
+                var trade = settings.Trades.FirstOrDefault(
+                    t => string.Equals(t.Id, CHTradeId, StringComparison.OrdinalIgnoreCase));
+                if (trade == null)
+                {
+                    trade = new FilterTradeConfig { Id = CHTradeId };
+                    settings.Trades.Add(trade);
+                }
+
+                trade.Label             = CHTradeLabel;
+                trade.Color             = CHTradeColor;
+                trade.ExternallyManaged = true;
+
+                // Rebuild rules from this run's buckets.
+                trade.Rules.Clear();
+                foreach (var (offset, ruleName, color) in chRules)
+                {
+                    string hex = ToHex(color);
+                    var rule = FilterRuleConfig.NewBlank();
+                    rule.Name              = ruleName;
+                    rule.Enabled           = true;
+                    rule.Parameter         = "Height Offset From Level";
+                    rule.BuiltInCategories = new List<string> { "OST_Ceilings" };
+                    rule.MatchType         = "equals";
+                    rule.Match             = new List<string> { offset.ToString("0.######") };
+                    rule.CutColor          = hex;
+                    rule.SurfColor         = hex;
+                    rule.LineColor         = hex;
+                    rule.Notes             = "Auto-generated by Ceiling Heatmap (numeric height match, " +
+                                             "± tolerance). Managed by the Ceiling Heatmap tool.";
+                    trade.Rules.Add(rule);
+                }
+
+                settings.Save();
+                Log($"Registered '{CHTradeLabel}' trade with {trade.Rules.Count} rule(s).", "info");
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: the Revit filters were already created/applied above. Surface the
+                // failure so the rules-list sync issue isn't hidden.
+                LemoineLog.Error("CeilingHeatmap: register Ceiling Heatmap trade", ex);
+                Log($"Filters applied, but could not update the rules list: {ex.Message}", "fail");
+            }
+        }
+
+        private static string ToHex(RevitColor c)
+            => $"#{c.Red:X2}{c.Green:X2}{c.Blue:X2}";
+
         private void AddBucket(List<double> buckets, double heightOffset)
         {
             foreach (double b in buckets)
@@ -611,7 +706,10 @@ namespace LemoineTools.Tools.Ceilings
             buckets.Add(heightOffset);
         }
 
-        private void ScanLinkedCeilings(
+        /// <summary>Scans every visible link in <paramref name="view"/> for ceilings,
+        /// adding their height offsets to <paramref name="buckets"/>. Returns the number
+        /// of linked ceilings scanned.</summary>
+        private int ScanLinkedCeilings(
             Document hostDoc, ViewPlan view,
             List<double> buckets)
         {
@@ -621,6 +719,7 @@ namespace LemoineTools.Tools.Ceilings
                 .Where(li => li.GetLinkDocument() != null)
                 .ToList();
 
+            int scanned = 0;
             foreach (RevitLinkInstance link in links)
             {
                 Document?  linkDoc   = link.GetLinkDocument();
@@ -637,20 +736,64 @@ namespace LemoineTools.Tools.Ceilings
                     double heightAbove = el.get_Parameter(
                         BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
                     AddBucket(buckets, heightAbove);
+                    scanned++;
                 }
             }
+            return scanned;
         }
 
-        private static ElementId GetCeilingHeightParamId(Document doc)
+        /// <summary>
+        /// Diagnostic only — host view filters cascade onto a link's elements only when
+        /// the link is displayed "By Host View" in that view. For every selected view ×
+        /// visible link, log the link's display mode and warn (in the step log and
+        /// diagnostics.log) about any link that won't be colored. Does NOT change the
+        /// link's display settings.
+        /// </summary>
+        private void ReportLinkDisplayModes(Document doc)
         {
-            var bipId = new ElementId(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
-            Element? sample = new FilteredElementCollector(doc)
-                .OfClass(typeof(Ceiling))
-                .WhereElementIsNotElementType()
-                .FirstOrDefault();
-            if (sample?.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM) != null)
-                return bipId;
-            return ElementId.InvalidElementId;
+            int notCascading = 0;
+
+            foreach (ElementId viewId in SelectedViewIds)
+            {
+                if (!(doc.GetElement(viewId) is View view)) continue;
+
+                foreach (RevitLinkInstance link in new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(RevitLinkInstance))
+                    .Cast<RevitLinkInstance>()
+                    .Where(li => li.GetLinkDocument() != null))
+                {
+                    LinkVisibility mode;
+                    try
+                    {
+                        // GetLinkOverrides returns null when the link uses the default
+                        // display (By Host View) and was never customized in this view.
+                        RevitLinkGraphicsSettings? gs = view.GetLinkOverrides(link.Id);
+                        mode = gs?.LinkVisibilityType ?? LinkVisibility.ByHostView;
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("CeilingHeatmap: read link display mode", ex);
+                        continue;
+                    }
+
+                    if (mode != LinkVisibility.ByHostView)
+                    {
+                        notCascading++;
+                        string linkName = link.Name;
+                        Log($"Link \"{linkName}\" in view \"{view.Name}\" is displayed "
+                            + $"\"{mode}\", not \"By Host View\" — its ceilings will not be "
+                            + "colored. Set it to \"By Host View\" in Visibility/Graphics to include them.",
+                            "fail");
+                        LemoineLog.Warn("CeilingHeatmap",
+                            $"link '{linkName}' in view '{view.Name}' display={mode}; "
+                            + "host filters will not cascade onto its ceilings.");
+                    }
+                }
+            }
+
+            if (notCascading == 0)
+                LemoineLog.Info("CeilingHeatmap",
+                    "all visible links display By Host View — heatmap filters will cascade onto linked ceilings.");
         }
 
         private static ElementId GetSolidFillPatternId(Document doc)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
@@ -160,7 +161,7 @@ namespace LemoineTools.Tools.Testing
                             }
                         }
                     }
-                    catch { /* skip reference errors per element */ }
+                    catch (Exception __lex) { LemoineLog.Swallowed("BatchDimension: skip reference error for element", __lex); }
                 }
 
                 if (refArray.IsEmpty || combinedBb == null)
@@ -247,7 +248,7 @@ namespace LemoineTools.Tools.Testing
                     if (useInt) refs.AddRange(intFaces);
                     if (!useExt && !useInt) refs.AddRange(extFaces); // fallback
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed("BatchDimension: select dimension references", __lex); }
                 return refs;
             }
 
@@ -272,7 +273,7 @@ namespace LemoineTools.Tools.Testing
                     }
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchDimension: build reference array", __lex); }
 
             return refs;
         }

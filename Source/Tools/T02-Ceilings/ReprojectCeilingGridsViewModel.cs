@@ -11,7 +11,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ReprojectCeilingGridsViewModel : ILemoineTool
+    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Ceiling plan view entry passed in from Command ────────────────────
         public sealed class CeilingPlanViewEntry
@@ -70,7 +70,7 @@ namespace LemoineTools.Tools.Ceilings
         public FrameworkElement? GetStepContent(string stepId)
         {
             if (stepId == "S1") return BuildS1();
-            if (stepId == "S2") return BuildReviewStep();
+            if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
             return null;
         }
 
@@ -130,89 +130,29 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        private struct CardDef
+
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            public string       Label;
-            public Func<string> Val;
-            public int          Row;
-            public int          Col;
-            public CardDef(string label, Func<string> val, int row, int col)
-            { Label = label; Val = val; Row = row; Col = col; }
-        }
+            ("views",  "Views Selected"),
+            ("target", "Target Ceilings"),
+            ("op",     "Operation"),
+            ("output", "Output"),
+        };
 
-        private FrameworkElement BuildReviewStep()
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            var outer = new StackPanel();
+            ["views"]  = _selectedViewIds.Count == 0 ? "None" : $"{_selectedViewIds.Count} ceiling plan(s)",
+            ["target"] = "Visible per view",
+            ["op"]     = "Delete → Reproject",
+            ["output"] = "Model curves (updated Z)",
+        };
 
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            var cards = new[]
-            {
-                new CardDef("Views Selected",  () => _selectedViewIds.Count == 0 ? "None" : $"{_selectedViewIds.Count} ceiling plan(s)", 0, 0),
-                new CardDef("Target Ceilings", () => "Visible per view",    0, 1),
-                new CardDef("Operation",       () => "Delete → Reproject",  1, 0),
-                new CardDef("Output",          () => "Model curves (updated Z)", 1, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                    Padding         = new Thickness(10, 7, 10, 7),
-                };
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var capturedVal = c.Val;
-                var valText = new TextBlock
-                {
-                    Text         = capturedVal(),
-                    FontWeight   = FontWeights.Medium,
-                    TextWrapping = TextWrapping.Wrap,
-                };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-
-                WpfGrid.SetRow(card, c.Row);
-                WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-
-            outer.Children.Add(grid);
-
-            var desc = new TextBlock
-            {
-                Text         = "For each selected ceiling plan, all ModelCurves visible in that view " +
-                               "are projected onto the current soffit geometry, then recreated at the " +
-                               "updated ceiling elevations. Curves with no ceiling overlap are skipped.",
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "For each selected ceiling plan, all ModelCurves visible in that " +
+            "view are projected onto the current soffit geometry, then recreated at the updated ceiling " +
+            "elevations. Curves with no ceiling overlap are skipped.";
+        public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════
         // IsValid

@@ -13,8 +13,6 @@ using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 
@@ -53,8 +51,53 @@ namespace LemoineTools.Lemoine
                 panel.Children.Add(row);
             }
 
+            panel.Children.Add(HSep(12));
+            panel.Children.Add(SubLabel("Diagnostics"));
+            panel.Children.Add(BuildDiagnosticsSection());
+
             scroll.Content = panel;
             return scroll;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Diagnostics — surfaces the durable log of swallowed/best-effort failures
+        // so a half-applied result is never invisible to the user.
+        private UIElement BuildDiagnosticsSection()
+        {
+            var stack = new StackPanel();
+
+            var desc = new TextBlock
+            {
+                Text = "Best-effort operations that fail quietly are recorded here, so a "
+                     + "half-applied result is never invisible. The log is written to:",
+                FontStyle    = FontStyles.Italic,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 6),
+            };
+            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            stack.Children.Add(desc);
+
+            var path = new TextBlock
+            {
+                Text         = LemoineLog.LogFilePath,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 10),
+            };
+            path.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            path.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            stack.Children.Add(path);
+
+            var btn = BuildFlatButton("Open diagnostics log");
+            btn.HorizontalAlignment = HorizontalAlignment.Left;
+            // OpenInDefaultViewer records its own failure to the log, so the bool
+            // result is intentionally not surfaced again here.
+            btn.Click += (s, e) => LemoineLog.OpenInDefaultViewer();
+            stack.Children.Add(btn);
+
+            return stack;
         }
 
         // ─────────────────────────────────────────────────────────────────────

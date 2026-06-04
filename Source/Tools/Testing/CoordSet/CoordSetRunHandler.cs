@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.CoordSet
 {
@@ -37,6 +38,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
+            long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             var s = Settings ?? CoordSetSettings.Instance;
 
@@ -116,12 +118,15 @@ namespace LemoineTools.Tools.Testing.CoordSet
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                LemoineLog.Error("CoordSet: run aborted", ex);
+                Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 
             Progress(100, pass, fail, skip);
             Log($"Done — {pass} created, {skip} skipped, {fail} failed.", "pass");
+            long __issues = LemoineLog.IssuesSince(__issues0);
+            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
             Complete(pass, fail, skip);
         }
 
@@ -589,7 +594,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                 cover.Name        = s.CoverSheetName;
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
-                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch { }
+                try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("CoordSet run: set text-note alignment", __lex); }
 
                 double noteY = 1.0;
                 void AddNote(string text)
@@ -624,7 +629,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
             }
             catch (Exception ex)
             {
-                try { tx.RollBack(); } catch { }
+                try { tx.RollBack(); } catch (Exception __lex) { LemoineLog.Swallowed("CoordSet run: roll back transaction", __lex); }
                 Log($"Cover sheet: {ex.Message}", "fail");
                 fail++;
             }
@@ -717,7 +722,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                             view.AddFilter(fid);
                         view.SetFilterVisibility(fid, show);
                     }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed($"CoordSet run: apply filter visibility to view {view.Id.Value}", __lex); }
                 }
             }
         }
@@ -766,7 +771,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                         {
                             grid.SetDatumExtentType(end, view, DatumExtentType.ViewSpecific);
                         }
-                        catch { }
+                        catch (Exception __lex) { LemoineLog.Swallowed($"CoordSet run: set grid {grid.Id.Value} datum extent type", __lex); }
                     }
 
                     // Apply visibility per end based on orientation
@@ -790,7 +795,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                     if (showEnd1) grid.ShowBubbleInView(DatumEnds.End1, view);
                     else          grid.HideBubbleInView(DatumEnds.End1, view);
                 }
-                catch { }
+                catch (Exception __lex) { LemoineLog.Swallowed($"CoordSet run: set grid {grid.Id.Value} bubble visibility", __lex); }
             }
         }
 

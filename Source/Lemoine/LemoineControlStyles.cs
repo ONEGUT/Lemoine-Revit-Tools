@@ -215,6 +215,18 @@ namespace LemoineTools.Lemoine
             </TextBox.FocusVisualStyle>
           </TextBox>
 
+          <!-- Non-editable display: shows the selected item when IsEditable=False
+               (the editable TextBox above is hidden by the IsEditable trigger below). -->
+          <ContentPresenter x:Name=""ContentSite""
+                            Grid.Column=""0""
+                            Margin=""8,0,0,0""
+                            Content=""{TemplateBinding SelectionBoxItem}""
+                            ContentTemplate=""{TemplateBinding SelectionBoxItemTemplate}""
+                            VerticalAlignment=""Center""
+                            IsHitTestVisible=""False""
+                            Visibility=""Collapsed""
+                            TextElement.Foreground=""{TemplateBinding Foreground}""/>
+
           <ToggleButton x:Name=""PART_ToggleButton""
                         Grid.Column=""1""
                         Focusable=""False""
@@ -233,6 +245,115 @@ namespace LemoineTools.Lemoine
               </ControlTemplate>
             </ToggleButton.Template>
           </ToggleButton>
+
+          <Popup x:Name=""PART_Popup""
+                 Grid.ColumnSpan=""2""
+                 Placement=""Bottom""
+                 IsOpen=""{TemplateBinding IsDropDownOpen}""
+                 AllowsTransparency=""True""
+                 Focusable=""False""
+                 PopupAnimation=""Slide"">
+            <Border CornerRadius=""3""
+                    BorderThickness=""1""
+                    Padding=""0,3,0,3""
+                    MinWidth=""{Binding ActualWidth,
+                        RelativeSource={RelativeSource AncestorType=ComboBox}}""
+                    MaxHeight=""{TemplateBinding MaxDropDownHeight}""
+                    Background=""{DynamicResource LemoineRaised}""
+                    BorderBrush=""{DynamicResource LemoineBorderMid}"">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius=""14"" ShadowDepth=""4""
+                                  Opacity=""0.4"" Color=""Black""/>
+              </Border.Effect>
+              <ScrollViewer MaxHeight=""200"">
+                <ItemsPresenter/>
+              </ScrollViewer>
+            </Border>
+          </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property=""IsEditable"" Value=""False"">
+            <Setter TargetName=""PART_EditableTextBox"" Property=""Visibility"" Value=""Collapsed""/>
+            <Setter TargetName=""ContentSite""          Property=""Visibility"" Value=""Visible""/>
+          </Trigger>
+          <Trigger Property=""IsMouseOver"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+          <Trigger Property=""IsKeyboardFocusWithin"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
+
+        // ── Read-only ComboBox — single-choice picker (no editable text box) ──
+        // LemoineSingleSelect is a pick-one control, not a free-text combo. The global
+        // ComboBox style above forces IsEditable=True, which renders a caret + editable
+        // text box. This template shows the selected item as static content with a full-
+        // width click target, so it reads as a dropdown, not a text field.
+        public static Style BuildReadOnlyComboBoxStyle() => ParseStyle(ReadOnlyComboBoxXaml)!;
+
+        private const string ReadOnlyComboBoxXaml = @"
+<Style TargetType=""{x:Type ComboBox}"">
+  <Setter Property=""Foreground""      Value=""{DynamicResource LemoineText}""/>
+  <Setter Property=""Background""      Value=""{DynamicResource LemoineSelectBg}""/>
+  <Setter Property=""BorderBrush""     Value=""{DynamicResource LemoineBorderMid}""/>
+  <Setter Property=""BorderThickness"" Value=""1""/>
+  <Setter Property=""FontFamily""      Value=""{DynamicResource LemoineUiFont}""/>
+  <Setter Property=""FontSize""        Value=""{DynamicResource LemoineFS_MD}""/>
+  <Setter Property=""MinHeight""       Value=""{DynamicResource LemoineH_Input}""/>
+  <Setter Property=""IsEditable""      Value=""False""/>
+  <Setter Property=""IsTextSearchEnabled"" Value=""False""/>
+  <Setter Property=""Template"">
+    <Setter.Value>
+      <ControlTemplate TargetType=""{x:Type ComboBox}"">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width=""*""/>
+            <ColumnDefinition Width=""22""/>
+          </Grid.ColumnDefinitions>
+
+          <Border x:Name=""Bd"" Grid.ColumnSpan=""2""
+                  CornerRadius=""3""
+                  Background=""{TemplateBinding Background}""
+                  BorderBrush=""{TemplateBinding BorderBrush}""
+                  BorderThickness=""{TemplateBinding BorderThickness}""/>
+
+          <!-- Full-width invisible click target opens the dropdown -->
+          <ToggleButton x:Name=""PART_ToggleButton""
+                        Grid.ColumnSpan=""2""
+                        Focusable=""False""
+                        ClickMode=""Press""
+                        IsChecked=""{Binding IsDropDownOpen, Mode=TwoWay,
+                            RelativeSource={RelativeSource TemplatedParent}}"">
+            <ToggleButton.Template>
+              <ControlTemplate TargetType=""{x:Type ToggleButton}"">
+                <Border Background=""Transparent""/>
+              </ControlTemplate>
+            </ToggleButton.Template>
+          </ToggleButton>
+
+          <!-- Selected item, static (non-hit-testable so clicks reach the toggle) -->
+          <ContentPresenter Grid.Column=""0""
+                            Margin=""10,0,0,0""
+                            Content=""{TemplateBinding SelectionBoxItem}""
+                            ContentTemplate=""{TemplateBinding SelectionBoxItemTemplate}""
+                            ContentTemplateSelector=""{TemplateBinding ItemTemplateSelector}""
+                            VerticalAlignment=""Center""
+                            IsHitTestVisible=""False""
+                            TextElement.Foreground=""{TemplateBinding Foreground}""/>
+
+          <Path Grid.Column=""1""
+                Data=""M 0 0 L 4 4 L 8 0 Z""
+                Fill=""{DynamicResource LemoineTextDim}""
+                Width=""8"" Height=""4""
+                HorizontalAlignment=""Center""
+                VerticalAlignment=""Center""
+                IsHitTestVisible=""False""/>
 
           <Popup x:Name=""PART_Popup""
                  Grid.ColumnSpan=""2""
@@ -369,6 +490,42 @@ namespace LemoineTools.Lemoine
 </Style>";
 
         private static Style MakeTextBoxStyle() => ParseStyle(TextBoxXaml)!;
+
+        // ── ListBoxItem — themed hover + selection (e.g. TagChipInput popup list) ─
+        // Assigned per-ListBox via ItemContainerStyle so it doesn't disturb other lists.
+        public static Style BuildListBoxItemStyle() => ParseStyle(ListBoxItemXaml)!;
+
+        private const string ListBoxItemXaml = @"
+<Style TargetType=""{x:Type ListBoxItem}"">
+  <Setter Property=""Foreground"" Value=""{DynamicResource LemoineText}""/>
+  <Setter Property=""Background"" Value=""Transparent""/>
+  <Setter Property=""FontFamily"" Value=""{DynamicResource LemoineUiFont}""/>
+  <Setter Property=""FontSize""   Value=""{DynamicResource LemoineFS_SM}""/>
+  <Setter Property=""Cursor""     Value=""Hand""/>
+  <Setter Property=""Template"">
+    <Setter.Value>
+      <ControlTemplate TargetType=""{x:Type ListBoxItem}"">
+        <Border x:Name=""Bd""
+                Padding=""8,4,8,4""
+                CornerRadius=""3""
+                Background=""{TemplateBinding Background}"">
+          <ContentPresenter VerticalAlignment=""Center""/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property=""IsMouseOver"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccentDim}""/>
+          </Trigger>
+          <Trigger Property=""IsSelected"" Value=""True"">
+            <Setter TargetName=""Bd"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccentDim}""/>
+            <Setter Property=""Foreground"" Value=""{DynamicResource LemoineAccent}""/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
 
         // ── CheckBox ──────────────────────────────────────────────────────────
         private static Style MakeCheckBoxStyle()
@@ -612,6 +769,167 @@ namespace LemoineTools.Lemoine
             };
             (inner.Parent as UIElement)?.RaiseEvent(relay);
         };
+    }
+
+    /// <summary>
+    /// Stops a CLOSED ComboBox from eating the mouse wheel — by default a WPF ComboBox
+    /// changes its selected item on wheel even when closed, which both mutates the value
+    /// unexpectedly and traps page scrolling. This re-raises the wheel to the parent so the
+    /// page/step scrolls instead. When the dropdown is open the wheel scrolls the list.
+    /// </summary>
+    public static void WireComboWheelBubbling(ComboBox combo)
+    {
+        if (combo == null) return;
+        combo.PreviewMouseWheel += (s, e) =>
+        {
+            if (combo.IsDropDownOpen) return; // open list scrolls normally
+            e.Handled = true;
+            (VisualTreeHelper.GetParent(combo) as UIElement)?.RaiseEvent(
+                new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+                {
+                    RoutedEvent = UIElement.MouseWheelEvent,
+                    Source      = combo,
+                });
+        };
+    }
+
+    // ── Floating action pill ────────────────────────────────────────────────
+    /// <summary>
+    /// Builds a fully-rounded "pill" button (Border-based so the corner radius is
+    /// honoured) with a drop shadow, used for the floating bottom-right Create /
+    /// Preview actions. <paramref name="primary"/> = accent-filled; otherwise a
+    /// neutral surface pill.
+    /// </summary>
+    public static Border BuildActionPill(string label, bool primary, Action onClick)
+    {
+        var tb = new TextBlock
+        {
+            Text                = label,
+            VerticalAlignment   = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            IsHitTestVisible    = false,
+        };
+        tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+        tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+        tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+
+        var pill = new Border
+        {
+            Padding         = new Thickness(18, 9, 18, 9),
+            BorderThickness = new Thickness(1),
+            Cursor          = Cursors.Hand,
+            Child           = tb,
+            Effect          = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 14, Opacity = 0.32, ShadowDepth = 3, Direction = 270,
+            },
+        };
+        pill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+        pill.SetResourceReference(Border.BorderBrushProperty,  "LemoineAccent");
+        pill.SetResourceReference(Border.BackgroundProperty,   primary ? "LemoineAccentDim" : "LemoineSurface");
+        if (!primary)
+        {
+            pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+        }
+
+        pill.MouseEnter += (s, e) =>
+        {
+            pill.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+        };
+        pill.MouseLeave += (s, e) =>
+        {
+            pill.SetResourceReference(Border.BackgroundProperty, primary ? "LemoineAccentDim" : "LemoineSurface");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, primary ? "LemoineAccent" : "LemoineText");
+            if (!primary) pill.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+        };
+        pill.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+        return pill;
+    }
+
+    // ── "Add" ghost pill (floats as last item in a list) ────────────────────
+    /// <summary>
+    /// Builds a rounded, dashed-feel "＋ Add …" affordance intended to sit as the
+    /// final child of a scrolling list panel (trades / rules / legends), replacing
+    /// the old sticky bottom bar.
+    /// </summary>
+    public static Border BuildAddPill(string label, Action onClick)
+    {
+        var lbl = new TextBlock
+        {
+            Text                = label,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+            IsHitTestVisible    = false,
+        };
+        lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+        lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+        lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+        var border = new Border
+        {
+            Margin          = new Thickness(4, 6, 4, 6),
+            Padding         = new Thickness(10, 7, 10, 7),
+            BorderThickness = new Thickness(1),
+            Cursor          = Cursors.Hand,
+            Background      = Brushes.Transparent,
+            Child           = lbl,
+        };
+        border.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+        border.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+
+        border.MouseEnter += (s, e) =>
+        {
+            border.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+            border.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty,  "LemoineText");
+        };
+        border.MouseLeave += (s, e) =>
+        {
+            border.Background = Brushes.Transparent;
+            border.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty,  "LemoineTextDim");
+        };
+        border.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+        return border;
+    }
+
+    // ── Floating status chip ────────────────────────────────────────────────
+    /// <summary>
+    /// Builds a rounded surface chip (collapsed by default) wrapping a green,
+    /// italic status <see cref="TextBlock"/>. Used in the floating action area so
+    /// status messages stay legible over content. Toggle the returned Border's
+    /// Visibility and set <paramref name="text"/>.Text to show a message.
+    /// </summary>
+    public static Border BuildStatusChip(out TextBlock text)
+    {
+        text = new TextBlock
+        {
+            Text              = "",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontStyle         = FontStyles.Italic,
+            IsHitTestVisible  = false,
+        };
+        text.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+        text.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
+        text.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+        var chip = new Border
+        {
+            Padding         = new Thickness(10, 5, 10, 5),
+            BorderThickness = new Thickness(1),
+            Visibility      = Visibility.Collapsed,
+            Child           = text,
+            Effect          = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 10, Opacity = 0.25, ShadowDepth = 2, Direction = 270,
+            },
+        };
+        chip.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+        chip.SetResourceReference(Border.BackgroundProperty,   "LemoineSurface");
+        chip.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+        return chip;
     }
 }
 }

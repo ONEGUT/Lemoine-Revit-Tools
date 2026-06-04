@@ -10,13 +10,12 @@ namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
     /// Top ribbon of the Legend Creator. Single row:
-    ///   [ Legend pill (title, accent-bordered) ] [ ✎ edit btn ] ── spacer ── [ Preview btn ] [ Templates ˅ pill ]
+    ///   [ Legend pill (title, accent-bordered) ] [ ✎ edit btn ] ── spacer (preview centered) ──
+    /// Templates have moved to the sidebar in LegendSettingsWindow.
     /// </summary>
     public partial class LemoineLegendLayoutBar : UserControl
     {
         public event EventHandler? Changed;
-        public event EventHandler? PreviewRequested;
-        public event EventHandler? TemplatesRequested;
 
         private LegendLayoutConfig _layout = new LegendLayoutConfig();
         public LegendLayoutConfig Layout
@@ -42,12 +41,11 @@ namespace LemoineTools.Lemoine.Controls
 
             _root.Children.Clear();
 
-            // Single grid: [Auto legend pill] [Auto edit btn] [* spacer (preview centered here)] [Auto templates pill]
+            // Grid: [Auto legend pill] [Auto edit btn]  (Preview moved to the
+            // host window's floating bottom-right pill — no spacer column needed).
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 0 legend pill
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 1 edit btn
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // 2 spacer (preview centered here)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 3 templates pill
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             // ── Legend pill ──────────────────────────────────────────────────
             var pill = new Border
@@ -108,65 +106,6 @@ namespace LemoineTools.Lemoine.Controls
 
             Grid.SetColumn(editBtn, 1);
             grid.Children.Add(editBtn);
-
-            // col 2 is the star spacer — no child needed
-
-            // ── Preview button (centered in the star spacer) ─────────────────
-            var previewBtn = LemoineControlStyles.BuildButton("Preview", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            previewBtn.VerticalAlignment   = VerticalAlignment.Center;
-            previewBtn.HorizontalAlignment = HorizontalAlignment.Center;
-            previewBtn.Margin              = new Thickness(0, 0, 4, 0);
-            previewBtn.Click += (s, e) => PreviewRequested?.Invoke(this, EventArgs.Empty);
-            Grid.SetColumn(previewBtn, 2);
-            grid.Children.Add(previewBtn);
-
-            // ── Templates pill ───────────────────────────────────────────────
-            var templatesPill = new Border
-            {
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 5, 10, 5),
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            templatesPill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
-            templatesPill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
-            templatesPill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
-
-            var templatesInner = new StackPanel { Orientation = Orientation.Horizontal };
-            var templatesLabel = new TextBlock
-            {
-                Text = "Templates",
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            templatesLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            templatesLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            templatesLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-
-            var templatesChevron = new TextBlock
-            {
-                Text = " ˅",
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            templatesChevron.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            templatesChevron.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            templatesChevron.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-
-            templatesInner.Children.Add(templatesLabel);
-            templatesInner.Children.Add(templatesChevron);
-            templatesPill.Child = templatesInner;
-
-            templatesPill.MouseEnter += (s, e) =>
-            {
-                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-            };
-            templatesPill.MouseLeave += (s, e) =>
-            {
-                templatesPill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
-            };
-            templatesPill.MouseLeftButtonUp += (s, e) => TemplatesRequested?.Invoke(this, EventArgs.Empty);
-
-            Grid.SetColumn(templatesPill, 3);
-            grid.Children.Add(templatesPill);
 
             _root.Children.Add(grid);
         }

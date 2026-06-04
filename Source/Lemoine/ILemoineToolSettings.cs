@@ -15,13 +15,8 @@ namespace LemoineTools.Lemoine
     //                       Apply. Write to YourToolSettings.Instance.* and
     //                       call .Save() at the end.
     //
-    // ⚠ Library modification note (AutoFilters):
-    //   AutoFiltersViewModel uses a bespoke 3-tab modal (AutoFiltersSettingsWindow)
-    //   that cannot be represented as a flat LemoineToolSettingsSpec.
-    //   GetSettingsSpec() returns null; GlobalSettingsWindow needs a new overload:
-    //     RegisterToolWithCustomWindow(string name, Func<UIElement> factory)
-    //   This is a pending library change — see OpenSettingsCommand.cs for the
-    //   placeholder comment.
+    // Note (AutoFilters): the Auto Filters tool uses a standalone FiltersSettingsWindow
+    //   opened from the ribbon. GetSettingsSpec() returns null for this tool.
     // =========================================================================
 
     public interface ILemoineToolSettings

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing.CoordSet
 {
@@ -223,7 +224,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("CoordSetSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LemoineCoordSetSettings.xml");
             }
         }
@@ -240,7 +241,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                 var xs = new XmlSerializer(typeof(CoordSetSettings));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CoordSetSettings.Save", __lex); }
         }
 
         private static CoordSetSettings Load()
@@ -254,7 +255,7 @@ namespace LemoineTools.Tools.Testing.CoordSet
                         return (CoordSetSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CoordSetSettings.Load", __lex); }
             var fresh = new CoordSetSettings();
             fresh.Save();
             return fresh;

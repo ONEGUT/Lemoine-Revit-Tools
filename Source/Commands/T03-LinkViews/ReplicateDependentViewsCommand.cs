@@ -73,7 +73,7 @@ namespace LemoineTools.Commands
                         var cb = depView.CropBox;
                         if (cb != null) { min = cb.Min; max = cb.Max; }
                     }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: read source crop box", __lex); }
 
                     // Scope box
                     ElementId scopeBoxId = ElementId.InvalidElementId;
@@ -82,7 +82,7 @@ namespace LemoineTools.Commands
                         var sp = depView.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
                         if (sp != null) scopeBoxId = sp.AsElementId() ?? ElementId.InvalidElementId;
                     }
-                    catch { }
+                    catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: read source scope box", __lex); }
 
                     deps.Add(new DepEntry
                     {
@@ -197,7 +197,7 @@ namespace LemoineTools.Commands
                     if (!string.IsNullOrEmpty(name)) return name;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: resolve view level name", __lex); }
             return "";
         }
     }

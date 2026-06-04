@@ -18,20 +18,20 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.Testing
 {
-    /// <summary>
-    /// View model for the Batch Export tool (Tx).
-    /// 3-step wizard: Select Sheets/Views → Filename &amp; Formats → Output &amp; Review.
-    /// </summary>
-    public class BatchExportViewModel : ILemoineTool, ILemoineToolSettings
+    public class BatchExportViewModel : ILemoineTool, ILemoineReviewable
     {
+        // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Batch Export";
         public string RunLabel => "Export in Revit →";
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Sheets / Views",  required: true),
-            new StepDefinition("S2", "Filename & Formats",     required: true),
-            new StepDefinition("S3", "Output & Review",        required: true),
+            new StepDefinition("S1", "Select Sheets / Views", required: true),
+            new StepDefinition("S2", "Build Packs",           required: false),
+            new StepDefinition("S3", "Filename & Formats",    required: true),
+            new StepDefinition("S4", "PDF Settings",          required: false),
+            new StepDefinition("S5", "Output",                required: true),
+            new StepDefinition("S6", "Review & Run",          required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -63,49 +63,64 @@ namespace LemoineTools.Tools.Testing
             ("Day",           "{Day}"),
         };
 
-        // ── State ─────────────────────────────────────────────────────────────
-        private string                    _exportMode       = "Sheets"; // "Sheets" | "Views"
-        private List<string>              _selectedNames    = new List<string>();
-        private Dictionary<string, ElementId> _nameToId    = new Dictionary<string, ElementId>();
-        private string                    _filenamePattern  = BatchExportSettings.Instance.FilenamePattern;
-        private bool                      _pdfOn            = BatchExportSettings.Instance.ExportPdf;
-        private bool                      _dwgOn            = BatchExportSettings.Instance.ExportDwg;
-        private bool                      _nwcOn            = BatchExportSettings.Instance.ExportNwc;
-        private bool                      _ifcOn            = BatchExportSettings.Instance.ExportIfc;
-        private string                    _ifcVersion       = BatchExportSettings.Instance.IfcVersion;
+        // ── S1 state ──────────────────────────────────────────────────────────
+        private string                        _exportMode    = "Sheets";
+        private List<string>                  _selectedNames = new List<string>();
+        private Dictionary<string, ElementId> _nameToId      = new Dictionary<string, ElementId>();
+
+        // ── S2 state (packs) ──────────────────────────────────────────────────
+        private readonly List<SheetPackLayout> _packs      = new List<SheetPackLayout>();
+        private int                            _activePack = 0;
+
+        // ── S3 state (filename & formats) ────────────────────────────────────
+        private string             _filenamePattern = BatchExportSettings.Instance.FilenamePattern;
+        private bool               _pdfOn           = BatchExportSettings.Instance.ExportPdf;
+        private bool               _dwgOn           = BatchExportSettings.Instance.ExportDwg;
+        private bool               _nwcOn           = BatchExportSettings.Instance.ExportNwc;
+        private bool               _ifcOn           = BatchExportSettings.Instance.ExportIfc;
+        private string             _ifcVersion      = BatchExportSettings.Instance.IfcVersion;
+        private string             _dwgSetup        = BatchExportSettings.Instance.DwgExportSetupName;
+        private LemoineTokenInput? _tokenInput;
 
         // ── NWC option state (all NavisworksExportOptions properties) ─────────
-        private string _nwcCoordinates        = BatchExportSettings.Instance.NwcCoordinates;
-        private string _nwcParameters         = BatchExportSettings.Instance.NwcParameters;
-        private bool   _nwcConvertElementProps = BatchExportSettings.Instance.NwcConvertElementProps;
-        private bool   _nwcDivideByLevel       = BatchExportSettings.Instance.NwcDivideByLevel;
-        private bool   _nwcExportLinks         = BatchExportSettings.Instance.NwcExportLinks;
-        private bool   _nwcExportParts         = BatchExportSettings.Instance.NwcExportParts;
-        private bool   _nwcExportElementIds    = BatchExportSettings.Instance.NwcExportElementIds;
-        private bool   _nwcExportUrls          = BatchExportSettings.Instance.NwcExportUrls;
-        private bool   _nwcFindMissingMaterials= BatchExportSettings.Instance.NwcFindMissingMaterials;
-        private bool   _nwcExportRoomGeometry  = BatchExportSettings.Instance.NwcExportRoomGeometry;
-        private bool   _nwcExportRoomAsAttr    = BatchExportSettings.Instance.NwcExportRoomAsAttribute;
-        private bool   _nwcConvertLights       = BatchExportSettings.Instance.NwcConvertLights;
-        private bool   _nwcConvertLinkedCad    = BatchExportSettings.Instance.NwcConvertLinkedCad;
-        private double _nwcFacetingFactor      = BatchExportSettings.Instance.NwcFacetingFactor;
-        private bool                      _combinePdf       = BatchExportSettings.Instance.CombinePdf;
-        private string                    _pdfPlacement     = BatchExportSettings.Instance.PdfPaperPlacement;
-        private string                    _hiddenLines      = BatchExportSettings.Instance.HiddenLinesVector
-                                                              ? "Vector Processing" : "Raster Processing";
-        private string                    _dwgSetup         = BatchExportSettings.Instance.DwgExportSetupName;
-        private string                    _outputFolder     = BatchExportSettings.Instance.OutputFolder;
-        private bool                      _splitByFormat    = BatchExportSettings.Instance.SplitByFormat;
+        private string _nwcCoordinates         = BatchExportSettings.Instance.NwcCoordinates;
+        private string _nwcParameters          = BatchExportSettings.Instance.NwcParameters;
+        private bool   _nwcConvertElementProps  = BatchExportSettings.Instance.NwcConvertElementProps;
+        private bool   _nwcDivideByLevel        = BatchExportSettings.Instance.NwcDivideByLevel;
+        private bool   _nwcExportLinks          = BatchExportSettings.Instance.NwcExportLinks;
+        private bool   _nwcExportParts          = BatchExportSettings.Instance.NwcExportParts;
+        private bool   _nwcExportElementIds     = BatchExportSettings.Instance.NwcExportElementIds;
+        private bool   _nwcExportUrls           = BatchExportSettings.Instance.NwcExportUrls;
+        private bool   _nwcFindMissingMaterials = BatchExportSettings.Instance.NwcFindMissingMaterials;
+        private bool   _nwcExportRoomGeometry   = BatchExportSettings.Instance.NwcExportRoomGeometry;
+        private bool   _nwcExportRoomAsAttr     = BatchExportSettings.Instance.NwcExportRoomAsAttribute;
+        private bool   _nwcConvertLights        = BatchExportSettings.Instance.NwcConvertLights;
+        private bool   _nwcConvertLinkedCad     = BatchExportSettings.Instance.NwcConvertLinkedCad;
+        private double _nwcFacetingFactor       = BatchExportSettings.Instance.NwcFacetingFactor;
 
-        // ── Data from Revit (populated via constructor) ───────────────────────
-        private readonly List<ViewSheet>  _allSheets;
-        private readonly List<View>       _allViews;
-        private readonly List<string>     _dwgSetupNames;
+        // ── S4 state (PDF settings) ───────────────────────────────────────────
+        private string _pdfPlacement    = BatchExportSettings.Instance.PdfPaperPlacement;
+        private string _zoomSetting     = BatchExportSettings.Instance.ZoomSetting;
+        private int    _zoomPct         = BatchExportSettings.Instance.ZoomPercent;
+        private string _colorDepth      = BatchExportSettings.Instance.ColorDepth;
+        private string _rasterQuality   = BatchExportSettings.Instance.RasterQuality;
+        private string _hiddenLines     = BatchExportSettings.Instance.HiddenLinesVector
+                                          ? "Vector Processing" : "Raster Processing";
+        private bool   _combinePdf      = BatchExportSettings.Instance.CombinePdf;
+        private bool   _viewLinksBlue   = BatchExportSettings.Instance.ViewLinksInBlue;
+        private bool   _replaceHalftone = BatchExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
-        // ── Step 2 token input (stored to access Text from Run()) ─────────────
-        private LemoineTokenInput?        _tokenInput;
+        // ── S5 state (output) ─────────────────────────────────────────────────
+        private string _outputFolder  = BatchExportSettings.Instance.OutputFolder;
+        private bool   _splitByFormat = BatchExportSettings.Instance.SplitByFormat;
 
-        // ── Preview element (first selected) ─────────────────────────────────
+        // ── Revit data ────────────────────────────────────────────────────────
+        private readonly List<ViewSheet>             _allSheets;
+        private readonly List<View>                  _allViews;
+        private readonly List<string>                _dwgSetupNames;
+        private readonly Dictionary<ElementId, ViewSheet> _sheetById;
+
+        // ── Preview (token preview in S3) ─────────────────────────────────────
         private string _previewSheetNumber = "A101";
         private string _previewSheetName   = "Ground Floor";
 
@@ -114,25 +129,6 @@ namespace LemoineTools.Tools.Testing
         private readonly ExternalEvent?           _event;
 
         // ── Constructor ───────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Main constructor — pass null handler/event for settings-only instantiation.
-        /// </summary>
-        public BatchExportViewModel(
-            BatchExportEventHandler? handler,
-            ExternalEvent?           externalEvent,
-            List<string>?            dwgSetupNames)
-        {
-            _handler       = handler;
-            _event         = externalEvent;
-            _dwgSetupNames = dwgSetupNames ?? new List<string>();
-            _allSheets     = new List<ViewSheet>();
-            _allViews      = new List<View>();
-        }
-
-        /// <summary>
-        /// Full constructor — pass all Revit data collected on the main thread.
-        /// </summary>
         public BatchExportViewModel(
             BatchExportEventHandler? handler,
             ExternalEvent?           externalEvent,
@@ -146,9 +142,11 @@ namespace LemoineTools.Tools.Testing
             _allSheets     = allSheets;
             _allViews      = allViews;
 
-            // Seed name→id map
+            // Build fast ID→Sheet lookup
+            _sheetById = new Dictionary<ElementId, ViewSheet>();
             foreach (var s in _allSheets)
             {
+                _sheetById[s.Id] = s;
                 string key = $"{s.SheetNumber} — {s.Name}";
                 if (!_nameToId.ContainsKey(key)) _nameToId[key] = s.Id;
             }
@@ -158,12 +156,19 @@ namespace LemoineTools.Tools.Testing
                 if (!_nameToId.ContainsKey(key)) _nameToId[key] = v.Id;
             }
 
-            // Seed preview names from first sheet
+            // Seed preview from first sheet
             if (_allSheets.Count > 0)
             {
                 _previewSheetNumber = _allSheets[0].SheetNumber;
                 _previewSheetName   = _allSheets[0].Name;
             }
+
+            // Restore saved packs
+            var saved = BatchExportSettings.Instance.SavedPacks;
+            if (saved.Count > 0)
+                foreach (var p in saved) _packs.Add(p.Clone());
+            else
+                _packs.Add(new SheetPackLayout("Pack 1"));
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -176,20 +181,16 @@ namespace LemoineTools.Tools.Testing
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
                 case "S3": return BuildS3();
+                case "S4": return BuildS4();
+                case "S5": return BuildS5();
                 default:   return null;
             }
         }
 
-        // ── Step 1 — Select Sheets / Views ────────────────────────────────────
+        // ── S1 — Select Sheets / Views ────────────────────────────────────────
         private FrameworkElement BuildS1()
         {
             var outer = new StackPanel();
-
-            // Mode toggle row
-            var modeRow = new WpfGrid();
-            modeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            modeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            modeRow.Margin = new Thickness(0, 0, 0, 8);
 
             var sheetsBtn = BuildModeButton("Sheets", _exportMode == "Sheets");
             var viewsBtn  = BuildModeButton("Views",  _exportMode == "Views");
@@ -214,17 +215,16 @@ namespace LemoineTools.Tools.Testing
             toggleRow.Children.Add(viewsBtn);
             outer.Children.Add(toggleRow);
 
-            // Show-all checkbox (for Views mode)
             var showAllCb = new CheckBox
             {
-                Content  = "Show all non-template views",
+                Content   = "Show all non-template views",
                 IsChecked = false,
+                Margin    = new Thickness(0, 0, 0, 6),
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin   = new Thickness(0, 0, 0, 6),
             };
-            showAllCb.SetResourceReference(CheckBox.ForegroundProperty,  "LemoineText");
-            showAllCb.SetResourceReference(CheckBox.FontFamilyProperty,  "LemoineUiFont");
-            showAllCb.SetResourceReference(CheckBox.FontSizeProperty,    "LemoineFS_SM");
+            showAllCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
+            showAllCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
+            showAllCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_SM");
             showAllCb.Tag = false;
             showAllCb.Checked   += (s, e) => { showAllCb.Tag = true;  RefreshMultiSelect(outer); Fire(); };
             showAllCb.Unchecked += (s, e) => { showAllCb.Tag = false; RefreshMultiSelect(outer); Fire(); };
@@ -232,7 +232,6 @@ namespace LemoineTools.Tools.Testing
             outer.Tag = showAllCb;
             outer.Children.Add(showAllCb);
 
-            // MultiSelectTabs placeholder
             var multiSelect = BuildMultiSelect(showAllCb);
             multiSelect.Tag = "multiselect";
             outer.Children.Add(multiSelect);
@@ -240,51 +239,10 @@ namespace LemoineTools.Tools.Testing
             return outer;
         }
 
-        private Button BuildModeButton(string label, bool active)
-        {
-            var b = new Button
-            {
-                Content         = label,
-                Margin          = new Thickness(0, 0, 4, 0),
-                BorderThickness = new Thickness(1),
-                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
-                Cursor          = Cursors.Hand,
-            };
-            b.SetResourceReference(Button.MinHeightProperty,  "LemoineH_BtnMin");
-            b.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnPad");
-            b.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_MD");
-            b.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
-            ApplyModeButtonStyle(b, active);
-            return b;
-        }
-
-        private static void ApplyModeButtonStyle(Button b, bool active)
-        {
-            if (active)
-            {
-                b.SetResourceReference(Button.BackgroundProperty,  "LemoineAccentDim");
-                b.SetResourceReference(Button.BorderBrushProperty, "LemoineAccent");
-                b.SetResourceReference(Button.ForegroundProperty,  "LemoineAccent");
-            }
-            else
-            {
-                b.Background = WpfBrushes.Transparent;
-                b.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
-                b.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
-            }
-        }
-
-        private static void RefreshModeButtons(Button sheets, Button views, bool sheetsActive)
-        {
-            ApplyModeButtonStyle(sheets, sheetsActive);
-            ApplyModeButtonStyle(views,  !sheetsActive);
-        }
-
         private LemoineMultiSelectTabs BuildMultiSelect(CheckBox showAllCb)
         {
             var tabs = new LemoineMultiSelectTabs();
-            var groups = BuildGroups((bool)(showAllCb.Tag ?? false));
-            tabs.SetGroups(groups);
+            tabs.SetGroups(BuildGroups((bool)(showAllCb.Tag ?? false)));
             tabs.SelectionChanged += selected =>
             {
                 _selectedNames = new List<string>(selected);
@@ -295,7 +253,6 @@ namespace LemoineTools.Tools.Testing
 
         private void RefreshMultiSelect(StackPanel outer)
         {
-            // Remove old multiselect, rebuild from current mode
             for (int i = outer.Children.Count - 1; i >= 0; i--)
             {
                 if (outer.Children[i] is FrameworkElement fe && (string?)fe.Tag == "multiselect")
@@ -324,8 +281,7 @@ namespace LemoineTools.Tools.Testing
             {
                 foreach (var sheet in _allSheets)
                 {
-                    string key = $"{sheet.SheetNumber} — {sheet.Name}";
-                    // Group by first letter-prefix of sheet number (A-, S-, M-, etc.)
+                    string key    = $"{sheet.SheetNumber} — {sheet.Name}";
                     string prefix = GetSheetPrefix(sheet.SheetNumber);
                     if (!groups.ContainsKey(prefix)) groups[prefix] = new List<string>();
                     groups[prefix].Add(key);
@@ -340,12 +296,12 @@ namespace LemoineTools.Tools.Testing
                     ViewFamily.Section,   ViewFamily.Elevation,
                     ViewFamily.Detail,    ViewFamily.ThreeDimensional,
                 };
-
                 foreach (var view in _allViews)
                 {
-                    if (!showAll && !allowedFamilies.Contains(view.ViewType == ViewType.DraftingView
-                            ? ViewFamily.Detail
-                            : GetViewFamily(view)))
+                    if (!showAll && !allowedFamilies.Contains(
+                            view.ViewType == ViewType.DraftingView
+                                ? ViewFamily.Detail
+                                : GetViewFamily(view)))
                         continue;
 
                     string groupName = GetViewGroupName(view);
@@ -356,55 +312,259 @@ namespace LemoineTools.Tools.Testing
                 }
             }
 
-            if (groups.Count == 0)
-                groups["(No items)"] = new List<string>();
-
+            if (groups.Count == 0) groups["(No items)"] = new List<string>();
             return groups;
         }
 
-        private static string GetSheetPrefix(string sheetNumber)
-        {
-            if (string.IsNullOrEmpty(sheetNumber)) return "Other";
-            // Take leading letters
-            int i = 0;
-            while (i < sheetNumber.Length && char.IsLetter(sheetNumber[i])) i++;
-            return i > 0 ? sheetNumber.Substring(0, i) + "-" : "Other";
-        }
-
-        private static ViewFamily GetViewFamily(View v)
-        {
-            if (v is View3D)    return ViewFamily.ThreeDimensional;
-            if (v is ViewPlan vp) return vp.ViewType == ViewType.CeilingPlan
-                ? ViewFamily.CeilingPlan : ViewFamily.FloorPlan;
-            if (v is ViewSection) return v.ViewType == ViewType.Elevation
-                ? ViewFamily.Elevation : ViewFamily.Section;
-            return ViewFamily.Invalid;
-        }
-
-        private static string GetViewGroupName(View v)
-        {
-            if (v is View3D)    return "3D Views";
-            if (v is ViewPlan vp)
-                return vp.ViewType == ViewType.CeilingPlan ? "Reflected Ceiling Plans" : "Floor Plans";
-            if (v is ViewSection)
-                return v.ViewType == ViewType.Elevation ? "Elevations" : "Sections";
-            if (v.ViewType == ViewType.DraftingView) return "Drafting Views";
-            return v.ViewType.ToString();
-        }
-
-        // ── Step 2 — Filename & Formats ───────────────────────────────────────
+        // ── S2 — Build Packs ──────────────────────────────────────────────────
         private FrameworkElement BuildS2()
+        {
+            if (_exportMode == "Views")
+            {
+                var info = new TextBlock
+                {
+                    Text         = "Pack organisation is only available when exporting sheets. Switch to 'Sheets' mode in Step 1 to use this feature.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 4, 0, 0),
+                };
+                info.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                info.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                info.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                return info;
+            }
+
+            var outer = new StackPanel();
+
+            // Optional note
+            var note = new TextBlock
+            {
+                Text         = "Optional — leave all packs empty to export each sheet individually with the filename pattern from Step 3.",
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 0, 0, 10),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(note);
+
+            var tabsRow      = new WrapPanel { Margin = new Thickness(0, 0, 0, 0) };
+            var tabContainer = new ContentControl { Margin = new Thickness(0, 0, 0, 0) };
+
+            Action rebuildPackTabs = null!;
+            rebuildPackTabs = () =>
+            {
+                tabsRow.Children.Clear();
+                for (int i = 0; i < _packs.Count; i++)
+                {
+                    int captured = i;
+                    var tab = new Border
+                    {
+                        BorderThickness = new Thickness(1),
+                        CornerRadius    = new CornerRadius(3, 3, 0, 0),
+                        Margin          = new Thickness(0, 0, 4, 0),
+                        Padding         = new Thickness(10, 4, 10, 4),
+                        Cursor          = Cursors.Hand,
+                    };
+                    if (captured == _activePack)
+                    {
+                        tab.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
+                        tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    }
+                    else
+                    {
+                        tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                        tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    }
+                    LemoineMotion.WireHover(tab,
+                        normalBgKey:     captured == _activePack ? "LemoineSelectBg" : "LemoineRaised",
+                        hoverBgKey:      "LemoineAccentDim",
+                        normalBorderKey: captured == _activePack ? "LemoineAccent" : "LemoineBorder",
+                        hoverBorderKey:  "LemoineAccent");
+
+                    var tabText = new TextBlock { Text = _packs[captured].PackName };
+                    tabText.SetResourceReference(TextBlock.ForegroundProperty,
+                        captured == _activePack ? "LemoineAccent" : "LemoineText");
+                    tabText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                    tabText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    tab.Child = tabText;
+
+                    tab.MouseLeftButtonDown += (s, e) =>
+                    {
+                        _activePack = captured;
+                        rebuildPackTabs();
+                        tabContainer.Content = BuildPackEditor(rebuildPackTabs);
+                    };
+                    tabsRow.Children.Add(tab);
+                }
+
+                // "+ New Pack" button
+                var addBtn = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius    = new CornerRadius(3, 3, 0, 0),
+                    Padding         = new Thickness(10, 4, 10, 4),
+                    Cursor          = Cursors.Hand,
+                };
+                addBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineCanvas");
+                addBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+                LemoineMotion.WireHover(addBtn,
+                    normalBgKey:     "LemoineCanvas",  hoverBgKey:     "LemoineAccentDim",
+                    normalBorderKey: "LemoineBorderMid", hoverBorderKey: "LemoineAccent");
+                var addText = new TextBlock { Text = "+ New Pack" };
+                addText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                addText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                addText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                addBtn.Child = addText;
+                addBtn.MouseLeftButtonDown += (s, e) =>
+                {
+                    _packs.Add(new SheetPackLayout($"Pack {_packs.Count + 1}"));
+                    _activePack = _packs.Count - 1;
+                    rebuildPackTabs();
+                    tabContainer.Content = BuildPackEditor(rebuildPackTabs);
+                    Fire();
+                };
+                tabsRow.Children.Add(addBtn);
+            };
+
+            outer.Children.Add(tabsRow);
+            tabContainer.Content = BuildPackEditor(rebuildPackTabs);
+            outer.Children.Add(tabContainer);
+            rebuildPackTabs();
+
+            return outer;
+        }
+
+        private FrameworkElement BuildPackEditor(Action rebuildTabs)
+        {
+            if (_activePack < 0 || _activePack >= _packs.Count)
+            {
+                var empty = new TextBlock { Text = "No pack selected." };
+                empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                return empty;
+            }
+
+            var pack  = _packs[_activePack];
+            var outer = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(0, 3, 3, 3),
+                Padding         = new Thickness(12),
+            };
+            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+
+            var inner = new StackPanel();
+
+            // Pack name row
+            var nameRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+
+            var nameLabel = new TextBlock
+            {
+                Text              = "PACK NAME",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 8, 0),
+            };
+            nameLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            nameLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            nameLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            nameRow.Children.Add(nameLabel);
+
+            var nameBox = new WpfTextBox
+            {
+                Text    = pack.PackName,
+                Width   = 180,
+                Padding = new Thickness(6, 2, 6, 2),
+            };
+            nameBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            nameBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            nameBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
+            nameBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
+            nameBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+            nameBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
+            nameBox.TextChanged += (s, e) =>
+            {
+                pack.PackName = nameBox.Text;
+                rebuildTabs();
+                Fire();
+            };
+            nameRow.Children.Add(nameBox);
+
+            if (_packs.Count > 1)
+            {
+                var delBtn = new Button
+                {
+                    Content         = "Remove Pack",
+                    Margin          = new Thickness(8, 0, 0, 0),
+                    Padding         = new Thickness(8, 0, 8, 0),
+                    BorderThickness = new Thickness(1),
+                    Cursor          = Cursors.Hand,
+                };
+                delBtn.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnMin");
+                delBtn.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
+                delBtn.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
+                delBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+                delBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineCanvas");
+                delBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+                delBtn.Template = LemoineControlStyles.BuildFlatButtonTemplate();
+                delBtn.Click += (s, e) =>
+                {
+                    _packs.RemoveAt(_activePack);
+                    _activePack = Math.Max(0, _activePack - 1);
+                    rebuildTabs();
+                    Fire();
+                };
+                nameRow.Children.Add(delBtn);
+            }
+            inner.Children.Add(nameRow);
+
+            // Sheet order label
+            var editorLabel = new TextBlock
+            {
+                Text   = "SHEET ORDER",
+                Margin = new Thickness(0, 0, 0, 6),
+            };
+            editorLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            editorLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            editorLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            inner.Children.Add(editorLabel);
+
+            // Build available-for-pack dict from S1 selections
+            var availableForPack = new Dictionary<string, string>();
+            foreach (var name in _selectedNames)
+            {
+                if (_nameToId.TryGetValue(name, out var id) && _sheetById.TryGetValue(id, out var sheet))
+                    availableForPack[sheet.SheetNumber] = sheet.Name;
+            }
+
+            var editor = new SheetPackLayoutEditor();
+            editor.Load(availableForPack, pack.SheetNumbers);
+            editor.LayoutChanged += () =>
+            {
+                pack.SheetNumbers = new List<string>(editor.PackSheetNumbers);
+                Fire();
+            };
+            inner.Children.Add(editor);
+
+            outer.Child = inner;
+            return outer;
+        }
+
+        // ── S3 — Filename & Formats ───────────────────────────────────────────
+        private FrameworkElement BuildS3()
         {
             var outer = new StackPanel();
 
-            // ── Section A: Filename Pattern ───────────────────────────────────
+            // Filename pattern
             AddSectionLabel(outer, "FILENAME PATTERN");
 
-            _tokenInput = new LemoineTokenInput(ExportTokens, "{SheetNumber}-{SheetName}");
+            _tokenInput      = new LemoineTokenInput(ExportTokens, "{SheetNumber}-{SheetName}");
             _tokenInput.Text = _filenamePattern;
             outer.Children.Add(_tokenInput);
 
-            // Live preview
             var preview = new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
@@ -415,6 +575,7 @@ namespace LemoineTools.Tools.Testing
             preview.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             preview.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             UpdatePreview(preview);
+            outer.Children.Add(preview);
 
             _tokenInput.TextChanged += (s, e) =>
             {
@@ -422,119 +583,108 @@ namespace LemoineTools.Tools.Testing
                 UpdatePreview(preview);
                 Fire();
             };
-            outer.Children.Add(preview);
+
+            // Pack filename note (shown when packs have sheets)
+            if (HasActivePacks())
+            {
+                var packNote = new TextBlock
+                {
+                    Text         = "Pack names are used as PDF filenames when packs are defined. The pattern above applies to DWG exports and individual PDF exports only.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 6, 0, 0),
+                };
+                packNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                packNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                packNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(packNote);
+            }
 
             AddDivider(outer);
 
-            // ── Section B: Formats ────────────────────────────────────────────
+            // Formats
             AddSectionLabel(outer, "FORMATS");
 
             var formatToggles = new LemoineToggleSwitches();
             formatToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "pdf", Label = "PDF", Desc = "Vector PDF via Revit engine",                DefaultOn = _pdfOn },
-                new ToggleItem { Id = "dwg", Label = "DWG", Desc = "AutoCAD DWG via Revit export",               DefaultOn = _dwgOn },
-                new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC — 3D views only",             DefaultOn = _nwcOn },
-                new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine — 3D views only", DefaultOn = _ifcOn },
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = "Vector PDF via Revit engine",                     DefaultOn = _pdfOn  },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = "AutoCAD DWG via Revit export",                    DefaultOn = _dwgOn  },
+                new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC — 3D views only",                  DefaultOn = _nwcOn  },
+                new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine — 3D views only",   DefaultOn = _ifcOn  },
             });
 
+            AddDivider(outer);
+
+            // DWG options (shown when DWG is on)
+            var dwgSection = new StackPanel { Tag = "dwgSection" };
+            AddSectionLabel(dwgSection, "DWG OPTIONS");
+
+            var setupNames = _dwgSetupNames.Count > 0
+                ? _dwgSetupNames.ToArray()
+                : new[] { "(No DWG setups found in project)" };
+            int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
+            AddLabeledComboBox(dwgSection, "Export Setup", setupNames, initIdx,
+                val => { _dwgSetup = val; Fire(); });
+
+            dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            outer.Children.Add(formatToggles);
+            outer.Children.Add(dwgSection);
+
+            // NWC options section (shown when NWC is on)
+            var nwcSection = new StackPanel { Tag = "nwcSection" };
+            BuildNwcOptions(nwcSection);
+            nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            outer.Children.Add(nwcSection);
+
+            // IFC options section (shown when IFC is on)
+            var ifcSection = new StackPanel { Tag = "ifcSection" };
+            BuildIfcOptions(ifcSection);
+            ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            outer.Children.Add(ifcSection);
+
+            // Wire all section visibility to toggle state
             formatToggles.StateChanged += state =>
             {
                 _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
                 _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
                 _nwcOn = state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
                 _ifcOn = state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
+                dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+                ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                 Fire();
-            };
-            outer.Children.Add(formatToggles);
-
-            AddDivider(outer);
-
-            // ── Section C: PDF Options ────────────────────────────────────────
-            var pdfSection = new StackPanel { Tag = "pdfSection" };
-            AddSectionLabel(pdfSection, "PDF OPTIONS");
-            BuildPdfOptions(pdfSection);
-            pdfSection.Visibility = _pdfOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(pdfSection);
-
-            // ── Section D: DWG Options ────────────────────────────────────────
-            var dwgSection = new StackPanel { Tag = "dwgSection" };
-            AddSectionLabel(dwgSection, "DWG OPTIONS");
-            BuildDwgOptions(dwgSection);
-            dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(dwgSection);
-
-            // ── Section E: NWC Options ────────────────────────────────────────
-            var nwcSection = new StackPanel { Tag = "nwcSection" };
-            BuildNwcOptions(nwcSection);
-            nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(nwcSection);
-
-            // ── Section F: IFC Options ────────────────────────────────────────
-            var ifcSection = new StackPanel { Tag = "ifcSection" };
-            BuildIfcOptions(ifcSection);
-            ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(ifcSection);
-
-            // Wire all format option section visibility to toggle state
-            formatToggles.StateChanged += state =>
-            {
-                bool pdf = state.TryGetValue("pdf", out bool pv) && pv;
-                bool dwg = state.TryGetValue("dwg", out bool dv) && dv;
-                bool nwc = state.TryGetValue("nwc", out bool nv) && nv;
-                bool ifc = state.TryGetValue("ifc", out bool iv) && iv;
-                pdfSection.Visibility = pdf ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                dwgSection.Visibility = dwg ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                nwcSection.Visibility = nwc ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                ifcSection.Visibility = ifc ? WpfVisibility.Visible : WpfVisibility.Collapsed;
             };
 
             return outer;
         }
 
-        private void BuildPdfOptions(StackPanel parent)
+        private void UpdatePreview(TextBlock preview)
         {
-            // Combine PDF
-            var combineCb = new CheckBox
+            var tokens = new Dictionary<string, string>
             {
-                Content   = "Merge all sheets into one PDF file",
-                IsChecked = _combinePdf,
-                Margin    = new Thickness(0, 0, 0, 6),
+                ["SheetNumber"]   = _previewSheetNumber,
+                ["SheetName"]     = _previewSheetName,
+                ["Revision"]      = "3",
+                ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
+                ["ProjectNumber"] = "2024-001",
+                ["ProjectName"]   = "Sample Project",
+                ["Year"]          = DateTime.Now.Year.ToString(),
+                ["Month"]         = DateTime.Now.Month.ToString("D2"),
+                ["Day"]           = DateTime.Now.Day.ToString("D2"),
             };
-            combineCb.SetResourceReference(CheckBox.ForegroundProperty,  "LemoineText");
-            combineCb.SetResourceReference(CheckBox.FontFamilyProperty,  "LemoineUiFont");
-            combineCb.SetResourceReference(CheckBox.FontSizeProperty,    "LemoineFS_MD");
-            combineCb.Checked   += (s, e) => { _combinePdf = true;  Fire(); };
-            combineCb.Unchecked += (s, e) => { _combinePdf = false; Fire(); };
-            parent.Children.Add(combineCb);
-
-            // Paper placement
-            AddLabeledComboBox(parent, "Paper Placement",
-                new[] { "Center", "Offset from Corner" },
-                _pdfPlacement == "Center" ? 0 : 1,
-                val => { _pdfPlacement = val; Fire(); });
-
-            // Hidden line rendering
-            AddLabeledComboBox(parent, "Hidden Line Views",
-                new[] { "Vector Processing", "Raster Processing" },
-                _hiddenLines == "Vector Processing" ? 0 : 1,
-                val => { _hiddenLines = val; Fire(); });
+            string resolved = LemoineTokenInput.Resolve(_filenamePattern, tokens);
+            preview.Text = $"Preview: {SanitiseFilenamePreview(resolved)}.pdf";
         }
 
-        private void BuildDwgOptions(StackPanel parent)
+        private static string SanitiseFilenamePreview(string name)
         {
-            var setupNames = _dwgSetupNames.Count > 0
-                ? _dwgSetupNames.ToArray()
-                : new[] { "(No DWG setups found in project)" };
-
-            int initIdx = setupNames.Contains(_dwgSetup)
-                ? Array.IndexOf(setupNames, _dwgSetup)
-                : 0;
-
-            AddLabeledComboBox(parent, "Export Setup", setupNames, initIdx,
-                val => { _dwgSetup = val; Fire(); });
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            return name.Trim();
         }
 
+        // ── NWC options builder ───────────────────────────────────────────────
         private void BuildNwcOptions(StackPanel parent)
         {
             AddSectionLabel(parent, "NWC OPTIONS");
@@ -592,14 +742,14 @@ namespace LemoineTools.Tools.Testing
             // ── Content to Include ────────────────────────────────────────────
             AddSectionLabel(parent, "CONTENT TO INCLUDE");
 
-            AddNwcCheckBox(parent, "Divide file into levels",                    _nwcDivideByLevel,      v => _nwcDivideByLevel       = v);
-            AddNwcCheckBox(parent, "Include linked Revit models",                _nwcExportLinks,        v => _nwcExportLinks         = v);
-            AddNwcCheckBox(parent, "Include Revit parts",                        _nwcExportParts,        v => _nwcExportParts         = v);
-            AddNwcCheckBox(parent, "Include element IDs (round-trip selection)", _nwcExportElementIds,   v => _nwcExportElementIds    = v);
-            AddNwcCheckBox(parent, "Include URL parameters",                     _nwcExportUrls,         v => _nwcExportUrls          = v);
+            AddNwcCheckBox(parent, "Divide file into levels",                    _nwcDivideByLevel,       v => _nwcDivideByLevel        = v);
+            AddNwcCheckBox(parent, "Include linked Revit models",                _nwcExportLinks,         v => _nwcExportLinks          = v);
+            AddNwcCheckBox(parent, "Include Revit parts",                        _nwcExportParts,         v => _nwcExportParts          = v);
+            AddNwcCheckBox(parent, "Include element IDs (round-trip selection)", _nwcExportElementIds,    v => _nwcExportElementIds     = v);
+            AddNwcCheckBox(parent, "Include URL parameters",                     _nwcExportUrls,          v => _nwcExportUrls           = v);
             AddNwcCheckBox(parent, "Find missing materials",                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
             AddNwcCheckBox(parent, "Export room geometry (ignored in per-view exports)", _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
-            AddNwcCheckBox(parent, "Attach room data as element attributes",     _nwcExportRoomAsAttr,   v => _nwcExportRoomAsAttr    = v);
+            AddNwcCheckBox(parent, "Attach room data as element attributes",     _nwcExportRoomAsAttr,    v => _nwcExportRoomAsAttr     = v);
         }
 
         private void AddNwcCheckBox(StackPanel parent, string label, bool isChecked, Action<bool> onChange)
@@ -613,6 +763,7 @@ namespace LemoineTools.Tools.Testing
             parent.Children.Add(cb);
         }
 
+        // ── IFC options builder ───────────────────────────────────────────────
         private void BuildIfcOptions(StackPanel parent)
         {
             AddSectionLabel(parent, "IFC OPTIONS");
@@ -634,238 +785,253 @@ namespace LemoineTools.Tools.Testing
                 val => { _ifcVersion = val; Fire(); });
         }
 
-        private void UpdatePreview(TextBlock preview)
-        {
-            var tokens = new Dictionary<string, string>
-            {
-                ["SheetNumber"]   = _previewSheetNumber,
-                ["SheetName"]     = _previewSheetName,
-                ["Revision"]      = "3",
-                ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
-                ["ProjectNumber"] = "2024-001",
-                ["ProjectName"]   = "Sample Project",
-                ["Year"]          = DateTime.Now.Year.ToString(),
-                ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                ["Day"]           = DateTime.Now.Day.ToString("D2"),
-            };
-            string resolved = LemoineTokenInput.Resolve(_filenamePattern, tokens);
-            preview.Text = $"Preview: {SanitizeFilenamePreview(resolved)}.pdf";
-        }
-
-        private static string SanitizeFilenamePreview(string name)
-        {
-            foreach (char c in Path.GetInvalidFileNameChars())
-                name = name.Replace(c, '_');
-            return name.Trim();
-        }
-
-        // ── Step 3 — Output & Review ──────────────────────────────────────────
-        private FrameworkElement BuildS3()
+        // ── S4 — PDF Settings ─────────────────────────────────────────────────
+        private FrameworkElement BuildS4()
         {
             var outer = new StackPanel();
 
-            // ── Section A: Output Folder ──────────────────────────────────────
-            AddSectionLabel(outer, "OUTPUT FOLDER");
-            BuildFolderPicker(outer);
-
-            // Split by format
-            var splitCb = new CheckBox
+            // Banner when PDF is disabled
+            if (!_pdfOn)
             {
-                Content   = "Split output into subfolders by file format",
-                IsChecked = _splitByFormat,
-                Margin    = new Thickness(0, 6, 0, 0),
+                var offNote = new TextBlock
+                {
+                    Text         = "PDF output is disabled in Step 3. These settings are saved but will not take effect until PDF is enabled.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 0, 0, 12),
+                };
+                offNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                offNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                offNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(offNote);
+            }
+
+            // PAGE SETUP ──────────────────────────────────────────────────────
+            AddSectionLabel(outer, "PAGE SETUP");
+
+            // Paper placement
+            AddSmallLabel(outer, "Paper Placement");
+            var offsetBtn  = BuildModeButton("Offset from Corner", _pdfPlacement == "Offset from Corner");
+            var centerBtn  = BuildModeButton("Center",             _pdfPlacement == "Center");
+            offsetBtn.Click += (s, e) => { _pdfPlacement = "Offset from Corner"; RefreshModeButtons(offsetBtn, centerBtn, true);  Fire(); };
+            centerBtn.Click += (s, e) => { _pdfPlacement = "Center";             RefreshModeButtons(offsetBtn, centerBtn, false); Fire(); };
+            var placementRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
+            placementRow.Children.Add(offsetBtn);
+            placementRow.Children.Add(centerBtn);
+            outer.Children.Add(placementRow);
+
+            var placementHint = new TextBlock
+            {
+                Text         = "Offset from Corner is recommended for mixed landscape/portrait exports.",
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, -4, 0, 8),
             };
-            splitCb.SetResourceReference(CheckBox.ForegroundProperty,  "LemoineText");
-            splitCb.SetResourceReference(CheckBox.FontFamilyProperty,  "LemoineUiFont");
-            splitCb.SetResourceReference(CheckBox.FontSizeProperty,    "LemoineFS_MD");
-            splitCb.Checked   += (s, e) => { _splitByFormat = true;  Fire(); };
-            splitCb.Unchecked += (s, e) => { _splitByFormat = false; Fire(); };
-            outer.Children.Add(splitCb);
+            placementHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            placementHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            placementHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(placementHint);
+
+            // Zoom type
+            AddSmallLabel(outer, "Zoom");
+            var fitBtn   = BuildModeButton("Fit to Page", _zoomSetting == "Fit to Page");
+            var scaleBtn = BuildModeButton("Scale %",     _zoomSetting == "Scale %");
+            var zoomRow  = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 4) };
+            zoomRow.Children.Add(fitBtn);
+            zoomRow.Children.Add(scaleBtn);
+            outer.Children.Add(zoomRow);
+
+            // Zoom stepper row (Collapsed when Fit to Page)
+            var stepperRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin      = new Thickness(0, 4, 0, 8),
+                Visibility  = _zoomSetting == "Scale %" ? WpfVisibility.Visible : WpfVisibility.Collapsed,
+            };
+            var stepper = new LemoineInlineStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5, Decimals = 0, ValueWidth = 48 };
+            stepper.ValueChanged += (s, v) => { _zoomPct = (int)v; Fire(); };
+            var pctLabel = new TextBlock
+            {
+                Text              = "%",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(6, 0, 0, 0),
+            };
+            pctLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            pctLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            pctLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            stepperRow.Children.Add(stepper);
+            stepperRow.Children.Add(pctLabel);
+            outer.Children.Add(stepperRow);
+
+            fitBtn.Click += (s, e) =>
+            {
+                _zoomSetting = "Fit to Page";
+                RefreshModeButtons(fitBtn, scaleBtn, true);
+                stepperRow.Visibility = WpfVisibility.Collapsed;
+                Fire();
+            };
+            scaleBtn.Click += (s, e) =>
+            {
+                _zoomSetting = "Scale %";
+                RefreshModeButtons(fitBtn, scaleBtn, false);
+                stepperRow.Visibility = WpfVisibility.Visible;
+                Fire();
+            };
 
             AddDivider(outer);
 
-            // ── Section B: Review Summary ─────────────────────────────────────
-            AddSectionLabel(outer, "REVIEW SUMMARY");
+            // OUTPUT QUALITY ──────────────────────────────────────────────────
+            AddSectionLabel(outer, "OUTPUT QUALITY");
 
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            AddLabeledComboBox(outer, "Color Depth",
+                new[] { "Color", "Grayscale", "Black & White" },
+                GetIndex(new[] { "Color", "Grayscale", "Black & White" }, _colorDepth),
+                val => { _colorDepth = val; Fire(); });
 
-            var cardDefs = new CardDef[]
+            AddLabeledComboBox(outer, "Raster Quality",
+                new[] { "Draft", "Low", "Medium", "High", "Presentation" },
+                GetIndex(new[] { "Draft", "Low", "Medium", "High", "Presentation" }, _rasterQuality),
+                val => { _rasterQuality = val; Fire(); });
+
+            AddLabeledComboBox(outer, "Hidden Line Views",
+                new[] { "Vector Processing", "Raster Processing" },
+                _hiddenLines == "Vector Processing" ? 0 : 1,
+                val => { _hiddenLines = val; Fire(); });
+
+            AddDivider(outer);
+
+            // COMBINE ─────────────────────────────────────────────────────────
+            AddSectionLabel(outer, "COMBINE");
+
+            var combineToggle = new LemoineToggleSwitches();
+            combineToggle.SetItems(new List<ToggleItem>
             {
-                new CardDef("Sheets / Views",   () => _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected"),
-                new CardDef("Formats",          () => GetActiveFormats()),
-                new CardDef("Filename Pattern", () => string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern),
-                new CardDef("Output Folder",    () => _outputFolder.Length > 40
-                    ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
-                    : (_outputFolder.Length == 0 ? "—" : _outputFolder)),
-                new CardDef("Combine PDF",      () => _combinePdf ? "Yes" : "No"),
-            };
+                new ToggleItem { Id = "combine", Label = "Combine into one PDF", DefaultOn = _combinePdf },
+            });
+            combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
+            outer.Children.Add(combineToggle);
 
-            for (int i = 0; i < cardDefs.Length; i++)
+            if (HasActivePacks())
             {
-                int row = i / 2;
-                int col = i % 2;
-                if (grid.RowDefinitions.Count <= row)
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                AddReviewCard(grid, cardDefs[i].Label, cardDefs[i].Value, row, col);
+                var packCombineNote = new TextBlock
+                {
+                    Text         = "Each pack is always exported as its own combined PDF regardless of this setting.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 2, 0, 0),
+                };
+                packCombineNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                packCombineNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                packCombineNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(packCombineNote);
             }
-            outer.Children.Add(grid);
+
+            AddDivider(outer);
+
+            // ADVANCED ────────────────────────────────────────────────────────
+            AddSectionLabel(outer, "ADVANCED");
+
+            var advToggles = new LemoineToggleSwitches();
+            advToggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "viewlinks",       Label = "View links in blue",              Desc = "Render linked Revit views with a blue tint in the PDF.",      DefaultOn = _viewLinksBlue   },
+                new ToggleItem { Id = "replacehalftone", Label = "Replace halftone with thin lines", Desc = "Substitute halftone patterns with thin black lines.",         DefaultOn = _replaceHalftone },
+            });
+            advToggles.StateChanged += state =>
+            {
+                state.TryGetValue("viewlinks",       out _viewLinksBlue);
+                state.TryGetValue("replacehalftone", out _replaceHalftone);
+                Fire();
+            };
+            outer.Children.Add(advToggles);
+
+            AddDivider(outer);
+
+            // Paper size note
+            var sizeNote = new TextBlock
+            {
+                Text         = "Paper size and orientation are read automatically from each sheet's titleblock. Sheets without a titleblock will be flagged in the export log.",
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+            };
+            sizeNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            sizeNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            sizeNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(sizeNote);
+
+            return outer;
+        }
+
+        // ── S5 — Output & Review ──────────────────────────────────────────────
+        private FrameworkElement BuildS5()
+        {
+            var outer = new StackPanel();
+
+            AddSectionLabel(outer, "OUTPUT FOLDER");
+            BuildFolderPicker(outer);
+
+            var splitToggle = new LemoineToggleSwitches { Margin = new Thickness(0, 6, 0, 0) };
+            splitToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "split", Label = "Split output into subfolders by file format", DefaultOn = _splitByFormat },
+            });
+            splitToggle.StateChanged += state => { state.TryGetValue("split", out _splitByFormat); Fire(); };
+            outer.Children.Add(splitToggle);
 
             return outer;
         }
 
         private void BuildFolderPicker(StackPanel parent)
         {
-            var pathBox = new WpfTextBox
+            var folder = new LemoineFolderBrowser
             {
-                Text        = _outputFolder,
-                Padding     = new Thickness(8, 4, 8, 4),
-                BorderThickness = new Thickness(1),
+                Path        = _outputFolder,
+                DialogTitle = "Select output folder",
             };
-            pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,    "LemoineH_Input");
-            pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,   "LemoineSelectBg");
-            pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,   "LemoineText");
-            pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty,  "LemoineBorderMid");
-            pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,   "LemoineMonoFont");
-            pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,     "LemoineFS_MD");
-            pathBox.TextChanged += (s, e) => { _outputFolder = pathBox.Text; Fire(); };
-
-            var browseBtn = LemoineControlStyles.BuildButton("Browse…");
-            browseBtn.Margin = new Thickness(0, 4, 0, 0);
-            browseBtn.Click += (s, e) =>
-            {
-                var dlg = new System.Windows.Forms.FolderBrowserDialog
-                {
-                    Description  = "Select output folder",
-                    SelectedPath = _outputFolder,
-                    ShowNewFolderButton = true,
-                };
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    pathBox.Text  = dlg.SelectedPath;
-                    _outputFolder = dlg.SelectedPath;
-                    Fire();
-                }
-            };
-
-            parent.Children.Add(pathBox);
-            parent.Children.Add(browseBtn);
+            folder.PathChanged += p => { _outputFolder = p; Fire(); };
+            parent.Children.Add(folder);
         }
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> valueFn, int row, int col)
-        {
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,    "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
-            card.SetResourceReference(Border.CornerRadiusProperty,  "LemoineRadius_SM");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var val = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-            val.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            val.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            val.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            val.Text = valueFn();
-            ValidationChanged += (s, e) => val.Text = valueFn();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(val);
-            card.Child = sp;
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
-
-        private string GetActiveFormats()
-        {
-            var fmts = new List<string>();
-            if (_pdfOn) fmts.Add("PDF");
-            if (_dwgOn) fmts.Add("DWG");
-            if (_nwcOn) fmts.Add("NWC");
-            if (_ifcOn) fmts.Add("IFC");
-            return fmts.Count > 0 ? string.Join(", ", fmts) : "—";
-        }
-
-        // ── Shared UI helpers ─────────────────────────────────────────────────
-
-        private static void AddSectionLabel(System.Windows.Controls.Panel parent, string text)
-        {
-            var lbl = new TextBlock
-            {
-                Text         = text,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 0, 0, 4),
-                TextWrapping = TextWrapping.Wrap,
-            };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            parent.Children.Add(lbl);
-        }
-
-        private static void AddDivider(System.Windows.Controls.Panel parent)
-        {
-            var sep = new System.Windows.Shapes.Rectangle
-            {
-                Height = 1,
-                Margin = new Thickness(0, 10, 0, 10),
-            };
-            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            parent.Children.Add(sep);
-        }
-
-        private void AddLabeledComboBox(System.Windows.Controls.Panel parent, string label, string[] items,
-            int selectedIndex, Action<string> onChange)
-        {
-            var lbl = new TextBlock
-            {
-                Text   = label,
-                Margin = new Thickness(0, 4, 0, 2),
-            };
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            parent.Children.Add(lbl);
-
-            var combo = new WpfComboBox
-            {
-                ItemsSource         = items,
-                SelectedIndex       = Math.Max(0, Math.Min(selectedIndex, items.Length - 1)),
-                IsEditable          = false,
-                MaxDropDownHeight   = 200,
-                Margin              = new Thickness(0, 0, 0, 4),
-            };
-            combo.SetResourceReference(WpfComboBox.BackgroundProperty,  "LemoineSelectBg");
-            combo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
-            combo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineUiFont");
-            combo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_MD");
-            combo.SelectionChanged += (s, e) =>
-            {
-                if (combo.SelectedItem is string val) onChange(val);
-            };
-            parent.Children.Add(combo);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("sheets",  "Sheets / Views"),
+            ("formats", "Formats"),
+            ("packs",   "Packs"),
+            ("quality", "Quality"),
+            ("pattern", "Filename Pattern"),
+            ("folder",  "Output Folder"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["sheets"]  = _selectedNames.Count == 0 ? "—" : $"{_selectedNames.Count} selected",
+            ["formats"] = GetActiveFormats(),
+            ["packs"]   = HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export",
+            ["quality"] = _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled",
+            ["pattern"] = string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern,
+            ["folder"]  = _outputFolder.Length == 0 ? "—"
+                : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
+                : _outputFolder,
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             switch (stepId)
             {
                 case "S1": return _selectedNames.Count > 0;
-                case "S2": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
-                case "S3": return !string.IsNullOrWhiteSpace(_outputFolder);
+                case "S2": return true;
+                case "S3": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
+                case "S4": return true;
+                case "S5": return !string.IsNullOrWhiteSpace(_outputFolder);
                 default:   return true;
             }
         }
@@ -876,12 +1042,17 @@ namespace LemoineTools.Tools.Testing
             {
                 case "S1": return _selectedNames.Count == 0 ? "—"
                     : $"{_selectedNames.Count} {_exportMode.ToLower()} selected";
-                case "S2": return GetActiveFormats() == "—"
+                case "S2": return HasActivePacks()
+                    ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)"
+                    : "Individual export";
+                case "S3": return GetActiveFormats() == "—"
                     ? "No formats selected"
                     : $"{GetActiveFormats()} — {_filenamePattern}";
-                case "S3": return string.IsNullOrEmpty(_outputFolder) ? "No output folder"
-                    : _outputFolder;
-                default: return "—";
+                case "S4": return _pdfOn
+                    ? $"{_hiddenLines.Split(' ')[0]} · {_rasterQuality} · {_colorDepth} · {_pdfPlacement.Split(' ')[0]}"
+                    : "PDF disabled";
+                case "S5": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
+                default:   return "—";
             }
         }
 
@@ -893,69 +1064,88 @@ namespace LemoineTools.Tools.Testing
             if (_handler == null || _event == null) return;
 
             // Persist settings
-            BatchExportSettings.Instance.FilenamePattern    = _filenamePattern;
-            BatchExportSettings.Instance.OutputFolder       = _outputFolder;
-            BatchExportSettings.Instance.SplitByFormat      = _splitByFormat;
-            BatchExportSettings.Instance.ExportPdf          = _pdfOn;
-            BatchExportSettings.Instance.ExportDwg          = _dwgOn;
-            BatchExportSettings.Instance.ExportNwc               = _nwcOn;
-            BatchExportSettings.Instance.NwcCoordinates          = _nwcCoordinates;
-            BatchExportSettings.Instance.NwcParameters           = _nwcParameters;
-            BatchExportSettings.Instance.NwcConvertElementProps  = _nwcConvertElementProps;
-            BatchExportSettings.Instance.NwcDivideByLevel        = _nwcDivideByLevel;
-            BatchExportSettings.Instance.NwcExportLinks          = _nwcExportLinks;
-            BatchExportSettings.Instance.NwcExportParts          = _nwcExportParts;
-            BatchExportSettings.Instance.NwcExportElementIds     = _nwcExportElementIds;
-            BatchExportSettings.Instance.NwcExportUrls           = _nwcExportUrls;
-            BatchExportSettings.Instance.NwcFindMissingMaterials = _nwcFindMissingMaterials;
-            BatchExportSettings.Instance.NwcExportRoomGeometry   = _nwcExportRoomGeometry;
-            BatchExportSettings.Instance.NwcExportRoomAsAttribute= _nwcExportRoomAsAttr;
-            BatchExportSettings.Instance.NwcConvertLights        = _nwcConvertLights;
-            BatchExportSettings.Instance.NwcConvertLinkedCad     = _nwcConvertLinkedCad;
-            BatchExportSettings.Instance.NwcFacetingFactor       = _nwcFacetingFactor;
-            BatchExportSettings.Instance.ExportIfc               = _ifcOn;
-            BatchExportSettings.Instance.IfcVersion              = _ifcVersion;
-            BatchExportSettings.Instance.CombinePdf         = _combinePdf;
-            BatchExportSettings.Instance.PdfPaperPlacement  = _pdfPlacement;
-            BatchExportSettings.Instance.HiddenLinesVector  = _hiddenLines == "Vector Processing";
-            BatchExportSettings.Instance.DwgExportSetupName = _dwgSetup;
-            BatchExportSettings.Instance.Save();
+            var s = BatchExportSettings.Instance;
+            s.FilenamePattern              = _filenamePattern;
+            s.OutputFolder                 = _outputFolder;
+            s.SplitByFormat                = _splitByFormat;
+            s.ExportPdf                    = _pdfOn;
+            s.ExportDwg                    = _dwgOn;
+            s.ExportNwc                    = _nwcOn;
+            s.NwcCoordinates               = _nwcCoordinates;
+            s.NwcParameters                = _nwcParameters;
+            s.NwcConvertElementProps       = _nwcConvertElementProps;
+            s.NwcDivideByLevel             = _nwcDivideByLevel;
+            s.NwcExportLinks               = _nwcExportLinks;
+            s.NwcExportParts               = _nwcExportParts;
+            s.NwcExportElementIds          = _nwcExportElementIds;
+            s.NwcExportUrls                = _nwcExportUrls;
+            s.NwcFindMissingMaterials      = _nwcFindMissingMaterials;
+            s.NwcExportRoomGeometry        = _nwcExportRoomGeometry;
+            s.NwcExportRoomAsAttribute     = _nwcExportRoomAsAttr;
+            s.NwcConvertLights             = _nwcConvertLights;
+            s.NwcConvertLinkedCad          = _nwcConvertLinkedCad;
+            s.NwcFacetingFactor            = _nwcFacetingFactor;
+            s.ExportIfc                    = _ifcOn;
+            s.IfcVersion                   = _ifcVersion;
+            s.CombinePdf                   = _combinePdf;
+            s.PdfPaperPlacement            = _pdfPlacement;
+            s.HiddenLinesVector            = _hiddenLines == "Vector Processing";
+            s.DwgExportSetupName           = _dwgSetup;
+            s.ColorDepth                   = _colorDepth;
+            s.RasterQuality                = _rasterQuality;
+            s.ZoomSetting                  = _zoomSetting;
+            s.ZoomPercent                  = _zoomPct;
+            s.ViewLinksInBlue              = _viewLinksBlue;
+            s.ReplaceHalftoneWithThinLines = _replaceHalftone;
+            s.SavedPacks                   = _packs.Select(p => p.Clone()).ToList();
+            s.Save();
 
-            // Set handler properties
-            _handler.SelectedIds     = _selectedNames
+            // Packs to export: only when in Sheets mode and at least one pack has sheets
+            var packsToExport = HasActivePacks()
+                ? _packs.Where(p => p.SheetNumbers.Count > 0).ToList()
+                : new List<SheetPackLayout>();
+
+            _handler.SelectedIds              = _selectedNames
                 .Where(n => _nameToId.ContainsKey(n))
                 .Select(n => _nameToId[n])
                 .ToList();
-            _handler.ExportMode      = _exportMode;
-            _handler.FilenamePattern = _filenamePattern;
-            _handler.OutputFolder    = _outputFolder;
-            _handler.SplitByFormat   = _splitByFormat;
-            _handler.ExportPdf       = _pdfOn;
-            _handler.ExportDwg       = _dwgOn;
-            _handler.ExportNwc               = _nwcOn;
-            _handler.NwcCoordinates          = _nwcCoordinates;
-            _handler.NwcParameters           = _nwcParameters;
-            _handler.NwcConvertElementProps  = _nwcConvertElementProps;
-            _handler.NwcDivideByLevel        = _nwcDivideByLevel;
-            _handler.NwcExportLinks          = _nwcExportLinks;
-            _handler.NwcExportParts          = _nwcExportParts;
-            _handler.NwcExportElementIds     = _nwcExportElementIds;
-            _handler.NwcExportUrls           = _nwcExportUrls;
-            _handler.NwcFindMissingMaterials = _nwcFindMissingMaterials;
-            _handler.NwcExportRoomGeometry   = _nwcExportRoomGeometry;
-            _handler.NwcExportRoomAsAttribute= _nwcExportRoomAsAttr;
-            _handler.NwcConvertLights        = _nwcConvertLights;
-            _handler.NwcConvertLinkedCad     = _nwcConvertLinkedCad;
-            _handler.NwcFacetingFactor       = _nwcFacetingFactor;
-            _handler.ExportIfc               = _ifcOn;
-            _handler.IfcVersion              = _ifcVersion;
-            _handler.CombinePdf      = _combinePdf;
-            _handler.DwgSetupName    = _dwgSetup;
-            _handler.PdfPlacement    = _pdfPlacement;
-            _handler.HiddenLines     = _hiddenLines;
-            _handler.PushLog         = pushLog;
-            _handler.OnProgress      = onProgress;
-            _handler.OnComplete      = onComplete;
+            _handler.ExportMode               = _exportMode;
+            _handler.FilenamePattern          = _filenamePattern;
+            _handler.OutputFolder             = _outputFolder;
+            _handler.SplitByFormat            = _splitByFormat;
+            _handler.ExportPdf                = _pdfOn;
+            _handler.ExportDwg                = _dwgOn;
+            _handler.ExportNwc                = _nwcOn;
+            _handler.NwcCoordinates           = _nwcCoordinates;
+            _handler.NwcParameters            = _nwcParameters;
+            _handler.NwcConvertElementProps   = _nwcConvertElementProps;
+            _handler.NwcDivideByLevel         = _nwcDivideByLevel;
+            _handler.NwcExportLinks           = _nwcExportLinks;
+            _handler.NwcExportParts           = _nwcExportParts;
+            _handler.NwcExportElementIds      = _nwcExportElementIds;
+            _handler.NwcExportUrls            = _nwcExportUrls;
+            _handler.NwcFindMissingMaterials  = _nwcFindMissingMaterials;
+            _handler.NwcExportRoomGeometry    = _nwcExportRoomGeometry;
+            _handler.NwcExportRoomAsAttribute = _nwcExportRoomAsAttr;
+            _handler.NwcConvertLights         = _nwcConvertLights;
+            _handler.NwcConvertLinkedCad      = _nwcConvertLinkedCad;
+            _handler.NwcFacetingFactor        = _nwcFacetingFactor;
+            _handler.ExportIfc                = _ifcOn;
+            _handler.IfcVersion               = _ifcVersion;
+            _handler.CombinePdf               = _combinePdf;
+            _handler.DwgSetupName             = _dwgSetup;
+            _handler.PdfPlacement             = _pdfPlacement;
+            _handler.HiddenLines              = _hiddenLines;
+            _handler.ColorDepth               = _colorDepth;
+            _handler.RasterQuality            = _rasterQuality;
+            _handler.ZoomSetting              = _zoomSetting;
+            _handler.ZoomPercent              = _zoomPct;
+            _handler.ViewLinksInBlue          = _viewLinksBlue;
+            _handler.ReplaceHalftoneWithThinLines = _replaceHalftone;
+            _handler.Packs                    = packsToExport;
+            _handler.PushLog                  = pushLog;
+            _handler.OnProgress               = onProgress;
+            _handler.OnComplete               = onComplete;
 
             _event.Raise();
         }
@@ -971,7 +1161,7 @@ namespace LemoineTools.Tools.Testing
                 Id          = "tx",
                 Label       = "Batch Export",
                 Icon        = "Tx",
-                Description = "Export sheets and views to PDF and DWG with parametric filenames.",
+                Description = "Export sheets and views to PDF, DWG, NWC and IFC with parametric filenames.",
                 Groups      = new List<LemoineSettingsGroup>
                 {
                     new LemoineSettingsGroup
@@ -1019,6 +1209,18 @@ namespace LemoineTools.Tools.Testing
                             new LemoineSettingDef { Id = "hiddenlines", Kind = "single", Label = "Hidden line views",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Vector Processing", "Raster Processing" } },
                                 Default = s.HiddenLinesVector ? "Vector Processing" : "Raster Processing" },
+                            new LemoineSettingDef { Id = "colordepth",  Kind = "single", Label = "Color depth",
+                                Options = new SingleSelectOpts { Items = new List<string> { "Color", "Grayscale", "Black & White" } },
+                                Default = s.ColorDepth },
+                            new LemoineSettingDef { Id = "rasterquality", Kind = "single", Label = "Raster quality",
+                                Options = new SingleSelectOpts { Items = new List<string> { "Draft", "Low", "Medium", "High", "Presentation" } },
+                                Default = s.RasterQuality },
+                            new LemoineSettingDef { Id = "zoomsetting", Kind = "single", Label = "Zoom",
+                                Options = new SingleSelectOpts { Items = new List<string> { "Fit to Page", "Scale %" } },
+                                Default = s.ZoomSetting },
+                            new LemoineSettingDef { Id = "zoompercent",  Kind = "number", Label = "Zoom percent (when Scale % mode)", Default = s.ZoomPercent },
+                            new LemoineSettingDef { Id = "viewlinksblue",    Kind = "toggle", Label = "View links in blue",               Default = s.ViewLinksInBlue },
+                            new LemoineSettingDef { Id = "replacehalftone",  Kind = "toggle", Label = "Replace halftone with thin lines", Default = s.ReplaceHalftoneWithThinLines },
                         }
                     },
                     new LemoineSettingsGroup
@@ -1074,39 +1276,206 @@ namespace LemoineTools.Tools.Testing
             var s = BatchExportSettings.Instance;
             switch (settingId)
             {
-                case "outdir":      s.OutputFolder          = value as string ?? "";   break;
-                case "splitformat": s.SplitByFormat         = value is bool b1 && b1;  break;
-                case "pattern":     s.FilenamePattern       = value as string ?? "";   break;
-                case "defpdf":      s.ExportPdf             = value is bool b2 && b2;  break;
-                case "defdwg":      s.ExportDwg             = value is bool b3 && b3;  break;
-                case "defnwc":        s.ExportNwc               = value is bool b5 && b5;          break;
-                case "nwccoords":    s.NwcCoordinates         = value as string ?? "Shared";       break;
-                case "nwcparams":    s.NwcParameters          = value as string ?? "All";          break;
+                case "outdir":          s.OutputFolder               = value as string ?? "";                      break;
+                case "splitformat":     s.SplitByFormat              = value is bool b1 && b1;                     break;
+                case "pattern":         s.FilenamePattern            = value as string ?? "";                      break;
+                case "defpdf":          s.ExportPdf                  = value is bool b2 && b2;                     break;
+                case "defdwg":          s.ExportDwg                  = value is bool b3 && b3;                     break;
+                case "defnwc":          s.ExportNwc                  = value is bool b5 && b5;                     break;
+                case "defifc":          s.ExportIfc                  = value is bool b6 && b6;                     break;
+                case "combinepdf":      s.CombinePdf                 = value is bool b4 && b4;                     break;
+                case "placement":       s.PdfPaperPlacement          = value as string ?? "Center";                break;
+                case "hiddenlines":     s.HiddenLinesVector          = value as string == "Vector Processing";     break;
+                case "colordepth":      s.ColorDepth                 = value as string ?? "Color";                 break;
+                case "rasterquality":   s.RasterQuality              = value as string ?? "High";                  break;
+                case "zoomsetting":     s.ZoomSetting                = value as string ?? "Fit to Page";           break;
+                case "zoompercent":     s.ZoomPercent                = value is int zi ? zi : 100;                 break;
+                case "viewlinksblue":   s.ViewLinksInBlue            = value is bool vl && vl;                     break;
+                case "replacehalftone": s.ReplaceHalftoneWithThinLines = value is bool rh && rh;                   break;
+                case "dwgsetup":        s.DwgExportSetupName         = value as string ?? "";                      break;
+                case "nwccoords":       s.NwcCoordinates             = value as string ?? "Shared";                break;
+                case "nwcparams":       s.NwcParameters              = value as string ?? "All";                   break;
                 case "nwcfaceting":
                 {
                     int fi = Array.IndexOf(NwcFacetingLabels, value as string ?? "");
                     s.NwcFacetingFactor = fi >= 0 ? NwcFacetingValues[fi] : 1.0;
                     break;
                 }
-                case "nwcconvelemprop": s.NwcConvertElementProps   = value is bool c1 && c1; break;
-                case "nwcdivide":       s.NwcDivideByLevel         = value is bool c2 && c2; break;
-                case "nwclinks":        s.NwcExportLinks           = value is bool c3 && c3; break;
-                case "nwcparts":        s.NwcExportParts           = value is bool c4 && c4; break;
-                case "nwcelementids":   s.NwcExportElementIds      = value is bool c5 && c5; break;
-                case "nwcurls":         s.NwcExportUrls            = value is bool c6 && c6; break;
-                case "nwcmissingmats":  s.NwcFindMissingMaterials  = value is bool c7 && c7; break;
-                case "nwcroomgeo":      s.NwcExportRoomGeometry    = value is bool c8 && c8; break;
-                case "nwcroomattr":     s.NwcExportRoomAsAttribute = value is bool c9 && c9; break;
-                case "nwclights":       s.NwcConvertLights         = value is bool d1 && d1; break;
-                case "nwclinkedcad":    s.NwcConvertLinkedCad      = value is bool d2 && d2; break;
-                case "defifc":      s.ExportIfc             = value is bool b6 && b6;          break;
-                case "ifcversion":  s.IfcVersion            = value as string ?? "IFC2x3";     break;
-                case "combinepdf":  s.CombinePdf            = value is bool b4 && b4;  break;
-                case "placement":   s.PdfPaperPlacement     = value as string ?? "Center"; break;
-                case "hiddenlines": s.HiddenLinesVector     = value as string == "Vector Processing"; break;
-                case "dwgsetup":    s.DwgExportSetupName    = value as string ?? "";   break;
+                case "nwcconvelemprop": s.NwcConvertElementProps    = value is bool c1 && c1; break;
+                case "nwcdivide":       s.NwcDivideByLevel          = value is bool c2 && c2; break;
+                case "nwclinks":        s.NwcExportLinks            = value is bool c3 && c3; break;
+                case "nwcparts":        s.NwcExportParts            = value is bool c4 && c4; break;
+                case "nwcelementids":   s.NwcExportElementIds       = value is bool c5 && c5; break;
+                case "nwcurls":         s.NwcExportUrls             = value is bool c6 && c6; break;
+                case "nwcmissingmats":  s.NwcFindMissingMaterials   = value is bool c7 && c7; break;
+                case "nwcroomgeo":      s.NwcExportRoomGeometry     = value is bool c8 && c8; break;
+                case "nwcroomattr":     s.NwcExportRoomAsAttribute  = value is bool c9 && c9; break;
+                case "nwclights":       s.NwcConvertLights          = value is bool d1 && d1; break;
+                case "nwclinkedcad":    s.NwcConvertLinkedCad       = value is bool d2 && d2; break;
+                case "ifcversion":      s.IfcVersion                = value as string ?? "IFC2x3"; break;
             }
             s.Save();
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  Shared UI helpers
+        // ═════════════════════════════════════════════════════════════════════
+
+        private Button BuildModeButton(string label, bool active)
+        {
+            var b = new Button
+            {
+                Content         = label,
+                Margin          = new Thickness(0, 0, 4, 0),
+                BorderThickness = new Thickness(1),
+                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
+                Cursor          = Cursors.Hand,
+            };
+            b.SetResourceReference(Button.MinHeightProperty,  "LemoineH_BtnMin");
+            b.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnPad");
+            b.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_MD");
+            b.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
+            ApplyModeButtonStyle(b, active);
+            return b;
+        }
+
+        private static void ApplyModeButtonStyle(Button b, bool active)
+        {
+            if (active)
+            {
+                b.SetResourceReference(Button.BackgroundProperty,  "LemoineAccentDim");
+                b.SetResourceReference(Button.BorderBrushProperty, "LemoineAccent");
+                b.SetResourceReference(Button.ForegroundProperty,  "LemoineAccent");
+            }
+            else
+            {
+                b.Background = WpfBrushes.Transparent; // ⚠ direct assignment — "Transparent" is not a resource key
+                b.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+                b.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+            }
+        }
+
+        private static void RefreshModeButtons(Button a, Button b, bool aActive)
+        {
+            ApplyModeButtonStyle(a, aActive);
+            ApplyModeButtonStyle(b, !aActive);
+        }
+
+        private static void AddSectionLabel(System.Windows.Controls.Panel parent, string text)
+        {
+            var lbl = new TextBlock
+            {
+                Text         = text,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 0, 0, 4),
+                TextWrapping = TextWrapping.Wrap,
+            };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            parent.Children.Add(lbl);
+        }
+
+        private static void AddSmallLabel(System.Windows.Controls.Panel parent, string text)
+        {
+            var lbl = new TextBlock
+            {
+                Text   = text,
+                Margin = new Thickness(0, 0, 0, 2),
+            };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            parent.Children.Add(lbl);
+        }
+
+        private static void AddDivider(System.Windows.Controls.Panel parent)
+        {
+            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 10, 0, 10) };
+            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
+            parent.Children.Add(sep);
+        }
+
+        private static void AddLabeledComboBox(System.Windows.Controls.Panel parent, string label,
+            string[] items, int selectedIndex, Action<string> onChange)
+        {
+            var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 4, 0, 2) };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            parent.Children.Add(lbl);
+
+            var combo = new WpfComboBox
+            {
+                ItemsSource       = items,
+                SelectedIndex     = Math.Max(0, Math.Min(selectedIndex, items.Length - 1)),
+                IsEditable        = false,
+                MaxDropDownHeight = 200,
+                Margin            = new Thickness(0, 0, 0, 4),
+            };
+            combo.SetResourceReference(WpfComboBox.BackgroundProperty,  "LemoineSelectBg");
+            combo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
+            combo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineUiFont");
+            combo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_MD");
+            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
+            combo.SelectionChanged += (s, e) =>
+            {
+                if (combo.SelectedItem is string val) onChange(val);
+            };
+            parent.Children.Add(combo);
+        }
+
+        private string GetActiveFormats()
+        {
+            var fmts = new List<string>();
+            if (_pdfOn) fmts.Add("PDF");
+            if (_dwgOn) fmts.Add("DWG");
+            if (_nwcOn) fmts.Add("NWC");
+            if (_ifcOn) fmts.Add("IFC");
+            return fmts.Count > 0 ? string.Join(", ", fmts) : "—";
+        }
+
+        private bool HasActivePacks() =>
+            _exportMode == "Sheets" &&
+            _packs.Any(p => p.SheetNumbers.Count > 0);
+
+        private static int GetIndex(string[] items, string value)
+        {
+            int idx = Array.IndexOf(items, value);
+            return idx >= 0 ? idx : 0;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  Sheet / view grouping helpers
+        // ═════════════════════════════════════════════════════════════════════
+
+        private static string GetSheetPrefix(string sheetNumber)
+        {
+            if (string.IsNullOrEmpty(sheetNumber)) return "Other";
+            int i = 0;
+            while (i < sheetNumber.Length && char.IsLetter(sheetNumber[i])) i++;
+            return i > 0 ? sheetNumber.Substring(0, i) + "-" : "Other";
+        }
+
+        private static ViewFamily GetViewFamily(View v)
+        {
+            if (v is View3D)    return ViewFamily.ThreeDimensional;
+            if (v is ViewPlan vp) return vp.ViewType == ViewType.CeilingPlan
+                ? ViewFamily.CeilingPlan : ViewFamily.FloorPlan;
+            if (v is ViewSection) return v.ViewType == ViewType.Elevation
+                ? ViewFamily.Elevation : ViewFamily.Section;
+            return ViewFamily.Invalid;
+        }
+
+        private static string GetViewGroupName(View v)
+        {
+            if (v is View3D)    return "3D Views";
+            if (v is ViewPlan vp)
+                return vp.ViewType == ViewType.CeilingPlan ? "Reflected Ceiling Plans" : "Floor Plans";
+            if (v is ViewSection)
+                return v.ViewType == ViewType.Elevation ? "Elevations" : "Sections";
+            if (v.ViewType == ViewType.DraftingView) return "Drafting Views";
+            return v.ViewType.ToString();
         }
     }
 }

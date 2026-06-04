@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// Color overrides are sourced from AutoFiltersSettings / MepColorMap,
     /// matching the same logic as Auto Filters.
     /// </summary>
-    public class ApplyFiltersToViewsViewModel : ILemoineTool
+    public class ApplyFiltersToViewsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Apply Filters to Views";
@@ -27,7 +27,8 @@ namespace LemoineTools.Tools.AutoFilters
         {
             new StepDefinition("S1", "Select Filters",     required: true),
             new StepDefinition("S2", "Select Views",       required: true),
-            new StepDefinition("S3", "Options & Review",   required: false),
+            new StepDefinition("S3", "Options",            required: false),
+            new StepDefinition("S4", "Review & Run",       required: false),
         };
 
         // ── State ──────────────────────────────────────────────────────────────
@@ -161,36 +162,6 @@ namespace LemoineTools.Tools.AutoFilters
                     OnValidationChanged();
                 };
                 outer.Children.Add(toggles);
-
-                outer.Children.Add(new System.Windows.Shapes.Rectangle
-                {
-                    Height  = 1,
-                    Margin  = new Thickness(0, 10, 0, 10),
-                });
-
-                // ── Review summary via reusable LemoineReviewSummary ──────────────
-                var reviewItems = new List<(string id, string label)>
-                {
-                    ("filters",  "Filters"),
-                    ("views",    "Target Views"),
-                    ("overwrite","Overwrite"),
-                    ("color",    "Color Overrides"),
-                };
-
-                IDictionary<string, string> BuildValues() => new Dictionary<string, string>
-                {
-                    ["filters"]   = $"{_selectedFilters.Count} selected",
-                    ["views"]     = $"{_selectedViews.Count} selected",
-                    ["overwrite"] = GetOpt("overwrite") ? "Yes — replace overrides" : "No — skip if present",
-                    ["color"]     = GetOpt("color")     ? "Apply from color map"    : "None",
-                };
-
-                var review = new LemoineReviewSummary();
-                review.SetItems(reviewItems, BuildValues());
-                // Refresh card values whenever options or selections change
-                ValidationChanged += (s, e) => review.SetItems(reviewItems, BuildValues());
-                outer.Children.Add(review);
-
                 return outer;
             }
 
@@ -200,6 +171,27 @@ namespace LemoineTools.Tools.AutoFilters
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
         // ═══════════════════════════════════════════════════════════════════════
+        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("filters",   "Filters"),
+            ("views",     "Target Views"),
+            ("overwrite", "Overwrite"),
+            ("color",     "Color Overrides"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["filters"]   = $"{_selectedFilters.Count} selected",
+            ["views"]     = $"{_selectedViews.Count} selected",
+            ["overwrite"] = GetOpt("overwrite") ? "Yes — replace overrides" : "No — skip if present",
+            ["color"]     = GetOpt("color")     ? "Apply from color map"    : "None",
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
+
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _selectedFilters.Count > 0;
@@ -237,18 +229,9 @@ namespace LemoineTools.Tools.AutoFilters
         private bool GetOpt(string key) =>
             _optionState.TryGetValue(key, out bool v) ? v : key == "color";
 
+        // Group by the trade that owns the matching rule; unmatched → "Others".
         private static Dictionary<string, List<string>> BuildFilterGroups(
             IReadOnlyList<string> names)
-        {
-            var groups = new Dictionary<string, List<string>>();
-            foreach (var name in names)
-            {
-                int sep  = name.IndexOf(" - ");
-                string g = sep >= 0 ? name.Substring(0, sep).Trim() : "Other";
-                if (!groups.ContainsKey(g)) groups[g] = new List<string>();
-                groups[g].Add(name);
-            }
-            return groups;
-        }
+            => AutoFiltersSettings.GroupFilterNamesByTrade(names);
     }
 }

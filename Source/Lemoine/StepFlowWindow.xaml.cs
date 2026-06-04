@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Lemoine
@@ -21,6 +22,8 @@ namespace LemoineTools.Lemoine
         private int  _activeStep = 0;
         private bool _isRunning  = false;
         private bool _isDone     = false;
+
+        private LemoineReviewSummary? _reviewSummary; // framework-built review for ILemoineReviewable tools
 
         // Named XAML elements — _outerBorder is declared by x:Name in XAML
 
@@ -77,7 +80,10 @@ namespace LemoineTools.Lemoine
             };
 
             BuildChrome();
-            _tool.ValidationChanged += (s, e) => RefreshStepState(_activeStep);
+            _tool.ValidationChanged += (s, e) => { RefreshStepState(_activeStep); PopulateReview(); };
+            if (_tool is ILemoineNavigable nav)
+                nav.NavigateRequested += (s, idx) =>
+                    Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -120,6 +126,27 @@ namespace LemoineTools.Lemoine
             BuildFooter();
             InjectControlStyles();        // ← themed scrollbars, ComboBox, CheckBox
             ApplyContainerStyles();
+
+            // Wire step-activation callbacks for tools that implement IStepAware.
+            if (_tool is IStepAware stepAware)
+            {
+                stepAware.SetContentRefreshCallback(stepId =>
+                {
+                    // Always dispatch to WPF thread — called from any thread.
+                    Dispatcher.BeginInvoke((Action)(() =>
+                    {
+                        int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
+                        if (idx < 0) return;
+                        var newContent = _tool.GetStepContent(stepId) ?? new Grid();
+                        if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
+                        {
+                            cs.Children.RemoveAt(0);
+                            cs.Children.Insert(0, newContent);
+                        }
+                    }));
+                });
+            }
+
             // Defer tab-bar rendering until after callers can RegisterLogTab()
             Loaded += (s, e) => BuildTabBar();
             ActivateStep(0);
@@ -264,8 +291,82 @@ namespace LemoineTools.Lemoine
 
             for (int i = 0; i < steps.Length; i++)
             {
-                _stepRows[i] = BuildStepRow(i, steps[i], _tool.GetStepContent(steps[i].Id) ?? new Grid());
+                FrameworkElement content;
+                // A reviewable tool's LAST step is framework-rendered as a review summary —
+                // the tool need not build any content for it. This guarantees the final step
+                // is review-only by construction.
+                if (i == steps.Length - 1 && _tool is ILemoineReviewable)
+                {
+                    _reviewSummary = new LemoineReviewSummary();
+                    content        = _reviewSummary;
+                }
+                else
+                {
+                    content = SafeBuildStepContent(steps[i].Id);
+                }
+                _stepRows[i] = BuildStepRow(i, steps[i], content);
                 _stepStack.Children.Add(_stepRows[i]);
+            }
+            PopulateReview();
+        }
+
+        // Builds a step's content, but never lets a faulty tool take down Revit: a thrown
+        // exception is logged to diagnostics.log and replaced with a visible error panel so
+        // the window still opens. (Step content is built eagerly at window construction.)
+        private FrameworkElement SafeBuildStepContent(string stepId)
+        {
+            try
+            {
+                return _tool.GetStepContent(stepId) ?? new Grid();
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"GetStepContent('{stepId}') for tool '{_tool.Title}'", ex);
+                return BuildStepErrorPanel(stepId, ex);
+            }
+        }
+
+        private FrameworkElement BuildStepErrorPanel(string stepId, Exception ex)
+        {
+            var sp = new StackPanel();
+            var hdr = new TextBlock
+            {
+                Text         = $"This step ('{stepId}') failed to load.",
+                TextWrapping = TextWrapping.Wrap,
+                FontWeight   = FontWeights.SemiBold,
+            };
+            hdr.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            hdr.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            hdr.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            sp.Children.Add(hdr);
+
+            var detail = new TextBlock
+            {
+                Text         = $"{ex.GetType().Name}: {ex.Message}\nSee %AppData%\\LemoineTools\\diagnostics.log for the full stack trace.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 4, 0, 0),
+            };
+            detail.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            detail.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            detail.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sp.Children.Add(detail);
+            return sp;
+        }
+
+        // Fills the framework-rendered review summary from the tool's ILemoineReviewable
+        // contract. No-op for non-reviewable tools. Called on build, on entering the last
+        // step, and whenever validation changes so the values stay current. Guarded so a
+        // throwing ReviewValues degrades to a logged error instead of crashing Revit.
+        private void PopulateReview()
+        {
+            if (_reviewSummary == null || !(_tool is ILemoineReviewable r)) return;
+            try
+            {
+                _reviewSummary.SetItems(r.ReviewItems, r.ReviewValues, r.ReviewChips, r.ReviewNote, r.ReviewWarning);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"PopulateReview for tool '{_tool.Title}'", ex);
             }
         }
 
@@ -413,9 +514,21 @@ namespace LemoineTools.Lemoine
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             btnGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var captIdx    = idx;
-            var confirmBtn = BuildButton(idx == _tool.Steps.Length - 1 ? _tool.RunLabel : "Confirm →", true);
-            confirmBtn.Click += (s, e) => ConfirmStep(captIdx);
+            var captIdx = idx;
+            string btnLabel;
+            if (idx == _tool.Steps.Length - 1)
+                btnLabel = _tool.RunLabel;
+            else if (_tool is ILemoineStepConfirmable sc && sc.ConfirmLabelFor(step.Id) is string lbl)
+                btnLabel = lbl;
+            else
+                btnLabel = "Confirm →";
+            var confirmBtn = BuildButton(btnLabel, true);
+            confirmBtn.Click += (s, e) =>
+            {
+                if (_tool is ILemoineStepConfirmable sc2)
+                    sc2.OnStepConfirm(_tool.Steps[captIdx].Id);
+                ConfirmStep(captIdx);
+            };
             _confirmBtns[idx] = confirmBtn;
             Grid.SetColumn(confirmBtn, 2);
             btnGrid.Children.Add(confirmBtn);
@@ -626,7 +739,7 @@ namespace LemoineTools.Lemoine
             btn.MouseLeave += (s, e) =>
             {
                 if ((string)btn.Tag != _activeLogTab)
-                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             };
             return btn;
         }
@@ -711,6 +824,10 @@ namespace LemoineTools.Lemoine
             }
             RefreshStepState(index);
             UpdateStepCounter();
+            // Refresh the framework review when the (last) review step opens so it reflects
+            // the latest input values.
+            if (index == _tool.Steps.Length - 1) PopulateReview();
+            (_tool as IStepAware)?.OnStepActivated(_tool.Steps[index].Id);
         }
 
         private void RefreshStepState(int index)
@@ -725,8 +842,59 @@ namespace LemoineTools.Lemoine
 
         private void AnimateContent(Border b, bool expand)
         {
-            var a = new DoubleAnimation { To = expand ? 1200 : 0, Duration = TimeSpan.FromMilliseconds(expand ? LemoineSettings.Instance.AnimExpand : LemoineSettings.Instance.AnimMed), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-            b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+            if (expand)
+            {
+                // Measure the content's natural height so the step isn't capped at a
+                // fixed ceiling. MaxHeight animates 0 → measured height, then is released
+                // to unbounded on completion so tall content is never clipped and can
+                // reflow freely afterwards (validation text, content refresh, etc.).
+                double target = MeasureContentHeight(b);
+
+                var a = new DoubleAnimation
+                {
+                    To             = target,
+                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimExpand),
+                    EasingFunction = ease,
+                };
+                a.Completed += (s, e) =>
+                {
+                    b.BeginAnimation(FrameworkElement.MaxHeightProperty, null); // drop the animation hold
+                    b.MaxHeight = double.PositiveInfinity;                      // no ceiling once open
+                };
+                b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+                LemoineMotion.FadeSlideIn(b);   // content fades up as the step opens
+            }
+            else
+            {
+                // Collapsing: MaxHeight may currently be PositiveInfinity (released on a
+                // prior expand), so pin a concrete From before animating down to 0.
+                var a = new DoubleAnimation
+                {
+                    From           = b.ActualHeight,
+                    To             = 0,
+                    Duration       = TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimMed),
+                    EasingFunction = ease,
+                };
+                b.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+            }
+        }
+
+        // Natural (uncapped) height of a step's content border, used as the expand
+        // animation target. Measures the inner child against the border's laid-out
+        // width plus its vertical padding; falls back to a generous default if the
+        // border hasn't been laid out yet (e.g. first activation during construction).
+        private double MeasureContentHeight(Border b)
+        {
+            if (b.Child is FrameworkElement child)
+            {
+                double width = b.ActualWidth > 0 ? b.ActualWidth : 1000;
+                child.Measure(new Size(width, double.PositiveInfinity));
+                double h = child.DesiredSize.Height + b.Padding.Top + b.Padding.Bottom;
+                if (h > 0) return h;
+            }
+            return 1200;
         }
 
         // ═══════════════════════════════════════ RUN / RESET ══════════════════
@@ -923,6 +1091,7 @@ namespace LemoineTools.Lemoine
                 btn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
                 btn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
             }
+            LemoineMotion.WirePress(btn);   // snappy tap-down feedback
             return btn;
         }
 

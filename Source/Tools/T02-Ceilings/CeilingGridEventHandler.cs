@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -49,7 +50,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                Log($"Fatal error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingGrid: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
 

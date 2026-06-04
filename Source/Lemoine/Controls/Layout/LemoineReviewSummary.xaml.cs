@@ -11,10 +11,12 @@ namespace LemoineTools.Lemoine.Controls
     /// Mirrors JS ReviewSummary exactly.
     ///
     /// API:
-    ///   SetItems(items, values, chips)
-    ///     items  — list of (id, label) pairs
-    ///     values — dict of id → display string
-    ///     chips  — optional list of chip strings shown below the cards
+    ///   SetItems(items, values, chips, note, warning)
+    ///     items   — list of (id, label) pairs
+    ///     values  — dict of id → display string
+    ///     chips   — optional list of chip strings shown below the cards
+    ///     note    — optional italic description shown beneath the summary
+    ///     warning — optional warning banner shown above the summary
     /// </summary>
     public partial class LemoineReviewSummary : UserControl
     {
@@ -26,9 +28,31 @@ namespace LemoineTools.Lemoine.Controls
         public void SetItems(
             IList<(string id, string label)> items,
             IDictionary<string, string>      values,
-            IList<string>?                   chips = null)
+            IList<string>?                   chips   = null,
+            string?                          note    = null,
+            string?                          warning = null)
         {
             _root.Children.Clear();
+
+            // Optional warning banner — sits above the cards.
+            if (!string.IsNullOrEmpty(warning))
+            {
+                var warn = new Border
+                {
+                    Margin          = new Thickness(0, 0, 0, 8),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius    = new CornerRadius(3),
+                    Padding         = new Thickness(10, 7, 10, 7),
+                };
+                warn.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                warn.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
+                var wt = new TextBlock { Text = warning, TextWrapping = TextWrapping.Wrap };
+                wt.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                wt.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+                wt.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                warn.Child = wt;
+                _root.Children.Add(warn);
+            }
 
             // 2-column card grid
             var grid = new Grid { Margin = new Thickness(0, 0, 0, 0) };
@@ -133,6 +157,22 @@ namespace LemoineTools.Lemoine.Controls
                 chipInner.Children.Add(chipWrap);
                 chipBorder.Child = chipInner;
                 _root.Children.Add(chipBorder);
+            }
+
+            // Optional italic note — sits beneath the summary.
+            if (!string.IsNullOrEmpty(note))
+            {
+                var noteTb = new TextBlock
+                {
+                    Text         = note,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 8, 0, 0),
+                };
+                noteTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                noteTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                noteTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                _root.Children.Add(noteTb);
             }
         }
     }

@@ -1,13 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Testing
 {
-    /// <summary>
-    /// Persistent settings for the Batch Export tool.
-    /// Saved to %AppData%\LemoineTools\BatchExportSettings.xml.
-    /// </summary>
     [XmlRoot("BatchExportSettings")]
     public sealed class BatchExportSettings
     {
@@ -17,12 +15,11 @@ namespace LemoineTools.Tools.Testing
 
         public static BatchExportSettings Instance => _lazy.Value;
 
-        // Required by XmlSerializer
         public BatchExportSettings() { }
 
         // ── Output ────────────────────────────────────────────────────────────
         public string OutputFolder  { get; set; } = "";
-        public bool   SplitByFormat { get; set; } = false;
+        public bool   SplitByFormat { get; set; } = true;
 
         // ── Filename ──────────────────────────────────────────────────────────
         public string FilenamePattern { get; set; } = "{SheetNumber}-{SheetName}";
@@ -31,12 +28,24 @@ namespace LemoineTools.Tools.Testing
         public bool ExportPdf { get; set; } = true;
         public bool ExportDwg { get; set; } = false;
 
-        // ── PDF options ───────────────────────────────────────────────────────
-        public bool   CombinePdf        { get; set; } = false;
-        public string PdfPaperPlacement { get; set; } = "Center";        // "Center" | "Offset"
+        // ── PDF — page setup ──────────────────────────────────────────────────
+        public string PdfPaperPlacement { get; set; } = "Offset from Corner";
+        public string ZoomSetting       { get; set; } = "Fit to Page";   // "Fit to Page" | "Scale %"
+        public int    ZoomPercent       { get; set; } = 100;
+
+        // ── PDF — output quality ──────────────────────────────────────────────
+        public string ColorDepth    { get; set; } = "Color";             // "Color" | "Grayscale" | "Black & White"
+        public string RasterQuality { get; set; } = "High";              // "Draft"|"Low"|"Medium"|"High"|"Presentation"
         public bool   HiddenLinesVector { get; set; } = true;
 
-        // ── DWG options ───────────────────────────────────────────────────────
+        // ── PDF — combine ─────────────────────────────────────────────────────
+        public bool CombinePdf { get; set; } = true;
+
+        // ── PDF — advanced ────────────────────────────────────────────────────
+        public bool ViewLinksInBlue             { get; set; } = false;
+        public bool ReplaceHalftoneWithThinLines { get; set; } = false;
+
+        // ── DWG ───────────────────────────────────────────────────────────────
         public string DwgExportSetupName { get; set; } = "";
 
         // ── NWC options ───────────────────────────────────────────────────────
@@ -62,6 +71,11 @@ namespace LemoineTools.Tools.Testing
         public bool   ExportIfc  { get; set; } = false;
         public string IfcVersion { get; set; } = "IFC2x3"; // "IFC2x3" | "IFC4"
 
+        // ── Saved packs ───────────────────────────────────────────────────────
+        [XmlArray("SavedPacks")]
+        [XmlArrayItem("Pack")]
+        public List<SheetPackLayout> SavedPacks { get; set; } = new List<SheetPackLayout>();
+
         // ── Persistence ───────────────────────────────────────────────────────
         private static string FilePath
         {
@@ -70,12 +84,11 @@ namespace LemoineTools.Tools.Testing
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings: create config directory", __lex); }
                 return Path.Combine(dir, "BatchExportSettings.xml");
             }
         }
 
-        /// <summary>Persist current values to disk. Silent on failure.</summary>
         public void Save()
         {
             try
@@ -84,7 +97,7 @@ namespace LemoineTools.Tools.Testing
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { /* never crash the UI over a settings write */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings.Save", __lex); }
         }
 
         private static BatchExportSettings Load()
@@ -99,7 +112,7 @@ namespace LemoineTools.Tools.Testing
                         return (BatchExportSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("BatchExportSettings.Load", __lex); }
             return new BatchExportSettings();
         }
     }

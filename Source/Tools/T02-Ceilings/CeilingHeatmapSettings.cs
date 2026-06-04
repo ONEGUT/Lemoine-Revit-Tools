@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -36,9 +37,6 @@ namespace LemoineTools.Tools.Ceilings
         /// </summary>
         public double ElevTolerance { get; set; } = 1.0 / 96.0;
 
-        /// <summary>Whether to include ceilings from Revit link instances.</summary>
-        public bool   IncludeLinks  { get; set; } = false;
-
         /// <summary>Whether to place a ceiling tag at the centroid of each ceiling.</summary>
         public bool   PlaceTags     { get; set; } = false;
 
@@ -50,7 +48,7 @@ namespace LemoineTools.Tools.Ceilings
                 string dir = System.IO.Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings: create config directory", __lex); }
                 return System.IO.Path.Combine(dir, "CeilingHeatmapSettings.xml");
             }
         }
@@ -64,7 +62,7 @@ namespace LemoineTools.Tools.Ceilings
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { /* never crash the UI over a settings write */ }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings.Save", __lex); }
         }
 
         private static CeilingHeatmapSettings Load()
@@ -79,7 +77,7 @@ namespace LemoineTools.Tools.Ceilings
                         return (CeilingHeatmapSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings.Load", __lex); }
             return new CeilingHeatmapSettings();
         }
     }

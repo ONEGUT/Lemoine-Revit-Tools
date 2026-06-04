@@ -6,6 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 
 namespace LemoineTools.Lemoine.Controls
@@ -26,6 +27,16 @@ namespace LemoineTools.Lemoine.Controls
         private IList<string> _items           = new List<string>();
         private int           _maxSuggestions  = 8;
         private string        _value           = "";
+
+        // Icon show/hide state
+        private bool _iconVisible = true;
+        private static readonly Thickness _padWithIcon = new Thickness(26, 6, 10, 6);
+        private static readonly Thickness _padNoIcon   = new Thickness(8,  6, 10, 6);
+        // Frozen so this shared static is thread-safe across each window's STA thread
+        // (a non-frozen Freezable crashes the second window with a cross-thread access).
+        private static readonly CubicEase _iconEase    = FreezeEase(new CubicEase { EasingMode = EasingMode.EaseOut });
+
+        private static CubicEase FreezeEase(CubicEase e) { e.Freeze(); return e; }
 
         public string Value
         {
@@ -102,9 +113,17 @@ namespace LemoineTools.Lemoine.Controls
         private void AttachEvents()
         {
             _textBox.TextChanged += OnTextChanged;
-            _textBox.GotFocus    += (s, e) => ShowDropdown();
+            _textBox.GotFocus    += (s, e) =>
+            {
+                // Hide the icon and shift text left the moment the field is focused —
+                // not on first keystroke — so the caret sits flush at the field's edge.
+                UpdateIconState(showIcon: false);
+                ShowDropdown();
+            };
             _textBox.LostFocus   += (s, e) =>
             {
+                // Restore the icon only when the field is left empty.
+                UpdateIconState(showIcon: string.IsNullOrEmpty(_textBox.Text));
                 // Delay so clicks on dropdown items register
                 Dispatcher.BeginInvoke(new Action(() => _popup.IsOpen = false),
                     System.Windows.Threading.DispatcherPriority.Background);
@@ -127,7 +146,39 @@ namespace LemoineTools.Lemoine.Controls
             _placeholder.Visibility = string.IsNullOrEmpty(_value)
                 ? Visibility.Visible : Visibility.Collapsed;
             SelectionChanged?.Invoke(_value);
-            ShowDropdown();
+            // Only auto-open the dropdown for real typing — a programmatic text change
+            // (e.g. panel rebuild / SetValue) must not pop the popup. Guard on keyboard focus.
+            if (_textBox.IsKeyboardFocusWithin) ShowDropdown();
+            // A programmatic SetValue on an unfocused field should still hide the icon when
+            // it fills text in; focus changes are handled by the Got/LostFocus handlers.
+            if (!string.IsNullOrEmpty(_value)) UpdateIconState(showIcon: false);
+        }
+
+        // Fades the search icon out (and slides the text padding left to fill the gap) when the
+        // field is focused or holds text, and reverses both when it returns to an empty rest state.
+        private void UpdateIconState(bool showIcon)
+        {
+            var dur = new Duration(TimeSpan.FromMilliseconds(LemoineSettings.Instance.AnimFast));
+
+            if (!showIcon && _iconVisible)
+            {
+                _iconVisible = false;
+                var fade = new DoubleAnimation(0, dur) { EasingFunction = _iconEase };
+                // Guard: only collapse if we haven't been asked to restore in the meantime.
+                fade.Completed += (s, e) => { if (!_iconVisible) _iconCanvas.Visibility = Visibility.Collapsed; };
+                _iconCanvas.BeginAnimation(UIElement.OpacityProperty, fade);
+                _textBox.BeginAnimation(Control.PaddingProperty,
+                    new ThicknessAnimation(_padNoIcon, dur) { EasingFunction = _iconEase });
+            }
+            else if (showIcon && !_iconVisible)
+            {
+                _iconVisible = true;
+                _iconCanvas.Visibility = Visibility.Visible;
+                _iconCanvas.BeginAnimation(UIElement.OpacityProperty,
+                    new DoubleAnimation(1, dur) { EasingFunction = _iconEase });
+                _textBox.BeginAnimation(Control.PaddingProperty,
+                    new ThicknessAnimation(_padWithIcon, dur) { EasingFunction = _iconEase });
+            }
         }
 
         private void ShowDropdown()
@@ -163,15 +214,10 @@ namespace LemoineTools.Lemoine.Controls
                 txt.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 row.Child = txt;
 
-                row.MouseEnter += (s, e) =>
-                    row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                row.MouseLeave += (s, e) =>
-                {
-                    if (captured == _value)
-                        row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                    else
-                        row.Background = Brushes.Transparent;
-                };
+                // Animated hover — the selected row keeps its accent rest state.
+                LemoineMotion.WireHover(row,
+                    normalBgKey: captured == _value ? "LemoineAccentDim" : null,
+                    hoverBgKey:  "LemoineAccentDim");
                 row.GotFocus += (s, e) =>
                     row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
                 row.LostFocus += (s, e) =>

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -24,7 +25,7 @@ namespace LemoineTools.Tools.Ceilings
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch { }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("MakeCeilingGridsSettings: create config directory", __lex); }
                 return Path.Combine(dir, "MakeCeilingGridsSettings.xml");
             }
         }
@@ -37,7 +38,7 @@ namespace LemoineTools.Tools.Ceilings
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("MakeCeilingGridsSettings.Save", __lex); }
         }
 
         private static MakeCeilingGridsSettings Load()
@@ -52,7 +53,7 @@ namespace LemoineTools.Tools.Ceilings
                         return (MakeCeilingGridsSettings)xs.Deserialize(r)!;
                 }
             }
-            catch { }
+            catch (Exception __lex) { LemoineLog.Swallowed("MakeCeilingGridsSettings.Load", __lex); }
             return new MakeCeilingGridsSettings();
         }
     }

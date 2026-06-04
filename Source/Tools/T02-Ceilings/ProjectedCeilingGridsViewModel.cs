@@ -12,7 +12,7 @@ using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ProjectedCeilingGridsViewModel : ILemoineTool
+    public class ProjectedCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── ILemoineTool identity ─────────────────────────────────────────────
         public string Title    => "Project Ceiling Grids";
@@ -53,7 +53,7 @@ namespace LemoineTools.Tools.Ceilings
         public FrameworkElement? GetStepContent(string stepId)
         {
             if (stepId == "S1") return BuildS1();
-            if (stepId == "S2") return BuildReviewPanel();
+            if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
             return null;
         }
 
@@ -102,39 +102,13 @@ namespace LemoineTools.Tools.Ceilings
                 desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 inner.Children.Add(desc);
 
-                var pathBox = new WpfTextBox
+                var folder = new LemoineFolderBrowser
                 {
-                    Text            = _folderPath,
-                    Padding         = new Thickness(8, 4, 8, 4),
-                    BorderThickness = new Thickness(1),
+                    Path        = _folderPath,
+                    DialogTitle = "Select DWG Export Folder",
                 };
-                pathBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-                pathBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-                pathBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-                pathBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-                pathBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-                pathBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-                pathBox.TextChanged += (s, e) => { _folderPath = pathBox.Text; OnValidationChanged(); };
-                inner.Children.Add(pathBox);
-
-                var browseBtn = LemoineControlStyles.BuildButton("Browse…");
-                browseBtn.Margin = new Thickness(0, 4, 0, 0);
-                browseBtn.Click += (s, e) =>
-                {
-                    var dlg = new System.Windows.Forms.FolderBrowserDialog
-                    {
-                        Description         = "Select DWG Export Folder",
-                        SelectedPath        = _folderPath,
-                        ShowNewFolderButton = false,
-                    };
-                    if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                    {
-                        pathBox.Text  = dlg.SelectedPath;
-                        _folderPath   = dlg.SelectedPath;
-                        OnValidationChanged();
-                    }
-                };
-                inner.Children.Add(browseBtn);
+                folder.PathChanged += p => { _folderPath = p; OnValidationChanged(); };
+                inner.Children.Add(folder);
 
                 _pickerHost.Child = inner;
             }
@@ -157,119 +131,58 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        private struct CardDef
+
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems
         {
-            public string       Label;
-            public Func<string> Val;
-            public int          Row;
-            public int          Col;
-            public CardDef(string label, Func<string> val, int row, int col)
-            { Label = label; Val = val; Row = row; Col = col; }
+            get
+            {
+                var items = new List<(string, string)>
+                {
+                    ("source", "Source"),
+                    ("mode",   "Mode"),
+                    ("target", "Target View"),
+                    ("output", "Output"),
+                };
+                if (_batchMode) items.Add(("dwg", "DWG Files"));
+                return items;
+            }
         }
 
-        private FrameworkElement BuildReviewPanel()
+        public IDictionary<string, string> ReviewValues
         {
-            var outer = new StackPanel();
-            outer.Children.Add(BuildInfoPanel());
-
-            var desc = new TextBlock
+            get
             {
-                TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            if (_batchMode)
-            {
-                desc.Text = "Each DWG in the selected folder will be matched to a ceiling plan view " +
-                            "by filename (without extension). Matched pairs will be projected; " +
-                            "unmatched DWGs will be logged and skipped.";
-
-                int dwgCount = 0;
-                if (Directory.Exists(_folderPath))
-                    dwgCount = Directory.GetFiles(_folderPath, "*.dwg", SearchOption.TopDirectoryOnly).Length;
-
-                var countNote = new TextBlock
+                var d = new Dictionary<string, string>
                 {
-                    Text   = dwgCount > 0 ? $"{dwgCount} DWG file(s) found in folder." : "No DWG files found in folder.",
-                    Margin = new Thickness(0, 6, 0, 0),
+                    ["source"] = _batchMode
+                        ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
+                        : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)),
+                    ["mode"]   = _batchMode ? "Batch — folder"   : "Single file",
+                    ["target"] = _batchMode ? "Per DWG filename" : "Active view",
+                    ["output"] = "Model curves",
                 };
-                countNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                countNote.SetResourceReference(TextBlock.ForegroundProperty, dwgCount > 0 ? "LemoineGreen" : "LemoineRed");
-                countNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                outer.Children.Add(countNote);
+                if (_batchMode) d["dwg"] = $"{CountDwgs()} found";
+                return d;
             }
-            else
-            {
-                desc.Text = "The DWG will be imported into the active view at origin, all curves extracted, " +
-                            "then the import deleted. Each curve is projected vertically onto matching ceiling " +
-                            "soffit faces and recreated as a model curve at the correct elevation.";
-            }
-
-            outer.Children.Add(desc);
-            return outer;
         }
 
-        private WpfGrid BuildInfoPanel()
-        {
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        public IList<string>? ReviewChips => null;
 
-            var cards = new[]
-            {
-                new CardDef("Source",      () => _batchMode
-                    ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
-                    : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)), 0, 0),
-                new CardDef("Mode",        () => _batchMode ? "Batch — folder"   : "Single file",  0, 1),
-                new CardDef("Target View", () => _batchMode ? "Per DWG filename" : "Active view",  1, 0),
-                new CardDef("Output",      () => "Model curves",                                    1, 1),
-            };
+        public string? ReviewNote => _batchMode
+            ? "Each DWG in the selected folder will be matched to a ceiling plan view by filename (without " +
+              "extension). Matched pairs will be projected; unmatched DWGs will be logged and skipped."
+            : "The DWG will be imported into the active view at origin, all curves extracted, then the import " +
+              "deleted. Each curve is projected vertically onto matching ceiling soffit faces and recreated as a " +
+              "model curve at the correct elevation.";
 
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                    Padding         = new Thickness(10, 7, 10, 7),
-                };
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? "No DWG files found in folder." : null;
 
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+        private int CountDwgs()
+            => Directory.Exists(_folderPath)
+                ? Directory.GetFiles(_folderPath, "*.dwg", SearchOption.TopDirectoryOnly).Length
+                : 0;
 
-                var capturedVal = c.Val;
-                var valText = new TextBlock
-                {
-                    Text         = capturedVal(),
-                    FontWeight   = FontWeights.Medium,
-                    TextWrapping = TextWrapping.Wrap,
-                };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-
-                WpfGrid.SetRow(card, c.Row);
-                WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-
-            return grid;
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         // IsValid

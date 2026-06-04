@@ -18,7 +18,7 @@ using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class CeilingHeatmapViewModel : ILemoineTool
+    public class CeilingHeatmapViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── Identity ─────────────────────────────────────────────────────────────
         public string Title    => "Ceiling Elevation Heatmap";
@@ -45,12 +45,11 @@ namespace LemoineTools.Tools.Ceilings
 
         // Live-update handles for S_RAMP step
         private WpfRectangle? _gradientRect;
-        private WpfComboBox?  _rampCombo;
+        private LemoineSingleSelect?  _rampCombo;
 
         // ── Run options state ────────────────────────────────────────────────────
         private bool   _deleteExisting = true;
         private bool   _placeTags      = CeilingHeatmapSettings.Instance.PlaceTags;
-        private bool   _includeLinks   = CeilingHeatmapSettings.Instance.IncludeLinks;
         private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
 
         // ── View selection state ─────────────────────────────────────────────────
@@ -113,7 +112,7 @@ namespace LemoineTools.Tools.Ceilings
                 case "S1":     return BuildS1();
                 case "S_RAMP": return BuildS_RAMP();
                 case "S2":     return BuildS2();
-                case "S3":     return BuildReview();
+                case "S3":     return null; // framework renders review (ILemoineReviewable)
                 default:       return null;
             }
         }
@@ -173,12 +172,7 @@ namespace LemoineTools.Tools.Ceilings
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             DockPanel.SetDock(loadBtn, Dock.Right);
 
-            _rampCombo = new WpfComboBox { IsEditable = false };
-            _rampCombo.SetResourceReference(WpfComboBox.BackgroundProperty,  "LemoineSelectBg");
-            _rampCombo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
-            _rampCombo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_SM");
-            _rampCombo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineMonoFont");
-            _rampCombo.SetResourceReference(WpfComboBox.BorderBrushProperty, "LemoineBorderMid");
+            _rampCombo = new LemoineSingleSelect();
             RefreshRampCombo();
 
             loadRow.Children.Add(deleteBtn);
@@ -323,9 +317,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (_rampCombo == null) return;
             var names = _rampStore.List().Select(t => t.Name).ToList();
-            _rampCombo.ItemsSource = names;
-            if (names.Count > 0 && _rampCombo.SelectedIndex < 0)
-                _rampCombo.SelectedIndex = 0;
+            _rampCombo.Items = names; // LemoineSingleSelect auto-selects the first entry
         }
 
         private void UpdateGradientPreview()
@@ -379,13 +371,6 @@ namespace LemoineTools.Tools.Ceilings
                 },
                 new ToggleItem
                 {
-                    Id        = "links",
-                    Label     = "Include linked ceilings",
-                    Desc      = "Scan Revit link instances visible in each selected view.",
-                    DefaultOn = _includeLinks,
-                },
-                new ToggleItem
-                {
                     Id        = "tags",
                     Label     = "Place ceiling tags",
                     Desc      = "Place a Ceiling Tag at the centroid of each ceiling after applying the heatmap. Ceilings that already carry a tag are skipped.",
@@ -395,7 +380,6 @@ namespace LemoineTools.Tools.Ceilings
             tog.StateChanged += state =>
             {
                 _deleteExisting = state.TryGetValue("delete", out bool dv) && dv;
-                _includeLinks   = state.TryGetValue("links",  out bool lv) && lv;
                 _placeTags      = state.TryGetValue("tags",   out bool tv) && tv;
                 OnValidationChanged();
             };
@@ -412,22 +396,19 @@ namespace LemoineTools.Tools.Ceilings
 
             var tolRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            double displayInches = Math.Round(_elevTolerance * 12.0, 4);
-            var tolBox = new WpfTextBox { Text = displayInches.ToString(), TextAlignment = TextAlignment.Right };
-            tolBox.SetResourceReference(WpfTextBox.WidthProperty,      "LemoineW_NumInput");
-            tolBox.SetResourceReference(WpfTextBox.MinHeightProperty,  "LemoineH_Input");
-            tolBox.SetResourceReference(WpfTextBox.PaddingProperty,    "LemoineTh_InputPad");
-            tolBox.SetResourceReference(WpfTextBox.BackgroundProperty, "LemoineSelectBg");
-            tolBox.SetResourceReference(WpfTextBox.ForegroundProperty, "LemoineText");
-            tolBox.SetResourceReference(WpfTextBox.FontFamilyProperty, "LemoineMonoFont");
-            tolBox.SetResourceReference(WpfTextBox.FontSizeProperty,   "LemoineFS_MD");
-            tolBox.SetResourceReference(WpfTextBox.BorderBrushProperty,"LemoineBorderMid");
-            tolBox.LostFocus += (s, e) =>
+            double displayInches = Math.Round(_elevTolerance * 12.0, 2);
+            var tolStepper = new LemoineInlineStepper
             {
-                if (double.TryParse(tolBox.Text, out double val))
-                    _elevTolerance = val / 12.0;
+                Value             = displayInches,
+                MinValue          = 0,
+                MaxValue          = 24,
+                Step              = 0.25,
+                Decimals          = 2,
+                ValueWidth        = 56,
+                VerticalAlignment = VerticalAlignment.Center,
             };
-            tolRow.Children.Add(tolBox);
+            tolStepper.ValueChanged += (s, v) => _elevTolerance = v / 12.0;
+            tolRow.Children.Add(tolStepper);
 
             var tolUnit = new TextBlock { Text = "  in", VerticalAlignment = VerticalAlignment.Center };
             tolUnit.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -453,97 +434,33 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── S3: Review ───────────────────────────────────────────────────────────
-        private struct CardDef
+
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            public string       Label;
-            public Func<string> Val;
-            public int          Row;
-            public int          Col;
-            public CardDef(string l, Func<string> v, int r, int c)
-            { Label = l; Val = v; Row = r; Col = c; }
-        }
+            ("views",  "Views Selected"),
+            ("ramp",   "Color Ramp"),
+            ("delete", "Delete Existing Filters"),
+            ("tags",   "Place Ceiling Tags"),
+            ("tol",    "Elevation Tolerance"),
+        };
 
-        private FrameworkElement BuildReview()
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            var outer = new StackPanel();
-            var grid  = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            for (int i = 0; i < 3; i++)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            ["views"]  = _selectedViewNames.Count == 0 ? "—"
+                : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
+            ["ramp"]   = $"{_colorLow} → {_colorMid} → {_colorHigh}",
+            ["delete"] = _deleteExisting ? "Yes" : "No",
+            ["tags"]   = _placeTags ? "Yes" : "No",
+            ["tol"]    = $"{Math.Round(_elevTolerance * 12.0, 4)} in",
+        };
 
-            var cards = new[]
-            {
-                new CardDef("Views Selected",
-                    () => _selectedViewNames.Count == 0 ? "—"
-                        : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
-                    0, 0),
-                new CardDef("Color Ramp",
-                    () => $"{_colorLow} → {_colorMid} → {_colorHigh}",
-                    0, 1),
-                new CardDef("Delete Existing Filters",
-                    () => _deleteExisting ? "Yes" : "No",
-                    1, 0),
-                new CardDef("Include Linked Ceilings",
-                    () => _includeLinks ? "Yes" : "No",
-                    1, 1),
-                new CardDef("Place Ceiling Tags",
-                    () => _placeTags ? "Yes" : "No",
-                    2, 0),
-                new CardDef("Elevation Tolerance",
-                    () => $"{Math.Round(_elevTolerance * 12.0, 4)} in",
-                    2, 1),
-            };
-
-            foreach (var c in cards)
-            {
-                var card = new Border
-                {
-                    Margin          = new Thickness(c.Col == 0 ? 0 : 4, c.Row == 0 ? 0 : 4, 0, 0),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3),
-                };
-                card.SetResourceReference(Border.PaddingProperty,    "LemoineTh_CardPad");
-                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-                var lbl = new TextBlock { Text = c.Label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-                var capturedVal = c.Val;
-                var valText = new TextBlock { FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap };
-                valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-                valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                valText.Text = capturedVal();
-                ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-                var sp = new StackPanel();
-                sp.Children.Add(lbl);
-                sp.Children.Add(valText);
-                card.Child = sp;
-                WpfGrid.SetRow(card, c.Row);
-                WpfGrid.SetColumn(card, c.Col);
-                grid.Children.Add(card);
-            }
-            outer.Children.Add(grid);
-
-            var desc = new TextBlock
-            {
-                Text         = "Selected ceiling plan views will be scanned for \"Height Offset From Level\" data. One view filter is created per distinct height offset bucket and applied to every selected view as a solid surface color override.",
-                TextWrapping = TextWrapping.Wrap,
-                FontStyle    = FontStyles.Italic,
-                Margin       = new Thickness(0, 8, 0, 0),
-            };
-            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(desc);
-
-            return outer;
-        }
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => "Selected ceiling plan views will be scanned for \"Height Offset " +
+            "From Level\" data in both the host model and every visible link. One view filter is created per " +
+            "distinct height offset bucket and applied to every selected view as a solid surface color override. " +
+            "Linked ceilings are colored only where the link is displayed \"By Host View\".";
+        public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
@@ -565,7 +482,6 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var parts = new List<string>();
                 if (_deleteExisting) parts.Add("Delete existing");
-                if (_includeLinks)   parts.Add("Include links");
                 if (_placeTags)      parts.Add("Place tags");
                 parts.Add($"Tol {Math.Round(_elevTolerance * 12.0, 4)} in");
                 return string.Join(" · ", parts);
@@ -581,7 +497,6 @@ namespace LemoineTools.Tools.Ceilings
         {
             // Persist run options back to settings
             CeilingHeatmapSettings.Instance.PlaceTags     = _placeTags;
-            CeilingHeatmapSettings.Instance.IncludeLinks  = _includeLinks;
             CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
             SaveColorsToSettings();
 
@@ -591,7 +506,6 @@ namespace LemoineTools.Tools.Ceilings
                 .ToList();
             _handler.DeleteExisting  = _deleteExisting;
             _handler.PlaceTags       = _placeTags;
-            _handler.IncludeLinks    = _includeLinks;
             _handler.ElevTolerance   = _elevTolerance;
             _handler.ColorLow        = ParseRevitColor(_colorLow,  0,   0, 255);
             _handler.ColorMid        = ParseRevitColor(_colorMid,  0, 255,   0);

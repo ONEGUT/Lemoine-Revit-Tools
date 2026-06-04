@@ -9,11 +9,10 @@ using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
 using WpfTextBox = System.Windows.Controls.TextBox;
-using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool
+    public class MakeCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
     {
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
@@ -41,7 +40,13 @@ namespace LemoineTools.Tools.Ceilings
 
         private List<string>           _selectedDocLabels        = new List<string>();
         private List<CeilingTypeEntry> _ceilingTypes             = new List<CeilingTypeEntry>();
+
+        // Exclusion is name-based ("Family|Type") so unchecking a type hides it across
+        // every model — consistent with the name-based hide filter in the run handler.
         private HashSet<string>        _excludedTypeKeys         = new HashSet<string>(StringComparer.Ordinal);
+        private HashSet<string>        _allTypeKeys              = new HashSet<string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _displayToKey = new Dictionary<string, string>(StringComparer.Ordinal);
+
         private bool                   _scanning                 = false;
         private bool                   _scanDone                 = false;
 
@@ -51,8 +56,6 @@ namespace LemoineTools.Tools.Ceilings
         // Live UI handles
         private StackPanel? _filterContainer;
         private Dispatcher? _filterDispatcher;
-        private WpfTextBox? _filterFamilyBox;
-        private WpfTextBox? _filterTypeBox;
 
         // ── ExternalEvent wiring ───────────────────────────────────────────
         private readonly MakeCeilingGridsPhase1Handler? _phase1Handler;
@@ -91,7 +94,7 @@ namespace LemoineTools.Tools.Ceilings
                 case "docs":   return BuildDocsStep();
                 case "filter": return BuildFilterStep();
                 case "export": return BuildExportStep();
-                case "run":    return BuildRunStep();
+                case "run":    return null; // framework renders review (ILemoineReviewable)
                 default:       return null;
             }
         }
@@ -224,136 +227,71 @@ namespace LemoineTools.Tools.Ceilings
             _phase1Event.Raise();
         }
 
+        // Builds the model-tabbed include/exclude list. One tab per source model
+        // (host + each link that has ceiling types); items are this model's
+        // "{Family}  —  {Type}" rows. Checked = included. Selection is by display
+        // string, so the same family+type checked in one model applies everywhere —
+        // which matches the name-based hide filter the run handler creates.
         private void PopulateFilterPanel()
         {
             if (_filterContainer == null) return;
             _filterContainer.Children.Clear();
 
-            var searchGrid = new WpfGrid { Margin = new Thickness(0, 0, 0, 8) };
-            searchGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            searchGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-            searchGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            searchGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            searchGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _displayToKey.Clear();
+            _allTypeKeys.Clear();
 
-            var familyLbl = MakeFilterLabel("Family name");
-            var typeLbl   = MakeFilterLabel("Type name");
-            WpfGrid.SetRow(familyLbl, 0); WpfGrid.SetColumn(familyLbl, 0);
-            WpfGrid.SetRow(typeLbl,   0); WpfGrid.SetColumn(typeLbl,   2);
-            searchGrid.Children.Add(familyLbl);
-            searchGrid.Children.Add(typeLbl);
-
-            _filterFamilyBox = BuildSearchBox("Family name…");
-            _filterTypeBox   = BuildSearchBox("Type name…");
-            _filterFamilyBox.TextChanged += (s, e) => RefreshTypeRows();
-            _filterTypeBox.TextChanged   += (s, e) => RefreshTypeRows();
-
-            WpfGrid.SetRow(_filterFamilyBox, 1); WpfGrid.SetColumn(_filterFamilyBox, 0);
-            WpfGrid.SetRow(_filterTypeBox,   1); WpfGrid.SetColumn(_filterTypeBox,   2);
-            searchGrid.Children.Add(_filterFamilyBox);
-            searchGrid.Children.Add(_filterTypeBox);
-            _filterContainer.Children.Add(searchGrid);
-
-            var scroll = new ScrollViewer
+            // Group types by source, preserving the scan order (host first via the
+            // command's doc collection). Build the display→key map and key set.
+            var groups   = new Dictionary<string, List<string>>();
+            var groupOrder = new List<string>();
+            foreach (var t in _ceilingTypes
+                .OrderBy(t => t.FamilyName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.TypeName,   StringComparer.OrdinalIgnoreCase))
             {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                MaxHeight = 280,
-            };
-            var rowPanel = new StackPanel();
-            scroll.Content = rowPanel;
-            _filterContainer.Children.Add(scroll);
+                string display = $"{t.FamilyName}  —  {t.TypeName}";
+                string key      = $"{t.FamilyName}|{t.TypeName}";
 
-            _filterContainer.Tag = rowPanel;
-            RefreshTypeRows();
-        }
+                _displayToKey[display] = key;
+                _allTypeKeys.Add(key);
 
-        private void RefreshTypeRows()
-        {
-            if (_filterContainer?.Tag is not StackPanel rowPanel) return;
-            rowPanel.Children.Clear();
+                if (!groups.TryGetValue(t.Source, out var list))
+                {
+                    list = new List<string>();
+                    groups[t.Source] = list;
+                    groupOrder.Add(t.Source);
+                }
+                if (!list.Contains(display)) list.Add(display);
+            }
 
-            string familyFilter = _filterFamilyBox?.Text.Trim() ?? "";
-            string typeFilter   = _filterTypeBox?.Text.Trim()   ?? "";
+            // Drop any stale exclusions that no longer correspond to a scanned type.
+            _excludedTypeKeys.IntersectWith(_allTypeKeys);
 
-            var filtered = _ceilingTypes
-                .Where(t => (string.IsNullOrEmpty(familyFilter) ||
-                             t.FamilyName.IndexOf(familyFilter, StringComparison.OrdinalIgnoreCase) >= 0)
-                         && (string.IsNullOrEmpty(typeFilter) ||
-                             t.TypeName.IndexOf(typeFilter, StringComparison.OrdinalIgnoreCase) >= 0))
-                .OrderBy(t => t.Source)
-                .ThenBy(t => t.FamilyName)
-                .ThenBy(t => t.TypeName)
+            // Ordered groups (host source label sorts naturally; keep scan order).
+            var orderedGroups = new Dictionary<string, List<string>>();
+            foreach (var src in groupOrder) orderedGroups[src] = groups[src];
+
+            // Initial selection = every display whose key is NOT excluded (i.e. included).
+            var initialSelected = _displayToKey
+                .Where(kv => !_excludedTypeKeys.Contains(kv.Value))
+                .Select(kv => kv.Key)
                 .ToList();
 
-            foreach (var entry in filtered)
+            var tabs = new LemoineMultiSelectTabs { AccessibleName = "Ceiling types by model" };
+            // Subscribe BEFORE SetGroups — SetGroups fires SelectionChanged once at the
+            // end of setup, which is what initialises our excluded-key mirror.
+            tabs.SelectionChanged += selected =>
             {
-                string key      = $"{entry.Source}|{entry.FamilyName}|{entry.TypeName}";
-                bool   included = !_excludedTypeKeys.Contains(key);
+                var includedKeys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var d in selected)
+                    if (_displayToKey.TryGetValue(d, out var k)) includedKeys.Add(k);
 
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 3) };
-
-                var cb = new CheckBox { IsChecked = included, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-                var capturedKey = key;
-                cb.Checked   += (s, e) => { _excludedTypeKeys.Remove(capturedKey);   OnValidationChanged(); };
-                cb.Unchecked += (s, e) => { _excludedTypeKeys.Add(capturedKey);      OnValidationChanged(); };
-
-                var label = new TextBlock
-                {
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming      = TextTrimming.CharacterEllipsis,
-                };
-                label.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                label.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                label.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-                var src   = entry.Source == "(Host document)" ? "" : $"[{entry.Source}] ";
-                label.Text = $"{src}{entry.FamilyName}  —  {entry.TypeName}";
-
-                row.Children.Add(cb);
-                row.Children.Add(label);
-                rowPanel.Children.Add(row);
-            }
-
-            if (filtered.Count == 0)
-            {
-                var none = new TextBlock
-                {
-                    Text      = "No ceiling types match the current filter.",
-                    FontStyle = FontStyles.Italic,
-                    Margin    = new Thickness(0, 4, 0, 0),
-                };
-                none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                rowPanel.Children.Add(none);
-            }
-        }
-
-        private static TextBlock MakeFilterLabel(string text)
-        {
-            var tb = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 3) };
-            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            return tb;
-        }
-
-        private static WpfTextBox BuildSearchBox(string placeholder)
-        {
-            var tb = new WpfTextBox
-            {
-                Padding         = new Thickness(6, 3, 6, 3),
-                BorderThickness = new Thickness(1),
-                ToolTip         = placeholder,
+                _excludedTypeKeys = new HashSet<string>(
+                    _allTypeKeys.Where(k => !includedKeys.Contains(k)), StringComparer.Ordinal);
+                OnValidationChanged();
             };
-            tb.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            tb.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
-            tb.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
-            tb.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
-            tb.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
-            tb.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
-            return tb;
+            tabs.SetGroups(orderedGroups, initialSelected);
+
+            _filterContainer.Children.Add(tabs);
         }
 
         // ── Step 3: Export Location ───────────────────────────────────────
@@ -426,88 +364,39 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── Step 5: Review & Run ───────────────────────────────────────────
-        private FrameworkElement BuildRunStep()
+        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            var outer = new StackPanel();
+            ("types",     "Ceiling Types"),
+            ("folder",    "Output Folder"),
+            ("subfolder", "Subfolder Mode"),
+            ("dwg",       "DWG Version"),
+            ("docs",      "Documents"),
+        };
 
-            var grid = new WpfGrid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            AddReviewCard(grid, "Ceiling Types",
-                () =>
+        public IDictionary<string, string> ReviewValues
+        {
+            get
+            {
+                int total    = DistinctTypeCount();
+                int excluded = _excludedTypeKeys.Count;
+                return new Dictionary<string, string>
                 {
-                    int total    = _ceilingTypes.Count;
-                    int excluded = _excludedTypeKeys.Count;
-                    return total == 0 ? "Scan pending" : $"{total - excluded} / {total} included";
-                }, 0, 0);
-
-            AddReviewCard(grid, "Output Folder",
-                () => string.IsNullOrEmpty(_outputFolder) ? "—"
-                    : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
-                0, 1);
-
-            AddReviewCard(grid, "Subfolder Mode",
-                () => _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
-                1, 0);
-
-            AddReviewCard(grid, "DWG Version",
-                () => "DWG 2018",
-                1, 1);
-
-            AddReviewCard(grid, "Documents",
-                () => _selectedDocLabels.Count == 0 ? "None"
-                    : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
-                2, 0);
-
-            outer.Children.Add(grid);
-            return outer;
+                    ["types"]     = total == 0 ? "Scan pending" : $"{total - excluded} / {total} included",
+                    ["folder"]    = string.IsNullOrEmpty(_outputFolder) ? "—"
+                        : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
+                    ["subfolder"] = _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
+                    ["dwg"]       = "DWG 2018",
+                    ["docs"]      = _selectedDocLabels.Count == 0 ? "None"
+                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
+                };
+            }
         }
 
-        private void AddReviewCard(WpfGrid grid, string label, Func<string> val, int row, int col)
-        {
-            while (grid.RowDefinitions.Count <= row)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => null;
 
-            var card = new Border
-            {
-                Margin          = new Thickness(col == 1 ? 4 : 0, row > 0 ? 4 : 0, 0, 0),
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 7, 10, 7),
-            };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var lbl = new TextBlock { Text = label.ToUpper(), Margin = new Thickness(0, 0, 0, 2) };
-            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var capturedVal = val;
-            var valText = new TextBlock
-            {
-                Text         = capturedVal(),
-                FontWeight   = FontWeights.Medium,
-                TextWrapping = TextWrapping.Wrap,
-            };
-            valText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            valText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            valText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            ValidationChanged += (s, e) => valText.Text = capturedVal();
-
-            var sp = new StackPanel();
-            sp.Children.Add(lbl);
-            sp.Children.Add(valText);
-            card.Child = sp;
-
-            WpfGrid.SetRow(card, row);
-            WpfGrid.SetColumn(card, col);
-            grid.Children.Add(card);
-        }
 
         // ═════════════════════════════════════════════════════════════════════
         // IsValid
@@ -531,9 +420,10 @@ namespace LemoineTools.Tools.Ceilings
                         : $"{_selectedDocLabels.Count} document(s)";
                 case "filter":
                     if (!_scanDone) return "Scan pending";
+                    int total    = DistinctTypeCount();
                     int excluded = _excludedTypeKeys.Count;
-                    return excluded == 0 ? $"All {_ceilingTypes.Count} type(s) included"
-                        : $"{_ceilingTypes.Count - excluded}/{_ceilingTypes.Count} included";
+                    return excluded == 0 ? $"All {total} type(s) included"
+                        : $"{total - excluded}/{total} included";
                 case "export":
                     return string.IsNullOrEmpty(_outputFolder) ? "—"
                         : System.IO.Path.GetFileName(_outputFolder.TrimEnd('\\', '/'));
@@ -543,6 +433,13 @@ namespace LemoineTools.Tools.Ceilings
                     return "—";
             }
         }
+
+        // Distinct ceiling types by Family+Type name across all scanned models.
+        private int DistinctTypeCount()
+            => _ceilingTypes
+                .Select(t => $"{t.FamilyName}|{t.TypeName}")
+                .Distinct(StringComparer.Ordinal)
+                .Count();
 
         // ═════════════════════════════════════════════════════════════════════
         // Run
@@ -564,9 +461,11 @@ namespace LemoineTools.Tools.Ceilings
             MakeCeilingGridsSettings.Instance.UseCeilingGridsSubfolder = _useCeilingGridsSubfolder;
             MakeCeilingGridsSettings.Instance.Save();
 
-            // Build included types list
-            var includedTypes = _ceilingTypes
-                .Where(t => !_excludedTypeKeys.Contains($"{t.Source}|{t.FamilyName}|{t.TypeName}"))
+            // Build excluded (Family, Type) name pairs — distinct across all models.
+            var excludedTypeNames = _ceilingTypes
+                .Select(t => (t.FamilyName, t.TypeName))
+                .Distinct()
+                .Where(p => _excludedTypeKeys.Contains($"{p.FamilyName}|{p.TypeName}"))
                 .ToList();
 
             bool includeHost = false;
@@ -580,7 +479,7 @@ namespace LemoineTools.Tools.Ceilings
 
             _runHandler.IncludeHost             = includeHost;
             _runHandler.LinkInstIds             = linkInstIds;
-            _runHandler.IncludedTypes           = includedTypes;
+            _runHandler.ExcludedTypeNames       = excludedTypeNames;
             _runHandler.OutputFolder            = _outputFolder;
             _runHandler.UseCeilingGridsSubfolder = _useCeilingGridsSubfolder;
             _runHandler.PushLog                 = pushLog;

@@ -10,7 +10,6 @@ using System.Windows.Shapes;
 using System.Windows.Shell;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Lemoine.Controls.Input;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
@@ -1061,7 +1060,6 @@ namespace LemoineTools.Preview
                 ("tx",      "Batch Export"),
                 ("ty",      "Batch Dimension"),
                 ("tz",      "Create Sheets"),
-                ("tw",      "Sheet Pack"),
             };
             const int pillNavVisible = 6;
 
@@ -1228,7 +1226,6 @@ namespace LemoineTools.Preview
                 case "tx":       content = BuildSpecContent(BuildBatchExportProxy(),    "Batch Export");      break;
                 case "ty":       content = BuildSpecContent(BuildBatchDimensionProxy(), "Batch Dimension");   break;
                 case "tz":       content = BuildSpecContent(BuildCreateSheetsProxy(),   "Create Sheets");     break;
-                case "tw":       content = BuildSpecContent(BuildSheetPackProxy(),      "Sheet Pack");        break;
                 default:         content = BuildGeneralContent();                                             break;
             }
 
@@ -1759,54 +1756,6 @@ namespace LemoineTools.Preview
                         case "startingNumber":
                             if (int.TryParse(val?.ToString(), out int n) && n >= 1) s.DefaultStartingNumber = n;
                             break;
-                    }
-                    s.Save();
-                });
-        }
-
-        private ILemoineToolSettings BuildSheetPackProxy()
-        {
-            var s = SheetPackSettings.Instance;
-            return new SpecProxy(
-                new LemoineToolSettingsSpec
-                {
-                    Id = "tw", Label = "Sheet Pack", Icon = "",
-                    Description = "Parameter names and default export folder.",
-                    Groups = new List<LemoineSettingsGroup>
-                    {
-                        new LemoineSettingsGroup
-                        {
-                            Id = "G1", Title = "Parameter Mapping", OpenByDefault = true,
-                            Hint = "Names of the Revit parameters to write pack metadata into.",
-                            Settings = new List<LemoineSettingDef>
-                            {
-                                new LemoineSettingDef { Id="packNameParam", Kind="text", Label="Pack Name Parameter",
-                                    Hint="Revit parameter name on ViewSheet to receive the pack name.",
-                                    Options=new TextOpts { Placeholder="Issue Set" }, Default=s.PackNameParameter },
-                                new LemoineSettingDef { Id="purposeParam", Kind="text", Label="Issue Purpose Parameter",
-                                    Hint="Revit parameter name on ViewSheet to receive the issue purpose.",
-                                    Options=new TextOpts { Placeholder="Issue Purpose" }, Default=s.IssuePurposeParameter },
-                            }
-                        },
-                        new LemoineSettingsGroup
-                        {
-                            Id = "G2", Title = "Export Defaults",
-                            Settings = new List<LemoineSettingDef>
-                            {
-                                new LemoineSettingDef { Id="exportFolder", Kind="file", Label="Default Export Folder",
-                                    Hint="Pre-filled output folder path for PDF export.",
-                                    Options=new FileOpts { Placeholder="Select folder…" }, Default=s.DefaultExportFolder },
-                            }
-                        }
-                    }
-                },
-                (groupId, sid, val) =>
-                {
-                    switch (sid)
-                    {
-                        case "packNameParam":  s.PackNameParameter   = val?.ToString() ?? ""; break;
-                        case "purposeParam":   s.IssuePurposeParameter = val?.ToString() ?? ""; break;
-                        case "exportFolder":   s.DefaultExportFolder = val?.ToString() ?? ""; break;
                     }
                     s.Save();
                 });

@@ -9,8 +9,10 @@ namespace LemoineTools.Lemoine
     public enum LemoineUiSize { Small, Medium, Large, ExtraLarge }
 
     /// <summary>Persisted UI settings DTO — written to %AppData%\LemoineTools\UISettings.xml.</summary>
+    /// <remarks>Must be <c>public</c>: <see cref="XmlSerializer"/> cannot process a non-public root type,
+    /// which previously made every theme/UI-size save throw and silently drop to defaults on restart.</remarks>
     [XmlRoot("LemoineUISettings")]
-    internal sealed class UISettingsDto
+    public sealed class UISettingsDto
     {
         [XmlAttribute] public string Theme  { get; set; } = nameof(LemoineTheme.DarkMono);
         [XmlAttribute] public string UiSize { get; set; } = nameof(LemoineUiSize.Medium);
@@ -77,6 +79,8 @@ namespace LemoineTools.Lemoine
         public double AnimExpand   => 280;
         /// <summary>Duration in milliseconds for progress-bar fill animations (350 ms).</summary>
         public double AnimProgress => 350;
+        /// <summary>Duration in milliseconds for the press/tap scale feedback — snappy (90 ms).</summary>
+        public double AnimPress    => 90;
 
         // ── Convenience scaled helpers ────────────────────────────────────────
         /// <summary>Scales a raw design-pixel value by <see cref="Scale"/> and rounds to one decimal place.</summary>
@@ -154,6 +158,7 @@ namespace LemoineTools.Lemoine
             r["LemoineRadius_SM"]   = new System.Windows.CornerRadius(3);
             r["LemoineRadius_MD"]   = new System.Windows.CornerRadius(4);
             r["LemoineRadius_Chip"] = new System.Windows.CornerRadius(10);
+            r["LemoineRadius_Card"] = new System.Windows.CornerRadius(10);
 
             // ── Thickness resources ───────────────────────────────────────────
             r["LemoineTh_ToolbarMar"]   = Th(14, 0, 14, 0);
@@ -204,7 +209,7 @@ namespace LemoineTools.Lemoine
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LemoineTools] UISettings load failed: {ex.Message}");
+                LemoineLog.Swallowed("LemoineSettings: load UISettings.xml (using defaults)", ex);
             }
         }
 
@@ -221,7 +226,7 @@ namespace LemoineTools.Lemoine
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LemoineTools] UISettings save failed: {ex.Message}");
+                LemoineLog.Error("LemoineSettings: save UISettings.xml failed — theme/size will not persist", ex);
             }
         }
     }

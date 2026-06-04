@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -142,7 +143,7 @@ namespace LemoineTools.Tools.Ceilings
                     if (rec.Face.Project(ps) == null || rec.Face.Project(pe) == null) continue;
                     result.Add(Line.CreateBound(ps, pe));
                 }
-                catch { /* skip degenerate */ }
+                catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
             }
             return result;
         }
@@ -163,7 +164,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch
             {
-                try { doc.Create.NewDetailCurve(view, curve); } catch { }
+                try { doc.Create.NewDetailCurve(view, curve); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: create detail curve", __lex); }
             }
         }
     }
