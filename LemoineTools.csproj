@@ -97,49 +97,4 @@
     <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
-  <!-- Stamp the current git branch + short commit into the assembly as metadata, so the
-       settings footer can show exactly which source the deployed DLL was built from. Reads
-       the .git files directly (no git.exe on PATH required — Visual Studio's build env often
-       lacks it). Falls back to "unknown" if .git can't be read, and the build still succeeds. -->
-  <Target Name="StampGitInfo" BeforeTargets="CoreCompile">
-    <PropertyGroup>
-      <_GitDir>$(MSBuildProjectDirectory)\.git</_GitDir>
-    </PropertyGroup>
-    <PropertyGroup Condition="Exists('$(_GitDir)\HEAD')">
-      <_GitHeadRaw>$([System.IO.File]::ReadAllText('$(_GitDir)\HEAD'))</_GitHeadRaw>
-      <_GitHead>$(_GitHeadRaw.Trim())</_GitHead>
-    </PropertyGroup>
-    <!-- Normal case: HEAD points at a branch — "ref: refs/heads/<branch>". -->
-    <PropertyGroup Condition="'$(_GitHead)' != '' and $(_GitHead.StartsWith('ref:'))">
-      <GitBranch>$(_GitHead.Substring(16))</GitBranch>
-      <_GitRefRel>$(_GitHead.Substring(5))</_GitRefRel>
-    </PropertyGroup>
-    <PropertyGroup Condition="'$(_GitRefRel)' != '' and Exists('$(_GitDir)\$(_GitRefRel)')">
-      <_GitCommitRaw>$([System.IO.File]::ReadAllText('$(_GitDir)\$(_GitRefRel)'))</_GitCommitRaw>
-      <GitCommit>$(_GitCommitRaw.Trim())</GitCommit>
-    </PropertyGroup>
-    <!-- Detached HEAD: HEAD holds the commit SHA directly (not a "ref:"). -->
-    <PropertyGroup Condition="'$(GitBranch)' == '' and '$(_GitHead)' != ''">
-      <GitBranch>detached</GitBranch>
-      <GitCommit>$(_GitHead)</GitCommit>
-    </PropertyGroup>
-    <PropertyGroup>
-      <GitBranch Condition="'$(GitBranch)' == ''">unknown</GitBranch>
-      <GitCommit Condition="'$(GitCommit)' == ''">unknown</GitCommit>
-      <GitCommitShort>$(GitCommit)</GitCommitShort>
-      <GitCommitShort Condition="$(GitCommit.Length) &gt; 7">$(GitCommit.Substring(0,7))</GitCommitShort>
-      <GitInfoFile>$(IntermediateOutputPath)GitInfo.g.cs</GitInfoFile>
-    </PropertyGroup>
-    <ItemGroup>
-      <_GitInfoLines Include="[assembly: System.Reflection.AssemblyMetadata(&quot;GitBranch&quot;, &quot;$(GitBranch)&quot;)]" />
-      <_GitInfoLines Include="[assembly: System.Reflection.AssemblyMetadata(&quot;GitCommit&quot;, &quot;$(GitCommitShort)&quot;)]" />
-    </ItemGroup>
-    <MakeDir Directories="$(IntermediateOutputPath)" />
-    <WriteLinesToFile File="$(GitInfoFile)" Lines="@(_GitInfoLines)" Overwrite="true" WriteOnlyWhenDifferent="true" />
-    <ItemGroup>
-      <Compile Include="$(GitInfoFile)" />
-      <FileWrites Include="$(GitInfoFile)" />
-    </ItemGroup>
-  </Target>
-
 </Project>
