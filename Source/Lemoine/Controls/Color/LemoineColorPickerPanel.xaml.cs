@@ -489,6 +489,7 @@ namespace LemoineTools.Lemoine.Controls
 
             foreach (var b in boxes) b.LostFocus += (s, e) => CommitRgba();
             foreach (var b in boxes) b.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitRgba(); e.Handled = true; } };
+            foreach (var b in boxes) WireNumericBox(b);
 
             right.Children.Add(rgbaGrid);
 
@@ -1200,6 +1201,41 @@ namespace LemoineTools.Lemoine.Controls
             (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 
         private static bool IsHexText(string s) => !string.IsNullOrEmpty(s) && s.All(IsHexChar);
+
+        private static bool IsDigits(string s) => !string.IsNullOrEmpty(s) && s.All(char.IsDigit);
+
+        // Give an R/G/B/A box the same behaviour as the hex box: select-all on focus,
+        // digits-only input, sanitised paste, and live colour updates with no Enter needed.
+        private void WireNumericBox(TextBox b)
+        {
+            b.GotKeyboardFocus += (s, e) => b.SelectAll();
+            b.GotMouseCapture  += (s, e) => b.SelectAll();
+            b.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (b.IsKeyboardFocusWithin) return;
+                e.Handled = true;
+                b.Focus();
+                b.SelectAll();
+            };
+            b.PreviewTextInput += (s, e) => { if (!IsDigits(e.Text)) e.Handled = true; };
+            DataObject.AddPastingHandler(b, (s, e) =>
+            {
+                if (e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true))
+                {
+                    var raw     = e.SourceDataObject.GetData(DataFormats.UnicodeText) as string ?? "";
+                    var cleaned = new string(raw.Where(char.IsDigit).ToArray());
+                    if (cleaned.Length > b.MaxLength) cleaned = cleaned.Substring(0, b.MaxLength);
+                    b.SelectedText = cleaned;
+                }
+                e.CancelCommand();
+            });
+            // Live-update the colour as the value changes; ignore programmatic RefreshAll writes (unfocused).
+            b.TextChanged += (s, e) =>
+            {
+                if (!b.IsKeyboardFocusWithin) return;
+                if (!string.IsNullOrEmpty(b.Text)) CommitRgba();
+            };
+        }
 
         private void CommitHex()
         {
