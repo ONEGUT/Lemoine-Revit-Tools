@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.Testing;
 
 namespace LemoineTools.Commands
