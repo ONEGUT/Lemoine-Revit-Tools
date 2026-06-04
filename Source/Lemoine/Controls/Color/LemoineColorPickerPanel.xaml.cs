@@ -25,6 +25,7 @@ namespace LemoineTools.Lemoine.Controls
         private const int ProjectSwatchSize = 30;
         private const int RecentSwatchSize  = 22;
         private const int RightColWidth     = 204;  // 6 × (30px swatch + 4px margin)
+        private const int HexLength         = 6;     // RRGGBB — the hex box accepts exactly this many digits
 
         private static readonly string PersistPath =
             IOPath.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -427,12 +428,22 @@ namespace LemoineTools.Lemoine.Controls
                 Background               = Brushes.Transparent,
                 Padding                  = new Thickness(0, 7, 8, 7),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                MaxLength                = 8,
+                MaxLength                = HexLength,   // exactly 6 RGB hex digits — no more, no less
             };
             _hexBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
             _hexBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
             _hexBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
             _hexBox.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            // Select the whole value on focus so a paste overwrites it wholesale.
+            _hexBox.GotKeyboardFocus        += (s, e) => _hexBox.SelectAll();
+            _hexBox.GotMouseCapture         += (s, e) => _hexBox.SelectAll();
+            _hexBox.PreviewMouseLeftButtonDown += HexBox_PreviewMouseLeftButtonDown;
+            // Only allow hex digits to be typed.
+            _hexBox.PreviewTextInput        += (s, e) => { if (!IsHexText(e.Text)) e.Handled = true; };
+            // Sanitise paste: strip '#'/non-hex, keep at most HexLength digits.
+            DataObject.AddPastingHandler(_hexBox, HexBox_OnPaste);
+            // Live-update the colour the instant the value becomes a complete hex — no Enter needed.
+            _hexBox.TextChanged += HexBox_TextChanged;
             _hexBox.LostFocus += (s, e) => CommitHex();
             _hexBox.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitHex(); e.Handled = true; } };
             hexInner.Children.Add(hashLbl);
@@ -478,6 +489,7 @@ namespace LemoineTools.Lemoine.Controls
 
             foreach (var b in boxes) b.LostFocus += (s, e) => CommitRgba();
             foreach (var b in boxes) b.KeyDown   += (s, e) => { if (e.Key == Key.Enter) { CommitRgba(); e.Handled = true; } };
+            foreach (var b in boxes) WireNumericBox(b);
 
             right.Children.Add(rgbaGrid);
 
@@ -561,7 +573,7 @@ namespace LemoineTools.Lemoine.Controls
             btn.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
             btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var inner = new Grid();
+            var inner = new Grid { Background = Brushes.Transparent }; // hit-testable across the whole button, not just the text
             inner.ColumnDefinitions.Add(new ColumnDefinition());
             inner.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -597,7 +609,27 @@ namespace LemoineTools.Lemoine.Controls
             {
                 RefreshDropdownContent();
                 _setDropdownPanel.Visibility = Visibility.Visible;
+
+                // Close the dropdown when the user clicks anywhere outside it.
+                // Window-level PreviewMouseDown (detached on collapse) is the crash-safe
+                // alternative to a StaysOpen=false popup hook.
+                var win = Window.GetWindow(this);
+                if (win != null)
+                {
+                    win.PreviewMouseDown -= OnWindowPreviewMouseDown_Dropdown; // guard against double-attach
+                    win.PreviewMouseDown += OnWindowPreviewMouseDown_Dropdown;
+                }
             }
+        }
+
+        private void OnWindowPreviewMouseDown_Dropdown(object sender, MouseButtonEventArgs e)
+        {
+            if (_setDropdownPanel == null || _setDropdownPanel.Visibility != Visibility.Visible) return;
+
+            bool insidePanel  = _setDropdownPanel.IsMouseOver;
+            bool insideButton = _dropdownBtn != null && _dropdownBtn.IsMouseOver;
+            if (!insidePanel && !insideButton)
+                CollapseDropdown();
         }
 
         private FrameworkElement BuildSetDropdownPanel()
@@ -624,6 +656,10 @@ namespace LemoineTools.Lemoine.Controls
         {
             if (_setDropdownPanel != null)
                 _setDropdownPanel.Visibility = Visibility.Collapsed;
+
+            var win = Window.GetWindow(this);
+            if (win != null)
+                win.PreviewMouseDown -= OnWindowPreviewMouseDown_Dropdown;
         }
 
         private void RefreshDropdownContent()
@@ -637,18 +673,82 @@ namespace LemoineTools.Lemoine.Controls
                 var capturedIdx = setIndex;
 
                 var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-                row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition());                           // name / rename field
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // Edit
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // Delete
 
                 var nameTb = MakeLabel(cs.Name);
-                nameTb.Margin = new Thickness(4, 4, 4, 4);
-                nameTb.Cursor = Cursors.Hand;
+                nameTb.Margin     = new Thickness(4, 4, 4, 4);
+                nameTb.Cursor     = Cursors.Hand;
+                nameTb.Background  = Brushes.Transparent; // make the full column width clickable, not just the glyphs
                 nameTb.MouseLeftButtonUp += (s, e) =>
                 {
                     SwitchToSet(capturedIdx);
                 };
                 Grid.SetColumn(nameTb, 0);
                 row.Children.Add(nameTb);
+
+                // Inline rename field — hidden until Edit is pressed.
+                var renameBox = new TextBox
+                {
+                    Text            = cs.Name,
+                    Padding         = new Thickness(6, 4, 6, 4),
+                    BorderThickness = new Thickness(1),
+                    MaxLength       = 32,
+                    Visibility      = Visibility.Collapsed,
+                };
+                renameBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+                renameBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+                renameBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+                renameBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
+                renameBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
+                renameBox.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+                Grid.SetColumn(renameBox, 0);
+                row.Children.Add(renameBox);
+
+                var editBtn = LemoineControlStyles.BuildSmallButton(
+                    "Edit", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                editBtn.Margin = new Thickness(4, 2, 2, 2);
+                Grid.SetColumn(editBtn, 1);
+                row.Children.Add(editBtn);
+
+                bool committing = false;
+                Action commitRename = () =>
+                {
+                    if (committing) return;
+                    committing = true;
+                    var newName = renameBox.Text?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(newName))
+                    {
+                        RenameSet(capturedIdx, newName);   // rebuilds the dropdown
+                    }
+                    else
+                    {
+                        renameBox.Visibility = Visibility.Collapsed;
+                        nameTb.Visibility    = Visibility.Visible;
+                    }
+                };
+
+                editBtn.Click += (s, e) =>
+                {
+                    nameTb.Visibility    = Visibility.Collapsed;
+                    renameBox.Visibility = Visibility.Visible;
+                    renameBox.Text       = cs.Name;
+                    renameBox.Focus();
+                    renameBox.SelectAll();
+                    e.Handled = true;
+                };
+                renameBox.LostFocus += (s, e) => commitRename();
+                renameBox.KeyDown   += (s, e) =>
+                {
+                    if (e.Key == Key.Enter)  { commitRename(); e.Handled = true; }
+                    else if (e.Key == Key.Escape)
+                    {
+                        renameBox.Visibility = Visibility.Collapsed;
+                        nameTb.Visibility    = Visibility.Visible;
+                        e.Handled = true;
+                    }
+                };
 
                 if (_colorSets.Count > 1)
                 {
@@ -688,7 +788,7 @@ namespace LemoineTools.Lemoine.Controls
                         _removePopup.IsOpen = true;
                         e.Handled = true;
                     };
-                    Grid.SetColumn(deleteBtn, 1);
+                    Grid.SetColumn(deleteBtn, 2);
                     row.Children.Add(deleteBtn);
                 }
 
@@ -796,6 +896,15 @@ namespace LemoineTools.Lemoine.Controls
             SavePersisted();
             RefreshProjectGrid();
             RefreshDropdownLabel();
+        }
+
+        private void RenameSet(int idx, string name)
+        {
+            if (idx < 0 || idx >= _colorSets.Count) return;
+            _colorSets[idx].Name = name;
+            SavePersisted();
+            RefreshDropdownLabel();
+            RefreshDropdownContent();
         }
 
         private void DeleteSet(int idx)
@@ -1082,6 +1191,77 @@ namespace LemoineTools.Lemoine.Controls
         // ─────────────────────────────────────────────────────────────────────
         // Commit text inputs
         // ─────────────────────────────────────────────────────────────────────
+        // First click into the (unfocused) box focuses it and selects everything,
+        // so the next paste/keystroke overwrites the value rather than inserting.
+        private void HexBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_hexBox == null || _hexBox.IsKeyboardFocusWithin) return;
+            e.Handled = true;
+            _hexBox.Focus();
+            _hexBox.SelectAll();
+        }
+
+        private void HexBox_OnPaste(object sender, DataObjectPastingEventArgs e)
+        {
+            if (e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true))
+            {
+                var raw      = e.SourceDataObject.GetData(DataFormats.UnicodeText) as string ?? "";
+                var cleaned  = new string(raw.Where(IsHexChar).ToArray());
+                if (cleaned.Length > HexLength) cleaned = cleaned.Substring(0, HexLength);
+
+                // SelectAll on focus means the box is empty of selection-survivors; replace wholesale.
+                if (_hexBox != null) _hexBox.SelectedText = cleaned;
+            }
+            e.CancelCommand(); // we have already applied the sanitised text
+        }
+
+        private void HexBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // Only react to user edits; programmatic RefreshAll updates happen while unfocused.
+            if (_hexBox == null || !_hexBox.IsKeyboardFocusWithin) return;
+            if (_hexBox.Text?.Length == HexLength) CommitHex();
+        }
+
+        private static bool IsHexChar(char c) =>
+            (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+
+        private static bool IsHexText(string s) => !string.IsNullOrEmpty(s) && s.All(IsHexChar);
+
+        private static bool IsDigits(string s) => !string.IsNullOrEmpty(s) && s.All(char.IsDigit);
+
+        // Give an R/G/B/A box the same behaviour as the hex box: select-all on focus,
+        // digits-only input, sanitised paste, and live colour updates with no Enter needed.
+        private void WireNumericBox(TextBox b)
+        {
+            b.GotKeyboardFocus += (s, e) => b.SelectAll();
+            b.GotMouseCapture  += (s, e) => b.SelectAll();
+            b.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (b.IsKeyboardFocusWithin) return;
+                e.Handled = true;
+                b.Focus();
+                b.SelectAll();
+            };
+            b.PreviewTextInput += (s, e) => { if (!IsDigits(e.Text)) e.Handled = true; };
+            DataObject.AddPastingHandler(b, (s, e) =>
+            {
+                if (e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true))
+                {
+                    var raw     = e.SourceDataObject.GetData(DataFormats.UnicodeText) as string ?? "";
+                    var cleaned = new string(raw.Where(char.IsDigit).ToArray());
+                    if (cleaned.Length > b.MaxLength) cleaned = cleaned.Substring(0, b.MaxLength);
+                    b.SelectedText = cleaned;
+                }
+                e.CancelCommand();
+            });
+            // Live-update the colour as the value changes; ignore programmatic RefreshAll writes (unfocused).
+            b.TextChanged += (s, e) =>
+            {
+                if (!b.IsKeyboardFocusWithin) return;
+                if (!string.IsNullOrEmpty(b.Text)) CommitRgba();
+            };
+        }
+
         private void CommitHex()
         {
             if (_hexBox == null) return;
