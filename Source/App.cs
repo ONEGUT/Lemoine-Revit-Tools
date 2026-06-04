@@ -361,17 +361,20 @@ namespace LemoineTools
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
                     "Create one 3D view per link with a section box, with optional combined views per discipline."));
 
-            // ── Settings / Developer — one compact stacked panel ──────────────
+            // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
 
-            settingsPanel.AddStackedItems(
+            settingsPanel.AddItem(
                 new PushButtonData("LT_OpenSettings", "Settings", dll,
                     "LemoineTools.Commands.OpenSettingsCommand")
                 {
-                    ToolTip = "Open Lemoine Tools global settings — themes, UI size, and per-tool options.",
-                    Image   = CreateGearBitmap(16),
-                },
-                Btn("LT_DebugTool", "UI Debug", "DebugToolCommand",
+                    ToolTip    = "Open Lemoine Tools global settings — themes, UI size, and per-tool options.",
+                    LargeImage = CreateGearBitmap(32),
+                    Image      = CreateGearBitmap(16),
+                });
+
+            settingsPanel.AddItem(
+                Btn("LT_DebugTool", "UI\nDebug", "DebugToolCommand",
                     "Exercise every Lemoine input control and UI element.", "\uE7B3"));
 
             return Result.Succeeded;
