@@ -262,6 +262,14 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 
 Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **window-level `PreviewMouseDown` handler only while it is open** and closing when the click lands outside the popup content (`!popupRoot.IsMouseOver`); detach on `Closed`. The popup hosts its own hwnd, so its own clicks never tunnel through the window — no `ThreadFilterMessage` hook, no crash.
 
+### Popup / dropdown scroll-wheel behaviour
+
+These were discovered fixing the "category pill dropdown scrolls down but not up" bug.
+
+- Inside an `AllowsTransparency=true` `Popup` (Revit's WPF hosting), the default `ScrollViewer` mouse-wheel handling is **unreliable and asymmetric** — it delivers down-scrolls but drops up-scrolls. Don't rely on it: handle `PreviewMouseWheel`, drive the offset yourself with `ScrollToVerticalOffset` (clamped to `[0, ScrollableHeight]`), and set `e.Handled = true`. Manual scrolling is symmetric by construction.
+- A `Popup`'s routed events **bubble up into the owner window's element tree**, so a popup-hosted scroller that re-raises the wheel to its parent lets the *page's* scroll position govern the dropdown (the page being at the top blocks scrolling the popup up). Popup/dropdown scrollers must be **self-contained** — consume the wheel, never bubble it out to the page behind them. In-page nested scrollers are the opposite: they *should* bubble to the page at their limits (`LemoineControlStyles.WireBubblingScroll`).
+- Visual-tree popup detection (walking `VisualTreeHelper` parents up to a `PopupRoot`) is **unreliable under Revit's hosting**. Tag popup scrollers authoritatively with `LemoineControlStyles.SetSelfContainedScroll(sv, true)`; the `PresentationSource.RootVisual == PopupRoot` check is only a backstop.
+
 ### Revit API gotchas (Revit 2024)
 
 | Wrong | Correct |
