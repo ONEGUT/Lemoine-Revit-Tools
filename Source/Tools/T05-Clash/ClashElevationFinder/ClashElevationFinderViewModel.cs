@@ -11,14 +11,14 @@ using LemoineTools.Lemoine.Controls;
 namespace LemoineTools.Tools.Testing
 {
     /// <summary>
-    /// Clash Finder &amp; Dimension wizard: pick saved definition(s) + views, detect clashes
-    /// and place coloured ES-tagged markers. A checkbox controls whether the (discovery-only)
-    /// dimension pass runs afterward. The actual work happens in <see cref="ClashFinderEventHandler"/>.
+    /// Clash Finder &amp; Elevation Tag wizard: pick saved definition(s) + section/elevation views,
+    /// detect clashes and place coloured round markers, then tag each round with a spot elevation at
+    /// its top, centre, or bottom. The actual work happens in <see cref="ClashElevationFinderEventHandler"/>.
     /// </summary>
-    public class ClashFinderViewModel : ILemoineTool
+    public class ClashElevationFinderViewModel : ILemoineTool
     {
-        public string Title    => "Clash Finder & Dimension";
-        public string RunLabel => "Find & Mark Clashes →";
+        public string Title    => "Clash Finder & Elevation Tag";
+        public string RunLabel => "Find & Tag Clashes →";
 
         public StepDefinition[] Steps => new[]
         {
@@ -31,58 +31,43 @@ namespace LemoineTools.Tools.Testing
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── Revit wiring ──────────────────────────────────────────────────────
-        private readonly ClashFinderEventHandler? _handler;
-        private readonly ExternalEvent?           _event;
-        private readonly AutoDimension.SlabPickEventHandler? _slabPickHandler;
-        private readonly ExternalEvent?                      _slabPickEvent;
-
-        // Up-front slab pick (slab-edge mode): chosen before running.
-        private AutoDimension.Resolvers.SlabScope? _pickedSlab;
-        private string _pickedSlabName = "";
+        private readonly ClashElevationFinderEventHandler? _handler;
+        private readonly ExternalEvent?                     _event;
 
         // ── Data ──────────────────────────────────────────────────────────────
         private readonly List<View> _allViews;
         private readonly List<ClashDefinition> _definitions;
         private readonly Dictionary<string, ClashDefinition> _defDisplayToDef = new Dictionary<string, ClashDefinition>();
+        private readonly List<(string Name, ElementId Id)> _spotTypes;
+        private readonly Dictionary<string, ElementId> _spotTypeByName = new Dictionary<string, ElementId>();
 
         // ── State ─────────────────────────────────────────────────────────────
-        private List<string> _selectedDefDisplays  = new List<string>();
-        private List<string> _selectedViewNames    = new List<string>();
+        private List<string> _selectedDefDisplays = new List<string>();
+        private List<string> _selectedViewNames   = new List<string>();
         private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
 
-        private bool _clearPrevious    = true;
-        private bool _showAllDocuments = false;
-        private bool _runDimensionPass = false;
-        private double _storeyMarginMm = 600.0;   // sub-floor depth still counted as a level's storey (slabs/structure)
-        private double _roundSizeMm    = 0.0;     // round marker diameter; 0 = auto-fit to the clash
+        private bool   _clearPrevious    = true;
+        private bool   _showAllDocuments = false;
+        private double _roundSizeMm      = 0.0;     // round marker diameter; 0 = auto-fit to the clash
+        private string _anchorMode       = "Centre"; // "Top" | "Centre" | "Bottom"
+        private ElementId _spotTypeId    = ElementId.InvalidElementId;
 
-        // Dimension-pass destination + chaining, seeded from the shared auto-dimension config.
-        private const string GridDisplay   = "To Grid";
-        private const string SlabDisplay   = "To Slab Edge";
-        private const string ManualDisplay = "To Picked Edge";
-        private string _dimTargetType =
-            string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
-          : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
-          : "Grid";
-        private bool   _chainAligned     = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
-        private double _chainGapMm       = AutoDimension.AutoDimensionConfig.Instance.ChainMaxGapMm;
-        private double _chainCollinearMm = AutoDimension.AutoDimensionConfig.Instance.ChainCollinearToleranceMm;
-        private double _dupTolMm         = AutoDimension.AutoDimensionConfig.Instance.DuplicateToleranceMm;
+        private const string AnchorTop    = "Top of round";
+        private const string AnchorCentre = "Centre of round";
+        private const string AnchorBottom = "Bottom of round";
 
-        public ClashFinderViewModel(
-            ClashFinderEventHandler? handler,
-            ExternalEvent?           externalEvent,
-            List<View>               allViews,
-            List<ClashDefinition>    definitions,
-            AutoDimension.SlabPickEventHandler? slabPickHandler = null,
-            ExternalEvent?                      slabPickEvent   = null)
+        public ClashElevationFinderViewModel(
+            ClashElevationFinderEventHandler? handler,
+            ExternalEvent?                    externalEvent,
+            List<View>                        allViews,
+            List<ClashDefinition>             definitions,
+            List<(string Name, ElementId Id)> spotTypes)
         {
-            _handler          = handler;
-            _event            = externalEvent;
-            _slabPickHandler  = slabPickHandler;
-            _slabPickEvent    = slabPickEvent;
-            _allViews    = allViews ?? new List<View>();
+            _handler     = handler;
+            _event       = externalEvent;
+            _allViews    = allViews    ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
+            _spotTypes   = spotTypes   ?? new List<(string, ElementId)>();
 
             var used = new HashSet<string>();
             foreach (var def in _definitions)
@@ -97,6 +82,13 @@ namespace LemoineTools.Tools.Testing
             foreach (var v in _allViews)
                 if (!_viewNameToId.ContainsKey(v.Name))
                     _viewNameToId[v.Name] = v.Id;
+
+            foreach (var t in _spotTypes)
+                if (!_spotTypeByName.ContainsKey(t.Name))
+                    _spotTypeByName[t.Name] = t.Id;
+
+            // Default to the first available spot elevation type.
+            if (_spotTypes.Count > 0) _spotTypeId = _spotTypes[0].Id;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -154,11 +146,12 @@ namespace LemoineTools.Tools.Testing
             return WrapInScroll(outer);
         }
 
-        // ── S2 — Select Views ─────────────────────────────────────────────────
+        // ── S2 — Select Views (sections + elevations) ─────────────────────────
         private FrameworkElement BuildViewsStep()
         {
             var outer = new StackPanel();
-            var tabs  = new LemoineMultiSelectTabs();
+            AddLabel(outer, "Pick the section and/or elevation views to mark and tag.");
+            var tabs = new LemoineMultiSelectTabs();
             tabs.SelectionChanged += selected =>
             {
                 _selectedViewNames = new List<string>(selected);
@@ -173,23 +166,23 @@ namespace LemoineTools.Tools.Testing
         {
             var groups = new Dictionary<string, List<string>>
             {
-                ["Floor Plans"]             = new List<string>(),
-                ["Reflected Ceiling Plans"] = new List<string>(),
+                ["Sections"]   = new List<string>(),
+                ["Elevations"] = new List<string>(),
             };
 
             foreach (var v in _allViews)
             {
                 if (!_viewNameToId.ContainsKey(v.Name)) _viewNameToId[v.Name] = v.Id;
-                if (v.ViewType == ViewType.CeilingPlan)
-                    groups["Reflected Ceiling Plans"].Add(v.Name);
+                if (v.ViewType == ViewType.Elevation)
+                    groups["Elevations"].Add(v.Name);
                 else
-                    groups["Floor Plans"].Add(v.Name);
+                    groups["Sections"].Add(v.Name);
             }
 
             foreach (var k in groups.Keys.Where(k => groups[k].Count == 0).ToList())
                 groups.Remove(k);
 
-            if (groups.Count == 0) groups["(No plan views)"] = new List<string>();
+            if (groups.Count == 0) groups["(No section or elevation views)"] = new List<string>();
             return groups;
         }
 
@@ -202,97 +195,57 @@ namespace LemoineTools.Tools.Testing
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "clear", Label = "Clear previous clash markers before running",
-                                 Desc = "Removes earlier Lemoine clash markers in the selected views first.", DefaultOn = _clearPrevious },
+                                 Desc = "Removes earlier Lemoine clash markers and tags in the selected views first.", DefaultOn = _clearPrevious },
                 new ToggleItem { Id = "allDocs", Label = "Scan all documents (ignore saved source filter)",
                                  Desc = "Overrides each definition's saved source documents and scans every loaded model.", DefaultOn = _showAllDocuments },
-                new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
-                                 Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
-                new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
-                                 Desc = "Merge collinear clashes that sit close together into one multi-segment string instead of separate dimensions.", DefaultOn = _chainAligned },
             });
             toggles.StateChanged += state =>
             {
                 state.TryGetValue("clear",   out _clearPrevious);
                 state.TryGetValue("allDocs", out _showAllDocuments);
-                state.TryGetValue("dimPass", out _runDimensionPass);
-                state.TryGetValue("chain",   out _chainAligned);
                 Fire();
             };
             outer.Children.Add(toggles);
 
             AddDivider(outer);
-            AddStepperRow(outer,
-                "Storey depth margin (mm)",
-                "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
-                _storeyMarginMm, min: 0, max: 3000, step: 50, decimals: 0,
-                v => { _storeyMarginMm = v; Fire(); });
+            AddLabel(outer, "Where on the round to place the elevation tag.");
+            var anchorPicker = new LemoineSingleSelect { Label = "Tag position" };
+            anchorPicker.Items = new List<string> { AnchorTop, AnchorCentre, AnchorBottom };
+            anchorPicker.SelectedItem = _anchorMode == "Top" ? AnchorTop
+                                      : _anchorMode == "Bottom" ? AnchorBottom : AnchorCentre;
+            anchorPicker.SelectionChanged += sel =>
+            {
+                _anchorMode = sel == AnchorTop ? "Top"
+                            : sel == AnchorBottom ? "Bottom" : "Centre";
+                Fire();
+            };
+            outer.Children.Add(anchorPicker);
+
+            AddDivider(outer);
+            AddLabel(outer, "Spot elevation type used for each tag.");
+            if (_spotTypes.Count == 0)
+            {
+                AddDim(outer, "No spot elevation type found in this project. Create one (Annotate → Spot Elevation) and re-open this tool — markers will still be placed, but without tags.");
+            }
+            else
+            {
+                var typePicker = new LemoineSingleSelect { Label = "Spot type" };
+                typePicker.Items = _spotTypes.Select(t => t.Name).ToList();
+                typePicker.SelectedItem = _spotTypes.FirstOrDefault(t => t.Id == _spotTypeId).Name ?? _spotTypes[0].Name;
+                typePicker.SelectionChanged += sel =>
+                {
+                    if (sel != null && _spotTypeByName.TryGetValue(sel, out var id)) _spotTypeId = id;
+                    Fire();
+                };
+                outer.Children.Add(typePicker);
+            }
 
             AddDivider(outer);
             AddStepperRow(outer,
                 "Marker oversize (mm, 0 = exact element size)",
-                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much — e.g. 50 makes a 100 mm pipe a 150 mm round and adds 50 mm to a duct's width and height.",
+                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much. Top/bottom tag elevations are measured at the marker's edge, so the oversize also sets how far above/below the clash centre they read.",
                 _roundSizeMm, min: 0, max: 1000, step: 25, decimals: 0,
                 v => { _roundSizeMm = v; Fire(); });
-
-            AddDivider(outer);
-            AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
-            var destPicker = new LemoineSingleSelect { Label = "Destination" };
-            destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
-            destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay
-                                    : _dimTargetType == "ManualDatum" ? ManualDisplay : GridDisplay;
-            destPicker.SelectionChanged += sel =>
-            {
-                _dimTargetType = sel == SlabDisplay ? "SlabEdge"
-                               : sel == ManualDisplay ? "ManualDatum" : "Grid";
-                Fire();
-            };
-            outer.Children.Add(destPicker);
-            if (_dimTargetType == "ManualDatum")
-                AddDim(outer, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
-
-            // Up-front slab pick — used in slab-edge mode; applies to every selected view.
-            AddDivider(outer);
-            AddLabel(outer, "Slab to dimension to (slab-edge mode). Pick a host floor, or a floor inside a Revit link.");
-            var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-            slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            slabStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            Action refreshSlab = () => slabStatus.Text = _pickedSlab == null
-                ? "No slab picked — scans all floors (nearest edge per axis)."
-                : $"Slab: {_pickedSlabName}";
-            refreshSlab();
-
-            var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var pickBtn = LemoineControlStyles.BuildButton("Pick host slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
-            pickBtn.Margin = new Thickness(0, 0, 8, 0);
-            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: false);
-            var pickLinkBtn = LemoineControlStyles.BuildButton("Pick linked slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
-            pickLinkBtn.Margin = new Thickness(0, 0, 8, 0);
-            pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: true);
-            var clearBtn = LemoineControlStyles.BuildButton("Clear", LemoineControlStyles.LemoineButtonVariant.Ghost);
-            clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
-            slabRow.Children.Add(pickBtn);
-            slabRow.Children.Add(pickLinkBtn);
-            slabRow.Children.Add(clearBtn);
-            outer.Children.Add(slabRow);
-            outer.Children.Add(slabStatus);
-
-            AddDivider(outer);
-            AddStepperRow(outer,
-                "Chain max gap (mm)",
-                "Clashes farther apart than this along a run are not chained into the same string.",
-                _chainGapMm, min: 0, max: 10000, step: 100, decimals: 0,
-                v => { _chainGapMm = v; Fire(); });
-            AddStepperRow(outer,
-                "Chain alignment tolerance (mm)",
-                "How far a clash may sit off the shared baseline and still count as in line for chaining.",
-                _chainCollinearMm, min: 0, max: 2000, step: 25, decimals: 0,
-                v => { _chainCollinearMm = v; Fire(); });
-            AddStepperRow(outer,
-                "Duplicate merge tolerance (mm)",
-                "Collapse parallel dimensions on the same axis whose witness lines coincide within this into one. 0 = off.",
-                _dupTolMm, min: 0, max: 2000, step: 25, decimals: 0,
-                v => { _dupTolMm = v; Fire(); });
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -321,9 +274,7 @@ namespace LemoineTools.Tools.Testing
                     var bits = new List<string>();
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
-                    bits.Add(_runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? " · chained" : "")}"
-                        : "dim pass off");
+                    bits.Add($"tag {(_anchorMode == "Top" ? "top" : _anchorMode == "Bottom" ? "bottom" : "centre")}");
                     bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm:F0} mm" : "exact size");
                     return string.Join(" · ", bits);
                 default: return "—";
@@ -348,40 +299,14 @@ namespace LemoineTools.Tools.Testing
                 .ToList();
             _handler.ClearPrevious    = _clearPrevious;
             _handler.ShowAllDocuments = _showAllDocuments;
-            _handler.RunDimensionPass = _runDimensionPass;
-            _handler.DimTargetType    = _dimTargetType;
-            _handler.StoreyMarginMm   = _storeyMarginMm;
-            _handler.RoundSizeMm        = _roundSizeMm;
-            _handler.DimChainAligned    = _chainAligned;
-            _handler.DimChainMaxGapMm   = _chainGapMm;
-            _handler.DimChainCollinearMm = _chainCollinearMm;
-            _handler.DimDuplicateTolMm   = _dupTolMm;
-            _handler.SlabScopes = _pickedSlab != null
-                ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
-                : new List<AutoDimension.Resolvers.SlabScope>();
+            _handler.AnchorMode       = _anchorMode;
+            _handler.SpotTypeId       = _spotTypeId;
+            _handler.RoundSizeMm      = _roundSizeMm;
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;
 
             _event.Raise();
-        }
-
-        // Raises the slab-pick external event; the picked floor (host or linked) comes back on
-        // Revit's main thread and is marshalled to this window's dispatcher.
-        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh, bool inLinks)
-        {
-            if (_slabPickHandler == null || _slabPickEvent == null) return;
-            _slabPickHandler.InLinks = inLinks;
-            _slabPickHandler.OnPicked = (scope, name) =>
-                disp.BeginInvoke(new Action(() =>
-                {
-                    if (scope == null) return;   // cancelled / not a floor — keep the prior choice
-                    _pickedSlab = scope;
-                    _pickedSlabName = name;
-                    refresh();
-                    Fire();
-                }));
-            _slabPickEvent.Raise();
         }
 
         // ── UI helpers ────────────────────────────────────────────────────────

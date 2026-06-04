@@ -4,41 +4,33 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
-using LemoineTools.Tools.Testing.AutoDimension;
+using LemoineTools.Tools.Testing.ElevationTag;
 
 namespace LemoineTools.Tools.Testing
 {
     /// <summary>
-    /// Runs the Clash Finder: for each selected <see cref="ClashDefinition"/> it detects clashes
-    /// and places coloured, ES-tagged markers (one transaction for the whole run). When the
-    /// dimension-pass checkbox is set, it then runs the auto-dimension engine to place dimensions
-    /// from each clash marker out to the chosen target (grids or slab edges).
-    /// Clear-previous is run-level (applied once, before the definition loop) so multi-definition
-    /// runs never wipe earlier markers.
+    /// Runs the Clash Finder for sections / elevations: for each selected <see cref="ClashDefinition"/>
+    /// it detects clashes and draws coloured round markers in the view's vertical plane (one tagged
+    /// diameter line per clash), then places a spot elevation at the chosen top / centre / bottom point
+    /// of each round. Detection + marking happen in one transaction; the elevation-tag pass opens its own
+    /// afterwards (so the freshly placed marker lines are queryable). Clear-previous is run-level.
     /// </summary>
-    public class ClashFinderEventHandler : IExternalEventHandler
+    public class ClashElevationFinderEventHandler : IExternalEventHandler
     {
         // ── Inputs (set by the ViewModel before Raise()) ──────────────────────
-        public List<ElementId>      ViewIds          { get; set; } = new List<ElementId>();
-        public List<ClashDefinition> Definitions     { get; set; } = new List<ClashDefinition>();
-        public bool                 ClearPrevious    { get; set; } = true;
-        public bool                 ShowAllDocuments { get; set; } = false;
-        public bool                 RunDimensionPass { get; set; } = false;
-        public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
-        public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
-        public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
-        public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
-        public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
-        public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"
-        public double               DimDuplicateTolMm   { get; set; } = 25.0;  // merge identical parallel dims within this
-        public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
-            = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
+        public List<ElementId>       ViewIds          { get; set; } = new List<ElementId>();
+        public List<ClashDefinition> Definitions      { get; set; } = new List<ClashDefinition>();
+        public bool                  ClearPrevious    { get; set; } = true;
+        public bool                  ShowAllDocuments { get; set; } = false;
+        public string                AnchorMode       { get; set; } = "Centre";  // "Top" | "Centre" | "Bottom"
+        public ElementId             SpotTypeId       { get; set; } = ElementId.InvalidElementId;
+        public double                RoundSizeMm      { get; set; } = 0.0;       // marker oversize added to the Group 1 element size; 0 = exact
 
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
 
-        public string GetName() => "LemoineTools.Tools.Testing.ClashFinderEventHandler";
+        public string GetName() => "LemoineTools.Tools.Testing.ClashElevationFinderEventHandler";
 
         public void Execute(UIApplication app)
         {
@@ -59,7 +51,7 @@ namespace LemoineTools.Tools.Testing
                 }
                 else
                 {
-                    using (var tx = new Transaction(doc, "Lemoine - Clash Finder"))
+                    using (var tx = new Transaction(doc, "Lemoine - Clash Finder (Elevation Tags)"))
                     {
                         tx.Start();
                         ConfigureFailures(tx);
@@ -84,8 +76,9 @@ namespace LemoineTools.Tools.Testing
                                 CrossLineTypeName = def.CrossLineTypeName,
                                 DimTarget         = def.DimTarget,
                                 MaxClashes        = def.MaxClashes,
-                                StoreyMarginMm    = StoreyMarginMm,
+                                StoreyMarginMm    = 0.0,        // no plan storey band — section/elevation views gate on their own crop
                                 RoundSizeMm       = RoundSizeMm,
+                                ElevationMode     = true,
                             };
 
                             var engine = new ClashEngine(opts, (t, s) => Log(t, s));
@@ -101,36 +94,26 @@ namespace LemoineTools.Tools.Testing
                         Log($"Marking done — {pass} marker(s), {fail} failure(s).", pass > 0 ? "pass" : "fail");
                     }
 
-                    // Dimension pass: place auto-dimensions from each clash marker out to the
-                    // chosen target. Runs after the marking transaction has committed, so the
-                    // freshly placed cross-lines are queryable; the runner opens its own transaction.
-                    if (RunDimensionPass)
+                    // Elevation-tag pass: place a spot elevation at each marker. Runs after the marking
+                    // transaction has committed, so the freshly placed diameter lines are queryable.
+                    if (pass > 0)
                     {
-                        Progress(85, pass, fail, skip);
-                        Log("Running dimension pass…", "info");
+                        if (SpotTypeId == ElementId.InvalidElementId)
+                        {
+                            Log("No spot elevation type available in this project — markers placed, but no tags. Create a spot elevation type and re-run.", "fail");
+                            fail++;
+                        }
+                        else
+                        {
+                            Progress(85, pass, fail, skip);
+                            Log("Placing elevation tags…", "info");
 
-                        var dimCfg = AutoDimensionConfig.Instance;
-                        dimCfg.TargetType                = DimTargetType;   // run-level overrides from the Clash Finder options
-                        dimCfg.ChainAligned              = DimChainAligned;
-                        dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
-                        dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
-                        dimCfg.DuplicateToleranceMm      = DimDuplicateTolMm;
-
-                        // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
-                        // the slab the user picked up front in the wizard (empty → scan all floors).
-                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
-                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
-                        if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
-                            datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
-                        else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) && SlabScopes.Count > 0)
-                            slabScopes = ViewIds.ToDictionary(v => v, v => SlabScopes);
-
-                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
-
-                        pass += dimResult.Placed;
-                        fail += dimResult.Failures;
-                        Log($"Dimension pass — {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
-                            dimResult.Placed > 0 ? "pass" : "fail");
+                            var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
+                            pass += tagResult.Placed;
+                            fail += tagResult.Failures;
+                            Log($"Elevation tags — {tagResult.Placed} placed, {tagResult.Failures} failure(s).",
+                                tagResult.Placed > 0 ? "pass" : "fail");
+                        }
                     }
                 }
             }
@@ -144,8 +127,8 @@ namespace LemoineTools.Tools.Testing
             Complete(pass, fail, skip);
         }
 
-        // When "Show all documents" is on, ignore the definition's saved per-group source
-        // filter so every loaded document is scanned. Otherwise honour the stored selection.
+        // When "Show all documents" is on, ignore the definition's saved per-group source filter so
+        // every loaded document is scanned. Otherwise honour the stored selection.
         private ClashGroupSpec EffectiveSpec(ClashGroupSpec spec)
         {
             if (!ShowAllDocuments) return spec;
@@ -175,7 +158,7 @@ namespace LemoineTools.Tools.Testing
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged lines for cleanup", ex); }
 
                 try
                 {
@@ -185,22 +168,22 @@ namespace LemoineTools.Tools.Testing
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged filled regions for cleanup", ex); }
 
                 try
                 {
                     toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(Dimension))
+                        .OfClass(typeof(SpotDimension))
                         .WhereElementIsNotElementType()
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged spot elevations for cleanup", ex); }
 
                 foreach (var id in toDelete)
                 {
                     try { if (doc.Delete(id).Count > 0) removed++; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: delete tagged element", ex); }
+                    catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: delete tagged element", ex); }
                 }
             }
             return removed;

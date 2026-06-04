@@ -19,7 +19,9 @@ namespace LemoineTools.Tools.Testing
         public string DimTarget;          // "Edge" | "Centre"
         public int    MaxClashes;
         public double StoreyMarginMm;     // depth below a level still counted as its storey (slabs/structure)
-        public double RoundSizeMm;        // round marker diameter; 0 = auto-fit to the clash bbox
+        public double RoundSizeMm;        // marker oversize margin added to the Group 1 element size; 0 = exact
+        public bool   ElevationMode;      // true → draw the round in the view's vertical plane (sections/elevations)
+                                          // with a single tagged diameter line for the spot-elevation pass
     }
 
     /// <summary>Aggregate result of one engine run.</summary>
@@ -75,6 +77,12 @@ namespace LemoineTools.Tools.Testing
             public BoundingBoxXYZ     HostBBox      = null!;
             public Solid?             HostSolid;
             public bool               SolidTried;
+            // Cross-section of the element (inherited by the marker drawn for its clashes).
+            public bool               IsRectangular; // true → rectangular duct/tray; false → round / unknown
+            public double             WidthFt;       // round: diameter; rectangular: width; 0 = unknown
+            public double             HeightFt;      // round: diameter; rectangular: height; 0 = unknown
+            public XYZ?               WidthDir;      // world unit vector of the rectangular width axis (null → view-aligned)
+            public XYZ?               HeightDir;     // world unit vector of the rectangular height axis
         }
 
         private class ClashResult
@@ -107,7 +115,8 @@ namespace LemoineTools.Tools.Testing
             // 2. Scan each group per its mode
             var group1Elements = ScanGroupSpec(group1Spec, sources, "Group 1");
             var group2Elements = ScanGroupSpec(group2Spec, sources, "Group 2");
-            Log($"Group 1: {group1Elements.Count} element(s)   Group 2: {group2Elements.Count} element(s)", "info");
+            int group1Rect = group1Elements.Count(e => e.IsRectangular);
+            Log($"Group 1: {group1Elements.Count} element(s) ({group1Rect} rectangular)   Group 2: {group2Elements.Count} element(s)", "info");
 
             if (group1Elements.Count == 0)
             {
@@ -364,6 +373,7 @@ namespace LemoineTools.Tools.Testing
                             if (!MatchesRule(el, rule)) continue;
                             var bb = GetHostBBox(el, tx);
                             if (bb == null) continue;
+                            var sh = ComputeElementShape(el, tx);
 
                             result.Add(new ClashElement
                             {
@@ -374,6 +384,11 @@ namespace LemoineTools.Tools.Testing
                                 Label         = rule.Name,
                                 ColorHex      = rule.SurfColor ?? "#888888",
                                 HostBBox      = bb,
+                                IsRectangular = sh.IsRect,
+                                WidthFt       = sh.W,
+                                HeightFt      = sh.H,
+                                WidthDir      = sh.WDir,
+                                HeightDir     = sh.HDir,
                             });
                             srcCount++;
                         }
@@ -415,6 +430,7 @@ namespace LemoineTools.Tools.Testing
                         var bb = GetHostBBox(el, tx);
                         if (bb == null) continue;
                         string? ruleColor = ResolveRuleColor(el);
+                        var sh = ComputeElementShape(el, tx);
                         result.Add(new ClashElement
                         {
                             Doc           = srcDoc,
@@ -425,6 +441,11 @@ namespace LemoineTools.Tools.Testing
                             ColorHex      = ruleColor ?? _opts.FallbackColorHex,
                             RuleColored   = ruleColor != null,
                             HostBBox      = bb,
+                            IsRectangular = sh.IsRect,
+                            WidthFt       = sh.W,
+                            HeightFt      = sh.H,
+                            WidthDir      = sh.WDir,
+                            HeightDir     = sh.HDir,
                         });
                         srcCount++;
                     }
@@ -454,6 +475,7 @@ namespace LemoineTools.Tools.Testing
                 if (bb == null) continue;
 
                 string? ruleColor = ResolveRuleColor(el);
+                var sh = ComputeElementShape(el, src.tx);
                 result.Add(new ClashElement
                 {
                     Doc           = src.doc,
@@ -464,6 +486,11 @@ namespace LemoineTools.Tools.Testing
                     ColorHex      = ruleColor ?? _opts.FallbackColorHex,
                     RuleColored   = ruleColor != null,
                     HostBBox      = bb,
+                    IsRectangular = sh.IsRect,
+                    WidthFt       = sh.W,
+                    HeightFt      = sh.H,
+                    WidthDir      = sh.WDir,
+                    HeightDir     = sh.HDir,
                 });
             }
             Log($"  Picked elements resolved: {result.Count}", "info");
@@ -568,6 +595,168 @@ namespace LemoineTools.Tools.Testing
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read built-in parameter value", ex); }
             }
             return null;
+        }
+
+        // ── Element cross-section (drives the marker shape + size, inherited from Group 1) ───
+        /// <summary>
+        /// Cross-section of an element in feet: a round pipe / round-duct outer diameter (exact and
+        /// orientation-independent) gives a circle; a rectangular duct's width × height gives a
+        /// rectangle. Falls back to the smallest dimension of the element's own box (≈ a straight
+        /// run's diameter, drawn round). Width/Height are 0 when nothing usable is found, so the
+        /// caller can fall back to fitting the clash itself.
+        /// </summary>
+        private static (bool IsRect, double W, double H, XYZ? WDir, XYZ? HDir) ComputeElementShape(Element el, Transform tx)
+        {
+            // Rectangular first: a duct / cable tray that reports BOTH a width and a height is
+            // rectangular — even when it also exposes an (equivalent) diameter parameter, which would
+            // otherwise mis-classify it as round.
+            double w = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_WIDTH_PARAM);
+            double h = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_HEIGHT_PARAM);
+            if (w <= 0) w = ReadNamedDoubleParam(el, "Width");
+            if (h <= 0) h = ReadNamedDoubleParam(el, "Height");
+            if (w > 1e-6 && h > 1e-6)
+            {
+                ComputeSectionAxes(el, tx, out XYZ? wDir, out XYZ? hDir);
+                return (true, w, h, wDir, hDir);
+            }
+
+            // Round pipe / round duct outer diameter (orientation-independent, exact).
+            double d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_OUTER_DIAMETER);
+            if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
+            if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_DIAMETER_PARAM);
+            if (d <= 0) d = ReadNamedDoubleParam(el, "Diameter");
+            if (d > 1e-6) return (false, d, d, null, null);
+
+            if (w > 1e-6 || h > 1e-6) { double s = Math.Max(w, h); return (false, s, s, null, null); }
+
+            try
+            {
+                var bb = el.get_BoundingBox(null);
+                if (bb != null)
+                {
+                    double dx = Math.Abs(bb.Max.X - bb.Min.X);
+                    double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
+                    double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
+                    double min = Math.Min(dx, Math.Min(dy, dz));
+                    if (min > 1e-6) return (false, min, min, null, null);
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: element shape bbox", ex); }
+            return (false, 0.0, 0.0, null, null);
+        }
+
+        // World width / height axes of a rectangular run: width is horizontal across the run, height is
+        // the vertical-most direction perpendicular to it. Null when the element has no run direction
+        // (e.g. a fitting), so the marker falls back to the view's own right / up axes.
+        private static void ComputeSectionAxes(Element el, Transform tx, out XYZ? widthDir, out XYZ? heightDir)
+        {
+            widthDir = null; heightDir = null;
+
+            XYZ? run = null;
+            try
+            {
+                if (el.Location is LocationCurve lc && lc.Curve != null)
+                {
+                    var dir = lc.Curve.GetEndPoint(1) - lc.Curve.GetEndPoint(0);
+                    if (dir.GetLength() > 1e-9) run = dir.Normalize();
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element location curve", ex); }
+            if (run == null) return;
+
+            if (tx != null && !tx.IsIdentity) run = tx.OfVector(run);
+            if (run.GetLength() < 1e-9) return;
+            run = run.Normalize();
+
+            XYZ refV = XYZ.BasisZ;
+            XYZ hd = refV.Subtract(run.Multiply(refV.DotProduct(run)));     // vertical-most ⟂ to run
+            if (hd.GetLength() < 1e-6)                                       // vertical run (riser)
+            {
+                refV = XYZ.BasisX;
+                hd   = refV.Subtract(run.Multiply(refV.DotProduct(run)));
+            }
+            if (hd.GetLength() < 1e-6) return;
+            hd = hd.Normalize();
+
+            XYZ wd = run.CrossProduct(hd);                                  // horizontal across the run
+            if (wd.GetLength() < 1e-6) return;
+            widthDir  = wd.Normalize();
+            heightDir = hd;
+        }
+
+        // Builds the marker boundary for a clash. Circles use the view's own axes; rectangles use the
+        // element's width / height axes projected into the view plane (so the marker follows the duct as
+        // it appears in this view), with an edge-on axis reconstructed from the view normal so the
+        // rectangle never collapses.
+        private static CurveLoop BuildMarkerLoop(
+            XYZ center, XYZ viewRight, XYZ viewUp, XYZ viewNormal,
+            bool rect, double radius, double halfW, double halfH,
+            XYZ? widthDir, XYZ? heightDir)
+        {
+            if (!rect) return CircleLoop(center, radius, viewRight, viewUp);
+
+            XYZ axW = viewRight, axH = viewUp;
+            if (widthDir != null && heightDir != null)
+            {
+                XYZ pw = InPlane(widthDir, viewNormal);
+                XYZ ph = InPlane(heightDir, viewNormal);
+                double lw = pw.GetLength(), lh = ph.GetLength();
+                if      (lw > 1e-6 && lh > 1e-6) { axW = pw.Normalize();                       axH = ph.Normalize(); }
+                else if (lw > 1e-6)              { axW = pw.Normalize();                       axH = viewNormal.CrossProduct(axW).Normalize(); }
+                else if (lh > 1e-6)              { axH = ph.Normalize();                       axW = axH.CrossProduct(viewNormal).Normalize(); }
+            }
+            return RectLoop(center, axW, axH, halfW, halfH);
+        }
+
+        private static XYZ InPlane(XYZ v, XYZ normal) => v.Subtract(normal.Multiply(v.DotProduct(normal)));
+
+        // ── Marker loop builders (shared by plan + vertical paths) ────────────
+        private static CurveLoop CircleLoop(XYZ center, double radius, XYZ xAxis, XYZ yAxis)
+        {
+            var loop = new CurveLoop();
+            loop.Append(Arc.Create(center, radius, 0,       Math.PI,     xAxis, yAxis));
+            loop.Append(Arc.Create(center, radius, Math.PI, 2 * Math.PI, xAxis, yAxis));
+            return loop;
+        }
+
+        private static CurveLoop RectLoop(XYZ center, XYZ right, XYZ up, double halfW, double halfH)
+        {
+            XYZ rW = right.Multiply(halfW);
+            XYZ uH = up.Multiply(halfH);
+            XYZ bl = center.Subtract(rW).Subtract(uH);
+            XYZ br = center.Add(rW).Subtract(uH);
+            XYZ tr = center.Add(rW).Add(uH);
+            XYZ tl = center.Subtract(rW).Add(uH);
+            var loop = new CurveLoop();
+            loop.Append(Line.CreateBound(bl, br));
+            loop.Append(Line.CreateBound(br, tr));
+            loop.Append(Line.CreateBound(tr, tl));
+            loop.Append(Line.CreateBound(tl, bl));
+            return loop;
+        }
+
+        private static double ReadDoubleParam(Element el, BuiltInParameter bip)
+        {
+            try
+            {
+                var p = el.get_Parameter(bip);
+                if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read double parameter", ex); }
+            return 0.0;
+        }
+
+        // Fallback for content whose width/height/diameter is not on the expected built-in parameter
+        // (e.g. cable trays, some duct families). Name-based, so it only resolves in matching locales.
+        private static double ReadNamedDoubleParam(Element el, string name)
+        {
+            try
+            {
+                var p = el.LookupParameter(name);
+                if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read named double parameter", ex); }
+            return 0.0;
         }
 
         // ── BBox helpers ──────────────────────────────────────────────────────
@@ -742,6 +931,10 @@ namespace LemoineTools.Tools.Testing
             Document doc, View view, ClashResult clash,
             ElementId lineStyleId, double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
         {
+            // Section / elevation views draw the round in the view's vertical cut plane.
+            if (_opts.ElevationMode)
+                return CreateClashGraphicsVertical(doc, view, clash, lineStyleId, toleranceFt, regionTypeCache);
+
             var zone = clash.OverlapBBox;
             double minX = zone.Min.X - toleranceFt;
             double maxX = zone.Max.X + toleranceFt;
@@ -754,11 +947,24 @@ namespace LemoineTools.Tools.Testing
             double cy     = (minY + maxY) / 2.0;
             double halfW  = (maxX - minX) / 2.0;
             double halfH  = (maxY - minY) / 2.0;
-            // Round marker: a fixed per-run diameter when set, else auto-fit (circumscribe the clash).
-            double radius = _opts.RoundSizeMm > 0
-                ? (_opts.RoundSizeMm / 2.0) / 304.8
-                : Math.Max(0.25, Math.Max(halfW, halfH));
-            double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
+
+            // Marker shape + size inherited from the Group 1 element, enlarged by the oversize margin.
+            // Round elements → circle (Ø + oversize); rectangular ducts → rectangle (W/H + oversize);
+            // unknown size → auto-fit a circle to the clash footprint.
+            double overFt = Math.Max(0.0, _opts.RoundSizeMm) / 304.8;
+            bool   rect   = clash.Group1.IsRectangular;
+            double elemW  = clash.Group1.WidthFt;
+            double elemH  = clash.Group1.HeightFt;
+            if (elemW <= 1e-6 || elemH <= 1e-6)
+            {
+                rect  = false;
+                double fit = Math.Max(0.25, Math.Max(halfW, halfH)); // auto-fit radius
+                elemW = elemH = fit * 2.0;
+            }
+            double mHalfW = (elemW + overFt) / 2.0;
+            double mHalfH = (elemH + overFt) / 2.0;
+            double radius = mHalfW;                                  // circle (mHalfW == mHalfH when round)
+            double armLen = Math.Max(0.5, Math.Min(Math.Max(mHalfW, mHalfH) * 1.5, 3.0));
 
             // One id shared by this clash's region + every cross line, so the dimension pass can
             // re-group the 2–4 lines back into a single clash and dimension it once (not per line).
@@ -781,11 +987,9 @@ namespace LemoineTools.Tools.Testing
                 try
                 {
                     var ctr  = new XYZ(cx, cy, 0);
-                    var arc1 = Arc.Create(ctr, radius, 0,        Math.PI,     XYZ.BasisX, XYZ.BasisY);
-                    var arc2 = Arc.Create(ctr, radius, Math.PI,  2 * Math.PI, XYZ.BasisX, XYZ.BasisY);
-                    var loop = new CurveLoop();
-                    loop.Append(arc1);
-                    loop.Append(arc2);
+                    CurveLoop loop = BuildMarkerLoop(
+                        ctr, view.RightDirection.Normalize(), view.UpDirection.Normalize(), view.ViewDirection.Normalize(),
+                        rect, radius, mHalfW, mHalfH, clash.Group1.WidthDir, clash.Group1.HeightDir);
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
                     ClashTagSchema.StampTag(fr, clashGroup);
                 }
@@ -807,6 +1011,92 @@ namespace LemoineTools.Tools.Testing
                 var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup);
                 return hLine != null && vLine != null;
             }
+        }
+
+        // ── Marker creation for vertical views (section / elevation) ──────────
+        // The round fill lives in the view's cut plane (built from RightDirection / UpDirection),
+        // with ONE tagged vertical diameter line spanning the round top→bottom. The elevation-tag
+        // pass re-finds that line and anchors a spot elevation at its top / centre / bottom point.
+        private bool CreateClashGraphicsVertical(
+            Document doc, View view, ClashResult clash,
+            ElementId lineStyleId, double toleranceFt, Dictionary<string, ElementId?> regionTypeCache)
+        {
+            var zone = clash.OverlapBBox;
+            var c = new XYZ((zone.Min.X + zone.Max.X) / 2.0,
+                            (zone.Min.Y + zone.Max.Y) / 2.0,
+                            (zone.Min.Z + zone.Max.Z) / 2.0);
+
+            XYZ right  = view.RightDirection.Normalize();
+            XYZ up     = view.UpDirection.Normalize();
+            XYZ normal = view.ViewDirection.Normalize();
+            XYZ origin = view.Origin;
+
+            // Project the clash centre onto the view's cut plane (drop the view-direction component).
+            double depth = (c - origin).DotProduct(normal);
+            XYZ cp = c - normal.Multiply(depth);
+
+            // In-plane half extents of the clash (project the 8 bbox corners onto right / up).
+            double halfU = 0, halfV = 0;
+            foreach (var corner in BoxCorners(zone.Min, zone.Max))
+            {
+                var d = corner - cp;
+                halfU = Math.Max(halfU, Math.Abs(d.DotProduct(right)));
+                halfV = Math.Max(halfV, Math.Abs(d.DotProduct(up)));
+            }
+            halfU += toleranceFt;
+            halfV += toleranceFt;
+
+            // Marker shape + size inherited from the Group 1 element, enlarged by the oversize margin.
+            // Width runs along the view's right axis, height along its up axis (matches a duct seen in
+            // cross-section). Unknown size → auto-fit a circle to the clash footprint.
+            double overFt = Math.Max(0.0, _opts.RoundSizeMm) / 304.8;
+            bool   rect   = clash.Group1.IsRectangular;
+            double elemW  = clash.Group1.WidthFt;
+            double elemH  = clash.Group1.HeightFt;
+            if (elemW <= 1e-6 || elemH <= 1e-6)
+            {
+                rect  = false;
+                double fit = Math.Max(0.25, Math.Max(halfU, halfV));
+                elemW = elemH = fit * 2.0;
+            }
+            double mHalfW = (elemW + overFt) / 2.0;
+            double mHalfH = (elemH + overFt) / 2.0;
+            double radius = mHalfW;                                  // circle (mHalfW == mHalfH when round)
+
+            // One id shared by this clash's region + diameter line, so the spot-elevation pass can
+            // carry the group through to its placed tag.
+            string clashGroup = Guid.NewGuid().ToString("N");
+
+            // ── FilledRegion (circular, in the view plane) ────────────────────
+            bool fallback   = !clash.Group1.RuleColored;
+            string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
+            string cacheKey = fallback ? $"{hexColor}_FB" : $"{hexColor}_{_opts.FillStyle}";
+            if (!regionTypeCache.TryGetValue(cacheKey, out ElementId? typeId))
+            {
+                typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
+                regionTypeCache[cacheKey] = typeId;
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
+            }
+
+            if (typeId != null && typeId != ElementId.InvalidElementId)
+            {
+                try
+                {
+                    CurveLoop loop = BuildMarkerLoop(
+                        cp, right, up, normal,
+                        rect, radius, mHalfW, mHalfH, clash.Group1.WidthDir, clash.Group1.HeightDir);
+                    var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
+                    ClashTagSchema.StampTag(fr, clashGroup);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region (vertical)", ex); }
+            }
+
+            // ── Vertical line spanning the marker top→bottom, tagged for the spot-elevation pass ──
+            var bottom = cp.Subtract(up.Multiply(mHalfH));
+            var top    = cp.Add(up.Multiply(mHalfH));
+            var line   = CreateLine(doc, view, lineStyleId, bottom, top, clashGroup);
+            return line != null;
         }
 
         // ── FilledRegionType management ───────────────────────────────────────
