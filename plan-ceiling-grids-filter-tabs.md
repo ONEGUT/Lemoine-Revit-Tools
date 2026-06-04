@@ -16,24 +16,26 @@
 
 ## Fix
 
-### A. Hide via `ParameterFilterElement` (name-based) — `MakeCeilingGridsRunHandler.cs`
+### A. Hide via the Ceiling-Heatmap filter mechanism — `MakeCeilingGridsRunHandler.cs`
 
-- Drop the host-type-id math (`allHostTypeIds` / `includedHostIds` / `excludedTypeIds`).
+Replicate `CeilingHeatmapEventHandler`'s exact pattern instead of a single combined
+filter:
+
 - Receive `ExcludedTypeNames : List<(string Family, string Type)>` from the ViewModel.
-- Before the per-level loop, build **one** `ParameterFilterElement`
-  (`"Lemoine — Hidden Ceiling Types"`, category `OST_Ceilings`) whose `ElementFilter`
-  is an OR of `(Family Name == F  AND  Type Name == T)` per excluded pair, using the
-  codebase-proven params `ELEM_FAMILY_PARAM` + `ALL_MODEL_TYPE_NAME`
-  (mirrors `AutoFiltersEventHandler`). Delete + recreate any existing one each run so
-  the definition stays current.
-  - If `Create` throws, retry with **Type-Name-only** matching; if that also throws,
-    log a clear `fail` and continue (no silent swallow).
-- Per view (in the existing visibility transaction): `view.AddFilter(id)` +
-  `view.SetFilterVisibility(id, false)`. View filters apply to linked elements when
-  the link is shown "By Host View" (the default for newly created views), which is
-  what covers the linked-ceiling case.
-- Keep a **host-only per-instance `HideElements` fallback by name** so host hiding
-  never regresses even if filter creation fails.
+- Register a `"Ceiling Grids — Hidden"` trade (id `CG`, `ExternallyManaged = true`) with
+  **one rule per excluded ceiling type** — `Parameter = "Type Name"`, `MatchType =
+  "equals"`, `Match = [typeName]`, `Visible = false` — via `RegisterHideTrade`
+  (mirrors `RegisterCeilingHeatmapTrade`).
+- Create **one `ParameterFilterElement` per rule** (reuse-by-name) matching ceilings by
+  `ALL_MODEL_TYPE_NAME` (a link-safe built-in parameter, like the heatmap's height
+  parameter), and apply it to every created RCP view with `SetFilterVisibility(false)`.
+- `DeleteHideFilters` removes prior `CG_` filters from all views before recreating.
+- `ReportLinkDisplayModes` warns about any link not shown "By Host View" (the same
+  accommodation the heatmap makes — that is what lets host filters cascade onto linked
+  ceilings).
+- Per-view and per-filter `try/catch`, `ConfigureFailures` on every transaction.
+- Phases: create views (0–40%) → hide filters + trade (40–70%) → DWG export (70–100%),
+  so the export reflects the applied filters.
 
 ### B. Reorganize Filter step into model tabs — `MakeCeilingGridsViewModel.cs`
 
