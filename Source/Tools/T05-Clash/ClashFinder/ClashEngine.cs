@@ -77,6 +77,7 @@ namespace LemoineTools.Tools.Testing
             public BoundingBoxXYZ     HostBBox      = null!;
             public Solid?             HostSolid;
             public bool               SolidTried;
+            public double             SizeFt;        // nominal cross-section of the element (pipe/duct Ø); 0 = unknown
         }
 
         private class ClashResult
@@ -376,6 +377,7 @@ namespace LemoineTools.Tools.Testing
                                 Label         = rule.Name,
                                 ColorHex      = rule.SurfColor ?? "#888888",
                                 HostBBox      = bb,
+                                SizeFt        = ComputeElementSizeFt(el),
                             });
                             srcCount++;
                         }
@@ -427,6 +429,7 @@ namespace LemoineTools.Tools.Testing
                             ColorHex      = ruleColor ?? _opts.FallbackColorHex,
                             RuleColored   = ruleColor != null,
                             HostBBox      = bb,
+                            SizeFt        = ComputeElementSizeFt(el),
                         });
                         srcCount++;
                     }
@@ -466,6 +469,7 @@ namespace LemoineTools.Tools.Testing
                     ColorHex      = ruleColor ?? _opts.FallbackColorHex,
                     RuleColored   = ruleColor != null,
                     HostBBox      = bb,
+                    SizeFt        = ComputeElementSizeFt(el),
                 });
             }
             Log($"  Picked elements resolved: {result.Count}", "info");
@@ -570,6 +574,51 @@ namespace LemoineTools.Tools.Testing
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read built-in parameter value", ex); }
             }
             return null;
+        }
+
+        // ── Element size (drives the round marker diameter, inherited from Group 1) ───
+        /// <summary>
+        /// Nominal cross-section of an element in feet — the pipe / round-duct outer diameter when
+        /// available (orientation-independent and exact), else the larger rectangular duct side, else
+        /// the smallest dimension of the element's own axis-aligned box (≈ a straight run's diameter).
+        /// 0 when nothing usable is found, so the caller can fall back to fitting the clash itself.
+        /// </summary>
+        private static double ComputeElementSizeFt(Element el)
+        {
+            double d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_OUTER_DIAMETER);
+            if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_PIPE_DIAMETER_PARAM);
+            if (d <= 0) d = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_DIAMETER_PARAM);
+            if (d > 1e-6) return d;
+
+            double w = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_WIDTH_PARAM);
+            double h = ReadDoubleParam(el, BuiltInParameter.RBS_CURVE_HEIGHT_PARAM);
+            if (w > 1e-6 || h > 1e-6) return Math.Max(w, h);
+
+            try
+            {
+                var bb = el.get_BoundingBox(null);
+                if (bb != null)
+                {
+                    double dx = Math.Abs(bb.Max.X - bb.Min.X);
+                    double dy = Math.Abs(bb.Max.Y - bb.Min.Y);
+                    double dz = Math.Abs(bb.Max.Z - bb.Min.Z);
+                    double min = Math.Min(dx, Math.Min(dy, dz));
+                    if (min > 1e-6) return min;
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: element size bbox", ex); }
+            return 0.0;
+        }
+
+        private static double ReadDoubleParam(Element el, BuiltInParameter bip)
+        {
+            try
+            {
+                var p = el.get_Parameter(bip);
+                if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read double parameter", ex); }
+            return 0.0;
         }
 
         // ── BBox helpers ──────────────────────────────────────────────────────
@@ -760,10 +809,13 @@ namespace LemoineTools.Tools.Testing
             double cy     = (minY + maxY) / 2.0;
             double halfW  = (maxX - minX) / 2.0;
             double halfH  = (maxY - minY) / 2.0;
-            // Round marker: a fixed per-run diameter when set, else auto-fit (circumscribe the clash).
+            // Round marker diameter: a fixed per-run value when set, else the Group 1 element's own
+            // size (e.g. the pipe diameter), else auto-fit (circumscribe the clash) as a last resort.
             double radius = _opts.RoundSizeMm > 0
                 ? (_opts.RoundSizeMm / 2.0) / 304.8
-                : Math.Max(0.25, Math.Max(halfW, halfH));
+                : clash.Group1.SizeFt > 1e-6
+                    ? clash.Group1.SizeFt / 2.0
+                    : Math.Max(0.25, Math.Max(halfW, halfH));
             double armLen = Math.Max(0.5, Math.Min(radius * 1.5, 3.0));
 
             // One id shared by this clash's region + every cross line, so the dimension pass can
@@ -848,9 +900,13 @@ namespace LemoineTools.Tools.Testing
             halfU += toleranceFt;
             halfV += toleranceFt;
 
+            // Round marker diameter: fixed per-run value when set, else the Group 1 element's own
+            // size (e.g. the pipe diameter), else auto-fit to the clash footprint.
             double radius = _opts.RoundSizeMm > 0
                 ? (_opts.RoundSizeMm / 2.0) / 304.8
-                : Math.Max(0.25, Math.Max(halfU, halfV));
+                : clash.Group1.SizeFt > 1e-6
+                    ? clash.Group1.SizeFt / 2.0
+                    : Math.Max(0.25, Math.Max(halfU, halfV));
 
             // One id shared by this clash's region + diameter line, so the spot-elevation pass can
             // carry the group through to its placed tag.

@@ -229,8 +229,8 @@ namespace LemoineTools.Tools.Testing
 
             AddDivider(outer);
             AddStepperRow(outer,
-                "Round marker size (mm, 0 = auto-fit)",
-                "Diameter of the round drawn at each clash. 0 fits the round to the clash; set a value to force every round to a fixed size — e.g. the opening needed for the pipe.",
+                "Round marker size (mm, 0 = match Group 1 element)",
+                "Diameter of the round drawn at each clash. 0 matches the Group 1 element's own size (e.g. the pipe diameter); set a value to force every round to a fixed size — e.g. the opening needed for the pipe.",
                 _roundSizeMm, min: 0, max: 1000, step: 25, decimals: 0,
                 v => { _roundSizeMm = v; Fire(); });
 
