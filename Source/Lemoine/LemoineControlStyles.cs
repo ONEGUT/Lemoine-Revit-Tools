@@ -831,11 +831,21 @@ namespace LemoineTools.Lemoine
         var sv = (ScrollViewer)sender;
 
         // A scroller inside a Popup (dropdown / tag-picker / open ComboBox list) is
-        // self-contained: it scrolls within itself and stops at its limits, and the wheel
-        // must NOT bubble into the parent window. Popups route their events up into the
-        // owning window's tree, so bubbling here would let the page's scroll position
-        // control the popup — exactly the reported "only the parent window scrolls it" bug.
-        if (IsInsidePopup(sv)) return;
+        // self-contained: it scrolls within itself, stops at its limits, and the wheel must
+        // NOT escape into the parent window. We drive the offset directly instead of relying
+        // on the default ScrollViewer wheel handling — inside an AllowsTransparency popup that
+        // default routing delivers the wheel unreliably (the reported "scrolls down but not
+        // up"). Manual scrolling is symmetric by construction and consuming the event keeps
+        // the page behind the popup from moving.
+        if (IsInsidePopup(sv))
+        {
+            e.Handled = true;                          // swallow — never reaches the page
+            if (sv.ScrollableHeight <= 0) return;      // nothing to scroll
+            double step   = e.Delta / 120.0 * 48.0;    // 3 lines (~48px) per wheel notch
+            double target = sv.VerticalOffset - step;
+            sv.ScrollToVerticalOffset(Math.Max(0, Math.Min(sv.ScrollableHeight, target)));
+            return;
+        }
 
         // PreviewMouseWheel tunnels outer→inner, so this fires on every ScrollViewer
         // ancestor. Only the innermost ScrollViewer under the cursor should act — otherwise
