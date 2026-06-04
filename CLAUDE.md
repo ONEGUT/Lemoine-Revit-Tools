@@ -276,11 +276,20 @@ Because `StaysOpen=false` crashes Revit, close an open popup by attaching a **wi
 | `RasterQualityType.Draft` | `RasterQualityType.Low` (Draft removed in 2024) |
 | `PDFExportOptions.Zoom` | `PDFExportOptions.ZoomPercentage` |
 | `ParameterFilterElement.AllFilterableCategories` | `ParameterFilterElement.GetAllFilterableCategories(doc)` |
+| Filter rule on `BuiltInParameter.ELEM_CATEGORY_PARAM` ("Category") | Rejected — *"parameter does not apply to this filter's categories"*. Build whole-category filters **rule-less** via the 3-arg `ParameterFilterElement.Create(doc, name, categories)` (matches every element in the categories, references no parameter) |
+| Family Name filter on `ELEM_FAMILY_PARAM` (ElementId storage) | `ALL_MODEL_FAMILY_NAME` (String storage) — a string contains/equals rule can't be built on an ElementId parameter; the rule is silently dropped and the filter never matches |
 | `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
 | App-level "font pt" field sizes generated text | A TextNote's size comes from its assigned `TextNoteType` (`TEXT_SIZE` param); a font-pt value can only drive a WPF preview, never the Revit output. Don't expose it as if it changed the legend. |
 | `PickObject(ObjectType.Element)` to select an element **inside a link** | `PickObject(ObjectType.LinkedElement)` — `ObjectType.Element` returns the whole `RevitLinkInstance` (its `LinkedElementId` is unset), so the linked sub-element never resolves |
 | Read a value to filter on via the **property-palette display** (`LookupParameter`) | Read it through the **same built-in the filter binds** — a view filter's string-rule keyword is compared against the *bound* parameter's value, not the palette. The palette "Fabrication Service" is a composite (`<abbreviation>: <name>`, e.g. `DVG - MP: Chilled Water Supply`) but `FABRICATION_SERVICE_NAME` holds only the name (`Chilled Water Supply`), so a keyword carrying the prefix never matches |
 | String filter rule against an **ElementId-storage** parameter (e.g. `ELEM_FAMILY_PARAM`) | `ParameterFilterRuleFactory.CreateContainsRule`/string rules require **String storage** — an ElementId param throws and the keyword is silently dropped (filter never created). For a string Family Name filter bind `ALL_MODEL_FAMILY_NAME`, not `ELEM_FAMILY_PARAM` |
+
+---
+
+## ParameterFilterElement Lifecycle (AutoFilters)
+
+- **Update in place, don't churn.** To change an existing `ParameterFilterElement`, call `SetCategories` / `SetElementFilter` — this preserves its `ElementId`, so view assignments and legend links survive. Delete + recreate mints a new `ElementId` and silently detaches the filter from every view that referenced it. Rebuild (delete + recreate) **only** when an in-place edit can't yield the correct definition (e.g. converting a keyword rule to whole-category — old rules can't be cleared in place; or a category/parameter change incompatible with the current state). A rule-less filter reports `GetElementFilter() == null`, which is how you detect it still carries stale rules.
+- **Discover must read the filter's parameter.** When a discover/scan captures keyword values, read them through the **same** `BuiltInParameter` the generated filter binds (e.g. `FABRICATION_SERVICE_NAME`), not the property-palette composite value — otherwise the captured `contains` keyword never matches what the view filter compares against.
 
 ---
 
