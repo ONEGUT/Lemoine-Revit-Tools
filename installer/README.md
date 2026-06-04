@@ -67,9 +67,19 @@ keep it entirely within the user's profile.
 
 ---
 
-## Important: remove any old machine-wide copy
+## Note on an existing machine-wide copy
 
-If a copy already exists in `C:\ProgramData\Autodesk\Revit\Addins\2024\`,
-Revit may load that one instead — or load both and show duplicate ribbon
-panels. For a clean per-user install, delete the `ProgramData` copy first
-(that deletion **does** require admin, since it's a machine-wide folder).
+Revit loads manifests from both locations together. If an all-users manifest
+(`ProgramData`) shares the **same filename** as the per-user one, Revit ignores
+the all-users copy — so our `LemoineTools.addin` in `%AppData%` wins and you
+won't load a stale machine-wide build. Duplicate ribbon panels would only occur
+if a *differently named* manifest also points at Lemoine Tools. For a clean
+install, removing any old `ProgramData` copy is still tidiest (that deletion
+**does** require admin, since it's a machine-wide folder).
+
+### Revit 2027+
+
+The per-user `%AppData%\Autodesk\Revit\Addins\<year>\` path is unchanged, so
+these installers keep working. Only the *all-users* path moved — to
+`C:\Program Files\Autodesk\Revit\Addins\2027\` (`ProgramData` is ignored by
+Revit 2027). Not relevant to a per-user install.
