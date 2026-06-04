@@ -803,6 +803,23 @@ namespace LemoineTools.Lemoine
     private static bool _scrollBubblingRegistered;
 
     /// <summary>
+    /// Marks a ScrollViewer as "self-contained": the wheel scrolls it directly and never
+    /// escapes to an outer scroller, regardless of visual-tree topology. Set this on scrollers
+    /// hosted in a Popup (dropdown, tag-picker) where popup-by-tree detection can be unreliable
+    /// in Revit's WPF hosting — it is the authoritative signal that overrides ancestor checks.
+    /// </summary>
+    public static readonly DependencyProperty SelfContainedScrollProperty =
+        DependencyProperty.RegisterAttached(
+            "SelfContainedScroll", typeof(bool), typeof(LemoineControlStyles),
+            new PropertyMetadata(false));
+
+    public static void SetSelfContainedScroll(DependencyObject o, bool value) =>
+        o.SetValue(SelfContainedScrollProperty, value);
+
+    public static bool GetSelfContainedScroll(DependencyObject o) =>
+        (bool)o.GetValue(SelfContainedScrollProperty);
+
+    /// <summary>
     /// Registers AppDomain-wide class handlers (once) so that EVERY ScrollViewer and
     /// ComboBox bubbles the mouse wheel to its parent when it can't scroll further —
     /// without each call site having to call <see cref="WireBubblingScroll"/> /
@@ -830,14 +847,14 @@ namespace LemoineTools.Lemoine
         if (e.Handled) return;
         var sv = (ScrollViewer)sender;
 
-        // A scroller inside a Popup (dropdown / tag-picker / open ComboBox list) is
-        // self-contained: it scrolls within itself, stops at its limits, and the wheel must
-        // NOT escape into the parent window. We drive the offset directly instead of relying
-        // on the default ScrollViewer wheel handling — inside an AllowsTransparency popup that
-        // default routing delivers the wheel unreliably (the reported "scrolls down but not
-        // up"). Manual scrolling is symmetric by construction and consuming the event keeps
-        // the page behind the popup from moving.
-        if (IsInsidePopup(sv))
+        // A scroller that is explicitly tagged self-contained, or detected as living inside a
+        // Popup (dropdown / tag-picker / open ComboBox list), scrolls itself and the wheel must
+        // NOT escape into the parent window. The tag is authoritative — the tree-walk popup
+        // check is unreliable under Revit's WPF hosting, which let the page's scroll position
+        // govern the dropdown (the reported "checks the outside before the inside"). We drive the
+        // offset directly: manual scrolling is symmetric by construction and consuming the event
+        // keeps the page behind the popup from moving.
+        if (GetSelfContainedScroll(sv) || IsInsidePopup(sv))
         {
             e.Handled = true;                          // swallow — never reaches the page
             if (sv.ScrollableHeight <= 0) return;      // nothing to scroll
@@ -897,12 +914,17 @@ namespace LemoineTools.Lemoine
     }
 
     /// <summary>
-    /// True if <paramref name="element"/> lives inside a Popup. A Popup hosts its content in a
-    /// separate visual tree whose root is a PopupRoot, so walking visual parents to the top and
-    /// checking the root type reliably distinguishes popup content from in-window content.
+    /// True if <paramref name="element"/> lives inside a Popup. A Popup hosts its content in its
+    /// own visual tree rooted at a PopupRoot. We check the hosting PresentationSource's RootVisual
+    /// first (robust even when a visual-parent walk is broken mid-tree), then fall back to walking
+    /// visual parents to the top. Primarily a backstop — popup scrollers we build also carry the
+    /// authoritative <see cref="SelfContainedScrollProperty"/> tag.
     /// </summary>
     private static bool IsInsidePopup(DependencyObject element)
     {
+        var root = PresentationSource.FromDependencyObject(element)?.RootVisual;
+        if (root != null && root.GetType().Name == "PopupRoot") return true;
+
         DependencyObject node = element;
         DependencyObject parent;
         while ((parent = VisualTreeHelper.GetParent(node)) != null)

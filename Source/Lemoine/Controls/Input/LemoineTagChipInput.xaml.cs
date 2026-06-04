@@ -276,7 +276,10 @@ namespace LemoineTools.Lemoine.Controls
             };
             _rowStack = new StackPanel();
             sv.Content = _rowStack;
-            LemoineControlStyles.WireBubblingScroll(sv);
+            // Authoritatively mark this scroller self-contained: the wheel scrolls the list
+            // directly and never leaks to the page scroller behind the popup (tree-based popup
+            // detection is unreliable under Revit's WPF hosting).
+            LemoineControlStyles.SetSelfContainedScroll(sv, true);
             stack.Children.Add(sv);
 
             if (AllowFreeText)
