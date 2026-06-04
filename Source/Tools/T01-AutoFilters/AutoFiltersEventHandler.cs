@@ -117,7 +117,12 @@ namespace LemoineTools.Tools.AutoFilters
                 ["System Name"]           = BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
                 ["Fabrication Service"]   = BuiltInParameter.FABRICATION_SERVICE_NAME,
                 ["Type Name"]             = BuiltInParameter.ALL_MODEL_TYPE_NAME,
-                ["Family Name"]           = BuiltInParameter.ELEM_FAMILY_PARAM,
+                // ALL_MODEL_FAMILY_NAME (String storage), NOT ELEM_FAMILY_PARAM (ElementId
+                // storage): a String contains/equals filter rule cannot be built against an
+                // ElementId parameter — the factory throws, the keyword is dropped, and the
+                // filter is silently never created. The discover scan reads the family name as
+                // a string (FamilySymbol.FamilyName), so the filter must bind the string param.
+                ["Family Name"]           = BuiltInParameter.ALL_MODEL_FAMILY_NAME,
                 ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
                 ["Mark"]                  = BuiltInParameter.ALL_MODEL_MARK,
                 ["Comments"]              = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,

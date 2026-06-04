@@ -80,6 +80,24 @@ Cannot build on Linux (per CLAUDE.md). Manual verification on Windows:
    (no `DVG - MP:` prefix).
 3. Commit the rules, apply to a view, confirm the pipes are coloured.
 
+## Audit — same bug class across all discoverable parameters
+
+The root pattern is *scan reads under display name X, but the filter binds a built-in whose
+compared value differs from what was read*. Checked every parameter the Discover tool can emit:
+
+| Parameter | Verdict | Action |
+|---|---|---|
+| Fabrication Service | Broken — read palette composite, filter binds name-only built-in | Fixed (above) |
+| Family Name | Broken — scan reads `FamilySymbol.FamilyName` (string) but `bipMap` bound `ELEM_FAMILY_PARAM` (ElementId storage); `CreateContainsRule` throws → keyword dropped → filter silently never created | Fixed: `bipMap["Family Name"]` → `BuiltInParameter.ALL_MODEL_FAMILY_NAME` (`AutoFiltersEventHandler.cs:120`) |
+| System Classification | Not broken — `LookupParameter("System Classification")` resolves to the same `RBS_SYSTEM_CLASSIFICATION_PARAM` the filter binds, so the keyword is the parameter's own value and `contains` matches | None |
+| Structural Material | Pre-existing platform limitation — a host filter's material ElementId cannot match a linked element's material id (Revit per-document ids); not a code defect | None |
+| Mark, Comments, System Name, Type Name | Consistent string reads/compares | None |
+| ClashEngine `BipMap` | Not in this class — builds no `ParameterFilterElement`; does in-memory `AsValueString` matching (valid even for ElementId params) | None |
+
+### Family Name fix detail
+- File: `Source/Tools/T01-AutoFilters/AutoFiltersEventHandler.cs`
+- `["Family Name"] = BuiltInParameter.ELEM_FAMILY_PARAM` → `BuiltInParameter.ALL_MODEL_FAMILY_NAME`.
+
 ## Existing broken filters
 
 Already-generated filters keep the bad `DVG - MP: ...` keyword. Either re-run Discover after
