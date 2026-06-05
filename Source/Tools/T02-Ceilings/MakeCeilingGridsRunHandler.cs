@@ -279,7 +279,8 @@ namespace LemoineTools.Tools.Ceilings
                     }
 
                     cgRules.Add((ruleName, type));
-                    pass++;
+                    // Hide-filter creation is an internal step; the success total counts the
+                    // views exported in Phase 3, not the per-type filters created here.
                 }
 
                 tx.Commit();

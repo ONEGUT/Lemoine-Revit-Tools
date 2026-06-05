@@ -304,7 +304,7 @@ namespace LemoineTools.Tools.Ceilings
                                 doc, viewId, new Reference(el),
                                 false, TagMode.TM_ADDBY_CATEGORY,
                                 TagOrientation.Horizontal, tagPt);
-                            tagPlaced++; pass++;
+                            tagPlaced++;   // tags are reported separately, not in the pass total
                         }
                         catch (Exception ex)
                         {
@@ -339,7 +339,7 @@ namespace LemoineTools.Tools.Ceilings
                                     doc, viewId, linkedRef,
                                     false, TagMode.TM_ADDBY_CATEGORY,
                                     TagOrientation.Horizontal, tagPt);
-                                tagPlaced++; pass++;
+                                tagPlaced++;   // tags are reported separately, not in the pass total
                             }
                             catch (Exception ex)
                             {
