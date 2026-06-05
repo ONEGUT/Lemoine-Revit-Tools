@@ -17,15 +17,25 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         public Core.Vec2 Target2d { get; set; }
         public string TargetKey { get; set; } = "";
         public Core.TargetType TargetType { get; set; }
+
+        /// <summary>Identity of the physical run this clash belongs to (from
+        /// <see cref="ClashRunGrouper"/>). Isolated clashes get a unique solo id.</summary>
+        public string RunId { get; set; } = "";
+
+        /// <summary>The run's principal (long) axis. Measurement axes parallel to this chain
+        /// along the run; axes perpendicular to it collapse to one representative dimension.</summary>
+        public Core.Vec2 RunLongAxis { get; set; } = new Core.Vec2(1, 0);
     }
 
     /// <summary>
-    /// Turns resolved clash→target pairs into the planned dimensions the layout/commit consume.
-    /// When chaining is on, pairs that share an axis + the same target and sit on a common
-    /// baseline (collinear within tolerance) and are adjacent along the axis are merged into one
-    /// multi-segment string (sources + target as ordered references → a native Revit chained
-    /// dimension). Otherwise every pair becomes a two-reference dimension. Deterministic: all
-    /// grouping is sorted, never hash-ordered.
+    /// Turns resolved clash→target pairs into the planned dimensions the layout/commit consume,
+    /// grouped by the physical run each clash belongs to (see <see cref="ClashRunGrouper"/>).
+    /// For each run, a measurement axis <b>along</b> the run chains every member to one shared edge
+    /// (sources + target as ordered references → a native Revit chained dimension); a measurement
+    /// axis <b>across</b> the run collapses to a single representative dimension at the run's median
+    /// offset, so slightly off-line members are absorbed rather than dimensioned on top of one
+    /// another. An isolated clash (solo run) yields one plain two-reference dimension per axis.
+    /// Deterministic: every grouping and ordering is sorted, never hash-ordered.
     /// </summary>
     public static class DimensionChainer
     {
@@ -35,132 +45,95 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             public Dictionary<string, PlannedRefBundle> Refs { get; } = new Dictionary<string, PlannedRefBundle>();
         }
 
-        public static Result Build(
-            IReadOnlyList<ResolvedItem> items, Core.LayoutConfig cfg,
-            bool chain, double maxGapFt, double collinearTolFt, double duplicateTolFt = 0.0,
+        public static Result Build(IReadOnlyList<ResolvedItem> items, Core.LayoutConfig cfg,
             Func<double, string?>? valueFmt = null)
         {
             var result = new Result();
             if (items == null || items.Count == 0) return result;
 
-            // Group by axis, then exact target, then collinear baseline bucket. Each group's
-            // members share a target line, so their target axial is constant; only their source
-            // axials differ. Within a group, adjacent runs (gap < maxGap) chain.
+            // Group by run, then by measurement axis. Each (run, axis) group becomes either a
+            // chained string (axis runs along the run) or one representative dimension (axis runs
+            // across the run). Deterministic ordering throughout.
             var byKey = items
-                .GroupBy(it => (AxisTag(it.Axis), it.TargetKey))
-                .OrderBy(g => g.Key.Item1).ThenBy(g => g.Key.Item2);
+                .GroupBy(it => (it.RunId, AxisTag(it.Axis)))
+                .OrderBy(g => g.Key.Item1, StringComparer.Ordinal).ThenBy(g => g.Key.Item2, StringComparer.Ordinal);
 
             foreach (var g in byKey)
             {
-                Core.Vec2 axis = g.First().Axis.Normalized();
+                var group = g.ToList();
+                Core.Vec2 axis = group[0].Axis.Normalized();
                 Core.Vec2 perp = axis.Perp();
+                Core.Vec2 longAxis = group[0].RunLongAxis.Normalized();
 
-                // Bucket members onto common baselines (perp coordinate within tolerance).
-                var members = g.OrderBy(it => it.Source2d.Dot(perp)).ToList();
-                var buckets = new List<List<ResolvedItem>>();
-                foreach (var it in members)
+                // Along the run when the measurement axis is more parallel to the run's long axis
+                // than to its cross axis; otherwise across.
+                bool along = Math.Abs(axis.Dot(longAxis)) >= Math.Abs(axis.Dot(longAxis.Perp()));
+
+                // One shared target for the whole group (majority vote) — adjacent members that the
+                // resolver pinned to slightly different faces are pulled onto the same edge, which is
+                // what lets near-coincident clashes collapse instead of stacking.
+                var target = ChooseTarget(group);
+
+                if (along && group.Count >= 2)
                 {
-                    double p = it.Source2d.Dot(perp);
-                    var bucket = buckets.FirstOrDefault(b => Math.Abs(b[0].Source2d.Dot(perp) - p) <= collinearTolFt);
-                    if (bucket == null) { bucket = new List<ResolvedItem>(); buckets.Add(bucket); }
-                    bucket.Add(it);
+                    EmitChain(group, axis, perp, target, cfg, result, valueFmt);
                 }
-
-                foreach (var bucket in buckets)
+                else
                 {
-                    // Sort along the axis, split into adjacency runs.
-                    var sorted = bucket.OrderBy(it => it.Source2d.Dot(axis)).ToList();
-                    int i = 0;
-                    while (i < sorted.Count)
-                    {
-                        int j = i + 1;
-                        while (chain && j < sorted.Count
-                               && (sorted[j].Source2d.Dot(axis) - sorted[j - 1].Source2d.Dot(axis)) <= maxGapFt)
-                            j++;
-
-                        var run = sorted.GetRange(i, j - i);
-                        if (run.Count >= 2) EmitChain(run, axis, perp, cfg, result, valueFmt);
-                        else                EmitSingle(run[0], axis, cfg, result, valueFmt);
-                        i = j;
-                    }
+                    // Across the run (or a solo member): one dimension whose value is the run's
+                    // median distance along the measurement axis, anchored on the member closest to
+                    // that median — so a clash a hair off the line never sets the dimension.
+                    var rep = Representative(group, axis);
+                    EmitSingle(rep, axis, target, cfg, result, valueFmt);
                 }
             }
 
-            if (duplicateTolFt > 0) CollapseDuplicates(result, duplicateTolFt);
             return result;
         }
 
-        /// <summary>
-        /// Drops dimensions that are visually identical to one already kept: same axis and the same
-        /// ordered witness-line positions (within tolerance), regardless of how far apart the two sit
-        /// perpendicular to the run. Three parallel 11'-6" dimensions to the same edge become one.
-        /// Operates on the final dims so legitimate chained strings (which differ in witness layout)
-        /// are preserved; only true parallel copies are removed. Deterministic — keeps the first.
-        /// </summary>
-        private static void CollapseDuplicates(Result result, double tolFt)
+        /// <summary>The group's shared target: the most common <see cref="ResolvedItem.TargetKey"/>
+        /// (ties broken lexicographically), returned as its first member's reference/point/key.</summary>
+        private static (Reference Ref, Core.Vec2 Point, string Key) ChooseTarget(List<ResolvedItem> group)
         {
-            var kept = new List<Core.PlannedDimension>();
-            var keptSigs = new List<(string axis, List<double> axials)>();
-
-            foreach (var d in result.Dims)
-            {
-                string tag = AxisTag(d.AxisDir);
-                List<double> axials = WitnessAxials(d);
-                bool dup = false;
-                foreach (var s in keptSigs)
-                    if (s.axis == tag && SameLayout(s.axials, axials, tolFt)) { dup = true; break; }
-
-                if (dup)
-                {
-                    result.Refs.Remove(d.SourceKey);   // drop its references too — it won't be placed
-                    continue;
-                }
-                kept.Add(d);
-                keptSigs.Add((tag, axials));
-            }
-
-            if (kept.Count != result.Dims.Count)
-            {
-                result.Dims.Clear();
-                result.Dims.AddRange(kept);
-            }
+            var winner = group
+                .GroupBy(it => it.TargetKey, StringComparer.Ordinal)
+                .OrderByDescending(grp => grp.Count())
+                .ThenBy(grp => grp.Key, StringComparer.Ordinal)
+                .First()
+                .OrderBy(it => it.SourceKey, StringComparer.Ordinal)
+                .First();
+            return (winner.TargetRef, winner.Target2d, winner.TargetKey);
         }
 
-        /// <summary>Ordered along-axis witness positions of a dimension, measured from its near end.
-        /// Works for both singles (two positions) and chained strings (one per reference).</summary>
-        private static List<double> WitnessAxials(Core.PlannedDimension d)
+        /// <summary>The member whose coordinate along <paramref name="measureAxis"/> is closest to
+        /// the group's median, so an off-line outlier never sets the dimension value. Ties broken by
+        /// source key.</summary>
+        private static ResolvedItem Representative(List<ResolvedItem> group, Core.Vec2 measureAxis)
         {
-            Core.Vec2 axis = d.AxisDir.Normalized();
-            double minA = Math.Min(d.SourcePoint.Dot(axis), d.TargetPoint.Dot(axis));
-            var list = new List<double> { minA };
-            double acc = minA;
-            foreach (var seg in d.Segments) { acc += seg.LengthFt; list.Add(acc); }
-            return list;
+            var coords = group.Select(it => it.Source2d.Dot(measureAxis)).OrderBy(v => v).ToList();
+            double median = coords[coords.Count / 2];
+            return group
+                .OrderBy(it => Math.Abs(it.Source2d.Dot(measureAxis) - median))
+                .ThenBy(it => it.SourceKey, StringComparer.Ordinal)
+                .First();
         }
 
-        private static bool SameLayout(List<double> a, List<double> b, double tolFt)
-        {
-            if (a.Count != b.Count) return false;
-            for (int i = 0; i < a.Count; i++)
-                if (Math.Abs(a[i] - b[i]) > tolFt) return false;
-            return true;
-        }
-
-        private static void EmitSingle(ResolvedItem it, Core.Vec2 axis, Core.LayoutConfig cfg, Result result,
-                                       Func<double, string?>? valueFmt)
+        private static void EmitSingle(
+            ResolvedItem it, Core.Vec2 axis, (Reference Ref, Core.Vec2 Point, string Key) target,
+            Core.LayoutConfig cfg, Result result, Func<double, string?>? valueFmt)
         {
             double srcA = it.Source2d.Dot(axis);
-            double tgtA = it.Target2d.Dot(axis);
+            double tgtA = target.Point.Dot(axis);
             double len  = Math.Abs(tgtA - srcA);
 
             string key = $"{it.SourceKey}|{AxisTag(axis)}";
             var dim = new Core.PlannedDimension
             {
                 SourceKey   = key,
-                TargetKey   = $"{it.TargetKey}|{AxisTag(axis)}",
+                TargetKey   = $"{target.Key}|{AxisTag(axis)}",
                 TargetType  = it.TargetType,
                 SourcePoint = it.Source2d,
-                TargetPoint = it.Target2d,
+                TargetPoint = target.Point,
                 AxisDir     = axis,
                 Side        = Core.DimSide.Positive,
                 OffsetFt    = cfg.FirstOffsetFt,
@@ -172,18 +145,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             result.Dims.Add(dim);
 
             // Reference order along the line: source then target by axial.
-            var ordered = new List<(Reference r, double a)> { (it.SourceRef, srcA), (it.TargetRef, tgtA) }
+            var ordered = new List<(Reference r, double a)> { (it.SourceRef, srcA), (target.Ref, tgtA) }
                 .OrderBy(t => t.a).Select(t => t.r).ToList();
             result.Refs[key] = new PlannedRefBundle { Ordered = ordered };
         }
 
         private static void EmitChain(
-            List<ResolvedItem> run, Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, Result result,
+            List<ResolvedItem> run, Core.Vec2 axis, Core.Vec2 perp,
+            (Reference Ref, Core.Vec2 Point, string Key) target, Core.LayoutConfig cfg, Result result,
             Func<double, string?>? valueFmt)
         {
-            // All members share the same target line → constant target axial; use the first's ref.
-            double tgtA = run[0].Target2d.Dot(axis);
-            Reference targetRef = run[0].TargetRef;
+            // The whole run shares one target line → constant target axial.
+            double tgtA = target.Point.Dot(axis);
+            Reference targetRef = target.Ref;
             double basePerp = run.Average(it => it.Source2d.Dot(perp));
 
             // Merge member sources + the single target, sorted along the axis, de-duping coincident
@@ -197,7 +171,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 if (deduped.Count == 0 || Math.Abs(ra.a - deduped[deduped.Count - 1].a) > cfg.PrecisionFt)
                     deduped.Add(ra);
 
-            if (deduped.Count < 2) { EmitSingle(run[0], axis, cfg, result, valueFmt); return; }
+            if (deduped.Count < 2) { EmitSingle(run[0], axis, target, cfg, result, valueFmt); return; }
 
             double minA = deduped[0].a, maxA = deduped[deduped.Count - 1].a;
             Core.Vec2 sp = axis * minA + perp * basePerp;
@@ -216,7 +190,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             result.Dims.Add(new Core.PlannedDimension
             {
                 SourceKey   = key,
-                TargetKey   = $"{run[0].TargetKey}|chain|{AxisTag(axis)}",
+                TargetKey   = $"{target.Key}|chain|{AxisTag(axis)}",
                 TargetType  = run[0].TargetType,
                 SourcePoint = sp,
                 TargetPoint = tp,
@@ -230,7 +204,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         private static string AxisTag(Core.Vec2 axis) => Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y";
 
-        /// <summary>Rough value-string width: char count × ~0.6× glyph height. Shared with the engine.</summary>
         internal static double EstimateTextWidth(
             double valueFt, double textHeightModelFt, Func<double, string?>? valueFmt)
         {

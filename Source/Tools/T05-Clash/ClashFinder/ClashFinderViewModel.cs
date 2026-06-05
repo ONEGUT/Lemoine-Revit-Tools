@@ -64,10 +64,9 @@ namespace LemoineTools.Tools.Clash
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
           : "Grid";
-        private bool   _chainAligned     = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
-        private double _chainGapMm       = AutoDimension.AutoDimensionConfig.Instance.ChainMaxGapMm;
-        private double _chainCollinearMm = AutoDimension.AutoDimensionConfig.Instance.ChainCollinearToleranceMm;
-        private double _dupTolMm         = AutoDimension.AutoDimensionConfig.Instance.DuplicateToleranceMm;
+        private bool   _chainAligned = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
+        private double _runGapMm     = AutoDimension.AutoDimensionConfig.Instance.RunGapMm;
+        private double _runCrossMm   = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceMm;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -279,20 +278,15 @@ namespace LemoineTools.Tools.Clash
 
             AddDivider(outer);
             AddStepperRow(outer,
-                "Chain max gap (mm)",
-                "Clashes farther apart than this along a run are not chained into the same string.",
-                _chainGapMm, min: 0, max: 10000, step: 100, decimals: 0,
-                v => { _chainGapMm = v; Fire(); });
+                "Run gap (mm)",
+                "Clashes farther apart than this along a run start a separate run (and a separate dimension).",
+                _runGapMm, min: 0, max: 10000, step: 100, decimals: 0,
+                v => { _runGapMm = v; Fire(); });
             AddStepperRow(outer,
-                "Chain alignment tolerance (mm)",
-                "How far a clash may sit off the shared baseline and still count as in line for chaining.",
-                _chainCollinearMm, min: 0, max: 2000, step: 25, decimals: 0,
-                v => { _chainCollinearMm = v; Fire(); });
-            AddStepperRow(outer,
-                "Duplicate merge tolerance (mm)",
-                "Collapse parallel dimensions on the same axis whose witness lines coincide within this into one. 0 = off.",
-                _dupTolMm, min: 0, max: 2000, step: 25, decimals: 0,
-                v => { _dupTolMm = v; Fire(); });
+                "Run cross tolerance (mm)",
+                "How far a clash may sit off the run line and still belong to it. Also the across-run snap: members within this share one dimension.",
+                _runCrossMm, min: 0, max: 2000, step: 25, decimals: 0,
+                v => { _runCrossMm = v; Fire(); });
 
             AddDivider(outer);
             AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
@@ -352,10 +346,9 @@ namespace LemoineTools.Tools.Clash
             _handler.DimTargetType    = _dimTargetType;
             _handler.StoreyMarginMm   = _storeyMarginMm;
             _handler.RoundSizeMm        = _roundSizeMm;
-            _handler.DimChainAligned    = _chainAligned;
-            _handler.DimChainMaxGapMm   = _chainGapMm;
-            _handler.DimChainCollinearMm = _chainCollinearMm;
-            _handler.DimDuplicateTolMm   = _dupTolMm;
+            _handler.DimChainAligned = _chainAligned;
+            _handler.DimRunGapMm     = _runGapMm;
+            _handler.DimRunCrossMm   = _runCrossMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
                 : new List<AutoDimension.Resolvers.SlabScope>();
