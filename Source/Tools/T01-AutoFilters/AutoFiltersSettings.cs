@@ -847,8 +847,14 @@ namespace LemoineTools.Tools.AutoFilters
                         // Promote category-level fields onto the rule if not already set
                         if (rule.BuiltInCategories == null || rule.BuiltInCategories.Count == 0)
                             rule.BuiltInCategories = new List<string>(cat.BuiltInCategories ?? new List<string>());
-                        if (string.IsNullOrEmpty(rule.Parameter) || rule.Parameter == "System Type")
-                            rule.Parameter = cat.Parameter ?? "System Type";
+
+                        // V2 stored the filter parameter at the category level; rules never
+                        // carried their own. This migration is version-gated (runs once, only
+                        // for V2 data), so the category parameter is authoritative — promote it
+                        // unconditionally. The old value-sniff (== "System Type", the rule
+                        // default) could not tell an unset default from a deliberate choice and
+                        // would clobber a real "System Type" if ever run on migrated data.
+                        rule.Parameter = cat.Parameter ?? "System Type";
 
                         trade.Rules.Add(rule);
                     }
