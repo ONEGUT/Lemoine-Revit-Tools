@@ -124,7 +124,9 @@ namespace LemoineTools.Tools.ModifyElements
                             if (pTop == null || pTop.IsReadOnly)
                                 throw new InvalidOperationException("Top Constraint is read-only.");
 
-                            pTop.Set(nextLevel.Id);
+                            if (!pTop.Set(nextLevel.Id))
+                                throw new InvalidOperationException(
+                                    $"Top Constraint would not accept level '{nextLevel.Name}'.");
                             pOff?.Set(0.0);
 
                             changed++;
