@@ -100,6 +100,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             output.CoreConfig = coreCfg;
             _log($"Text size: {textPaperFt * 12.0:0.###}\" paper × 1:{scale:0} → {coreCfg.TextHeightFt:0.##} ft model (cramped + stagger basis).", "info");
 
+            // Exact value formatter using the dimension type's own units format, so width estimation
+            // counts the real glyphs (e.g. 0' - 11 5/8") in whatever units the type displays.
+            var valueFmt = BuildValueFormatter(doc, output.DimTypeId);
+
             var axes = cfg.DimensionBothAxes
                 ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
                 : new[] { new Core.Vec2(1, 0) };
@@ -157,7 +161,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             double collinearFt = cfg.ChainCollinearToleranceMm / 304.8;
             double dupTolFt    = cfg.DuplicateToleranceMm / 304.8;
             _log($"Chaining aligned clashes ({(cfg.ChainAligned ? "on" : "off")})…", "info");
-            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt, dupTolFt);
+            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt, dupTolFt, valueFmt);
             var dims = chained.Dims;
             output.Refs = chained.Refs;
 
@@ -208,6 +212,35 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 TimeCapMs           = paper.TimeCapMs,
                 PlateauEpsilon      = paper.PlateauEpsilon,
                 MaxOffsetSteps      = paper.MaxOffsetSteps,
+            };
+        }
+
+        /// <summary>
+        /// Returns a formatter that renders a length (internal ft) exactly as the resolved dimension
+        /// type will display it. It reads the type's own units-format override when present (so it
+        /// matches the placed dimension's text in any unit system), else the project length units.
+        /// Used to estimate text width by glyph count at plan time; never throws.
+        /// </summary>
+        private static Func<double, string?> BuildValueFormatter(Document doc, ElementId dimTypeId)
+        {
+            Units units = doc.GetUnits();
+            try
+            {
+                var dt = doc.GetElement(dimTypeId) as DimensionType;
+                FormatOptions fo = dt?.GetUnitsFormatOptions();
+                if (fo != null && !fo.UseDefault)
+                {
+                    var u = new Units(units.UnitSystem);
+                    u.SetFormatOptions(SpecTypeId.Length, fo);
+                    units = u;
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: read dim units format", ex); }
+
+            return ft =>
+            {
+                try { return UnitFormatUtils.Format(units, SpecTypeId.Length, ft, false); }
+                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: format dim value", ex); return null; }
             };
         }
 

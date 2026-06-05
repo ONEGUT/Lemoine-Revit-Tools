@@ -37,7 +37,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         public static Result Build(
             IReadOnlyList<ResolvedItem> items, Core.LayoutConfig cfg,
-            bool chain, double maxGapFt, double collinearTolFt, double duplicateTolFt = 0.0)
+            bool chain, double maxGapFt, double collinearTolFt, double duplicateTolFt = 0.0,
+            Func<double, string?>? valueFmt = null)
         {
             var result = new Result();
             if (items == null || items.Count == 0) return result;
@@ -78,8 +79,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                             j++;
 
                         var run = sorted.GetRange(i, j - i);
-                        if (run.Count >= 2) EmitChain(run, axis, perp, cfg, result);
-                        else                EmitSingle(run[0], axis, cfg, result);
+                        if (run.Count >= 2) EmitChain(run, axis, perp, cfg, result, valueFmt);
+                        else                EmitSingle(run[0], axis, cfg, result, valueFmt);
                         i = j;
                     }
                 }
@@ -145,7 +146,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             return true;
         }
 
-        private static void EmitSingle(ResolvedItem it, Core.Vec2 axis, Core.LayoutConfig cfg, Result result)
+        private static void EmitSingle(ResolvedItem it, Core.Vec2 axis, Core.LayoutConfig cfg, Result result,
+                                       Func<double, string?>? valueFmt)
         {
             double srcA = it.Source2d.Dot(axis);
             double tgtA = it.Target2d.Dot(axis);
@@ -164,7 +166,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 OffsetFt    = cfg.FirstOffsetFt,
                 Segments    = new List<Core.PlannedSegment>
                 {
-                    new Core.PlannedSegment { LengthFt = len, TextWidthFt = EstimateTextWidth(len, cfg.TextHeightFt) },
+                    new Core.PlannedSegment { LengthFt = len, TextWidthFt = EstimateTextWidth(len, cfg.TextHeightFt, valueFmt) },
                 },
             };
             result.Dims.Add(dim);
@@ -176,7 +178,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         }
 
         private static void EmitChain(
-            List<ResolvedItem> run, Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, Result result)
+            List<ResolvedItem> run, Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, Result result,
+            Func<double, string?>? valueFmt)
         {
             // All members share the same target line → constant target axial; use the first's ref.
             double tgtA = run[0].Target2d.Dot(axis);
@@ -194,7 +197,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 if (deduped.Count == 0 || Math.Abs(ra.a - deduped[deduped.Count - 1].a) > cfg.PrecisionFt)
                     deduped.Add(ra);
 
-            if (deduped.Count < 2) { EmitSingle(run[0], axis, cfg, result); return; }
+            if (deduped.Count < 2) { EmitSingle(run[0], axis, cfg, result, valueFmt); return; }
 
             double minA = deduped[0].a, maxA = deduped[deduped.Count - 1].a;
             Core.Vec2 sp = axis * minA + perp * basePerp;
@@ -204,7 +207,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             for (int k = 1; k < deduped.Count; k++)
             {
                 double len = deduped[k].a - deduped[k - 1].a;
-                segments.Add(new Core.PlannedSegment { LengthFt = len, TextWidthFt = EstimateTextWidth(len, cfg.TextHeightFt) });
+                segments.Add(new Core.PlannedSegment { LengthFt = len, TextWidthFt = EstimateTextWidth(len, cfg.TextHeightFt, valueFmt) });
             }
 
             string key = "chain|" + AxisTag(axis) + "|" +
@@ -228,11 +231,44 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private static string AxisTag(Core.Vec2 axis) => Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y";
 
         /// <summary>Rough value-string width: char count × ~0.6× glyph height. Shared with the engine.</summary>
-        internal static double EstimateTextWidth(double valueFt, double textHeightModelFt)
+        internal static double EstimateTextWidth(
+            double valueFt, double textHeightModelFt, Func<double, string?>? valueFmt)
         {
-            string s = valueFt.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "'";
+            // Prefer the EXACT display string produced by the dimension type's own units format, so the
+            // glyph count matches what Revit will render in any unit system. Fall back to an imperial
+            // ft-in render only when formatting is unavailable. Either beats the old decimal-feet string,
+            // which under-counted imperial glyphs ~2-3x and left cramped/clash detection and column
+            // sizing thinking the text was far narrower than it is.
+            string s = valueFmt?.Invoke(valueFt) ?? "";
+            if (s.Length == 0) s = ArchFeetInchString(valueFt);
             int chars = Math.Max(3, s.Length);
-            return chars * textHeightModelFt * 0.6;
+            return chars * textHeightModelFt * GlyphWidthFactor;
+        }
+
+        // Average glyph advance as a fraction of text height (monospace-ish upper estimate).
+        private const double GlyphWidthFactor = 0.6;
+
+        /// <summary>Formats a length in feet as an architectural feet-inches-sixteenths string —
+        /// only used to count glyphs for width estimation, so exact rounding is not critical.</summary>
+        private static string ArchFeetInchString(double valueFt)
+        {
+            bool neg = valueFt < 0;
+            double v = Math.Abs(valueFt);
+            int feet  = (int)Math.Floor(v);
+            double remIn = (v - feet) * 12.0;
+            int inches = (int)Math.Floor(remIn);
+            int sixteenths = (int)Math.Round((remIn - inches) * 16.0);
+            if (sixteenths == 16) { inches++; sixteenths = 0; }
+            if (inches == 12) { feet++; inches = 0; }
+
+            string s = (neg ? "-" : "") + feet + "' - " + inches;
+            if (sixteenths > 0)
+            {
+                int num = sixteenths, den = 16;
+                while (num % 2 == 0 && den % 2 == 0) { num /= 2; den /= 2; }
+                s += " " + num + "/" + den;
+            }
+            return s + "\"";
         }
     }
 }

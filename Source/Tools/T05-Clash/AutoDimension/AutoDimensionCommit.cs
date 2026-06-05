@@ -154,6 +154,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private const double ColumnStepHeights     = 1.4;  // perpendicular step between stacked tags
         private const double AlongBaseHeights      = 0.75; // column offset past the group's far text edge
         private const int    MaxColumnSteps        = 24;   // perpendicular clash-avoidance tries before giving up
+        private const double GlyphWidthFactor      = 0.6;  // average glyph advance as a fraction of text height
+
+        /// <summary>
+        /// Width (model ft) of a tag's actual displayed value text. Uses the real Revit ValueString
+        /// (e.g. "0' - 11 5/8\"") so the column boxes and front-edge alignment match what's drawn,
+        /// rather than the plan-time decimal estimate which badly under-counted imperial glyphs.
+        /// Falls back to the planned estimate if the value string isn't available yet.
+        /// </summary>
+        private static double TagWidthFt(string? valueString, double fallbackFt, double th)
+        {
+            if (string.IsNullOrEmpty(valueString)) return fallbackFt;
+            int chars = Math.Max(3, valueString.Length);
+            return chars * th * GlyphWidthFactor;
+        }
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
@@ -196,12 +210,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     {
                         DimensionSegment? seg = null;
                         XYZ? def = null;
-                        try { seg = segs.get_Item(k); def = seg?.TextPosition; }
+                        string? val = null;
+                        try { seg = segs.get_Item(k); def = seg?.TextPosition; val = seg?.ValueString; }
                         catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: read segment text", ex); }
                         if (seg != null && def != null)
                         {
                             DimensionSegment captured = seg;
-                            run.Add(new ColumnTag(def, pd.Segments[k], pos =>
+                            double w = TagWidthFt(val, pd.Segments[k].TextWidthFt, th);
+                            run.Add(new ColumnTag(def, pd.Segments[k], w, pos =>
                             {
                                 try { captured.TextPosition = pos; }
                                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
@@ -223,9 +239,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     XYZ? def = dim.TextPosition;
                     if (def != null)
                     {
+                        double w = TagWidthFt(dim.ValueString, pd.Segments[0].TextWidthFt, th);
                         var single = new List<ColumnTag>
                         {
-                            new ColumnTag(def, pd.Segments[0], pos =>
+                            new ColumnTag(def, pd.Segments[0], w, pos =>
                             {
                                 try { dim.TextPosition = pos; }
                                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
@@ -244,9 +261,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         {
             public readonly XYZ DefaultPos;
             public readonly Core.PlannedSegment Ps;
+            public readonly double Width;          // actual displayed-text width (model ft)
             public readonly Action<XYZ> SetPos;
-            public ColumnTag(XYZ defaultPos, Core.PlannedSegment ps, Action<XYZ> setPos)
-            { DefaultPos = defaultPos; Ps = ps; SetPos = setPos; }
+            public ColumnTag(XYZ defaultPos, Core.PlannedSegment ps, double width, Action<XYZ> setPos)
+            { DefaultPos = defaultPos; Ps = ps; Width = width; SetPos = setPos; }
         }
 
         /// <summary>
@@ -287,7 +305,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             double step  = ColumnStepHeights * th;
             foreach (var t in ordered)
             {
-                double halfAlong = Math.Max(t.Ps.TextWidthFt, th) * 0.5;
+                double halfAlong = Math.Max(t.Width, th) * 0.5;
                 double halfPerp  = th * 0.5;
                 double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
                 double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
