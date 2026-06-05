@@ -52,14 +52,15 @@ namespace LemoineTools.Tools.AutoFilters
                 return;
             }
 
-            // Resolve names to ElementIds
+            // Resolve names to ElementIds (case-insensitive, matching the rest of the filter system).
+            var selectedSet = new HashSet<string>(SelectedFilterNames, StringComparer.OrdinalIgnoreCase);
             var filterMap = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
                 .Cast<ParameterFilterElement>()
-                .Where(f => SelectedFilterNames.Contains(f.Name))
-                .ToDictionary(f => f.Name, f => f.Id);
+                .Where(f => selectedSet.Contains(f.Name))
+                .ToDictionary(f => f.Name, f => f.Id, StringComparer.OrdinalIgnoreCase);
 
-            var notFound = SelectedFilterNames.Except(filterMap.Keys).ToList();
+            var notFound = SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)).ToList();
             foreach (var n in notFound)
             {
                 Log($"Not found in project: '{n}' — skipped.", "info");

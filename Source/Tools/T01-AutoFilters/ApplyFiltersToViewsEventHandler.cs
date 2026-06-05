@@ -59,14 +59,16 @@ namespace LemoineTools.Tools.AutoFilters
                 fail++; return;
             }
 
-            // Build filter name → ElementId map
+            // Build filter name → ElementId map. Case-insensitive to match the OrdinalIgnoreCase
+            // rule-name comparison used elsewhere, so a filter with differing stored casing is found.
+            var selectedSet = new HashSet<string>(SelectedFilterNames, StringComparer.OrdinalIgnoreCase);
             var filterMap = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
                 .Cast<ParameterFilterElement>()
-                .Where(f => SelectedFilterNames.Contains(f.Name))
-                .ToDictionary(f => f.Name, f => f.Id);
+                .Where(f => selectedSet.Contains(f.Name))
+                .ToDictionary(f => f.Name, f => f.Id, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var m in SelectedFilterNames.Except(filterMap.Keys))
+            foreach (var m in SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)))
                 Log($"Filter not found in project: '{m}'", "info");
 
             if (filterMap.Count == 0)
