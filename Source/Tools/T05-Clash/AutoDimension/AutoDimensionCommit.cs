@@ -250,11 +250,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         }
 
         /// <summary>
-        /// Places a run of adjacent moved tags as one aligned column. The column sits just past the
-        /// group's far (+axis) end so every arc swings the same way; tags stack perpendicular from a
-        /// base clearance, nearest anchor lowest, each subsequent one a row higher (and bumped further
-        /// if it still hits an already-placed tag). The perpendicular sign follows the dimension side,
-        /// so an above run climbs up and a Flipped/below run mirrors downward.
+        /// Places a run of adjacent moved tags as one aligned column. Every tag's FRONT (arc-side)
+        /// edge lands on a common line — wider tags extend further back (+axis) rather than spreading
+        /// their centres — and that front line sits just past the group's furthest dimension edge (a
+        /// moved segment's far witness), so the whole column clears the dimension. Tags then stack
+        /// perpendicular from a base clearance, nearest anchor lowest, each subsequent one a row higher
+        /// (bumped further if it still hits an already-placed tag). The perpendicular sign follows the
+        /// dimension side, so an above run climbs up and a Flipped/below run mirrors downward.
         /// </summary>
         private static void PlaceColumn(
             List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, double th,
@@ -264,16 +266,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             double Axial(XYZ p) => projection.To2D(p).Dot(axis);   // reading-direction coordinate
 
-            // Column anchor = just past the far (max-axial) tag's text edge.
-            ColumnTag far = run[0];
-            double maxAxial = Axial(far.DefaultPos);
+            // Reference point on the dimension line (any tag centre works — the line is straight along
+            // worldAxis), plus the group's furthest dimension edge: the far witness of the +axis-most
+            // moved segment = its centre + half its measured span.
+            ColumnTag refTag = run[0];
+            double refAxial  = Axial(refTag.DefaultPos);
+            double groupFarEdge = double.MinValue;
             foreach (var t in run)
             {
-                double a = Axial(t.DefaultPos);
-                if (a > maxAxial) { maxAxial = a; far = t; }
+                double edge = Axial(t.DefaultPos) + t.Ps.LengthFt * 0.5;
+                if (edge > groupFarEdge) groupFarEdge = edge;
             }
-            double farHalf  = Math.Max(far.Ps.TextWidthFt, th) * 0.5;
-            XYZ colAnchor   = far.DefaultPos + worldAxis * (farHalf + AlongBaseHeights * th);
+            // Every tag's front edge aligns here, offset just past the dimension's furthest edge.
+            double frontLine = groupFarEdge + AlongBaseHeights * th;
 
             // Nearest anchor (max axial) lowest → farthest highest, so the arcs nest without crossing.
             var ordered = run.OrderByDescending(t => Axial(t.DefaultPos)).ToList();
@@ -287,11 +292,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
                 double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
 
-                XYZ pos = colAnchor;
+                // Centre this tag so its front (arc-side, -axis) edge sits on frontLine: push the centre
+                // back by the tag's own half-width. All front edges then line up regardless of text length.
+                double along = (frontLine - refAxial) + halfAlong;
+                XYZ baseOnLine = refTag.DefaultPos + worldAxis * along;
+
+                XYZ pos = baseOnLine;
                 Core.Box2 box = default;
                 for (int s = 0; s < MaxColumnSteps; s++)
                 {
-                    pos = colAnchor + worldPerp * (sign * level);
+                    pos = baseOnLine + worldPerp * (sign * level);
                     box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
                     bool clash = false;
                     for (int i = 0; i < placedTags.Count; i++)
