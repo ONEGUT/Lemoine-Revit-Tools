@@ -808,9 +808,14 @@ namespace LemoineTools.Tools.Ceilings
         private static string FormatFtIn(double valueFt)
         {
             int totalInches = (int)Math.Round(valueFt * 12.0);
-            int ft          = totalInches / 12;
-            int inches      = Math.Abs(totalInches % 12);
-            return $"{ft}'-{inches}\"";
+            // Sign must survive on the whole value: when ft rounds to 0, a bare
+            // Abs(inches) made +6" and -6" both read "0'-6"", collapsing two buckets
+            // into one filter name. Carry the sign as a prefix on the magnitude.
+            string sign   = totalInches < 0 ? "-" : "";
+            int absInches = Math.Abs(totalInches);
+            int ft        = absInches / 12;
+            int inches    = absInches % 12;
+            return $"{sign}{ft}'-{inches}\"";
         }
 
         private List<Autodesk.Revit.DB.Color> BuildHeatmapRamp(int count)
