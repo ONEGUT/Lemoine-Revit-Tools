@@ -235,17 +235,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// </summary>
         private static Func<double, string?> BuildValueFormatter(Document doc, ElementId dimTypeId)
         {
+            // GetUnits() returns a mutable copy of the project units, so we can override just the
+            // Length format options with the dimension type's own when it sets one (no need to know
+            // the unit system to build a fresh Units — Units has no UnitSystem getter in 2024).
             Units units = doc.GetUnits();
             try
             {
                 var dt = doc.GetElement(dimTypeId) as DimensionType;
                 FormatOptions fo = dt?.GetUnitsFormatOptions();
                 if (fo != null && !fo.UseDefault)
-                {
-                    var u = new Units(units.UnitSystem);
-                    u.SetFormatOptions(SpecTypeId.Length, fo);
-                    units = u;
-                }
+                    units.SetFormatOptions(SpecTypeId.Length, fo);
             }
             catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: read dim units format", ex); }
 
