@@ -110,27 +110,45 @@ namespace LemoineTools.Tools.Clash
                         Log("Running dimension pass…", "info");
 
                         var dimCfg = AutoDimensionConfig.Instance;
-                        dimCfg.TargetType                = DimTargetType;   // run-level overrides from the Clash Finder options
-                        dimCfg.ChainAligned              = DimChainAligned;
-                        dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
-                        dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
-                        dimCfg.DuplicateToleranceMm      = DimDuplicateTolMm;
+                        // Snapshot the fields we override so these run-level Clash Finder options don't
+                        // leak into the shared singleton (and thus the standalone Auto Dimension tool).
+                        var snapTarget    = dimCfg.TargetType;
+                        var snapChain     = dimCfg.ChainAligned;
+                        var snapGap       = dimCfg.ChainMaxGapMm;
+                        var snapCollinear = dimCfg.ChainCollinearToleranceMm;
+                        var snapDup       = dimCfg.DuplicateToleranceMm;
+                        try
+                        {
+                            dimCfg.TargetType                = DimTargetType;   // run-level overrides
+                            dimCfg.ChainAligned              = DimChainAligned;
+                            dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
+                            dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
+                            dimCfg.DuplicateToleranceMm      = DimDuplicateTolMm;
 
-                        // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
-                        // the slab the user picked up front in the wizard (empty → scan all floors).
-                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
-                        System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
-                        if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
-                            datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
-                        else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) && SlabScopes.Count > 0)
-                            slabScopes = ViewIds.ToDictionary(v => v, v => SlabScopes);
+                            // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
+                            // the slab the user picked up front in the wizard (empty → scan all floors).
+                            System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
+                            System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
+                            if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
+                                datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
+                            else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) && SlabScopes.Count > 0)
+                                slabScopes = ViewIds.ToDictionary(v => v, v => SlabScopes);
 
-                        var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
+                            var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
 
-                        pass += dimResult.Placed;
-                        fail += dimResult.Failures;
-                        Log($"Dimension pass — {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
-                            dimResult.Placed > 0 ? "pass" : "fail");
+                            pass += dimResult.Placed;
+                            fail += dimResult.Failures;
+                            Log($"Dimension pass — {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
+                                dimResult.Placed > 0 ? "pass" : "fail");
+                        }
+                        finally
+                        {
+                            dimCfg.TargetType                = snapTarget;
+                            dimCfg.ChainAligned              = snapChain;
+                            dimCfg.ChainMaxGapMm             = snapGap;
+                            dimCfg.ChainCollinearToleranceMm = snapCollinear;
+                            dimCfg.DuplicateToleranceMm      = snapDup;
+                        }
                     }
                 }
             }
