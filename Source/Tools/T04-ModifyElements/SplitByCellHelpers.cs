@@ -59,13 +59,26 @@ namespace LemoineTools.Tools.ModifyElements
             double startX = Math.Floor((bb.Min.X - ox) / cellX) * cellX + ox;
             double startY = Math.Floor((bb.Min.Y - oy) / cellY) * cellY + oy;
 
-            var cellsX = new List<(double Min, double Max)>();
-            for (double x = startX; x < bb.Max.X; x += cellX)
-                cellsX.Add((x, x + cellX));
+            // Use an integer cell count rather than accumulating `x += cellX`: repeated addition
+            // drifts by a float epsilon over many cells and can drop the trailing column/row when
+            // the running value lands just past bb.Max. The small epsilon stops an exact span edge
+            // from spawning a zero-width sliver cell.
+            int nx = Math.Max(1, (int)Math.Ceiling((bb.Max.X - startX) / cellX - 1e-9));
+            int ny = Math.Max(1, (int)Math.Ceiling((bb.Max.Y - startY) / cellY - 1e-9));
 
-            var cellsY = new List<(double Min, double Max)>();
-            for (double y = startY; y < bb.Max.Y; y += cellY)
+            var cellsX = new List<(double Min, double Max)>(nx);
+            for (int i = 0; i < nx; i++)
+            {
+                double x = startX + i * cellX;
+                cellsX.Add((x, x + cellX));
+            }
+
+            var cellsY = new List<(double Min, double Max)>(ny);
+            for (int j = 0; j < ny; j++)
+            {
+                double y = startY + j * cellY;
                 cellsY.Add((y, y + cellY));
+            }
 
             if (cellsX.Count == 1 && cellsY.Count == 1)
                 return (0, CellSplitStatus.FitsInOneCell);
