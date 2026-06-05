@@ -184,7 +184,7 @@ namespace LemoineTools.Tools.Ceilings
                     if (!string.IsNullOrWhiteSpace(OutputFolder))
                     {
                         string outDir = UseCeilingGridsSubfolder
-                            ? EnsureDir(Path.Combine(OutputFolder, "Ceiling Grids"))
+                            ? Path.Combine(OutputFolder, "Ceiling Grids")
                             : OutputFolder;
                         EnsureDir(outDir);
                         ExportDwg(doc, view, name, outDir);
