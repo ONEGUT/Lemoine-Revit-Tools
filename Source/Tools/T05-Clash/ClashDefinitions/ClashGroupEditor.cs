@@ -142,7 +142,14 @@ namespace LemoineTools.Tools.Clash
         private void RestoreFromSpec()
         {
             foreach (var pk in _spec.RuleKeys ?? new List<string>())
-                if (_persistKeyToDisplay.TryGetValue(pk, out var dk) && dk != null) _ruleDisplays.Add(dk);
+            {
+                if (_persistKeyToDisplay.TryGetValue(pk, out var dk) && dk != null)
+                    _ruleDisplays.Add(dk);
+                else
+                    // Saved rule no longer exists in the catalog — it will be pruned when the group is
+                    // re-saved. Record it so the drop isn't silent.
+                    LemoineLog.Warn("ClashGroupEditor", $"Saved clash rule '{pk}' no longer exists — dropped from the group.");
+            }
 
             foreach (var ost in _spec.Categories ?? new List<string>())
                 if (_ostToCategoryDisplay.TryGetValue(ost, out var disp) && disp != null) _catDisplays.Add(disp);
