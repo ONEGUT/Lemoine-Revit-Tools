@@ -104,6 +104,17 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
                 : new[] { new Core.Vec2(1, 0) };
 
+            // ── 1b. Cluster clashes into physical runs (axis-agnostic, before resolve) ──
+            // A run governs both its dimensions: chained along its length, single across it.
+            double runCrossFt = cfg.RunCrossToleranceMm / 304.8;
+            double runGapFt   = cfg.RunGapMm / 304.8;
+            var runs = cfg.ChainAligned
+                ? ClashRunGrouper.Build(sources, runCrossFt, runGapFt)
+                : new Dictionary<string, ClashRunGrouper.RunInfo>();
+            if (cfg.ChainAligned)
+                _log($"Grouped {sources.Count} clash(es) into {runs.Values.Distinct().Count()} run(s) "
+                   + $"(cross ≤{cfg.RunCrossToleranceMm:0} mm, gap ≤{cfg.RunGapMm:0} mm).", "info");
+
             var resolved        = new List<ResolvedItem>();
             var resolvedSources = new HashSet<string>();
             var firstFailReason = new Dictionary<string, string>();   // sourceKey → reason, used only if no axis resolved
@@ -118,16 +129,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     var res = resolver.Resolve(src, ctx);
                     if (res.Success)
                     {
+                        // A clash with no clustered run is its own solo run (one dim per axis).
+                        runs.TryGetValue(src.SourceKey, out var run);
                         resolved.Add(new ResolvedItem
                         {
-                            SourceKey  = src.SourceKey,
-                            SourceRef  = src.SourceRef,
-                            Source2d   = src.Anchor2d,
-                            Axis       = ax,
-                            TargetRef  = res.TargetRef!,
-                            Target2d   = res.TargetPoint2d,
-                            TargetKey  = res.TargetKey,
-                            TargetType = ttEnum,
+                            SourceKey   = src.SourceKey,
+                            SourceRef   = src.SourceRef,
+                            Source2d    = src.Anchor2d,
+                            Axis        = ax,
+                            TargetRef   = res.TargetRef!,
+                            Target2d    = res.TargetPoint2d,
+                            TargetKey   = res.TargetKey,
+                            TargetType  = ttEnum,
+                            RunId       = run?.RunId ?? ("solo|" + src.SourceKey),
+                            RunLongAxis = run?.LongAxis ?? new Core.Vec2(1, 0),
                         });
                         resolvedSources.Add(src.SourceKey);
                     }
@@ -152,17 +167,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             _log($"Resolved {resolved.Count} dimension(s) over {axes.Length} axis/axes from {sources.Count} source(s) — {plan.Unresolved.Count} unresolved, {plan.Ambiguities.Count} ambiguous.",
                 resolved.Count > 0 ? "info" : "fail");
 
-            // ── 2b. Chain collinear, adjacent clashes into multi-segment strings ──
-            double chainGapFt  = cfg.ChainMaxGapMm / 304.8;
-            double collinearFt = cfg.ChainCollinearToleranceMm / 304.8;
-            double dupTolFt    = cfg.DuplicateToleranceMm / 304.8;
-            _log($"Chaining aligned clashes ({(cfg.ChainAligned ? "on" : "off")})…", "info");
-            var chained = DimensionChainer.Build(resolved, coreCfg, cfg.ChainAligned, chainGapFt, collinearFt, dupTolFt);
+            // ── 2b. Build run-aware dimensions: chain along each run, single across it ──
+            _log($"Building run-aware dimensions (grouping {(cfg.ChainAligned ? "on" : "off")})…", "info");
+            var chained = DimensionChainer.Build(resolved, coreCfg);
             var dims = chained.Dims;
             output.Refs = chained.Refs;
 
             int chainedStrings = dims.Count(d => d.Segments.Count > 1);
-            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained){(cfg.DuplicateToleranceMm > 0 ? $", duplicate-merge ≤{cfg.DuplicateToleranceMm:0} mm" : "")}.", "info");
+            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
             if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────

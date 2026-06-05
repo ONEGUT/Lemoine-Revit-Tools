@@ -27,10 +27,9 @@ namespace LemoineTools.Tools.Clash
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
         public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
-        public bool                 DimChainAligned  { get; set; } = true;   // merge collinear, adjacent clashes into one string
-        public double               DimChainMaxGapMm { get; set; } = 1500.0; // max along-axis gap that still chains
-        public double               DimChainCollinearMm { get; set; } = 150.0; // off-baseline tolerance for "in line"
-        public double               DimDuplicateTolMm   { get; set; } = 25.0;  // merge identical parallel dims within this
+        public bool                 DimChainAligned  { get; set; } = true;   // group clashes into runs (chain along, single across)
+        public double               DimRunGapMm      { get; set; } = 1500.0; // max along-run gap between adjacent run members
+        public double               DimRunCrossMm    { get; set; } = 100.0;  // off-line tolerance + across-run snap
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
@@ -111,10 +110,9 @@ namespace LemoineTools.Tools.Clash
 
                         var dimCfg = AutoDimensionConfig.Instance;
                         dimCfg.TargetType                = DimTargetType;   // run-level overrides from the Clash Finder options
-                        dimCfg.ChainAligned              = DimChainAligned;
-                        dimCfg.ChainMaxGapMm             = DimChainMaxGapMm;
-                        dimCfg.ChainCollinearToleranceMm = DimChainCollinearMm;
-                        dimCfg.DuplicateToleranceMm      = DimDuplicateTolMm;
+                        dimCfg.ChainAligned         = DimChainAligned;
+                        dimCfg.RunGapMm             = DimRunGapMm;
+                        dimCfg.RunCrossToleranceMm  = DimRunCrossMm;
 
                         // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
                         // the slab the user picked up front in the wizard (empty → scan all floors).
