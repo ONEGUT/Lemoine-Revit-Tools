@@ -66,8 +66,16 @@ namespace LemoineTools.Lemoine.Controls
             row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_SM");
             row.SetResourceReference(Border.PaddingProperty, "LemoineTh_CardPad");
             KeyboardNavigation.SetIsTabStop(row, true);
-            row.SetResourceReference(Border.BackgroundProperty,   on ? "LemoineAccentDim" : "Transparent");
-            row.SetResourceReference(Border.BorderBrushProperty,  on ? "LemoineAccent"    : "Transparent");
+            if (on)
+            {
+                row.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                row.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            }
+            else
+            {
+                row.Background  = Brushes.Transparent;   // direct — "Transparent" is not a resource key
+                row.BorderBrush = Brushes.Transparent;
+            }
 
             // UIA: expose label, description, and on/off state to screen readers
             AutomationProperties.SetName(row, item.Label);
@@ -168,8 +176,16 @@ namespace LemoineTools.Lemoine.Controls
 
             // Update row colours and notify UIA of the state change
             row.SetIsOn(newOn);
-            row.SetResourceReference(Border.BackgroundProperty,  newOn ? "LemoineAccentDim" : "Transparent");
-            row.SetResourceReference(Border.BorderBrushProperty, newOn ? "LemoineAccent"    : "Transparent");
+            if (newOn)
+            {
+                row.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                row.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            }
+            else
+            {
+                row.Background  = Brushes.Transparent;   // direct — "Transparent" is not a resource key
+                row.BorderBrush = Brushes.Transparent;
+            }
 
             // Update knob fill (theme-aware contrast)
             knob.SetResourceReference(Ellipse.FillProperty, newOn ? "LemoineKnobOn" : "LemoineKnobOff");

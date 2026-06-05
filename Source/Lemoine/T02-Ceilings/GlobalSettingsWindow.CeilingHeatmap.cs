@@ -123,16 +123,16 @@ namespace LemoineTools.Lemoine
                         {
                             var opts = setting.Options as NumberOpts;
                             var row = new StackPanel { Orientation = Orientation.Horizontal };
-                            var tb = new TextBox { Text = setting.Default?.ToString() ?? "", TextAlignment = TextAlignment.Right };
-                            tb.SetResourceReference(TextBox.WidthProperty, "LemoineW_NumInput");
-                            tb.SetResourceReference(TextBox.HeightProperty,     "LemoineH_Input");
-                            tb.SetResourceReference(TextBox.PaddingProperty,    "LemoineTh_InputPad");
-                            tb.SetResourceReference(TextBox.BackgroundProperty, "LemoineSelectBg");
-                            tb.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
-                            tb.SetResourceReference(TextBox.FontFamilyProperty, "LemoineMonoFont");
-                            tb.SetResourceReference(TextBox.FontSizeProperty,   "LemoineFS_MD");
-                            tb.LostFocus += (s, e) => { if (double.TryParse(tb.Text, out double v)) ts?.ApplySettings(groupId, setting.Id, v); };
-                            row.Children.Add(tb);
+                            var stepper = new Controls.LemoineInlineStepper
+                            {
+                                MinValue = opts?.Min ?? 0,
+                                MaxValue = opts?.Max ?? 100,
+                                Step     = opts?.Step ?? 1,
+                                Decimals = (opts != null && opts.Step % 1 != 0) ? 2 : 0,
+                                Value    = double.TryParse(setting.Default?.ToString(), out var d) ? d : 0,
+                            };
+                            stepper.ValueChanged += (s, v) => ts?.ApplySettings(groupId, setting.Id, v);
+                            row.Children.Add(stepper);
                             if (!string.IsNullOrEmpty(opts?.Unit))
                             {
                                 var u = new TextBlock { Text = "  " + opts!.Unit, VerticalAlignment = VerticalAlignment.Center };

@@ -990,11 +990,11 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var cardStack = new StackPanel();
 
@@ -1115,11 +1115,11 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var cardStack = new StackPanel();
 
@@ -1413,11 +1413,11 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var cardStack = new StackPanel();
 
@@ -1626,11 +1626,11 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 10, 10, 10),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var cardStack = new StackPanel();
 
@@ -3001,11 +3001,11 @@ namespace LemoineTools.Lemoine
             {
                 Margin          = new Thickness(10, 0, 10, 10),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(10), // rounder card (matches LemoineRadius_Card)
                 Padding         = new Thickness(10, 8, 10, 8),
             };
-            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
-            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
 
             var descTb = new TextBlock
             {
