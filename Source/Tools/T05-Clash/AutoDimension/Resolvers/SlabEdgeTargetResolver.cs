@@ -100,10 +100,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
                     "no slab/opening termination face on the measurement axis within the distance cap");
 
-            // Deterministic ordering: score, then stable key.
+            // Order by straight-line distance to the edge directly (nearest wins), then a stable key.
+            // The composite score's axis-deviation/area terms could otherwise rank a slightly farther
+            // edge ahead of the nearest, and the ambiguity guard below already compares RadialDist.
             candidates.Sort((a, b) =>
             {
-                int c = a.Score.CompareTo(b.Score);
+                int c = a.RadialDist.CompareTo(b.RadialDist);
                 return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key);
             });
 
