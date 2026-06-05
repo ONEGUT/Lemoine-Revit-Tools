@@ -77,9 +77,9 @@ namespace LemoineTools.Tools.Ceilings
                     .OfClass(typeof(Ceiling))
                     .WhereElementIsNotElementType())
                 {
-                    double heightAbove = el.get_Parameter(
-                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
-                    AddBucket(heightBuckets, heightAbove);
+                    var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+                    if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    AddBucket(heightBuckets, hParam.AsDouble());
                     hostCeilings++;
                 }
 
@@ -733,9 +733,9 @@ namespace LemoineTools.Tools.Ceilings
                     .WherePasses(bbFilter)
                     .WhereElementIsNotElementType())
                 {
-                    double heightAbove = el.get_Parameter(
-                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
-                    AddBucket(buckets, heightAbove);
+                    var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+                    if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    AddBucket(buckets, hParam.AsDouble());
                     scanned++;
                 }
             }
