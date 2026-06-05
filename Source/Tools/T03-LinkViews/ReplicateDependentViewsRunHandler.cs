@@ -182,7 +182,7 @@ namespace LemoineTools.Tools.LinkViews
         private static bool ViewNameExists(Document doc, string name) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(View)).Cast<View>()
-                .Any(v => !v.IsTemplate && v.Name == name);
+                .Any(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Assembles the new dependent view name from the naming slot configuration.

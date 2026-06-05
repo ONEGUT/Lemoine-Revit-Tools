@@ -209,13 +209,14 @@ namespace LemoineTools.Tools.LinkViews
         public static bool View3dExists(Document doc, string name) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(View3D)).Cast<View3D>()
-                .Any(v => !v.IsTemplate && v.Name == name);
+                .Any(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
 
         public static bool PlanExists(Document doc, string name, ViewFamily family) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
-                .Any(v => !v.IsTemplate && v.Name == name && v.ViewType ==
-                    (family == ViewFamily.FloorPlan ? ViewType.FloorPlan : ViewType.CeilingPlan));
+                .Any(v => !v.IsTemplate
+                          && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)
+                          && v.ViewType == (family == ViewFamily.FloorPlan ? ViewType.FloorPlan : ViewType.CeilingPlan));
 
         // ── View creation helpers ─────────────────────────────────────────────────
 
