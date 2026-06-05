@@ -17,8 +17,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
     {
         /// <summary>Config schema version. v1 first release; v2 refreshes the layout/chaining
         /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
-        /// the clash (Load() migrates older files).</summary>
-        public int SchemaVersion { get; set; } = 3;
+        /// the clash; v4 replaces per-axis chaining tolerances with run-based grouping (Load()
+        /// migrates older files).</summary>
+        public int SchemaVersion { get; set; } = 4;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -29,19 +30,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>Measure each clash in both the view's X and Y directions (two dimensions/clash).</summary>
         public bool DimensionBothAxes { get; set; } = true;
 
-        /// <summary>Merge collinear, adjacent clashes that share a target into one chained string.</summary>
+        /// <summary>Group clashes into physical runs, then chain along each run and emit a single
+        /// dimension across it. Off = one dimension per clash per axis.</summary>
         public bool ChainAligned { get; set; } = true;
 
-        /// <summary>Max along-axis gap between adjacent clashes that still chain (mm). Wide so
-        /// penetrations spread across a bay consolidate into one run to the edge, like the manual.</summary>
-        public double ChainMaxGapMm { get; set; } = 3000.0;
+        /// <summary>Max along-run gap between adjacent clashes that still belong to one run (mm).
+        /// Wide enough that penetrations spread across a bay stay one run to the edge, like the
+        /// manual; tight enough that a separate run further along starts its own dimension.</summary>
+        public double RunGapMm { get; set; } = 1500.0;
 
-        /// <summary>How far a clash may sit off the shared baseline and still count as "in line" (mm).</summary>
-        public double ChainCollinearToleranceMm { get; set; } = 250.0;
-
-        /// <summary>Collapse parallel dimensions on the same axis whose witness lines coincide within
-        /// this tolerance into a single dimension (mm). 0 disables the merge.</summary>
-        public double DuplicateToleranceMm { get; set; } = 25.0;
+        /// <summary>How far a clash may sit off the run's line and still belong to it (mm). Also the
+        /// across-run snap: members within this of the run offset share one dimension (a pipe a hair
+        /// off the line is treated as in line, not dimensioned separately).</summary>
+        public double RunCrossToleranceMm { get; set; } = 100.0;
 
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";
@@ -108,6 +109,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         if (c.Layout == null) c.Layout = new CoreLayout();
                         if (c.SchemaVersion < 2) MigrateToV2(c);
                         if (c.SchemaVersion < 3) MigrateToV3(c);
+                        if (c.SchemaVersion < 4) MigrateToV4(c);
                         return c;
                     }
                 }
@@ -126,8 +128,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             c.Layout.CrampedWeight     = def.Layout.CrampedWeight;
             c.Layout.FirstOffsetFt     = def.Layout.FirstOffsetFt;
             c.Layout.StringSpacingFt   = def.Layout.StringSpacingFt;
-            c.ChainMaxGapMm            = def.ChainMaxGapMm;
-            c.ChainCollinearToleranceMm = def.ChainCollinearToleranceMm;
+            // The v1→v2 chaining-number refresh targeted the old per-axis tolerances, which v4
+            // replaces with run grouping; MigrateToV4 sets the run knobs, so nothing to do here.
             c.SchemaVersion = 2;
         }
 
@@ -138,6 +140,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             var def = new AutoDimensionConfig();
             c.Layout.FirstOffsetFt = def.Layout.FirstOffsetFt;
             c.SchemaVersion = 3;
+        }
+
+        /// <summary>v3 → v4: the per-axis chaining tolerances (ChainMaxGapMm,
+        /// ChainCollinearToleranceMm) and the duplicate-merge tolerance (DuplicateToleranceMm) are
+        /// gone — grouping is now run-based. Those old XML elements are ignored on load; the new
+        /// RunGapMm / RunCrossToleranceMm take their (semantically different) defaults. Leaves the
+        /// user's target, links, dimension-type, and layout numbers untouched.</summary>
+        private static void MigrateToV4(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.RunGapMm            = def.RunGapMm;
+            c.RunCrossToleranceMm = def.RunCrossToleranceMm;
+            c.SchemaVersion = 4;
         }
     }
 }

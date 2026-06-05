@@ -188,7 +188,7 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         private static double SectionBoxBuffer =>
-            LinkViewsDisciplineSettings.Instance is var _ ? 3.0 : 3.0; // 3 ft default
+            LinkViewsDisciplineSettings.Instance.SectionBoxBuffer; // serialized; defaults to 3 ft
 
         private static bool View3dExists(Document doc, string name) =>
             new FilteredElementCollector(doc).OfClass(typeof(View3D)).Cast<View3D>()

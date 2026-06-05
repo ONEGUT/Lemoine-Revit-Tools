@@ -33,10 +33,16 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── State ──────────────────────────────────────────────────────────────
         private readonly IReadOnlyList<string> _allFilterNames;
-        private readonly IReadOnlyList<(string Name, string ViewType)> _allViews;
+        private readonly IReadOnlyList<(long Id, string Name, string ViewType)> _allViews;
 
         private List<string> _selectedFilters = new List<string>();
+        // S2 selection is keyed by the multiselect's display label; the map below
+        // resolves each label back to its view ElementId (the value passed to the
+        // handler). Labels are made unique in GetStepContent so colliding view names
+        // remain individually targetable.
         private List<string> _selectedViews   = new List<string>();
+        private readonly Dictionary<string, long> _viewLabelToId =
+            new Dictionary<string, long>(StringComparer.Ordinal);
         private Dictionary<string, bool> _optionState = new Dictionary<string, bool>
         {
             ["overwrite"] = false,
@@ -55,12 +61,12 @@ namespace LemoineTools.Tools.AutoFilters
             ApplyFiltersToViewsEventHandler handler,
             Autodesk.Revit.UI.ExternalEvent externalEvent,
             IReadOnlyList<string> allFilterNames,
-            IReadOnlyList<(string Name, string ViewType)> allViews)
+            IReadOnlyList<(long Id, string Name, string ViewType)> allViews)
         {
             _handler        = handler;
             _event          = externalEvent;
             _allFilterNames = allFilterNames ?? new List<string>();
-            _allViews       = allViews       ?? new List<(string, string)>();
+            _allViews       = allViews       ?? new List<(long, string, string)>();
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -113,16 +119,29 @@ namespace LemoineTools.Tools.AutoFilters
                     return none;
                 }
 
-                // Group by ViewType
+                // View names are NOT unique in Revit (a Floor Plan and its RCP, or two
+                // 3D views, can share a name), but the multiselect keys items by their
+                // display string. Give each view a unique label so colliding names stay
+                // individually selectable — without exposing the ElementId: the first
+                // occurrence keeps the plain name and later duplicates get a " (2)",
+                // " (3)" suffix. The label→id map (not the label) is what the handler
+                // resolves against.
+                _viewLabelToId.Clear();
                 var groups = new Dictionary<string, List<string>>();
-                foreach (var (name, vt) in _allViews)
+                foreach (var (id, name, vt) in _allViews)
                 {
+                    string label = name;
+                    int dup = 1;
+                    while (_viewLabelToId.ContainsKey(label))
+                        label = $"{name} ({++dup})";
+                    _viewLabelToId[label] = id;
                     if (!groups.ContainsKey(vt)) groups[vt] = new List<string>();
-                    groups[vt].Add(name);
+                    groups[vt].Add(label);
                 }
 
                 var tabs = new LemoineMultiSelectTabs();
-                tabs.SetGroups(groups);
+                // Pass the current selection so re-entering the step keeps prior picks.
+                tabs.SetGroups(groups, _selectedViews);
                 tabs.SelectionChanged += selected =>
                 {
                     _selectedViews = new List<string>(selected);
@@ -213,7 +232,15 @@ namespace LemoineTools.Tools.AutoFilters
             Action<int, int, int>      onComplete)
         {
             _handler.SelectedFilterNames = new List<string>(_selectedFilters);
-            _handler.SelectedViewNames   = new List<string>(_selectedViews);
+            // Resolve the selected display labels back to view ElementIds. A label
+            // missing from the map can only happen if state desynced; skip it rather
+            // than guessing a view by name.
+            _handler.SelectedViewIds = _selectedViews
+                .Where(lbl => _viewLabelToId.ContainsKey(lbl))
+                .Select(lbl => _viewLabelToId[lbl])
+                .ToList();
+            if (_handler.SelectedViewIds.Count < _selectedViews.Count)
+                pushLog($"{_selectedViews.Count - _handler.SelectedViewIds.Count} selected view(s) could not be resolved and were skipped.", "fail");
             _handler.OverwriteExisting   = GetOpt("overwrite");
             _handler.ApplyColorOverrides = GetOpt("color");
             _handler.PushLog             = pushLog;

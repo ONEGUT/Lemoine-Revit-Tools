@@ -76,8 +76,10 @@ namespace LemoineTools.Tools.AutoFilters
                     "and cannot be recovered. They will be removed from all views.");
                 outer.Children.Add(warn);
 
-                // Multi-select grouped by discipline prefix — nothing pre-selected
-                var groups = BuildFilterGroups(_allFilterNames);
+                // Multi-select grouped by owning trade — nothing pre-selected.
+                // Filter names are "{TRADEID}_{RULE_NAME}", so group via the trade
+                // map rather than splitting on " - " (which never matches).
+                var groups = AutoFiltersSettings.GroupFilterNamesByTrade(_allFilterNames);
                 var tabs = new LemoineMultiSelectTabs();
                 tabs.SetGroups(groups);
                 tabs.SelectionChanged += selected =>
@@ -95,7 +97,6 @@ namespace LemoineTools.Tools.AutoFilters
 
             return null;
         }
-
 
                 // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
@@ -146,21 +147,6 @@ namespace LemoineTools.Tools.AutoFilters
 
             pushLog($"Permanently deleting {_selectedNames.Count} filter(s) from project…", "info");
             _event.Raise();
-        }
-
-        // ── Helpers ─────────────────────────────────────────────────────────────
-        private static Dictionary<string, List<string>> BuildFilterGroups(
-            IReadOnlyList<string> names)
-        {
-            var groups = new Dictionary<string, List<string>>();
-            foreach (var name in names)
-            {
-                int sep  = name.IndexOf(" - ");
-                string g = sep >= 0 ? name.Substring(0, sep).Trim() : "Other";
-                if (!groups.ContainsKey(g)) groups[g] = new List<string>();
-                groups[g].Add(name);
-            }
-            return groups;
         }
     }
 }

@@ -17,7 +17,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineReviewable
+    public class LinkViewsLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Views by Level";
@@ -86,6 +86,9 @@ namespace LemoineTools.Tools.LinkViews
         private StackPanel  _s2Container;
         private Dispatcher  _s2Dispatcher;
 
+        // IStepAware: rebuilds a step's content widget (set by StepFlowWindow)
+        private Action<string>? _rebuildContent;
+
         // ── ExternalEvent wiring ───────────────────────────────────────
         private readonly LinkViewsLevelPhase1Handler? _phase1Handler;
         private readonly ExternalEvent?               _phase1Event;
@@ -135,6 +138,28 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S3") return BuildS3Naming();
             if (stepId == "S4") return null; // framework renders review (ILemoineReviewable)
             return null;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // IStepAware — re-scan when the user enters S2
+        // ═══════════════════════════════════════════════════════════════
+        // S2 content is built eagerly once at window construction, so a change to
+        // the S1 document selection (which clears the scan via the S1 handler) would
+        // otherwise leave S2 showing the stale all-documents scan and — because the
+        // S1 handler also clears _levelKeyToId — make every level click resolve to
+        // nothing, stranding the user with a disabled Next button. Rebuilding S2 on
+        // activation re-runs BuildS2, which re-triggers the scan for the current
+        // document selection and repopulates the level tabs.
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+            // Only rebuild when the scan is stale; a completed scan is preserved so
+            // the user's level selections survive navigating away and back.
+            if (!_scanDone && !_scanning)
+                _rebuildContent?.Invoke("S2");
         }
 
         // ── S1: Source Documents ───────────────────────────────────────

@@ -39,12 +39,13 @@ namespace LemoineTools.Tools.AutoFilters
                     return;
                 }
 
-                // Build name → ElementId lookup from active view's current filters
+                // Build name → ElementId lookup from active view's current filters (case-insensitive
+                // to match the rest of the filter system).
                 var appliedFilters = view.GetFilters()
                     .Select(id => doc.GetElement(id) as ParameterFilterElement)
                     .Where(f => f != null)
                     .Select(f => f!)
-                    .ToDictionary(f => f.Name, f => f.Id);
+                    .ToDictionary(f => f.Name, f => f.Id, StringComparer.OrdinalIgnoreCase);
 
                 var toRemove = SelectedFilterNames
                     .Where(n => appliedFilters.ContainsKey(n))

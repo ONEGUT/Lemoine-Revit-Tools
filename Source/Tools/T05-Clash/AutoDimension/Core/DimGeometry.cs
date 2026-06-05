@@ -22,13 +22,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             Vec2 a = d.SourcePoint + offVec;
             Vec2 b = d.TargetPoint + offVec;
 
-            // Text band thickness: text height plus a small pad. Staggered text reaches one
-            // extra band outward, so widen on that case.
+            // Text band thickness: text height plus a small pad. Moved text (staggered above or
+            // flipped below) reaches one extra band outward, so widen on that case.
             double band = cfg.TextHeightFt * 1.5;
-            bool staggered = false;
+            bool moved = false;
             foreach (var seg in d.Segments)
-                if (seg.TextState == SegmentTextState.Staggered) { staggered = true; break; }
-            if (staggered) band += cfg.TextHeightFt;
+                if (seg.TextState == SegmentTextState.Staggered || seg.TextState == SegmentTextState.Flipped)
+                { moved = true; break; }
+            if (moved) band += cfg.TextHeightFt;
 
             var box = Box2.FromPoints(a, b);
             d.PaperBounds = new Box2(box.MinX - band, box.MinY - band,

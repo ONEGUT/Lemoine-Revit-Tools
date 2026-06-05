@@ -184,7 +184,7 @@ namespace LemoineTools.Tools.Ceilings
                     if (!string.IsNullOrWhiteSpace(OutputFolder))
                     {
                         string outDir = UseCeilingGridsSubfolder
-                            ? EnsureDir(Path.Combine(OutputFolder, "Ceiling Grids"))
+                            ? Path.Combine(OutputFolder, "Ceiling Grids")
                             : OutputFolder;
                         EnsureDir(outDir);
                         ExportDwg(doc, view, name, outDir);
@@ -279,7 +279,8 @@ namespace LemoineTools.Tools.Ceilings
                     }
 
                     cgRules.Add((ruleName, type));
-                    pass++;
+                    // Hide-filter creation is an internal step; the success total counts the
+                    // views exported in Phase 3, not the per-type filters created here.
                 }
 
                 tx.Commit();

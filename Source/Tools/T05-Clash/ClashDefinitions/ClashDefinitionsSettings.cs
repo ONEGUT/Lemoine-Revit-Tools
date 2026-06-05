@@ -112,10 +112,11 @@ namespace LemoineTools.Tools.Clash
 
         private static ClashDefinitionsSettings Load()
         {
-            try
+            string path = FilePath;
+
+            if (File.Exists(path))
             {
-                string path = FilePath;
-                if (File.Exists(path))
+                try
                 {
                     var xs = new XmlSerializer(typeof(ClashDefinitionsSettings));
                     using (var r = new StreamReader(path))
@@ -125,15 +126,41 @@ namespace LemoineTools.Tools.Clash
                         return s;
                     }
                 }
+                catch (Exception ex)
+                {
+                    // The file EXISTS but won't parse. Falling through to the first-run
+                    // seed path would return a one-item library that the next Save()
+                    // writes over the (possibly recoverable) file — destroying every
+                    // saved definition. Instead back the file up, surface the failure,
+                    // and start empty without seeding so nothing is silently replaced.
+                    LemoineLog.Error(
+                        "ClashDefinitions: settings file is corrupt — backed up and starting empty (existing data NOT overwritten)",
+                        ex);
+                    TryBackupCorruptFile(path);
+                    return new ClashDefinitionsSettings();
+                }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitionsSettings: load (using defaults)", ex); }
 
-            // First run: seed one definition from the old Clash Dimension settings so the
-            // library isn't empty and existing group/marking choices carry over.
+            // True first run (no file yet): seed one definition from the old Clash
+            // Dimension settings so the library isn't empty and existing group/marking
+            // choices carry over.
             var seeded = new ClashDefinitionsSettings();
             try { seeded.Definitions.Add(SeedFromClashDimension()); }
             catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitionsSettings: seed from ClashDimension", ex); }
             return seeded;
+        }
+
+        // Copies an unreadable settings file aside so a parse failure never costs the
+        // user their saved clash definitions — they can recover the .bak by hand.
+        private static void TryBackupCorruptFile(string path)
+        {
+            try
+            {
+                string backup = path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".bak";
+                File.Copy(path, backup, overwrite: true);
+                LemoineLog.Info("ClashDefinitions", $"Corrupt settings backed up to {backup}");
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitions: backup corrupt settings", ex); }
         }
 
         /// <summary>

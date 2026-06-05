@@ -61,6 +61,11 @@ namespace LemoineTools.Tools.LinkViews
                 foreach (var pair in sourcePairs)
                     cachedRooms[pair.DisplayName] = CollectRooms(doc, new List<Document> { pair.Doc });
 
+                // Reconcile link rooms to host levels by elevation so differently-named link levels
+                // still count under the correct host level (and stop generating "(No rooms)" rows).
+                foreach (var kv in cachedRooms)
+                    AssignHostLevelsByElevation(kv.Value, allLevels, LevelMatchToleranceFt);
+
                 // Accumulate room counts per (levelName, docName)
                 var roomCounts = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
                 foreach (var kv in cachedRooms)

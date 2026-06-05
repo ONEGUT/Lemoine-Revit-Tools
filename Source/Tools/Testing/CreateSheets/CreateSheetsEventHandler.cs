@@ -39,6 +39,12 @@ namespace LemoineTools.Tools.Testing
 
             try
             {
+                if (app.ActiveUIDocument?.Document == null)
+                {
+                    pushLog("No active project — open a document and try again.", "fail");
+                    onComplete(0, 1, 0);
+                    return;
+                }
                 var doc = app.ActiveUIDocument.Document;
 
                 if (TitleBlockTypeId == ElementId.InvalidElementId)

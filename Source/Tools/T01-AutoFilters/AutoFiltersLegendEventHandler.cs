@@ -75,6 +75,19 @@ namespace LemoineTools.Tools.AutoFilters
             // ── Build legend rows ─────────────────────────────────────────────
             var rows = new List<(string Disc, string Val, (int R, int G, int B)? Rgb)>();
 
+            // Filter names are "{TRADEID}_{RULE_NAME}" (see MakeFilterName), so the old
+            // " - " split always fell into "Other". Map each expected filter name back to
+            // its owning trade label (group) and rule display name (legend value).
+            var nameToTrade = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var nameToRule  = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var trade in AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>())
+                foreach (var rule in trade.Rules ?? new List<FilterRuleConfig>())
+                {
+                    string fn = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
+                    nameToTrade[fn] = trade.Label;
+                    nameToRule[fn]  = rule.Name;
+                }
+
             foreach (var fid in filterIds)
             {
                 var pfe = doc.GetElement(fid) as ParameterFilterElement;
@@ -103,9 +116,10 @@ namespace LemoineTools.Tools.AutoFilters
                 }
 
                 string name = pfe.Name;
-                int sep = name.IndexOf(" - ");
-                string disc = sep >= 0 ? name.Substring(0, sep).Trim() : "Other";
-                string val  = sep >= 0 ? name.Substring(sep + 3).Trim() : name;
+                string disc = nameToTrade.TryGetValue(name, out var lbl) && !string.IsNullOrEmpty(lbl)
+                    ? lbl : "Other";
+                string val  = nameToRule.TryGetValue(name, out var rn) && !string.IsNullOrEmpty(rn)
+                    ? rn : name;
 
                 rows.Add((disc, val, rgb));
             }

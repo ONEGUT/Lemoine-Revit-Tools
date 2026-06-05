@@ -97,4 +97,89 @@
     <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
+  <!--
+    Build-info stamping. Runs before every compile and writes a generated partial
+    that implements BuildInfo.InitGenerated() with the current build time, git branch
+    and short commit (see Source\Lemoine\BuildInfo.cs). The file lives under obj\ so it
+    is never committed.
+
+    Branch/commit are read straight from the .git directory (HEAD + ref file) so no
+    'git' executable on PATH is required. A git CLI call is used only as a fallback for
+    the commit when the loose ref is absent (packed refs), and only when it actually
+    succeeds — so a missing git never leaks an error string into the UI. Everything
+    falls back to "unknown" rather than breaking the build.
+  -->
+  <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_GitDir>$(MSBuildProjectDirectory)\.git</_GitDir>
+      <_BuildTime>$([System.DateTime]::Now.ToString("yyyy-MM-dd HH:mm"))</_BuildTime>
+      <_GitBranch></_GitBranch>
+      <_GitCommit></_GitCommit>
+    </PropertyGroup>
+
+    <!-- Branch (and detached-HEAD commit) from .git/HEAD. -->
+    <ReadLinesFromFile File="$(_GitDir)\HEAD" Condition="Exists('$(_GitDir)\HEAD')">
+      <Output TaskParameter="Lines" PropertyName="_Head" />
+    </ReadLinesFromFile>
+    <PropertyGroup Condition="'$(_Head)' != ''">
+      <_GitBranch Condition="$(_Head.StartsWith('ref: refs/heads/'))">$(_Head.Substring(16).Trim())</_GitBranch>
+      <_GitBranch Condition="'$(_GitBranch)' == ''">(detached)</_GitBranch>
+      <_GitCommit Condition="'$(_GitBranch)' == '(detached)'">$(_Head.Substring(0, 7))</_GitCommit>
+    </PropertyGroup>
+
+    <!-- Commit from the loose ref file when on a branch. -->
+    <PropertyGroup>
+      <_RefFile Condition="'$(_GitBranch)' != '' and '$(_GitBranch)' != '(detached)'">$(_GitDir)\refs\heads\$(_GitBranch.Replace('/','\'))</_RefFile>
+    </PropertyGroup>
+    <ReadLinesFromFile File="$(_RefFile)" Condition="'$(_RefFile)' != '' and Exists('$(_RefFile)')">
+      <Output TaskParameter="Lines" PropertyName="_RefSha" />
+    </ReadLinesFromFile>
+    <PropertyGroup Condition="'$(_GitCommit)' == '' and '$(_RefSha)' != ''">
+      <_GitCommit>$(_RefSha.Substring(0, 7))</_GitCommit>
+    </PropertyGroup>
+
+    <!-- Fallback for packed refs: git CLI, used only if it returns success. -->
+    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD"
+          Condition="'$(_GitCommit)' == ''"
+          ConsoleToMSBuild="true" ContinueOnError="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitCliRaw" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitCliExit" />
+    </Exec>
+    <PropertyGroup Condition="'$(_GitCommit)' == '' and '$(_GitCliExit)' == '0' and '$(_GitCliRaw)' != ''">
+      <_GitCommit>$(_GitCliRaw.Trim())</_GitCommit>
+    </PropertyGroup>
+
+    <PropertyGroup>
+      <_GitBranch Condition="'$(_GitBranch)' == ''">unknown</_GitBranch>
+      <_GitCommit Condition="'$(_GitCommit)' == ''">unknown</_GitCommit>
+      <_BuildInfoFile>$(IntermediateOutputPath)BuildInfo.Generated.cs</_BuildInfoFile>
+    </PropertyGroup>
+
+    <!-- Each line is one Compile-able C# statement. ';' is escaped as %3B so MSBuild
+         does not treat it as an item separator. -->
+    <ItemGroup>
+      <_BuildInfoLines Include="// &lt;auto-generated&gt; regenerated each build — do not edit or commit." />
+      <_BuildInfoLines Include="namespace LemoineTools.Lemoine" />
+      <_BuildInfoLines Include="{" />
+      <_BuildInfoLines Include="    public static partial class BuildInfo" />
+      <_BuildInfoLines Include="    {" />
+      <_BuildInfoLines Include="        static partial void InitGenerated()" />
+      <_BuildInfoLines Include="        {" />
+      <_BuildInfoLines Include="            BuildTime = &quot;$(_BuildTime)&quot;%3B" />
+      <_BuildInfoLines Include="            GitBranch = &quot;$(_GitBranch)&quot;%3B" />
+      <_BuildInfoLines Include="            GitCommit = &quot;$(_GitCommit)&quot;%3B" />
+      <_BuildInfoLines Include="        }" />
+      <_BuildInfoLines Include="    }" />
+      <_BuildInfoLines Include="}" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(_BuildInfoFile)" Lines="@(_BuildInfoLines)" Overwrite="true" />
+
+    <ItemGroup>
+      <Compile Include="$(_BuildInfoFile)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

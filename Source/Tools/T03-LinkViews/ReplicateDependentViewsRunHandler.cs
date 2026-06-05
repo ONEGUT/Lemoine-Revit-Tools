@@ -182,7 +182,7 @@ namespace LemoineTools.Tools.LinkViews
         private static bool ViewNameExists(Document doc, string name) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(View)).Cast<View>()
-                .Any(v => !v.IsTemplate && v.Name == name);
+                .Any(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Assembles the new dependent view name from the naming slot configuration.
@@ -220,23 +220,45 @@ namespace LemoineTools.Tools.LinkViews
             }
         }
 
-        private static void ConfigureFailures(Transaction tx)
+        private void ConfigureFailures(Transaction tx)
         {
             var opts = tx.GetFailureHandlingOptions();
             opts.SetClearAfterRollback(true);
             opts.SetDelayedMiniWarnings(true);
-            opts.SetFailuresPreprocessor(new SuppressWarningsPreprocessor());
+            opts.SetFailuresPreprocessor(new SuppressWarningsPreprocessor(Log));
             tx.SetFailureHandlingOptions(opts);
         }
 
-        /// <summary>Silently discards copy-monitor and other non-error warnings.</summary>
+        /// <summary>
+        /// Resolves warnings so the modeless batch never blocks on a dialog, but reports each distinct
+        /// warning to the run log and diagnostics first — so a real one (e.g. "view range invalid") is
+        /// surfaced rather than silently swallowed alongside the expected copy-monitor noise.
+        /// </summary>
         private sealed class SuppressWarningsPreprocessor : IFailuresPreprocessor
         {
+            private readonly Action<string, string>? _log;
+            private readonly HashSet<string> _seen = new HashSet<string>(StringComparer.Ordinal);
+            public SuppressWarningsPreprocessor(Action<string, string>? log) { _log = log; }
+
             public FailureProcessingResult PreprocessFailures(FailuresAccessor fa)
             {
                 foreach (var msg in fa.GetFailureMessages()
                                       .Where(m => m.GetSeverity() == FailureSeverity.Warning))
+                {
+                    string desc;
+                    try { desc = msg.GetDescriptionText(); }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("ReplicateDependentViews: read warning text", ex);
+                        desc = "(unreadable warning)";
+                    }
+                    if (_seen.Add(desc))   // report each distinct warning once, then resolve it
+                    {
+                        _log?.Invoke($"[warning] {desc}", "warn");
+                        LemoineLog.Warn("ReplicateDependentViews", desc);
+                    }
                     fa.DeleteWarning(msg);
+                }
                 return FailureProcessingResult.Continue;
             }
         }

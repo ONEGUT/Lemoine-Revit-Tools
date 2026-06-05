@@ -141,18 +141,33 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         }
 
         /// <summary>
-        /// Realizes the layout's per-segment text decisions on the placed Revit dimension. A moved
-        /// (cramped) tag is pushed OUT perpendicular (to clear the leader arc) AND sideways along the
-        /// dimension axis, so the value sits beside the segment centre — on the side the arc sweeps to —
-        /// instead of straight above it. Before committing each tag, its realized text box is tested
-        /// against every tag already placed this run and slid further along-axis until it clears, so
-        /// neighbouring arced tags no longer overlap. Each move is independently guarded.
+        /// Realizes the layout's per-segment text decisions on the placed Revit dimension. A run of
+        /// adjacent moved tags is relocated as a single aligned COLUMN just past the group's far end:
+        /// each tag is shifted to the side, then stacked perpendicular (UP when the dimension line is
+        /// on the positive/above side, DOWN when Flipped/below) so crowded values pile straight on top
+        /// of one another while their arc leaders swing out to the side. The nearest anchor sits lowest
+        /// and each farther one a row higher, so the leaders nest and never cross; each tag also clears
+        /// every tag already placed this run (cross-dimension). Every move is independently guarded.
         /// NOTE: these heights are Windows-tunable — verify the text clears the arc on a real plot.
         /// </summary>
-        private const double StaggerNudgeHeights = 2.2;  // perpendicular nudge for a staggered tag (clears the arc)
-        private const double LeaderNudgeHeights  = 3.0;  // perpendicular nudge for a leadered tag (now rare)
-        private const double AlongBaseHeights    = 0.75; // sideways offset past the text's own half-width
-        private const int    MaxAlongSteps       = 12;   // clash-avoidance tries before giving up
+        private const double ColumnBasePerpHeights = 2.2;  // first clearance above/below the dimension arc
+        private const double ColumnStepHeights     = 1.4;  // perpendicular step between stacked tags
+        private const double AlongBaseHeights      = 0.75; // column offset past the group's far text edge
+        private const int    MaxColumnSteps        = 24;   // perpendicular clash-avoidance tries before giving up
+        private const double GlyphWidthFactor      = 0.6;  // average glyph advance as a fraction of text height
+
+        /// <summary>
+        /// Width (model ft) of a tag's actual displayed value text. Uses the real Revit ValueString
+        /// (e.g. "0' - 11 5/8\"") so the column boxes and front-edge alignment match what's drawn,
+        /// rather than the plan-time decimal estimate which badly under-counted imperial glyphs.
+        /// Falls back to the planned estimate if the value string isn't available yet.
+        /// </summary>
+        private static double TagWidthFt(string? valueString, double fallbackFt, double th)
+        {
+            if (string.IsNullOrEmpty(valueString)) return fallbackFt;
+            int chars = Math.Max(3, valueString.Length);
+            return chars * th * GlyphWidthFactor;
+        }
 
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
@@ -184,70 +199,143 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             if (segs != null && segs.Size > 0)
             {
+                // Walk segments, gathering maximal runs of consecutive moved tags. A non-moved
+                // (inline/fitting) segment breaks the run, so a spread-out dimension yields several
+                // small columns instead of one. Each run is then placed as an aligned column.
                 int n = Math.Min(segs.Size, pd.Segments.Count);
-                for (int k = 0; k < n; k++)
+                var run = new List<ColumnTag>();
+                for (int k = 0; k <= n; k++)
                 {
-                    var ps = pd.Segments[k];
-                    if (!IsMoved(ps.TextState)) continue;
-                    try
+                    if (k < n && IsMoved(pd.Segments[k].TextState))
                     {
-                        var seg = segs.get_Item(k);
-                        if (seg?.TextPosition == null) continue;
-                        seg.TextPosition = PlaceTag(seg.TextPosition, ps, worldPerp, worldAxis, sign, th,
-                                                    projection, axis, perp, placedTags);
+                        DimensionSegment? seg = null;
+                        XYZ? def = null;
+                        string? val = null;
+                        try { seg = segs.get_Item(k); def = seg?.TextPosition; val = seg?.ValueString; }
+                        catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: read segment text", ex); }
+                        if (seg != null && def != null)
+                        {
+                            DimensionSegment captured = seg;
+                            double w = TagWidthFt(val, pd.Segments[k].TextWidthFt, th);
+                            run.Add(new ColumnTag(def, pd.Segments[k], w, pos =>
+                            {
+                                try { captured.TextPosition = pos; }
+                                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
+                            }));
+                            continue;
+                        }
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
+                    if (run.Count > 0)
+                    {
+                        PlaceColumn(run, worldPerp, worldAxis, sign, th, projection, axis, perp, placedTags);
+                        run.Clear();
+                    }
                 }
             }
             else if (pd.Segments.Count > 0 && IsMoved(pd.Segments[0].TextState))
             {
                 try
                 {
-                    if (dim.TextPosition != null)
-                        dim.TextPosition = PlaceTag(dim.TextPosition, pd.Segments[0], worldPerp, worldAxis,
-                                                    sign, th, projection, axis, perp, placedTags);
+                    XYZ? def = dim.TextPosition;
+                    if (def != null)
+                    {
+                        double w = TagWidthFt(dim.ValueString, pd.Segments[0].TextWidthFt, th);
+                        var single = new List<ColumnTag>
+                        {
+                            new ColumnTag(def, pd.Segments[0], w, pos =>
+                            {
+                                try { dim.TextPosition = pos; }
+                                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
+                            }),
+                        };
+                        PlaceColumn(single, worldPerp, worldAxis, sign, th, projection, axis, perp, placedTags);
+                    }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
             }
         }
 
+        /// <summary>One moved tag: its natural (segment-centre) position, the planned segment it
+        /// belongs to, and a setter that writes the chosen world position back to Revit.</summary>
+        private sealed class ColumnTag
+        {
+            public readonly XYZ DefaultPos;
+            public readonly Core.PlannedSegment Ps;
+            public readonly double Width;          // actual displayed-text width (model ft)
+            public readonly Action<XYZ> SetPos;
+            public ColumnTag(XYZ defaultPos, Core.PlannedSegment ps, double width, Action<XYZ> setPos)
+            { DefaultPos = defaultPos; Ps = ps; Width = width; SetPos = setPos; }
+        }
+
         /// <summary>
-        /// Computes the final world text position for one moved tag: perpendicular out to clear the arc,
-        /// then sideways along the axis so it sits beside the segment centre. Slides further along-axis
-        /// in text-width steps until the tag's view-2D box clears every tag already in
-        /// <paramref name="placedTags"/>, then records its box. Returns the chosen world position.
+        /// Places a run of adjacent moved tags as one aligned column. Every tag's FRONT (arc-side)
+        /// edge lands on a common line — wider tags extend further back (+axis) rather than spreading
+        /// their centres — and that front line sits just past the group's furthest dimension edge (a
+        /// moved segment's far witness), so the whole column clears the dimension. Tags then stack
+        /// perpendicular from a base clearance, nearest anchor lowest, each subsequent one a row higher
+        /// (bumped further if it still hits an already-placed tag). The perpendicular sign follows the
+        /// dimension side, so an above run climbs up and a Flipped/below run mirrors downward.
         /// </summary>
-        private static XYZ PlaceTag(
-            XYZ defaultPos, Core.PlannedSegment ps, XYZ worldPerp, XYZ worldAxis, double sign, double th,
+        private static void PlaceColumn(
+            List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, double th,
             Resolvers.ViewProjection projection, Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags)
         {
-            double perpNudge = (ps.TextState == Core.SegmentTextState.LeaderOut ? LeaderNudgeHeights : StaggerNudgeHeights) * th;
-            double halfAlong = Math.Max(ps.TextWidthFt, th) * 0.5;   // along the reading direction
-            double halfPerp  = th * 0.5;
-            double alongBase = halfAlong + AlongBaseHeights * th;    // clear the segment centre
-            double alongStep = halfAlong * 2.0 + th * 0.5;           // one text width per clash bump
+            if (run.Count == 0 || th <= 0) return;
 
-            // View-2D half extents of the (axis-aligned) tag box.
-            double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
-            double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
+            double Axial(XYZ p) => projection.To2D(p).Dot(axis);   // reading-direction coordinate
 
-            XYZ pos = defaultPos;
-            Core.Box2 box = default;
-            for (int t = 0; t < MaxAlongSteps; t++)
+            // Reference point on the dimension line (any tag centre works — the line is straight along
+            // worldAxis), plus the group's furthest dimension edge: the far witness of the +axis-most
+            // moved segment = its centre + half its measured span.
+            ColumnTag refTag = run[0];
+            double refAxial  = Axial(refTag.DefaultPos);
+            double groupFarEdge = double.MinValue;
+            foreach (var t in run)
             {
-                double along = alongBase + t * alongStep;
-                pos = defaultPos + worldPerp * (sign * perpNudge) + worldAxis * along;
-                box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
-                bool clash = false;
-                for (int i = 0; i < placedTags.Count; i++)
-                    if (box.Intersects(placedTags[i])) { clash = true; break; }
-                if (!clash) break;
+                double edge = Axial(t.DefaultPos) + t.Ps.LengthFt * 0.5;
+                if (edge > groupFarEdge) groupFarEdge = edge;
             }
-            placedTags.Add(box);
-            return pos;   // ⚠ leader appearance depends on the DimensionType — verify on Windows
+            // Every tag's front edge aligns here, offset just past the dimension's furthest edge.
+            double frontLine = groupFarEdge + AlongBaseHeights * th;
+
+            // Nearest anchor (max axial) lowest → farthest highest, so the arcs nest without crossing.
+            var ordered = run.OrderByDescending(t => Axial(t.DefaultPos)).ToList();
+
+            double level = ColumnBasePerpHeights * th;
+            double step  = ColumnStepHeights * th;
+            foreach (var t in ordered)
+            {
+                double halfAlong = Math.Max(t.Width, th) * 0.5;
+                double halfPerp  = th * 0.5;
+                double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
+                double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
+
+                // Centre this tag so its front (arc-side, -axis) edge sits on frontLine: push the centre
+                // back by the tag's own half-width. All front edges then line up regardless of text length.
+                double along = (frontLine - refAxial) + halfAlong;
+                XYZ baseOnLine = refTag.DefaultPos + worldAxis * along;
+
+                XYZ pos = baseOnLine;
+                Core.Box2 box = default;
+                for (int s = 0; s < MaxColumnSteps; s++)
+                {
+                    pos = baseOnLine + worldPerp * (sign * level);
+                    box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
+                    bool clash = false;
+                    for (int i = 0; i < placedTags.Count; i++)
+                        if (box.Intersects(placedTags[i])) { clash = true; break; }
+                    if (!clash) break;
+                    level += step;
+                }
+                t.SetPos(pos);   // ⚠ leader appearance depends on the DimensionType — verify on Windows
+                placedTags.Add(box);
+                level += step;    // next tag at least one row higher (monotonic → leaders never cross)
+            }
         }
 
         private static bool IsMoved(Core.SegmentTextState s) =>
-            s == Core.SegmentTextState.LeaderOut || s == Core.SegmentTextState.Staggered;
+            s == Core.SegmentTextState.LeaderOut ||
+            s == Core.SegmentTextState.Staggered ||
+            s == Core.SegmentTextState.Flipped;
     }
 }

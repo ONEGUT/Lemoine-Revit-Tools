@@ -12,7 +12,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
+    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable
     {
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
@@ -57,6 +57,9 @@ namespace LemoineTools.Tools.Ceilings
         private StackPanel? _filterContainer;
         private Dispatcher? _filterDispatcher;
 
+        // IStepAware: rebuilds a step's content widget (set by StepFlowWindow)
+        private Action<string>? _rebuildContent;
+
         // ── ExternalEvent wiring ───────────────────────────────────────────
         private readonly MakeCeilingGridsPhase1Handler? _phase1Handler;
         private readonly Autodesk.Revit.UI.ExternalEvent?  _phase1Event;
@@ -97,6 +100,27 @@ namespace LemoineTools.Tools.Ceilings
                 case "run":    return null; // framework renders review (ILemoineReviewable)
                 default:       return null;
             }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // IStepAware — re-scan when the user enters the filter step
+        // ═════════════════════════════════════════════════════════════════════
+        // The filter step's content is built eagerly once at window construction, so
+        // a change to the document selection (which clears the scan via the docs-step
+        // handler) would otherwise leave the filter step showing the stale ceiling
+        // types from the previous document set, with exclusions that no longer match.
+        // Rebuilding on activation re-runs BuildFilterStep, which re-triggers the scan
+        // for the current document selection.
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "filter") return;
+            // Only rebuild when the scan is stale; a completed scan is preserved so
+            // the user's type exclusions survive navigating away and back.
+            if (!_scanDone && !_scanning)
+                _rebuildContent?.Invoke("filter");
         }
 
         // ── Step 1: Select Documents ───────────────────────────────────────

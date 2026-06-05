@@ -11,6 +11,9 @@ namespace LemoineTools.Tools.LinkViews
     public sealed class RoomInfo
     {
         public string LevelName { get; set; } = null!;
+        /// <summary>Elevation of the room's level in HOST coordinates (link transform applied),
+        /// used to reconcile link rooms to host levels by height when names differ.</summary>
+        public double LevelElevation { get; set; }
         public double CentroidX { get; set; }
         public double CentroidY { get; set; }
         public double MinX      { get; set; }
@@ -78,9 +81,16 @@ namespace LemoineTools.Tools.LinkViews
                     XYZ bMin   = isLink ? tf.OfPoint(bb.Min) : bb.Min;
                     XYZ bMax   = isLink ? tf.OfPoint(bb.Max) : bb.Max;
 
+                    // Room level elevation in host coordinates (so link levels reconcile by height).
+                    Level roomLevel = r.Level;
+                    double levelElevHost = roomLevel != null
+                        ? (isLink ? tf.OfPoint(new XYZ(0, 0, roomLevel.Elevation)).Z : roomLevel.Elevation)
+                        : center.Z;
+
                     result.Add(new RoomInfo
                     {
                         LevelName = r.Level?.Name ?? string.Empty,
+                        LevelElevation = levelElevHost,
                         CentroidX = center.X,
                         CentroidY = center.Y,
                         MinX = Math.Min(bMin.X, bMax.X),
@@ -91,6 +101,43 @@ namespace LemoineTools.Tools.LinkViews
                 }
             }
             return result;
+        }
+
+        // ── Host-level reconciliation ─────────────────────────────────────────────
+
+        /// <summary>Tolerance (ft) for matching a room's level elevation to a host level. Generous
+        /// enough to absorb arch/struct datum offsets, but well under a typical floor-to-floor.</summary>
+        public const double LevelMatchToleranceFt = 4.0;
+
+        /// <summary>
+        /// Reconciles each room to a HOST level by elevation, so rooms in links whose level NAMES
+        /// differ from the host still attach to the correct floor. A room whose level name already
+        /// matches a host level is left untouched; otherwise it is retargeted to the nearest host
+        /// level within <paramref name="tolFt"/> by setting its <see cref="RoomInfo.LevelName"/> to
+        /// that host level's name. Only the backing association changes — everything the user sees
+        /// stays keyed by host level name.
+        /// </summary>
+        public static void AssignHostLevelsByElevation(
+            List<RoomInfo> rooms, IList<Level> hostLevels, double tolFt)
+        {
+            if (rooms == null || hostLevels == null || hostLevels.Count == 0) return;
+            var hostNames = new HashSet<string>(hostLevels.Select(l => l.Name), StringComparer.Ordinal);
+
+            foreach (var r in rooms)
+            {
+                if (!string.IsNullOrEmpty(r.LevelName) && hostNames.Contains(r.LevelName))
+                    continue;   // already a host level by name — keep it
+
+                Level best = null;
+                double bestD = double.MaxValue;
+                foreach (var hl in hostLevels)
+                {
+                    double d = Math.Abs(hl.Elevation - r.LevelElevation);
+                    if (d < bestD) { bestD = d; best = hl; }
+                }
+                if (best != null && bestD <= tolFt)
+                    r.LevelName = best.Name;
+            }
         }
 
         // ── Union-find clustering ─────────────────────────────────────────────────
@@ -162,13 +209,14 @@ namespace LemoineTools.Tools.LinkViews
         public static bool View3dExists(Document doc, string name) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(View3D)).Cast<View3D>()
-                .Any(v => !v.IsTemplate && v.Name == name);
+                .Any(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
 
         public static bool PlanExists(Document doc, string name, ViewFamily family) =>
             new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
-                .Any(v => !v.IsTemplate && v.Name == name && v.ViewType ==
-                    (family == ViewFamily.FloorPlan ? ViewType.FloorPlan : ViewType.CeilingPlan));
+                .Any(v => !v.IsTemplate
+                          && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase)
+                          && v.ViewType == (family == ViewFamily.FloorPlan ? ViewType.FloorPlan : ViewType.CeilingPlan));
 
         // ── View creation helpers ─────────────────────────────────────────────────
 

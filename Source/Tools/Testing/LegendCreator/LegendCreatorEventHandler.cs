@@ -241,9 +241,18 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     if (TargetLegendId != null && TargetLegendId != ElementId.InvalidElementId)
                         dv = doc.GetElement(TargetLegendId) as View;
                     else
-                        dv = new FilteredElementCollector(doc)
+                    {
+                        var legends = new FilteredElementCollector(doc)
                             .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                            .FirstOrDefault(v => v.ViewType == ViewType.Legend && v.Name == baseTitle);
+                            .Where(v => v.ViewType == ViewType.Legend)
+                            .ToList();
+                        // Revit auto-suffixes a duplicated legend with " (n)"; match the exact title
+                        // first, then fall back to a "<title> (n)" variant so an update still finds it.
+                        dv = legends.FirstOrDefault(v => v.Name == baseTitle)
+                          ?? legends.FirstOrDefault(v =>
+                                 v.Name.StartsWith(baseTitle + " (", StringComparison.Ordinal) &&
+                                 v.Name.EndsWith(")", StringComparison.Ordinal));
+                    }
                     if (dv == null || dv.ViewType != ViewType.Legend)
                     {
                         Log("Target legend view not found. Use 'Create Legend' to create a new one.", "fail");

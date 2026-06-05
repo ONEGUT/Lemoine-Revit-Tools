@@ -49,14 +49,17 @@ namespace LemoineTools.Commands
                 .Select(f => f.Name)
                 .ToList();
 
-            // All views that support graphic overrides and are not templates
+            // All views that support graphic overrides and are not templates.
+            // Carry each view's ElementId: view names are NOT unique in Revit (a Floor
+            // Plan and its RCP, or two 3D views, can share a name), so the ElementId is
+            // the only reliable per-view key for targeting.
             var views = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate && v.AreGraphicsOverridesAllowed())
                 .OrderBy(v => v.ViewType.ToString())
                 .ThenBy(v => v.Name)
-                .Select(v => (v.Name, v.ViewType.ToString()))
+                .Select(v => (v.Id.Value, v.Name, v.ViewType.ToString()))
                 .ToList();
 
             var vm = new ApplyFiltersToViewsViewModel(

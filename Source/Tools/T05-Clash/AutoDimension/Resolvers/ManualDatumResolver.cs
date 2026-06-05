@@ -18,7 +18,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             double axisCosTol = Math.Cos(ctx.Config.AxisToleranceDeg * Math.PI / 180.0);
 
             if (ctx.Datums == null || ctx.Datums.Count == 0)
-                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
+                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.ManualDatum,
                     "manual-datum mode but no datum was picked for this view");
 
             // Pick the datum best aligned to this axis: its edge must be roughly perpendicular to
@@ -41,13 +41,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             }
 
             if (best == null)
-                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
+                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.ManualDatum,
                     "no picked datum runs across this axis");
 
             double datumAxial = ctx.Projection.To2D(best.WorldPoint).Dot(axis);
             double delta = datumAxial - srcAxial;
             if (Math.Abs(delta) < 1e-4)
-                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
+                return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.ManualDatum,
                     "clash sits on the datum — no measurable offset on this axis");
 
             Core.Vec2 targetPt = source.Anchor2d + axis * delta;

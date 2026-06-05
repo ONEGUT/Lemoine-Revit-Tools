@@ -77,9 +77,9 @@ namespace LemoineTools.Tools.Ceilings
                     .OfClass(typeof(Ceiling))
                     .WhereElementIsNotElementType())
                 {
-                    double heightAbove = el.get_Parameter(
-                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
-                    AddBucket(heightBuckets, heightAbove);
+                    var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+                    if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    AddBucket(heightBuckets, hParam.AsDouble());
                     hostCeilings++;
                 }
 
@@ -304,7 +304,7 @@ namespace LemoineTools.Tools.Ceilings
                                 doc, viewId, new Reference(el),
                                 false, TagMode.TM_ADDBY_CATEGORY,
                                 TagOrientation.Horizontal, tagPt);
-                            tagPlaced++; pass++;
+                            tagPlaced++;   // tags are reported separately, not in the pass total
                         }
                         catch (Exception ex)
                         {
@@ -339,7 +339,7 @@ namespace LemoineTools.Tools.Ceilings
                                     doc, viewId, linkedRef,
                                     false, TagMode.TM_ADDBY_CATEGORY,
                                     TagOrientation.Horizontal, tagPt);
-                                tagPlaced++; pass++;
+                                tagPlaced++;   // tags are reported separately, not in the pass total
                             }
                             catch (Exception ex)
                             {
@@ -733,9 +733,9 @@ namespace LemoineTools.Tools.Ceilings
                     .WherePasses(bbFilter)
                     .WhereElementIsNotElementType())
                 {
-                    double heightAbove = el.get_Parameter(
-                        BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM)?.AsDouble() ?? 0.0;
-                    AddBucket(buckets, heightAbove);
+                    var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
+                    if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    AddBucket(buckets, hParam.AsDouble());
                     scanned++;
                 }
             }
@@ -808,9 +808,14 @@ namespace LemoineTools.Tools.Ceilings
         private static string FormatFtIn(double valueFt)
         {
             int totalInches = (int)Math.Round(valueFt * 12.0);
-            int ft          = totalInches / 12;
-            int inches      = Math.Abs(totalInches % 12);
-            return $"{ft}'-{inches}\"";
+            // Sign must survive on the whole value: when ft rounds to 0, a bare
+            // Abs(inches) made +6" and -6" both read "0'-6"", collapsing two buckets
+            // into one filter name. Carry the sign as a prefix on the magnitude.
+            string sign   = totalInches < 0 ? "-" : "";
+            int absInches = Math.Abs(totalInches);
+            int ft        = absInches / 12;
+            int inches    = absInches % 12;
+            return $"{sign}{ft}'-{inches}\"";
         }
 
         private List<Autodesk.Revit.DB.Color> BuildHeatmapRamp(int count)

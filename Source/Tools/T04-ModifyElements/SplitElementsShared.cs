@@ -451,8 +451,17 @@ namespace LemoineTools.Tools.ModifyElements
             string      splitKind,
             SplitStats  stats)
         {
-            var pts = DeduplicatePoints(rawSplitPts, 0.01);
-            if (!pts.Any()) { stats.Skip($"{el.Id}: no split points after dedup"); return; }
+            // Keep only split points strictly interior to the segment. A point within
+            // tolerance of an endpoint would create a degenerate sub-segment — and for
+            // the FIRST segment that is destructive: the original element (segIds[0])
+            // keeps its full A→B length while the copies cover the real sub-ranges,
+            // leaving overlapping duplicate geometry. Excluding endpoint-coincident
+            // points guarantees every consecutive pair in `seq` is a valid segment.
+            const double endTol = 0.01;
+            var pts = DeduplicatePoints(rawSplitPts, endTol)
+                .Where(p => p.DistanceTo(A) > endTol && p.DistanceTo(B) > endTol)
+                .ToList();
+            if (!pts.Any()) { stats.Skip($"{el.Id}: no interior split points after dedup"); return; }
 
             var seq = new List<XYZ> { A };
             seq.AddRange(pts);
@@ -518,8 +527,13 @@ namespace LemoineTools.Tools.ModifyElements
                 }
             }
 
-            if (success > 0)
+            if (success == segIds.Count)
                 stats.Split($"{el.Category?.Name} {el.Id} → {success} {splitKind} segment(s)");
+            else if (success > 0)
+                // Some sub-segments failed and were removed — the run is incomplete and
+                // can leave a gap along the original curve. Report it as such rather than
+                // a clean success so the user knows to check the result.
+                stats.Split($"{el.Category?.Name} {el.Id} → {success}/{segIds.Count} {splitKind} segment(s) (some failed — result may have a gap)");
             else
                 stats.Fail(el.Id.ToString(), "All segment curve assignments failed.");
         }
