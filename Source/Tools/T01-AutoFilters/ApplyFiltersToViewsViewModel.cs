@@ -121,20 +121,19 @@ namespace LemoineTools.Tools.AutoFilters
 
                 // View names are NOT unique in Revit (a Floor Plan and its RCP, or two
                 // 3D views, can share a name), but the multiselect keys items by their
-                // display string. Disambiguate any colliding name with its ElementId so
-                // each view stays an independent, individually-targetable item; the
-                // label→id map is the authoritative key handed to the handler.
-                var nameCounts = _allViews
-                    .GroupBy(v => v.Name, StringComparer.Ordinal)
-                    .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-
+                // display string. Give each view a unique label so colliding names stay
+                // individually selectable — without exposing the ElementId: the first
+                // occurrence keeps the plain name and later duplicates get a " (2)",
+                // " (3)" suffix. The label→id map (not the label) is what the handler
+                // resolves against.
                 _viewLabelToId.Clear();
                 var groups = new Dictionary<string, List<string>>();
                 foreach (var (id, name, vt) in _allViews)
                 {
-                    string label = nameCounts.TryGetValue(name, out int n) && n > 1
-                        ? $"{name}  [#{id}]"
-                        : name;
+                    string label = name;
+                    int dup = 1;
+                    while (_viewLabelToId.ContainsKey(label))
+                        label = $"{name} ({++dup})";
                     _viewLabelToId[label] = id;
                     if (!groups.ContainsKey(vt)) groups[vt] = new List<string>();
                     groups[vt].Add(label);
