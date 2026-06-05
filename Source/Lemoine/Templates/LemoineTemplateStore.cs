@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Templates
@@ -103,21 +105,57 @@ namespace LemoineTools.Lemoine.Templates
 
         /// <summary>
         /// Converts a human-readable template name to a safe file-name slug.
-        /// Invalid path characters are replaced with underscores.
+        /// <para>
+        /// Invalid path characters (and the escape character itself) are percent-encoded
+        /// as <c>%XX</c>. This is a <b>reversible, injective</b> mapping: two distinct
+        /// names never collapse to the same slug, so saving one template can never
+        /// silently overwrite another, and <see cref="FromSlug"/> recovers the exact
+        /// original name. (The previous scheme replaced every invalid char with an
+        /// underscore, so e.g. "A/B" and "A_B" shared one file and round-tripping
+        /// corrupted any real underscore into a space.)
+        /// </para>
         /// </summary>
         public static string ToSlug(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return "template";
-            var chars   = Path.GetInvalidFileNameChars();
-            var cleaned = string.Join("_", name.Split(chars)).Trim();
-            return string.IsNullOrEmpty(cleaned) ? "template" : cleaned;
+            var invalid = new HashSet<char>(Path.GetInvalidFileNameChars());
+            var sb = new StringBuilder(name.Length);
+            foreach (char c in name.Trim())
+            {
+                if (c == '%' || invalid.Contains(c))
+                    sb.Append('%').Append(((int)c).ToString("X2", CultureInfo.InvariantCulture));
+                else
+                    sb.Append(c);
+            }
+            var slug = sb.ToString();
+            return string.IsNullOrEmpty(slug) ? "template" : slug;
         }
 
         /// <summary>
-        /// Converts a file-name slug back to a display name by replacing
-        /// underscores with spaces and applying title-case trimming.
+        /// Converts a file-name slug back to its exact display name by reversing the
+        /// percent-encoding applied by <see cref="ToSlug"/>. Slugs with no escapes
+        /// (the common case, and every legacy template) are returned unchanged.
         /// </summary>
-        public static string FromSlug(string slug) => slug.Replace('_', ' ').Trim();
+        public static string FromSlug(string slug)
+        {
+            if (string.IsNullOrEmpty(slug)) return "";
+            var sb = new StringBuilder(slug.Length);
+            for (int i = 0; i < slug.Length; i++)
+            {
+                if (slug[i] == '%' && i + 2 < slug.Length &&
+                    int.TryParse(slug.Substring(i + 1, 2), NumberStyles.HexNumber,
+                                 CultureInfo.InvariantCulture, out int code))
+                {
+                    sb.Append((char)code);
+                    i += 2;
+                }
+                else
+                {
+                    sb.Append(slug[i]);
+                }
+            }
+            return sb.ToString();
+        }
 
         // ── Core operations ───────────────────────────────────────────────────
 
