@@ -120,33 +120,60 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             s == DimSide.Positive ? DimSide.Negative : DimSide.Positive;
 
         /// <summary>
-        /// For each cramped segment, pick the text state with the lowest soft penalty:
-        /// inline (overflow penalty), staggered (half penalty, uses neighbour space), or
-        /// leader-out (no cramped penalty, fixed leader penalty). Flipped is treated as inline
-        /// for sizing — it only repositions to dodge a neighbour and is selected by the offset
-        /// loop, so here we choose between the size-affecting states deterministically.
+        /// Marks each segment's text state. A cramped segment (text wider than its span) is
+        /// moved out of line ONLY when its text actually overlaps an adjacent segment's text —
+        /// a cramped tag whose overflow lands in empty space (a large/fitting neighbour) is
+        /// left inline. The moved state follows the dimension's side so the commit layer stacks
+        /// the tags into a column on the correct side: Staggered (above) for the positive side,
+        /// Flipped (below) for the negative side. Leader-out is chosen instead when its fixed
+        /// penalty beats the moved (half-overflow) penalty.
         /// </summary>
         private void ResolveSegments(PlannedDimension d)
         {
-            foreach (var seg in d.Segments)
+            var segs = d.Segments;
+
+            // Which side the dimension line sits on decides up (Staggered) vs down (Flipped).
+            SegmentTextState movedState = d.Side == DimSide.Positive
+                ? SegmentTextState.Staggered
+                : SegmentTextState.Flipped;
+
+            for (int i = 0; i < segs.Count; i++)
             {
+                var seg = segs[i];
                 if (!seg.IsCramped)
                 {
                     seg.TextState = SegmentTextState.Inline;
                     continue;
                 }
 
-                double overflow = seg.TextWidthFt - seg.LengthFt;
-                double inlineCost    = overflow * _cfg.CrampedWeight;
-                double staggeredCost = overflow * _cfg.CrampedWeight * 0.5;
-                double leaderCost    = _cfg.LeaderWeight;
+                // Cramped, but only a real text–text overlap with a neighbour warrants moving;
+                // overflow into a wide/empty neighbour reads fine inline and must not move.
+                bool clash =
+                    (i > 0              && AdjacentTextOverlap(seg, segs[i - 1])) ||
+                    (i < segs.Count - 1 && AdjacentTextOverlap(seg, segs[i + 1]));
 
-                // Deterministic tie-break order: Inline < Staggered < LeaderOut.
-                seg.TextState = SegmentTextState.Inline;
-                double best = inlineCost;
-                if (staggeredCost < best) { best = staggeredCost; seg.TextState = SegmentTextState.Staggered; }
-                if (leaderCost   < best) {                        seg.TextState = SegmentTextState.LeaderOut; }
+                if (!clash)
+                {
+                    seg.TextState = SegmentTextState.Inline;
+                    continue;
+                }
+
+                double overflow  = seg.TextWidthFt - seg.LengthFt;
+                double movedCost  = overflow * _cfg.CrampedWeight * 0.5;
+                double leaderCost = _cfg.LeaderWeight;
+                seg.TextState = leaderCost < movedCost ? SegmentTextState.LeaderOut : movedState;
             }
+        }
+
+        /// <summary>
+        /// True when two adjacent segments' value texts overlap: half each text width together
+        /// exceeds the centre-to-centre gap (half each segment length).
+        /// </summary>
+        private static bool AdjacentTextOverlap(PlannedSegment a, PlannedSegment b)
+        {
+            double halfText = (a.TextWidthFt + b.TextWidthFt) * 0.5;
+            double gap      = (a.LengthFt + b.LengthFt) * 0.5;
+            return halfText > gap;
         }
 
         /// <summary>Count of segments the layout left leadered (for the report).</summary>

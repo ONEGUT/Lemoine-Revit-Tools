@@ -78,7 +78,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 if (seg.IsCramped)
                 {
                     double overflow = seg.TextWidthFt - seg.LengthFt;
-                    double factor = seg.TextState == SegmentTextState.Staggered ? 0.5 : 1.0;
+                    // Moved tags (staggered above / flipped below) borrow neighbour space → half penalty.
+                    bool moved = seg.TextState == SegmentTextState.Staggered
+                              || seg.TextState == SegmentTextState.Flipped;
+                    double factor = moved ? 0.5 : 1.0;
                     soft += overflow * _cfg.CrampedWeight * factor;
                 }
             }
