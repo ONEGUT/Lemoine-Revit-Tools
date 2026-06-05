@@ -180,8 +180,16 @@ namespace LemoineTools.Tools.LinkViews
                     sourceDocs.Add(ld);
             }
 
-            // Collect rooms
-            var rooms        = CollectRooms(doc, sourceDocs);
+            // All host levels in elevation order
+            var allLevels = new FilteredElementCollector(doc)
+                .OfClass(typeof(Level)).Cast<Level>()
+                .OrderBy(l => l.Elevation).ToList();
+
+            // Collect rooms, then reconcile link rooms to host levels by elevation so
+            // differently-named link levels still group under the correct host level.
+            var rooms = CollectRooms(doc, sourceDocs);
+            AssignHostLevelsByElevation(rooms, allLevels, LevelMatchToleranceFt);
+
             var roomsByLevel = new Dictionary<string, List<RoomInfo>>(StringComparer.Ordinal);
             foreach (var r in rooms)
             {
@@ -189,11 +197,6 @@ namespace LemoineTools.Tools.LinkViews
                     roomsByLevel[r.LevelName] = new List<RoomInfo>();
                 roomsByLevel[r.LevelName].Add(r);
             }
-
-            // All host levels in elevation order
-            var allLevels = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level)).Cast<Level>()
-                .OrderBy(l => l.Elevation).ToList();
 
             var selectedIdSet = new HashSet<long>(SelectedLevelIds.Select(id => id.Value));
             var keptLevels    = allLevels.Where(l => selectedIdSet.Contains(l.Id.Value)).ToList();
