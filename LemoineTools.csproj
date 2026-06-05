@@ -97,4 +97,56 @@
     <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
+  <!--
+    Build-info stamping. Runs before every compile and writes a generated partial
+    that implements BuildInfo.InitGenerated() with the current build time, git branch
+    and short commit (see Source\Lemoine\BuildInfo.cs). The file lives under obj\ so it
+    is never committed, and git failures fall back to "unknown" rather than breaking
+    the build (e.g. when building from a source archive).
+  -->
+  <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --abbrev-ref HEAD"
+          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitBranchRaw" />
+    </Exec>
+    <Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD"
+          ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitCommitRaw" />
+    </Exec>
+
+    <PropertyGroup>
+      <_GitBranch>$(_GitBranchRaw.Trim())</_GitBranch>
+      <_GitBranch Condition="'$(_GitBranch)' == ''">unknown</_GitBranch>
+      <_GitCommit>$(_GitCommitRaw.Trim())</_GitCommit>
+      <_GitCommit Condition="'$(_GitCommit)' == ''">unknown</_GitCommit>
+      <_BuildTime>$([System.DateTime]::Now.ToString("yyyy-MM-dd HH:mm"))</_BuildTime>
+      <_BuildInfoFile>$(IntermediateOutputPath)BuildInfo.Generated.cs</_BuildInfoFile>
+    </PropertyGroup>
+
+    <!-- Each line is one Compile-able C# statement. ';' is escaped as %3B so MSBuild
+         does not treat it as an item separator. -->
+    <ItemGroup>
+      <_BuildInfoLines Include="// &lt;auto-generated&gt; regenerated each build — do not edit or commit." />
+      <_BuildInfoLines Include="namespace LemoineTools.Lemoine" />
+      <_BuildInfoLines Include="{" />
+      <_BuildInfoLines Include="    public static partial class BuildInfo" />
+      <_BuildInfoLines Include="    {" />
+      <_BuildInfoLines Include="        static partial void InitGenerated()" />
+      <_BuildInfoLines Include="        {" />
+      <_BuildInfoLines Include="            BuildTime = &quot;$(_BuildTime)&quot;%3B" />
+      <_BuildInfoLines Include="            GitBranch = &quot;$(_GitBranch)&quot;%3B" />
+      <_BuildInfoLines Include="            GitCommit = &quot;$(_GitCommit)&quot;%3B" />
+      <_BuildInfoLines Include="        }" />
+      <_BuildInfoLines Include="    }" />
+      <_BuildInfoLines Include="}" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(_BuildInfoFile)" Lines="@(_BuildInfoLines)" Overwrite="true" />
+
+    <ItemGroup>
+      <Compile Include="$(_BuildInfoFile)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

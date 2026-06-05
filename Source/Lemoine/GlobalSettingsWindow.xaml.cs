@@ -26,6 +26,7 @@ namespace LemoineTools.Lemoine
 
         // ── Footer status text ───────────────────────────────────────────────
         private TextBlock? _fStatusText;
+        private TextBlock? _fBuildInfoText;
 
         // ─────────────────────────────────────────────────────────────────────
         public GlobalSettingsWindow()
@@ -250,12 +251,27 @@ namespace LemoineTools.Lemoine
             var closeBtn = BuildFlatButton("Close");
             closeBtn.Click += (s, e) => Close();
 
+            // Build-info line (build time · branch @ commit) — dim, monospace, docked
+            // left. Values are stamped at compile time by the GenerateBuildInfo target;
+            // they read "unknown" if that target did not run.
+            _fBuildInfoText = new TextBlock
+            {
+                Text              = BuildInfo.Summary,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip           = "Build metadata (build time · git branch @ commit)",
+            };
+            _fBuildInfoText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            _fBuildInfoText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            _fBuildInfoText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
             var btnStack = new StackPanel { Orientation = Orientation.Horizontal };
             btnStack.Children.Add(closeBtn);
             DockPanel.SetDock(btnStack, Dock.Right);
+            DockPanel.SetDock(_fBuildInfoText, Dock.Left);
             dp.Children.Add(btnStack);
-            dp.Children.Add(_fStatusText);
+            dp.Children.Add(_fBuildInfoText);
+            dp.Children.Add(_fStatusText); // fill — transient template/save messages
 
             _footerBorder.Child = dp;
         }
