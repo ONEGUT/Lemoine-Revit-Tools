@@ -16,7 +16,11 @@ namespace LemoineTools.Tools.AutoFilters
     {
         // ── Set by ViewModel before Raise() ───────────────────────────────────
         public IList<string> SelectedFilterNames { get; set; } = new List<string>();
-        public IList<string> SelectedViewNames   { get; set; } = new List<string>();
+        // View ElementIds (as long) — NOT names. View names are not unique in Revit,
+        // so targeting by name would apply a filter to every view sharing that name
+        // (e.g. a Floor Plan and its RCP). The ViewModel resolves the user's picks to
+        // ElementIds and passes them here.
+        public IList<long>   SelectedViewIds     { get; set; } = new List<long>();
         public bool          OverwriteExisting   { get; set; } = false;
         public bool          ApplyColorOverrides { get; set; } = true;
 
@@ -49,7 +53,7 @@ namespace LemoineTools.Tools.AutoFilters
         // ── Core logic ────────────────────────────────────────────────────────
         private void Apply(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            if (SelectedFilterNames.Count == 0 || SelectedViewNames.Count == 0)
+            if (SelectedFilterNames.Count == 0 || SelectedViewIds.Count == 0)
             {
                 Log("No filters or views selected.", "fail");
                 fail++; return;
@@ -71,14 +75,19 @@ namespace LemoineTools.Tools.AutoFilters
                 fail++; return;
             }
 
-            // Build view name → View map
-            var selectedViewSet = new HashSet<string>(SelectedViewNames, StringComparer.Ordinal);
-            var viewList = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate && selectedViewSet.Contains(v.Name) &&
-                            v.AreGraphicsOverridesAllowed())
+            // Resolve the selected view ElementIds directly — each id is one specific
+            // view, so same-named views (Floor Plan vs RCP, duplicate 3D views) are
+            // never conflated. Ids that no longer resolve (view deleted since launch)
+            // or that can't take overrides are dropped and reported.
+            var viewList = SelectedViewIds
+                .Select(id => doc.GetElement(new ElementId(id)))
+                .OfType<View>()
+                .Where(v => !v.IsTemplate && v.AreGraphicsOverridesAllowed())
                 .ToList();
+
+            int droppedViews = SelectedViewIds.Count - viewList.Count;
+            if (droppedViews > 0)
+                Log($"{droppedViews} selected view(s) were skipped (deleted or do not support graphic overrides).", "info");
 
             if (viewList.Count == 0)
             {
