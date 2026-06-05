@@ -522,21 +522,75 @@ namespace LemoineTools.Tools.AutoFilters
         // filter (null = rule-less whole-category). Used when an in-place edit can't produce
         // the correct definition (e.g. converting a keyword rule to whole-category, or an
         // incompatible category/parameter change). The recreated element has a new ElementId,
-        // so any view assignment is lost and must be re-applied — that's the accepted trade-off
-        // for guaranteeing the definition is correct.
+        // which would otherwise silently detach the filter from every view/template it was on
+        // (the documented churn hazard) — including in the create-only pass, which skips the
+        // active-view re-add block entirely. To stay transparent, capture each existing view
+        // assignment (enabled state + graphic overrides) before deleting, then restore them
+        // onto the new ElementId.
         private static ParameterFilterElement RebuildFilter(
             Document doc, string filterName, ICollection<ElementId> catIds,
             ElementFilter? elementFilter, ParameterFilterElement old,
             Dictionary<string, ParameterFilterElement> existingFilters,
             HashSet<long> existingViewFilterIds)
         {
-            existingViewFilterIds.Remove(old.Id.Value);
-            doc.Delete(old.Id);
+            ElementId oldId = old.Id;
+            bool activeHadFilter = existingViewFilterIds.Remove(oldId.Value);
+
+            // Snapshot every view/template that references the old filter.
+            var assignments = new List<(View View, bool Enabled, OverrideGraphicSettings Ogs)>();
+            foreach (var v in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
+            {
+                ICollection<ElementId> vFilters;
+                try { vFilters = v.GetFilters(); }
+                catch (Exception ex)
+                {
+                    // Views that don't support filters throw — they can't carry this filter.
+                    LemoineLog.Swallowed($"AutoFilters: read filters on view {v.Id.Value}", ex);
+                    continue;
+                }
+                if (!vFilters.Any(id => id.Value == oldId.Value)) continue;
+
+                bool enabled;
+                OverrideGraphicSettings ogs;
+                try
+                {
+                    enabled = v.GetIsFilterEnabled(oldId);
+                    ogs     = v.GetFilterOverrides(oldId);
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Swallowed($"AutoFilters: read filter state on view {v.Id.Value}", ex);
+                    enabled = true;
+                    ogs     = new OverrideGraphicSettings();
+                }
+                assignments.Add((v, enabled, ogs));
+            }
+
+            doc.Delete(oldId);
 
             var pfe = elementFilter == null
                 ? ParameterFilterElement.Create(doc, filterName, catIds)
                 : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
             existingFilters[filterName] = pfe;
+
+            // Re-apply the captured assignments onto the new ElementId.
+            foreach (var a in assignments)
+            {
+                try
+                {
+                    a.View.AddFilter(pfe.Id);
+                    a.View.SetIsFilterEnabled(pfe.Id, a.Enabled);
+                    a.View.SetFilterOverrides(pfe.Id, a.Ogs);
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Swallowed(
+                        $"AutoFilters: restore filter '{filterName}' onto view {a.View.Id.Value}", ex);
+                }
+            }
+
+            // Keep the active-view bookkeeping in sync so ProcessRule does not double-add.
+            if (activeHadFilter) existingViewFilterIds.Add(pfe.Id.Value);
             return pfe;
         }
 
