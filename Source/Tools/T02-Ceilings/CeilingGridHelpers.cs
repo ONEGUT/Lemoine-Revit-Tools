@@ -17,6 +17,18 @@ namespace LemoineTools.Tools.Ceilings
         public static XyBounds FromPoints(XYZ a, XYZ b) => new XyBounds(
             Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
             Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+
+        public static XyBounds FromPoints(IEnumerable<XYZ> pts)
+        {
+            double minX = double.MaxValue, minY = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue;
+            foreach (var p in pts)
+            {
+                if (p.X < minX) minX = p.X; if (p.Y < minY) minY = p.Y;
+                if (p.X > maxX) maxX = p.X; if (p.Y > maxY) maxY = p.Y;
+            }
+            return new XyBounds(minX, minY, maxX, maxY);
+        }
     }
 
     internal sealed class FaceRecord
@@ -128,24 +140,46 @@ namespace LemoineTools.Tools.Ceilings
         public static IList<Curve> ProjectCurveOntoCeilings(Curve src, IList<FaceRecord> records)
         {
             var result = new List<Curve>();
-            XYZ      p0    = src.GetEndPoint(0);
-            XYZ      p1    = src.GetEndPoint(1);
-            XyBounds cBBox = XyBounds.FromPoints(p0, p1);
+
+            // Tessellate the source so arcs, splines and closed loops are projected ALONG the curve
+            // as a polyline instead of collapsed to a single straight chord between the two endpoints
+            // (which also dropped closed curves whose endpoints coincide). A straight line tessellates
+            // to its two endpoints, so this is unchanged for lines.
+            IList<XYZ> pts = src.Tessellate();
+            if (pts == null || pts.Count < 2) return result;
+
+            XyBounds cBBox = XyBounds.FromPoints(pts);
 
             foreach (FaceRecord rec in records)
             {
                 if (!rec.Bounds.Overlaps(cBBox)) continue;
-                XYZ? ps = ProjectPointOntoFace(p0, rec.Face);
-                XYZ? pe = ProjectPointOntoFace(p1, rec.Face);
-                if (ps == null || pe == null || ps.IsAlmostEqualTo(pe)) continue;
-                try
+
+                XYZ? prev   = null;
+                bool prevOn = false;
+                foreach (XYZ p in pts)
                 {
-                    if (rec.Face.Project(ps) == null || rec.Face.Project(pe) == null) continue;
-                    result.Add(Line.CreateBound(ps, pe));
+                    XYZ? proj = ProjectPointOntoFace(p, rec.Face);
+                    bool on   = proj != null && IsWithinFace(rec.Face, proj);
+
+                    // Emit a segment only where BOTH consecutive tessellation points land on the face,
+                    // so the grid is drawn just over the ceiling and a curve crossing the boundary is
+                    // split rather than dropped wholesale.
+                    if (on && prevOn && prev != null && proj != null && !prev.IsAlmostEqualTo(proj))
+                    {
+                        try { result.Add(Line.CreateBound(prev, proj)); }
+                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
+                    }
+                    prev   = proj;
+                    prevOn = on;
                 }
-                catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
             }
             return result;
+        }
+
+        private static bool IsWithinFace(PlanarFace face, XYZ pointOnPlane)
+        {
+            try { return face.Project(pointOnPlane) != null; }
+            catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: face containment test", __lex); return false; }
         }
 
         public static void TryCreateModelCurve(Document doc, View view, Curve curve,
