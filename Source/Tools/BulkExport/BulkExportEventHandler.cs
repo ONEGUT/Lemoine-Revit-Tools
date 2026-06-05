@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Tools.BulkExport
@@ -223,8 +224,11 @@ namespace LemoineTools.Tools.BulkExport
             Action<int, int, int, int> onProgress,
             ref int pass, ref int fail, ref int skip)
         {
+            // Duplicate sheet numbers can occur (e.g. placeholder/legacy sheets); ToDictionary throws
+            // on the first dup and would abort the entire pack export. Group and keep the first id.
             var sheetNumToId = elements.OfType<ViewSheet>()
-                .ToDictionary(s => s.SheetNumber, s => s.Id);
+                .GroupBy(s => s.SheetNumber)
+                .ToDictionary(g => g.Key, g => g.First().Id);
 
             // Pre-build DWG options once — setup lookup is constant across packs
             DWGExportOptions? dwgOpts     = null;
@@ -520,11 +524,11 @@ namespace LemoineTools.Tools.BulkExport
                             opts.FacetingFactor           = NwcFacetingFactor;
 
                             // ConvertLinkedCADFormats was added mid-cycle — guard for older API versions.
-                            // Only warn the user if they actually had it enabled.
-                            // TEMPORARY DEBUG — remove try/catch once minimum API version confirmed
+                            // Only warn the user if they actually had it enabled, but always record it.
                             try { opts.ConvertLinkedCADFormats = NwcConvertLinkedCad; }
                             catch (Exception ex)
                             {
+                                LemoineLog.Swallowed("BulkExport: NWC ConvertLinkedCADFormats unsupported by this API", ex);
                                 if (NwcConvertLinkedCad)
                                     pushLog("NWC: ConvertLinkedCADFormats is not supported by this Revit/Navisworks version — setting ignored.", "warn");
                             }
