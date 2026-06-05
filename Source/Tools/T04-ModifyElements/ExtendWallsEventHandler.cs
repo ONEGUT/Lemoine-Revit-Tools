@@ -90,6 +90,12 @@ namespace LemoineTools.Tools.ModifyElements
                     if (topLvlId != null && topLvlId == nextLevel.Id && Math.Abs(existingOff) < 0.001)
                     { alreadyCorrect++; continue; }
 
+                    // Already tall enough — the top is at or above the next level (e.g. topped to the
+                    // next level with a positive offset). "Extending" it would reset that offset to 0
+                    // and SHORTEN the wall, so leave deliberately taller walls untouched.
+                    if (topElev >= nextLevel.Elevation - 0.001)
+                    { alreadyCorrect++; continue; }
+
                     if (topElev <= ceilingElev - 0.01) { skipped++; continue; }
 
                     candidates.Add((wall, nextLevel));
