@@ -110,7 +110,11 @@ namespace LemoineTools.Tools.ModifyElements
                             elementSolid, cellSolid,
                             BooleanOperationsType.Intersect);
                     }
-                    catch { continue; }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed($"SplitByCell: cell boolean intersect failed on element {el.Id.Value}", ex);
+                        continue;
+                    }
 
                     if (intersection == null || intersection.Volume < 1e-9)
                         continue;
@@ -250,13 +254,16 @@ namespace LemoineTools.Tools.ModifyElements
             double startX = Math.Floor((minX - ox) / cellX) * cellX + ox;
             double startY = Math.Floor((minY - oy) / cellY) * cellY + oy;
 
-            var cellsX = new List<(double Min, double Max)>();
-            for (double x = startX; x < maxX; x += cellX)
-                cellsX.Add((x, x + cellX));
+            // Integer cell counts (see the solid path) so repeated += drift can't drop the trailing
+            // column/row; the epsilon stops an exact span edge from spawning a zero-width sliver.
+            int nx = Math.Max(1, (int)Math.Ceiling((maxX - startX) / cellX - 1e-9));
+            int ny = Math.Max(1, (int)Math.Ceiling((maxY - startY) / cellY - 1e-9));
 
-            var cellsY = new List<(double Min, double Max)>();
-            for (double y = startY; y < maxY; y += cellY)
-                cellsY.Add((y, y + cellY));
+            var cellsX = new List<(double Min, double Max)>(nx);
+            for (int i = 0; i < nx; i++) { double x = startX + i * cellX; cellsX.Add((x, x + cellX)); }
+
+            var cellsY = new List<(double Min, double Max)>(ny);
+            for (int j = 0; j < ny; j++) { double y = startY + j * cellY; cellsY.Add((y, y + cellY)); }
 
             if (cellsX.Count == 1 && cellsY.Count == 1)
                 return (0, CellSplitStatus.FitsInOneCell);
@@ -291,13 +298,25 @@ namespace LemoineTools.Tools.ModifyElements
 
             if (pending.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
 
-            // Phase 2: create replacement FilledRegions.
+            // Phase 2: create replacement FilledRegions. A single degenerate cell (e.g. a sliver from
+            // a grid line coincident with the region edge) must not abort the whole split — log it and
+            // skip, keeping the good cells.
             var newIds = new List<ElementId>();
             foreach (var loops in pending)
             {
-                FilledRegion newFr = FilledRegion.Create(doc, fr.GetTypeId(), fr.OwnerViewId, loops);
-                newIds.Add(newFr.Id);
+                try
+                {
+                    FilledRegion newFr = FilledRegion.Create(doc, fr.GetTypeId(), fr.OwnerViewId, loops);
+                    newIds.Add(newFr.Id);
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Swallowed($"SplitByCell: skipped a degenerate cell of filled region {fr.Id.Value}", ex);
+                }
             }
+
+            // If nothing valid was produced, leave the original intact rather than deleting it.
+            if (newIds.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
 
             doc.Delete(fr.Id);
             return (newIds.Count, CellSplitStatus.Split);
@@ -357,13 +376,19 @@ namespace LemoineTools.Tools.ModifyElements
 
         private static XYZ IntersectAtX(XYZ a, XYZ b, double x, double z)
         {
-            double t = (x - a.X) / (b.X - a.X);
+            double dx = b.X - a.X;
+            // Edge parallel to the clip line (coincident with a grid line): no real crossing, so
+            // return the boundary point without dividing by ~0 (which produced NaN → garbage cells).
+            if (Math.Abs(dx) < 1e-9) return new XYZ(x, a.Y, z);
+            double t = (x - a.X) / dx;
             return new XYZ(x, a.Y + t * (b.Y - a.Y), z);
         }
 
         private static XYZ IntersectAtY(XYZ a, XYZ b, double y, double z)
         {
-            double t = (y - a.Y) / (b.Y - a.Y);
+            double dy = b.Y - a.Y;
+            if (Math.Abs(dy) < 1e-9) return new XYZ(a.X, y, z);
+            double t = (y - a.Y) / dy;
             return new XYZ(a.X + t * (b.X - a.X), y, z);
         }
 
