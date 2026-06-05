@@ -271,20 +271,32 @@ namespace LemoineTools.Tools.Ceilings
                     .ToList();
 
                 var projected = new List<Curve>();
+                var toDelete  = new List<ElementId>();
                 int noMatch   = 0;
                 int total     = sourceGeom.Count;
                 int done      = 0;
 
-                foreach (var (_, src) in sourceGeom)
+                foreach (var (id, src) in sourceGeom)
                 {
                     var projs = CeilingGridHelpers.ProjectCurveOntoCeilings(src, faces);
-                    if (projs.Count == 0) noMatch++;
-                    else projected.AddRange(projs);
+                    if (projs.Count == 0)
+                    {
+                        // No ceiling under this curve — keep the original. Deleting it
+                        // would be destructive: a reproject that finds no overlap (wrong
+                        // active view, ceilings not in view) must not wipe the grid lines.
+                        noMatch++;
+                    }
+                    else
+                    {
+                        projected.AddRange(projs);
+                        toDelete.Add(id);  // replaced by its projection below
+                    }
                     done++;
                     Progress((int)(done * 60.0 / total), pass, fail, noMatch);
                 }
 
-                doc.Delete(sourceGeom.Select(g => g.Id).ToList());
+                if (toDelete.Count > 0)
+                    doc.Delete(toDelete);
 
                 var cache = new Dictionary<double, SketchPlane>();
                 total = projected.Count;
@@ -311,7 +323,7 @@ namespace LemoineTools.Tools.Ceilings
 
                 Log($"Complete — {pass} curve(s) created across {cache.Count} elevation(s).", "pass");
                 if (noMatch > 0)
-                    Log($"{noMatch} curve(s) had no ceiling overlap and were skipped.", "info");
+                    Log($"{noMatch} curve(s) had no ceiling overlap and were kept unchanged.", "info");
             }
         }
 
