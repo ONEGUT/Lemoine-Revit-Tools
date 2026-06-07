@@ -119,7 +119,8 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private static readonly (string Id, string Label)[] _navDefs =
         {
-            ("general", "General"),
+            ("general",    "General"),
+            ("dimensions", "Dimensions"),
         };
 
         private void BuildTabNav()
@@ -218,8 +219,9 @@ namespace LemoineTools.Lemoine
             UIElement content;
             switch (tabId)
             {
-                case "general":  content = BuildGeneralContent();  break;
-                case "t08":      content = LegendCreatorTabContent.BuildContent(this); break;
+                case "general":    content = BuildGeneralContent();    break;
+                case "dimensions": content = BuildDimensionsContent(); break;
+                case "t08":        content = LegendCreatorTabContent.BuildContent(this); break;
                 // (Create Sheets settings tab removed — values are now per-run in the tool.)
                 default:         content = BuildNoSettingsContent(); break;
             }

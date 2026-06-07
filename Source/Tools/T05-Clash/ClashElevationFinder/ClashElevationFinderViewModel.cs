@@ -14,19 +14,24 @@ namespace LemoineTools.Tools.Testing
     /// <summary>
     /// Clash Finder &amp; Elevation Tag wizard: pick saved definition(s) + section/elevation views,
     /// detect clashes and place coloured round markers, then tag each round with a spot elevation at
-    /// its top, centre, or bottom. The actual work happens in <see cref="ClashElevationFinderEventHandler"/>.
+    /// its top, centre, or bottom. Four steps: definitions · views · marker &amp; tag settings ·
+    /// review &amp; run. Marker oversize is edited in inches but stored internally in millimetres.
+    /// The actual work happens in <see cref="ClashElevationFinderEventHandler"/>.
     /// </summary>
-    public class ClashElevationFinderViewModel : ILemoineTool
+    public class ClashElevationFinderViewModel : ILemoineTool, ILemoineReviewable
     {
         public string Title    => "Clash Finder & Elevation Tag";
         public string RunLabel => "Find & Tag Clashes →";
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Definitions", required: true),
-            new StepDefinition("S2", "Select Views",       required: true),
-            new StepDefinition("S3", "Options & Run",      required: false),
+            new StepDefinition("S1", "Select Definitions",     required: true),
+            new StepDefinition("S2", "Select Views",           required: true),
+            new StepDefinition("S3", "Marker & Tag Settings",  required: false),
+            new StepDefinition("S4", "Review & Run",           required: false),
         };
+
+        private const double MmPerInch = 25.4;
 
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -49,7 +54,7 @@ namespace LemoineTools.Tools.Testing
 
         private bool   _clearPrevious    = true;
         private bool   _showAllDocuments = false;
-        private double _roundSizeMm      = 0.0;     // round marker diameter; 0 = auto-fit to the clash
+        private double _roundSizeMm      = 0.0;     // round marker oversize; 0 = exact element size
         private string _anchorMode       = "Centre"; // "Top" | "Centre" | "Bottom"
         private ElementId _spotTypeId    = ElementId.InvalidElementId;
 
@@ -99,7 +104,8 @@ namespace LemoineTools.Tools.Testing
             {
                 case "S1": return BuildDefinitionsStep();
                 case "S2": return BuildViewsStep();
-                case "S3": return BuildOptionsStep();
+                case "S3": return BuildSettingsStep();
+                case "S4": return null;   // framework renders the review (ILemoineReviewable)
                 default:   return null;
             }
         }
@@ -187,8 +193,8 @@ namespace LemoineTools.Tools.Testing
             return groups;
         }
 
-        // ── S3 — Options & Run ────────────────────────────────────────────────
-        private FrameworkElement BuildOptionsStep()
+        // ── S3 — Marker & Tag Settings ────────────────────────────────────────
+        private FrameworkElement BuildSettingsStep()
         {
             var outer = new StackPanel();
 
@@ -207,6 +213,13 @@ namespace LemoineTools.Tools.Testing
                 Fire();
             };
             outer.Children.Add(toggles);
+
+            AddDivider(outer);
+            AddStepperRow(outer,
+                "Marker oversize (in, 0 = exact element size)",
+                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much. Top/bottom tag elevations are measured at the marker's edge, so the oversize also sets how far above/below the clash centre they read.",
+                _roundSizeMm / MmPerInch, min: 0, max: 40, step: 0.25, decimals: 2,
+                v => { _roundSizeMm = v * MmPerInch; Fire(); });
 
             AddDivider(outer);
             AddLabel(outer, "Where on the round to place the elevation tag.");
@@ -241,16 +254,6 @@ namespace LemoineTools.Tools.Testing
                 outer.Children.Add(typePicker);
             }
 
-            AddDivider(outer);
-            AddStepperRow(outer,
-                "Marker oversize (mm, 0 = exact element size)",
-                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much. Top/bottom tag elevations are measured at the marker's edge, so the oversize also sets how far above/below the clash centre they read.",
-                _roundSizeMm, min: 0, max: 1000, step: 25, decimals: 0,
-                v => { _roundSizeMm = v; Fire(); });
-
-            AddDivider(outer);
-            AddDim(outer, $"{_selectedDefDisplays.Count} definition(s) · {_selectedViewNames.Count} view(s) selected.");
-
             return WrapInScroll(outer);
         }
 
@@ -272,15 +275,57 @@ namespace LemoineTools.Tools.Testing
                 case "S1": return _selectedDefDisplays.Count == 0 ? "—" : $"{_selectedDefDisplays.Count} definition(s)";
                 case "S2": return _selectedViewNames.Count   == 0 ? "—" : $"{_selectedViewNames.Count} view(s)";
                 case "S3":
+                {
                     var bits = new List<string>();
                     if (_clearPrevious)    bits.Add("clear");
                     if (_showAllDocuments) bits.Add("all docs");
                     bits.Add($"tag {(_anchorMode == "Top" ? "top" : _anchorMode == "Bottom" ? "bottom" : "centre")}");
-                    bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm:F0} mm" : "exact size");
+                    bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in" : "exact size");
                     return string.Join(" · ", bits);
+                }
+                case "S4": return "Ready to run";
                 default: return "—";
             }
         }
+
+        // ── ILemoineReviewable — framework renders the review step ────────────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("defs",   "Definitions"),
+            ("views",  "Views"),
+            ("marker", "Marker"),
+            ("tag",    "Tag"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["defs"]   = _selectedDefDisplays.Count > 0 ? $"{_selectedDefDisplays.Count} definition(s)" : "—",
+            ["views"]  = _selectedViewNames.Count   > 0 ? $"{_selectedViewNames.Count} view(s)"        : "—",
+            ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
+            ["tag"]    = $"{(_anchorMode == "Top" ? "top" : _anchorMode == "Bottom" ? "bottom" : "centre")}"
+                + (_spotTypes.Count > 0
+                    ? $" · {_spotTypes.FirstOrDefault(t => t.Id == _spotTypeId).Name ?? _spotTypes[0].Name}"
+                    : " · no spot type"),
+        };
+
+        public IList<string>? ReviewChips
+        {
+            get
+            {
+                var chips = new List<string>();
+                if (_clearPrevious)    chips.Add("clear previous");
+                if (_showAllDocuments) chips.Add("all documents");
+                return chips.Count > 0 ? chips : null;
+            }
+        }
+
+        public string? ReviewNote => "Detects clashes from the selected definitions across the chosen "
+            + "sections and elevations, places coloured round markers, and tags each with a spot "
+            + "elevation at the chosen position on the round.";
+
+        public string? ReviewWarning => _spotTypes.Count == 0
+            ? "No spot elevation type found — markers will be placed but cannot be tagged."
+            : null;
 
         // ── Run ───────────────────────────────────────────────────────────────
         public void Run(

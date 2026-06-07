@@ -17,9 +17,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
     {
         /// <summary>Config schema version. v1 first release; v2 refreshes the layout/chaining
         /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
-        /// the clash; v4 replaces per-axis chaining tolerances with run-based grouping (Load()
-        /// migrates older files).</summary>
-        public int SchemaVersion { get; set; } = 4;
+        /// the clash; v4 replaces per-axis chaining tolerances with run-based grouping; v5 resets the
+        /// run gap / cross tolerance to the clean feet-based defaults (5 ft / 0.5 ft). Load() migrates
+        /// older files.</summary>
+        public int SchemaVersion { get; set; } = 5;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -36,13 +37,15 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         /// <summary>Max along-run gap between adjacent clashes that still belong to one run (mm).
         /// Wide enough that penetrations spread across a bay stay one run to the edge, like the
-        /// manual; tight enough that a separate run further along starts its own dimension.</summary>
-        public double RunGapMm { get; set; } = 1500.0;
+        /// manual; tight enough that a separate run further along starts its own dimension. Default
+        /// 5 ft (1524 mm) — the UI edits this in feet.</summary>
+        public double RunGapMm { get; set; } = 1524.0;
 
         /// <summary>How far a clash may sit off the run's line and still belong to it (mm). Also the
         /// across-run snap: members within this of the run offset share one dimension (a pipe a hair
-        /// off the line is treated as in line, not dimensioned separately).</summary>
-        public double RunCrossToleranceMm { get; set; } = 100.0;
+        /// off the line is treated as in line, not dimensioned separately). Default 0.5 ft (152.4 mm)
+        /// — the UI edits this in feet.</summary>
+        public double RunCrossToleranceMm { get; set; } = 152.4;
 
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";
@@ -110,6 +113,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         if (c.SchemaVersion < 2) MigrateToV2(c);
                         if (c.SchemaVersion < 3) MigrateToV3(c);
                         if (c.SchemaVersion < 4) MigrateToV4(c);
+                        if (c.SchemaVersion < 5) MigrateToV5(c);
                         return c;
                     }
                 }
@@ -153,6 +157,18 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             c.RunGapMm            = def.RunGapMm;
             c.RunCrossToleranceMm = def.RunCrossToleranceMm;
             c.SchemaVersion = 4;
+        }
+
+        /// <summary>v4 → v5: the run gap / cross tolerance are now edited in feet and seeded from clean
+        /// feet-based defaults (5 ft / 0.5 ft). Reset both to the new defaults so existing files pick up
+        /// the rounded values rather than the old 1500 / 100 mm. Leaves target, links, dimension-type,
+        /// and layout numbers untouched — same shape as the v2/v3/v4 resets above.</summary>
+        private static void MigrateToV5(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.RunGapMm            = def.RunGapMm;
+            c.RunCrossToleranceMm = def.RunCrossToleranceMm;
+            c.SchemaVersion = 5;
         }
     }
 }

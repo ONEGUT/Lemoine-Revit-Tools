@@ -3,6 +3,17 @@
 Base branch: **off `main`** (has the merged audit + run-aware dimensioning).
 Branch name: `clash-dimensioning-settings-split`.
 
+## Decisions (confirmed before build)
+1. **ClashElevation wizard = 4 steps**, no hollow step: S1 Definitions · S2 Views ·
+   S3 Marker & Tag settings (oversize, spot-elevation type, tag position, clear /
+   scan-all-docs) · S4 Review & Run. All tag-related per-run settings stay in the
+   wizard.
+2. **Dimension Settings = a new "Dimensions" tab inside the existing tabbed
+   `GlobalSettingsWindow`** (not a standalone window, no new ribbon button).
+3. **Wizard ↔ config = per-run only.** The wizards seed their dimensioning fields
+   from `AutoDimensionConfig` but never write back. The Dimensions tab is the only
+   place that edits the persisted defaults.
+
 ## 1. Fix diagonal dimensions (bug)
 `DimensionChainer.EmitSingle` draws the line from the representative clash's
 anchor to the majority-voted target's point, which was computed on-axis from a

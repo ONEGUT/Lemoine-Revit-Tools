@@ -147,6 +147,21 @@ namespace LemoineTools.Lemoine
                 });
             }
 
+            // Give an activatable tool a way to pull its host window back to the foreground after a
+            // Revit interaction (e.g. a slab PickObject) brings Revit's main window forward.
+            if (_tool is IWindowActivatable activatable)
+            {
+                activatable.SetActivateCallback(() =>
+                    Dispatcher.BeginInvoke((Action)(() =>
+                    {
+                        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                        Activate();
+                        // Nudge to the top without staying pinned, then return keyboard focus.
+                        Topmost = true; Topmost = false;
+                        Focus();
+                    })));
+            }
+
             // Defer tab-bar rendering until after callers can RegisterLogTab()
             Loaded += (s, e) => BuildTabBar();
             ActivateStep(0);

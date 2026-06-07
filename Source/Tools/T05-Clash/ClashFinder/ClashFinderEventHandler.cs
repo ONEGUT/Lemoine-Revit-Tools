@@ -25,11 +25,11 @@ namespace LemoineTools.Tools.Clash
         public bool                 ShowAllDocuments { get; set; } = false;
         public bool                 RunDimensionPass { get; set; } = false;
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
-        public double               StoreyMarginMm   { get; set; } = 600.0;  // sub-floor depth still counted as a level's storey
+        public double               StoreyMarginMm   { get; set; } = 609.6;  // 2 ft: sub-floor depth still counted as a level's storey
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
         public bool                 DimChainAligned  { get; set; } = true;   // group clashes into runs (chain along, single across)
-        public double               DimRunGapMm      { get; set; } = 1500.0; // max along-run gap between adjacent run members
-        public double               DimRunCrossMm    { get; set; } = 100.0;  // off-line tolerance + across-run snap
+        public double               DimRunGapMm      { get; set; } = 1524.0; // 5 ft: max along-run gap between adjacent run members
+        public double               DimRunCrossMm    { get; set; } = 152.4;  // 0.5 ft: off-line tolerance + across-run snap
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
