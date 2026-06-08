@@ -840,6 +840,17 @@ namespace LemoineTools.Lemoine
         EventManager.RegisterClassHandler(typeof(ComboBox),
             UIElement.PreviewMouseWheelEvent,
             new MouseWheelEventHandler(OnComboWheel), handledEventsToo: false);
+
+        // Every ComboBox: while its dropdown is open, redirect a wheel that Windows delivered to
+        // the owner window (rather than the dropdown popup's own hwnd) into the dropdown's
+        // scroller, so the open list scrolls BOTH directions. A Popup takes no Win32 activation,
+        // so depending on focus and the OS "scroll inactive windows under the cursor" setting the
+        // wheel can land on the main window — then the page's asymmetric scrolling takes over and
+        // the list scrolls down but not up. Same root cause as the tag-chip popup. Wired once per
+        // ComboBox on Loaded; the popup-hwnd delivery path is already handled by OnScrollViewerWheel.
+        EventManager.RegisterClassHandler(typeof(ComboBox),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnComboLoaded));
     }
 
     private static void OnScrollViewerWheel(object sender, MouseWheelEventArgs e)
@@ -903,6 +914,69 @@ namespace LemoineTools.Lemoine
                 RoutedEvent = UIElement.MouseWheelEvent,
                 Source      = combo,
             });
+    }
+
+    // Marks a ComboBox whose dropdown wheel-redirect has already been wired, so re-raised
+    // Loaded events (a control can load more than once) don't attach duplicate handlers.
+    private static readonly DependencyProperty ComboWheelWiredProperty =
+        DependencyProperty.RegisterAttached(
+            "ComboWheelWired", typeof(bool), typeof(LemoineControlStyles),
+            new PropertyMetadata(false));
+
+    private static void OnComboLoaded(object sender, RoutedEventArgs e)
+    {
+        var combo = (ComboBox)sender;
+        if ((bool)combo.GetValue(ComboWheelWiredProperty)) return; // wire exactly once
+        combo.SetValue(ComboWheelWiredProperty, true);
+
+        // Captured across open/close so the close handler detaches the exact same delegate.
+        // The popup/scroller are resolved lazily at wheel time (when the dropdown is open and
+        // realized) rather than at open time, which can race the popup's visual-tree build.
+        Window? owner = null;
+        MouseWheelEventHandler redirect = (ws, we) =>
+        {
+            // Only act on a wheel that reached the owner window while the dropdown is open and the
+            // cursor is over it; otherwise let the page scroll normally. Driving the offset
+            // manually is symmetric by construction, so the up-scroll can't be dropped.
+            if (we.Handled || !combo.IsDropDownOpen) return;
+            var popup   = combo.Template?.FindName("PART_Popup", combo) as Popup;
+            var content = popup?.Child as FrameworkElement;
+            if (content == null || !content.IsMouseOver) return;
+            var sv = FindDescendantScrollViewer(content);
+            if (sv == null) return;
+
+            we.Handled = true;
+            if (sv.ScrollableHeight <= 0) return;
+            double step = we.Delta / 120.0 * 48.0; // 3 lines (~48px) per wheel notch
+            sv.ScrollToVerticalOffset(
+                Math.Max(0, Math.Min(sv.ScrollableHeight, sv.VerticalOffset - step)));
+        };
+
+        combo.DropDownOpened += (s, _) =>
+        {
+            owner = Window.GetWindow(combo);
+            if (owner == null) return;
+            owner.PreviewMouseWheel -= redirect; // avoid a duplicate attach
+            owner.PreviewMouseWheel += redirect;
+        };
+
+        combo.DropDownClosed += (s, _) =>
+        {
+            if (owner != null) owner.PreviewMouseWheel -= redirect;
+        };
+    }
+
+    /// <summary>Depth-first search of the visual tree under <paramref name="root"/> for the first ScrollViewer.</summary>
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject root)
+    {
+        if (root is ScrollViewer sv) return sv;
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var found = FindDescendantScrollViewer(VisualTreeHelper.GetChild(root, i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     /// <summary>Walks up the visual tree from <paramref name="start"/> to the nearest ScrollViewer.</summary>
