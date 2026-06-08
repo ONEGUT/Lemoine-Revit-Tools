@@ -198,8 +198,17 @@ namespace LemoineTools.Tools.BulkExport
                     debug.Log("IFC", "Export blocked — ExportMode is Sheets.");
                 }
 
-                if (Packs.Count > 0 && ExportMode == "Sheets")
+                if (Packs.Count > 0)
+                {
+                    // Packs only combine PDF and order DWG. NWC/IFC are inherently per-view
+                    // and cannot be packed — report this rather than dropping them silently.
+                    if (ExportNwc)
+                        pushLog("NWC: Skipped — NWC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export NWC.", "warn");
+                    if (ExportIfc && ExportMode != "Sheets")
+                        pushLog("IFC: Skipped — IFC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export IFC.", "warn");
+
                     ExportPackMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip);
+                }
                 else
                     ExportIndividualMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip, nwcReady);
 
@@ -224,10 +233,14 @@ namespace LemoineTools.Tools.BulkExport
             Action<int, int, int, int> onProgress,
             ref int pass, ref int fail, ref int skip)
         {
-            // Duplicate sheet numbers can occur (e.g. placeholder/legacy sheets); ToDictionary throws
-            // on the first dup and would abort the entire pack export. Group and keep the first id.
-            var sheetNumToId = elements.OfType<ViewSheet>()
-                .GroupBy(s => s.SheetNumber)
+            // Pack keys are sheet numbers (Sheets mode) or view names (Views mode), matching
+            // how the ViewModel builds the pack editor. Duplicate keys can occur (placeholder
+            // sheets, identically-named views); group and keep the first id so a dup doesn't
+            // abort the whole export.
+            var keyToId = elements
+                .Select(e => new { Key = e is ViewSheet vs ? vs.SheetNumber : e.Name, e.Id })
+                .Where(x => !string.IsNullOrEmpty(x.Key))
+                .GroupBy(x => x.Key)
                 .ToDictionary(g => g.Key, g => g.First().Id);
 
             // Pre-build DWG options once — setup lookup is constant across packs
@@ -242,13 +255,13 @@ namespace LemoineTools.Tools.BulkExport
             foreach (var pack in Packs)
             {
                 var packIds = pack.SheetNumbers
-                    .Where(n => sheetNumToId.ContainsKey(n))
-                    .Select(n => sheetNumToId[n])
+                    .Where(n => keyToId.ContainsKey(n))
+                    .Select(n => keyToId[n])
                     .ToList();
 
                 if (packIds.Count == 0)
                 {
-                    pushLog($"Pack '{pack.PackName}': no matching sheets in selection — skipped.", "fail");
+                    pushLog($"Pack '{pack.PackName}': no matching items in selection — skipped.", "fail");
                     skip++;
                     // Advance done for the pre-counted operations so progress stays accurate
                     if (ExportPdf) done++;
@@ -308,8 +321,7 @@ namespace LemoineTools.Tools.BulkExport
                         foreach (var sheetId in packIds)
                         {
                             var sheet   = doc.GetElement(sheetId);
-                            var tokens  = BuildTokens(sheet, projNumber, projName);
-                            string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+                            string safeName = ResolveExportName(sheet, projNumber, projName, "DWG", pushLog);
 
                             try
                             {
@@ -370,8 +382,7 @@ namespace LemoineTools.Tools.BulkExport
                     try
                     {
                         string outDir    = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
-                        var firstTokens  = BuildTokens(elements[0], projNumber, projName);
-                        string safeName  = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, firstTokens));
+                        string safeName  = ResolveExportName(elements[0], projNumber, projName, "PDF", pushLog);
                         var allIds       = elements.Select(e => e.Id).ToList();
                         var opts         = BuildPdfOptions(safeName, combine: true);
                         bool ok          = doc.Export(outDir, allIds, opts);
@@ -399,8 +410,7 @@ namespace LemoineTools.Tools.BulkExport
                     // One call per element
                     foreach (var element in elements)
                     {
-                        var tokens  = BuildTokens(element, projNumber, projName);
-                        string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+                        string safeName = ResolveExportName(element, projNumber, projName, "PDF", pushLog);
 
                         try
                         {
@@ -445,8 +455,7 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     foreach (var element in elements)
                     {
-                        var tokens  = BuildTokens(element, projNumber, projName);
-                        string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+                        string safeName = ResolveExportName(element, projNumber, projName, "DWG", pushLog);
 
                         try
                         {
@@ -480,8 +489,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
-                    var tokens  = BuildTokens(element, projNumber, projName);
-                    string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+                    string safeName = ResolveExportName(element, projNumber, projName, "NWC", pushLog);
 
                     try
                     {
@@ -555,8 +563,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
-                    var tokens  = BuildTokens(element, projNumber, projName);
-                    string safeName = SanitizeFilename(LemoineTokenInput.Resolve(FilenamePattern, tokens));
+                    string safeName = ResolveExportName(element, projNumber, projName, "IFC", pushLog);
 
                     try
                     {
@@ -668,20 +675,70 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
+        // Tokens are resolved against whatever is being exported. A ViewSheet exposes the
+        // sheet parameters; any other View has none of them, so its name/type drive the
+        // tokens and the sheet tokens fall back to the view name (so a stray sheet pattern
+        // still yields a non-empty name instead of silently producing "-").
         private static Dictionary<string, string> BuildTokens(Element? element, string projNumber, string projName)
         {
-            return new Dictionary<string, string>
+            var tokens = new Dictionary<string, string>
             {
-                ["SheetNumber"]   = element?.get_Parameter(BuiltInParameter.SHEET_NUMBER)?.AsString()           ?? "",
-                ["SheetName"]     = element?.get_Parameter(BuiltInParameter.SHEET_NAME)?.AsString()             ?? "",
-                ["Revision"]      = element?.get_Parameter(BuiltInParameter.SHEET_CURRENT_REVISION)?.AsString() ?? "",
-                ["IssueDate"]     = element?.get_Parameter(BuiltInParameter.SHEET_ISSUE_DATE)?.AsString()       ?? "",
                 ["ProjectNumber"] = projNumber,
                 ["ProjectName"]   = projName,
                 ["Year"]          = DateTime.Now.Year.ToString(),
                 ["Month"]         = DateTime.Now.Month.ToString("D2"),
                 ["Day"]           = DateTime.Now.Day.ToString("D2"),
             };
+
+            if (element is ViewSheet sheet)
+            {
+                tokens["SheetNumber"] = sheet.SheetNumber ?? "";
+                tokens["SheetName"]   = sheet.Name ?? "";
+                tokens["Revision"]    = element.get_Parameter(BuiltInParameter.SHEET_CURRENT_REVISION)?.AsString() ?? "";
+                tokens["IssueDate"]   = element.get_Parameter(BuiltInParameter.SHEET_ISSUE_DATE)?.AsString()       ?? "";
+                tokens["ViewName"]    = sheet.Name ?? "";
+                tokens["ViewType"]    = "Sheet";
+            }
+            else if (element is View view)
+            {
+                string viewName = view.Name ?? "";
+                tokens["ViewName"]    = viewName;
+                tokens["ViewType"]    = view.ViewType.ToString();
+                tokens["SheetName"]   = viewName;   // fallback so a sheet pattern still resolves
+                tokens["SheetNumber"] = "";
+                tokens["Revision"]    = "";
+                tokens["IssueDate"]   = "";
+            }
+
+            return tokens;
+        }
+
+        // Resolves the export filename and never silently emits a junk name. If the pattern
+        // resolves to something with no usable character (e.g. an all-empty-token pattern
+        // collapsing to "-"), the failure is reported to the run log AND diagnostics.log,
+        // and a deterministic fallback (element name, else element id) is used instead.
+        private string ResolveExportName(Element? element, string projNumber, string projName,
+                                         string fmt, Action<string, string> pushLog)
+        {
+            var    tokens   = BuildTokens(element, projNumber, projName);
+            string resolved = LemoineTokenInput.Resolve(FilenamePattern, tokens);
+
+            if (resolved.Any(char.IsLetterOrDigit))
+                return SanitizeFilename(resolved);
+
+            // Degenerate — report loudly and fall back.
+            string label    = element?.Name ?? "";
+            string fallback = SanitizeFilename(label);
+            if (!fallback.Any(char.IsLetterOrDigit))
+                fallback = "export-" + (element?.Id.IntegerValue.ToString() ?? "0");
+
+            pushLog($"{fmt}: filename pattern '{FilenamePattern}' produced no usable name for '{label}' " +
+                    $"(its tokens were all empty for this {(element is ViewSheet ? "sheet" : "view")}). " +
+                    $"Using '{fallback}' instead — check the pattern matches the export mode.", "warn");
+            LemoineLog.Warn("BulkExport.ResolveExportName",
+                $"Degenerate filename. fmt={fmt} pattern='{FilenamePattern}' resolved='{resolved}' " +
+                $"element={element?.Id} name='{label}' fallback='{fallback}'");
+            return fallback;
         }
 
         private static string SanitizeFilename(string name)

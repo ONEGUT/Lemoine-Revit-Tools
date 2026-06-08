@@ -18,21 +18,53 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable
+    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Bulk Export";
         public string RunLabel => "Export in Revit →";
 
+        // PDF/DWG/NWC/IFC settings each get their own step, shown only when that format
+        // is enabled (ILemoineConditionalSteps). The settings steps must never be last —
+        // S9 (review/run) is always visible.
         public StepDefinition[] Steps => new[]
         {
             new StepDefinition("S1", "Select Sheets / Views", required: true),
             new StepDefinition("S2", "Build Packs",           required: false),
             new StepDefinition("S3", "Filename & Formats",    required: true),
             new StepDefinition("S4", "PDF Settings",          required: false),
-            new StepDefinition("S5", "Output",                required: true),
-            new StepDefinition("S6", "Review & Run",          required: false),
+            new StepDefinition("S5", "DWG Settings",          required: false),
+            new StepDefinition("S6", "NWC Settings",          required: false),
+            new StepDefinition("S7", "IFC Settings",          required: false),
+            new StepDefinition("S8", "Output",                required: true),
+            new StepDefinition("S9", "Review & Run",          required: false),
         };
+
+        // ── ILemoineConditionalSteps ──────────────────────────────────────────
+        public bool IsStepVisible(string stepId)
+        {
+            switch (stepId)
+            {
+                case "S4": return _pdfOn;
+                case "S5": return _dwgOn;
+                case "S6": return _nwcOn;
+                case "S7": return _ifcOn;
+                default:   return true;
+            }
+        }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        // Step content is built eagerly when the window opens, so steps that depend on
+        // earlier choices must be rebuilt when the user navigates to them:
+        //   S2 reads the live S1 selection, S3's token picker matches the export mode,
+        //   S6's note reflects sheets-vs-views mode.
+        private Action<string>? _refreshStep;
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId == "S2" || stepId == "S3" || stepId == "S6")
+                _refreshStep?.Invoke(stepId);
+        }
 
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -50,7 +82,13 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── Token definitions ─────────────────────────────────────────────────
-        private static readonly (string Label, string Token)[] ExportTokens =
+        // Two vocabularies so the picker only ever offers tokens that are valid for what
+        // is being exported. Sheet-only tokens (number/revision/issue date) do not exist
+        // on a view, so offering them in Views mode would produce empty/degenerate names.
+        private const string SheetDefaultPattern = "{SheetNumber}-{SheetName}";
+        private const string ViewDefaultPattern  = "{ViewName}";
+
+        private static readonly (string Label, string Token)[] SheetTokens =
         {
             ("Sheet Number",  "{SheetNumber}"),
             ("Sheet Name",    "{SheetName}"),
@@ -63,6 +101,19 @@ namespace LemoineTools.Tools.BulkExport
             ("Day",           "{Day}"),
         };
 
+        private static readonly (string Label, string Token)[] ViewTokens =
+        {
+            ("View Name",     "{ViewName}"),
+            ("View Type",     "{ViewType}"),
+            ("Project No.",   "{ProjectNumber}"),
+            ("Project Name",  "{ProjectName}"),
+            ("Year",          "{Year}"),
+            ("Month",         "{Month}"),
+            ("Day",           "{Day}"),
+        };
+
+        private bool ViewsMode => _exportMode == "Views";
+
         // ── S1 state ──────────────────────────────────────────────────────────
         private string                        _exportMode    = "Sheets";
         private List<string>                  _selectedNames = new List<string>();
@@ -73,7 +124,15 @@ namespace LemoineTools.Tools.BulkExport
         private int                            _activePack = 0;
 
         // ── S3 state (filename & formats) ────────────────────────────────────
-        private string             _filenamePattern = BulkExportSettings.Instance.FilenamePattern;
+        // Separate patterns per mode so each carries a default built from its own valid
+        // token set. ActivePattern resolves to whichever applies to the current mode.
+        private string             _sheetPattern    = BulkExportSettings.Instance.FilenamePattern;
+        private string             _viewPattern     = BulkExportSettings.Instance.ViewFilenamePattern;
+        private string ActivePattern
+        {
+            get => ViewsMode ? _viewPattern : _sheetPattern;
+            set { if (ViewsMode) _viewPattern = value; else _sheetPattern = value; }
+        }
         private bool               _pdfOn           = BulkExportSettings.Instance.ExportPdf;
         private bool               _dwgOn           = BulkExportSettings.Instance.ExportDwg;
         private bool               _nwcOn           = BulkExportSettings.Instance.ExportNwc;
@@ -169,6 +228,12 @@ namespace LemoineTools.Tools.BulkExport
                 foreach (var p in saved) _packs.Add(p.Clone());
             else
                 _packs.Add(new SheetPackLayout("Pack 1"));
+
+            // Default the DWG setup to the first available so the combo's shown value
+            // matches what actually gets used (previously the combo displayed setup [0]
+            // while _dwgSetup stayed empty until the user touched it).
+            if (string.IsNullOrEmpty(_dwgSetup) && _dwgSetupNames.Count > 0)
+                _dwgSetup = _dwgSetupNames[0];
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -181,8 +246,11 @@ namespace LemoineTools.Tools.BulkExport
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
                 case "S3": return BuildS3();
-                case "S4": return BuildS4();
-                case "S5": return BuildS5();
+                case "S4": return BuildS4Pdf();
+                case "S5": return BuildS5Dwg();
+                case "S6": return BuildS6Nwc();
+                case "S7": return BuildS7Ifc();
+                case "S8": return BuildS8Output();
                 default:   return null;
             }
         }
@@ -242,12 +310,15 @@ namespace LemoineTools.Tools.BulkExport
         private LemoineMultiSelectTabs BuildMultiSelect(CheckBox showAllCb)
         {
             var tabs = new LemoineMultiSelectTabs();
-            tabs.SetGroups(BuildGroups((bool)(showAllCb.Tag ?? false)));
+            // Subscribe BEFORE SetGroups — per the LemoineMultiSelectTabs contract, the
+            // single SelectionChanged fired at the end of SetGroups is the only mechanism
+            // that initialises the mirror field.
             tabs.SelectionChanged += selected =>
             {
                 _selectedNames = new List<string>(selected);
                 Fire();
             };
+            tabs.SetGroups(BuildGroups((bool)(showAllCb.Tag ?? false)));
             return tabs;
         }
 
@@ -319,27 +390,13 @@ namespace LemoineTools.Tools.BulkExport
         // ── S2 — Build Packs ──────────────────────────────────────────────────
         private FrameworkElement BuildS2()
         {
-            if (_exportMode == "Views")
-            {
-                var info = new TextBlock
-                {
-                    Text         = "Pack organisation is only available when exporting sheets. Switch to 'Sheets' mode in Step 1 to use this feature.",
-                    TextWrapping = TextWrapping.Wrap,
-                    FontStyle    = FontStyles.Italic,
-                    Margin       = new Thickness(0, 4, 0, 0),
-                };
-                info.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                info.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                info.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                return info;
-            }
-
             var outer = new StackPanel();
 
-            // Optional note
+            // Optional note (wording adapts to the export mode)
+            string itemWord = ViewsMode ? "view" : "sheet";
             var note = new TextBlock
             {
-                Text         = "Optional — leave all packs empty to export each sheet individually with the filename pattern from Step 3.",
+                Text         = $"Optional — leave all packs empty to export each {itemWord} individually with the filename pattern from Step 3. Packs are combined into one PDF (in the order shown) and exported as individual DWGs.",
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 0, 0, 10),
@@ -532,12 +589,16 @@ namespace LemoineTools.Tools.BulkExport
             editorLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             inner.Children.Add(editorLabel);
 
-            // Build available-for-pack dict from S1 selections
+            // Build available-for-pack dict from the live S1 selection. Sheets are keyed
+            // by sheet number (preserves saved-pack keys); views are keyed by their name.
             var availableForPack = new Dictionary<string, string>();
             foreach (var name in _selectedNames)
             {
-                if (_nameToId.TryGetValue(name, out var id) && _sheetById.TryGetValue(id, out var sheet))
+                if (!_nameToId.TryGetValue(name, out var id)) continue;
+                if (_sheetById.TryGetValue(id, out var sheet))
                     availableForPack[sheet.SheetNumber] = sheet.Name;
+                else
+                    availableForPack[name] = name;   // view: key == display name
             }
 
             var editor = new SheetPackLayoutEditor();
@@ -554,15 +615,19 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S3 — Filename & Formats ───────────────────────────────────────────
+        // Pattern + format toggles only. Each format's own options live in its dedicated
+        // step (S4 PDF, S5 DWG, S6 NWC, S7 IFC), shown only when that format is enabled.
         private FrameworkElement BuildS3()
         {
             var outer = new StackPanel();
 
-            // Filename pattern
-            AddSectionLabel(outer, "FILENAME PATTERN");
+            // Filename pattern — token vocabulary matches the export mode so only valid
+            // tokens are ever offered (sheet tokens for sheets, view tokens for views).
+            AddSectionLabel(outer, ViewsMode ? "FILENAME PATTERN (VIEWS)" : "FILENAME PATTERN (SHEETS)");
 
-            _tokenInput      = new LemoineTokenInput(ExportTokens, "{SheetNumber}-{SheetName}");
-            _tokenInput.Text = _filenamePattern;
+            _tokenInput      = new LemoineTokenInput(ViewsMode ? ViewTokens : SheetTokens,
+                                                     ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
+            _tokenInput.Text = ActivePattern;
             outer.Children.Add(_tokenInput);
 
             var preview = new TextBlock
@@ -579,12 +644,12 @@ namespace LemoineTools.Tools.BulkExport
 
             _tokenInput.TextChanged += (s, e) =>
             {
-                _filenamePattern = _tokenInput.Text;
+                ActivePattern = _tokenInput.Text;
                 UpdatePreview(preview);
                 Fire();
             };
 
-            // Pack filename note (shown when packs have sheets)
+            // Pack filename note (shown when packs have items)
             if (HasActivePacks())
             {
                 var packNote = new TextBlock
@@ -602,7 +667,8 @@ namespace LemoineTools.Tools.BulkExport
 
             AddDivider(outer);
 
-            // Formats
+            // Formats — toggling a format reveals/hides its settings step (via Fire →
+            // the window re-evaluates IsStepVisible).
             AddSectionLabel(outer, "FORMATS");
 
             var formatToggles = new LemoineToggleSwitches();
@@ -613,68 +679,78 @@ namespace LemoineTools.Tools.BulkExport
                 new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC — 3D views only",                  DefaultOn = _nwcOn  },
                 new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine — 3D views only",   DefaultOn = _ifcOn  },
             });
-
-            AddDivider(outer);
-
-            // DWG options (shown when DWG is on)
-            var dwgSection = new StackPanel { Tag = "dwgSection" };
-            AddSectionLabel(dwgSection, "DWG OPTIONS");
-
-            var setupNames = _dwgSetupNames.Count > 0
-                ? _dwgSetupNames.ToArray()
-                : new[] { "(No DWG setups found in project)" };
-            int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
-            AddLabeledComboBox(dwgSection, "Export Setup", setupNames, initIdx,
-                val => { _dwgSetup = val; Fire(); });
-
-            dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(formatToggles);
-            outer.Children.Add(dwgSection);
-
-            // NWC options section (shown when NWC is on)
-            var nwcSection = new StackPanel { Tag = "nwcSection" };
-            BuildNwcOptions(nwcSection);
-            nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(nwcSection);
-
-            // IFC options section (shown when IFC is on)
-            var ifcSection = new StackPanel { Tag = "ifcSection" };
-            BuildIfcOptions(ifcSection);
-            ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-            outer.Children.Add(ifcSection);
-
-            // Wire all section visibility to toggle state
             formatToggles.StateChanged += state =>
             {
                 _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
                 _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
                 _nwcOn = state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
                 _ifcOn = state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
-                dwgSection.Visibility = _dwgOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                nwcSection.Visibility = _nwcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
-                ifcSection.Visibility = _ifcOn ? WpfVisibility.Visible : WpfVisibility.Collapsed;
                 Fire();
             };
+            outer.Children.Add(formatToggles);
+
+            // Mode hint for the 3D-only formats
+            if ((_nwcOn || _ifcOn) && !ViewsMode)
+            {
+                var modeHint = new TextBlock
+                {
+                    Text         = "NWC and IFC export 3D views only and require Views mode (Step 1). They will be skipped in Sheets mode.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 8, 0, 0),
+                };
+                modeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                modeHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                modeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(modeHint);
+            }
 
             return outer;
         }
 
         private void UpdatePreview(TextBlock preview)
         {
-            var tokens = new Dictionary<string, string>
+            Dictionary<string, string> tokens;
+            if (ViewsMode)
             {
-                ["SheetNumber"]   = _previewSheetNumber,
-                ["SheetName"]     = _previewSheetName,
-                ["Revision"]      = "3",
-                ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
-                ["ProjectNumber"] = "2024-001",
-                ["ProjectName"]   = "Sample Project",
-                ["Year"]          = DateTime.Now.Year.ToString(),
-                ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                ["Day"]           = DateTime.Now.Day.ToString("D2"),
-            };
-            string resolved = LemoineTokenInput.Resolve(_filenamePattern, tokens);
-            preview.Text = $"Preview: {SanitiseFilenamePreview(resolved)}.pdf";
+                tokens = new Dictionary<string, string>
+                {
+                    ["ViewName"]      = "Level 1 - Lighting",
+                    ["ViewType"]      = "FloorPlan",
+                    ["ProjectNumber"] = "2024-001",
+                    ["ProjectName"]   = "Sample Project",
+                    ["Year"]          = DateTime.Now.Year.ToString(),
+                    ["Month"]         = DateTime.Now.Month.ToString("D2"),
+                    ["Day"]           = DateTime.Now.Day.ToString("D2"),
+                };
+            }
+            else
+            {
+                tokens = new Dictionary<string, string>
+                {
+                    ["SheetNumber"]   = _previewSheetNumber,
+                    ["SheetName"]     = _previewSheetName,
+                    ["Revision"]      = "3",
+                    ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
+                    ["ProjectNumber"] = "2024-001",
+                    ["ProjectName"]   = "Sample Project",
+                    ["Year"]          = DateTime.Now.Year.ToString(),
+                    ["Month"]         = DateTime.Now.Month.ToString("D2"),
+                    ["Day"]           = DateTime.Now.Day.ToString("D2"),
+                };
+            }
+            string resolved = LemoineTokenInput.Resolve(ActivePattern, tokens);
+            preview.Text = $"Preview: {SanitiseFilenamePreview(resolved)}{PreviewExtension()}";
+        }
+
+        // The dominant output extension for the preview (first enabled format).
+        private string PreviewExtension()
+        {
+            if (_pdfOn) return ".pdf";
+            if (_dwgOn) return ".dwg";
+            if (_nwcOn) return ".nwc";
+            if (_ifcOn) return ".ifc";
+            return "";
         }
 
         private static string SanitiseFilenamePreview(string name)
@@ -689,16 +765,17 @@ namespace LemoineTools.Tools.BulkExport
         {
             AddSectionLabel(parent, "NWC OPTIONS");
 
-            // Mode-aware note — updated whenever mode changes in Step 1 via ValidationChanged
+            // Mode-aware note. This step is rebuilt every time it is activated
+            // (IStepAware.OnStepActivated → "S6"), so the text reflects the current mode
+            // without a ValidationChanged subscription — the old subscription accumulated
+            // one handler per rebuild and is removed.
             var note = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) };
             note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            void UpdateNote() => note.Text = _exportMode == "Sheets"
+            note.Text = _exportMode == "Sheets"
                 ? "NWC is not available in Sheets mode — switch to Views in Step 1. Non-3D views are always skipped."
                 : "Exports each selected 3D view via Navisworks Manage. Non-3D views are skipped.";
-            UpdateNote();
-            ValidationChanged += (s, e) => UpdateNote(); // ⚠ accumulates if step rebuilt — existing pattern in this VM
             parent.Children.Add(note);
 
             AddDivider(parent);
@@ -785,26 +862,10 @@ namespace LemoineTools.Tools.BulkExport
                 val => { _ifcVersion = val; Fire(); });
         }
 
-        // ── S4 — PDF Settings ─────────────────────────────────────────────────
-        private FrameworkElement BuildS4()
+        // ── S4 — PDF Settings (shown only when PDF is enabled) ─────────────────
+        private FrameworkElement BuildS4Pdf()
         {
             var outer = new StackPanel();
-
-            // Banner when PDF is disabled
-            if (!_pdfOn)
-            {
-                var offNote = new TextBlock
-                {
-                    Text         = "PDF output is disabled in Step 3. These settings are saved but will not take effect until PDF is enabled.",
-                    TextWrapping = TextWrapping.Wrap,
-                    FontStyle    = FontStyles.Italic,
-                    Margin       = new Thickness(0, 0, 0, 12),
-                };
-                offNote.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                offNote.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                offNote.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                outer.Children.Add(offNote);
-            }
 
             // PAGE SETUP ──────────────────────────────────────────────────────
             AddSectionLabel(outer, "PAGE SETUP");
@@ -962,8 +1023,52 @@ namespace LemoineTools.Tools.BulkExport
             return outer;
         }
 
-        // ── S5 — Output & Review ──────────────────────────────────────────────
-        private FrameworkElement BuildS5()
+        // ── S5 — DWG Settings (shown only when DWG is enabled) ─────────────────
+        private FrameworkElement BuildS5Dwg()
+        {
+            var outer = new StackPanel();
+            AddSectionLabel(outer, "DWG OPTIONS");
+
+            var setupNames = _dwgSetupNames.Count > 0
+                ? _dwgSetupNames.ToArray()
+                : new[] { "(No DWG setups found in project)" };
+            int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
+            AddLabeledComboBox(outer, "Export Setup", setupNames, initIdx,
+                val => { _dwgSetup = val; Fire(); });
+
+            var note = new TextBlock
+            {
+                Text         = "The export setup must already exist in the project (File → Export → DWG → modify a setup). DWG files are named with the pattern from Step 3.",
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 6, 0, 0),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(note);
+
+            return outer;
+        }
+
+        // ── S6 — NWC Settings (shown only when NWC is enabled) ─────────────────
+        private FrameworkElement BuildS6Nwc()
+        {
+            var outer = new StackPanel();
+            BuildNwcOptions(outer);
+            return outer;
+        }
+
+        // ── S7 — IFC Settings (shown only when IFC is enabled) ─────────────────
+        private FrameworkElement BuildS7Ifc()
+        {
+            var outer = new StackPanel();
+            BuildIfcOptions(outer);
+            return outer;
+        }
+
+        // ── S8 — Output ───────────────────────────────────────────────────────
+        private FrameworkElement BuildS8Output()
         {
             var outer = new StackPanel();
 
@@ -1013,7 +1118,7 @@ namespace LemoineTools.Tools.BulkExport
             ["formats"] = GetActiveFormats(),
             ["packs"]   = HasActivePacks() ? $"{_packs.Count(p => p.SheetNumbers.Count > 0)} pack(s)" : "None — individual export",
             ["quality"] = _pdfOn ? $"{_colorDepth} · {_rasterQuality}" : "PDF disabled",
-            ["pattern"] = string.IsNullOrEmpty(_filenamePattern) ? "—" : _filenamePattern,
+            ["pattern"] = string.IsNullOrEmpty(ActivePattern) ? "—" : ActivePattern,
             ["folder"]  = _outputFolder.Length == 0 ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
                 : _outputFolder,
@@ -1030,8 +1135,11 @@ namespace LemoineTools.Tools.BulkExport
                 case "S1": return _selectedNames.Count > 0;
                 case "S2": return true;
                 case "S3": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
-                case "S4": return true;
-                case "S5": return !string.IsNullOrWhiteSpace(_outputFolder);
+                case "S4": return true;   // PDF settings
+                case "S5": return true;   // DWG settings
+                case "S6": return true;   // NWC settings
+                case "S7": return true;   // IFC settings
+                case "S8": return !string.IsNullOrWhiteSpace(_outputFolder);
                 default:   return true;
             }
         }
@@ -1047,11 +1155,12 @@ namespace LemoineTools.Tools.BulkExport
                     : "Individual export";
                 case "S3": return GetActiveFormats() == "—"
                     ? "No formats selected"
-                    : $"{GetActiveFormats()} — {_filenamePattern}";
-                case "S4": return _pdfOn
-                    ? $"{_hiddenLines.Split(' ')[0]} · {_rasterQuality} · {_colorDepth} · {_pdfPlacement.Split(' ')[0]}"
-                    : "PDF disabled";
-                case "S5": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
+                    : $"{GetActiveFormats()} — {ActivePattern}";
+                case "S4": return $"{_hiddenLines.Split(' ')[0]} · {_rasterQuality} · {_colorDepth} · {_pdfPlacement.Split(' ')[0]}";
+                case "S5": return string.IsNullOrEmpty(_dwgSetup) ? "Default DWG setup" : _dwgSetup;
+                case "S6": return $"{_nwcCoordinates} · params: {_nwcParameters}";
+                case "S7": return _ifcVersion;
+                case "S8": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
                 default:   return "—";
             }
         }
@@ -1065,7 +1174,8 @@ namespace LemoineTools.Tools.BulkExport
 
             // Persist settings
             var s = BulkExportSettings.Instance;
-            s.FilenamePattern              = _filenamePattern;
+            s.FilenamePattern              = _sheetPattern;
+            s.ViewFilenamePattern          = _viewPattern;
             s.OutputFolder                 = _outputFolder;
             s.SplitByFormat                = _splitByFormat;
             s.ExportPdf                    = _pdfOn;
@@ -1100,7 +1210,7 @@ namespace LemoineTools.Tools.BulkExport
             s.SavedPacks                   = _packs.Select(p => p.Clone()).ToList();
             s.Save();
 
-            // Packs to export: only when in Sheets mode and at least one pack has sheets
+            // Packs to export: any non-empty pack (sheets or views).
             var packsToExport = HasActivePacks()
                 ? _packs.Where(p => p.SheetNumbers.Count > 0).ToList()
                 : new List<SheetPackLayout>();
@@ -1110,7 +1220,9 @@ namespace LemoineTools.Tools.BulkExport
                 .Select(n => _nameToId[n])
                 .ToList();
             _handler.ExportMode               = _exportMode;
-            _handler.FilenamePattern          = _filenamePattern;
+            // Send the pattern for the mode being exported — its tokens are guaranteed
+            // valid for those elements.
+            _handler.FilenamePattern          = ActivePattern;
             _handler.OutputFolder             = _outputFolder;
             _handler.SplitByFormat            = _splitByFormat;
             _handler.ExportPdf                = _pdfOn;
@@ -1436,7 +1548,6 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         private bool HasActivePacks() =>
-            _exportMode == "Sheets" &&
             _packs.Any(p => p.SheetNumbers.Count > 0);
 
         private static int GetIndex(string[] items, string value)

@@ -22,7 +22,10 @@ namespace LemoineTools.Tools.BulkExport
         public bool   SplitByFormat { get; set; } = true;
 
         // ── Filename ──────────────────────────────────────────────────────────
-        public string FilenamePattern { get; set; } = "{SheetNumber}-{SheetName}";
+        // Separate patterns per export mode so each defaults to tokens valid for its
+        // own elements (sheets have sheet number/name; views have view name/type).
+        public string FilenamePattern     { get; set; } = "{SheetNumber}-{SheetName}";
+        public string ViewFilenamePattern { get; set; } = "{ViewName}";
 
         // ── Formats ───────────────────────────────────────────────────────────
         public bool ExportPdf { get; set; } = true;

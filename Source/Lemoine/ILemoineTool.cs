@@ -108,6 +108,27 @@ namespace LemoineTools.Lemoine
     }
 
     /// <summary>
+    /// Optional interface for tools whose step list is conditional — i.e. some steps
+    /// should be hidden entirely depending on earlier choices (e.g. a "PDF Settings"
+    /// step that only applies when PDF output is enabled).
+    ///
+    /// StepFlowWindow hides a step's accordion row and progress pip when
+    /// <see cref="IsStepVisible"/> returns false, and skips it during forward/back
+    /// navigation. Visibility is re-evaluated on every step activation and whenever the
+    /// tool raises <see cref="ILemoineTool.ValidationChanged"/>, so toggling the
+    /// condition updates the accordion live.
+    ///
+    /// Contract: a conditional (hideable) step must never be the LAST step — the final
+    /// step carries the Run button, log area, and review summary and is always shown.
+    /// Tools that do not implement this interface are unaffected (every step is visible).
+    /// </summary>
+    public interface ILemoineConditionalSteps
+    {
+        /// <summary>Return false to hide the step with this id from the accordion and navigation.</summary>
+        bool IsStepVisible(string stepId);
+    }
+
+    /// <summary>
     /// Optional interface for tools that need to drive accordion navigation programmatically.
     /// StepFlowWindow subscribes when the tool implements this interface.
     /// </summary>
