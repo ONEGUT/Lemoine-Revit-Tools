@@ -47,7 +47,7 @@ namespace LemoineTools.Lemoine
         {
             if (theme == ActiveTheme) return;
             ActiveTheme = theme;
-            ThemeChanged?.Invoke(theme);
+            RaiseIsolated(ThemeChanged, theme, "LemoineSettings.SetTheme");
             SaveToDisk();
         }
 
@@ -57,8 +57,21 @@ namespace LemoineTools.Lemoine
         {
             if (size == UiSize) return;
             UiSize = size;
-            UiSizeChanged?.Invoke(size);
+            RaiseIsolated(UiSizeChanged, size, "LemoineSettings.SetUiSize");
             SaveToDisk();
+        }
+
+        // Invoke each subscriber in isolation so one dead or throwing handler (e.g. a closed
+        // tool window whose STA dispatcher has shut down) cannot abort the event chain or
+        // crash the thread that initiated the change. Failures are logged, never silent.
+        private static void RaiseIsolated<T>(Action<T>? handlers, T arg, string context)
+        {
+            if (handlers == null) return;
+            foreach (var d in handlers.GetInvocationList())
+            {
+                try { ((Action<T>)d)(arg); }
+                catch (Exception ex) { LemoineLog.Swallowed($"{context}: subscriber threw", ex); }
+            }
         }
 
         /// <summary>Multiplier: Small=0.85, Medium=1.0, Large=1.2, ExtraLarge=1.40</summary>

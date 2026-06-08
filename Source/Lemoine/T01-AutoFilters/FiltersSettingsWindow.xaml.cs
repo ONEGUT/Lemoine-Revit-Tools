@@ -71,19 +71,33 @@ namespace LemoineTools.Lemoine
             InitializeComponent();
             Loaded += OnLoaded;
 
-            LemoineSettings.Instance.ThemeChanged += t => Dispatcher.Invoke(() =>
+            // Named handlers (not lambdas) so they can be detached in OnClosed — a leaked
+            // subscription to this STA window after its dispatcher has shut down crashes/hangs
+            // Revit on the next theme change.
+            LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
+            LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+        }
+
+        private void OnThemeChanged(LemoineTheme t)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            });
+            }));
+        }
 
-            LemoineSettings.Instance.UiSizeChanged += _ => Dispatcher.Invoke(() =>
+        private void OnUiSizeChanged(LemoineUiSize _)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyScaleTo(Resources);
                 LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 UpdateRowHeights();
-            });
+            }));
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -109,6 +123,9 @@ namespace LemoineTools.Lemoine
         // TaskDialog, because this STA window is already tearing down.
         protected override void OnClosed(EventArgs e)
         {
+            LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
+            LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+
             if (_filterTrades != null)
             {
                 bool dirty = SerializeTrades(_filterTrades) != _filtersSnapshot;

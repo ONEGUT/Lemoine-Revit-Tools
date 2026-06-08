@@ -88,17 +88,22 @@ namespace LemoineTools.Lemoine
 
         private void OnThemeChanged(LemoineTheme t)
         {
-            Dispatcher.Invoke(() =>
+            // Non-blocking marshal back to this window's own dispatcher (the event fires on the
+            // theme-change thread). A blocking Invoke here can deadlock against Revit's main
+            // thread; bail if this dispatcher is already shutting down.
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 ApplyContainerStyles();
-            });
+            }));
         }
 
         private void OnUiSizeChanged(LemoineUiSize _)
         {
-            Dispatcher.Invoke(() =>
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyScaleTo(Resources);
                 LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 5);
@@ -106,7 +111,7 @@ namespace LemoineTools.Lemoine
                 // Re-measure progress fill width since track may have changed
                 _progressTrack?.UpdateLayout();
                 ResizeProgressFill();
-            });
+            }));
         }
 
         private void UpdateRowHeights()

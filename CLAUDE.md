@@ -264,6 +264,16 @@ These patterns cause Revit to crash or hang. They have been discovered by breaki
 | `SizeToContent="WidthAndHeight"` + `WindowStyle="None"` | `Width=N` (fixed) + `SizeToContent="Height"` |
 | `Autodesk.Windows.ComponentManager.ApplicationWindow` for window owner | Not referenced in this project — omit or use `WindowInteropHelper` with a Revit HWND |
 | Shared `static` WPF Freezable (CubicEase easing, brush) left unfrozen | `.Freeze()` it at init — each tool window runs on its own STA thread, and cross-thread use of an unfrozen shared static crashes Revit (root cause of the easing crash, commit `86887ff`) |
+| Per-STA-thread window subscribing to a global event (`LemoineSettings.ThemeChanged` / `UiSizeChanged`) with an anonymous lambda + blocking `Dispatcher.Invoke` | Named handler detached on `Closed`; marshal with non-blocking `BeginInvoke` guarded by `if (Dispatcher.HasShutdownStarted) return;` (root cause of the theme-switch crash) |
+
+### Why leaked global-event subscriptions crash Revit
+
+Each tool/settings window runs on its **own dedicated STA thread** that shuts down (`Dispatcher.InvokeShutdown()`) when the window closes. A subscription to a process-wide event like `LemoineSettings.ThemeChanged` made with an **anonymous lambda** can never be `-=`'d, so it **outlives the window**. The next time the event fires, the stale handler runs a blocking `Dispatcher.Invoke` into a **terminated dispatcher** — which throws on the firing thread (unhandled → crash) or blocks forever waiting for a thread that will never pump (→ Revit hangs). The bug is session-history-dependent (you must have opened *and closed* such a window earlier), so it presents as an intermittent crash.
+
+Rules for any window subscribing to a global Lemoine event:
+- Subscribe with a **named instance method**, never an anonymous lambda, and `-=` it in `Closed`/`OnClosed`. `StepFlowWindow` is the reference.
+- In the handler, marshal back with **non-blocking `Dispatcher.BeginInvoke`** (not blocking `Invoke` — that can deadlock against Revit's main thread), guarded by `if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;`.
+- The event raiser (`LemoineSettings.SetTheme`/`SetUiSize`) walks `GetInvocationList()` and wraps each subscriber in `try/catch` → `LemoineLog.Swallowed`, so one dead subscriber can't abort the chain or crash the initiating thread.
 
 ### Why `Popup StaysOpen=false` crashes Revit
 
