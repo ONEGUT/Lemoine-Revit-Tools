@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public Core.Vec2 SegA;       // 2D extent of the edge in plan (the face reads as a line segment)
             public Core.Vec2 SegB;
             public double Area;
+            public string Src = "";      // diagnostic label: "host" or "link <id>"
             public string Key = "";
         }
 
@@ -41,6 +42,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public double Delta;          // signed offset along the axis (sign distinguishes sides)
             public Reference Ref = null!;
             public Core.Vec2 TargetPoint;
+            public string Src = "";       // diagnostic label, copied from the winning face
             public string Key = "";
         }
 
@@ -92,13 +94,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     Delta       = delta,
                     Ref         = f.Ref,
                     TargetPoint = source.Anchor2d + axis * delta,
+                    Src         = f.Src,
                     Key         = f.Key,
                 });
             }
 
             if (candidates.Count == 0)
+            {
+                if (ctx.Config.DiagnoseSlabEdge)
+                    ctx.Log($"  slab-diag resolve {source.SourceKey} axis {AxisName(axis)}: "
+                          + $"0 candidate(s) from {faces.Count} cached face(s) (none axis-aligned within tol AND within {ctx.Config.MaxDistanceFt:0.#} ft).", "info");
                 return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.SlabEdge,
                     "no slab/opening termination face on the measurement axis within the distance cap");
+            }
 
             // Order by straight-line distance to the edge directly (nearest wins), then a stable key.
             // The composite score's axis-deviation/area terms could otherwise rank a slightly farther
@@ -119,12 +127,27 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 
             var best = distinct[0];
 
+            if (ctx.Config.DiagnoseSlabEdge)
+            {
+                int hostCand = candidates.Count(c => c.Src == "host");
+                int linkCand = candidates.Count - hostCand;
+                string top = string.Join("  |  ", distinct.Take(5).Select(c =>
+                    $"[{c.Src}] radial {c.RadialDist:0.##} ft, delta {c.Delta:+0.##;-0.##} ft, score {c.Score:0.###} ({c.Key})"));
+                ctx.Log($"  slab-diag resolve {source.SourceKey} axis {AxisName(axis)}: "
+                      + $"{candidates.Count} candidate(s) [host {hostCand}, linked {linkCand}], {distinct.Count} distinct edge(s). "
+                      + $"Winner [{best.Src}] {best.Key}. Top: {top}", "info");
+            }
+
             // AMBIGUITY: two genuinely different edges within threshold — don't guess which side.
             if (distinct.Count >= 2)
             {
                 var second = distinct[1];
                 if (Math.Abs(best.RadialDist - second.RadialDist) < ctx.Config.AmbiguityThresholdFt)
                 {
+                    if (ctx.Config.DiagnoseSlabEdge)
+                        ctx.Log($"  slab-diag resolve {source.SourceKey} axis {AxisName(axis)}: AMBIGUOUS — "
+                              + $"[{best.Src}] {best.Key} (radial {best.RadialDist:0.##}) vs [{second.Src}] {second.Key} "
+                              + $"(radial {second.RadialDist:0.##}), within {ctx.Config.AmbiguityThresholdFt:0.###} ft — not placed.", "info");
                     return new ResolvedTarget
                     {
                         Success   = false,
@@ -156,9 +179,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 DetailLevel              = ViewDetailLevel.Fine,
             };
 
+            int hostKept = 0, linkKept = 0;   // diagnostic: where the surviving faces came from
             foreach (var sd in ctx.Sources)
             {
                 if (sd.Link != null && !ctx.Config.IncludeLinks) continue;
+                string srcLabel = sd.Link != null ? $"link {sd.Link.Id.IntegerValue}" : "host";
 
                 // When the user picked floor(s), only scan those — and only in the doc they belong to.
                 HashSet<int>? allowedFloors = null;
@@ -181,6 +206,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: collect floors", ex); continue; }
 
+                // Per-source diagnostic tallies — isolate WHERE linked faces are lost (collection,
+                // verticality, null reference, or link-reference conversion).
+                int sPlanar = 0, sVertical = 0, sNullRef = 0, sConvFail = 0, sKept = 0;
                 foreach (var floor in floors)
                 {
                     GeometryElement? ge = null;
@@ -197,17 +225,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                             int thisIndex = faceIndex++;
                             if (!(face is PlanarFace pf)) continue;        // slab terminations are planar
                             if (pf.Area < 0.01) continue;                  // VALIDITY: drop slivers/stubs
+                            sPlanar++;
 
                             XYZ wn = sd.Transform.OfVector(pf.FaceNormal).Normalize();
                             // VERTICAL face only: normal lies in the view plane (axis-independent).
                             if (!ctx.Projection.NormalInPlane(wn, ctx.Config.AxisToleranceDeg)) continue;
+                            sVertical++;
 
                             Reference? r = pf.Reference;
-                            if (r == null) continue;
+                            if (r == null) { sNullRef++; continue; }
                             if (sd.Link != null)
                             {
                                 r = LinkRefHelper.ToHostReference(sd.Link, r, ctx.ReportMissingLink);
-                                if (r == null) continue;
+                                if (r == null) { sConvFail++; continue; }
                             }
 
                             Core.Vec2 origin2d = ctx.Projection.To2D(sd.Transform.OfPoint(pf.Origin));
@@ -221,14 +251,22 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                                 SegA     = segA,
                                 SegB     = segB,
                                 Area     = pf.Area,
+                                Src      = srcLabel,
                                 Key      = $"slab:{(sd.Link != null ? sd.Link.Id.IntegerValue + ":" : "")}{floor.Id.IntegerValue}:{thisIndex}",
                             });
+                            sKept++;
                         }
                     }
                 }
+
+                if (sd.Link != null) linkKept += sKept; else hostKept += sKept;
+                if (ctx.Config.DiagnoseSlabEdge)
+                    ctx.Log($"  slab-diag [{srcLabel}]: {floors.Count} floor(s) → {sPlanar} planar face(s), "
+                          + $"{sVertical} vertical, kept {sKept} (dropped {sNullRef} null-ref, {sConvFail} link-conv-fail).", "info");
             }
 
-            ctx.Log($"Target cache: {list.Count} slab side-face(s) scanned across {ctx.Sources.Count} document(s).", "info");
+            ctx.Log($"Target cache: {list.Count} slab side-face(s) scanned across {ctx.Sources.Count} document(s) "
+                  + $"— host {hostKept}, linked {linkKept}.", "info");
             _cache = list;
             _cacheCtx = ctx;
             return list;
@@ -267,6 +305,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 LemoineLog.Swallowed("SlabEdgeTargetResolver: project face segment", ex);
             }
         }
+
+        /// <summary>Diagnostic label for the measurement axis (view-2D x or y).</summary>
+        private static string AxisName(Core.Vec2 axis) => Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y";
 
         /// <summary>Shortest distance from a point to a finite segment (point when degenerate).</summary>
         private static double DistanceToSegment(Core.Vec2 p, Core.Vec2 a, Core.Vec2 b)
