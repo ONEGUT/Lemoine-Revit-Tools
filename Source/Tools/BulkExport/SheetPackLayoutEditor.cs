@@ -54,7 +54,7 @@ namespace LemoineTools.Tools.BulkExport
 
             // ── Left side: Available sheets ───────────────────────────────────
             var leftOuter = new StackPanel();
-            var leftHeader = BuildColumnHeader("AVAILABLE SHEETS", "Double-click to add →");
+            var leftHeader = BuildColumnHeader("AVAILABLE", "Double-click to add →");
             leftOuter.Children.Add(leftHeader);
 
             var leftScroll = new ScrollViewer
@@ -131,7 +131,7 @@ namespace LemoineTools.Tools.BulkExport
 
             if (_availableSheets.Count == 0)
             {
-                var empty = BuildEmptyLabel("All sheets are in the pack.");
+                var empty = BuildEmptyLabel("All items are in the pack.");
                 _availablePanel.Children.Add(empty);
             }
         }
@@ -153,7 +153,7 @@ namespace LemoineTools.Tools.BulkExport
 
             if (_packSheets.Count == 0)
             {
-                var empty = BuildEmptyLabel("No sheets in this pack yet.");
+                var empty = BuildEmptyLabel("No items in this pack yet.");
                 _packPanel.Children.Add(empty);
             }
         }
@@ -186,6 +186,10 @@ namespace LemoineTools.Tools.BulkExport
                     AddToPack(number);
             };
 
+            // Views are keyed by their own name, so there's no distinct short "number" to
+            // show in a chip — only render the chip when the key differs from the display name.
+            bool showChip = !string.IsNullOrEmpty(number) && number != name;
+
             var innerGrid = new Grid();
             innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });  // number chip
             innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // name
@@ -196,25 +200,28 @@ namespace LemoineTools.Tools.BulkExport
             innerGrid.Margin = new Thickness(8, 5, 8, 5);
 
             // Sheet number chip
-            var numChip = new Border
+            if (showChip)
             {
-                CornerRadius    = new CornerRadius(2),
-                Padding         = new Thickness(4, 1, 4, 1),
-                Margin          = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            numChip.SetResourceReference(Border.BackgroundProperty, "LemoineAccentMuted");
-            var numText = new TextBlock
-            {
-                Text       = number,
-                FontWeight = FontWeights.SemiBold,
-            };
-            numText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-            numText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            numText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            numChip.Child = numText;
-            Grid.SetColumn(numChip, 0);
-            innerGrid.Children.Add(numChip);
+                var numChip = new Border
+                {
+                    CornerRadius    = new CornerRadius(2),
+                    Padding         = new Thickness(4, 1, 4, 1),
+                    Margin          = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                numChip.SetResourceReference(Border.BackgroundProperty, "LemoineAccentMuted");
+                var numText = new TextBlock
+                {
+                    Text       = number,
+                    FontWeight = FontWeights.SemiBold,
+                };
+                numText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+                numText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                numText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                numChip.Child = numText;
+                Grid.SetColumn(numChip, 0);
+                innerGrid.Children.Add(numChip);
+            }
 
             // Sheet name
             var nameText = new TextBlock
@@ -226,7 +233,8 @@ namespace LemoineTools.Tools.BulkExport
             nameText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             nameText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             nameText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            Grid.SetColumn(nameText, 1);
+            Grid.SetColumn(nameText, showChip ? 1 : 0);
+            if (!showChip) Grid.SetColumnSpan(nameText, isInPack ? 1 : 2);
             innerGrid.Children.Add(nameText);
 
             // Up/Down buttons (pack side only)

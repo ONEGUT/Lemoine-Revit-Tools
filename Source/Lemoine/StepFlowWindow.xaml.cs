@@ -80,7 +80,7 @@ namespace LemoineTools.Lemoine
             };
 
             BuildChrome();
-            _tool.ValidationChanged += (s, e) => { RefreshStepState(_activeStep); PopulateReview(); };
+            _tool.ValidationChanged += (s, e) => { RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview(); };
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested += (s, idx) =>
                     Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
@@ -557,7 +557,7 @@ namespace LemoineTools.Lemoine
             {
                 var backBtn = BuildButton("← Back", false);
                 backBtn.Width = 90;
-                backBtn.Click += (s, e) => ActivateStep(captIdx - 1);
+                backBtn.Click += (s, e) => { int prev = PrevVisible(captIdx); if (prev >= 0) ActivateStep(prev); };
                 _backBtns[idx] = backBtn;
                 Grid.SetColumn(backBtn, 0);
                 btnGrid.Children.Add(backBtn);
@@ -814,9 +814,13 @@ namespace LemoineTools.Lemoine
         private void ActivateStep(int index)
         {
             _activeStep = index;
+            RefreshStepVisibility();
             var steps = _tool.Steps;
+            int visibleOrdinal = 0;
             for (int i = 0; i < steps.Length; i++)
             {
+                // Number visible steps 1..N so hidden conditional steps don't leave gaps.
+                if (IsStepVisible(i)) visibleOrdinal++;
                 bool isActive = i == index, isDone = i < index, isFuture = i > index;
                 _stepRows[i].Background = Brushes.Transparent;
                 if (isDone)        _accentBars[i].SetResourceReference(Border.BackgroundProperty, "LemoineGreen");
@@ -828,7 +832,7 @@ namespace LemoineTools.Lemoine
                 if (isDone)        _stepCircles[i].SetResourceReference(Border.BackgroundProperty, "LemoineGreen");
                 else if (isActive) _stepCircles[i].SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
                 else               _stepCircles[i].Background = Brushes.Transparent;
-                _circleTexts[i].Text = isDone ? "✓" : (i + 1).ToString();
+                _circleTexts[i].Text = isDone ? "✓" : visibleOrdinal.ToString();
                 if (isDone || isActive)
                     _circleTexts[i].SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
                 else
@@ -858,7 +862,50 @@ namespace LemoineTools.Lemoine
             _confirmBtns[index].IsEnabled = !(s.Required && !valid);
         }
 
-        private void ConfirmStep(int i) { if (i < _tool.Steps.Length - 1) ActivateStep(i + 1); else StartRun(); }
+        private void ConfirmStep(int i)
+        {
+            int next = NextVisible(i);
+            if (next >= 0) ActivateStep(next); else StartRun();
+        }
+
+        // ── Conditional-step support (ILemoineConditionalSteps) ────────────────
+        // Tools that don't implement the interface have every step visible, so these
+        // helpers reduce to the original linear behaviour.
+
+        private bool IsStepVisible(int i)
+        {
+            if (i < 0 || i >= _tool.Steps.Length) return false;
+            return !(_tool is ILemoineConditionalSteps cs) || cs.IsStepVisible(_tool.Steps[i].Id);
+        }
+
+        /// <summary>First visible step index strictly after <paramref name="from"/>, or -1 if none.</summary>
+        private int NextVisible(int from)
+        {
+            for (int i = from + 1; i < _tool.Steps.Length; i++)
+                if (IsStepVisible(i)) return i;
+            return -1;
+        }
+
+        /// <summary>Last visible step index strictly before <paramref name="from"/>, or -1 if none.</summary>
+        private int PrevVisible(int from)
+        {
+            for (int i = from - 1; i >= 0; i--)
+                if (IsStepVisible(i)) return i;
+            return -1;
+        }
+
+        // Collapses the rows + pips of hidden steps. No-op for non-conditional tools.
+        private void RefreshStepVisibility()
+        {
+            if (!(_tool is ILemoineConditionalSteps) || _stepRows == null) return;
+            for (int i = 0; i < _tool.Steps.Length; i++)
+            {
+                var vis = IsStepVisible(i) ? Visibility.Visible : Visibility.Collapsed;
+                if (_stepRows[i] != null) _stepRows[i].Visibility = vis;
+                if (_pipRects != null && _pipRects[i] != null) _pipRects[i].Visibility = vis;
+            }
+            UpdateStepCounter();
+        }
 
         private void AnimateContent(Border b, bool expand)
         {
@@ -1017,7 +1064,20 @@ namespace LemoineTools.Lemoine
 
         private void SetStatus(string t) => _statusText.Text = t;
         private void SetCounts(int p, int f, int s) { _passText.Text = p.ToString(); _failText.Text = f.ToString(); _skipText.Text = s.ToString(); }
-        private void UpdateStepCounter() { if (_stepCounter == null) return; _stepCounter.Text = _isDone ? "Complete" : _isRunning ? "Running…" : $"Step {_activeStep + 1} / {_tool.Steps.Length}"; }
+        private void UpdateStepCounter()
+        {
+            if (_stepCounter == null) return;
+            if (_isDone)    { _stepCounter.Text = "Complete"; return; }
+            if (_isRunning) { _stepCounter.Text = "Running…"; return; }
+            int total = 0, pos = 0;
+            for (int i = 0; i < _tool.Steps.Length; i++)
+            {
+                if (!IsStepVisible(i)) continue;
+                total++;
+                if (i <= _activeStep) pos++;
+            }
+            _stepCounter.Text = $"Step {pos} / {total}";
+        }
 
         private TextBlock SectionLabel(string t)
         {
