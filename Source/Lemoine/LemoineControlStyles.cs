@@ -266,7 +266,7 @@ namespace LemoineTools.Lemoine
                 <DropShadowEffect BlurRadius=""14"" ShadowDepth=""4""
                                   Opacity=""0.4"" Color=""Black""/>
               </Border.Effect>
-              <ScrollViewer MaxHeight=""200"">
+              <ScrollViewer MaxHeight=""200"" CanContentScroll=""False"">
                 <ItemsPresenter/>
               </ScrollViewer>
             </Border>
@@ -375,7 +375,7 @@ namespace LemoineTools.Lemoine
                 <DropShadowEffect BlurRadius=""14"" ShadowDepth=""4""
                                   Opacity=""0.4"" Color=""Black""/>
               </Border.Effect>
-              <ScrollViewer MaxHeight=""200"">
+              <ScrollViewer MaxHeight=""200"" CanContentScroll=""False"">
                 <ItemsPresenter/>
               </ScrollViewer>
             </Border>
@@ -747,57 +747,20 @@ namespace LemoineTools.Lemoine
 
     // ── Scroll bubbling ───────────────────────────────────────────────────────
     /// <summary>
-    /// Wires up scroll bubbling on <paramref name="inner"/>: when the inner
-    /// ScrollViewer hits its top or bottom limit, the wheel event is re-raised
-    /// on the parent element so the nearest ancestor ScrollViewer continues scrolling.
+    /// No-op retained for source compatibility. Scroll-wheel bubbling at a scroller's limit is now
+    /// handled centrally for EVERY ScrollViewer by the <see cref="OnScrollViewerWheel"/> class
+    /// handler (see <see cref="EnsureGlobalScrollBubbling"/>), so per-call-site wiring is no longer
+    /// needed and only stacked a second, redundant handler on the same scroller. Callers may keep
+    /// calling this; new code should not add calls.
     /// </summary>
-    public static void WireBubblingScroll(ScrollViewer inner)
-    {
-        inner.PreviewMouseWheel += (s, e) =>
-        {
-            // A scroller hosted in a Popup (dropdown, tag-picker) is self-contained — its
-            // wheel must never escape into the parent window, or the page's scroll position
-            // ends up governing the popup (the "only the parent window scrolls it" bug).
-            if (IsInsidePopup(inner)) return;
-
-            bool atTop    = inner.VerticalOffset <= 0;
-            bool atBottom = inner.VerticalOffset >= inner.ScrollableHeight - 0.5;
-            bool up   = e.Delta > 0;
-            bool down = e.Delta < 0;
-
-            if (!((atTop && up) || (atBottom && down))) return;
-
-            e.Handled = true;
-            var relay = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-            {
-                RoutedEvent = UIElement.MouseWheelEvent,
-                Source      = inner,
-            };
-            (inner.Parent as UIElement)?.RaiseEvent(relay);
-        };
-    }
+    public static void WireBubblingScroll(ScrollViewer inner) { /* handled globally — see OnScrollViewerWheel */ }
 
     /// <summary>
-    /// Stops a CLOSED ComboBox from eating the mouse wheel — by default a WPF ComboBox
-    /// changes its selected item on wheel even when closed, which both mutates the value
-    /// unexpectedly and traps page scrolling. This re-raises the wheel to the parent so the
-    /// page/step scrolls instead. When the dropdown is open the wheel scrolls the list.
+    /// No-op retained for source compatibility. A closed ComboBox is stopped from eating the wheel
+    /// (and from passing it to the page) centrally by the <see cref="OnComboWheel"/> class handler,
+    /// so per-call-site wiring is no longer needed. New code should not add calls.
     /// </summary>
-    public static void WireComboWheelBubbling(ComboBox combo)
-    {
-        if (combo == null) return;
-        combo.PreviewMouseWheel += (s, e) =>
-        {
-            if (combo.IsDropDownOpen) return; // open list scrolls normally
-            e.Handled = true;
-            (VisualTreeHelper.GetParent(combo) as UIElement)?.RaiseEvent(
-                new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-                {
-                    RoutedEvent = UIElement.MouseWheelEvent,
-                    Source      = combo,
-                });
-        };
-    }
+    public static void WireComboWheelBubbling(ComboBox combo) { /* handled globally — see OnComboWheel */ }
 
     // ── Global scroll bubbling (auto-wired, no per-call-site needed) ───────────
     private static bool _scrollBubblingRegistered;
@@ -932,18 +895,11 @@ namespace LemoineTools.Lemoine
         Window? owner = null;
         MouseWheelEventHandler redirect = (ws, we) =>
         {
-            // Only act on a wheel that reached the owner window while the dropdown is open and the
-            // cursor is over it; otherwise let the page scroll normally. Driving the offset
-            // manually is symmetric by construction, so the up-scroll can't be dropped.
-            if (we.Handled || !combo.IsDropDownOpen) return;
+            if (!combo.IsDropDownOpen) return;
             var popup   = combo.Template?.FindName("PART_Popup", combo) as Popup;
             var content = popup?.Child as FrameworkElement;
-            if (content == null || !content.IsMouseOver) return;
-            var sv = FindDescendantScrollViewer(content);
-            if (sv == null) return;
-
-            we.Handled = true;
-            WheelScrollBy(sv, we.Delta);
+            var sv      = content != null ? FindDescendantScrollViewer(content) : null;
+            RedirectWheelToPopupScroller(we, content, sv);
         };
 
         combo.DropDownOpened += (s, _) =>
@@ -958,6 +914,24 @@ namespace LemoineTools.Lemoine
         {
             if (owner != null) owner.PreviewMouseWheel -= redirect;
         };
+    }
+
+    /// <summary>
+    /// Shared owner-window wheel redirect for popups (ComboBox dropdown, tag-chip picker). A Popup
+    /// takes no Win32 activation, so depending on focus and the OS "scroll inactive windows under
+    /// the cursor" setting, Windows can deliver WM_MOUSEWHEEL to the owner window instead of the
+    /// popup's own hwnd — then the popup's self-contained scroller never sees it and the page's
+    /// asymmetric scrolling takes over (scrolls down but not up). Call this from a window-level
+    /// PreviewMouseWheel handler that is live only while the popup is open: when the cursor is over
+    /// <paramref name="content"/>, it drives <paramref name="sv"/> directly (symmetric, unit-correct)
+    /// and consumes the event. Returns true if it handled the wheel.
+    /// </summary>
+    public static bool RedirectWheelToPopupScroller(MouseWheelEventArgs e, FrameworkElement? content, ScrollViewer? sv)
+    {
+        if (e.Handled || content == null || sv == null || !content.IsMouseOver) return false;
+        e.Handled = true;            // never let it reach the page behind the popup
+        WheelScrollBy(sv, e.Delta);
+        return true;
     }
 
     /// <summary>

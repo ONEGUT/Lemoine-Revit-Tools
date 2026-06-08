@@ -412,12 +412,8 @@ namespace LemoineTools.Tools.AutoFilters
 
             var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
             catTabs.SetGroups(CategoryGroups);
-            // Wire scroll bubbling through catTabs' internal ScrollViewers once loaded
-            catTabs.Loaded += (s2, e2) =>
-            {
-                foreach (var innerSv in FindVisualChildren<ScrollViewer>(catTabs))
-                    LemoineControlStyles.WireBubblingScroll(innerSv);
-            };
+            // Scroll-wheel handling is global (OnScrollViewerWheel) and MultiSelectTabs already wires
+            // its own inner scrollers — no per-call-site wiring needed here.
 
             var configPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
             configPanel.Children.Add(MakeNote("Select categories above to configure the scan."));
@@ -1244,16 +1240,5 @@ namespace LemoineTools.Tools.AutoFilters
             => AutoFiltersSettings.KnownCategoryMap
                    .FirstOrDefault(kvp => kvp.Value == ostCategory).Key
                ?? ostCategory;
-
-        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)
-            where T : DependencyObject
-        {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T t) yield return t;
-                foreach (var cc in FindVisualChildren<T>(child)) yield return cc;
-            }
-        }
     }
 }

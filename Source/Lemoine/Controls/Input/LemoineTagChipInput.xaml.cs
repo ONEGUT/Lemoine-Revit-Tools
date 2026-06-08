@@ -341,18 +341,11 @@ namespace LemoineTools.Lemoine.Controls
         // Window-level fallback wheel handler — live only while the popup is open. Redirects a
         // wheel delivered to the main window into the popup's results scroller when the cursor is
         // over the popup, so the list scrolls both directions regardless of where Windows routed
-        // the WM_MOUSEWHEEL.
+        // the WM_MOUSEWHEEL. Uses the shared redirect helper (same path as ComboBox dropdowns).
         private void OnOwnerPreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (e.Handled || _popup?.IsOpen != true || _resultsScroll == null || _popupRoot == null) return;
-            if (!_popupRoot.IsMouseOver) return; // let the page scroll normally when not over the popup
-
-            e.Handled = true;                                   // never let it reach the page behind
-            if (_resultsScroll.ScrollableHeight <= 0) return;   // nothing to scroll
-            double step   = e.Delta / 120.0 * 48.0;             // 3 lines (~48px) per wheel notch
-            double target = _resultsScroll.VerticalOffset - step;
-            _resultsScroll.ScrollToVerticalOffset(
-                Math.Max(0, Math.Min(_resultsScroll.ScrollableHeight, target)));
+            if (_popup?.IsOpen != true) return;
+            LemoineControlStyles.RedirectWheelToPopupScroller(e, _popupRoot, _resultsScroll);
         }
 
         private void RefreshPopupList()
