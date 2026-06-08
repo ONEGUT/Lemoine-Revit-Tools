@@ -63,11 +63,14 @@ namespace LemoineTools.Lemoine.Controls
         public event EventHandler? Changed;
 
         // ── Internal refs ─────────────────────────────────────────────────────
-        private WrapPanel?   _chipPanel;
-        private Popup?       _popup;
-        private TextBox?     _searchBox;
-        private StackPanel?  _rowStack;   // popup result rows (manual Borders, not a ListBox)
-        private UIElement?   _addBtn;
+        private WrapPanel?    _chipPanel;
+        private Popup?        _popup;
+        private TextBox?      _searchBox;
+        private StackPanel?   _rowStack;       // popup result rows (manual Borders, not a ListBox)
+        private UIElement?    _addBtn;
+        private ScrollViewer? _resultsScroll;  // the popup's scrollable results list
+        private FrameworkElement? _popupRoot;   // popup content root, for cursor hit-testing
+        private Window?       _wheelOwner;       // window we attached the wheel-redirect to (while open)
 
         public LemoineTagChipInput()
         {
@@ -278,8 +281,11 @@ namespace LemoineTools.Lemoine.Controls
             sv.Content = _rowStack;
             // Authoritatively mark this scroller self-contained: the wheel scrolls the list
             // directly and never leaks to the page scroller behind the popup (tree-based popup
-            // detection is unreliable under Revit's WPF hosting).
+            // detection is unreliable under Revit's WPF hosting). This handles the case where the
+            // wheel IS delivered to the popup's own hwnd; the window-level redirect (see
+            // OpenPopup) handles the case where Windows routes WM_MOUSEWHEEL to the main window.
             LemoineControlStyles.SetSelfContainedScroll(sv, true);
+            _resultsScroll = sv;
             stack.Children.Add(sv);
 
             if (AllowFreeText)
@@ -296,6 +302,7 @@ namespace LemoineTools.Lemoine.Controls
 
             outerBorder.Child = stack;
             popup.Child       = outerBorder;
+            _popupRoot        = outerBorder;
             return popup;
         }
 
@@ -306,11 +313,39 @@ namespace LemoineTools.Lemoine.Controls
             RefreshPopupList();
             _popup.IsOpen = true;
             _searchBox.Focus();
+
+            // A Popup doesn't take Win32 activation, so depending on focus state and the OS
+            // "scroll inactive windows under the cursor" setting, WM_MOUSEWHEEL can be delivered
+            // to the MAIN window rather than the popup's hwnd. When that happens the popup's
+            // self-contained scroller never sees the wheel and the page's (asymmetric) scrolling
+            // takes over — the "scrolls down but not up" bug. Attach a window-level redirect ONLY
+            // while the popup is open: if the cursor is over the popup, drive the results scroller
+            // directly (symmetric by construction) and consume the event. Detached in ClosePopup.
+            if (_wheelOwner != null) // already attached (re-entrant open) — avoid double-subscribe
+                _wheelOwner.PreviewMouseWheel -= OnOwnerPreviewMouseWheel;
+            _wheelOwner = Window.GetWindow(this);
+            if (_wheelOwner != null)
+                _wheelOwner.PreviewMouseWheel += OnOwnerPreviewMouseWheel;
         }
 
         private void ClosePopup()
         {
+            if (_wheelOwner != null)
+            {
+                _wheelOwner.PreviewMouseWheel -= OnOwnerPreviewMouseWheel;
+                _wheelOwner = null;
+            }
             if (_popup != null) _popup.IsOpen = false;
+        }
+
+        // Window-level fallback wheel handler — live only while the popup is open. Redirects a
+        // wheel delivered to the main window into the popup's results scroller when the cursor is
+        // over the popup, so the list scrolls both directions regardless of where Windows routed
+        // the WM_MOUSEWHEEL. Uses the shared redirect helper (same path as ComboBox dropdowns).
+        private void OnOwnerPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (_popup?.IsOpen != true) return;
+            LemoineControlStyles.RedirectWheelToPopupScroller(e, _popupRoot, _resultsScroll);
         }
 
         private void RefreshPopupList()

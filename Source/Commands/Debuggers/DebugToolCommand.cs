@@ -7,10 +7,10 @@ using LemoineTools.Tools.Debuggers;
 namespace LemoineTools.Commands
 {
     /// <summary>
-    /// Opens the motion/feature test harness (MotionTestViewModel) from the reserved
-    /// Developer-panel slot. Swap the ViewModel in Execute to CrashProbeViewModel to re-run
-    /// the lazy-build crash-isolation probe (per CLAUDE.md "Crashes & Large Ambiguous
-    /// Issues — Build a Debugger First").
+    /// Opens a debug harness from the reserved Developer-panel slot. Currently wired to the
+    /// ScrollProbeViewModel (scroll-mechanics investigation). Swap the ViewModel in Execute to
+    /// MotionTestViewModel / CrashProbeViewModel / SourceIngestProbeViewModel to re-run an earlier
+    /// harness (per CLAUDE.md "Crashes & Large Ambiguous Issues — Build a Debugger First").
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]
@@ -22,12 +22,11 @@ namespace LemoineTools.Commands
         {
             if (_window != null && _window.IsVisible) { _window.Activate(); return Result.Succeeded; }
 
-            // Active investigation: "Auto-Dimension found no lines". Gather the source-ingest
-            // diagnostic snapshot HERE (Revit main thread, read-only) so the display harness
-            // stays Revit-free. Swap to `new MotionTestViewModel()` / `new CrashProbeViewModel()`
-            // to re-run the earlier harnesses.
-            var report = SourceIngestProbe.Collect(commandData.Application);
-            var vm = new SourceIngestProbeViewModel(report);
+            // Active investigation: scroll mechanics (dropdowns / discover menu). The probe is
+            // Revit-free — no snapshot needed. Swap to `new MotionTestViewModel()` /
+            // `new CrashProbeViewModel()` / `new SourceIngestProbeViewModel(SourceIngestProbe.Collect(commandData.Application))`
+            // to re-run an earlier harness.
+            var vm = new ScrollProbeViewModel();
             _window = new StepFlowWindow(vm);
             _window.Closed += (s, e) => _window = null;
             _window.Show();
