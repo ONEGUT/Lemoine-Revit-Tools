@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml.Serialization;
+using Autodesk.Revit.DB;
 using LemoineTools.Lemoine.Templates;
 using LemoineTools.Lemoine;
 
@@ -394,6 +396,77 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         /// <summary>
+        /// Canonical signature of the part of a rule that is written to the Revit
+        /// ParameterFilterElement <em>definition</em> (categories + parameter + match type +
+        /// keywords). Graphic overrides and view flags are deliberately excluded — they are
+        /// not part of the definition that the create-on-close pass rewrites, so changing a
+        /// colour must not count as a definition change. Categories and keywords are compared
+        /// as order-insensitive sets so a pure reorder is not treated as a change.
+        /// </summary>
+        private static string RuleDefinitionSignature(FilterRuleConfig r)
+        {
+            if (r == null) return "";
+            string cats = string.Join(",",
+                (r.BuiltInCategories ?? new List<string>())
+                    .Where(c => !string.IsNullOrEmpty(c))
+                    .Select(c => c.Trim())
+                    .OrderBy(c => c, StringComparer.Ordinal));
+            string kws = string.Join("",
+                (r.Match ?? new List<string>())
+                    .OrderBy(k => k ?? "", StringComparer.Ordinal));
+            string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+            string param = r.Parameter ?? "";
+            return $"{cats}{param}{mt}{kws}";
+        }
+
+        /// <summary>
+        /// Returns the filter names whose <em>definition</em> changed between the
+        /// <paramref name="before"/> and <paramref name="after"/> trade buffers — i.e. every
+        /// enabled, filter-producing, non-externally-managed rule in <paramref name="after"/>
+        /// whose category/parameter/match-type/keyword definition differs from the rule of the
+        /// same filter name in <paramref name="before"/>, or that had no counterpart in
+        /// <paramref name="before"/>.
+        ///
+        /// Used by the auto-create-on-close pass so it only rewrites the definitions of rules
+        /// the user actually changed in the menu — leaving filters that were edited outside the
+        /// menu (e.g. in Revit's own filter editor) untouched.
+        /// </summary>
+        public static HashSet<string> ComputeChangedFilterNames(
+            IEnumerable<FilterTradeConfig> before, IEnumerable<FilterTradeConfig> after)
+        {
+            var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // before-name → signature. A duplicate name keeps the first signature seen;
+            // any mismatch against the "after" rule still flags it as changed.
+            var beforeSig = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in before ?? new List<FilterTradeConfig>())
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                {
+                    if (r == null) continue;
+                    string name = MakeFilterName(t.Id, r.Name);
+                    if (!beforeSig.ContainsKey(name))
+                        beforeSig[name] = RuleDefinitionSignature(r);
+                }
+            }
+
+            foreach (var t in after ?? new List<FilterTradeConfig>())
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                {
+                    if (r == null || !r.Enabled || !RuleProducesFilter(r)) continue;
+                    string name = MakeFilterName(t.Id, r.Name);
+                    if (!beforeSig.TryGetValue(name, out var prevSig)
+                        || prevSig != RuleDefinitionSignature(r))
+                        changed.Add(name);
+                }
+            }
+            return changed;
+        }
+
+        /// <summary>
         /// Characters Revit forbids in element names. Sourced from the Revit API error
         /// "name cannot include prohibited characters, such as { } [ ] | ; &lt; &gt; ? ` ~"
         /// plus backslash and colon, which are also rejected.
@@ -731,6 +804,34 @@ namespace LemoineTools.Tools.AutoFilters
             { "Rooms",                    "OST_Rooms" },
             { "Areas",                    "OST_Areas" },
             { "Spaces",                   "OST_MEPSpaces" },
+            // ── Architectural — additional model categories / subcategories ──
+            { "Curtain Systems",          "OST_Curtain_Systems" },
+            { "Wall Sweeps",              "OST_Cornices" },
+            { "Slab Edges",               "OST_EdgeSlab" },
+            { "Gutters",                  "OST_Gutter" },
+            { "Fascias",                  "OST_Fascia" },
+            { "Roof Soffits",             "OST_RoofSoffit" },
+            { "Mass Floors",              "OST_MassFloor" },
+            { "Parts",                    "OST_Parts" },
+            { "Assemblies",               "OST_Assemblies" },
+            { "Signage",                  "OST_Signage" },
+            { "Vertical Circulation",     "OST_VerticalCirculation" },
+            { "Audio Visual Devices",     "OST_AudioVisualDevices" },
+            { "Medical Equipment",        "OST_MedicalEquipment" },
+            { "Food Service Equipment",   "OST_FoodServiceEquipment" },
+            { "Temporary Structures",     "OST_TemporaryStructure" },
+            // ── Site / civil ───────────────────────────────────────────────
+            { "Parking",                  "OST_Parking" },
+            { "Roads",                    "OST_Roads" },
+            { "Hardscape",                "OST_Hardscape" },
+            // ── Mechanical / Plumbing — additional ─────────────────────────
+            { "Plumbing Equipment",       "OST_PlumbingEquipment" },
+            { "Mechanical Control Devices","OST_MechanicalControlDevices" },
+            // ── Electrical — additional ────────────────────────────────────
+            { "Wires",                    "OST_Wire" },
+            { "Fire Protection",          "OST_FireProtection" },
+            // ── Structural — additional ────────────────────────────────────
+            { "Structural Rebar Couplers","OST_Coupler" },
         };
 
         /// <summary>Sorted display names for the category checklist.</summary>
@@ -738,10 +839,26 @@ namespace LemoineTools.Tools.AutoFilters
 
         static AutoFiltersSettings()
         {
-            var names = new List<string>(KnownCategoryMap.Keys);
+            // Only surface categories whose OST_* string resolves to a real BuiltInCategory in
+            // the running Revit. This keeps the picker version-safe: a name that doesn't exist
+            // in this Revit (e.g. a category added in a later release) is silently dropped rather
+            // than shown as a dead entry that would never match any element.
+            var names = KnownCategoryMap
+                .Where(kv => IsResolvableBuiltInCategory(kv.Value))
+                .Select(kv => kv.Key)
+                .ToList();
             names.Sort(StringComparer.OrdinalIgnoreCase);
             KnownCategoryDisplayNames = names.ToArray();
         }
+
+        /// <summary>
+        /// True when <paramref name="ost"/> parses to a valid, non-INVALID
+        /// <see cref="BuiltInCategory"/> in the running Revit version.
+        /// </summary>
+        private static bool IsResolvableBuiltInCategory(string ost)
+            => !string.IsNullOrEmpty(ost)
+               && Enum.TryParse<BuiltInCategory>(ost, false, out var bic)
+               && bic != BuiltInCategory.INVALID;
 
         // ── Persistence ───────────────────────────────────────────────────────
 

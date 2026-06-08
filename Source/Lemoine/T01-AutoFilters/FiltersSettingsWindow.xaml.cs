@@ -123,7 +123,16 @@ namespace LemoineTools.Lemoine
                     AutoFiltersSettings.Instance.CreatedFilterNames ?? new List<string>());
 
                 if ((dirty || manifestStale) && expected.Count > 0)
-                    RaiseAutoCreate();
+                {
+                    // Only refresh the definitions of rules whose category/parameter/match
+                    // definition actually changed in the menu — every other existing filter is
+                    // left untouched so edits made outside the menu (Revit's own filter editor)
+                    // survive. Missing filters are still (re)created and orphans removed.
+                    var snapshotTrades = DeserializeTrades(_filtersSnapshot);
+                    var changed = AutoFiltersSettings.ComputeChangedFilterNames(
+                        snapshotTrades, _filterTrades);
+                    RaiseAutoCreate(changed);
+                }
             }
 
             base.OnClosed(e);
@@ -133,7 +142,7 @@ namespace LemoineTools.Lemoine
         // Revit runs the handler at its next idle moment, after this window has closed — which
         // is why failures are surfaced by the handler's own TaskDialog (ShowFailureDialog),
         // never marshalled back to this dispatcher.
-        private void RaiseAutoCreate()
+        private void RaiseAutoCreate(HashSet<string>? changedFilterNames)
         {
             var handler = App.AutoFiltersHandler;
             var evt     = App.AutoFiltersEvent;
@@ -145,6 +154,7 @@ namespace LemoineTools.Lemoine
 
             handler.CreateOnly          = true;
             handler.ShowFailureDialog   = true;
+            handler.ChangedFilterNames  = changedFilterNames;
             handler.SelectedDisciplines = new List<string>();
             handler.SelectedLinkTitles  = new List<string>();
             handler.PushLog             = null;
@@ -212,6 +222,26 @@ namespace LemoineTools.Lemoine
             {
                 LemoineLog.Swallowed("FiltersSettingsWindow.SerializeTrades", ex);
                 return Guid.NewGuid().ToString(); // treat as dirty → save
+            }
+        }
+
+        // Reverses SerializeTrades for the load-time snapshot so the close pass can diff it
+        // against the current buffer and refresh only the rules that actually changed. On any
+        // failure we return an empty list, which makes ComputeChangedFilterNames treat every
+        // current rule as changed — the safe fallback that preserves the old "refresh all".
+        private static List<FilterTradeConfig> DeserializeTrades(string? xml)
+        {
+            if (string.IsNullOrEmpty(xml)) return new List<FilterTradeConfig>();
+            try
+            {
+                var xs = new System.Xml.Serialization.XmlSerializer(typeof(List<FilterTradeConfig>));
+                using (var sr = new System.IO.StringReader(xml))
+                    return (List<FilterTradeConfig>)xs.Deserialize(sr) ?? new List<FilterTradeConfig>();
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("FiltersSettingsWindow.DeserializeTrades", ex);
+                return new List<FilterTradeConfig>();
             }
         }
 

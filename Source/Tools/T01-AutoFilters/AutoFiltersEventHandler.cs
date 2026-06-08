@@ -41,6 +41,17 @@ namespace LemoineTools.Tools.AutoFilters
         public bool OverwriteFilterDefinition { get; set; } = false;
 
         /// <summary>
+        /// In <see cref="CreateOnly"/> mode, restricts which existing filters have their
+        /// definition refreshed to the filters named in this set — every other existing filter
+        /// is reused untouched, preserving rule edits made outside the Auto Filters menu (e.g.
+        /// in Revit's own filter editor). <see langword="null"/> (the default) refreshes every
+        /// filter, matching the historical behaviour for callers that don't track which rules
+        /// changed. Has no effect outside CreateOnly mode, where <see cref="OverwriteFilterDefinition"/>
+        /// alone governs refresh. Brand-new filters are always created regardless of this set.
+        /// </summary>
+        public HashSet<string>? ChangedFilterNames { get; set; } = null;
+
+        /// <summary>
         /// When true, a Revit TaskDialog summarising any filter-creation failures is shown
         /// at the end of <see cref="Execute"/>. Used by the auto-create-on-close path, where
         /// the originating window has already closed and cannot surface failures itself.
@@ -388,11 +399,16 @@ namespace LemoineTools.Tools.AutoFilters
 
             string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
 
-            // Refresh the definition of an existing filter (in CreateOnly mode, or when the
-            // caller explicitly asked to overwrite). The refresh updates the element in place
-            // rather than deleting and recreating it, so the filter keeps its ElementId and
-            // stays attached to any views and legends that reference it.
-            bool refreshDef = createOnly || overwriteDef;
+            // Refresh the definition of an existing filter (when the caller explicitly asked to
+            // overwrite, or — in CreateOnly mode — when this rule's definition actually changed).
+            // The refresh updates the element in place rather than deleting and recreating it, so
+            // the filter keeps its ElementId and stays attached to any views and legends that
+            // reference it. In CreateOnly mode a ChangedFilterNames set limits the refresh to the
+            // rules the user changed in the menu; a filter not in the set is reused untouched, so
+            // edits made to it outside the menu (e.g. in Revit's filter editor) are preserved.
+            // A null ChangedFilterNames keeps the historical "refresh all" behaviour.
+            bool refreshDef = overwriteDef
+                || (createOnly && (ChangedFilterNames == null || ChangedFilterNames.Contains(filterName)));
 
             try
             {
