@@ -723,10 +723,13 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         /// <summary>
-        /// Maps Revit category display name → OST_* BuiltInCategory string.
-        /// Used to populate the multi-category checklist and resolve BuiltInCategories.
+        /// Hardcoded fallback map of Revit category display name → OST_* BuiltInCategory
+        /// string. Used only when no live document has been captured (e.g. the standalone
+        /// preview app). When a document is open, <see cref="CaptureFilterableCategories"/>
+        /// replaces this with the exact list Revit reports via
+        /// <c>ParameterFilterUtilities.GetAllFilterableCategories</c>.
         /// </summary>
-        public static readonly Dictionary<string, string> KnownCategoryMap =
+        private static readonly Dictionary<string, string> DefaultKnownCategoryMap =
             new Dictionary<string, string>
         {
             // ── Mechanical / HVAC ──────────────────────────────────────────
@@ -834,8 +837,8 @@ namespace LemoineTools.Tools.AutoFilters
             { "Structural Rebar Couplers","OST_Coupler" },
         };
 
-        /// <summary>Sorted display names for the category checklist.</summary>
-        public static readonly string[] KnownCategoryDisplayNames;
+        /// <summary>Sorted fallback display names for the category checklist.</summary>
+        private static readonly string[] DefaultKnownCategoryDisplayNames;
 
         static AutoFiltersSettings()
         {
@@ -843,12 +846,95 @@ namespace LemoineTools.Tools.AutoFilters
             // the running Revit. This keeps the picker version-safe: a name that doesn't exist
             // in this Revit (e.g. a category added in a later release) is silently dropped rather
             // than shown as a dead entry that would never match any element.
-            var names = KnownCategoryMap
+            var names = DefaultKnownCategoryMap
                 .Where(kv => IsResolvableBuiltInCategory(kv.Value))
                 .Select(kv => kv.Key)
                 .ToList();
             names.Sort(StringComparer.OrdinalIgnoreCase);
-            KnownCategoryDisplayNames = names.ToArray();
+            DefaultKnownCategoryDisplayNames = names.ToArray();
+        }
+
+        // ── Runtime (document-driven) category snapshot ───────────────────────
+        // Populated by CaptureFilterableCategories on the Revit main thread so the
+        // pickers list exactly what Revit's "Edit Filters → Categories" dialog shows.
+        // Null until a document is captured; the public accessors fall back to the
+        // hardcoded defaults so the standalone preview app still works.
+        private static Dictionary<string, string>? _runtimeCategoryMap;
+        private static string[]? _runtimeDisplayNames;
+        private static Dictionary<string, IReadOnlyList<string>>? _runtimeSubcategories;
+
+        /// <summary>
+        /// Maps Revit category display name → OST_* BuiltInCategory string. Returns the
+        /// document-captured set when available (exact parity with Revit's filterable
+        /// category list), otherwise the hardcoded fallback.
+        /// </summary>
+        public static IReadOnlyDictionary<string, string> KnownCategoryMap =>
+            _runtimeCategoryMap ?? (IReadOnlyDictionary<string, string>)DefaultKnownCategoryMap;
+
+        /// <summary>Sorted display names for the category checklist (document-captured when available).</summary>
+        public static IReadOnlyList<string> KnownCategoryDisplayNames =>
+            _runtimeDisplayNames ?? (IReadOnlyList<string>)DefaultKnownCategoryDisplayNames;
+
+        /// <summary>
+        /// Reads the exact filterable-category list from the open document and stores it as the
+        /// runtime snapshot the category pickers read from. Must be called on the Revit main
+        /// thread (it queries the Revit API) before the window thread that builds the picker
+        /// starts. Only BuiltInCategory-backed categories are captured — the filter engine
+        /// persists categories as OST_* strings, so non-builtin custom subcategories (which it
+        /// cannot store) are skipped. On any failure the snapshot is left untouched and the
+        /// hardcoded fallback continues to be used.
+        /// </summary>
+        public static void CaptureFilterableCategories(Document doc)
+        {
+            if (doc == null) return;
+            try
+            {
+                var ids = ParameterFilterUtilities.GetAllFilterableCategories(doc);
+                var map = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var id in ids)
+                {
+                    // BuiltInCategory ids are negative; positive ids are project-defined custom
+                    // subcategories the OST_*-based filter engine cannot persist — skip them.
+                    long raw = id.Value;
+                    if (raw >= 0) continue;
+                    var bic = (BuiltInCategory)(int)raw;
+                    if (bic == BuiltInCategory.INVALID) continue;
+
+                    Category? cat = null;
+                    try { cat = Category.GetCategory(doc, id); }
+                    catch (Exception __cex) { LemoineLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
+
+                    string name = cat?.Name ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    // First writer wins so the displayed name stays stable if two ids share a name.
+                    if (!map.ContainsKey(name)) map[name] = bic.ToString();
+                }
+
+                if (map.Count == 0) return;
+
+                // Keep the curated parent→child caret grouping, but restrict it to parents and
+                // children that are actually present in this document's filterable set.
+                var present = new HashSet<string>(map.Keys, StringComparer.Ordinal);
+                var subs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+                foreach (var kv in DefaultCategorySubcategories)
+                {
+                    if (!present.Contains(kv.Key)) continue;
+                    var kids = kv.Value.Where(present.Contains).ToList();
+                    if (kids.Count > 0) subs[kv.Key] = kids;
+                }
+
+                var names = map.Keys.ToList();
+                names.Sort(StringComparer.OrdinalIgnoreCase);
+
+                _runtimeCategoryMap   = map;
+                _runtimeDisplayNames  = names.ToArray();
+                _runtimeSubcategories = subs;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
+            }
         }
 
         /// <summary>
@@ -869,7 +955,7 @@ namespace LemoineTools.Tools.AutoFilters
         /// A child whose OST string doesn't resolve in the running Revit is dropped by the
         /// picker (it only renders children present in its ItemsSource).
         /// </summary>
-        public static readonly Dictionary<string, IReadOnlyList<string>> CategorySubcategories =
+        private static readonly Dictionary<string, IReadOnlyList<string>> DefaultCategorySubcategories =
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
             // ── Mechanical ─────────────────────────────────────────────────
@@ -895,6 +981,14 @@ namespace LemoineTools.Tools.AutoFilters
             // ── Site ───────────────────────────────────────────────────────
             { "Site",                 new[]{ "Topography", "Planting", "Parking", "Roads", "Hardscape" } },
         };
+
+        /// <summary>
+        /// Parent category display name → nested sub-category display names for the picker carets.
+        /// Returns the document-captured grouping (curated grouping intersected with the real
+        /// filterable set) when available, otherwise the hardcoded fallback.
+        /// </summary>
+        public static IReadOnlyDictionary<string, IReadOnlyList<string>> CategorySubcategories =>
+            _runtimeSubcategories ?? (IReadOnlyDictionary<string, IReadOnlyList<string>>)DefaultCategorySubcategories;
 
         // ── Persistence ───────────────────────────────────────────────────────
 

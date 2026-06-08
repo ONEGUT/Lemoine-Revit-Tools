@@ -44,6 +44,10 @@ namespace LemoineTools.Commands
             var doc = commandData.Application.ActiveUIDocument?.Document;
             if (doc != null)
             {
+                // Capture the exact filterable-category list from this document so the rule
+                // editor's category picker mirrors Revit's own "Edit Filters → Categories" list.
+                LemoineTools.Tools.AutoFilters.AutoFiltersSettings.CaptureFilterableCategories(doc);
+
                 fillNames.AddRange(
                     new FilteredElementCollector(doc)
                         .OfClass(typeof(FillPatternElement))
