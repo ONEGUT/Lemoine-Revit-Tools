@@ -868,10 +868,7 @@ namespace LemoineTools.Lemoine
         if (GetSelfContainedScroll(sv) || IsInsidePopup(sv))
         {
             e.Handled = true;                          // swallow — never reaches the page
-            if (sv.ScrollableHeight <= 0) return;      // nothing to scroll
-            double step   = e.Delta / 120.0 * 48.0;    // 3 lines (~48px) per wheel notch
-            double target = sv.VerticalOffset - step;
-            sv.ScrollToVerticalOffset(Math.Max(0, Math.Min(sv.ScrollableHeight, target)));
+            WheelScrollBy(sv, e.Delta);
             return;
         }
 
@@ -946,10 +943,7 @@ namespace LemoineTools.Lemoine
             if (sv == null) return;
 
             we.Handled = true;
-            if (sv.ScrollableHeight <= 0) return;
-            double step = we.Delta / 120.0 * 48.0; // 3 lines (~48px) per wheel notch
-            sv.ScrollToVerticalOffset(
-                Math.Max(0, Math.Min(sv.ScrollableHeight, sv.VerticalOffset - step)));
+            WheelScrollBy(sv, we.Delta);
         };
 
         combo.DropDownOpened += (s, _) =>
@@ -964,6 +958,23 @@ namespace LemoineTools.Lemoine
         {
             if (owner != null) owner.PreviewMouseWheel -= redirect;
         };
+    }
+
+    /// <summary>
+    /// Scrolls <paramref name="sv"/> vertically by a wheel <paramref name="delta"/>, respecting the
+    /// scroller's mode: an item-based (logical) scroller — e.g. a ComboBox/ListBox internal viewer
+    /// with <c>CanContentScroll=true</c> — measures its offset and extent in ITEMS, while a pixel
+    /// scroller measures in DIPs. Treating items as pixels (48 per notch) jumps the whole list from
+    /// top to bottom in one notch, so use ~3 items per notch for logical scrollers (matching the OS
+    /// default) and ~48px per notch otherwise. Positive delta scrolls up.
+    /// </summary>
+    private static void WheelScrollBy(ScrollViewer sv, int delta)
+    {
+        if (sv.ScrollableHeight <= 0) return; // nothing to scroll
+        double notches = delta / 120.0;
+        double step    = sv.CanContentScroll ? notches * 3.0 : notches * 48.0;
+        double target  = sv.VerticalOffset - step;
+        sv.ScrollToVerticalOffset(Math.Max(0, Math.Min(sv.ScrollableHeight, target)));
     }
 
     /// <summary>Depth-first search of the visual tree under <paramref name="root"/> for the first ScrollViewer.</summary>
