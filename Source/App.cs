@@ -54,6 +54,10 @@ namespace LemoineTools
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
 
+        // ── Bulk Views by Template ──────────────────────────────────────────────────
+        internal static ViewsByTemplateRunHandler?   ViewsByTemplateRunHandler   { get; private set; }
+        internal static ExternalEvent?               ViewsByTemplateRunEvent     { get; private set; }
+
         // ── Link Views — Discipline ─────────────────────────────────────────────────
         internal static LinkViewsDisciplineRunHandler? LinkViewsDisciplineRunHandler { get; private set; }
         internal static ExternalEvent?                 LinkViewsDisciplineRunEvent   { get; private set; }
@@ -137,6 +141,8 @@ namespace LemoineTools
             LinkViewsLevelPhase1Event   = ExternalEvent.Create(LinkViewsLevelPhase1Handler);
             LinkViewsLevelRunHandler    = new LinkViewsLevelRunHandler();
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
+            ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();
+            ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
 
             // ── Link Views — Discipline ───────────────────────────────────────
             LinkViewsDisciplineRunHandler = new LinkViewsDisciplineRunHandler();
@@ -290,6 +296,11 @@ namespace LemoineTools
                 "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
                 "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
                 char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
+
+            linkViewsPanel.AddItem(Btn(
+                "LT_ViewsByTemplate", "Views ×\nTemplates", "ViewsByTemplateCommand",
+                "Duplicate selected views across selected view templates, naming each from a token pattern.",
+                char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
