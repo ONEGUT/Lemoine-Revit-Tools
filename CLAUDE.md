@@ -241,6 +241,20 @@ A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world 
 
 ---
 
+## Step Flow — Conditional & Data-Dependent Steps
+
+- **Step content is built eagerly at window construction.** A step whose content depends on an earlier step's choice (the live selection, the export mode, etc.) must implement `IStepAware` and rebuild itself in `OnStepActivated(stepId)` via the content-refresh callback — otherwise it renders once with stale/empty state and never updates. This was the root cause of Bulk Export's "Build Packs" appearing empty: the pack editor read the selection at construction (before anything was selected) and was never refreshed.
+- **Hide steps conditionally with `ILemoineConditionalSteps`.** `IsStepVisible(stepId)` returning false collapses that step's accordion row and progress pip and skips it during forward/back navigation; visibility is re-evaluated on activation and on `ValidationChanged`. A conditional (hideable) step must **never be the last step** — the final step carries the Run button, log area, and review summary and is always shown. Tools that don't implement the interface are unaffected (every step visible).
+
+---
+
+## Export Filenames — Views vs Sheets
+
+- A non-sheet `View` exposes **no** `SHEET_NUMBER` / `SHEET_NAME` parameters, so a sheet-token filename pattern (`{SheetNumber}-{SheetName}`) silently resolves to a degenerate name (e.g. `-`) for views, and every view collides on the same file. Name views from `view.Name` / `view.ViewType` instead, and offer a **mode-aware token vocabulary** (sheet tokens for sheets, view tokens for views) so only valid tokens are ever presented — never a silent fallback.
+- **A resolved filename that is empty or has no alphanumeric character is a failure, not a fallback.** Detect it and report through both the run log (`pushLog(..., "warn")`) and `LemoineLog.Warn(...)` before substituting a deterministic name (`element.Name`, else element id). Export tooling must be **equally viable for views and sheets**.
+
+---
+
 ## Reusable Components — Prefer Over Hand-Rolling
 
 - **Numeric input:** `LemoineInlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.
