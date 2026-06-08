@@ -1146,6 +1146,8 @@ namespace LemoineTools.Lemoine
                 ItemsSource   = AutoFiltersSettings.KnownCategoryDisplayNames,
                 SelectedItems = catDisplayNames,
                 Placeholder   = "Add category…",
+                // Nest related sub-categories under their parent behind an expand caret.
+                Hierarchy     = AutoFiltersSettings.CategorySubcategories,
             };
             catChip.Changed += (s, e) =>
             {

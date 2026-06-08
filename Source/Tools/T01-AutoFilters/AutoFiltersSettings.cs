@@ -860,6 +860,42 @@ namespace LemoineTools.Tools.AutoFilters
                && Enum.TryParse<BuiltInCategory>(ost, false, out var bic)
                && bic != BuiltInCategory.INVALID;
 
+        /// <summary>
+        /// Parent category display name → the related sub-category display names nested beneath
+        /// it in the category picker. Both parent and children are real, filterable categories
+        /// already present in <see cref="KnownCategoryMap"/>; children are hidden from the flat
+        /// top level and surfaced under the parent's expand caret. Revit's internal V/G
+        /// sub-categories are not filterable, so only real model categories are grouped here.
+        /// A child whose OST string doesn't resolve in the running Revit is dropped by the
+        /// picker (it only renders children present in its ItemsSource).
+        /// </summary>
+        public static readonly Dictionary<string, IReadOnlyList<string>> CategorySubcategories =
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            // ── Mechanical ─────────────────────────────────────────────────
+            { "Ducts",                new[]{ "Duct Fittings", "Duct Accessories", "Duct Insulation", "Duct Linings", "Flex Ducts", "Air Terminals" } },
+            { "Mechanical Equipment", new[]{ "Mechanical Control Devices" } },
+            { "Fabrication Ductwork", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
+            // ── Piping / Plumbing ──────────────────────────────────────────
+            { "Pipes",                new[]{ "Pipe Fittings", "Pipe Accessories", "Pipe Insulation", "Pipe Linings", "Flex Pipes" } },
+            { "Fabrication Pipework", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
+            { "Plumbing Fixtures",    new[]{ "Plumbing Equipment" } },
+            // ── Electrical ─────────────────────────────────────────────────
+            { "Cable Trays",          new[]{ "Cable Tray Fittings" } },
+            { "Conduits",             new[]{ "Conduit Fittings" } },
+            { "Lighting Fixtures",    new[]{ "Lighting Devices" } },
+            { "Electrical Equipment", new[]{ "Electrical Fixtures", "Wires" } },
+            // ── Architectural ──────────────────────────────────────────────
+            { "Walls",                new[]{ "Curtain Wall Panels", "Curtain Wall Mullions", "Curtain Systems", "Wall Sweeps" } },
+            { "Roofs",                new[]{ "Fascias", "Gutters", "Roof Soffits" } },
+            { "Floors",               new[]{ "Slab Edges" } },
+            // ── Structural ─────────────────────────────────────────────────
+            { "Structural Framing",   new[]{ "Structural Trusses", "Structural Stiffeners", "Structural Connections", "Structural Rebar Couplers" } },
+            { "Rebar",                new[]{ "Area Reinforcement", "Path Reinforcement", "Fabric Reinforcement", "Fabric Area" } },
+            // ── Site ───────────────────────────────────────────────────────
+            { "Site",                 new[]{ "Topography", "Planting", "Parking", "Roads", "Hardscape" } },
+        };
+
         // ── Persistence ───────────────────────────────────────────────────────
 
         private static string FilePath
