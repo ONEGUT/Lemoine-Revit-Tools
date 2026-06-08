@@ -34,21 +34,43 @@ namespace LemoineTools.Lemoine
             InitializeComponent();
             Loaded += OnLoaded;
 
-            LemoineSettings.Instance.ThemeChanged += t => Dispatcher.Invoke(() =>
+            // Named handlers (not lambdas) so they can be detached on close — a leaked
+            // subscription to a window whose dispatcher has shut down crashes/hangs Revit
+            // on the next theme change.
+            LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
+            LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+            Closed += (s, e) =>
+            {
+                LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
+                LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            };
+        }
+
+        // Fired on the theme-change thread (any STA thread). Marshal back to this window's
+        // own dispatcher non-blocking (BeginInvoke) to avoid cross-thread deadlock, and bail
+        // if this dispatcher has already begun shutting down.
+        private void OnThemeChanged(LemoineTheme t)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 RefreshThemeRows();
-            });
+            }));
+        }
 
-            LemoineSettings.Instance.UiSizeChanged += _ => Dispatcher.Invoke(() =>
+        private void OnUiSizeChanged(LemoineUiSize _)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LemoineSettings.Instance.ApplyScaleTo(Resources);
                 LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 UpdateRowHeights();
                 RefreshSizeRows();
-            });
+            }));
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
