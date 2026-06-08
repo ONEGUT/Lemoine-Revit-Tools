@@ -58,6 +58,10 @@ namespace LemoineTools
         internal static ViewsByTemplateRunHandler?   ViewsByTemplateRunHandler   { get; private set; }
         internal static ExternalEvent?               ViewsByTemplateRunEvent     { get; private set; }
 
+        // ── Bulk Duplicate Views ────────────────────────────────────────────────────
+        internal static ViewsBulkDuplicateRunHandler? ViewsBulkDuplicateRunHandler { get; private set; }
+        internal static ExternalEvent?                ViewsBulkDuplicateRunEvent   { get; private set; }
+
         // ── Link Views — Discipline ─────────────────────────────────────────────────
         internal static LinkViewsDisciplineRunHandler? LinkViewsDisciplineRunHandler { get; private set; }
         internal static ExternalEvent?                 LinkViewsDisciplineRunEvent   { get; private set; }
@@ -143,6 +147,8 @@ namespace LemoineTools
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
             ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();
             ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
+            ViewsBulkDuplicateRunHandler = new ViewsBulkDuplicateRunHandler();
+            ViewsBulkDuplicateRunEvent   = ExternalEvent.Create(ViewsBulkDuplicateRunHandler);
 
             // ── Link Views — Discipline ───────────────────────────────────────
             LinkViewsDisciplineRunHandler = new LinkViewsDisciplineRunHandler();
@@ -278,8 +284,9 @@ namespace LemoineTools
             });
 
             // ── T03 — Bulk Views ──────────────────────────────────────────────
-            // Large: Bulk Views by Level
-            // Large: Replicate Dep. Views
+            // Large:    Bulk Views by Level
+            // Pulldown: Duplicate Views (Bulk Duplicate | By Template | Dependent)
+            // Large:    Bulk Export
             var linkViewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T03  Bulk Views");
 
             linkViewsPanel.AddItem(Btn(
@@ -287,20 +294,43 @@ namespace LemoineTools
                 "Create cropped 3D, floor plan, and ceiling plan views per level and building cluster.",
                 "\uE8B7"));  // Segoe MDL2: Layers
 
-            linkViewsPanel.AddItem(Btn(
-                "LT_ReplicateDependentViews", "Replicate\nDep. Views", "ReplicateDependentViewsCommand",
-                "Copy dependent views and their crop regions from a source view onto one or more target views.",
-                "\uE8C8"));  // Segoe MDL2: Copy
+            // Pulldown: Duplicate Views (Bulk Duplicate | By Template | Dependent)
+            var dupViewsPulldown = new PulldownButtonData("LT_DuplicateViews", "Duplicate\nViews")
+            {
+                ToolTip    = "Bulk-duplicate views: plain duplicate, duplicate across view templates, or duplicate as dependent.",
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Segoe MDL2: Copy
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
+            };
+            var dupViewsBtn = linkViewsPanel.AddItem(dupViewsPulldown) as PulldownButton;
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ViewsBulkDuplicate", "Bulk Duplicate", dll, "LemoineTools.Commands.ViewsBulkDuplicateCommand")
+            {
+                ToolTip    = "Duplicate selected views (Duplicate, With Detailing, or As Dependent) with token-based naming.",
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
+            });
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ViewsByTemplate", "Bulk Views by Template", dll, "LemoineTools.Commands.ViewsByTemplateCommand")
+            {
+                ToolTip    = "Duplicate selected views across selected view templates, naming each from a token pattern.",
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
+            });
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ReplicateDependentViews", "Bulk Dependent Views", dll, "LemoineTools.Commands.ReplicateDependentViewsCommand")
+            {
+                ToolTip    = "Copy dependent views and their crop regions from a source view onto one or more target views.",
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
+            });
 
             linkViewsPanel.AddItem(Btn(
                 "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
                 "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
                 char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
-
-            linkViewsPanel.AddItem(Btn(
-                "LT_ViewsByTemplate", "Views ×\nTemplates", "ViewsByTemplateCommand",
-                "Duplicate selected views across selected view templates, naming each from a token pattern.",
-                char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)

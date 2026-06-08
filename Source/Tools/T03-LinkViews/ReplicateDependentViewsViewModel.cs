@@ -128,7 +128,7 @@ namespace LemoineTools.Tools.LinkViews
     {
         // ── Identity ──────────────────────────────────────────────────
         /// <summary>Gets the title displayed in the step-flow window header.</summary>
-        public string Title    => "Replicate Dependent Views";
+        public string Title    => "Bulk Dependent Views";
 
         /// <summary>Gets the label displayed on the final run button.</summary>
         public string RunLabel => "Replicate in Revit →";
