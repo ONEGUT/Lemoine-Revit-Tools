@@ -126,6 +126,15 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             double tgtA = target.Point.Dot(axis);
             double len  = Math.Abs(tgtA - srcA);
 
+            // Project the shared (majority-voted) target onto the measurement-axis line that runs
+            // through the representative clash. The target point was resolved from a DIFFERENT member,
+            // so its cross-axis position can differ from the representative's — leaving SourcePoint and
+            // TargetPoint off-axis from each other and drawing a skewed (diagonal) band. Re-anchoring the
+            // target at Source2d + axis*(tgtA-srcA) keeps the measured length but forces the line
+            // orthogonal. The Revit dimension itself is still built from the ordered References below;
+            // only the layout band geometry is corrected here.
+            Core.Vec2 targetPoint = it.Source2d + axis * (tgtA - srcA);
+
             string key = $"{it.SourceKey}|{AxisTag(axis)}";
             var dim = new Core.PlannedDimension
             {
@@ -133,7 +142,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 TargetKey   = $"{target.Key}|{AxisTag(axis)}",
                 TargetType  = it.TargetType,
                 SourcePoint = it.Source2d,
-                TargetPoint = target.Point,
+                TargetPoint = targetPoint,
                 AxisDir     = axis,
                 Side        = Core.DimSide.Positive,
                 OffsetFt    = cfg.FirstOffsetFt,
