@@ -25,6 +25,9 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         public string          SheetSeries    { get; set; } = "";
         public string          SeriesParamName { get; set; } = "Sheet Series";
 
+        /// <summary>Fast, approximate layout: size viewports from the crop box instead of measuring placed outlines.</summary>
+        public bool            EstimateMode   { get; set; } = false;
+
         public bool   TrimBubbles { get; set; } = true;
         public double TrimInches  { get; set; } = 0.125;   // paper inches past the model crop
 
@@ -97,10 +100,17 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             .Cast<ViewSheet>().Select(vs => vs.SheetNumber),
                         StringComparer.OrdinalIgnoreCase);
 
-                    // ── Phase 1: create sheets, trim, place viewports — NO regen ──────────
-                    // doc.Regenerate() recomputes the whole model, so calling it per sheet is the
-                    // dominant cost. We do all the mutations first, then regenerate ONCE.
-                    var jobs = new List<SheetJob>();
+                    // The drawing area is identical for every sheet (same title block), so resolve
+                    // it once and reuse — in estimate mode this is the ONLY explicit regen.
+                    bool   areaKnown = false;
+                    double areaMinX = 0, areaMinY = 0, areaW = 0, areaH = 0;
+
+                    Log(EstimateMode
+                        ? "Quick estimate — sizing views from their crop boxes."
+                        : "Accurate — measuring each placed view.", "info");
+
+                    // One sheet at a time: progress updates per sheet and (accurate mode) each regen
+                    // only touches that sheet's changes, so the commit at the end is cheap.
                     for (int i = 0; i < ParentViewIds.Count; i++)
                     {
                         var parent = doc.GetElement(ParentViewIds[i]) as View;
@@ -109,7 +119,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             Log("[SKIP] A selected view no longer exists.", "warn");
                             LemoineLog.Warn("PlaceDependentViews", $"Parent view {ParentViewIds[i]} not found.");
                             skip++;
-                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
 
@@ -118,7 +128,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         {
                             Log($"[SKIP] '{parent.Name}' has no dependent views.", "warn");
                             skip++;
-                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
 
@@ -128,7 +138,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         {
                             Log($"[FAIL] Could not find a free sheet number for '{parent.Name}'.", "fail");
                             fail++;
-                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
                         string sheetName = LemoineTokenInput.Resolve(
@@ -146,7 +156,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             Log($"[FAIL] Could not create sheet for '{parent.Name}': {ex.Message}", "fail");
                             LemoineLog.Error("PlaceDependentViews: create sheet", ex);
                             fail++;
-                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
 
@@ -159,94 +169,139 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             foreach (var depId in depIds)
                                 TrimAnnotationCrop(doc.GetElement(depId) as View, trimPaperFt);
 
-                        // ── Place viewports at a provisional point (repositioned in phase 2) ──
-                        var placed = new List<Viewport>();
+                        // ── Which dependents can actually be placed ──────────
+                        var toPlace = new List<View>(depIds.Count);
                         foreach (var depId in depIds)
                         {
                             if (!Viewport.CanAddViewToSheet(doc, sheet.Id, depId))
                             {
-                                var dv = doc.GetElement(depId) as View;
-                                Log($"[SKIP] '{dv?.Name ?? depId.ToString()}' is already placed on a sheet.", "warn");
+                                var dv0 = doc.GetElement(depId) as View;
+                                Log($"[SKIP] '{dv0?.Name ?? depId.ToString()}' is already placed on a sheet.", "warn");
                                 skip++;
                                 continue;
                             }
-                            try
-                            {
-                                placed.Add(Viewport.Create(doc, sheet.Id, depId, XYZ.Zero));
-                            }
-                            catch (Exception ex)
-                            {
-                                var dv = doc.GetElement(depId) as View;
-                                Log($"[FAIL] Could not place '{dv?.Name ?? depId.ToString()}': {ex.Message}", "fail");
-                                LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create", ex);
-                                fail++;
-                            }
+                            if (doc.GetElement(depId) is View dv) toPlace.Add(dv);
                         }
-
-                        if (placed.Count == 0)
+                        if (toPlace.Count == 0)
                         {
-                            Log($"[WARN] Nothing placed on sheet {sheetNumber} — {sheetName}.", "warn");
-                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                            Log($"[WARN] Nothing to place on sheet {sheetNumber} — {sheetName}.", "warn");
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
 
-                        jobs.Add(new SheetJob(sheet, sheetNumber, sheetName, placed));
-                        onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
-                    }
+                        int placedCount = 0;
 
-                    // ── Single regen: trims + sheets + title blocks + viewports all settle here ──
-                    doc.Regenerate();
-
-                    // ── Phase 2: measure real footprints, pack, position ─────────────────
-                    for (int j = 0; j < jobs.Count; j++)
-                    {
-                        var job = jobs[j];
-
-                        if (!TryGetDrawingArea(doc, job.Sheet, marginLeft, marginRight, marginTop, marginBottom,
-                                               out double areaMinX, out double areaMinY, out double areaW, out double areaH))
+                        if (EstimateMode)
                         {
-                            Log($"[WARN] Could not read title-block size for sheet {job.Number}; " +
-                                "dependents left at the sheet origin.", "warn");
-                            LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {job.Number}.");
-                            pass++;
-                            onProgress(50 + Pct(j + 1, jobs.Count) / 2, pass, fail, skip);
-                            continue;
-                        }
-
-                        var rects = new List<SheetLayoutPacker.Rect>(job.Viewports.Count);
-                        var keep  = new List<Viewport>(job.Viewports.Count);
-                        foreach (var vp in job.Viewports)
-                        {
-                            if (TryGetOutlineSize(vp, out double w, out double h))
+                            // Resolve the area once (one regen so the title-block bbox is valid).
+                            if (!areaKnown)
                             {
-                                rects.Add(new SheetLayoutPacker.Rect(w, h));
-                                keep.Add(vp);
+                                doc.Regenerate();
+                                areaKnown = TryGetDrawingArea(doc, sheet, marginLeft, marginRight, marginTop, marginBottom,
+                                                             out areaMinX, out areaMinY, out areaW, out areaH);
                             }
-                            else
+                            if (!areaKnown)
                             {
-                                Log("[WARN] A viewport reported no size and was left at the sheet origin.", "warn");
+                                Log($"[WARN] Could not read title-block size; sheet {sheetNumber} left empty.", "warn");
+                                LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
+                                pass++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
                             }
-                        }
 
-                        if (keep.Count > 0)
-                        {
+                            // Estimate footprints from the crop box, pack, place directly — no regen.
+                            var rects = toPlace.Select(v => EstimateRect(v, TrimBubbles, trimPaperFt)).ToList();
                             var result = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
-                            for (int k = 0; k < keep.Count; k++)
+                            for (int k = 0; k < toPlace.Count; k++)
                             {
                                 var p = result.Placements[k];
-                                keep[k].SetBoxCenter(new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
+                                try
+                                {
+                                    Viewport.Create(doc, sheet.Id, toPlace[k].Id,
+                                                    new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
+                                    placedCount++;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"[FAIL] Could not place '{toPlace[k].Name}': {ex.Message}", "fail");
+                                    LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create (estimate)", ex);
+                                    fail++;
+                                }
+                            }
+                            if (result.Overflow)
+                                Log($"[WARN] Sheet {sheetNumber}: estimated views don't fit the drawing area — " +
+                                    "they may extend past the margins.", "warn");
+                        }
+                        else
+                        {
+                            // Accurate: place provisionally, regen this sheet, measure, pack, position.
+                            var placed = new List<Viewport>(toPlace.Count);
+                            foreach (var dv in toPlace)
+                            {
+                                try { placed.Add(Viewport.Create(doc, sheet.Id, dv.Id, XYZ.Zero)); }
+                                catch (Exception ex)
+                                {
+                                    Log($"[FAIL] Could not place '{dv.Name}': {ex.Message}", "fail");
+                                    LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create", ex);
+                                    fail++;
+                                }
+                            }
+                            if (placed.Count == 0)
+                            {
+                                Log($"[WARN] Nothing placed on sheet {sheetNumber} — {sheetName}.", "warn");
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
                             }
 
-                            if (result.Overflow)
-                                Log($"[WARN] Sheet {job.Number}: {keep.Count} view(s) don't fit the drawing " +
-                                    "area at this scale — they extend past the margins.", "warn");
+                            doc.Regenerate(); // outlines are only valid after a regen
+
+                            if (!areaKnown)
+                                areaKnown = TryGetDrawingArea(doc, sheet, marginLeft, marginRight, marginTop, marginBottom,
+                                                             out areaMinX, out areaMinY, out areaW, out areaH);
+                            if (!areaKnown)
+                            {
+                                Log($"[WARN] Could not read title-block size for sheet {sheetNumber}; " +
+                                    "views left at the sheet origin.", "warn");
+                                LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
+                                pass++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
+
+                            var rects = new List<SheetLayoutPacker.Rect>(placed.Count);
+                            var keep  = new List<Viewport>(placed.Count);
+                            foreach (var vp in placed)
+                            {
+                                if (TryGetOutlineSize(vp, out double w, out double h))
+                                {
+                                    rects.Add(new SheetLayoutPacker.Rect(w, h));
+                                    keep.Add(vp);
+                                }
+                                else
+                                {
+                                    Log("[WARN] A viewport reported no size and was left at the sheet origin.", "warn");
+                                }
+                            }
+
+                            if (keep.Count > 0)
+                            {
+                                var result = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
+                                for (int k = 0; k < keep.Count; k++)
+                                {
+                                    var p = result.Placements[k];
+                                    keep[k].SetBoxCenter(new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
+                                }
+                                if (result.Overflow)
+                                    Log($"[WARN] Sheet {sheetNumber}: {keep.Count} view(s) don't fit the drawing " +
+                                        "area at this scale — they extend past the margins.", "warn");
+                            }
+                            placedCount = keep.Count;
                         }
 
                         pass++;
-                        Log($"✓ Sheet {job.Number} — {job.Name}  ({keep.Count} view(s) placed)", "pass");
-                        onProgress(50 + Pct(j + 1, jobs.Count) / 2, pass, fail, skip);
+                        Log($"✓ Sheet {sheetNumber} — {sheetName}  ({placedCount} view(s) placed)", "pass");
+                        onProgress(Pct(i + 1, total), pass, fail, skip);
                     }
-                    // SetBoxCenter needs no regen here — the commit below recomputes everything once.
 
                     tx.Commit();
                 }
@@ -372,17 +427,22 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             return null;
         }
 
-        /// <summary>One created sheet plus the viewports placed on it, carried from phase 1 to phase 2.</summary>
-        private sealed class SheetJob
+        /// <summary>Per-side paper pad assumed for un-trimmed views (rough bubble allowance) in estimate mode.</summary>
+        private const double DefaultAnnotationPadIn = 0.5;
+
+        /// <summary>
+        /// Approximates a viewport's on-sheet footprint from the view's crop box and scale, without
+        /// placing or regenerating. When trimming we know the annotation gap exactly; otherwise a
+        /// default pad stands in for bubbles/section heads so the estimate isn't grossly undersized.
+        /// </summary>
+        private static SheetLayoutPacker.Rect EstimateRect(View v, bool trim, double trimPaperFt)
         {
-            public ViewSheet      Sheet     { get; }
-            public string         Number    { get; }
-            public string         Name      { get; }
-            public List<Viewport> Viewports { get; }
-            public SheetJob(ViewSheet sheet, string number, string name, List<Viewport> viewports)
-            {
-                Sheet = sheet; Number = number; Name = name; Viewports = viewports;
-            }
+            double scale = v.Scale > 0 ? v.Scale : 1.0;
+            BoundingBoxXYZ cb = v.CropBox;
+            double wPaper = Math.Abs(cb.Max.X - cb.Min.X) / scale;
+            double hPaper = Math.Abs(cb.Max.Y - cb.Min.Y) / scale;
+            double pad = trim ? trimPaperFt : (DefaultAnnotationPadIn / 12.0);
+            return new SheetLayoutPacker.Rect(wPaper + 2 * pad, hPaper + 2 * pad);
         }
 
         /// <summary>Writes the Sheet Series value to the named sheet parameter; warns once if it's missing or read-only.</summary>

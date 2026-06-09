@@ -54,7 +54,11 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         private string _sheetSeries     = "";
         private string _seriesParamName = "Sheet Series";
 
+        private bool   _estimateMode  = false;
         private bool   _trimBubbles   = true;
+
+        private const string ModeAccurate = "Accurate (measured)";
+        private const string ModeEstimate = "Quick estimate (fast)";
         private double _trimInches    = 0.125;
         private double _marginTop     = 0.5;
         private double _marginBottom  = 0.5;
@@ -254,6 +258,19 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         {
             var outer = new StackPanel();
 
+            // ── Placement mode ────────────────────────────────────────────────
+            outer.Children.Add(SectionLabel("PLACEMENT MODE"));
+            var modeSelect = new LemoineSingleSelect();
+            modeSelect.Items = new List<string> { ModeAccurate, ModeEstimate };
+            modeSelect.SelectedItem = _estimateMode ? ModeEstimate : ModeAccurate;
+            modeSelect.SelectionChanged += s => { _estimateMode = s == ModeEstimate; OnValidationChanged(); };
+            outer.Children.Add(modeSelect);
+            outer.Children.Add(Note("Accurate measures every placed view (one regen per sheet, with progress). " +
+                                    "Quick estimate sizes views from their crop boxes for a fast, approximate " +
+                                    "layout — best for testing margins, gap and trim before a final accurate run."));
+
+            outer.Children.Add(Spaced(SeparatorLine(), 12));
+
             // Trim toggle
             var trim = new CheckBox
             {
@@ -340,7 +357,8 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 ? "—"
                 : $"\"{_sheetSeries}\" → param '{_seriesParamName}'",
             ["trim"]   = _trimBubbles ? $"On — {_trimInches:0.###}\" past crop (permanent)" : "Off",
-            ["layout"] = $"Auto best-fit  |  gap {_gapInches:0.###}\"  |  margins " +
+            ["layout"] = $"{(_estimateMode ? "Quick estimate" : "Accurate")}  |  auto best-fit  |  " +
+                         $"gap {_gapInches:0.###}\"  |  margins " +
                          $"T{_marginTop:0.##} B{_marginBottom:0.##} L{_marginLeft:0.##} R{_marginRight:0.##}\"",
         };
 
@@ -370,7 +388,9 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 case "S1": return _selectedParentIds.Count == 0 ? "—" : $"{_selectedParentIds.Count} selected";
                 case "S2": return string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock;
                 case "S3": return $"{_namingPattern}  |  start {_startingNumber}";
-                case "S4": return _trimBubbles ? $"Trim {_trimInches:0.###}\"  |  gap {_gapInches:0.###}\"" : $"No trim  |  gap {_gapInches:0.###}\"";
+                case "S4": return $"{(_estimateMode ? "Estimate" : "Accurate")}  |  " +
+                                  (_trimBubbles ? $"trim {_trimInches:0.###}\"" : "no trim") +
+                                  $"  |  gap {_gapInches:0.###}\"";
                 case "S5": return "Ready to run";
                 default:   return "—";
             }
@@ -393,6 +413,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             _handler.NumberSuffix    = _numberSuffix;
             _handler.SheetSeries     = _sheetSeries;
             _handler.SeriesParamName = _seriesParamName;
+            _handler.EstimateMode    = _estimateMode;
             _handler.TrimBubbles     = _trimBubbles;
             _handler.TrimInches      = _trimInches;
             _handler.MarginTopIn     = _marginTop;
@@ -421,6 +442,13 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         {
             el.Margin = new Thickness(0, top, 0, 4);
             return el;
+        }
+
+        private static Border SeparatorLine()
+        {
+            var b = new Border { Height = 1, BorderThickness = new Thickness(0) };
+            b.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            return b;
         }
 
         private static TextBlock Note(string text)
