@@ -21,5 +21,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 
         /// <summary>Anchor projected into the view 2D plane (fed to the layout core).</summary>
         public Core.Vec2 Anchor2d { get; set; }
+
+        /// <summary>The exact Group 2 element this clash hit (stamped on the marker), or
+        /// <see cref="ElementId.InvalidElementId"/> when the marker carries no target (legacy run).
+        /// When set, slab-edge mode dimensions to this element's edge instead of scanning.</summary>
+        public ElementId TargetElementId { get; set; } = ElementId.InvalidElementId;
+
+        /// <summary>Owning link instance of <see cref="TargetElementId"/>, or
+        /// <see cref="ElementId.InvalidElementId"/> when the clashed element lives in the host.</summary>
+        public ElementId TargetLinkInstanceId { get; set; } = ElementId.InvalidElementId;
     }
 }

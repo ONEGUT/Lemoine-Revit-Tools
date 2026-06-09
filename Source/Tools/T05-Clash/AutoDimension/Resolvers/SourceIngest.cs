@@ -120,6 +120,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 return null;
             }
 
+            // Every line of one clash carries the same stamped Group 2 target — read it once.
+            var tgt = ClashTagSchema.ReadTarget(lines[0]);
             return new SourceLine
             {
                 SourceKey = key,
@@ -127,6 +129,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 SourceRef = bestRef,
                 Anchor3d  = bestPt,
                 Anchor2d  = projection.To2D(bestPt),
+                TargetElementId      = tgt?.elementId      ?? ElementId.InvalidElementId,
+                TargetLinkInstanceId = tgt?.linkInstanceId ?? ElementId.InvalidElementId,
             };
         }
 
@@ -147,6 +151,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 unresolved.Add(new Core.UnresolvedTarget { SourceKey = key, Reason = "source cross-line carries no usable endpoint reference" });
                 return null;
             }
+            var tgt = ClashTagSchema.ReadTarget(dc);
             return new SourceLine
             {
                 SourceKey = key,
@@ -154,6 +159,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 SourceRef = sref,
                 Anchor3d  = anchor,
                 Anchor2d  = projection.To2D(anchor),
+                TargetElementId      = tgt?.elementId      ?? ElementId.InvalidElementId,
+                TargetLinkInstanceId = tgt?.linkInstanceId ?? ElementId.InvalidElementId,
             };
         }
 

@@ -44,12 +44,15 @@ namespace LemoineTools.Tools.Clash
 
         /// <summary>
         /// Stamps an element as a Lemoine clash marker, optionally with a per-clash
-        /// <paramref name="group"/> id so every line + region of one clash can be re-grouped later.
-        /// Stored as "LemoineCD" (un-grouped) or "LemoineCD|&lt;group&gt;". Must be called inside an
-        /// open transaction. Failures are logged (not thrown) so one un-taggable element never
-        /// aborts a marking run.
+        /// <paramref name="group"/> id (so every line + region of one clash can be re-grouped later)
+        /// and the exact Group 2 element it clashed (so the dimension pass can target that element's
+        /// edge). Stored as pipe-delimited segments: <c>LemoineCD|&lt;group&gt;|&lt;linkId&gt;:&lt;elemId&gt;</c>
+        /// (later segments omitted when absent; <c>linkId</c> 0 = host). Must be called inside an open
+        /// transaction. Failures are logged (not thrown) so one un-taggable element never aborts a run.
         /// </summary>
-        public static void StampTag(Element element, string? group = null)
+        public static void StampTag(
+            Element element, string? group = null,
+            ElementId? targetLinkId = null, ElementId? targetElemId = null)
         {
             if (element == null) return;
             try
@@ -57,8 +60,20 @@ namespace LemoineTools.Tools.Clash
                 var schema = GetOrCreateTagSchema();
                 var field  = ResolveTagField(schema);
                 if (field == null) { LemoineLog.Error("ClashTagSchema: stamp clash tag", new InvalidOperationException("schema has no usable string field")); return; }
+
+                string g = group ?? "";
+                bool hasTarget = targetElemId != null && targetElemId != ElementId.InvalidElementId;
+                string val = TagValue;
+                if (!string.IsNullOrEmpty(g) || hasTarget) val += "|" + g;       // keep segment positions
+                if (hasTarget)
+                {
+                    int linkRaw = (targetLinkId != null && targetLinkId != ElementId.InvalidElementId)
+                        ? targetLinkId.IntegerValue : 0;
+                    val += "|" + linkRaw + ":" + targetElemId!.IntegerValue;
+                }
+
                 var entity = new Entity(schema);
-                entity.Set(field, string.IsNullOrEmpty(group) ? TagValue : TagValue + "|" + group);
+                entity.Set(field, val);
                 element.SetEntity(entity);
             }
             catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: stamp clash tag", ex); }
@@ -103,10 +118,40 @@ namespace LemoineTools.Tools.Clash
                 var entity = element.GetEntity(schema);
                 if (entity == null || !entity.IsValid()) return "";
                 var v = entity.Get<string>(field) ?? "";
-                int bar = v.IndexOf('|');
-                return bar >= 0 ? v.Substring(bar + 1) : "";
+                // Segments: [0]=TagValue, [1]=group, [2]=target. Take only the group segment so an
+                // appended target segment never bleeds into the group key.
+                var parts = v.Split('|');
+                return parts.Length >= 2 ? parts[1] : "";
             }
             catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash group", ex); return ""; }
+        }
+
+        /// <summary>
+        /// The exact Group 2 element this marker clashed, stamped at marking, or null when the marker
+        /// carries no target (legacy markers, or non-clash tags). Returns the owning link instance id
+        /// (<see cref="ElementId.InvalidElementId"/> for a host element) and the element id. Read-only.
+        /// </summary>
+        public static (ElementId linkInstanceId, ElementId elementId)? ReadTarget(Element element)
+        {
+            if (element == null) return null;
+            try
+            {
+                var schema = GetOrCreateTagSchema();
+                var field  = ResolveTagField(schema);
+                if (schema == null || field == null) return null;
+                var entity = element.GetEntity(schema);
+                if (entity == null || !entity.IsValid()) return null;
+                var v = entity.Get<string>(field) ?? "";
+                var parts = v.Split('|');
+                if (parts.Length < 3) return null;                       // no target segment
+                int colon = parts[2].IndexOf(':');
+                if (colon < 0) return null;
+                if (!int.TryParse(parts[2].Substring(0, colon), out int linkRaw)) return null;
+                if (!int.TryParse(parts[2].Substring(colon + 1), out int elemRaw) || elemRaw <= 0) return null;
+                ElementId linkId = linkRaw > 0 ? new ElementId(linkRaw) : ElementId.InvalidElementId;
+                return (linkId, new ElementId(elemRaw));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash target", ex); return null; }
         }
 
         /// <summary>

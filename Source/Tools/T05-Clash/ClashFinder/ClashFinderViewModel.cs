@@ -284,14 +284,15 @@ namespace LemoineTools.Tools.Clash
 
             // Up-front slab pick — used in slab-edge mode; applies to every selected view.
             AddDivider(outer);
-            AddLabel(outer, "Slab to dimension to (slab-edge mode). Pick a host floor, or a floor inside a Revit link.");
+            AddLabel(outer, "Slab edge mode dimensions each clash to the EDGE of the exact element it hit "
+                          + "(the Group 2 element — slab, wall, etc.). Optionally override with one specific floor for every clash.");
             var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
             slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             slabStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             Action refreshSlab = () => slabStatus.Text = _pickedSlab == null
-                ? "No slab picked — scans all floors (nearest edge per axis)."
-                : $"Slab: {_pickedSlabName}";
+                ? "Default: dimensions to each clash's own Group 2 element edge (legacy markers fall back to nearest floor edge)."
+                : $"Override — every clash dimensions to: {_pickedSlabName}";
             refreshSlab();
 
             var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -385,7 +386,7 @@ namespace LemoineTools.Tools.Clash
                 if (_clearPrevious)    chips.Add("clear previous");
                 if (_showAllDocuments) chips.Add("all documents");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
-                    chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: all floors");
+                    chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
                 return chips.Count > 0 ? chips : null;
             }
         }

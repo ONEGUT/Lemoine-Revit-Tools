@@ -970,6 +970,11 @@ namespace LemoineTools.Tools.Clash
             // re-group the 2–4 lines back into a single clash and dimension it once (not per line).
             string clashGroup = Guid.NewGuid().ToString("N");
 
+            // The exact Group 2 element this clash hit, stamped on every marker so the dimension pass
+            // can dimension straight to that element's edge (linked slabs, walls — anything in Group 2).
+            ElementId tgtLink = clash.Group2.LinkInstance?.Id ?? ElementId.InvalidElementId;
+            ElementId tgtElem = clash.Group2.Id;
+
             // ── FilledRegion (circular) ───────────────────────────────────────
             bool fallback   = !clash.Group1.RuleColored;
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
@@ -991,7 +996,7 @@ namespace LemoineTools.Tools.Clash
                         ctr, view.RightDirection.Normalize(), view.UpDirection.Normalize(), view.ViewDirection.Normalize(),
                         rect, radius, mHalfW, mHalfH, clash.Group1.WidthDir, clash.Group1.HeightDir);
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
-                    ClashTagSchema.StampTag(fr, clashGroup);
+                    ClashTagSchema.StampTag(fr, clashGroup, tgtLink, tgtElem);
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region", ex); }
             }
@@ -999,16 +1004,16 @@ namespace LemoineTools.Tools.Clash
             // ── Cross lines (tagged so the discovery pass can re-find them) ────
             if (_opts.DimTarget == "Centre")
             {
-                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0), clashGroup);
-                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup);
-                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0), clashGroup);
-                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armLen, 0), clashGroup);
+                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0), clashGroup, tgtLink, tgtElem);
+                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup, tgtLink, tgtElem);
+                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0), clashGroup, tgtLink, tgtElem);
+                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armLen, 0), clashGroup, tgtLink, tgtElem);
                 return hLeft != null && hRight != null && vBot != null && vTop != null;
             }
             else
             {
-                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup);
-                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup);
+                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup, tgtLink, tgtElem);
+                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup, tgtLink, tgtElem);
                 return hLine != null && vLine != null;
             }
         }
@@ -1067,6 +1072,10 @@ namespace LemoineTools.Tools.Clash
             // carry the group through to its placed tag.
             string clashGroup = Guid.NewGuid().ToString("N");
 
+            // The exact Group 2 element this clash hit — stamped so the dimension pass can target it.
+            ElementId tgtLink = clash.Group2.LinkInstance?.Id ?? ElementId.InvalidElementId;
+            ElementId tgtElem = clash.Group2.Id;
+
             // ── FilledRegion (circular, in the view plane) ────────────────────
             bool fallback   = !clash.Group1.RuleColored;
             string hexColor = (clash.Group1.ColorHex ?? "#888888").TrimStart('#').ToUpperInvariant();
@@ -1087,7 +1096,7 @@ namespace LemoineTools.Tools.Clash
                         cp, right, up, normal,
                         rect, radius, mHalfW, mHalfH, clash.Group1.WidthDir, clash.Group1.HeightDir);
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
-                    ClashTagSchema.StampTag(fr, clashGroup);
+                    ClashTagSchema.StampTag(fr, clashGroup, tgtLink, tgtElem);
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region (vertical)", ex); }
             }
@@ -1095,7 +1104,7 @@ namespace LemoineTools.Tools.Clash
             // ── Vertical line spanning the marker top→bottom, tagged for the spot-elevation pass ──
             var bottom = cp.Subtract(up.Multiply(mHalfH));
             var top    = cp.Add(up.Multiply(mHalfH));
-            var line   = CreateLine(doc, view, lineStyleId, bottom, top, clashGroup);
+            var line   = CreateLine(doc, view, lineStyleId, bottom, top, clashGroup, tgtLink, tgtElem);
             return line != null;
         }
 
@@ -1145,11 +1154,13 @@ namespace LemoineTools.Tools.Clash
         }
 
         // ── Detail line creation (tagged) ─────────────────────────────────────
-        private static DetailCurve? CreateLine(Document doc, View view, ElementId lineStyleId, XYZ start, XYZ end, string group)
+        private static DetailCurve? CreateLine(
+            Document doc, View view, ElementId lineStyleId, XYZ start, XYZ end, string group,
+            ElementId targetLinkId, ElementId targetElemId)
         {
             var line = Line.CreateBound(start, end);
             var dc   = doc.Create.NewDetailCurve(view, line);
-            ClashTagSchema.StampTag(dc, group);
+            ClashTagSchema.StampTag(dc, group, targetLinkId, targetElemId);
 
             if (lineStyleId != ElementId.InvalidElementId)
             {
