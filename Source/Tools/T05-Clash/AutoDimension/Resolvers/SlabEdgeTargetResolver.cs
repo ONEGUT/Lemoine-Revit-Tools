@@ -36,7 +36,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public Core.Vec2 SegB;
             public double Area;
             public string Src = "";      // diagnostic label: "host" or "link <id>"
-            public string Key = "";
+            public string Key = "";      // unique per face (tie-break + ownership stamp)
+            public string ElemKey = "";  // identity of the owning element (no face index) — chain grouping
         }
 
         private sealed class Candidate
@@ -49,6 +50,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public Core.Vec2 TargetPoint;
             public string Src = "";       // diagnostic label, copied from the winning face
             public string Key = "";
+            public string ElemKey = "";   // owning-element identity, copied from the winning face
         }
 
         // Faces whose along-axis offset matches this closely resolve to the same edge location
@@ -109,9 +111,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 // projDist when the source sits within the edge's perpendicular span.
                 double radialDist = DistanceToSegment(source.Anchor2d, f.SegA, f.SegB);
 
-                // The cap bounds how FAR the edge is, not how long the dimension is — an edge that
-                // is genuinely near is dimensioned however long that turns out to be.
-                if (radialDist > ctx.Config.MaxDistanceFt) continue;
+                // Scan mode caps distance to reject unrelated floors; the targeted path trusts the
+                // explicitly-clashed element, so its edge is measured however far away it is (a large
+                // slab plate can have its nearest edge well beyond the scan cap).
+                if (!targeted && radialDist > ctx.Config.MaxDistanceFt) continue;
 
                 double axisDevDeg = Math.Acos(Math.Min(1.0, axisDot)) * 180.0 / Math.PI;
                 double score = radialDist
@@ -128,6 +131,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     TargetPoint = source.Anchor2d + axis * delta,
                     Src         = f.Src,
                     Key         = f.Key,
+                    ElemKey     = f.ElemKey,
                 });
             }
 
@@ -196,7 +200,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 }
             }
 
-            return ResolvedTarget.Ok(best.Ref, best.TargetPoint, best.Key);
+            return ResolvedTarget.Ok(best.Ref, best.TargetPoint, best.Key, best.ElemKey);
         }
 
         /// <summary>Builds the axis-independent candidate-face list once per view (per context).</summary>
@@ -333,8 +337,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                       + $"{stats.Planar} planar face(s), {stats.Vertical} vertical, kept {stats.Kept} "
                       + $"(dropped {stats.NullRef} null-ref, {stats.ConvFail} link-conv-fail).", "info");
 
-            _elemCache[key] = list;
-            return list;
+            // No usable edge on the clashed element at all (e.g. a round column or face-less family in
+            // Group 2) → null lets the nearest-edge scan fall back rather than hard-failing the clash.
+            // A non-empty list is trusted exactly (never substituted with an unrelated floor).
+            var resolved = list.Count > 0 ? list : null;
+            _elemCache[key] = resolved;
+            return resolved;
         }
 
         /// <summary>
@@ -382,6 +390,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     Core.Vec2 origin2d = ctx.Projection.To2D(xform.OfPoint(pf.Origin));
                     ProjectSegment(pf, xform, ctx.Projection, origin2d, out Core.Vec2 segA, out Core.Vec2 segB);
 
+                    string elemKey = $"{keyPrefix}{(link != null ? link.Id.IntegerValue + ":" : "")}{elemIdInt}";
                     list.Add(new FaceCand
                     {
                         Ref      = r,
@@ -391,7 +400,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                         SegB     = segB,
                         Area     = pf.Area,
                         Src      = srcLabel,
-                        Key      = $"{keyPrefix}{(link != null ? link.Id.IntegerValue + ":" : "")}{elemIdInt}:{list.Count}",
+                        Key      = $"{elemKey}:{list.Count}",
+                        ElemKey  = elemKey,
                     });
                     stats.Kept++;
                 }

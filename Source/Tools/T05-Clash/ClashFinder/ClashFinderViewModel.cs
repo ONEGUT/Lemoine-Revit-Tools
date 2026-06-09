@@ -272,19 +272,18 @@ namespace LemoineTools.Tools.Clash
             destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
             destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay
                                     : _dimTargetType == "ManualDatum" ? ManualDisplay : GridDisplay;
-            destPicker.SelectionChanged += sel =>
-            {
-                _dimTargetType = sel == SlabDisplay ? "SlabEdge"
-                               : sel == ManualDisplay ? "ManualDatum" : "Grid";
-                Fire();
-            };
             outer.Children.Add(destPicker);
-            if (_dimTargetType == "ManualDatum")
-                AddDim(outer, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
 
-            // Up-front slab pick — used in slab-edge mode; applies to every selected view.
-            AddDivider(outer);
-            AddLabel(outer, "Slab edge mode dimensions each clash to the EDGE of the exact element it hit "
+            // Manual-datum note — shown only for that destination.
+            var manualSection = new StackPanel();
+            AddDim(manualSection, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
+            outer.Children.Add(manualSection);
+
+            // Slab-edge config — shown only for that destination. Default targets each clash's own
+            // Group 2 element; the buttons override every clash with one specific floor.
+            var slabSection = new StackPanel();
+            AddDivider(slabSection);
+            AddLabel(slabSection, "Slab edge mode dimensions each clash to the EDGE of the exact element it hit "
                           + "(the Group 2 element — slab, wall, etc.). Optionally override with one specific floor for every clash.");
             var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
             slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -307,8 +306,27 @@ namespace LemoineTools.Tools.Clash
             slabRow.Children.Add(pickBtn);
             slabRow.Children.Add(pickLinkBtn);
             slabRow.Children.Add(clearBtn);
-            outer.Children.Add(slabRow);
-            outer.Children.Add(slabStatus);
+            slabSection.Children.Add(slabRow);
+            slabSection.Children.Add(slabStatus);
+            outer.Children.Add(slabSection);
+
+            // Reveal only the config relevant to the chosen destination (Grid shows neither), and keep
+            // it in sync when the destination changes — the step content is built once, so toggle here.
+            Action syncDestSections = () =>
+            {
+                manualSection.Visibility = _dimTargetType == "ManualDatum"
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                slabSection.Visibility = _dimTargetType == "SlabEdge"
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            };
+            destPicker.SelectionChanged += sel =>
+            {
+                _dimTargetType = sel == SlabDisplay ? "SlabEdge"
+                               : sel == ManualDisplay ? "ManualDatum" : "Grid";
+                syncDestSections();
+                Fire();
+            };
+            syncDestSections();
 
             AddDivider(outer);
             AddStepperRow(outer,

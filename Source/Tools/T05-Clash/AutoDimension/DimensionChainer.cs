@@ -16,6 +16,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         public Reference TargetRef { get; set; } = null!;
         public Core.Vec2 Target2d { get; set; }
         public string TargetKey { get; set; } = "";
+
+        /// <summary>Identity of the target ELEMENT (not the face). Chains are grouped by this so a run
+        /// spanning two different elements (e.g. two slabs across a building line) yields one chain per
+        /// element rather than force-voting everything onto one edge. Empty = grid/manual (no split).</summary>
+        public string TargetGroupKey { get; set; } = "";
+
         public Core.TargetType TargetType { get; set; }
 
         /// <summary>Identity of the physical run this clash belongs to (from
@@ -51,12 +57,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             var result = new Result();
             if (items == null || items.Count == 0) return result;
 
-            // Group by run, then by measurement axis. Each (run, axis) group becomes either a
-            // chained string (axis runs along the run) or one representative dimension (axis runs
-            // across the run). Deterministic ordering throughout.
+            // Group by run, then by measurement axis, then by target element. Each (run, axis, element)
+            // group becomes either a chained string (axis runs along the run) or one representative
+            // dimension (axis runs across the run). Splitting on the target element keeps a chain to a
+            // single element; an empty group key (grid/manual) leaves their run-wide chaining intact.
+            // Deterministic ordering throughout.
             var byKey = items
-                .GroupBy(it => (it.RunId, AxisTag(it.Axis)))
-                .OrderBy(g => g.Key.Item1, StringComparer.Ordinal).ThenBy(g => g.Key.Item2, StringComparer.Ordinal);
+                .GroupBy(it => (it.RunId, AxisTag(it.Axis), it.TargetGroupKey))
+                .OrderBy(g => g.Key.Item1, StringComparer.Ordinal)
+                .ThenBy(g => g.Key.Item2, StringComparer.Ordinal)
+                .ThenBy(g => g.Key.Item3, StringComparer.Ordinal);
 
             foreach (var g in byKey)
             {
