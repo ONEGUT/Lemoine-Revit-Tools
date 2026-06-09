@@ -388,15 +388,22 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         /// <summary>Writes the Sheet Series value to the named sheet parameter; warns once if it's missing or read-only.</summary>
         private void WriteSeries(ViewSheet sheet, ref bool warned)
         {
-            var p = sheet.LookupParameter(SeriesParamName);
-            if (p == null || p.IsReadOnly || p.StorageType != StorageType.String)
+            // LookupParameter returns only the FIRST name match and silently picks the wrong one
+            // when duplicates exist (a shared "Sheet Series" is rarely the first). GetParameters
+            // returns all matches, so prefer the shared, writable, text one — else any writable text.
+            var matches = sheet.GetParameters(SeriesParamName);
+            Parameter? p =
+                matches.FirstOrDefault(x => x != null && !x.IsReadOnly && x.StorageType == StorageType.String && x.IsShared)
+                ?? matches.FirstOrDefault(x => x != null && !x.IsReadOnly && x.StorageType == StorageType.String);
+
+            if (p == null)
             {
                 if (!warned)
                 {
                     warned = true;
-                    Log($"[WARN] Sheet parameter '{SeriesParamName}' not found or not writable — " +
-                        "series value skipped.", "warn");
-                    LemoineLog.Warn("PlaceDependentViews", $"Series param '{SeriesParamName}' missing/not writable.");
+                    Log($"[WARN] No writable text sheet parameter named '{SeriesParamName}' — series value skipped.", "warn");
+                    LemoineLog.Warn("PlaceDependentViews",
+                        $"Series param '{SeriesParamName}' not found as a writable text parameter on sheets.");
                 }
                 return;
             }
