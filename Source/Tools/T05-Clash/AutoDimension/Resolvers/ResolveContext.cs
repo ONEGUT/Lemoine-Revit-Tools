@@ -68,19 +68,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
         public Core.Vec2 TargetPoint2d { get; set; }
         public string TargetKey { get; set; } = "";
 
-        /// <summary>Identity of the target ELEMENT (not the specific face), used by the chainer to keep
-        /// a chained string to one element: same-element faces merge, different elements never chain
-        /// together. Empty = no element grouping (grid / manual datum keep their run-wide chaining).</summary>
-        public string TargetGroupKey { get; set; } = "";
-
         /// <summary>Set when resolution failed outright (no candidate).</summary>
         public Core.UnresolvedTarget? Unresolved { get; set; }
 
         /// <summary>Set when the top two candidates scored within threshold — do not guess.</summary>
         public Core.AmbiguousTarget? Ambiguity { get; set; }
 
-        public static ResolvedTarget Ok(Reference r, Core.Vec2 pt, string key, string groupKey = "") =>
-            new ResolvedTarget { Success = true, TargetRef = r, TargetPoint2d = pt, TargetKey = key, TargetGroupKey = groupKey };
+        public static ResolvedTarget Ok(Reference r, Core.Vec2 pt, string key) =>
+            new ResolvedTarget { Success = true, TargetRef = r, TargetPoint2d = pt, TargetKey = key };
 
         public static ResolvedTarget Fail(string sourceKey, Core.TargetType t, string reason) =>
             new ResolvedTarget

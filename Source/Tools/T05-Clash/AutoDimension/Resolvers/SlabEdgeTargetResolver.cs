@@ -36,8 +36,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public Core.Vec2 SegB;
             public double Area;
             public string Src = "";      // diagnostic label: "host" or "link <id>"
-            public string Key = "";      // unique per face (tie-break + ownership stamp)
-            public string ElemKey = "";  // identity of the owning element (no face index) — chain grouping
+            public string Key = "";
         }
 
         private sealed class Candidate
@@ -50,7 +49,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             public Core.Vec2 TargetPoint;
             public string Src = "";       // diagnostic label, copied from the winning face
             public string Key = "";
-            public string ElemKey = "";   // owning-element identity, copied from the winning face
         }
 
         // Faces whose along-axis offset matches this closely resolve to the same edge location
@@ -131,7 +129,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     TargetPoint = source.Anchor2d + axis * delta,
                     Src         = f.Src,
                     Key         = f.Key,
-                    ElemKey     = f.ElemKey,
                 });
             }
 
@@ -200,7 +197,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 }
             }
 
-            return ResolvedTarget.Ok(best.Ref, best.TargetPoint, best.Key, best.ElemKey);
+            return ResolvedTarget.Ok(best.Ref, best.TargetPoint, best.Key);
         }
 
         /// <summary>Builds the axis-independent candidate-face list once per view (per context).</summary>
@@ -390,7 +387,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     Core.Vec2 origin2d = ctx.Projection.To2D(xform.OfPoint(pf.Origin));
                     ProjectSegment(pf, xform, ctx.Projection, origin2d, out Core.Vec2 segA, out Core.Vec2 segB);
 
-                    string elemKey = $"{keyPrefix}{(link != null ? link.Id.IntegerValue + ":" : "")}{elemIdInt}";
                     list.Add(new FaceCand
                     {
                         Ref      = r,
@@ -400,8 +396,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                         SegB     = segB,
                         Area     = pf.Area,
                         Src      = srcLabel,
-                        Key      = $"{elemKey}:{list.Count}",
-                        ElemKey  = elemKey,
+                        Key      = $"{keyPrefix}{(link != null ? link.Id.IntegerValue + ":" : "")}{elemIdInt}:{list.Count}",
                     });
                     stats.Kept++;
                 }

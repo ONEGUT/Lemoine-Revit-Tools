@@ -144,7 +144,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                             TargetRef   = res.TargetRef!,
                             Target2d    = res.TargetPoint2d,
                             TargetKey   = res.TargetKey,
-                            TargetGroupKey = res.TargetGroupKey,
                             TargetType  = ttEnum,
                             RunId       = run?.RunId ?? ("solo|" + src.SourceKey),
                             RunLongAxis = run?.LongAxis ?? new Core.Vec2(1, 0),
