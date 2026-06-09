@@ -221,6 +221,8 @@ Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal`
 
 `view.ViewTemplateId = templateId` must be assigned **before** `SetSectionBox()` or any crop-box operation. The template assignment can reset view geometry; setting it first lets the subsequent programmatic geometry override it.
 
+Assigning `view.ViewTemplateId` a template whose `ViewType` differs from the view's **throws** (it does not silently no-op), and a **dependent** view cannot carry its own template at all. When applying templates across mixed view types, either filter to the matching type or wrap the assignment in try/catch and skip-and-log the mismatch (deleting any duplicate you created for it).
+
 ### Annotations in section/elevation views live in the view's cut plane
 
 A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world XY at `z=0`, but in a **section or elevation** the boundary must lie in the view's vertical cut plane. Build geometry from `view.RightDirection` / `view.UpDirection`, projecting the world point onto the plane by dropping its `view.ViewDirection` component (`p - ((p-origin)·n) n`). The plan-view world-XY trick silently produces empty/garbage regions in vertical views. A clash marker that must orient to an element's run (e.g. a rectangular duct) projects the element's world width/height axes into that same right/up basis.
@@ -238,6 +240,8 @@ A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world 
 ## LemoineMultiSelectTabs Contract
 
 `SetGroups` fires `SelectionChanged` once at the end of setup. Any ViewModel that mirrors tab selection into a private field must subscribe to `SelectionChanged` **before** calling `SetGroups` — that callback is the only mechanism that populates the mirror field on initialisation.
+
+For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups` rather than hand-rolling radios or coercing a multi-select down to one: checking an item then clears any prior selection (across all group tabs) and hides the per-group "All" row. Defaults to `false` (multi-select), so existing pickers are unaffected.
 
 ---
 
