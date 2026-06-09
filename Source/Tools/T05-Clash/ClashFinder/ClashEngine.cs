@@ -92,12 +92,56 @@ namespace LemoineTools.Tools.Clash
             public BoundingBoxXYZ OverlapBBox = null!;
         }
 
-        // ── Entry point ───────────────────────────────────────────────────────
+        // ── View-independent detection output ─────────────────────────────────
+        /// <summary>What <see cref="Detect"/> produces once and <see cref="PlaceInView"/> consumes per
+        /// view: the clashes (model-wide) plus the per-view gating data and marking context. Lets a
+        /// multi-view run scan the model only once and place markers view-by-view.</summary>
+        public sealed class ClashDetection
+        {
+            internal List<ClashResult> Clashes = new List<ClashResult>();
+            internal ElementId LineStyleId = ElementId.InvalidElementId;
+            internal List<double> LevelElevs = new List<double>();
+            internal double StoreyMarginFt;
+            internal double ToleranceFt;
+            /// <summary>True when detection could not run (a group produced no elements).</summary>
+            public bool Failed { get; internal set; }
+            /// <summary>Distinct clashes detected, model-wide.</summary>
+            public int ClashCount => Clashes.Count;
+        }
+
+        /// <summary>Per-view marker placement tally.</summary>
+        public struct PlacementResult { public int Markers; public int Fails; public int Skipped; }
+
+        // ── Entry point (detect once, then place in every view) ───────────────
         public ClashEngineResult Run(
             Document doc, IList<ElementId> viewIds,
             ClashGroupSpec group1Spec, ClashGroupSpec group2Spec)
         {
             var result = new ClashEngineResult();
+            var det = Detect(doc, group1Spec, group2Spec);
+            result.Clashes = det.ClashCount;
+            if (det.Failed) { result.Fails++; return result; }
+            if (det.ClashCount == 0) return result;
+
+            Log($"Placing markers for {det.ClashCount} clash(es) across {viewIds.Count} view(s)…", "info");
+            var regionTypeCache = new Dictionary<string, ElementId?>();
+            foreach (var viewId in viewIds)
+            {
+                if (!(doc.GetElement(viewId) is View view)) continue;
+                var pr = PlaceInView(doc, view, det, regionTypeCache);
+                result.Markers += pr.Markers;
+                result.Fails   += pr.Fails;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Scans both groups and finds solid intersections — view-independent, no element changes,
+        /// safe outside a transaction. Logs the group counts, the no-elements / clash-limit cases.
+        /// </summary>
+        public ClashDetection Detect(Document doc, ClashGroupSpec group1Spec, ClashGroupSpec group2Spec)
+        {
+            var det = new ClashDetection();
 
             // 1. Source documents (host + all loaded links)
             var sources = new List<(Document doc, RevitLinkInstance? link, Transform tx)>
@@ -121,99 +165,76 @@ namespace LemoineTools.Tools.Clash
             if (group1Elements.Count == 0)
             {
                 Log("Group 1 produced no elements — check its mode, selection, and source documents.", "fail");
-                result.Fails++; return result;
+                det.Failed = true; return det;
             }
             if (group2Elements.Count == 0)
             {
                 Log("Group 2 produced no elements — check its mode, selection, and source documents.", "fail");
-                result.Fails++; return result;
+                det.Failed = true; return det;
             }
 
             // 3. Find clashes
             int maxClashes = _opts.MaxClashes > 0 ? _opts.MaxClashes : 500;
-            double toleranceFt = _opts.ToleranceMm / 304.8;
-            var clashes  = FindClashes(group1Elements, group2Elements, maxClashes);
-            bool hitLimit = clashes.Count >= maxClashes;
-            result.Clashes = clashes.Count;
+            det.ToleranceFt = _opts.ToleranceMm / 304.8;
+            det.Clashes = FindClashes(group1Elements, group2Elements, maxClashes);
+            bool hitLimit = det.Clashes.Count >= maxClashes;
 
-            if (clashes.Count == 0)
+            if (det.Clashes.Count == 0)
             {
                 Log("No solid intersections detected between the two groups.", "info");
-                return result;
+                return det;
             }
 
             Log(hitLimit
-                ? $"Found {clashes.Count} clash(es) — limit of {maxClashes} reached. Increase Max Clashes to detect more."
-                : $"Found {clashes.Count} clash(es).", "info");
+                ? $"Found {det.Clashes.Count} clash(es) — limit of {maxClashes} reached. Increase Max Clashes to detect more."
+                : $"Found {det.Clashes.Count} clash(es).", "info");
 
-            int unruled = clashes.Count(c => !c.Group1.RuleColored);
+            int unruled = det.Clashes.Count(c => !c.Group1.RuleColored);
             if (unruled > 0)
                 Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {_opts.FallbackColorHex} with a solid fill.", "info");
 
-            // 4. Place markers (inside the caller's transaction)
-            ElementId lineStyleId = ResolveLineStyleId(doc);
-            var regionTypeCache = new Dictionary<string, ElementId?>();
-
-            // Per-view world box, computed once. A clash is drawn in a view only when its overlap
-            // region falls inside that view's volume — crop box in XY, a storey-height band in Z —
-            // so other levels' clashes (common in identical stacked-level models) don't bleed onto
-            // this view. Overlap bboxes are already in host world coordinates (SolidWorldBBox), so
-            // the gate is link-agnostic. Levels are resolved once for the storey-band lookup.
-            var levelElevs = new FilteredElementCollector(doc)
+            // Per-view gating context, resolved once. A clash is drawn in a view only when its overlap
+            // region falls inside that view's volume — crop box in XY, a storey-height band in Z — so
+            // other levels' clashes (common in identical stacked-level models) don't bleed onto this
+            // view. Overlap bboxes are already in host world coordinates, so the gate is link-agnostic.
+            det.LineStyleId    = ResolveLineStyleId(doc);
+            det.LevelElevs     = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level)).Cast<Level>()
                 .Select(l => l.Elevation).OrderBy(z => z).ToList();
-            double storeyMarginFt = Math.Max(0.0, _opts.StoreyMarginMm) / 304.8;
+            det.StoreyMarginFt = Math.Max(0.0, _opts.StoreyMarginMm) / 304.8;
+            return det;
+        }
 
-            var viewBoxes     = new Dictionary<ElementId, (BoundingBoxXYZ box, bool gated)>();
-            var skippedByView = new Dictionary<ElementId, int>();
-            foreach (var viewId in viewIds)
+        /// <summary>
+        /// Places the detected clashes' markers in ONE view, inside the caller's open transaction.
+        /// Gated by the view's world box so other levels' / off-crop clashes don't bleed in. Returns
+        /// this view's tally. The region-type cache is shared across views to reuse filled-region types.
+        /// </summary>
+        public PlacementResult PlaceInView(
+            Document doc, View view, ClashDetection det, Dictionary<string, ElementId?> regionTypeCache)
+        {
+            var pr = new PlacementResult();
+            if (det == null || det.Failed || det.Clashes.Count == 0) return pr;
+
+            bool gated = TryGetViewWorldBox(view, det.LevelElevs, det.StoreyMarginFt, out BoundingBoxXYZ box);
+            foreach (var clash in det.Clashes)
             {
-                if (!(doc.GetElement(viewId) is View v)) continue;
-                bool gated = TryGetViewWorldBox(v, levelElevs, storeyMarginFt, out BoundingBoxXYZ box);
-                viewBoxes[viewId] = (box, gated);
-            }
-
-            Log($"Placing markers for {clashes.Count} clash(es) across {viewIds.Count} view(s)…", "info");
-            int markedClash = 0;
-            foreach (var clash in clashes)
-            {
-                if (++markedClash % 200 == 0)
-                    Log($"  …{markedClash}/{clashes.Count} clash(es) marked", "info");
-
-                foreach (var viewId in viewIds)
+                if (gated && !BBoxOverlapTol(clash.OverlapBBox, box, det.ToleranceFt)) { pr.Skipped++; continue; }
+                try
                 {
-                    var view = doc.GetElement(viewId) as View;
-                    if (view == null) continue;
-
-                    if (viewBoxes.TryGetValue(viewId, out var vb) && vb.gated
-                        && !BBoxOverlapTol(clash.OverlapBBox, vb.box, toleranceFt))
-                    {
-                        skippedByView.TryGetValue(viewId, out int s);
-                        skippedByView[viewId] = s + 1;
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (CreateClashGraphics(doc, view, clash, lineStyleId, toleranceFt, regionTypeCache))
-                            result.Markers++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Error in '{view.Name}': {ex.Message}", "fail");
-                        result.Fails++;
-                    }
+                    if (CreateClashGraphics(doc, view, clash, det.LineStyleId, det.ToleranceFt, regionTypeCache))
+                        pr.Markers++;
+                }
+                catch (Exception ex)
+                {
+                    Log($"Error in '{view.Name}': {ex.Message}", "fail");
+                    pr.Fails++;
                 }
             }
 
-            foreach (var kv in skippedByView)
-            {
-                if (kv.Value <= 0) continue;
-                var view = doc.GetElement(kv.Key) as View;
-                Log($"View '{view?.Name ?? kv.Key.ToString()}': {kv.Value} clash(es) outside the view volume — skipped.", "info");
-            }
-
-            return result;
+            if (pr.Skipped > 0)
+                Log($"View '{view.Name}': {pr.Skipped} clash(es) outside the view volume — skipped.", "info");
+            return pr;
         }
 
         // ── View-volume gate (keeps other levels' / off-crop clashes off this view) ───
