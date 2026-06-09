@@ -269,7 +269,11 @@ namespace LemoineTools.Tools.LinkViews
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => "Each selected view is duplicated once. Copies whose name already exists are skipped; " +
             "a view that does not support the chosen duplicate mode is reported as failed.";
-        public string?        ReviewWarning => null;
+        public string?        ReviewWarning =>
+            (_namePattern != null && _namePattern.Trim() == "{ViewName}")
+                ? "Name pattern resolves to each view's own name — every copy would collide with its source and be skipped. " +
+                  "Add a suffix or token to differentiate."
+                : null;
 
         // ═══════════════════════════════════════════════════════════════
         // IsValid / SummaryFor

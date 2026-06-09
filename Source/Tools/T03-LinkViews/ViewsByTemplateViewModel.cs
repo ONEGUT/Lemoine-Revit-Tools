@@ -293,7 +293,12 @@ namespace LemoineTools.Tools.LinkViews
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => "Each selected view is duplicated (with detailing) once per template. " +
             "Pairs whose name already exists are skipped; a template that cannot apply to a view's type is reported as failed.";
-        public string?        ReviewWarning => null;
+        public string?        ReviewWarning =>
+            (_selectedViewIds.Count > 0 && _selectedTemplateIds.Count > 1
+             && !_namePattern.Contains("{TemplateName}"))
+                ? "Name pattern has no {TemplateName} token — every template resolves to the same name per view, " +
+                  "so only the first copy is created and the rest are skipped. Add {TemplateName} to differentiate."
+                : null;
 
         // ═══════════════════════════════════════════════════════════════
         // IsValid / SummaryFor
