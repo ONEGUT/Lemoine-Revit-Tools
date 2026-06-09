@@ -877,12 +877,15 @@ namespace LemoineTools.Tools.AutoFilters
 
         /// <summary>
         /// Reads the exact filterable-category list from the open document and stores it as the
-        /// runtime snapshot the category pickers read from. Must be called on the Revit main
-        /// thread (it queries the Revit API) before the window thread that builds the picker
-        /// starts. Only BuiltInCategory-backed categories are captured — the filter engine
-        /// persists categories as OST_* strings, so non-builtin custom subcategories (which it
-        /// cannot store) are skipped. On any failure the snapshot is left untouched and the
-        /// hardcoded fallback continues to be used.
+        /// runtime snapshot the category pickers read from, mirroring what Revit shows in its own
+        /// "Edit Filters → Categories" tree: real display names, and real parent→sub-category
+        /// nesting taken from each <see cref="Category.Parent"/> (not a hand-curated grouping).
+        ///
+        /// Must be called on the Revit main thread (it queries the Revit API) before the window
+        /// thread that builds the picker starts. Only BuiltInCategory-backed categories are
+        /// captured — the filter engine persists categories as OST_* strings, so non-builtin
+        /// custom subcategories (which it cannot store) are skipped. On any failure the snapshot
+        /// is left untouched and the hardcoded fallback continues to be used.
         /// </summary>
         public static void CaptureFilterableCategories(Document doc)
         {
@@ -890,52 +893,113 @@ namespace LemoineTools.Tools.AutoFilters
             try
             {
                 var ids = ParameterFilterUtilities.GetAllFilterableCategories();
-                var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                // The set of filterable categories that are BuiltInCategory-backed (negative id).
+                // Parent linkage is only honoured when the parent is itself in this set.
+                var filterable = new HashSet<long>();
                 foreach (var id in ids)
                 {
-                    // BuiltInCategory ids are negative; positive ids are project-defined custom
-                    // subcategories the OST_*-based filter engine cannot persist — skip them.
                     long raw = id.Value;
-                    if (raw >= 0) continue;
-                    var bic = (BuiltInCategory)(int)raw;
-                    if (bic == BuiltInCategory.INVALID) continue;
+                    if (raw < 0 && (BuiltInCategory)(int)raw != BuiltInCategory.INVALID)
+                        filterable.Add(raw);
+                }
+                if (filterable.Count == 0) return;
+
+                // Resolve each filterable category to its real Revit name and real parent.
+                var nodes      = new List<CategoryNode>();
+                var nameByRaw  = new Dictionary<long, string>();
+                foreach (var id in ids)
+                {
+                    long raw = id.Value;
+                    if (!filterable.Contains(raw)) continue;
 
                     Category? cat = null;
                     try { cat = Category.GetCategory(doc, id); }
                     catch (Exception __cex) { LemoineLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
+                    if (cat == null) continue;
 
-                    string name = cat?.Name ?? string.Empty;
+                    string name = cat.Name;
                     if (string.IsNullOrWhiteSpace(name)) continue;
 
-                    // First writer wins so the displayed name stays stable if two ids share a name.
-                    if (!map.ContainsKey(name)) map[name] = bic.ToString();
+                    long? parentRaw = null;
+                    try
+                    {
+                        var p = cat.Parent;
+                        if (p != null) parentRaw = p.Id.Value;
+                    }
+                    catch (Exception __pex) { LemoineLog.Swallowed("CaptureFilterableCategories.Parent", __pex); }
+                    // Only nest under a parent that is itself a filterable, builtin category.
+                    if (parentRaw.HasValue && !filterable.Contains(parentRaw.Value)) parentRaw = null;
+
+                    nodes.Add(new CategoryNode(raw, ((BuiltInCategory)(int)raw).ToString(), name, parentRaw));
+                    nameByRaw[raw] = name;
                 }
+                if (nodes.Count == 0) return;
 
-                if (map.Count == 0) return;
-
-                // Keep the curated parent→child caret grouping, but restrict it to parents and
-                // children that are actually present in this document's filterable set.
-                var present = new HashSet<string>(map.Keys, StringComparer.Ordinal);
-                var subs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-                foreach (var kv in DefaultCategorySubcategories)
+                // Disambiguate duplicate Revit names (e.g. an "Insulation" sub-category under two
+                // different parents) by qualifying with the parent name, so each display token maps
+                // to exactly one OST string. Names that are unique stay verbatim.
+                var nameCounts = nodes.GroupBy(n => n.Name, StringComparer.Ordinal)
+                                      .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+                var displayByRaw = new Dictionary<long, string>();
+                var map          = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var n in nodes)
                 {
-                    if (!present.Contains(kv.Key)) continue;
-                    var kids = kv.Value.Where(present.Contains).ToList();
-                    if (kids.Count > 0) subs[kv.Key] = kids;
+                    string display = n.Name;
+                    if (nameCounts[n.Name] > 1 && n.ParentRaw.HasValue &&
+                        nameByRaw.TryGetValue(n.ParentRaw.Value, out var pn))
+                        display = n.Name + " (" + pn + ")";
+
+                    // Final guard against any residual collision so map keys stay unique.
+                    if (map.ContainsKey(display) && map[display] != n.Ost)
+                        display = display + " [" + n.Ost + "]";
+
+                    displayByRaw[n.Raw] = display;
+                    if (!map.ContainsKey(display)) map[display] = n.Ost;
                 }
 
-                var names = map.Keys.ToList();
+                // Real parent → children nesting for the picker carets.
+                var subs = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                foreach (var n in nodes)
+                {
+                    if (!n.ParentRaw.HasValue) continue;
+                    if (!displayByRaw.TryGetValue(n.ParentRaw.Value, out var parentDisplay)) continue;
+                    if (!subs.TryGetValue(parentDisplay, out var kids))
+                        subs[parentDisplay] = kids = new List<string>();
+                    kids.Add(displayByRaw[n.Raw]);
+                }
+                foreach (var kids in subs.Values)
+                    kids.Sort(StringComparer.OrdinalIgnoreCase);
+
+                var names = displayByRaw.Values.ToList();
                 names.Sort(StringComparer.OrdinalIgnoreCase);
 
                 _runtimeCategoryMap   = map;
                 _runtimeDisplayNames  = names.ToArray();
-                _runtimeSubcategories = subs;
+                _runtimeSubcategories = subs.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<string>)kv.Value,
+                    StringComparer.Ordinal);
             }
             catch (Exception ex)
             {
                 LemoineLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
             }
         }
+
+        /// <summary>One filterable Revit category resolved from the open document.</summary>
+        private readonly struct CategoryNode
+        {
+            public CategoryNode(long raw, string ost, string name, long? parentRaw)
+            {
+                Raw = raw; Ost = ost; Name = name; ParentRaw = parentRaw;
+            }
+            public long    Raw       { get; }
+            public string  Ost       { get; }
+            public string  Name      { get; }
+            public long?   ParentRaw { get; }
+        }
+
 
         /// <summary>
         /// True when <paramref name="ost"/> parses to a valid, non-INVALID
