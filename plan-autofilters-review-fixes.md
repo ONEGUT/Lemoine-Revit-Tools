@@ -142,14 +142,21 @@ has Ctrl/Shift multi-select (`_fSelectedRuleIds`) and a batch editor panel
 BATCH EDIT header card — it appears exactly when ≥2 rules are selected, matching
 the requested "auto filters menu + multi-selection" interaction.
 
-**Semantics:**
-- The **anchor rule** (the active/last-plain-clicked rule, whose values the batch
-  editor already displays) survives: it keeps its Id, name, colors, line/pattern
-  settings, and list position.
-- Merged onto it from the other selected rules:
-  - `Match` keywords → union, case-insensitive dedupe.
-  - `BuiltInCategories` → union.
-- The other selected rules are removed from the trade.
+**Two actions, side by side in the BATCH EDIT card:**
+1. **"Merge into one rule"** — destructive consolidation. The **anchor rule**
+   (the active/last-plain-clicked rule, whose values the batch editor already
+   displays) survives: it keeps its Id, name, colors, line/pattern settings, and
+   list position. The other selected rules are removed from the trade.
+2. **"Create combined rule"** — non-destructive. A NEW rule is appended to the
+   trade with the same unioned definition (named "<anchor name> (combined)",
+   editable immediately); all original rules are kept untouched. Useful when the
+   individual filters are still wanted sometimes but a single combined filter is
+   wanted for other views.
+
+**Union semantics (both actions):**
+- `Match` keywords → union, case-insensitive dedupe.
+- `BuiltInCategories` → union.
+- Graphics/overrides → taken from the anchor rule.
 - **Guards:**
   - All selected rules must share the same `Parameter` — otherwise the button is
     disabled with an explanatory note (one filter rule can only bind one parameter).
@@ -159,10 +166,12 @@ the requested "auto filters menu + multi-selection" interaction.
     confirm popup.
 - **Confirm step** (house UX rule — explicit single action): a `StaysOpen=true`
   popup anchored to the button showing the resulting rule name, keyword list, and
-  category list, with Merge / Cancel.
-- After merge: clear multi-selection, refresh rule list + editor. The dropped
-  rules' Revit filters become orphans and are cleaned up by the next create pass
-  via the existing `CreatedFilterNames` manifest (no extra Revit work needed).
+  category list, with Merge (or Create) / Cancel. The popup states whether the
+  source rules will be removed or kept.
+- Afterward: clear multi-selection, refresh rule list + editor (for "create",
+  the new rule becomes the active selection). Rules dropped by a destructive
+  merge leave orphaned Revit filters that the next create pass cleans up via the
+  existing `CreatedFilterNames` manifest (no extra Revit work needed).
 
 ---
 
