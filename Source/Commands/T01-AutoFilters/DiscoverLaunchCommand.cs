@@ -44,6 +44,10 @@ namespace LemoineTools.Commands
 
             var doc = commandData.Application.ActiveUIDocument.Document;
 
+            // Capture the exact filterable-category list so the category pickers mirror
+            // Revit's own "Edit Filters → Categories" list (read on the main thread).
+            AutoFiltersSettings.CaptureFilterableCategories(doc);
+
             // Collect loaded link instances on the Revit main thread
             var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>();
             foreach (RevitLinkInstance li in

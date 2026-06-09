@@ -41,6 +41,11 @@ namespace LemoineTools.Commands
 
             var doc = commandData.Application.ActiveUIDocument?.Document;
 
+            // Capture the exact filterable-category list so the clash group editor's category
+            // picker mirrors Revit's own "Edit Filters → Categories" list (main-thread read).
+            if (doc != null)
+                LemoineTools.Tools.AutoFilters.AutoFiltersSettings.CaptureFilterableCategories(doc);
+
             // Line style names (cross-line style picker).
             var lineStyleNames = new List<string>();
             if (doc != null)

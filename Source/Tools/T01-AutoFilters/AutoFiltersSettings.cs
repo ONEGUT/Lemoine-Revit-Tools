@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml.Serialization;
+using Autodesk.Revit.DB;
 using LemoineTools.Lemoine.Templates;
 using LemoineTools.Lemoine;
 
@@ -394,6 +396,77 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         /// <summary>
+        /// Canonical signature of the part of a rule that is written to the Revit
+        /// ParameterFilterElement <em>definition</em> (categories + parameter + match type +
+        /// keywords). Graphic overrides and view flags are deliberately excluded — they are
+        /// not part of the definition that the create-on-close pass rewrites, so changing a
+        /// colour must not count as a definition change. Categories and keywords are compared
+        /// as order-insensitive sets so a pure reorder is not treated as a change.
+        /// </summary>
+        private static string RuleDefinitionSignature(FilterRuleConfig r)
+        {
+            if (r == null) return "";
+            string cats = string.Join(",",
+                (r.BuiltInCategories ?? new List<string>())
+                    .Where(c => !string.IsNullOrEmpty(c))
+                    .Select(c => c.Trim())
+                    .OrderBy(c => c, StringComparer.Ordinal));
+            string kws = string.Join("",
+                (r.Match ?? new List<string>())
+                    .OrderBy(k => k ?? "", StringComparer.Ordinal));
+            string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+            string param = r.Parameter ?? "";
+            return $"{cats}{param}{mt}{kws}";
+        }
+
+        /// <summary>
+        /// Returns the filter names whose <em>definition</em> changed between the
+        /// <paramref name="before"/> and <paramref name="after"/> trade buffers — i.e. every
+        /// enabled, filter-producing, non-externally-managed rule in <paramref name="after"/>
+        /// whose category/parameter/match-type/keyword definition differs from the rule of the
+        /// same filter name in <paramref name="before"/>, or that had no counterpart in
+        /// <paramref name="before"/>.
+        ///
+        /// Used by the auto-create-on-close pass so it only rewrites the definitions of rules
+        /// the user actually changed in the menu — leaving filters that were edited outside the
+        /// menu (e.g. in Revit's own filter editor) untouched.
+        /// </summary>
+        public static HashSet<string> ComputeChangedFilterNames(
+            IEnumerable<FilterTradeConfig> before, IEnumerable<FilterTradeConfig> after)
+        {
+            var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // before-name → signature. A duplicate name keeps the first signature seen;
+            // any mismatch against the "after" rule still flags it as changed.
+            var beforeSig = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in before ?? new List<FilterTradeConfig>())
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                {
+                    if (r == null) continue;
+                    string name = MakeFilterName(t.Id, r.Name);
+                    if (!beforeSig.ContainsKey(name))
+                        beforeSig[name] = RuleDefinitionSignature(r);
+                }
+            }
+
+            foreach (var t in after ?? new List<FilterTradeConfig>())
+            {
+                if (t == null || t.ExternallyManaged) continue;
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                {
+                    if (r == null || !r.Enabled || !RuleProducesFilter(r)) continue;
+                    string name = MakeFilterName(t.Id, r.Name);
+                    if (!beforeSig.TryGetValue(name, out var prevSig)
+                        || prevSig != RuleDefinitionSignature(r))
+                        changed.Add(name);
+                }
+            }
+            return changed;
+        }
+
+        /// <summary>
         /// Characters Revit forbids in element names. Sourced from the Revit API error
         /// "name cannot include prohibited characters, such as { } [ ] | ; &lt; &gt; ? ` ~"
         /// plus backslash and colon, which are also rejected.
@@ -650,10 +723,13 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         /// <summary>
-        /// Maps Revit category display name → OST_* BuiltInCategory string.
-        /// Used to populate the multi-category checklist and resolve BuiltInCategories.
+        /// Hardcoded fallback map of Revit category display name → OST_* BuiltInCategory
+        /// string. Used only when no live document has been captured (e.g. the standalone
+        /// preview app). When a document is open, <see cref="CaptureFilterableCategories"/>
+        /// replaces this with the exact list Revit reports via
+        /// <c>ParameterFilterUtilities.GetAllFilterableCategories</c>.
         /// </summary>
-        public static readonly Dictionary<string, string> KnownCategoryMap =
+        private static readonly Dictionary<string, string> DefaultKnownCategoryMap =
             new Dictionary<string, string>
         {
             // ── Mechanical / HVAC ──────────────────────────────────────────
@@ -731,17 +807,252 @@ namespace LemoineTools.Tools.AutoFilters
             { "Rooms",                    "OST_Rooms" },
             { "Areas",                    "OST_Areas" },
             { "Spaces",                   "OST_MEPSpaces" },
+            // ── Architectural — additional model categories / subcategories ──
+            { "Curtain Systems",          "OST_Curtain_Systems" },
+            { "Wall Sweeps",              "OST_Cornices" },
+            { "Slab Edges",               "OST_EdgeSlab" },
+            { "Gutters",                  "OST_Gutter" },
+            { "Fascias",                  "OST_Fascia" },
+            { "Roof Soffits",             "OST_RoofSoffit" },
+            { "Mass Floors",              "OST_MassFloor" },
+            { "Parts",                    "OST_Parts" },
+            { "Assemblies",               "OST_Assemblies" },
+            { "Signage",                  "OST_Signage" },
+            { "Vertical Circulation",     "OST_VerticalCirculation" },
+            { "Audio Visual Devices",     "OST_AudioVisualDevices" },
+            { "Medical Equipment",        "OST_MedicalEquipment" },
+            { "Food Service Equipment",   "OST_FoodServiceEquipment" },
+            { "Temporary Structures",     "OST_TemporaryStructure" },
+            // ── Site / civil ───────────────────────────────────────────────
+            { "Parking",                  "OST_Parking" },
+            { "Roads",                    "OST_Roads" },
+            { "Hardscape",                "OST_Hardscape" },
+            // ── Mechanical / Plumbing — additional ─────────────────────────
+            { "Plumbing Equipment",       "OST_PlumbingEquipment" },
+            { "Mechanical Control Devices","OST_MechanicalControlDevices" },
+            // ── Electrical — additional ────────────────────────────────────
+            { "Wires",                    "OST_Wire" },
+            { "Fire Protection",          "OST_FireProtection" },
+            // ── Structural — additional ────────────────────────────────────
+            { "Structural Rebar Couplers","OST_Coupler" },
         };
 
-        /// <summary>Sorted display names for the category checklist.</summary>
-        public static readonly string[] KnownCategoryDisplayNames;
+        /// <summary>Sorted fallback display names for the category checklist.</summary>
+        private static readonly string[] DefaultKnownCategoryDisplayNames;
 
         static AutoFiltersSettings()
         {
-            var names = new List<string>(KnownCategoryMap.Keys);
+            // Only surface categories whose OST_* string resolves to a real BuiltInCategory in
+            // the running Revit. This keeps the picker version-safe: a name that doesn't exist
+            // in this Revit (e.g. a category added in a later release) is silently dropped rather
+            // than shown as a dead entry that would never match any element.
+            var names = DefaultKnownCategoryMap
+                .Where(kv => IsResolvableBuiltInCategory(kv.Value))
+                .Select(kv => kv.Key)
+                .ToList();
             names.Sort(StringComparer.OrdinalIgnoreCase);
-            KnownCategoryDisplayNames = names.ToArray();
+            DefaultKnownCategoryDisplayNames = names.ToArray();
         }
+
+        // ── Runtime (document-driven) category snapshot ───────────────────────
+        // Populated by CaptureFilterableCategories on the Revit main thread so the
+        // pickers list exactly what Revit's "Edit Filters → Categories" dialog shows.
+        // Null until a document is captured; the public accessors fall back to the
+        // hardcoded defaults so the standalone preview app still works.
+        private static Dictionary<string, string>? _runtimeCategoryMap;
+        private static string[]? _runtimeDisplayNames;
+        private static Dictionary<string, IReadOnlyList<string>>? _runtimeSubcategories;
+
+        /// <summary>
+        /// Maps Revit category display name → OST_* BuiltInCategory string. Returns the
+        /// document-captured set when available (exact parity with Revit's filterable
+        /// category list), otherwise the hardcoded fallback.
+        /// </summary>
+        public static IReadOnlyDictionary<string, string> KnownCategoryMap =>
+            _runtimeCategoryMap ?? (IReadOnlyDictionary<string, string>)DefaultKnownCategoryMap;
+
+        /// <summary>Sorted display names for the category checklist (document-captured when available).</summary>
+        public static IReadOnlyList<string> KnownCategoryDisplayNames =>
+            _runtimeDisplayNames ?? (IReadOnlyList<string>)DefaultKnownCategoryDisplayNames;
+
+        /// <summary>
+        /// Reads the exact filterable-category list from the open document and stores it as the
+        /// runtime snapshot the category pickers read from, mirroring what Revit shows in its own
+        /// "Edit Filters → Categories" tree: real display names, and real parent→sub-category
+        /// nesting taken from each <see cref="Category.Parent"/> (not a hand-curated grouping).
+        ///
+        /// Must be called on the Revit main thread (it queries the Revit API) before the window
+        /// thread that builds the picker starts. Only BuiltInCategory-backed categories are
+        /// captured — the filter engine persists categories as OST_* strings, so non-builtin
+        /// custom subcategories (which it cannot store) are skipped. On any failure the snapshot
+        /// is left untouched and the hardcoded fallback continues to be used.
+        /// </summary>
+        public static void CaptureFilterableCategories(Document doc)
+        {
+            if (doc == null) return;
+            try
+            {
+                var ids = ParameterFilterUtilities.GetAllFilterableCategories();
+
+                // The set of filterable categories that are BuiltInCategory-backed (negative id).
+                // Parent linkage is only honoured when the parent is itself in this set.
+                var filterable = new HashSet<long>();
+                foreach (var id in ids)
+                {
+                    long raw = id.Value;
+                    if (raw < 0 && (BuiltInCategory)(int)raw != BuiltInCategory.INVALID)
+                        filterable.Add(raw);
+                }
+                if (filterable.Count == 0) return;
+
+                // Resolve each filterable category to its real Revit name and real parent.
+                var nodes      = new List<CategoryNode>();
+                var nameByRaw  = new Dictionary<long, string>();
+                foreach (var id in ids)
+                {
+                    long raw = id.Value;
+                    if (!filterable.Contains(raw)) continue;
+
+                    Category? cat = null;
+                    try { cat = Category.GetCategory(doc, id); }
+                    catch (Exception __cex) { LemoineLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
+                    if (cat == null) continue;
+
+                    string name = cat.Name;
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    long? parentRaw = null;
+                    try
+                    {
+                        var p = cat.Parent;
+                        if (p != null) parentRaw = p.Id.Value;
+                    }
+                    catch (Exception __pex) { LemoineLog.Swallowed("CaptureFilterableCategories.Parent", __pex); }
+                    // Only nest under a parent that is itself a filterable, builtin category.
+                    if (parentRaw.HasValue && !filterable.Contains(parentRaw.Value)) parentRaw = null;
+
+                    nodes.Add(new CategoryNode(raw, ((BuiltInCategory)(int)raw).ToString(), name, parentRaw));
+                    nameByRaw[raw] = name;
+                }
+                if (nodes.Count == 0) return;
+
+                // Disambiguate duplicate Revit names (e.g. an "Insulation" sub-category under two
+                // different parents) by qualifying with the parent name, so each display token maps
+                // to exactly one OST string. Names that are unique stay verbatim.
+                var nameCounts = nodes.GroupBy(n => n.Name, StringComparer.Ordinal)
+                                      .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+                var displayByRaw = new Dictionary<long, string>();
+                var map          = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var n in nodes)
+                {
+                    string display = n.Name;
+                    if (nameCounts[n.Name] > 1 && n.ParentRaw.HasValue &&
+                        nameByRaw.TryGetValue(n.ParentRaw.Value, out var pn))
+                        display = n.Name + " (" + pn + ")";
+
+                    // Final guard against any residual collision so map keys stay unique.
+                    if (map.ContainsKey(display) && map[display] != n.Ost)
+                        display = display + " [" + n.Ost + "]";
+
+                    displayByRaw[n.Raw] = display;
+                    if (!map.ContainsKey(display)) map[display] = n.Ost;
+                }
+
+                // Real parent → children nesting for the picker carets.
+                var subs = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                foreach (var n in nodes)
+                {
+                    if (!n.ParentRaw.HasValue) continue;
+                    if (!displayByRaw.TryGetValue(n.ParentRaw.Value, out var parentDisplay)) continue;
+                    if (!subs.TryGetValue(parentDisplay, out var kids))
+                        subs[parentDisplay] = kids = new List<string>();
+                    kids.Add(displayByRaw[n.Raw]);
+                }
+                foreach (var kids in subs.Values)
+                    kids.Sort(StringComparer.OrdinalIgnoreCase);
+
+                var names = displayByRaw.Values.ToList();
+                names.Sort(StringComparer.OrdinalIgnoreCase);
+
+                _runtimeCategoryMap   = map;
+                _runtimeDisplayNames  = names.ToArray();
+                _runtimeSubcategories = subs.ToDictionary(
+                    kv => kv.Key,
+                    kv => (IReadOnlyList<string>)kv.Value,
+                    StringComparer.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
+            }
+        }
+
+        /// <summary>One filterable Revit category resolved from the open document.</summary>
+        private readonly struct CategoryNode
+        {
+            public CategoryNode(long raw, string ost, string name, long? parentRaw)
+            {
+                Raw = raw; Ost = ost; Name = name; ParentRaw = parentRaw;
+            }
+            public long    Raw       { get; }
+            public string  Ost       { get; }
+            public string  Name      { get; }
+            public long?   ParentRaw { get; }
+        }
+
+
+        /// <summary>
+        /// True when <paramref name="ost"/> parses to a valid, non-INVALID
+        /// <see cref="BuiltInCategory"/> in the running Revit version.
+        /// </summary>
+        private static bool IsResolvableBuiltInCategory(string ost)
+            => !string.IsNullOrEmpty(ost)
+               && Enum.TryParse<BuiltInCategory>(ost, false, out var bic)
+               && bic != BuiltInCategory.INVALID;
+
+        /// <summary>
+        /// Parent category display name → the related sub-category display names nested beneath
+        /// it in the category picker. Both parent and children are real, filterable categories
+        /// already present in <see cref="KnownCategoryMap"/>; children are hidden from the flat
+        /// top level and surfaced under the parent's expand caret. Revit's internal V/G
+        /// sub-categories are not filterable, so only real model categories are grouped here.
+        /// A child whose OST string doesn't resolve in the running Revit is dropped by the
+        /// picker (it only renders children present in its ItemsSource).
+        /// </summary>
+        private static readonly Dictionary<string, IReadOnlyList<string>> DefaultCategorySubcategories =
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            // ── Mechanical ─────────────────────────────────────────────────
+            { "Ducts",                new[]{ "Duct Fittings", "Duct Accessories", "Duct Insulation", "Duct Linings", "Flex Ducts", "Air Terminals" } },
+            { "Mechanical Equipment", new[]{ "Mechanical Control Devices" } },
+            { "Fabrication Ductwork", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
+            // ── Piping / Plumbing ──────────────────────────────────────────
+            { "Pipes",                new[]{ "Pipe Fittings", "Pipe Accessories", "Pipe Insulation", "Pipe Linings", "Flex Pipes" } },
+            { "Fabrication Pipework", new[]{ "Fabrication Hangers", "Fabrication Containment" } },
+            { "Plumbing Fixtures",    new[]{ "Plumbing Equipment" } },
+            // ── Electrical ─────────────────────────────────────────────────
+            { "Cable Trays",          new[]{ "Cable Tray Fittings" } },
+            { "Conduits",             new[]{ "Conduit Fittings" } },
+            { "Lighting Fixtures",    new[]{ "Lighting Devices" } },
+            { "Electrical Equipment", new[]{ "Electrical Fixtures", "Wires" } },
+            // ── Architectural ──────────────────────────────────────────────
+            { "Walls",                new[]{ "Curtain Wall Panels", "Curtain Wall Mullions", "Curtain Systems", "Wall Sweeps" } },
+            { "Roofs",                new[]{ "Fascias", "Gutters", "Roof Soffits" } },
+            { "Floors",               new[]{ "Slab Edges" } },
+            // ── Structural ─────────────────────────────────────────────────
+            { "Structural Framing",   new[]{ "Structural Trusses", "Structural Stiffeners", "Structural Connections", "Structural Rebar Couplers" } },
+            { "Rebar",                new[]{ "Area Reinforcement", "Path Reinforcement", "Fabric Reinforcement", "Fabric Area" } },
+            // ── Site ───────────────────────────────────────────────────────
+            { "Site",                 new[]{ "Topography", "Planting", "Parking", "Roads", "Hardscape" } },
+        };
+
+        /// <summary>
+        /// Parent category display name → nested sub-category display names for the picker carets.
+        /// Returns the document-captured grouping (curated grouping intersected with the real
+        /// filterable set) when available, otherwise the hardcoded fallback.
+        /// </summary>
+        public static IReadOnlyDictionary<string, IReadOnlyList<string>> CategorySubcategories =>
+            _runtimeSubcategories ?? (IReadOnlyDictionary<string, IReadOnlyList<string>>)DefaultCategorySubcategories;
 
         // ── Persistence ───────────────────────────────────────────────────────
 

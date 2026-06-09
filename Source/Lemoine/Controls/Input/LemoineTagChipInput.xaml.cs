@@ -62,6 +62,21 @@ namespace LemoineTools.Lemoine.Controls
         /// <summary>Raised whenever SelectedItems changes (add or remove).</summary>
         public event EventHandler? Changed;
 
+        /// <summary>
+        /// Optional parent→children grouping. When set (and the search box is empty) the popup
+        /// renders a one-level tree: each parent that owns children shows a caret that expands to
+        /// reveal its child rows; children are hidden from the flat top level and only appear
+        /// under their parent. Parents remain individually selectable. Keys and values are the
+        /// same display strings used in <see cref="ItemsSource"/>; a child not present in
+        /// ItemsSource is dropped. <see langword="null"/> (the default) keeps the flat list.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<string>>? Hierarchy { get; set; }
+
+        // Parents the user has expanded in the popup (display names). Reset each open.
+        private readonly HashSet<string> _expandedParents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Cached union of every child across Hierarchy, so a top-level pass can exclude them.
+        private HashSet<string>? _childSet;
+
         // ── Internal refs ─────────────────────────────────────────────────────
         private WrapPanel?    _chipPanel;
         private Popup?        _popup;
@@ -310,6 +325,7 @@ namespace LemoineTools.Lemoine.Controls
         {
             if (_popup == null || _searchBox == null) return;
             _searchBox.Text = "";
+            _expandedParents.Clear();   // start collapsed each time the picker opens
             RefreshPopupList();
             _popup.IsOpen = true;
             _searchBox.Focus();
@@ -355,6 +371,16 @@ namespace LemoineTools.Lemoine.Controls
 
             var filter  = _searchBox.Text.Trim();
             var current = SelectedItems ?? new ObservableCollection<string>();
+
+            // Tree mode: hierarchy supplied AND not currently searching. While searching we fall
+            // through to the flat list over ALL items so nested children are still findable.
+            if (Hierarchy != null && Hierarchy.Count > 0 && string.IsNullOrEmpty(filter))
+            {
+                BuildTreeRows(current);
+                if (_rowStack.Children.Count == 0) AddNoMatchesRow();
+                return;
+            }
+
             var filtered = (ItemsSource?.ToList() ?? new List<string>())
                 .Where(x => !current.Contains(x))
                 .Where(x => string.IsNullOrEmpty(filter) ||
@@ -365,16 +391,69 @@ namespace LemoineTools.Lemoine.Controls
                 _rowStack.Children.Add(BuildResultRow(item));
 
             if (filtered.Count == 0)
+                AddNoMatchesRow();
+        }
+
+        private void AddNoMatchesRow()
+        {
+            if (_rowStack == null) return;
+            var none = new TextBlock
             {
-                var none = new TextBlock
+                Text   = AllowFreeText ? "No matches — press Enter to add" : "No matches",
+                Margin = new Thickness(8, 6, 8, 6),
+            };
+            none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            _rowStack.Children.Add(none);
+        }
+
+        // Union of all children across the hierarchy — top-level rows exclude these so a child
+        // appears only beneath its parent's caret.
+        private HashSet<string> GetChildSet()
+        {
+            if (_childSet != null) return _childSet;
+            _childSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Hierarchy != null)
+                foreach (var kids in Hierarchy.Values)
+                    if (kids != null)
+                        foreach (var k in kids) _childSet.Add(k);
+            return _childSet;
+        }
+
+        // Renders the one-level tree: top-level rows (categories that are not a child of any
+        // parent), each parent with children carrying a caret that expands indented child rows.
+        private void BuildTreeRows(ICollection<string> current)
+        {
+            if (_rowStack == null) return;
+
+            var childSet = GetChildSet();
+            var items    = ItemsSource?.ToList() ?? new List<string>();
+            var known    = new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in items)
+            {
+                if (childSet.Contains(item)) continue; // shown only under its parent
+
+                bool hasChildren = Hierarchy!.TryGetValue(item, out var kids)
+                                   && kids != null && kids.Count > 0;
+                bool selected = current.Contains(item);
+
+                // Leaf top-level item that's already selected → hide (flat-list behaviour).
+                // A parent with children is always shown so its children stay reachable.
+                if (selected && !hasChildren) continue;
+
+                _rowStack.Children.Add(BuildParentRow(item, hasChildren, selected));
+
+                if (hasChildren && _expandedParents.Contains(item))
                 {
-                    Text   = AllowFreeText ? "No matches — press Enter to add" : "No matches",
-                    Margin = new Thickness(8, 6, 8, 6),
-                };
-                none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                _rowStack.Children.Add(none);
+                    foreach (var kid in kids!)
+                    {
+                        if (!known.Contains(kid)) continue;     // unknown/invalid child — drop
+                        if (current.Contains(kid)) continue;    // already selected
+                        _rowStack.Children.Add(BuildChildRow(kid));
+                    }
+                }
             }
         }
 
@@ -389,6 +468,106 @@ namespace LemoineTools.Lemoine.Controls
                 Focusable = false,
                 Tag       = item,
                 Background = Brushes.Transparent, // full-width hit area
+            };
+            var tb = new TextBlock { Text = item };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            row.Child = tb;
+
+            LemoineMotion.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+
+            string captured = item;
+            row.MouseLeftButtonDown += (s, e) => { e.Handled = true; AddItem(captured); };
+            return row;
+        }
+
+        // A top-level row in tree mode. When it owns children it carries a caret on the left
+        // (its own hit target — toggles expansion without selecting); the label area selects the
+        // category itself. An already-selected parent shows a dim ✓ and its label becomes a
+        // no-op for re-add, but the caret still reaches its children.
+        private Border BuildParentRow(string item, bool hasChildren, bool selected)
+        {
+            var row = new Border
+            {
+                Padding    = new Thickness(6, 4, 8, 4),
+                Cursor     = Cursors.Hand,
+                Focusable  = false,
+                Tag        = item,
+                Background = Brushes.Transparent,
+            };
+
+            var grid = new DockPanel { LastChildFill = true };
+
+            // Caret (or a fixed-width spacer for alignment when there are no children).
+            string expanded  = char.ConvertFromUtf32(0x25BE); // ▾
+            string collapsed = char.ConvertFromUtf32(0x25B8); // ▸
+            var caret = new TextBlock
+            {
+                Width               = 16,
+                TextAlignment       = TextAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                Text                = hasChildren ? (_expandedParents.Contains(item) ? expanded : collapsed) : "",
+                Cursor              = hasChildren ? Cursors.Hand : Cursors.Arrow,
+            };
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            caret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            caret.Background = Brushes.Transparent; // hit-testable across its whole box
+            if (hasChildren)
+            {
+                string capCaret = item;
+                caret.MouseLeftButtonDown += (s, e) =>
+                {
+                    e.Handled = true;                       // toggle only — never selects
+                    if (!_expandedParents.Remove(capCaret)) _expandedParents.Add(capCaret);
+                    RefreshPopupList();
+                };
+            }
+            DockPanel.SetDock(caret, Dock.Left);
+            grid.Children.Add(caret);
+
+            if (selected)
+            {
+                var check = new TextBlock
+                {
+                    Text              = char.ConvertFromUtf32(0x2713), // ✓
+                    Margin            = new Thickness(6, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                check.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                check.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                check.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                DockPanel.SetDock(check, Dock.Right);
+                grid.Children.Add(check);
+            }
+
+            var lbl = new TextBlock { Text = item, VerticalAlignment = VerticalAlignment.Center };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, selected ? "LemoineTextDim" : "LemoineText");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            grid.Children.Add(lbl);
+
+            row.Child = grid;
+            LemoineMotion.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+
+            // Clicking the label area selects the parent category (no-op if already selected —
+            // AddItem dedups). The caret handler above sets e.Handled, so caret clicks never reach here.
+            string captured = item;
+            row.MouseLeftButtonDown += (s, e) => { e.Handled = true; AddItem(captured); };
+            return row;
+        }
+
+        // An indented, selectable child row shown under an expanded parent.
+        private Border BuildChildRow(string item)
+        {
+            var row = new Border
+            {
+                Padding    = new Thickness(30, 4, 8, 4),  // indent under the parent's caret + label
+                Cursor     = Cursors.Hand,
+                Focusable  = false,
+                Tag        = item,
+                Background = Brushes.Transparent,
             };
             var tb = new TextBlock { Text = item };
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
