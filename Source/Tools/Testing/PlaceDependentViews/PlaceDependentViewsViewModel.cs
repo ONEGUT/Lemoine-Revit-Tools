@@ -49,6 +49,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
         private int    _startingNumber = 1;
         private string _namingPattern  = "{ParentViewName}";
+        private string _numberPrefix    = "";
+        private string _numberSuffix    = "";
+        private string _sheetSeries     = "";
+        private string _seriesParamName = "Sheet Series";
 
         private bool   _trimBubbles   = true;
         private double _trimInches    = 0.125;
@@ -169,6 +173,24 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             numStepper.ValueChanged += (s, v) => { _startingNumber = (int)v; OnValidationChanged(); };
             outer.Children.Add(numStepper);
 
+            // ── Number prefix / suffix ────────────────────────────────────────
+            var prefixField = new LemoineTextField
+            {
+                Label = "Number prefix", Placeholder = "e.g. A-",
+                Text = _numberPrefix, Margin = new Thickness(0, 14, 0, 0),
+            };
+            prefixField.TextChanged += t => { _numberPrefix = t ?? ""; OnValidationChanged(); };
+            outer.Children.Add(prefixField);
+
+            var suffixField = new LemoineTextField
+            {
+                Label = "Number suffix", Placeholder = "e.g. .1",
+                Text = _numberSuffix, Margin = new Thickness(0, 8, 0, 0),
+            };
+            suffixField.TextChanged += t => { _numberSuffix = t ?? ""; OnValidationChanged(); };
+            outer.Children.Add(suffixField);
+
+            // ── Naming pattern ────────────────────────────────────────────────
             var patLabel = SectionLabel("SHEET NAMING PATTERN");
             patLabel.Margin = new Thickness(0, 14, 0, 4);
             outer.Children.Add(patLabel);
@@ -177,6 +199,26 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             tokenInput.TextChanged += (s, e) => { _namingPattern = tokenInput.Text; OnValidationChanged(); };
             outer.Children.Add(tokenInput);
 
+            // ── Sheet series ──────────────────────────────────────────────────
+            var seriesField = new LemoineTextField
+            {
+                Label = "Sheet series value", Placeholder = "e.g. Architectural",
+                Text = _sheetSeries, Margin = new Thickness(0, 14, 0, 0),
+            };
+            seriesField.TextChanged += t => { _sheetSeries = t ?? ""; OnValidationChanged(); };
+            outer.Children.Add(seriesField);
+
+            var seriesParamField = new LemoineTextField
+            {
+                Label = "Series parameter name", Placeholder = "Sheet Series",
+                Text = _seriesParamName, Margin = new Thickness(0, 8, 0, 0),
+            };
+            seriesParamField.TextChanged += t => { _seriesParamName = t ?? ""; OnValidationChanged(); };
+            outer.Children.Add(seriesParamField);
+            outer.Children.Add(Note("Written to this text parameter on each created sheet (e.g. for Project " +
+                                    "Browser grouping). Skipped with a warning if the parameter doesn't exist."));
+
+            // ── Preview ───────────────────────────────────────────────────────
             var prevLabel = SectionLabel("PREVIEW");
             prevLabel.Margin = new Thickness(0, 14, 0, 4);
             outer.Children.Add(prevLabel);
@@ -196,8 +238,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             };
             Action update = () =>
             {
-                placeholders["SheetNumber"] = _startingNumber.ToString();
-                preview.Text = LemoineTokenInput.Resolve(_namingPattern, placeholders);
+                string fullNumber = _numberPrefix + _startingNumber.ToString() + _numberSuffix;
+                placeholders["SheetNumber"] = fullNumber;
+                string name = LemoineTokenInput.Resolve(_namingPattern, placeholders);
+                preview.Text = $"{fullNumber}   |   {name}";
             };
             update();
             ValidationChanged += (s, e) => update();
@@ -280,6 +324,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             ("views",  "Views"),
             ("tb",     "Title Block"),
             ("naming", "Naming / Numbering"),
+            ("series", "Sheet Series"),
             ("trim",   "Bubble Trim"),
             ("layout", "Layout"),
         };
@@ -290,7 +335,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 ? "— (none selected)"
                 : $"{_selectedParentIds.Count} view(s) → {_selectedParentIds.Count} sheet(s)",
             ["tb"]     = string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
-            ["naming"] = $"Pattern: {_namingPattern}  |  Start: {_startingNumber}",
+            ["naming"] = $"No.: {_numberPrefix}{_startingNumber}{_numberSuffix} (+1…)  |  Name: {_namingPattern}",
+            ["series"] = string.IsNullOrWhiteSpace(_sheetSeries)
+                ? "—"
+                : $"\"{_sheetSeries}\" → param '{_seriesParamName}'",
             ["trim"]   = _trimBubbles ? $"On — {_trimInches:0.###}\" past crop (permanent)" : "Off",
             ["layout"] = $"Auto best-fit  |  gap {_gapInches:0.###}\"  |  margins " +
                          $"T{_marginTop:0.##} B{_marginBottom:0.##} L{_marginLeft:0.##} R{_marginRight:0.##}\"",
@@ -341,6 +389,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                         ? tbId : ElementId.InvalidElementId;
             _handler.StartingNumber  = _startingNumber;
             _handler.NamingPattern   = _namingPattern;
+            _handler.NumberPrefix    = _numberPrefix;
+            _handler.NumberSuffix    = _numberSuffix;
+            _handler.SheetSeries     = _sheetSeries;
+            _handler.SeriesParamName = _seriesParamName;
             _handler.TrimBubbles     = _trimBubbles;
             _handler.TrimInches      = _trimInches;
             _handler.MarginTopIn     = _marginTop;

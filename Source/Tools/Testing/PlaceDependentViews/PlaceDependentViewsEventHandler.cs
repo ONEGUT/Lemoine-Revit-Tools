@@ -20,6 +20,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         public ElementId       TitleBlockTypeId { get; set; } = ElementId.InvalidElementId;
         public int             StartingNumber { get; set; } = 1;
         public string          NamingPattern  { get; set; } = "{ParentViewName}";
+        public string          NumberPrefix   { get; set; } = "";
+        public string          NumberSuffix   { get; set; } = "";
+        public string          SheetSeries    { get; set; } = "";
+        public string          SeriesParamName { get; set; } = "Sheet Series";
 
         public bool   TrimBubbles { get; set; } = true;
         public double TrimInches  { get; set; } = 0.125;   // paper inches past the model crop
@@ -84,6 +88,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     tx.Start();
 
                     int number = StartingNumber;
+                    bool seriesWarned = false;
                     for (int i = 0; i < ParentViewIds.Count; i++)
                     {
                         var parent = doc.GetElement(ParentViewIds[i]) as View;
@@ -106,7 +111,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         }
 
                         // ── Sheet number / name ──────────────────────────────
-                        string? sheetNumber = NextFreeNumber(doc, ref number);
+                        string? sheetNumber = NextFreeNumber(doc, ref number, NumberPrefix, NumberSuffix);
                         if (sheetNumber == null)
                         {
                             Log($"[FAIL] Could not find a free sheet number for '{parent.Name}'.", "fail");
@@ -132,6 +137,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
+
+                        // ── Sheet Series parameter ───────────────────────────
+                        if (!string.IsNullOrWhiteSpace(SheetSeries))
+                            WriteSeries(sheet, ref seriesWarned);
 
                         // ── Trim each dependent's annotation crop ────────────
                         if (TrimBubbles)
@@ -331,8 +340,11 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             };
         }
 
-        /// <summary>Advances <paramref name="number"/> past any existing sheet numbers and returns the first free one.</summary>
-        private static string? NextFreeNumber(Document doc, ref int number)
+        /// <summary>
+        /// Advances <paramref name="number"/> past any existing sheet numbers and returns the
+        /// first free fully-formatted number: <c>prefix + running-number + suffix</c>.
+        /// </summary>
+        private static string? NextFreeNumber(Document doc, ref int number, string prefix, string suffix)
         {
             var existing = new HashSet<string>(
                 new FilteredElementCollector(doc).OfClass(typeof(ViewSheet))
@@ -341,11 +353,29 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
             for (int guard = 0; guard < 100000; guard++)
             {
-                string candidate = number.ToString();
+                string candidate = (prefix ?? "") + number.ToString() + (suffix ?? "");
                 number++;
                 if (!existing.Contains(candidate)) return candidate;
             }
             return null;
+        }
+
+        /// <summary>Writes the Sheet Series value to the named sheet parameter; warns once if it's missing or read-only.</summary>
+        private void WriteSeries(ViewSheet sheet, ref bool warned)
+        {
+            var p = sheet.LookupParameter(SeriesParamName);
+            if (p == null || p.IsReadOnly || p.StorageType != StorageType.String)
+            {
+                if (!warned)
+                {
+                    warned = true;
+                    Log($"[WARN] Sheet parameter '{SeriesParamName}' not found or not writable — " +
+                        "series value skipped.", "warn");
+                    LemoineLog.Warn("PlaceDependentViews", $"Series param '{SeriesParamName}' missing/not writable.");
+                }
+                return;
+            }
+            p.Set(SheetSeries);
         }
 
         private static int Pct(int done, int total) => total > 0 ? (int)(done * 100.0 / total) : 100;
