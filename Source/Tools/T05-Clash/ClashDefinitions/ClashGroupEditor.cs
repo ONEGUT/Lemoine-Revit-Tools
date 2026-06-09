@@ -43,6 +43,12 @@ namespace LemoineTools.Tools.Clash
         private readonly List<string>             _docNames           = new List<string>();
         private readonly Dictionary<string, long> _docDisplayToLinkId = new Dictionary<string, long>();
 
+        // ── Worksets (per source document) ────────────────────────────────────
+        private readonly Dictionary<string, List<string>>       _wsGroups       = new Dictionary<string, List<string>>(); // docName → ws displays
+        private readonly Dictionary<string, (long lnk, int ws)> _wsDisplayToRef = new Dictionary<string, (long, int)>();
+        private readonly HashSet<string>                        _wsSelected     = new HashSet<string>();   // checked (= included) ws displays
+        private bool                                            _anyWorksets;
+
         // ── Live working sets (display strings) ───────────────────────────────
         private readonly HashSet<string>           _ruleDisplays = new HashSet<string>();
         private readonly HashSet<string>           _catDisplays  = new HashSet<string>();
@@ -66,7 +72,8 @@ namespace LemoineTools.Tools.Clash
             _pickEvent   = pickEvent;
             _onChanged   = onChanged;
 
-            foreach (var d in docs ?? new List<ClashDocInfo>())
+            var docList = docs ?? new List<ClashDocInfo>();
+            foreach (var d in docList)
             {
                 if (_docDisplayToLinkId.ContainsKey(d.Name)) continue;
                 _docNames.Add(d.Name);
@@ -75,7 +82,82 @@ namespace LemoineTools.Tools.Clash
 
             BuildFilterMappings();
             BuildCategoryMappings();
+            BuildWorksetMappings(docList);
             RestoreFromSpec();
+            RestoreWorksetsFromSpec();
+        }
+
+        // ── Workset mappings (display ↔ (link, workset id)) ───────────────────
+        private void BuildWorksetMappings(List<ClashDocInfo> docs)
+        {
+            // Workset names are unique within a document but can collide across documents;
+            // qualify a colliding name with its document so the flat selection set stays unambiguous.
+            var nameCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var d in docs)
+                foreach (var ws in d.Worksets ?? new List<ClashWorksetInfo>())
+                {
+                    if (!nameCount.ContainsKey(ws.Name)) nameCount[ws.Name] = 0;
+                    nameCount[ws.Name]++;
+                }
+
+            foreach (var d in docs)
+            {
+                var worksets = d.Worksets ?? new List<ClashWorksetInfo>();
+                if (worksets.Count == 0) continue;
+
+                var items = new List<string>();
+                foreach (var ws in worksets)
+                {
+                    string disp = (nameCount.TryGetValue(ws.Name, out int c) && c > 1)
+                        ? $"{ws.Name}  —  {d.Name}"
+                        : ws.Name;
+                    while (_wsDisplayToRef.ContainsKey(disp)) disp += " ";   // last-resort uniqueness
+                    _wsDisplayToRef[disp] = (d.LinkInstId, ws.Id);
+                    items.Add(disp);
+                }
+                _wsGroups[d.Name] = items;
+                _anyWorksets = true;
+            }
+        }
+
+        private void RestoreWorksetsFromSpec()
+        {
+            var excl = new Dictionary<long, HashSet<int>>();
+            foreach (var f in _spec.WorksetFilters ?? new List<ClashWorksetFilter>())
+                if (f != null) excl[f.LinkInstId] = new HashSet<int>(f.ExcludedWorksetIds ?? new List<int>());
+
+            // A workset is checked (included) unless its id is recorded as excluded for its document.
+            foreach (var kv in _wsDisplayToRef)
+            {
+                var (lnk, ws) = kv.Value;
+                bool isExcluded = excl.TryGetValue(lnk, out var s) && s.Contains(ws);
+                if (!isExcluded) _wsSelected.Add(kv.Key);
+            }
+        }
+
+        private void CommitWorksets()
+        {
+            var perLink = new Dictionary<long, List<(int ws, string disp)>>();
+            foreach (var kv in _wsDisplayToRef)
+            {
+                var (lnk, ws) = kv.Value;
+                if (!perLink.TryGetValue(lnk, out var list)) perLink[lnk] = list = new List<(int, string)>();
+                list.Add((ws, kv.Key));
+            }
+
+            var filters = new List<ClashWorksetFilter>();
+            foreach (var kv in perLink)
+            {
+                var excluded = kv.Value
+                    .Where(x => !_wsSelected.Contains(x.disp))
+                    .Select(x => x.ws)
+                    .OrderBy(id => id)                       // deterministic → no spurious dirty/save
+                    .ToList();
+                if (excluded.Count > 0)
+                    filters.Add(new ClashWorksetFilter { LinkInstId = kv.Key, ExcludedWorksetIds = excluded });
+            }
+            _spec.WorksetFilters = filters;
+            Notify();
         }
 
         // ── Mapping builders (Revit-free — read from AutoFiltersSettings) ──────
@@ -257,6 +339,24 @@ namespace LemoineTools.Tools.Clash
                 Notify();
             };
             outer.Children.Add(srcTabs);
+
+            // ── Worksets (per source document) ────────────────────────────────
+            // Shown only when at least one source document is workshared. Subscribe BEFORE
+            // SetGroups — the post-setup SelectionChanged is what seeds the mirror set.
+            if (_anyWorksets)
+            {
+                AddDivider(outer);
+                AddLabel(outer, "Worksets (uncheck to exclude a workset's elements; per model)");
+                var wsTabs = new LemoineMultiSelectTabs();
+                wsTabs.SelectionChanged += selected =>
+                {
+                    _wsSelected.Clear();
+                    foreach (var s in selected) _wsSelected.Add(s);
+                    CommitWorksets();
+                };
+                wsTabs.SetGroups(new Dictionary<string, List<string>>(_wsGroups), _wsSelected);
+                outer.Children.Add(wsTabs);
+            }
 
             AddDivider(outer);
             outer.Children.Add(body);

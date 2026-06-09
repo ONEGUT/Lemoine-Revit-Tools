@@ -335,17 +335,18 @@ namespace LemoineTools.Tools.Clash
             List<(Document doc, RevitLinkInstance? link, Transform tx)> allSources,
             string label)
         {
+            var worksetExcl = BuildWorksetExclusions(spec.WorksetFilters);
             switch (spec.Mode)
             {
                 case "Categories":
-                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds));
+                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds), worksetExcl);
                 case "Elements":
                     return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources);
                 default:
                     var rules = ResolveRules(spec.RuleKeys);
                     if (rules.Count == 0)
                         Log($"{label}: no filter rules resolved — check Auto Filters or switch mode.", "info");
-                    return ScanRules(rules, FilterSources(allSources, spec.SourceLinkIds));
+                    return ScanRules(rules, FilterSources(allSources, spec.SourceLinkIds), worksetExcl);
             }
         }
 
@@ -357,9 +358,39 @@ namespace LemoineTools.Tools.Clash
             return all.Where(s => set.Contains(s.link?.Id.Value ?? 0L)).ToList();
         }
 
+        // ── Workset filtering (per source document) ───────────────────────────
+        /// <summary>linkId (0 = host) → set of excluded (unchecked) workset ids. Empty/absent = include all.</summary>
+        private static Dictionary<long, HashSet<int>> BuildWorksetExclusions(List<ClashWorksetFilter> filters)
+        {
+            var map = new Dictionary<long, HashSet<int>>();
+            foreach (var f in filters ?? new List<ClashWorksetFilter>())
+            {
+                if (f?.ExcludedWorksetIds == null || f.ExcludedWorksetIds.Count == 0) continue;
+                map[f.LinkInstId] = new HashSet<int>(f.ExcludedWorksetIds);
+            }
+            return map;
+        }
+
+        /// <summary>Excluded-workset set for one source (by its link id), or null when nothing is excluded there.</summary>
+        private static HashSet<int>? WorksetExclForSource(
+            Dictionary<long, HashSet<int>> worksetExcl, RevitLinkInstance? link)
+        {
+            long linkId = link?.Id.Value ?? 0L;
+            return worksetExcl.TryGetValue(linkId, out var set) && set.Count > 0 ? set : null;
+        }
+
+        /// <summary>True when the element should be kept: no exclusions, or its workset is not excluded.</summary>
+        private static bool PassesWorkset(Element el, HashSet<int>? excluded)
+        {
+            if (excluded == null || excluded.Count == 0) return true;
+            try { return !excluded.Contains(el.WorksetId.IntegerValue); }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element workset", ex); return true; }
+        }
+
         private List<ClashElement> ScanRules(
             List<(FilterTradeConfig trade, FilterRuleConfig rule)> rules,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources,
+            Dictionary<long, HashSet<int>> worksetExcl)
         {
             var result = new List<ClashElement>();
 
@@ -381,6 +412,7 @@ namespace LemoineTools.Tools.Clash
                 int ruleTotal = 0;
                 foreach (var (srcDoc, link, tx) in sources)
                 {
+                    var wsExcluded = WorksetExclForSource(worksetExcl, link);
                     int srcCount = 0;
                     foreach (var bic in catIds)
                     {
@@ -395,6 +427,7 @@ namespace LemoineTools.Tools.Clash
                         foreach (var el in elems)
                         {
                             if (!MatchesRule(el, rule)) continue;
+                            if (!PassesWorkset(el, wsExcluded)) continue;
                             var bb = GetHostBBox(el, tx);
                             if (bb == null) continue;
                             var sh = ComputeElementShape(el, tx);
@@ -430,7 +463,8 @@ namespace LemoineTools.Tools.Clash
 
         private List<ClashElement> ScanCategories(
             List<string> osts,
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources)
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> sources,
+            Dictionary<long, HashSet<int>> worksetExcl)
         {
             var result = new List<ClashElement>();
             foreach (var ostStr in osts ?? new List<string>())
@@ -440,6 +474,7 @@ namespace LemoineTools.Tools.Clash
                 int catTotal = 0;
                 foreach (var (srcDoc, link, tx) in sources)
                 {
+                    var wsExcluded = WorksetExclForSource(worksetExcl, link);
                     int srcCount = 0;
                     IEnumerable<Element> elems;
                     try
@@ -451,6 +486,7 @@ namespace LemoineTools.Tools.Clash
 
                     foreach (var el in elems)
                     {
+                        if (!PassesWorkset(el, wsExcluded)) continue;
                         var bb = GetHostBBox(el, tx);
                         if (bb == null) continue;
                         string? ruleColor = ResolveRuleColor(el);
