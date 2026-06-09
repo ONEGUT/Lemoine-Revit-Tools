@@ -64,8 +64,8 @@ namespace LemoineTools.Tools.Clash
                 ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
             };
 
-        // ── Inner types ───────────────────────────────────────────────────────
-        private class ClashElement
+        // ── Inner types (internal: surfaced through the public ClashDetection's internal fields) ──
+        internal class ClashElement
         {
             public Document           Doc          = null!;
             public RevitLinkInstance? LinkInstance;
@@ -85,7 +85,7 @@ namespace LemoineTools.Tools.Clash
             public XYZ?               HeightDir;     // world unit vector of the rectangular height axis
         }
 
-        private class ClashResult
+        internal class ClashResult
         {
             public ClashElement   Group1      = null!;
             public ClashElement   Group2      = null!;
@@ -98,16 +98,16 @@ namespace LemoineTools.Tools.Clash
         /// multi-view run scan the model only once and place markers view-by-view.</summary>
         public sealed class ClashDetection
         {
-            // Private fields of a nested type: the enclosing ClashEngine still reads/writes them, and
-            // keeping them private avoids exposing the private ClashResult type through this public
-            // class (an internal field of a private-typed list is CS0052).
-            private List<ClashResult> Clashes = new List<ClashResult>();
-            private ElementId LineStyleId = ElementId.InvalidElementId;
-            private List<double> LevelElevs = new List<double>();
-            private double StoreyMarginFt;
-            private double ToleranceFt;
+            // Internal so the enclosing ClashEngine (same assembly) reads/writes them. The
+            // ClashResult/ClashElement types are likewise internal, so an internal field is never
+            // backed by a less-accessible type (CS0052).
+            internal List<ClashResult> Clashes = new List<ClashResult>();
+            internal ElementId LineStyleId = ElementId.InvalidElementId;
+            internal List<double> LevelElevs = new List<double>();
+            internal double StoreyMarginFt;
+            internal double ToleranceFt;
             /// <summary>True when detection could not run (a group produced no elements).</summary>
-            public bool Failed { get; private set; }
+            public bool Failed { get; internal set; }
             /// <summary>Distinct clashes detected, model-wide.</summary>
             public int ClashCount => Clashes.Count;
         }
