@@ -89,6 +89,18 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
                     int number = StartingNumber;
                     bool seriesWarned = false;
+
+                    // Existing sheet numbers, built once; NextFreeNumber adds to it as we go so the
+                    // O(N²) "rescan every sheet" cost is gone.
+                    var usedNumbers = new HashSet<string>(
+                        new FilteredElementCollector(doc).OfClass(typeof(ViewSheet))
+                            .Cast<ViewSheet>().Select(vs => vs.SheetNumber),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    // ── Phase 1: create sheets, trim, place viewports — NO regen ──────────
+                    // doc.Regenerate() recomputes the whole model, so calling it per sheet is the
+                    // dominant cost. We do all the mutations first, then regenerate ONCE.
+                    var jobs = new List<SheetJob>();
                     for (int i = 0; i < ParentViewIds.Count; i++)
                     {
                         var parent = doc.GetElement(ParentViewIds[i]) as View;
@@ -97,7 +109,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             Log("[SKIP] A selected view no longer exists.", "warn");
                             LemoineLog.Warn("PlaceDependentViews", $"Parent view {ParentViewIds[i]} not found.");
                             skip++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
                             continue;
                         }
 
@@ -106,17 +118,17 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         {
                             Log($"[SKIP] '{parent.Name}' has no dependent views.", "warn");
                             skip++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
                             continue;
                         }
 
                         // ── Sheet number / name ──────────────────────────────
-                        string? sheetNumber = NextFreeNumber(doc, ref number, NumberPrefix, NumberSuffix);
+                        string? sheetNumber = NextFreeNumber(ref number, NumberPrefix, NumberSuffix, usedNumbers);
                         if (sheetNumber == null)
                         {
                             Log($"[FAIL] Could not find a free sheet number for '{parent.Name}'.", "fail");
                             fail++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
                             continue;
                         }
                         string sheetName = LemoineTokenInput.Resolve(
@@ -134,7 +146,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             Log($"[FAIL] Could not create sheet for '{parent.Name}': {ex.Message}", "fail");
                             LemoineLog.Error("PlaceDependentViews: create sheet", ex);
                             fail++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
                             continue;
                         }
 
@@ -147,23 +159,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             foreach (var depId in depIds)
                                 TrimAnnotationCrop(doc.GetElement(depId) as View, trimPaperFt);
 
-                        doc.Regenerate();
-
-                        // ── Usable drawing area from the title block bbox ────
-                        if (!TryGetDrawingArea(doc, sheet, marginLeft, marginRight, marginTop, marginBottom,
-                                               out double areaMinX, out double areaMinY, out double areaW, out double areaH))
-                        {
-                            Log($"[WARN] Could not read title-block size for sheet {sheetNumber}; " +
-                                "dependents left unplaced.", "warn");
-                            LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
-                            // Sheet still created; count it as a partial pass with a warning.
-                            pass++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
-                            continue;
-                        }
-
-                        // ── Place viewports (provisional center) ─────────────
-                        var areaCenter = new XYZ(areaMinX + areaW / 2.0, areaMinY + areaH / 2.0, 0);
+                        // ── Place viewports at a provisional point (repositioned in phase 2) ──
                         var placed = new List<Viewport>();
                         foreach (var depId in depIds)
                         {
@@ -176,7 +172,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             }
                             try
                             {
-                                placed.Add(Viewport.Create(doc, sheet.Id, depId, areaCenter));
+                                placed.Add(Viewport.Create(doc, sheet.Id, depId, XYZ.Zero));
                             }
                             catch (Exception ex)
                             {
@@ -190,16 +186,36 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         if (placed.Count == 0)
                         {
                             Log($"[WARN] Nothing placed on sheet {sheetNumber} — {sheetName}.", "warn");
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
                             continue;
                         }
 
-                        doc.Regenerate(); // outlines are only valid after a regen
+                        jobs.Add(new SheetJob(sheet, sheetNumber, sheetName, placed));
+                        onProgress(Pct(i + 1, total) / 2, pass, fail, skip);
+                    }
 
-                        // ── Measure real footprints and pack ─────────────────
-                        var rects   = new List<SheetLayoutPacker.Rect>(placed.Count);
-                        var keep    = new List<Viewport>(placed.Count);
-                        foreach (var vp in placed)
+                    // ── Single regen: trims + sheets + title blocks + viewports all settle here ──
+                    doc.Regenerate();
+
+                    // ── Phase 2: measure real footprints, pack, position ─────────────────
+                    for (int j = 0; j < jobs.Count; j++)
+                    {
+                        var job = jobs[j];
+
+                        if (!TryGetDrawingArea(doc, job.Sheet, marginLeft, marginRight, marginTop, marginBottom,
+                                               out double areaMinX, out double areaMinY, out double areaW, out double areaH))
+                        {
+                            Log($"[WARN] Could not read title-block size for sheet {job.Number}; " +
+                                "dependents left at the sheet origin.", "warn");
+                            LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {job.Number}.");
+                            pass++;
+                            onProgress(50 + Pct(j + 1, jobs.Count) / 2, pass, fail, skip);
+                            continue;
+                        }
+
+                        var rects = new List<SheetLayoutPacker.Rect>(job.Viewports.Count);
+                        var keep  = new List<Viewport>(job.Viewports.Count);
+                        foreach (var vp in job.Viewports)
                         {
                             if (TryGetOutlineSize(vp, out double w, out double h))
                             {
@@ -208,7 +224,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             }
                             else
                             {
-                                Log("[WARN] A viewport reported no size and was left at the sheet center.", "warn");
+                                Log("[WARN] A viewport reported no size and was left at the sheet origin.", "warn");
                             }
                         }
 
@@ -220,17 +236,17 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 var p = result.Placements[k];
                                 keep[k].SetBoxCenter(new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
                             }
-                            doc.Regenerate();
 
                             if (result.Overflow)
-                                Log($"[WARN] Sheet {sheetNumber}: {keep.Count} view(s) don't fit the drawing " +
+                                Log($"[WARN] Sheet {job.Number}: {keep.Count} view(s) don't fit the drawing " +
                                     "area at this scale — they extend past the margins.", "warn");
                         }
 
                         pass++;
-                        Log($"✓ Sheet {sheetNumber} — {sheetName}  ({keep.Count} view(s) placed)", "pass");
-                        onProgress(Pct(i + 1, total), pass, fail, skip);
+                        Log($"✓ Sheet {job.Number} — {job.Name}  ({keep.Count} view(s) placed)", "pass");
+                        onProgress(50 + Pct(j + 1, jobs.Count) / 2, pass, fail, skip);
                     }
+                    // SetBoxCenter needs no regen here — the commit below recomputes everything once.
 
                     tx.Commit();
                 }
@@ -341,23 +357,32 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         }
 
         /// <summary>
-        /// Advances <paramref name="number"/> past any existing sheet numbers and returns the
-        /// first free fully-formatted number: <c>prefix + running-number + suffix</c>.
+        /// Advances <paramref name="number"/> past any used sheet numbers and returns the first free
+        /// fully-formatted number (<c>prefix + running-number + suffix</c>), reserving it in
+        /// <paramref name="used"/> so later sheets in the same run don't collide.
         /// </summary>
-        private static string? NextFreeNumber(Document doc, ref int number, string prefix, string suffix)
+        private static string? NextFreeNumber(ref int number, string prefix, string suffix, HashSet<string> used)
         {
-            var existing = new HashSet<string>(
-                new FilteredElementCollector(doc).OfClass(typeof(ViewSheet))
-                    .Cast<ViewSheet>().Select(vs => vs.SheetNumber),
-                StringComparer.OrdinalIgnoreCase);
-
             for (int guard = 0; guard < 100000; guard++)
             {
                 string candidate = (prefix ?? "") + number.ToString() + (suffix ?? "");
                 number++;
-                if (!existing.Contains(candidate)) return candidate;
+                if (used.Add(candidate)) return candidate;   // Add is false when already present
             }
             return null;
+        }
+
+        /// <summary>One created sheet plus the viewports placed on it, carried from phase 1 to phase 2.</summary>
+        private sealed class SheetJob
+        {
+            public ViewSheet      Sheet     { get; }
+            public string         Number    { get; }
+            public string         Name      { get; }
+            public List<Viewport> Viewports { get; }
+            public SheetJob(ViewSheet sheet, string number, string name, List<Viewport> viewports)
+            {
+                Sheet = sheet; Number = number; Name = name; Viewports = viewports;
+            }
         }
 
         /// <summary>Writes the Sheet Series value to the named sheet parameter; warns once if it's missing or read-only.</summary>
