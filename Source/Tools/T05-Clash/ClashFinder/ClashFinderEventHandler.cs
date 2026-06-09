@@ -41,121 +41,158 @@ namespace LemoineTools.Tools.Clash
 
         public void Execute(UIApplication app)
         {
-            var doc = app.ActiveUIDocument.Document;
-            int pass = 0, fail = 0, skip = 0;
+            var uidoc = app.ActiveUIDocument;
+            var doc   = uidoc.Document;
+            int viewsDone = 0, viewsFailed = 0, viewsSkipped = 0;
 
             try
             {
                 if (Definitions == null || Definitions.Count == 0)
                 {
                     Log("No clash definitions selected.", "fail");
-                    fail++;
+                    viewsFailed++;
                 }
                 else if (ViewIds == null || ViewIds.Count == 0)
                 {
                     Log("No views selected.", "fail");
-                    fail++;
+                    viewsFailed++;
                 }
                 else
                 {
-                    using (var tx = new Transaction(doc, "Lemoine - Clash Finder"))
+                    // ── Phase 1: detect each definition's clashes ONCE (view-independent) ──
+                    Progress(5, viewsDone, viewsFailed, viewsSkipped);
+                    var dets = new List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)>();
+                    foreach (var def in Definitions)
                     {
-                        tx.Start();
-                        ConfigureFailures(tx);
-
-                        if (ClearPrevious)
+                        Log($"— Detecting '{def.Name}' —", "info");
+                        var opts = new ClashMarkingOptions
                         {
-                            int removed = ClearPreviousMarkers(doc);
-                            if (removed > 0) Log($"Cleared {removed} previous marker element(s).", "info");
-                        }
-
-                        int done = 0;
-                        foreach (var def in Definitions)
-                        {
-                            Progress(10 + (int)(done * 70.0 / Definitions.Count), pass, fail, skip);
-                            Log($"— Definition '{def.Name}' —", "info");
-
-                            var opts = new ClashMarkingOptions
-                            {
-                                ToleranceMm       = def.ToleranceMm,
-                                FillStyle         = def.FillStyle,
-                                FallbackColorHex  = def.FallbackColorHex,
-                                CrossLineTypeName = def.CrossLineTypeName,
-                                DimTarget         = def.DimTarget,
-                                MaxClashes        = def.MaxClashes,
-                                StoreyMarginMm    = StoreyMarginMm,
-                                RoundSizeMm       = RoundSizeMm,
-                            };
-
-                            var engine = new ClashEngine(opts, (t, s) => Log(t, s));
-                            var r = engine.Run(doc, ViewIds,
-                                EffectiveSpec(def.Group1), EffectiveSpec(def.Group2));
-
-                            pass += r.Markers;
-                            fail += r.Fails;
-                            done++;
-                        }
-
-                        tx.Commit();
-                        Log($"Marking done — {pass} marker(s), {fail} failure(s).", pass > 0 ? "pass" : "fail");
+                            ToleranceMm       = def.ToleranceMm,
+                            FillStyle         = def.FillStyle,
+                            FallbackColorHex  = def.FallbackColorHex,
+                            CrossLineTypeName = def.CrossLineTypeName,
+                            DimTarget         = def.DimTarget,
+                            MaxClashes        = def.MaxClashes,
+                            StoreyMarginMm    = StoreyMarginMm,
+                            RoundSizeMm       = RoundSizeMm,
+                        };
+                        var engine = new ClashEngine(opts, (t, s) => Log(t, s));
+                        var det = engine.Detect(doc, EffectiveSpec(def.Group1), EffectiveSpec(def.Group2));
+                        dets.Add((engine, det, new Dictionary<string, ElementId?>()));
                     }
 
-                    // Dimension pass: place auto-dimensions from each clash marker out to the
-                    // chosen target. Runs after the marking transaction has committed, so the
-                    // freshly placed cross-lines are queryable; the runner opens its own transaction.
-                    if (RunDimensionPass)
+                    // ── Dimension-pass prep: apply run-level config overrides once (restored in
+                    // finally), and pick manual datums up front so all picks stay together. ──
+                    var dimCfg = AutoDimensionConfig.Instance;
+                    var snapTarget = dimCfg.TargetType;
+                    var snapChain  = dimCfg.ChainAligned;
+                    var snapGap    = dimCfg.RunGapMm;
+                    var snapCross  = dimCfg.RunCrossToleranceMm;
+                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
+                    bool slabEdge = string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
+                    try
                     {
-                        Progress(85, pass, fail, skip);
-                        Log("Running dimension pass…", "info");
-
-                        var dimCfg = AutoDimensionConfig.Instance;
-                        // Snapshot the fields we override so these run-level Clash Finder options don't
-                        // leak into the shared singleton (and thus the standalone Auto Dimension tool).
-                        var snapTarget = dimCfg.TargetType;
-                        var snapChain  = dimCfg.ChainAligned;
-                        var snapGap    = dimCfg.RunGapMm;
-                        var snapCross  = dimCfg.RunCrossToleranceMm;
-                        try
+                        if (RunDimensionPass)
                         {
-                            dimCfg.TargetType          = DimTargetType;   // run-level overrides
+                            dimCfg.TargetType          = DimTargetType;
                             dimCfg.ChainAligned        = DimChainAligned;
                             dimCfg.RunGapMm            = DimRunGapMm;
                             dimCfg.RunCrossToleranceMm = DimRunCrossMm;
-
-                            // ManualDatum still picks one datum edge per view at run time; SlabEdge uses
-                            // the slab the user picked up front in the wizard (empty → scan all floors).
-                            System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
-                            System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? slabScopes = null;
                             if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
-                                datums = AutoDimension.ManualDatumPicker.PickForViews(app.ActiveUIDocument, ViewIds, (t, s) => Log(t, s));
-                            else if (string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) && SlabScopes.Count > 0)
-                                slabScopes = ViewIds.ToDictionary(v => v, v => SlabScopes);
-
-                            var dimResult = AutoDimensionRunner.Run(doc, ViewIds, dimCfg, (t, s) => Log(t, s), null, datums, slabScopes);
-
-                            pass += dimResult.Placed;
-                            fail += dimResult.Failures;
-                            Log($"Dimension pass — {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
-                                dimResult.Placed > 0 ? "pass" : "fail");
+                                datums = AutoDimension.ManualDatumPicker.PickForViews(uidoc, ViewIds, (t, s) => Log(t, s));
                         }
-                        finally
+
+                        // ── Phase 2: one view at a time — mark, then dimension, then next view ──
+                        int processed = 0;
+                        foreach (var viewId in ViewIds)
                         {
-                            dimCfg.TargetType          = snapTarget;
-                            dimCfg.ChainAligned        = snapChain;
-                            dimCfg.RunGapMm            = snapGap;
-                            dimCfg.RunCrossToleranceMm = snapCross;
+                            processed++;
+                            var view = doc.GetElement(viewId) as View;
+                            if (view == null)
+                            {
+                                viewsSkipped++;
+                                Progress(10 + (int)(processed * 88.0 / ViewIds.Count), viewsDone, viewsFailed, viewsSkipped);
+                                continue;
+                            }
+
+                            Log($"— View '{view.Name}' —", "info");
+                            int markers = 0, markerFails = 0;
+                            bool viewFailed = false;
+                            try
+                            {
+                                // Mark this view: clear its old markers, then place every definition's
+                                // detected clashes that fall in this view — one transaction per view.
+                                using (var tx = new Transaction(doc, $"Lemoine - Clash Finder · {view.Name}"))
+                                {
+                                    tx.Start();
+                                    ConfigureFailures(tx);
+                                    if (ClearPrevious)
+                                    {
+                                        int removed = ClearViewMarkers(doc, viewId);
+                                        if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{view.Name}'.", "info");
+                                    }
+                                    foreach (var (engine, det, cache) in dets)
+                                    {
+                                        if (det.Failed || det.ClashCount == 0) continue;
+                                        var pr = engine.PlaceInView(doc, view, det, cache);
+                                        markers     += pr.Markers;
+                                        markerFails += pr.Fails;
+                                    }
+                                    tx.Commit();
+                                }
+                                Log($"View '{view.Name}': {markers} marker(s) placed.", markers > 0 ? "pass" : "info");
+
+                                // Dimension this view (its own transaction), only when it has markers.
+                                if (RunDimensionPass && markers > 0)
+                                {
+                                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? oneDatum = null;
+                                    if (datums != null && datums.TryGetValue(viewId, out var vd) && vd != null)
+                                        oneDatum = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>> { [viewId] = vd };
+
+                                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? oneScope = null;
+                                    if (slabEdge && SlabScopes.Count > 0)
+                                        oneScope = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>> { [viewId] = SlabScopes };
+
+                                    var dimResult = AutoDimensionRunner.Run(doc, new List<ElementId> { viewId }, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope);
+                                    Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
+                                        dimResult.Placed > 0 ? "pass" : "info");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log($"View '{view.Name}': failed — {ex.Message}", "fail");
+                                viewFailed = true;
+                            }
+
+                            // Classify the view for the top-bar tracker.
+                            if (viewFailed)            viewsFailed++;   // exception while processing this view
+                            else if (markers > 0)      viewsDone++;     // marked (and dimensioned, if enabled)
+                            else if (markerFails > 0)  viewsFailed++;   // attempted but every marker failed
+                            else                       viewsSkipped++;  // no clash fell in this view's volume
+
+                            Progress(10 + (int)(processed * 88.0 / ViewIds.Count), viewsDone, viewsFailed, viewsSkipped);
                         }
                     }
+                    finally
+                    {
+                        dimCfg.TargetType          = snapTarget;
+                        dimCfg.ChainAligned        = snapChain;
+                        dimCfg.RunGapMm            = snapGap;
+                        dimCfg.RunCrossToleranceMm = snapCross;
+                    }
+
+                    Log($"Done — {viewsDone} view(s) completed, {viewsFailed} failed, {viewsSkipped} skipped.",
+                        viewsDone > 0 ? "pass" : viewsFailed > 0 ? "fail" : "info");
                 }
             }
             catch (Exception ex)
             {
                 Log($"Fatal: {ex.Message}", "fail");
-                fail++;
+                viewsFailed++;
             }
 
-            Progress(100, pass, fail, skip);
-            Complete(pass, fail, skip);
+            Progress(100, viewsDone, viewsFailed, viewsSkipped);
+            Complete(viewsDone, viewsFailed, viewsSkipped);
         }
 
         // When "Show all documents" is on, ignore the definition's saved per-group source
@@ -174,48 +211,48 @@ namespace LemoineTools.Tools.Clash
             };
         }
 
-        private int ClearPreviousMarkers(Document doc)
+        // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the
+        // cross-lines also removes any dimensions that referenced them). One view at a time, inside the
+        // caller's open transaction.
+        private static int ClearViewMarkers(Document doc, ElementId viewId)
         {
             int removed = 0;
-            foreach (var viewId in ViewIds)
+            var toDelete = new List<ElementId>();
+
+            try
             {
-                var toDelete = new List<ElementId>();
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfCategory(BuiltInCategory.OST_Lines)
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(FilledRegion))
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(Dimension))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(Dimension))
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
-
-                foreach (var id in toDelete)
-                {
-                    try { if (doc.Delete(id).Count > 0) removed++; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: delete tagged element", ex); }
-                }
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: delete tagged element", ex); }
             }
             return removed;
         }

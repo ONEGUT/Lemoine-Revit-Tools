@@ -114,7 +114,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     if (dim == null)
                     {
                         result.Failures++;
-                        log($"Source {pd.SourceKey} → {pd.TargetKey}: NewDimension returned null ({bundle.Ordered.Count} refs).", "fail");
+                        log($"Source {pd.SourceKey} → {pd.TargetKey}: NewDimension returned null ({bundle.Ordered.Count} refs) — the target edge may not be visible/dimensionable in this view (e.g. a linked element not shown by the host view).", "fail");
                         continue;
                     }
 

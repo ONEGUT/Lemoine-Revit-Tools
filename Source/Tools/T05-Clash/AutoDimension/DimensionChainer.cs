@@ -53,7 +53,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             // Group by run, then by measurement axis. Each (run, axis) group becomes either a
             // chained string (axis runs along the run) or one representative dimension (axis runs
-            // across the run). Deterministic ordering throughout.
+            // across the run). A chained string deliberately relates the whole run to ONE shared edge
+            // (majority-voted in ChooseTarget). Deterministic ordering throughout.
             var byKey = items
                 .GroupBy(it => (it.RunId, AxisTag(it.Axis)))
                 .OrderBy(g => g.Key.Item1, StringComparer.Ordinal).ThenBy(g => g.Key.Item2, StringComparer.Ordinal);

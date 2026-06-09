@@ -71,12 +71,16 @@ namespace LemoineTools.Lemoine
                 new ToggleItem { Id = "links", Label = "Include linked models as targets",
                                  Desc = "Use loaded Revit links as target sources (coordination slabs / grids).",
                                  DefaultOn = cfg.IncludeLinks },
+                new ToggleItem { Id = "slabDiag", Label = "Diagnose slab edge (log only)",
+                                 Desc = "Logs a per-source face tally (host vs each link) and per-clash candidate ranking during a To Slab Edge run, to pinpoint why auto mode misses a linked slab. No effect on placement.",
+                                 DefaultOn = cfg.DiagnoseSlabEdge },
             });
             runToggles.StateChanged += state =>
             {
                 if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned     = c;
                 if (state.TryGetValue("bothAxes", out var b)) cfg.DimensionBothAxes = b;
                 if (state.TryGetValue("links",    out var l)) cfg.IncludeLinks      = l;
+                if (state.TryGetValue("slabDiag", out var d)) cfg.DiagnoseSlabEdge  = d;
                 cfg.Save();
             };
             panel.Children.Add(runToggles);
