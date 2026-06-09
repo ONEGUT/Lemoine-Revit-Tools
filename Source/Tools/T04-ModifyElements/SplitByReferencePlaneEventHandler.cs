@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -74,7 +75,9 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog($"Found {elements.Count} elements across {SelectedCategoryNames.Count} category(ies).", "info");
                 }
 
-                pushLog($"Splitting at {refPlanes.Count} reference plane(s)...", "info");
+                pushLog($"Splitting {elements.Count} element(s) at {refPlanes.Count} reference plane(s)...", "info");
+
+                var progress = new RunProgressReporter(pushLog, elements.Count, "elements");
 
                 SplitStats stats;
                 using (var tx = new Transaction(doc, "Split Elements by Reference Plane"))
@@ -84,7 +87,7 @@ namespace LemoineTools.Tools.ModifyElements
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes);
+                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes, progress);
 
                     tx.Commit();
                 }
@@ -97,6 +100,8 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(entry, status);
                 }
 
+                pushLog($"Done — {stats.SplitCount} split, {stats.SkipCount} skipped, {stats.FailCount} failed.",
+                        stats.FailCount > 0 ? "fail" : "pass");
                 onProgress(100, stats.SplitCount, stats.FailCount, stats.SkipCount);
                 onComplete(stats.SplitCount, stats.FailCount, stats.SkipCount);
             }

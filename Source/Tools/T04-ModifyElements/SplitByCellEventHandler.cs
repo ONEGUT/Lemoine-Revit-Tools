@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -84,6 +85,8 @@ namespace LemoineTools.Tools.ModifyElements
                 int skipped = 0;
                 int failed  = 0;
 
+                var progress = new RunProgressReporter(pushLog, targetIds.Count, "elements");
+
                 using (var tg = new TransactionGroup(doc, "Split Elements by Cell"))
                 {
                     tg.Start();
@@ -91,7 +94,13 @@ namespace LemoineTools.Tools.ModifyElements
                     foreach (ElementId id in targetIds)
                     {
                         Element el = doc.GetElement(id);
-                        if (el == null) { skipped++; continue; }
+                        if (el == null)
+                        {
+                            skipped++;
+                            progress.Tick();
+                            onProgress(progress.Percent, created, failed, skipped);
+                            continue;
+                        }
 
                         using (var tx = new Transaction(doc, $"Split {el.Name}"))
                         {
@@ -137,11 +146,16 @@ namespace LemoineTools.Tools.ModifyElements
                                 pushLog($"✗ {el.Category?.Name} {el.Id}: {ex.Message}", "fail");
                             }
                         }
+
+                        progress.Tick();
+                        onProgress(progress.Percent, created, failed, skipped);
                     }
 
                     tg.Assimilate();
                 }
 
+                pushLog($"Done — {created} cell(s) created, {skipped} skipped, {failed} failed.",
+                        failed > 0 ? "fail" : "pass");
                 onProgress(100, created, failed, skipped);
                 onComplete(created, failed, skipped);
             }

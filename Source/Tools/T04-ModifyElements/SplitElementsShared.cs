@@ -126,7 +126,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByLevel(
             Document             doc,
             IEnumerable<Element> elements,
-            List<Level>          levels)
+            List<Level>          levels,
+            RunProgressReporter? progress = null)
         {
             var stats = new SplitStats();
 
@@ -150,6 +151,12 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                }
+                finally
+                {
+                    // Tick every element regardless of outcome so the 5% interval log
+                    // reflects true progress through the selection.
+                    progress?.Tick();
                 }
             }
 
@@ -175,7 +182,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByGrid(
             Document             doc,
             IEnumerable<Element> elements,
-            List<Grid?>          grids)
+            List<Grid?>          grids,
+            RunProgressReporter? progress = null)
         {
             var planes = grids
                 .Where(g => g != null)
@@ -183,7 +191,7 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "grids");
+            return SplitByPlanesCore(doc, elements, planes, "grids", progress);
         }
 
         /// <summary>
@@ -195,7 +203,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByReferencePlane(
             Document              doc,
             IEnumerable<Element>  elements,
-            List<ReferencePlane?> refPlanes)
+            List<ReferencePlane?> refPlanes,
+            RunProgressReporter?  progress = null)
         {
             var planes = refPlanes
                 .Where(r => r != null)
@@ -203,14 +212,15 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "reference planes");
+            return SplitByPlanesCore(doc, elements, planes, "reference planes", progress);
         }
 
         private static SplitStats SplitByPlanesCore(
             Document                       doc,
             IEnumerable<Element>           elements,
             List<(XYZ Normal, XYZ Origin)> planes,
-            string                         contextLabel)
+            string                         contextLabel,
+            RunProgressReporter?           progress = null)
         {
             var stats = new SplitStats();
 
@@ -238,6 +248,12 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                }
+                finally
+                {
+                    // Tick every element regardless of outcome so the 5% interval log
+                    // reflects true progress through the selection.
+                    progress?.Tick();
                 }
             }
 

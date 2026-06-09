@@ -972,6 +972,10 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
             _resetBtn.IsEnabled = false;
+            // True-hide every step except the last (which hosts the run controls + output
+            // log), then extend the log to its max height so the run output fills the area.
+            HideStepsForRun(true);
+            _logScroll.Height = _logMaxH;
             _logStack.Children.Clear(); PushLog("Starting…", "info");
             _tool.Run(
                 // BeginInvoke (non-blocking) — lets Execute() keep running while
@@ -1010,11 +1014,30 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
             _resetBtn.IsEnabled = true;
+            // Restore the step rows hidden for the run and return the log to its default
+            // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
+            HideStepsForRun(false);
+            _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
             _logStack.Children.Clear(); PushLog("Ready.", "info");
             SetStatus("● Configuring…"); SetCounts(0, 0, 0); SetProgress(0);
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             ActivateStep(0);
+        }
+
+        // During a run, true-hide every step row except the last (which hosts the run
+        // controls + output log) so the log can expand to fill the freed space. Passing
+        // false restores all rows to visible; conditional-step re-hiding is then handled
+        // by the subsequent RefreshStepVisibility call.
+        private void HideStepsForRun(bool hide)
+        {
+            if (_stepRows == null) return;
+            int last = _tool.Steps.Length - 1;
+            for (int i = 0; i < _tool.Steps.Length; i++)
+            {
+                if (i == last || _stepRows[i] == null) continue;
+                _stepRows[i].Visibility = hide ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         // ═══════════════════════════════════════ LOG ══════════════════════════

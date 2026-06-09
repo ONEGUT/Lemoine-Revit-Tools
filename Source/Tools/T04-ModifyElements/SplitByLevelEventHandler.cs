@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -77,7 +78,9 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog($"Found {elements.Count} elements across {SelectedCategoryNames.Count} category(ies).", "info");
                 }
 
-                pushLog($"Splitting at {levels.Count} level(s)...", "info");
+                pushLog($"Splitting {elements.Count} element(s) at {levels.Count} level(s)...", "info");
+
+                var progress = new RunProgressReporter(pushLog, elements.Count, "elements");
 
                 SplitStats stats;
                 using (var tx = new Transaction(doc, "Split Elements by Level"))
@@ -87,12 +90,11 @@ namespace LemoineTools.Tools.ModifyElements
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels);
+                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels, progress);
 
                     tx.Commit();
                 }
 
-                int total = stats.SplitCount + stats.SkipCount + stats.FailCount;
                 foreach (var entry in stats.Log)
                 {
                     string status = entry.StartsWith("✓") ? "pass"
@@ -101,6 +103,8 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(entry, status);
                 }
 
+                pushLog($"Done — {stats.SplitCount} split, {stats.SkipCount} skipped, {stats.FailCount} failed.",
+                        stats.FailCount > 0 ? "fail" : "pass");
                 onProgress(100, stats.SplitCount, stats.FailCount, stats.SkipCount);
                 onComplete(stats.SplitCount, stats.FailCount, stats.SkipCount);
             }

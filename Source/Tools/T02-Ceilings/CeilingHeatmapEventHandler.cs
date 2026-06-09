@@ -293,9 +293,38 @@ namespace LemoineTools.Tools.Ceilings
                         catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap: delete element (protected or already gone)", __lex); }
                     }
 
-                    foreach (Element el in new FilteredElementCollector(doc, viewId)
+                    var hostCeilings = new FilteredElementCollector(doc, viewId)
                         .OfClass(typeof(Ceiling))
-                        .WhereElementIsNotElementType())
+                        .WhereElementIsNotElementType()
+                        .ToList();
+
+                    var linkInstances = new FilteredElementCollector(doc, viewId)
+                        .OfClass(typeof(RevitLinkInstance))
+                        .Cast<RevitLinkInstance>()
+                        .Where(li => li.GetLinkDocument() != null)
+                        .ToList();
+
+                    var linkedCeilings = new List<(RevitLinkInstance Link, Document LinkDoc, Transform Xform, Element El)>();
+                    foreach (RevitLinkInstance link in linkInstances)
+                    {
+                        Document  linkDoc = link.GetLinkDocument();
+                        Transform xform   = link.GetTotalTransform();
+                        var bbFilter = GetViewBoundsFilter(vp, xform.Inverse);
+
+                        foreach (Element el in new FilteredElementCollector(linkDoc)
+                            .OfClass(typeof(Ceiling))
+                            .WherePasses(bbFilter)
+                            .WhereElementIsNotElementType())
+                            linkedCeilings.Add((link, linkDoc, xform, el));
+                    }
+
+                    // A single view can hold thousands of ceilings, so the per-view progress
+                    // band alone goes silent here — report tag placement at 5% intervals.
+                    var tagProgress = new RunProgressReporter(
+                        Log, hostCeilings.Count + linkedCeilings.Count,
+                        $"ceiling tags (view {vi + 1} of {viewCount})");
+
+                    foreach (Element el in hostCeilings)
                     {
                         try
                         {
@@ -311,42 +340,28 @@ namespace LemoineTools.Tools.Ceilings
                             Log($"Could not place tag on host ceiling {el.Id}: {ex.Message}", "fail");
                             fail++;
                         }
+                        tagProgress.Tick();
                     }
 
-                    var linkInstances = new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(RevitLinkInstance))
-                        .Cast<RevitLinkInstance>()
-                        .Where(li => li.GetLinkDocument() != null)
-                        .ToList();
-
-                    foreach (RevitLinkInstance link in linkInstances)
+                    foreach (var lc in linkedCeilings)
                     {
-                        Document  linkDoc  = link.GetLinkDocument();
-                        Transform xform    = link.GetTotalTransform();
-                        var bbFilter = GetViewBoundsFilter(vp, xform.Inverse);
-
-                        foreach (Element el in new FilteredElementCollector(linkDoc)
-                            .OfClass(typeof(Ceiling))
-                            .WherePasses(bbFilter)
-                            .WhereElementIsNotElementType())
+                        try
                         {
-                            try
-                            {
-                                Reference linkedRef = new Reference(el).CreateLinkReference(link);
-                                XYZ tagPt = xform.OfPoint(GetTagPoint(el as Ceiling, linkDoc));
+                            Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
+                            XYZ tagPt = lc.Xform.OfPoint(GetTagPoint(lc.El as Ceiling, lc.LinkDoc));
 
-                                IndependentTag.Create(
-                                    doc, viewId, linkedRef,
-                                    false, TagMode.TM_ADDBY_CATEGORY,
-                                    TagOrientation.Horizontal, tagPt);
-                                tagPlaced++;   // tags are reported separately, not in the pass total
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"Could not place tag on linked ceiling {el.Id}: {ex.Message}", "fail");
-                                fail++;
-                            }
+                            IndependentTag.Create(
+                                doc, viewId, linkedRef,
+                                false, TagMode.TM_ADDBY_CATEGORY,
+                                TagOrientation.Horizontal, tagPt);
+                            tagPlaced++;   // tags are reported separately, not in the pass total
                         }
+                        catch (Exception ex)
+                        {
+                            Log($"Could not place tag on linked ceiling {lc.El.Id}: {ex.Message}", "fail");
+                            fail++;
+                        }
+                        tagProgress.Tick();
                     }
 
                     Progress(90 + (int)((vi + 1) * 8.0 / viewCount), pass, fail, skip);
