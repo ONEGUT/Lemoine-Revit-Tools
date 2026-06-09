@@ -267,12 +267,11 @@ namespace LemoineTools.Tools.LinkViews
                 ? new List<string> { _selectedSourceKey }
                 : new List<string>();
 
-            var tabs = new LemoineMultiSelectTabs();
+            // Source is a single view — restrict the picker to one checkbox at a time.
+            var tabs = new LemoineMultiSelectTabs { SingleSelect = true };
             tabs.SelectionChanged += selected =>
             {
-                var list  = selected.ToList();
-                string newKey = list.FirstOrDefault(k => k != _selectedSourceKey)
-                             ?? list.LastOrDefault();
+                string? newKey = selected.FirstOrDefault();
                 if (newKey == _selectedSourceKey) return;
                 _selectedSourceKey  = newKey;
                 _selectedTargetKeys = new List<string>();
