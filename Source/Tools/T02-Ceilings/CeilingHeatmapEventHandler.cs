@@ -280,7 +280,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     var viewId = SelectedViewIds[vi];
                     var vp     = doc.GetElement(viewId) as ViewPlan;
-                    if (vp == null) { skip++; continue; }
+                    if (vp == null) continue;   // already counted as skipped in the scan pass
 
                     foreach (var staleId in new FilteredElementCollector(doc, viewId)
                         .OfClass(typeof(IndependentTag))
@@ -333,7 +333,7 @@ namespace LemoineTools.Tools.Ceilings
                                 doc, viewId, new Reference(el),
                                 false, TagMode.TM_ADDBY_CATEGORY,
                                 TagOrientation.Horizontal, tagPt);
-                            tagPlaced++;   // tags are reported separately, not in the pass total
+                            tagPlaced++;   // folded into the pass total at the end of this method
                         }
                         catch (Exception ex)
                         {
@@ -354,7 +354,7 @@ namespace LemoineTools.Tools.Ceilings
                                 doc, viewId, linkedRef,
                                 false, TagMode.TM_ADDBY_CATEGORY,
                                 TagOrientation.Horizontal, tagPt);
-                            tagPlaced++;   // tags are reported separately, not in the pass total
+                            tagPlaced++;   // folded into the pass total at the end of this method
                         }
                         catch (Exception ex)
                         {
@@ -375,6 +375,10 @@ namespace LemoineTools.Tools.Ceilings
                     $"{Math.Max(0, tagPlaced - tagDeleted)} net new).", "pass");
             else
                 Log($"Tags placed: {tagPlaced} (none previously existed).", "pass");
+
+            // Tags are a primary deliverable of the heatmap — count them toward pass so the
+            // headline total reflects the ceilings tagged, not just the bucket filters created.
+            pass += tagPlaced;
         }
 
         private FamilySymbol? GetOrLoadTagSymbol(Document doc)

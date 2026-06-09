@@ -44,6 +44,10 @@ namespace LemoineTools.Tools.Clash
             var uidoc = app.ActiveUIDocument;
             var doc   = uidoc.Document;
             int viewsDone = 0, viewsFailed = 0, viewsSkipped = 0;
+            // The tool's real deliverables are markers and dimensions placed — these drive the
+            // pass/fail counters so the headline reflects what was produced, not how many views
+            // were touched. View tallies are reported in the summary log line.
+            int totalMarkers = 0, totalMarkerFails = 0, totalDims = 0, totalDimFails = 0;
 
             try
             {
@@ -111,7 +115,8 @@ namespace LemoineTools.Tools.Clash
                             if (view == null)
                             {
                                 viewsSkipped++;
-                                Progress(10 + (int)(processed * 88.0 / ViewIds.Count), viewsDone, viewsFailed, viewsSkipped);
+                                Progress(10 + (int)(processed * 88.0 / ViewIds.Count),
+                                     totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
                                 continue;
                             }
 
@@ -137,6 +142,8 @@ namespace LemoineTools.Tools.Clash
                                         var pr = engine.PlaceInView(doc, view, det, cache);
                                         markers     += pr.Markers;
                                         markerFails += pr.Fails;
+                                        totalMarkers     += pr.Markers;
+                                        totalMarkerFails += pr.Fails;
                                     }
                                     tx.Commit();
                                 }
@@ -154,6 +161,8 @@ namespace LemoineTools.Tools.Clash
                                         oneScope = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>> { [viewId] = SlabScopes };
 
                                     var dimResult = AutoDimensionRunner.Run(doc, new List<ElementId> { viewId }, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope);
+                                    totalDims     += dimResult.Placed;
+                                    totalDimFails += dimResult.Failures;
                                     Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
                                         dimResult.Placed > 0 ? "pass" : "info");
                                 }
@@ -170,7 +179,8 @@ namespace LemoineTools.Tools.Clash
                             else if (markerFails > 0)  viewsFailed++;   // attempted but every marker failed
                             else                       viewsSkipped++;  // no clash fell in this view's volume
 
-                            Progress(10 + (int)(processed * 88.0 / ViewIds.Count), viewsDone, viewsFailed, viewsSkipped);
+                            Progress(10 + (int)(processed * 88.0 / ViewIds.Count),
+                                     totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
                         }
                     }
                     finally
@@ -181,18 +191,20 @@ namespace LemoineTools.Tools.Clash
                         dimCfg.RunCrossToleranceMm = snapCross;
                     }
 
-                    Log($"Done — {viewsDone} view(s) completed, {viewsFailed} failed, {viewsSkipped} skipped.",
-                        viewsDone > 0 ? "pass" : viewsFailed > 0 ? "fail" : "info");
+                    Log($"Done — {totalMarkers} marker(s) and {totalDims} dimension(s) placed "
+                      + $"across {viewsDone} view(s); {totalMarkerFails + totalDimFails} placement failure(s); "
+                      + $"{viewsFailed} view(s) failed, {viewsSkipped} view(s) with nothing to mark.",
+                        totalMarkers + totalDims > 0 ? "pass" : (totalMarkerFails + totalDimFails) > 0 ? "fail" : "info");
                 }
             }
             catch (Exception ex)
             {
                 Log($"Fatal: {ex.Message}", "fail");
-                viewsFailed++;
+                totalMarkerFails++;
             }
 
-            Progress(100, viewsDone, viewsFailed, viewsSkipped);
-            Complete(viewsDone, viewsFailed, viewsSkipped);
+            Progress(100, totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+            Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
         }
 
         // When "Show all documents" is on, ignore the definition's saved per-group source

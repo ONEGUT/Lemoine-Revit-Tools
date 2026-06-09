@@ -382,7 +382,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                     CurveLoop loop = MakeShapeLoop(blk.Kind ?? "square", x0, y0, x1, y1);
                                     FilledRegion.Create(doc, frtId, dv.Id, new List<CurveLoop> { loop });
                                 }
-                                catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); }
+                                catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); fail++; }
                             }
 
                             // Label: origin at blockY — Revit TextNote Y is the baseline,
@@ -408,7 +408,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 }
 
                 tx.Commit();
-                pass++;
+                // Deliverable = legend blocks/swatches drawn, not a hardcoded 1 for the view.
+                pass += blocksDone;
 
                 // Notify caller of the newly created view's id (Create mode only).
                 if (!UpdateMode) OnLegendCreated?.Invoke(dv.Id);
@@ -416,8 +417,9 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
             foreach (var l in logMsgs) Log(l, "info");
             Log(UpdateMode
-                ? $"Updated legend view '{baseTitle}'."
-                : $"Created legend view '{legendName}'.", "pass");
+                ? $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
+                : $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
+                fail > 0 ? "fail" : "pass");
         }
 
         // ── Shape helpers ─────────────────────────────────────────────────────

@@ -36,7 +36,11 @@ namespace LemoineTools.Tools.Testing
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument.Document;
+            // pass = clash markers placed (one per clash — the deliverable). Elevation tags
+            // are a label on each marker, tracked separately so a successful run isn't reported
+            // as ~2× the clash count by summing markers + tags.
             int pass = 0, fail = 0, skip = 0;
+            int tagsPlaced = 0;
 
             try
             {
@@ -110,8 +114,8 @@ namespace LemoineTools.Tools.Testing
                             Log("Placing elevation tags…", "info");
 
                             var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
-                            pass += tagResult.Placed;
-                            fail += tagResult.Failures;
+                            tagsPlaced += tagResult.Placed;
+                            fail       += tagResult.Failures;
                             Log($"Elevation tags — {tagResult.Placed} placed, {tagResult.Failures} failure(s).",
                                 tagResult.Placed > 0 ? "pass" : "fail");
                         }
@@ -124,6 +128,8 @@ namespace LemoineTools.Tools.Testing
                 fail++;
             }
 
+            Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
+                pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
         }

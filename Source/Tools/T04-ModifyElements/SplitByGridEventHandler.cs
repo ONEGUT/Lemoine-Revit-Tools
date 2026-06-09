@@ -102,10 +102,11 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(entry, status);
                 }
 
-                pushLog($"Done — {stats.SplitCount} split, {stats.SkipCount} skipped, {stats.FailCount} failed.",
+                pushLog($"Done — {stats.SegmentsCreated} segment(s) created from {stats.SplitCount} element(s), "
+                      + $"{stats.SkipCount} skipped, {stats.FailCount} failed.",
                         stats.FailCount > 0 ? "fail" : "pass");
-                onProgress(100, stats.SplitCount, stats.FailCount, stats.SkipCount);
-                onComplete(stats.SplitCount, stats.FailCount, stats.SkipCount);
+                onProgress(100, stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
+                onComplete(stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
             }
             catch (Exception ex)
             {

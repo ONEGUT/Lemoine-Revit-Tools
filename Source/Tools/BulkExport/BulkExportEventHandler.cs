@@ -151,8 +151,9 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     if (ExportMode == "Sheets")
                     {
-                        pushLog("NWC: Skipped — NWC requires Views mode (3D views only). Switch to Views in Step 1.", "fail");
+                        pushLog("NWC: Skipped — NWC requires Views mode (3D views only). Switch to Views in Step 1.", "warn");
                         debug.Log("NWC", "Export blocked — ExportMode is Sheets.");
+                        skip++;
                     }
                     else
                     {
@@ -194,8 +195,9 @@ namespace LemoineTools.Tools.BulkExport
                 // ── IFC pre-flight ────────────────────────────────────────────
                 if (ExportIfc && ExportMode == "Sheets")
                 {
-                    pushLog("IFC: Skipped — IFC requires Views mode (3D views only). Switch to Views in Step 1.", "fail");
+                    pushLog("IFC: Skipped — IFC requires Views mode (3D views only). Switch to Views in Step 1.", "warn");
                     debug.Log("IFC", "Export blocked — ExportMode is Sheets.");
+                    skip++;
                 }
 
                 if (Packs.Count > 0)
@@ -203,9 +205,9 @@ namespace LemoineTools.Tools.BulkExport
                     // Packs only combine PDF and order DWG. NWC/IFC are inherently per-view
                     // and cannot be packed — report this rather than dropping them silently.
                     if (ExportNwc)
-                        pushLog("NWC: Skipped — NWC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export NWC.", "warn");
+                        { pushLog("NWC: Skipped — NWC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export NWC.", "warn"); skip++; }
                     if (ExportIfc && ExportMode != "Sheets")
-                        pushLog("IFC: Skipped — IFC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export IFC.", "warn");
+                        { pushLog("IFC: Skipped — IFC is per-view and cannot be exported as part of a pack. Clear packs (Step 2) to export IFC.", "warn"); skip++; }
 
                     ExportPackMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip);
                 }
