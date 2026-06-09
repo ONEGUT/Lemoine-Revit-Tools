@@ -22,6 +22,13 @@ namespace LemoineTools.Lemoine.Controls
         public IReadOnlyCollection<string> SelectedItems => _selected;
         public event Action<IReadOnlyCollection<string>>? SelectionChanged;
 
+        /// <summary>
+        /// When true, only one item can be selected at a time across all groups: checking an
+        /// item clears any prior selection and the per-group "All" row is hidden. Defaults to
+        /// false (multi-select). Set before <see cref="SetGroups"/>.
+        /// </summary>
+        public bool SingleSelect { get; set; } = false;
+
         /// <summary>Accessible name announced by screen readers when the control receives focus.</summary>
         public string AccessibleName { set => AutomationProperties.SetName(this, value ?? string.Empty); }
 
@@ -226,24 +233,29 @@ namespace LemoineTools.Lemoine.Controls
             }
 
             var allItems = _groups[groupName];
-            bool allChecked  = allItems.Count > 0 && allItems.All(x => _selected.Contains(x));
-            bool someChecked = allItems.Any(x => _selected.Contains(x)) && !allChecked;
 
-            _checkStack.Children.Add(BuildCheckItem(
-                $"All {groupName}", allChecked, someChecked,
-                on =>
-                {
-                    if (on) foreach (var it in allItems) _selected.Add(it);
-                    else    foreach (var it in allItems) _selected.Remove(it);
-                    SelectionChanged?.Invoke(SelectedItems);
-                    RefreshAllCounters();
-                    ActivateGroup(groupName);
-                },
-                bold: true));
+            // The per-group "All" row is meaningless when only one item may be selected.
+            if (!SingleSelect)
+            {
+                bool allChecked  = allItems.Count > 0 && allItems.All(x => _selected.Contains(x));
+                bool someChecked = allItems.Any(x => _selected.Contains(x)) && !allChecked;
 
-            var divider = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 0, 0, 5) };
-            divider.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            _checkStack.Children.Add(divider);
+                _checkStack.Children.Add(BuildCheckItem(
+                    $"All {groupName}", allChecked, someChecked,
+                    on =>
+                    {
+                        if (on) foreach (var it in allItems) _selected.Add(it);
+                        else    foreach (var it in allItems) _selected.Remove(it);
+                        SelectionChanged?.Invoke(SelectedItems);
+                        RefreshAllCounters();
+                        ActivateGroup(groupName);
+                    },
+                    bold: true));
+
+                var divider = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 0, 0, 5) };
+                divider.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
+                _checkStack.Children.Add(divider);
+            }
 
             foreach (var item in allItems)
             {
@@ -252,11 +264,18 @@ namespace LemoineTools.Lemoine.Controls
                     item, _selected.Contains(item), false,
                     on =>
                     {
-                        if (on) _selected.Add(captured);
-                        else    _selected.Remove(captured);
+                        if (on)
+                        {
+                            if (SingleSelect) _selected.Clear();
+                            _selected.Add(captured);
+                        }
+                        else _selected.Remove(captured);
                         SelectionChanged?.Invoke(SelectedItems);
                         RefreshAllCounters();
-                        RefreshSelectAllRow(groupName, allItems);
+                        // Single-select rebuilds the list so the previously checked item clears;
+                        // multi-select only needs the "All" row's tri-state refreshed.
+                        if (SingleSelect) ActivateGroup(groupName);
+                        else              RefreshSelectAllRow(groupName, allItems);
                     }));
             }
         }
