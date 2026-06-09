@@ -889,7 +889,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (doc == null) return;
             try
             {
-                var ids = ParameterFilterUtilities.GetAllFilterableCategories(doc);
+                var ids = ParameterFilterUtilities.GetAllFilterableCategories();
                 var map = new Dictionary<string, string>(StringComparer.Ordinal);
                 foreach (var id in ids)
                 {
