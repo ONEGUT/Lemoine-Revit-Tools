@@ -861,6 +861,10 @@ namespace LemoineTools.Tools.Clash
             var results = new List<ClashResult>();
             int booleanFails = 0;
 
+            // The pair test is O(group1 × group2) — the most expensive loop in the run.
+            // Report progress over the outer group at 5% intervals so it isn't silent.
+            var progress = new RunProgressReporter(Log, group1.Count, "source elements");
+
             foreach (var g1 in group1)
             {
                 var b1 = g1.HostBBox;
@@ -903,6 +907,8 @@ namespace LemoineTools.Tools.Clash
                         return results;
                     }
                 }
+
+                progress.Tick();
             }
             if (booleanFails > 0) Log($"  ({booleanFails} boolean op fallback(s) to bbox)", "info");
             return results;

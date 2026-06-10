@@ -20,8 +20,12 @@ namespace LemoineTools.Tools.LinkViews
     /// options (Duplicate, Duplicate with Detailing, Duplicate as Dependent) and names
     /// each copy from a token/chip pattern (the Bulk Export naming control).
     /// </summary>
-    public class ViewsBulkDuplicateViewModel : ILemoineTool, ILemoineReviewable
+    public class ViewsBulkDuplicateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Duplicate Views";
         public string RunLabel => "Duplicate in Revit →";

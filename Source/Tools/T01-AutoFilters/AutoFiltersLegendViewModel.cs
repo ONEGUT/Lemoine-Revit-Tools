@@ -13,8 +13,12 @@ namespace LemoineTools.Tools.AutoFilters
     /// Legend view with colored swatches. No user inputs required beyond
     /// confirming the run.
     /// </summary>
-    public class AutoFiltersLegendViewModel : ILemoineTool, ILemoineReviewable
+    public class AutoFiltersLegendViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "swatches";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Filter Legend Creator";
         public string RunLabel => "Create Legend →";

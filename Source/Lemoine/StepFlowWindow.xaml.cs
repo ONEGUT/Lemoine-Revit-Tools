@@ -16,6 +16,13 @@ namespace LemoineTools.Lemoine
     {
         private readonly ILemoineTool _tool;
 
+        // Callbacks the window hands to the static ExternalEvent handlers / tool ViewModels
+        // (which outlive the window) capture this sink instead of `this`. Severing it on close
+        // lets the whole window + visual tree be garbage-collected even though the long-lived
+        // handler still holds the delegate. The sink itself is tiny.
+        private sealed class WindowSink { public StepFlowWindow? Win; }
+        private readonly WindowSink _sink = new WindowSink();
+
         // Theme is now owned by LemoineSettings singleton
         private LemoineTheme ActiveTheme => LemoineSettings.Instance.ActiveTheme;
 
@@ -66,6 +73,7 @@ namespace LemoineTools.Lemoine
         {
             InitializeComponent();
             _tool  = tool ?? throw new ArgumentNullException(nameof(tool));
+            _sink.Win = this;
             Title = tool.Title;
 
             LemoineSettings.Instance.ApplyTo(Resources);
@@ -77,13 +85,31 @@ namespace LemoineTools.Lemoine
             {
                 LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+                // The tool (VM) is retained by its static ExternalEvent handler and outlives
+                // this window — detach so a late ValidationChanged can't touch a dead window.
+                _tool.ValidationChanged -= OnToolValidationChanged;
+                // Let the tool detach any callbacks it parked on its static ExternalEvent handler.
+                (_tool as ILemoineToolCleanup)?.OnWindowClosed();
+                // Sever the sink so the static handler's retained run/refresh/activate/navigate
+                // callbacks no longer root this window — it (and its visual tree) can now be GC'd.
+                _sink.Win = null;
             };
 
             BuildChrome();
-            _tool.ValidationChanged += (s, e) => { RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview(); };
+            _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
-                nav.NavigateRequested += (s, idx) =>
-                    Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
+                nav.NavigateRequested += (s, idx) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx)); };
+        }
+
+        // ValidationChanged can be raised from a tool's refresh callback on Revit's main
+        // thread (not this window's STA thread) and could even arrive after the window closed.
+        // Stay synchronous on the UI thread (preserves validation timing); otherwise marshal,
+        // guarded against a terminated dispatcher.
+        private void OnToolValidationChanged(object? sender, EventArgs e)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            if (!Dispatcher.CheckAccess()) { SafeBeginInvoke(() => OnToolValidationChanged(sender, e)); return; }
+            RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview();
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -114,6 +140,40 @@ namespace LemoineTools.Lemoine
             }));
         }
 
+        // Marshals back onto this window's dispatcher, but bails if the dispatcher has begun
+        // shutting down (window closing/closed). Callbacks passed to the static ExternalEvent
+        // handlers and tool ViewModels outlive this window, so a late callback calling
+        // Dispatcher.BeginInvoke on a terminated dispatcher would throw on Revit's main thread
+        // and hard-crash Revit. This guard makes such a late callback a no-op.
+        private void SafeBeginInvoke(Action action)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(action);
+        }
+
+        // Rebuilds a step's content in place (IStepAware refresh). Runs on the UI thread.
+        private void RefreshStepContent(string stepId)
+        {
+            int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
+            if (idx < 0) return;
+            var newContent = _tool.GetStepContent(stepId) ?? new Grid();
+            if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
+            {
+                cs.Children.RemoveAt(0);
+                cs.Children.Insert(0, newContent);
+            }
+        }
+
+        // Pulls this window back to the foreground after a Revit interaction (IWindowActivatable).
+        private void BringToForeground()
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+            // Nudge to the top without staying pinned, then return keyboard focus.
+            Topmost = true; Topmost = false;
+            Focus();
+        }
+
         private void UpdateRowHeights()
         {
             if (_root == null) return;
@@ -135,20 +195,12 @@ namespace LemoineTools.Lemoine
             // Wire step-activation callbacks for tools that implement IStepAware.
             if (_tool is IStepAware stepAware)
             {
+                // Captures the sink (not `this`) so a retained refresh callback can't keep the
+                // window alive after close; guarded so a late refresh doesn't hit a dead dispatcher.
                 stepAware.SetContentRefreshCallback(stepId =>
                 {
-                    // Always dispatch to WPF thread — called from any thread.
-                    Dispatcher.BeginInvoke((Action)(() =>
-                    {
-                        int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
-                        if (idx < 0) return;
-                        var newContent = _tool.GetStepContent(stepId) ?? new Grid();
-                        if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
-                        {
-                            cs.Children.RemoveAt(0);
-                            cs.Children.Insert(0, newContent);
-                        }
-                    }));
+                    var w = _sink.Win;
+                    if (w != null) w.SafeBeginInvoke(() => w.RefreshStepContent(stepId));
                 });
             }
 
@@ -157,14 +209,10 @@ namespace LemoineTools.Lemoine
             if (_tool is IWindowActivatable activatable)
             {
                 activatable.SetActivateCallback(() =>
-                    Dispatcher.BeginInvoke((Action)(() =>
-                    {
-                        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-                        Activate();
-                        // Nudge to the top without staying pinned, then return keyboard focus.
-                        Topmost = true; Topmost = false;
-                        Focus();
-                    })));
+                {
+                    var w = _sink.Win;
+                    if (w != null) w.SafeBeginInvoke(() => w.BringToForeground());
+                });
             }
 
             // Defer tab-bar rendering until after callers can RegisterLogTab()
@@ -972,16 +1020,19 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
             _resetBtn.IsEnabled = false;
+            // True-hide every step except the last (which hosts the run controls + output
+            // log), then extend the log to its max height so the run output fills the area.
+            HideStepsForRun(true);
+            _logScroll.Height = _logMaxH;
             _logStack.Children.Clear(); PushLog("Starting…", "info");
             _tool.Run(
-                // BeginInvoke (non-blocking) — lets Execute() keep running while
-                // the window's dedicated STA thread processes UI updates in real time.
-                pushLog:    (t, s) => Dispatcher.BeginInvoke(
-                                (Action)(() => PushLog(t, s))),
-                onProgress: (pct, p, f, s) => Dispatcher.BeginInvoke(
-                                (Action)(() => { SetCounts(p, f, s); SetProgress(pct); })),
-                onComplete: (p, f, s)       => Dispatcher.BeginInvoke(
-                                (Action)(() => CompleteRun(p, f, s))));
+                // SafeBeginInvoke (non-blocking, shutdown-guarded) — lets Execute() keep
+                // running while the window's dedicated STA thread processes UI updates in real
+                // time, and no-ops if the window has been closed mid-run (the handler is static
+                // and keeps calling these after the dispatcher is gone).
+                pushLog:    (t, s)          => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.PushLog(t, s)); },
+                onProgress: (pct, p, f, s)  => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => { w.SetCounts(p, f, s); w.SetProgress(pct); }); },
+                onComplete: (p, f, s)       => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.CompleteRun(p, f, s)); });
         }
 
         private void CompleteRun(int pass, int fail, int skip)
@@ -997,7 +1048,61 @@ namespace LemoineTools.Lemoine
             _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineGreen");
             _resetBtn.IsEnabled = true;
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
+            // Prominent, self-describing summary in the output log (the top bar keeps the
+            // generic pass/fail/skip): "42 segments" plus any per-output chip breakdown.
+            PushRunSummary(pass, fail, skip);
             UpdateStepCounter();
+        }
+
+        // Appends a large-text result summary to the output log. Every tool gets a headline
+        // line built from its ILemoineRunResult.ResultNoun ("42 segments · 2 skipped · 0 failed");
+        // multi-output tools add a second line of labelled chip figures ("120 markers · 118 dims").
+        private void PushRunSummary(int pass, int fail, int skip)
+        {
+            var rr   = _tool as ILemoineRunResult;
+            var noun = rr?.ResultNoun;
+            if (string.IsNullOrWhiteSpace(noun)) noun = "done";
+
+            var block = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
+
+            // Headline: big coloured primary count + noun, then skipped / failed.
+            var headline = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            headline.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            headline.Inlines.Add(SummaryRun(pass.ToString(),  "LemoineGreen",   "LemoineFS_XL", true));
+            headline.Inlines.Add(SummaryRun($" {noun}",        "LemoineText",    "LemoineFS_XL", true));
+            headline.Inlines.Add(SummaryRun($"    {skip} skipped", "LemoineTextDim", "LemoineFS_LG", false));
+            headline.Inlines.Add(SummaryRun($"    {fail} failed",
+                fail > 0 ? "LemoineRed" : "LemoineTextDim", "LemoineFS_LG", false));
+            block.Children.Add(headline);
+
+            // Optional per-output breakdown.
+            var chips = rr?.ResultChips;
+            if (chips != null && chips.Count > 0)
+            {
+                var chipLine = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+                chipLine.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                bool first = true;
+                foreach (var chip in chips)
+                {
+                    if (!first) chipLine.Inlines.Add(SummaryRun("  ·  ", "LemoineTextDim", "LemoineFS_LG", false));
+                    first = false;
+                    var colorKey = string.IsNullOrWhiteSpace(chip.ColorKey) ? "LemoineText" : chip.ColorKey;
+                    chipLine.Inlines.Add(SummaryRun(chip.Count.ToString(), colorKey, "LemoineFS_LG", true));
+                    chipLine.Inlines.Add(SummaryRun($" {chip.Label}", "LemoineTextDim", "LemoineFS_LG", false));
+                }
+                block.Children.Add(chipLine);
+            }
+
+            _logStack.Children.Add(block);
+            _logScroll.ScrollToEnd();
+        }
+
+        private static System.Windows.Documents.Run SummaryRun(string text, string colorKey, string fsKey, bool bold)
+        {
+            var run = new System.Windows.Documents.Run(text) { FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
+            run.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, colorKey);
+            run.SetResourceReference(System.Windows.Documents.TextElement.FontSizeProperty, fsKey);
+            return run;
         }
 
         private void ResetAll()
@@ -1010,11 +1115,30 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
             _resetBtn.IsEnabled = true;
+            // Restore the step rows hidden for the run and return the log to its default
+            // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
+            HideStepsForRun(false);
+            _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
             _logStack.Children.Clear(); PushLog("Ready.", "info");
             SetStatus("● Configuring…"); SetCounts(0, 0, 0); SetProgress(0);
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             ActivateStep(0);
+        }
+
+        // During a run, true-hide every step row except the last (which hosts the run
+        // controls + output log) so the log can expand to fill the freed space. Passing
+        // false restores all rows to visible; conditional-step re-hiding is then handled
+        // by the subsequent RefreshStepVisibility call.
+        private void HideStepsForRun(bool hide)
+        {
+            if (_stepRows == null) return;
+            int last = _tool.Steps.Length - 1;
+            for (int i = 0; i < _tool.Steps.Length; i++)
+            {
+                if (i == last || _stepRows[i] == null) continue;
+                _stepRows[i].Visibility = hide ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         // ═══════════════════════════════════════ LOG ══════════════════════════

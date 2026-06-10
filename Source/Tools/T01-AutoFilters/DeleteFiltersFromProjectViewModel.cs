@@ -13,8 +13,12 @@ namespace LemoineTools.Tools.AutoFilters
     /// Step 1 — select which filters to delete (grouped by discipline prefix).
     /// Step 2 — Review &amp; Run (with explicit warning card).
     /// </summary>
-    public class DeleteFiltersFromProjectViewModel : ILemoineTool, ILemoineReviewable
+    public class DeleteFiltersFromProjectViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "filters";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Delete Filters from Project";
         public string RunLabel => "Permanently Delete →";

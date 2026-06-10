@@ -12,8 +12,12 @@ using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ProjectedCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
+    public class ProjectedCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "curves";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── ILemoineTool identity ─────────────────────────────────────────────
         public string Title    => "Project Ceiling Grids";
         public string RunLabel => "Run in Revit →";

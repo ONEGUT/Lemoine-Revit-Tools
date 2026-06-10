@@ -25,8 +25,12 @@ namespace LemoineTools.Tools.AutoFilters
     //   S5  Summary card + Confirm triggers DiscoverEventHandler (Commit)
     // =========================================================================
 
-    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable
+    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "rules";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Nested types ──────────────────────────────────────────────────────
 
         public class LinkEntry

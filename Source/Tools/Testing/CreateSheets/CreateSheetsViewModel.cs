@@ -15,8 +15,12 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Testing
 {
-    public class CreateSheetsViewModel : ILemoineTool, ILemoineReviewable
+    public class CreateSheetsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "sheets";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Constants ─────────────────────────────────────────────────────────
         private static readonly string[] Modes =
             { "By Level", "By Room", "By Scope Box", "From CSV" };

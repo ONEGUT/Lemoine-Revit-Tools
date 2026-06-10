@@ -18,8 +18,23 @@ namespace LemoineTools.Tools.Clash
     /// Distances are edited in imperial units (oversize in inches, tolerances in feet) but stored
     /// internally in millimetres — the engine divides by 304.8.
     /// </summary>
-    public class ClashFinderViewModel : ILemoineTool, ILemoineReviewable, IWindowActivatable
+    public class ClashFinderViewModel : ILemoineTool, ILemoineReviewable, IWindowActivatable, ILemoineRunResult, ILemoineToolCleanup
     {
+        // Run strip: live "markers" label during the run, full chip breakdown on completion.
+        public string? ResultNoun => "markers";
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog       = null;
+            _handler.OnProgress    = null;
+            _handler.OnComplete    = null;
+            _handler.OnResultChips = null;
+        }
+
         public string Title    => "Clash Finder & Dimension";
         public string RunLabel => "Find & Mark Clashes →";
 
@@ -425,6 +440,8 @@ namespace LemoineTools.Tools.Clash
         {
             if (_handler == null || _event == null) return;
 
+            _resultChips = null;   // clear any breakdown from a previous run
+
             _handler.Definitions = _selectedDefDisplays
                 .Where(d => _defDisplayToDef.ContainsKey(d))
                 .Select(d => _defDisplayToDef[d])
@@ -448,6 +465,7 @@ namespace LemoineTools.Tools.Clash
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;
+            _handler.OnResultChips    = chips => _resultChips = chips;
 
             _event.Raise();
         }

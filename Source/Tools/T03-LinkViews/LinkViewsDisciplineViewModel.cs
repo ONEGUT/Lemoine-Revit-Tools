@@ -14,8 +14,12 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsDisciplineViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable
+    public class LinkViewsDisciplineViewModel : ILemoineTool, ILemoineToolSettings, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Link Views — Discipline";
         public string RunLabel => "Create Views in Revit →";

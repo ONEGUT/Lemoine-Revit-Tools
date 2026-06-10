@@ -20,8 +20,12 @@ namespace LemoineTools.Tools.LinkViews
     /// view×template pair it duplicates the view (With Detailing), applies the template,
     /// and names the result from a token/chip pattern (the Bulk Export naming control).
     /// </summary>
-    public class ViewsByTemplateViewModel : ILemoineTool, ILemoineReviewable
+    public class ViewsByTemplateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Views by Template";
         public string RunLabel => "Create Views in Revit →";
