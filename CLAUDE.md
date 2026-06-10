@@ -257,6 +257,7 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 - A non-sheet `View` exposes **no** `SHEET_NUMBER` / `SHEET_NAME` parameters, so a sheet-token filename pattern (`{SheetNumber}-{SheetName}`) silently resolves to a degenerate name (e.g. `-`) for views, and every view collides on the same file. Name views from `view.Name` / `view.ViewType` instead, and offer a **mode-aware token vocabulary** (sheet tokens for sheets, view tokens for views) so only valid tokens are ever presented — never a silent fallback.
 - **A resolved filename that is empty or has no alphanumeric character is a failure, not a fallback.** Detect it and report through both the run log (`pushLog(..., "warn")`) and `LemoineLog.Warn(...)` before substituting a deterministic name (`element.Name`, else element id). Export tooling must be **equally viable for views and sheets**.
+- **Uniqueness differs by field.** Revit enforces uniqueness on **sheet numbers** (`SHEET_NUMBER`) and **view names** (`View.Name`) — both setters **throw** on a duplicate — but **sheet names are *not* unique**. A bulk rename/number tool must pre-check and **skip-and-log** collisions when rewriting sheet numbers or view names (against existing elements *and* earlier items in the same batch), while a sheet-*name* rewrite needs no uniqueness check. Even with the pre-check, wrap the actual `Set` / `Name =` in try/catch — a transient swap (A→B while B→A) still trips Revit's check and must be reported, not silently dropped.
 
 ---
 
