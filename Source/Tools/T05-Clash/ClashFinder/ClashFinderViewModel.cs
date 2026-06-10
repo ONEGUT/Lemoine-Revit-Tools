@@ -250,6 +250,10 @@ namespace LemoineTools.Tools.Clash
         {
             var outer = new StackPanel();
 
+            AddDim(outer, "Per-run overrides — these start from the saved defaults "
+                        + "(Settings → Dimensions) and apply to this run only; the defaults are never changed here.");
+            AddDivider(outer);
+
             var toggles = new LemoineToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
@@ -370,7 +374,7 @@ namespace LemoineTools.Tools.Clash
                 }
                 case "S4":
                     return _runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? " · chained" : "")}"
+                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? $" · grouped ({_runGapFt:0.#} ft / {_runCrossFt:0.##} ft)" : "")}"
                         : "dim pass off";
                 case "S5": return "Ready to run";
                 default: return "—";
@@ -392,7 +396,8 @@ namespace LemoineTools.Tools.Clash
             ["views"]  = _selectedViewNames.Count   > 0 ? $"{_selectedViewNames.Count} view(s)"        : "—",
             ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
             ["dim"]    = _runDimensionPass
-                ? $"{(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? " · chained" : "")}"
+                ? $"{(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
+                  + (_chainAligned ? $" · grouped, reach {_runGapFt:0.#} ft / line tol {_runCrossFt:0.##} ft" : " · ungrouped")
                 : "off",
         };
 

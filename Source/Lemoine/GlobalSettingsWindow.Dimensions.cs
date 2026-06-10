@@ -153,6 +153,38 @@ namespace LemoineTools.Lemoine
                 cfg.Layout.TextHeightFt * 12.0, 0.03125, 1, 0.015625, 4,
                 v => { cfg.Layout.TextHeightFt = v / 12.0; cfg.Save(); });
 
+            panel.Children.Add(HSep(12));
+
+            // ── Advanced layout ──────────────────────────────────────────────
+            panel.Children.Add(SubLabel("Advanced layout"));
+
+            var layoutToggles = new LemoineToggleSwitches();
+            layoutToggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "alignRows", Label = "Align dimensions sharing a row",
+                                 Desc = "Pulls opposite-direction strings at nearly the same level onto one shared line, so they read as a single aligned dimension line.",
+                                 DefaultOn = cfg.Layout.AlignSharedRows },
+                new ToggleItem { Id = "stagger", Label = "Stagger stacked values",
+                                 Desc = "Nudges value texts on adjacent rows apart so stacked dimensions don't pile their numbers into one column.",
+                                 DefaultOn = cfg.Layout.StaggerStackedText },
+            });
+            layoutToggles.StateChanged += state =>
+            {
+                if (state.TryGetValue("alignRows", out var a)) cfg.Layout.AlignSharedRows    = a;
+                if (state.TryGetValue("stagger",   out var s)) cfg.Layout.StaggerStackedText = s;
+                cfg.Save();
+            };
+            panel.Children.Add(layoutToggles);
+
+            AddCfgStepper(panel, "Max stacked rows",
+                "How many rows a string may step outward to clear a collision before giving up.",
+                cfg.Layout.MaxOffsetSteps, 1, 20, 1, 0,
+                v => { cfg.Layout.MaxOffsetSteps = (int)Math.Round(v); cfg.Save(); });
+            AddCfgStepper(panel, "Repair passes",
+                "Extra worst-first refinement passes over the laid-out plan before committing. 0 disables repair.",
+                cfg.Layout.MaxRepairPasses, 0, 10, 1, 0,
+                v => { cfg.Layout.MaxRepairPasses = (int)Math.Round(v); cfg.Save(); });
+
             scroll.Content = panel;
             return scroll;
         }
