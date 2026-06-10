@@ -39,15 +39,12 @@ namespace LemoineTools.Tools.Clash
         private readonly Dictionary<string, string>       _categoryDisplayToOst = new Dictionary<string, string>();
         private readonly Dictionary<string, string>       _ostToCategoryDisplay = new Dictionary<string, string>();
 
-        // ── Source documents ──────────────────────────────────────────────────
-        private readonly List<string>             _docNames           = new List<string>();
-        private readonly Dictionary<string, long> _docDisplayToLinkId = new Dictionary<string, long>();
-
-        // ── Worksets (per source document) ────────────────────────────────────
-        private readonly Dictionary<string, List<string>>       _wsGroups       = new Dictionary<string, List<string>>(); // docName → ws displays
-        private readonly Dictionary<string, (long lnk, int ws)> _wsDisplayToRef = new Dictionary<string, (long, int)>();
-        private readonly HashSet<string>                        _wsSelected     = new HashSet<string>();   // checked (= included) ws displays
-        private bool                                            _anyWorksets;
+        // ── Source documents + their worksets (inline tree picker) ────────────
+        private readonly List<ClashDocInfo>             _docs;
+        private readonly HashSet<long>                  _selectedDocs = new HashSet<long>();                  // checked source docs (link ids; 0 = host)
+        private readonly Dictionary<long, HashSet<int>> _wsExcluded   = new Dictionary<long, HashSet<int>>(); // unchecked (excluded) worksets per doc
+        private readonly HashSet<long>                  _expandedDocs = new HashSet<long>();                  // docs whose worksets are expanded (UI only)
+        private StackPanel?                             _docTree;                                            // rebuilt in place on every toggle
 
         // ── Live working sets (display strings) ───────────────────────────────
         private readonly HashSet<string>           _ruleDisplays = new HashSet<string>();
@@ -72,92 +69,182 @@ namespace LemoineTools.Tools.Clash
             _pickEvent   = pickEvent;
             _onChanged   = onChanged;
 
-            var docList = docs ?? new List<ClashDocInfo>();
-            foreach (var d in docList)
-            {
-                if (_docDisplayToLinkId.ContainsKey(d.Name)) continue;
-                _docNames.Add(d.Name);
-                _docDisplayToLinkId[d.Name] = d.LinkInstId;
-            }
+            _docs = docs ?? new List<ClashDocInfo>();
 
             BuildFilterMappings();
             BuildCategoryMappings();
-            BuildWorksetMappings(docList);
             RestoreFromSpec();
-            RestoreWorksetsFromSpec();
+            RestoreSourcesFromSpec();
         }
 
-        // ── Workset mappings (display ↔ (link, workset id)) ───────────────────
-        private void BuildWorksetMappings(List<ClashDocInfo> docs)
+        // ── Source-document + workset state (restore / commit) ────────────────
+        private void RestoreSourcesFromSpec()
         {
-            // Workset names are unique within a document but can collide across documents;
-            // qualify a colliding name with its document so the flat selection set stays unambiguous.
-            var nameCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (var d in docs)
-                foreach (var ws in d.Worksets ?? new List<ClashWorksetInfo>())
-                {
-                    if (!nameCount.ContainsKey(ws.Name)) nameCount[ws.Name] = 0;
-                    nameCount[ws.Name]++;
-                }
+            // Selected docs: the explicit SourceLinkIds, or every doc when unset ("scan all").
+            var src = _spec.SourceLinkIds ?? new List<long>();
+            if (src.Count == 0)
+                foreach (var d in _docs) _selectedDocs.Add(d.LinkInstId);
+            else
+                foreach (var id in src) _selectedDocs.Add(id);
 
-            foreach (var d in docs)
-            {
-                var worksets = d.Worksets ?? new List<ClashWorksetInfo>();
-                if (worksets.Count == 0) continue;
-
-                var items = new List<string>();
-                foreach (var ws in worksets)
-                {
-                    string disp = (nameCount.TryGetValue(ws.Name, out int c) && c > 1)
-                        ? $"{ws.Name}  —  {d.Name}"
-                        : ws.Name;
-                    while (_wsDisplayToRef.ContainsKey(disp)) disp += " ";   // last-resort uniqueness
-                    _wsDisplayToRef[disp] = (d.LinkInstId, ws.Id);
-                    items.Add(disp);
-                }
-                _wsGroups[d.Name] = items;
-                _anyWorksets = true;
-            }
-        }
-
-        private void RestoreWorksetsFromSpec()
-        {
-            var excl = new Dictionary<long, HashSet<int>>();
             foreach (var f in _spec.WorksetFilters ?? new List<ClashWorksetFilter>())
-                if (f != null) excl[f.LinkInstId] = new HashSet<int>(f.ExcludedWorksetIds ?? new List<int>());
-
-            // A workset is checked (included) unless its id is recorded as excluded for its document.
-            foreach (var kv in _wsDisplayToRef)
-            {
-                var (lnk, ws) = kv.Value;
-                bool isExcluded = excl.TryGetValue(lnk, out var s) && s.Contains(ws);
-                if (!isExcluded) _wsSelected.Add(kv.Key);
-            }
+                if (f != null && f.ExcludedWorksetIds != null && f.ExcludedWorksetIds.Count > 0)
+                    _wsExcluded[f.LinkInstId] = new HashSet<int>(f.ExcludedWorksetIds);
         }
 
-        private void CommitWorksets()
+        private void CommitSources()
         {
-            var perLink = new Dictionary<long, List<(int ws, string disp)>>();
-            foreach (var kv in _wsDisplayToRef)
-            {
-                var (lnk, ws) = kv.Value;
-                if (!perLink.TryGetValue(lnk, out var list)) perLink[lnk] = list = new List<(int, string)>();
-                list.Add((ws, kv.Key));
-            }
+            _spec.SourceLinkIds = _selectedDocs.OrderBy(x => x).ToList();
 
+            // Worksets only matter for a document that is actually scanned, so emit a filter
+            // entry only for selected docs that have unchecked worksets.
             var filters = new List<ClashWorksetFilter>();
-            foreach (var kv in perLink)
+            foreach (var d in _docs)
             {
-                var excluded = kv.Value
-                    .Where(x => !_wsSelected.Contains(x.disp))
-                    .Select(x => x.ws)
-                    .OrderBy(id => id)                       // deterministic → no spurious dirty/save
-                    .ToList();
-                if (excluded.Count > 0)
-                    filters.Add(new ClashWorksetFilter { LinkInstId = kv.Key, ExcludedWorksetIds = excluded });
+                if (!_selectedDocs.Contains(d.LinkInstId)) continue;
+                if (!_wsExcluded.TryGetValue(d.LinkInstId, out var ex) || ex.Count == 0) continue;
+                filters.Add(new ClashWorksetFilter
+                {
+                    LinkInstId         = d.LinkInstId,
+                    ExcludedWorksetIds = ex.OrderBy(i => i).ToList(),   // deterministic → no spurious save
+                });
             }
             _spec.WorksetFilters = filters;
             Notify();
+        }
+
+        private void SetWorksetExcluded(long linkId, int wsId, bool excluded)
+        {
+            if (!_wsExcluded.TryGetValue(linkId, out var set))
+            {
+                if (!excluded) return;
+                _wsExcluded[linkId] = set = new HashSet<int>();
+            }
+            if (excluded) set.Add(wsId);
+            else          set.Remove(wsId);
+            if (set.Count == 0) _wsExcluded.Remove(linkId);
+        }
+
+        // ── Source-document tree (inline checklist with per-doc workset carets) ─
+        private void RebuildDocTree()
+        {
+            if (_docTree == null) return;
+            _docTree.Children.Clear();
+
+            if (_docs.Count == 0)
+            {
+                AddDim(_docTree, "No documents available.");
+                return;
+            }
+            foreach (var d in _docs)
+                _docTree.Children.Add(BuildDocRow(d));
+        }
+
+        private FrameworkElement BuildDocRow(ClashDocInfo d)
+        {
+            long linkId      = d.LinkInstId;
+            var  worksets    = d.Worksets ?? new List<ClashWorksetInfo>();
+            bool hasWorksets = worksets.Count > 0;
+            bool docSelected = _selectedDocs.Contains(linkId);
+            bool expanded    = _expandedDocs.Contains(linkId);
+
+            var container = new StackPanel { Margin = new Thickness(0, 0, 0, 2) };
+
+            // Header: [caret | spacer] [checkbox] [name]
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand };
+
+            var caret = new TextBlock
+            {
+                Text              = hasWorksets ? (expanded ? char.ConvertFromUtf32(0x25BE) : char.ConvertFromUtf32(0x25B8)) : "",
+                Width             = 16,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment     = TextAlignment.Center,
+                Background        = Brushes.Transparent,        // hit-testable across its whole box
+                Cursor            = hasWorksets ? Cursors.Hand : Cursors.Arrow,
+            };
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            caret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            if (hasWorksets)
+                caret.MouseLeftButtonDown += (s, e) =>
+                {
+                    e.Handled = true;
+                    if (!_expandedDocs.Remove(linkId)) _expandedDocs.Add(linkId);
+                    RebuildDocTree();
+                };
+            header.Children.Add(caret);
+
+            var cb = new CheckBox
+            {
+                IsChecked         = docSelected,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            cb.Checked   += (s, e) => { _selectedDocs.Add(linkId);    CommitSources(); RebuildDocTree(); };
+            cb.Unchecked += (s, e) => { _selectedDocs.Remove(linkId); CommitSources(); RebuildDocTree(); };
+            header.Children.Add(cb);
+
+            var name = new TextBlock { Text = d.Name, VerticalAlignment = VerticalAlignment.Center };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            header.Children.Add(name);
+
+            // Clicking the name area toggles the doc (caret + checkbox handle their own clicks).
+            header.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is CheckBox) return;
+                cb.IsChecked = !(cb.IsChecked == true);
+            };
+            container.Children.Add(header);
+
+            // Worksets — indented under the caret, only when expanded.
+            if (hasWorksets && expanded)
+            {
+                var excluded = _wsExcluded.TryGetValue(linkId, out var ex) ? ex : null;
+                foreach (var ws in worksets)
+                    container.Children.Add(BuildWorksetRow(linkId, ws, docSelected, excluded));
+            }
+            return container;
+        }
+
+        private FrameworkElement BuildWorksetRow(long linkId, ClashWorksetInfo ws, bool docSelected, HashSet<int>? excluded)
+        {
+            // Checked (= included) only when the parent doc is on and this workset isn't excluded.
+            // When the doc is off, the row is disabled and reads unchecked, so an unselected
+            // document never appears to still have selected worksets.
+            bool included = docSelected && (excluded == null || !excluded.Contains(ws.Id));
+
+            var cb = new CheckBox
+            {
+                IsChecked         = included,
+                IsEnabled         = docSelected,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, 0, 6, 0),
+            };
+            cb.Checked   += (s, e) => { SetWorksetExcluded(linkId, ws.Id, false); CommitSources(); };
+            cb.Unchecked += (s, e) => { SetWorksetExcluded(linkId, ws.Id, true);  CommitSources(); };
+
+            var name = new TextBlock { Text = ws.Name, VerticalAlignment = VerticalAlignment.Center };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            name.SetResourceReference(TextBlock.ForegroundProperty, docSelected ? "LemoineText" : "LemoineTextDim");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin      = new Thickness(34, 1, 0, 3),   // indent past the caret + checkbox
+                Cursor      = docSelected ? Cursors.Hand : Cursors.Arrow,
+            };
+            row.Children.Add(cb);
+            row.Children.Add(name);
+
+            row.MouseLeftButtonDown += (s, e) =>
+            {
+                if (!docSelected || e.OriginalSource is CheckBox) return;
+                cb.IsChecked = !(cb.IsChecked == true);
+            };
+            return row;
         }
 
         // ── Mapping builders (Revit-free — read from AutoFiltersSettings) ──────
@@ -323,40 +410,10 @@ namespace LemoineTools.Tools.Clash
             AddDivider(outer);
 
             AddLabel(outer, "Source documents (which models this group scans)");
-            var docGroups   = new Dictionary<string, List<string>> { ["Documents"] = new List<string>(_docNames) };
-            var sourceLinks = new HashSet<long>(_spec.SourceLinkIds ?? new List<long>());
-            var initialDocs = (sourceLinks.Count == 0)
-                ? new List<string>(_docNames)
-                : _docNames.Where(n => sourceLinks.Contains(_docDisplayToLinkId[n])).ToList();
-            var srcTabs = new LemoineMultiSelectTabs();
-            srcTabs.SetGroups(docGroups, initialDocs);
-            srcTabs.SelectionChanged += selected =>
-            {
-                var ids = new List<long>();
-                foreach (var n in selected)
-                    if (_docDisplayToLinkId.TryGetValue(n, out var lid)) ids.Add(lid);
-                _spec.SourceLinkIds = ids;
-                Notify();
-            };
-            outer.Children.Add(srcTabs);
-
-            // ── Worksets (per source document) ────────────────────────────────
-            // Shown only when at least one source document is workshared. Subscribe BEFORE
-            // SetGroups — the post-setup SelectionChanged is what seeds the mirror set.
-            if (_anyWorksets)
-            {
-                AddDivider(outer);
-                AddLabel(outer, "Worksets (uncheck to exclude a workset's elements; per model)");
-                var wsTabs = new LemoineMultiSelectTabs();
-                wsTabs.SelectionChanged += selected =>
-                {
-                    _wsSelected.Clear();
-                    foreach (var s in selected) _wsSelected.Add(s);
-                    CommitWorksets();
-                };
-                wsTabs.SetGroups(new Dictionary<string, List<string>>(_wsGroups), _wsSelected);
-                outer.Children.Add(wsTabs);
-            }
+            AddDim(outer, "Check a model to scan it. Expand its caret to include or exclude individual worksets.");
+            _docTree = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
+            outer.Children.Add(_docTree);
+            RebuildDocTree();
 
             AddDivider(outer);
             outer.Children.Add(body);

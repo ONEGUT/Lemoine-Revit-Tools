@@ -48,11 +48,16 @@ worksets simply shows no workset control.
   detached/closed links).
 
 ### 3. `Source/Tools/T05-Clash/ClashDefinitions/ClashGroupEditor.cs` (UI)
-- After the "Source documents" picker, add a **"Worksets (per model)"** section.
-- See the UI-approach decision below for how the per-document checklist is rendered.
-- Check state = NOT in `ExcludedWorksetIds`. Toggling updates
-  `_spec.WorksetFilters` for that doc's `LinkInstId` (drop the entry entirely
-  when nothing is excluded, to keep the spec clean), then `Notify()`.
+- Replace the source-documents `LemoineMultiSelectTabs` with an **inline document
+  tree**: one row per document with a checkbox (is it scanned) and, when the
+  document has worksets, a caret (▸/▾) that expands indented workset checkboxes.
+- A workset row reads checked when the parent doc is selected and the workset is
+  not in `ExcludedWorksetIds`. Toggling a workset updates `_wsExcluded`; toggling
+  a document updates `_selectedDocs`.
+- **Deselecting a document disables and unchecks its worksets** (an unselected
+  model never shows selected worksets). `CommitSources` writes `SourceLinkIds`
+  from the checked docs and emits a `ClashWorksetFilter` only for selected docs
+  that have unchecked worksets.
 
 ### 4. `Source/Tools/T05-Clash/ClashFinder/ClashEngine.cs` (apply at scan time)
 - Build a `Dictionary<long, HashSet<int>>` (linkId → excluded workset ids) from
@@ -74,6 +79,8 @@ saved definitions; XmlSerializer just writes an empty element.
 Will run the mandated post-change scan (workset reads, `WorksetId` access) before
 reporting done.
 
-## Open decision (UI approach) — see chat
-Literal per-link dropdown popup vs. reusing the proven `LemoineMultiSelectTabs`
-(tab per document, worksets as checkable items) right under the source picker.
+## UI approach (decided)
+Inline document tree: each document row carries a caret that expands its worksets
+as indented checkboxes. Deselecting a document auto-clears (disables/unchecks) its
+worksets so there is never an unselected model showing selected worksets. No popup
+(avoids the Revit `Popup` crash constraints); rebuilt in place on each toggle.
