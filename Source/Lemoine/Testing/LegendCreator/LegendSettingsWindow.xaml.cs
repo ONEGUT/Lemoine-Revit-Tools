@@ -29,9 +29,10 @@ namespace LemoineTools.Lemoine
         private readonly Dictionary<string, LemoineLegendBuilder> _builders =
             new Dictionary<string, LemoineLegendBuilder>();
 
-        // ── Window-level preview overlay (grows from the floating Preview pill) ──
+        // ── Preview overlay (covers ONLY the centre builder column) ─────────────
         private LemoineLegendPreview?   _previewControl;
         private WpfGrid?                _previewOverlayGrid;
+        private WpfGrid?                _mainGrid;        // 4-column layout grid; hosts the overlay in col 1
         private bool                    _previewVisible;
         private LemoineLegendBuilder?   _activeBuilder;   // subscribed for live preview refresh
 
@@ -216,6 +217,15 @@ namespace LemoineTools.Lemoine
         private void BuildPreviewLayer()
         {
             _previewControl = new LemoineLegendPreview { Margin = new Thickness(8) };
+
+            // A long/wide legend must stay reachable — scroll instead of clipping.
+            var previewScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content                       = _previewControl,
+            };
+
             _previewOverlayGrid = new WpfGrid
             {
                 Visibility            = WpfVisibility.Collapsed,
@@ -225,8 +235,23 @@ namespace LemoineTools.Lemoine
                 RenderTransform       = new ScaleTransform(0, 0),
             };
             _previewOverlayGrid.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineSurface");
-            _previewOverlayGrid.Children.Add(_previewControl);
-            _previewLayer.Children.Add(_previewOverlayGrid);
+            _previewOverlayGrid.Children.Add(previewScroll);
+
+            // Overlay ONLY the centre builder column — the legend tabs (sidebar) and the
+            // Sizing / Text Styles panel stay visible and editable while the preview is
+            // open, and their changes refresh it live. Hosting the overlay inside the main
+            // grid's column 1 (above the builder via ZIndex) also makes it track the
+            // GridSplitter automatically.
+            if (_mainGrid != null)
+            {
+                WpfGrid.SetColumn(_previewOverlayGrid, 1);
+                System.Windows.Controls.Panel.SetZIndex(_previewOverlayGrid, 40);
+                _mainGrid.Children.Add(_previewOverlayGrid);
+            }
+            else
+            {
+                _previewLayer.Children.Add(_previewOverlayGrid); // fallback: window-wide layer
+            }
         }
 
         private void TogglePreviewFromPill()
@@ -348,6 +373,7 @@ namespace LemoineTools.Lemoine
             WpfGrid.SetColumn(rightBorder, 3);
             grid.Children.Add(rightBorder);
 
+            _mainGrid = grid; // BuildPreviewLayer parks the preview overlay in column 1
             _contentBorder.Child = grid;
 
             ActivateTab(0);
@@ -1156,10 +1182,15 @@ namespace LemoineTools.Lemoine
             for (int r = 0; r < 4; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => entry.TitleTypeId       = id);
-            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => entry.SubtitleTypeId    = id);
-            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => entry.GroupHeaderTypeId = id);
-            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => entry.LabelTypeId       = id);
+            // Wrap each setter so a text-style change refreshes the live preview — role
+            // text sizes come from the chosen TextNoteType, so the preview must re-resolve
+            // its caps (ActiveRoleCaps) when a selection changes.
+            void SetAndRefresh(Action<long> set, long id) { set(id); OnBuilderEdited(); }
+
+            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
+            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
+            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
+            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
 
             return WrapCard("TEXT STYLES", grid);
         }
