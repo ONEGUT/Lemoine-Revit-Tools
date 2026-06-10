@@ -2971,6 +2971,7 @@ namespace LemoineTools.Lemoine
 
             var scrollContent = new StackPanel();
             scrollContent.Children.Add(BuildBatchHeader(count));
+            scrollContent.Children.Add(BuildMergeSection(trade, rule));
             scrollContent.Children.Add(BuildFilterLogicSection(trade, rule, markDirty));
             scrollContent.Children.Add(BuildOverrideStyleSection(rule, markDirty));
             scrollContent.Children.Add(BuildAppearanceSection(rule, markDirty));
@@ -3057,6 +3058,283 @@ namespace LemoineTools.Lemoine
                     case "appearance.filteron":     target.FilterOn     = source.FilterOn;     break;
                 }
             }
+        }
+
+        // ── Merge selected rules ──────────────────────────────────────────────
+        //
+        // Two actions, shown only in batch mode:
+        //   • Merge into one  — anchor absorbs the others' keywords + categories; the
+        //                        others are deleted (destructive).
+        //   • Create combined — a NEW rule with the unioned definition is appended; all
+        //                        originals are kept (non-destructive).
+        // Both require the selected rules to share one parameter and be keyword-based —
+        // a single ParameterFilterElement binds exactly one parameter, and whole-category
+        // / value-predicate rules carry no keywords to union.
+        private readonly struct MergePlan
+        {
+            public readonly bool         Ok;
+            public readonly string?      Reason;     // why merge is blocked (Ok == false)
+            public readonly string       Parameter;
+            public readonly string       MatchType;  // resulting match type
+            public readonly List<string> Keywords;   // unioned, case-insensitive dedupe
+            public readonly List<string> Categories; // unioned OST strings
+            public MergePlan(bool ok, string? reason, string parameter, string matchType,
+                             List<string> keywords, List<string> categories)
+            { Ok = ok; Reason = reason; Parameter = parameter; MatchType = matchType;
+              Keywords = keywords; Categories = categories; }
+            public static MergePlan Blocked(string reason) =>
+                new MergePlan(false, reason, "", "", new List<string>(), new List<string>());
+        }
+
+        private static readonly HashSet<string> PositiveKeywordMatchTypes =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "contains", "equals", "begins with", "ends with" };
+
+        // Builds the merge plan from the currently-selected rules of the given trade.
+        private MergePlan ComputeMergePlan(FilterTradeConfig trade, FilterRuleConfig anchor)
+        {
+            // Anchor first, then the rest in trade order, so the union is deterministic.
+            var selected = new List<FilterRuleConfig> { anchor };
+            selected.AddRange(trade.Rules.Where(r =>
+                r.Id != anchor.Id && _fSelectedRuleIds.Contains(r.Id)));
+
+            if (selected.Count < 2)
+                return MergePlan.Blocked("Select two or more rules to merge.");
+
+            string param = anchor.Parameter ?? "";
+            if (selected.Any(r => !string.Equals(r.Parameter ?? "", param, StringComparison.Ordinal)))
+                return MergePlan.Blocked("All selected rules must use the same parameter — a filter rule binds only one.");
+
+            // Every selected rule must be keyword-based (not whole-category / value-predicate).
+            foreach (var r in selected)
+            {
+                string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+                if (mt == "all" || mt == "has a value" || mt == "has no value")
+                    return MergePlan.Blocked("Whole-category and has-value rules can't be merged — only keyword rules.");
+            }
+
+            // Resulting match type: same type if uniform; else, if all positive, widen to
+            // "contains"; a mix involving a negative (does not contain/equal) is ambiguous.
+            var matchTypes = selected
+                .Select(r => (r.MatchType ?? "contains").ToLowerInvariant())
+                .Distinct().ToList();
+            string resultType;
+            if (matchTypes.Count == 1)
+                resultType = matchTypes[0];
+            else if (matchTypes.All(mt => PositiveKeywordMatchTypes.Contains(mt)))
+                resultType = "contains";
+            else
+                return MergePlan.Blocked("Mixed include/exclude match types can't be merged. Make them the same first.");
+
+            var keywords = UnionStrings(selected.Select(r => r.Match ?? new List<string>()));
+            var cats     = UnionStrings(selected.Select(r => r.BuiltInCategories ?? new List<string>()));
+            return new MergePlan(true, null, param, resultType, keywords, cats);
+        }
+
+        private static List<string> UnionStrings(IEnumerable<IEnumerable<string>> lists)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var outl = new List<string>();
+            foreach (var l in lists)
+                foreach (var x in l)
+                    if (!string.IsNullOrEmpty(x) && seen.Add(x)) outl.Add(x);
+            return outl;
+        }
+
+        private UIElement BuildMergeSection(FilterTradeConfig trade, FilterRuleConfig anchor)
+        {
+            var outer = new StackPanel();
+
+            var sectionLbl = new Border { Padding = new Thickness(12, 4, 12, 4) };
+            var sectionTb  = new TextBlock { Text = "MERGE" };
+            sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            sectionLbl.Child = sectionTb;
+            outer.Children.Add(sectionLbl);
+
+            var card = new Border
+            {
+                Margin          = new Thickness(10, 0, 10, 10),
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(10),
+                Padding         = new Thickness(10, 8, 10, 8),
+            };
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var stack = new StackPanel();
+            var plan  = ComputeMergePlan(trade, anchor);
+
+            if (!plan.Ok)
+            {
+                var blockedTb = new TextBlock
+                {
+                    Text         = plan.Reason,
+                    FontStyle    = FontStyles.Italic,
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                blockedTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                blockedTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                blockedTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                stack.Children.Add(blockedTb);
+                card.Child = stack;
+                outer.Children.Add(card);
+                return outer;
+            }
+
+            var summaryTb = new TextBlock
+            {
+                Text = $"Combine {_fSelectedRuleIds.Count} rules → {plan.Keywords.Count} keyword(s), " +
+                       $"{plan.Categories.Count} categor{(plan.Categories.Count == 1 ? "y" : "ies")}, " +
+                       $"match “{plan.MatchType}”.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 8),
+            };
+            summaryTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            summaryTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            summaryTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            stack.Children.Add(summaryTb);
+
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal };
+
+            var mergeBtn = FlatSmBtn("Merge into one");
+            mergeBtn.ToolTip = $"Keep “{anchor.Name}” and delete the other selected rules.";
+            mergeBtn.Click += (s, e) =>
+                ShowMergeConfirmPopup(mergeBtn, trade, anchor, destructive: true);
+
+            var combineBtn = FlatSmBtn("Create combined");
+            combineBtn.Margin  = new Thickness(6, 0, 0, 0);
+            combineBtn.ToolTip = "Add a new combined rule and keep the originals.";
+            combineBtn.Click += (s, e) =>
+                ShowMergeConfirmPopup(combineBtn, trade, anchor, destructive: false);
+
+            btnRow.Children.Add(mergeBtn);
+            btnRow.Children.Add(combineBtn);
+            stack.Children.Add(btnRow);
+
+            card.Child = stack;
+            outer.Children.Add(card);
+            return outer;
+        }
+
+        // Confirm popup (StaysOpen=false matches this window's other popups; it runs on
+        // the settings window's own STA thread, not Revit's main loop). Shows the result
+        // name + keyword/category lists, then applies the merge or creates a combined rule.
+        private void ShowMergeConfirmPopup(
+            UIElement anchorBtn, FilterTradeConfig trade, FilterRuleConfig anchor, bool destructive)
+        {
+            var plan = ComputeMergePlan(trade, anchor);
+            if (!plan.Ok) return;
+
+            string resultName = destructive ? anchor.Name : anchor.Name + " (combined)";
+
+            var popup = new Popup
+            {
+                PlacementTarget    = anchorBtn,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = false,
+                AllowsTransparency = false,
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(10, 8, 10, 8), MaxWidth = 260 };
+
+            void Line(string text, string fontKey, string colorKey, double bottom)
+            {
+                var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, bottom) };
+                tb.SetResourceReference(TextBlock.FontSizeProperty,   fontKey);
+                tb.SetResourceReference(TextBlock.ForegroundProperty, colorKey);
+                tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                panel.Children.Add(tb);
+            }
+
+            Line(destructive
+                    ? $"Merge into “{resultName}” and delete {_fSelectedRuleIds.Count - 1} other rule(s)?"
+                    : $"Create “{resultName}” and keep all originals?",
+                "LemoineFS_SM", "LemoineText", 6);
+            Line("Keywords: " + (plan.Keywords.Count > 0 ? string.Join(", ", plan.Keywords) : "(none)"),
+                "LemoineFS_SM", "LemoineTextDim", 2);
+            Line("Categories: " + (plan.Categories.Count > 0
+                    ? string.Join(", ", plan.Categories.Select(AutoFiltersSettings.DisplayNameForOst))
+                    : "(all)"),
+                "LemoineFS_SM", "LemoineTextDim", 8);
+
+            var confirmBtn = FlatSmBtn(destructive ? "Merge" : "Create");
+            if (destructive)
+            {
+                confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
+                confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
+            }
+            confirmBtn.Click += (s, e) =>
+            {
+                popup.IsOpen = false;
+                ApplyMerge(trade, anchor, plan, destructive);
+            };
+            var cancelBtn = FlatSmBtn("Cancel");
+            cancelBtn.Margin = new Thickness(6, 0, 0, 0);
+            cancelBtn.Click += (s, e) => popup.IsOpen = false;
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(confirmBtn);
+            row.Children.Add(cancelBtn);
+            panel.Children.Add(row);
+
+            var outerBorder = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(4),
+                Margin          = new Thickness(0, 2, 0, 0),
+                Child           = panel,
+            };
+            outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+
+            popup.Child  = outerBorder;
+            popup.IsOpen = true;
+        }
+
+        private void ApplyMerge(
+            FilterTradeConfig trade, FilterRuleConfig anchor, MergePlan plan, bool destructive)
+        {
+            if (destructive)
+            {
+                anchor.Parameter         = plan.Parameter;
+                anchor.MatchType         = plan.MatchType;
+                anchor.Match             = plan.Keywords;
+                anchor.BuiltInCategories = plan.Categories;
+
+                var others = _fSelectedRuleIds.Where(id => id != anchor.Id).ToList();
+                ClearMultiSelection();
+                foreach (var id in others)
+                    trade.Rules.RemoveAll(r => r.Id == id);
+                _fActiveRuleId = anchor.Id;
+            }
+            else
+            {
+                var combined = FilterRuleConfig.NewBlank();
+                combined.Name              = anchor.Name + " (combined)";
+                combined.Parameter         = plan.Parameter;
+                combined.MatchType         = plan.MatchType;
+                combined.Match             = plan.Keywords;
+                combined.BuiltInCategories = plan.Categories;
+                combined.Enabled           = anchor.Enabled;
+                // Graphics come from the anchor so the combined rule looks like it.
+                combined.CutColor     = anchor.CutColor;     combined.CutPattern  = anchor.CutPattern;
+                combined.OverrideCut  = anchor.OverrideCut;
+                combined.SurfColor    = anchor.SurfColor;    combined.SurfPattern = anchor.SurfPattern;
+                combined.OverrideSurf = anchor.OverrideSurf;
+                combined.LineColor    = anchor.LineColor;    combined.LinePattern = anchor.LinePattern;
+                combined.LineWeight   = anchor.LineWeight;   combined.OverrideLine = anchor.OverrideLine;
+                combined.Halftone     = anchor.Halftone;     combined.Transparency = anchor.Transparency;
+                combined.Visible      = anchor.Visible;      combined.FilterOn     = anchor.FilterOn;
+
+                trade.Rules.Add(combined);
+                ClearMultiSelection();
+                _fActiveRuleId = combined.Id;
+            }
+
+            FRefreshRuleList();
+            FRefreshRuleEditor();
         }
     }
 }
