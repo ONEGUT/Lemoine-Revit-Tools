@@ -29,6 +29,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             Vec2 axis = d.AxisDir.Normalized();
             Vec2 perp = axis.Perp();
             double sign = d.Side == DimSide.Positive ? 1.0 : -1.0;
+            double dir  = d.TagColumnDir < 0 ? -1.0 : 1.0;
             double lineLevel = d.SourcePoint.Dot(perp) + sign * d.OffsetFt;
 
             double[] bounds = DimGeometry.SegmentBoundaries(d, axis);
@@ -45,7 +46,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 }
                 if (run.Count > 0)
                 {
-                    PlanColumn(run, axis, perp, sign, lineLevel, th, cfg);
+                    PlanColumn(run, axis, perp, sign, dir, lineLevel, th, cfg);
                     run.Clear();
                 }
             }
@@ -53,25 +54,30 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         private static void PlanColumn(
             List<(PlannedSegment seg, double centreA)> run,
-            Vec2 axis, Vec2 perp, double sign, double lineLevel, double th, LayoutConfig cfg)
+            Vec2 axis, Vec2 perp, double sign, double dir, double lineLevel, double th, LayoutConfig cfg)
         {
-            // Front line just past the group's furthest dimension edge (far witness of the
-            // +axis-most moved segment), exactly as commit aligns the realized tags.
-            double farEdge = double.MinValue;
+            // Front line just past the group's furthest dimension edge IN THE COLUMN DIRECTION
+            // (the dir-most moved segment's far witness), exactly as commit aligns the realized
+            // tags. dir=+1 hangs the column off the +axis end, dir=-1 mirrors it to the other side.
+            double edge = dir > 0 ? double.MinValue : double.MaxValue;
             foreach (var t in run)
             {
-                double edge = t.centreA + t.seg.LengthFt * 0.5;
-                if (edge > farEdge) farEdge = edge;
+                double e = t.centreA + dir * t.seg.LengthFt * 0.5;
+                if (dir > 0 ? e > edge : e < edge) edge = e;
             }
-            double frontLine = farEdge + cfg.TagColumnAlongHeights * th;
+            double frontLine = edge + dir * cfg.TagColumnAlongHeights * th;
 
-            // Nearest anchor lowest, each farther one a row higher → leaders nest, never cross.
+            // Nearest anchor to the column lowest, each farther one a row higher → leaders nest.
+            var ordered = dir > 0
+                ? run.OrderByDescending(t => t.centreA).ToList()
+                : run.OrderBy(t => t.centreA).ToList();
+
             double level = cfg.TagColumnBaseHeights * th;
             double step  = cfg.TagColumnStepHeights * th;
-            foreach (var t in run.OrderByDescending(t => t.centreA))
+            foreach (var t in ordered)
             {
                 double halfAlong = Math.Max(t.seg.TextWidthFt, th) * 0.5;
-                double centreA   = frontLine + halfAlong;
+                double centreA   = frontLine + dir * halfAlong;
                 t.seg.TagPos = axis * centreA + perp * (lineLevel + sign * level);
                 level += step;
             }

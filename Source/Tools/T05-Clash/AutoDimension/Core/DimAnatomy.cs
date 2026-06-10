@@ -94,10 +94,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     bounds = bounds.Union(box);
 
                     // Leader: from the segment's anchor point on the dimension line to the
-                    // tag's front (arc-side, −axis) edge. The real leader is an arc; its
-                    // chord is what we test for crossings.
+                    // tag's front (arc-side) edge — the edge facing back toward the group,
+                    // so it mirrors when the column hangs off the other end. The real leader
+                    // is an arc; its chord is what we test for crossings.
+                    double colDir = d.TagColumnDir < 0 ? -1.0 : 1.0;
                     Vec2 anchor = axis * centreA + perp * lineLevel;
-                    Vec2 front  = tag - axis * halfAlong;
+                    Vec2 front  = tag - axis * (halfAlong * colDir);
                     var leader  = new Seg2(anchor, front);
                     an.Leaders.Add(leader);
                     bounds = bounds.Union(leader.Bounds);

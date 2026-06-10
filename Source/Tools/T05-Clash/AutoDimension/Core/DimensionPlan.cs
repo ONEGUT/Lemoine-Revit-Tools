@@ -60,6 +60,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         public DimSide Side { get; set; } = DimSide.Positive;
 
+        /// <summary>Which way along the axis the moved-tag column hangs off its group:
+        /// +1 past the far edge (right for an x-string), -1 before the near edge (left).
+        /// Searched by the layout exactly like <see cref="Side"/>, so a busy right side
+        /// flips the column left as easily as a busy top flips the string below.</summary>
+        public int TagColumnDir { get; set; } = 1;
+
         /// <summary>Current paper-space offset of the dimension line from the source run (model ft).</summary>
         public double OffsetFt { get; set; }
 

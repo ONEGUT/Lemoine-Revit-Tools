@@ -98,41 +98,52 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
                     DimSide origSide   = d.Side;
                     double  origOffset = d.OffsetFt;
+                    int     origDir    = d.TagColumnDir;
                     var     best       = _scorer.Score(d, obstacles, dims);
                     DimSide bestSide   = origSide;
                     double  bestOffset = origOffset;
+                    int     bestDir    = origDir;
 
                     foreach (var side in new[] { origSide, Flip(origSide) })
                     {
                         for (int step = 0; step < _cfg.MaxOffsetSteps; step++)
                         {
                             double offset = _cfg.FirstOffsetFt + step * _cfg.StringSpacingFt;
-                            if (side == origSide && Math.Abs(offset - origOffset) <= 1e-9) continue;
 
                             d.Side     = side;
                             d.OffsetFt = offset;
                             ResolveSegments(d);
-                            DimGeometry.RecomputeBounds(d, _cfg);
-                            var s = _scorer.Score(d, obstacles, dims);
 
-                            bool better = s.Hard < best.Hard - 1e-9
-                                       || (Math.Abs(s.Hard - best.Hard) <= 1e-9 && s.Soft < best.Soft - 1e-9);
-                            if (better) { best = s; bestSide = side; bestOffset = offset; }
+                            foreach (int dir in HasMovedTags(d) ? BothColumnDirs : ForwardColumnDir)
+                            {
+                                if (side == origSide && Math.Abs(offset - origOffset) <= 1e-9 && dir == origDir)
+                                    continue;   // current placement is already `best`
+
+                                d.TagColumnDir = dir;
+                                DimGeometry.RecomputeBounds(d, _cfg);
+                                var s = _scorer.Score(d, obstacles, dims);
+
+                                bool better = s.Hard < best.Hard - 1e-9
+                                           || (Math.Abs(s.Hard - best.Hard) <= 1e-9 && s.Soft < best.Soft - 1e-9);
+                                if (better) { best = s; bestSide = side; bestOffset = offset; bestDir = dir; }
+                            }
                         }
                     }
 
-                    d.Side     = bestSide;
-                    d.OffsetFt = bestOffset;
+                    d.Side         = bestSide;
+                    d.OffsetFt     = bestOffset;
+                    d.TagColumnDir = bestDir;
                     ResolveSegments(d);
                     DimGeometry.RecomputeBounds(d, _cfg);
-                    if (bestSide != origSide || Math.Abs(bestOffset - origOffset) > 1e-9) changed = true;
+                    if (bestSide != origSide || Math.Abs(bestOffset - origOffset) > 1e-9 || bestDir != origDir)
+                        changed = true;
                 }
 
                 if (!changed) return;
             }
         }
 
-        /// <summary>Chooses side + offset then per-segment text states for one dimension.</summary>
+        /// <summary>Chooses side + offset + tag-column direction, then per-segment text states.</summary>
         private void PlaceOne(
             PlannedDimension d,
             IReadOnlyList<Box2> obstacles,
@@ -141,9 +152,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             // Step the offset outward, but at EACH (closest-possible) offset try both sides and
             // take whichever clears. Dragging the string to the open/lower side keeps it near the
             // clash instead of marching one stack upward — so a dense run de-stacks across both
-            // sides rather than always piling toward the top.
+            // sides rather than always piling toward the top. When segments moved their tags out,
+            // both column directions are tried too, so a busy right side flips the column left
+            // exactly like a busy top flips the string below.
             DimSide original  = d.Side;
             DimSide bestSide   = original;
+            int     bestDir    = 1;
             double  bestOffset = _cfg.FirstOffsetFt;
             double  bestHard   = double.MaxValue;
 
@@ -156,29 +170,48 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     d.Side     = side;
                     d.OffsetFt = offset;
                     ResolveSegments(d);               // pick segment states at this side/offset
-                    DimGeometry.RecomputeBounds(d, _cfg);
-                    double hard = _scorer.Score(d, obstacles, placed).Hard;
 
-                    // Lower hard wins; ties prefer the closer offset, then the original side
-                    // (deterministic — identical input yields an identical plan).
-                    bool better = hard < bestHard - 1e-9;
-                    bool tie    = Math.Abs(hard - bestHard) <= 1e-9;
-                    bool closer = offset < bestOffset - 1e-9;
-                    bool sameOffset      = Math.Abs(offset - bestOffset) <= 1e-9;
-                    bool prefersOriginal = side == original && bestSide != original;
-                    if (better || (tie && (closer || (sameOffset && prefersOriginal))))
+                    foreach (int dir in HasMovedTags(d) ? BothColumnDirs : ForwardColumnDir)
                     {
-                        bestHard = hard; bestOffset = offset; bestSide = side;
+                        d.TagColumnDir = dir;
+                        DimGeometry.RecomputeBounds(d, _cfg);
+                        double hard = _scorer.Score(d, obstacles, placed).Hard;
+
+                        // Lower hard wins; ties prefer the closer offset, then the original side.
+                        // Iteration order (original side, +axis column first) settles remaining
+                        // ties — deterministic: identical input yields an identical plan.
+                        bool better = hard < bestHard - 1e-9;
+                        bool tie    = Math.Abs(hard - bestHard) <= 1e-9;
+                        bool closer = offset < bestOffset - 1e-9;
+                        bool sameOffset      = Math.Abs(offset - bestOffset) <= 1e-9;
+                        bool prefersOriginal = side == original && bestSide != original;
+                        if (better || (tie && (closer || (sameOffset && prefersOriginal))))
+                        {
+                            bestHard = hard; bestOffset = offset; bestSide = side; bestDir = dir;
+                        }
                     }
                 }
 
                 if (bestHard <= 1e-6) break;          // a side cleared at this offset → don't march further out
             }
 
-            d.Side     = bestSide;
-            d.OffsetFt = bestOffset;
+            d.Side         = bestSide;
+            d.OffsetFt     = bestOffset;
+            d.TagColumnDir = bestDir;
             ResolveSegments(d);
             DimGeometry.RecomputeBounds(d, _cfg);
+        }
+
+        private static readonly int[] BothColumnDirs   = { 1, -1 };
+        private static readonly int[] ForwardColumnDir = { 1 };
+
+        /// <summary>True when any segment's text moved out of line (the column direction only
+        /// matters then).</summary>
+        private static bool HasMovedTags(PlannedDimension d)
+        {
+            foreach (var seg in d.Segments)
+                if (TagColumnPlanner.IsMoved(seg.TextState)) return true;
+            return false;
         }
 
         private static DimSide Flip(DimSide s) =>

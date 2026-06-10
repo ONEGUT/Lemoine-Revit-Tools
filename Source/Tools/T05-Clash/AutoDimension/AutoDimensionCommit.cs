@@ -143,7 +143,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         /// <summary>
         /// Realizes the layout's per-segment text decisions on the placed Revit dimension. A run of
-        /// adjacent moved tags is relocated as a single aligned COLUMN just past the group's far end:
+        /// adjacent moved tags is relocated as a single aligned COLUMN just past the group's end in
+        /// the planned direction (PlannedDimension.TagColumnDir: +axis, or mirrored to -axis when
+        /// the layout found that side clearer):
         /// each tag is shifted to the side, then stacked perpendicular (UP when the dimension line is
         /// on the positive/above side, DOWN when Flipped/below) so crowded values pile straight on top
         /// of one another while their arc leaders swing out to the side. The nearest anchor sits lowest
@@ -228,7 +230,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     if (run.Count > 0)
                     {
-                        PlaceColumn(run, worldPerp, worldAxis, sign, th, cfg, projection, axis, perp, placedTags, obstacles);
+                        PlaceColumn(run, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles);
                         run.Clear();
                     }
                 }
@@ -249,7 +251,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
                             }),
                         };
-                        PlaceColumn(single, worldPerp, worldAxis, sign, th, cfg, projection, axis, perp, placedTags, obstacles);
+                        PlaceColumn(single, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles);
                     }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
@@ -278,30 +280,34 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// dimension side, so an above run climbs up and a Flipped/below run mirrors downward.
         /// </summary>
         private static void PlaceColumn(
-            List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, double th,
+            List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, int colDir, double th,
             Core.LayoutConfig cfg, Resolvers.ViewProjection projection,
             Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags, IReadOnlyList<Core.Box2> obstacles)
         {
             if (run.Count == 0 || th <= 0) return;
 
+            double dir = colDir < 0 ? -1.0 : 1.0;                  // planned column direction
             double Axial(XYZ p) => projection.To2D(p).Dot(axis);   // reading-direction coordinate
 
             // Reference point on the dimension line (any tag centre works — the line is straight along
-            // worldAxis), plus the group's furthest dimension edge: the far witness of the +axis-most
-            // moved segment = its centre + half its measured span.
+            // worldAxis), plus the group's furthest dimension edge IN THE COLUMN DIRECTION: the far
+            // witness of the dir-most moved segment = its centre + dir * half its measured span.
             ColumnTag refTag = run[0];
             double refAxial  = Axial(refTag.DefaultPos);
-            double groupFarEdge = double.MinValue;
+            double groupEdge = dir > 0 ? double.MinValue : double.MaxValue;
             foreach (var t in run)
             {
-                double edge = Axial(t.DefaultPos) + t.Ps.LengthFt * 0.5;
-                if (edge > groupFarEdge) groupFarEdge = edge;
+                double edge = Axial(t.DefaultPos) + dir * t.Ps.LengthFt * 0.5;
+                if (dir > 0 ? edge > groupEdge : edge < groupEdge) groupEdge = edge;
             }
             // Every tag's front edge aligns here, offset just past the dimension's furthest edge.
-            double frontLine = groupFarEdge + cfg.TagColumnAlongHeights * th;
+            double frontLine = groupEdge + dir * cfg.TagColumnAlongHeights * th;
 
-            // Nearest anchor (max axial) lowest → farthest highest, so the arcs nest without crossing.
-            var ordered = run.OrderByDescending(t => Axial(t.DefaultPos)).ToList();
+            // Nearest anchor to the column lowest → farthest highest, so the arcs nest without
+            // crossing; mirrored when the column hangs off the other (-axis) end.
+            var ordered = (dir > 0
+                ? run.OrderByDescending(t => Axial(t.DefaultPos))
+                : run.OrderBy(t => Axial(t.DefaultPos))).ToList();
 
             double level = cfg.TagColumnBaseHeights * th;
             double step  = cfg.TagColumnStepHeights * th;
@@ -312,9 +318,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double halfX = Math.Abs(axis.X) * halfAlong + Math.Abs(perp.X) * halfPerp;
                 double halfY = Math.Abs(axis.Y) * halfAlong + Math.Abs(perp.Y) * halfPerp;
 
-                // Centre this tag so its front (arc-side, -axis) edge sits on frontLine: push the centre
-                // back by the tag's own half-width. All front edges then line up regardless of text length.
-                double along = (frontLine - refAxial) + halfAlong;
+                // Centre this tag so its front (arc-side) edge sits on frontLine: push the centre
+                // away by the tag's own half-width in the column direction. All front edges then
+                // line up regardless of text length.
+                double along = (frontLine - refAxial) + dir * halfAlong;
                 XYZ baseOnLine = refTag.DefaultPos + worldAxis * along;
 
                 XYZ pos = baseOnLine;
