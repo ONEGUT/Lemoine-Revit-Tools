@@ -18,8 +18,23 @@ namespace LemoineTools.Tools.Testing
     /// review &amp; run. Marker oversize is edited in inches but stored internally in millimetres.
     /// The actual work happens in <see cref="ClashElevationFinderEventHandler"/>.
     /// </summary>
-    public class ClashElevationFinderViewModel : ILemoineTool, ILemoineReviewable
+    public class ClashElevationFinderViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
+        // Run strip: "markers" during the run, full marker/tag/failure breakdown on completion.
+        public string? ResultNoun => "markers";
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog       = null;
+            _handler.OnProgress    = null;
+            _handler.OnComplete    = null;
+            _handler.OnResultChips = null;
+        }
+
         public string Title    => "Clash Finder & Elevation Tag";
         public string RunLabel => "Find & Tag Clashes →";
 
@@ -335,6 +350,8 @@ namespace LemoineTools.Tools.Testing
         {
             if (_handler == null || _event == null) return;
 
+            _resultChips = null;   // clear any breakdown from a previous run
+
             _handler.Definitions = _selectedDefDisplays
                 .Where(d => _defDisplayToDef.ContainsKey(d))
                 .Select(d => _defDisplayToDef[d])
@@ -351,6 +368,7 @@ namespace LemoineTools.Tools.Testing
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
             _handler.OnComplete       = onComplete;
+            _handler.OnResultChips    = chips => _resultChips = chips;
 
             _event.Raise();
         }

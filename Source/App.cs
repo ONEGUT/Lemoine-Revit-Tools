@@ -62,6 +62,10 @@ namespace LemoineTools
         internal static ViewsBulkDuplicateRunHandler? ViewsBulkDuplicateRunHandler { get; private set; }
         internal static ExternalEvent?                ViewsBulkDuplicateRunEvent   { get; private set; }
 
+        // ── Bulk Rename (Sheets & Views) ─────────────────────────────────────────────
+        internal static LemoineTools.Tools.LinkViews.BulkRename.BulkRenameRunHandler? BulkRenameRunHandler { get; private set; }
+        internal static ExternalEvent?                BulkRenameRunEvent           { get; private set; }
+
         // ── Link Views — Discipline ─────────────────────────────────────────────────
         internal static LinkViewsDisciplineRunHandler? LinkViewsDisciplineRunHandler { get; private set; }
         internal static ExternalEvent?                 LinkViewsDisciplineRunEvent   { get; private set; }
@@ -87,6 +91,10 @@ namespace LemoineTools
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
+
+        // ── Testing — Place Dependent Views ─────────────────────────────────────────
+        internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
+        internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
@@ -149,6 +157,8 @@ namespace LemoineTools
             ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
             ViewsBulkDuplicateRunHandler = new ViewsBulkDuplicateRunHandler();
             ViewsBulkDuplicateRunEvent   = ExternalEvent.Create(ViewsBulkDuplicateRunHandler);
+            BulkRenameRunHandler = new LemoineTools.Tools.LinkViews.BulkRename.BulkRenameRunHandler();
+            BulkRenameRunEvent   = ExternalEvent.Create(BulkRenameRunHandler);
 
             // ── Link Views — Discipline ───────────────────────────────────────
             LinkViewsDisciplineRunHandler = new LinkViewsDisciplineRunHandler();
@@ -171,6 +181,8 @@ namespace LemoineTools
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
+            PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
+            PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -332,6 +344,11 @@ namespace LemoineTools
                 "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
                 char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
 
+            linkViewsPanel.AddItem(Btn(
+                "LT_BulkRename", "Bulk\nRename", "BulkRenameCommand",
+                "Bulk-rename sheets or views via find & replace, prefix/suffix, sequential numbering, or token pattern.",
+                char.ConvertFromUtf32(0xE8AC)));  // Segoe MDL2: Rename
+
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
             // Large:    Extend Walls
@@ -409,7 +426,9 @@ namespace LemoineTools
                 Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
-                    "Create one 3D view per link with a section box, with optional combined views per discipline."));
+                    "Create one 3D view per link with a section box, with optional combined views per discipline."),
+                Btn("LT_PlaceDepViews",       "Place Dep. Views", "PlaceDependentViewsCommand",
+                    "Create one sheet per view and place its dependents, trimmed and packed without overlap."));
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");

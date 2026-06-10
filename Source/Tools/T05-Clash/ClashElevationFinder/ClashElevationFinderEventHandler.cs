@@ -30,13 +30,18 @@ namespace LemoineTools.Tools.Testing
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashElevationFinderEventHandler";
 
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument.Document;
+            // pass = clash markers placed (one per clash — the deliverable). Elevation tags
+            // are a label on each marker, tracked separately so a successful run isn't reported
+            // as ~2× the clash count by summing markers + tags.
             int pass = 0, fail = 0, skip = 0;
+            int tagsPlaced = 0;
 
             try
             {
@@ -110,8 +115,8 @@ namespace LemoineTools.Tools.Testing
                             Log("Placing elevation tags…", "info");
 
                             var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
-                            pass += tagResult.Placed;
-                            fail += tagResult.Failures;
+                            tagsPlaced += tagResult.Placed;
+                            fail       += tagResult.Failures;
                             Log($"Elevation tags — {tagResult.Placed} placed, {tagResult.Failures} failure(s).",
                                 tagResult.Placed > 0 ? "pass" : "fail");
                         }
@@ -124,7 +129,15 @@ namespace LemoineTools.Tools.Testing
                 fail++;
             }
 
+            Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
+                pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
             Progress(100, pass, fail, skip);
+            OnResultChips?.Invoke(new List<ResultChip>
+            {
+                new ResultChip("markers", pass,       "LemoineGreen"),
+                new ResultChip("tags",    tagsPlaced, "LemoineGreen"),
+                new ResultChip("failed",  fail,       "LemoineRed"),
+            });
             Complete(pass, fail, skip);
         }
 

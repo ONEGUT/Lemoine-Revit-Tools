@@ -221,8 +221,13 @@ namespace LemoineTools.Tools.AutoFilters
                                 new Dictionary<(long Type, string Param), string?>();
 
                         var valueCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                        // A linked category can hold thousands of elements — report the scan
+                        // at 5% intervals so a long per-category read isn't silent.
+                        var scanProgress = new RunProgressReporter(
+                            Log, collector.GetElementCount(), $"{spec.OstCategory} elements");
                         foreach (Element el in collector)
                         {
+                            scanProgress.Tick();
                             string? val = ReadParameterValue(el, spec.Parameter, typeCache);
                             if (string.IsNullOrWhiteSpace(val)) continue;
                             valueCounts.TryGetValue(val!, out int c);

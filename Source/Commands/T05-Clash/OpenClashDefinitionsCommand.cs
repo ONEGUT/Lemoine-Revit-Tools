@@ -59,11 +59,17 @@ namespace LemoineTools.Commands
                 }
             }
 
-            // Source documents available to each clash group (host + each loaded link).
+            // Source documents available to each clash group (host + each loaded link),
+            // each carrying its user worksets for the per-document workset checklist.
             var docs = new List<ClashDocInfo>();
             if (doc != null)
             {
-                docs.Add(new ClashDocInfo { Name = "(Host) " + doc.Title, LinkInstId = 0L });
+                docs.Add(new ClashDocInfo
+                {
+                    Name       = "(Host) " + doc.Title,
+                    LinkInstId = 0L,
+                    Worksets   = ReadUserWorksets(doc),
+                });
                 foreach (var li in new FilteredElementCollector(doc)
                     .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
                 {
@@ -73,6 +79,7 @@ namespace LemoineTools.Commands
                     {
                         Name       = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "]",
                         LinkInstId = li.Id.Value,
+                        Worksets   = ReadUserWorksets(ld),
                     });
                 }
             }
@@ -100,6 +107,25 @@ namespace LemoineTools.Commands
             ready.Wait();
             _window = win;
             return Result.Succeeded;
+        }
+
+        /// <summary>User worksets of a document, sorted by name. Empty when the document is not
+        /// workshared (or the read throws on a detached/closed link).</summary>
+        private static List<ClashWorksetInfo> ReadUserWorksets(Document d)
+        {
+            var list = new List<ClashWorksetInfo>();
+            try
+            {
+                if (d == null || !d.IsWorkshared) return list;
+                foreach (var ws in new FilteredWorksetCollector(d).OfKind(WorksetKind.UserWorkset))
+                    list.Add(new ClashWorksetInfo { Id = ws.Id.IntegerValue, Name = ws.Name });
+                list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("OpenClashDefinitionsCommand: read user worksets", ex);
+            }
+            return list;
         }
     }
 }
