@@ -49,8 +49,6 @@ namespace LemoineTools.Lemoine
         private TextBlock    _passText        = null!;
         private TextBlock    _failText        = null!;
         private TextBlock    _skipText        = null!;
-        private TextBlock    _passLbl         = null!;   // primary-count label (renamed via ILemoineRunResult)
-        private StackPanel   _countersPanel   = null!;   // host for pass/fail/skip — swapped for chips on completion
 
         private StackPanel   _logStack  = null!;
         private ScrollViewer _logScroll = null!;
@@ -262,17 +260,11 @@ namespace LemoineTools.Lemoine
             top.Children.Add(_statusText);
 
             var counters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            _passLbl  = CtrLbl(" pass  ");
-            _passText = Ctr("LemoineGreen");   counters.Children.Add(_passText); counters.Children.Add(_passLbl);
+            _passText = Ctr("LemoineGreen");   counters.Children.Add(_passText); counters.Children.Add(CtrLbl(" pass  "));
             _failText = Ctr("LemoineRed");     counters.Children.Add(_failText); counters.Children.Add(CtrLbl(" fail  "));
             _skipText = Ctr("LemoineTextDim"); counters.Children.Add(_skipText); counters.Children.Add(CtrLbl(" skip"));
             DockPanel.SetDock(counters, Dock.Right);
             top.Children.Add(counters);
-            _countersPanel = counters;
-
-            // Self-describing primary label, e.g. "42 segments" instead of "42 pass".
-            if (_tool is ILemoineRunResult rrLabel && !string.IsNullOrWhiteSpace(rrLabel.ResultNoun))
-                _passLbl.Text = $" {rrLabel.ResultNoun}  ";
 
             _progressTrack = new Border
             {
@@ -1009,27 +1001,61 @@ namespace LemoineTools.Lemoine
             _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineGreen");
             _resetBtn.IsEnabled = true;
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
-            // Multi-output tools replace the bare pass number with a labelled breakdown.
-            if (_tool is ILemoineRunResult rr && rr.ResultChips != null && rr.ResultChips.Count > 0)
-                RenderResultChips(rr.ResultChips);
+            // Prominent, self-describing summary in the output log (the top bar keeps the
+            // generic pass/fail/skip): "42 segments" plus any per-output chip breakdown.
+            PushRunSummary(pass, fail, skip);
             UpdateStepCounter();
         }
 
-        // Swaps the pass/fail/skip counters for a tool-supplied set of labelled figures,
-        // e.g. "120 markers · 118 dims · 3 views empty". Called once on completion.
-        private void RenderResultChips(System.Collections.Generic.IReadOnlyList<ResultChip> chips)
+        // Appends a large-text result summary to the output log. Every tool gets a headline
+        // line built from its ILemoineRunResult.ResultNoun ("42 segments · 2 skipped · 0 failed");
+        // multi-output tools add a second line of labelled chip figures ("120 markers · 118 dims").
+        private void PushRunSummary(int pass, int fail, int skip)
         {
-            _countersPanel.Children.Clear();
-            bool first = true;
-            foreach (var chip in chips)
+            var rr   = _tool as ILemoineRunResult;
+            var noun = rr?.ResultNoun;
+            if (string.IsNullOrWhiteSpace(noun)) noun = "done";
+
+            var block = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
+
+            // Headline: big coloured primary count + noun, then skipped / failed.
+            var headline = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            headline.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            headline.Inlines.Add(SummaryRun(pass.ToString(),  "LemoineGreen",   "LemoineFS_XL", true));
+            headline.Inlines.Add(SummaryRun($" {noun}",        "LemoineText",    "LemoineFS_XL", true));
+            headline.Inlines.Add(SummaryRun($"    {skip} skipped", "LemoineTextDim", "LemoineFS_LG", false));
+            headline.Inlines.Add(SummaryRun($"    {fail} failed",
+                fail > 0 ? "LemoineRed" : "LemoineTextDim", "LemoineFS_LG", false));
+            block.Children.Add(headline);
+
+            // Optional per-output breakdown.
+            var chips = rr?.ResultChips;
+            if (chips != null && chips.Count > 0)
             {
-                if (!first) _countersPanel.Children.Add(CtrLbl("   "));
-                first = false;
-                var num = Ctr(string.IsNullOrWhiteSpace(chip.ColorKey) ? "LemoineText" : chip.ColorKey);
-                num.Text = chip.Count.ToString();
-                _countersPanel.Children.Add(num);
-                _countersPanel.Children.Add(CtrLbl($" {chip.Label}"));
+                var chipLine = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+                chipLine.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                bool first = true;
+                foreach (var chip in chips)
+                {
+                    if (!first) chipLine.Inlines.Add(SummaryRun("  ·  ", "LemoineTextDim", "LemoineFS_LG", false));
+                    first = false;
+                    var colorKey = string.IsNullOrWhiteSpace(chip.ColorKey) ? "LemoineText" : chip.ColorKey;
+                    chipLine.Inlines.Add(SummaryRun(chip.Count.ToString(), colorKey, "LemoineFS_LG", true));
+                    chipLine.Inlines.Add(SummaryRun($" {chip.Label}", "LemoineTextDim", "LemoineFS_LG", false));
+                }
+                block.Children.Add(chipLine);
             }
+
+            _logStack.Children.Add(block);
+            _logScroll.ScrollToEnd();
+        }
+
+        private static System.Windows.Documents.Run SummaryRun(string text, string colorKey, string fsKey, bool bold)
+        {
+            var run = new System.Windows.Documents.Run(text) { FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal };
+            run.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, colorKey);
+            run.SetResourceReference(System.Windows.Documents.TextElement.FontSizeProperty, fsKey);
+            return run;
         }
 
         private void ResetAll()
@@ -1046,7 +1072,6 @@ namespace LemoineTools.Lemoine
             // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
             HideStepsForRun(false);
             _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
-            RestoreCounters();   // undo any result-chip swap from the previous run
             _logStack.Children.Clear(); PushLog("Ready.", "info");
             SetStatus("● Configuring…"); SetCounts(0, 0, 0); SetProgress(0);
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
@@ -1116,16 +1141,6 @@ namespace LemoineTools.Lemoine
 
         private void SetStatus(string t) => _statusText.Text = t;
         private void SetCounts(int p, int f, int s) { _passText.Text = p.ToString(); _failText.Text = f.ToString(); _skipText.Text = s.ToString(); }
-
-        // Rebuilds the pass/fail/skip layout in the counters panel (it may have been replaced
-        // by result chips at the end of a previous run). Re-uses the existing counter TextBlocks.
-        private void RestoreCounters()
-        {
-            _countersPanel.Children.Clear();
-            _countersPanel.Children.Add(_passText); _countersPanel.Children.Add(_passLbl);
-            _countersPanel.Children.Add(_failText); _countersPanel.Children.Add(CtrLbl(" fail  "));
-            _countersPanel.Children.Add(_skipText); _countersPanel.Children.Add(CtrLbl(" skip"));
-        }
         private void UpdateStepCounter()
         {
             if (_stepCounter == null) return;
