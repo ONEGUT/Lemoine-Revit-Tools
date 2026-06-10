@@ -112,12 +112,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // A run governs both its dimensions: chained along its length, single across it.
             double runCrossFt = cfg.RunCrossToleranceMm / 304.8;
             double runGapFt   = cfg.RunGapMm / 304.8;
-            var runs = cfg.ChainAligned
+            var grouping = cfg.ChainAligned
                 ? ClashRunGrouper.Build(sources, runCrossFt, runGapFt)
-                : new Dictionary<string, ClashRunGrouper.RunInfo>();
+                : new ClashRunGrouper.GroupResult();
+            var runs = grouping.Map;
             if (cfg.ChainAligned)
-                _log($"Grouped {sources.Count} clash(es) into {runs.Values.Distinct().Count()} run(s) "
-                   + $"(cross ≤{cfg.RunCrossToleranceMm:0} mm, gap ≤{cfg.RunGapMm:0} mm).", "info");
+            {
+                _log($"Grouped {sources.Count} clash(es) into {grouping.RunCount} run(s) "
+                   + $"(group reach ≤{runGapFt:0.#} ft along the line, off-line ≤{runCrossFt:0.##} ft).", "info");
+                foreach (var miss in grouping.NearMisses) _log(miss, "info");
+                if (grouping.NearMisses.Count > 0)
+                    plan.Notes.Add($"{grouping.NearMisses.Count} near-miss grouping pair(s) — the log shows "
+                                 + "which distance kept them apart (tune group reach / line tolerance).");
+            }
 
             var resolved        = new List<ResolvedItem>();
             var resolvedSources = new HashSet<string>();
