@@ -70,9 +70,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         public static double EntryHeightIn(double swatchHIn, double labelCapIn)
             => Math.Max(swatchHIn, labelCapIn) + EntryPadIn;
 
-        /// <summary>Vertical distance from a group header's top to its first entry centre.</summary>
-        public static double HeaderAdvanceIn(double headerCapIn)
-            => headerCapIn + HeaderPadIn;
+        /// <summary>
+        /// Vertical distance from a group header's band top to its first entry CENTRE:
+        /// header text band, the header pad, then half the first entry's height — matching
+        /// the preview, which stacks header → pad → entry rows with centred content.
+        /// </summary>
+        public static double HeaderAdvanceIn(double headerCapIn, double entryHIn)
+            => headerCapIn + HeaderPadIn + entryHIn / 2.0;
 
         /// <summary>Converts a TextNoteType size (Revit internal feet, paper-space) to paper inches.</summary>
         public static double FeetToInches(double feet) => feet * 12.0;

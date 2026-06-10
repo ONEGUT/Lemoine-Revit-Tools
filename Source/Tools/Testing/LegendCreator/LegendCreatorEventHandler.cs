@@ -234,9 +234,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 // Removes previous filled regions / text notes so a redraw starts clean.
                 void ClearLegendContents(View v)
                 {
+                    // Match FilledRegion by CLASS — matching its category (OST_FilledRegion)
+                    // missed the regions, which is why "Update Legend" stacked new colour
+                    // squares on top of the old ones instead of replacing them.
                     var ids = new FilteredElementCollector(doc, v.Id)
                         .WherePasses(new LogicalOrFilter(
-                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
+                            new ElementClassFilter(typeof(FilledRegion)),
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
                     foreach (var id in ids)
@@ -330,11 +333,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 double colGapFt = LegendLayout.InchesToFeet(layout.ColGap, scale);
                 double rowGapFt = LegendLayout.InchesToFeet(layout.RowGap, scale);
 
-                // ── Resolve per-role TextNoteType IDs ────────────────────────
-                ElementId titleTid  = ResolveTypeId(TitleTypeId,       textTypeId);
-                ElementId subTid    = ResolveTypeId(SubtitleTypeId,    textTypeId);
-                ElementId headerTid = ResolveTypeId(GroupHeaderTypeId, textTypeId);
-                ElementId labelTid  = ResolveTypeId(LabelTypeId,       textTypeId);
+                // ── Resolve per-role TextNoteType IDs (validated against THIS doc) ──
+                ElementId titleTid  = ResolveTypeId(doc, TitleTypeId,       textTypeId);
+                ElementId subTid    = ResolveTypeId(doc, SubtitleTypeId,    textTypeId);
+                ElementId headerTid = ResolveTypeId(doc, GroupHeaderTypeId, textTypeId);
+                ElementId labelTid  = ResolveTypeId(doc, LabelTypeId,       textTypeId);
 
                 // Model-space font heights from each TextNoteType's registered size.
                 // TEXT_SIZE is stored in Revit internal units (feet, paper-space).
@@ -346,11 +349,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 // All vertical/column math goes through LegendLayout (paper inches → feet) so
                 // the WPF preview, which calls the same formulas, matches this output exactly.
-                double entryH = LegendLayout.InchesToFeet(
-                    LegendLayout.EntryHeightIn(layout.SwatchH, labelFontH * 12.0 / scale), scale);
-                // hdrPad: space from group header top to first block center.
+                double entryHIn = LegendLayout.EntryHeightIn(layout.SwatchH, labelFontH * 12.0 / scale);
+                double entryH   = LegendLayout.InchesToFeet(entryHIn, scale);
+                // hdrPad: group header band top → first block CENTRE.
                 double hdrPad = LegendLayout.InchesToFeet(
-                    LegendLayout.HeaderAdvanceIn(headerFontH * 12.0 / scale), scale);
+                    LegendLayout.HeaderAdvanceIn(headerFontH * 12.0 / scale, entryHIn), scale);
 
                 // Estimated label width in model feet, via the shared paper-inch estimate.
                 double LabelWidthFt(string text, double fontH)
@@ -361,13 +364,18 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 // PlaceNote: single-line (no width arg) so a long label never wraps and
                 // overlaps the next entry — column spacing comes from the measured width.
-                void PlaceNote(ElementId viewId, XYZ origin, string text, ElementId typeId)
+                // VerticalAlignment is pinned to MIDDLE and every origin below is a band
+                // CENTRE: top-vs-baseline anchor ambiguity (which mis-stacked swatches
+                // against labels) is eliminated rather than compensated for.
+                int textFails = 0;
+                void PlaceNote(ElementId viewId, XYZ centerOrigin, string text, ElementId typeId)
                 {
                     if (string.IsNullOrEmpty(text)) return;
                     var o = new TextNoteOptions { TypeId = typeId };
                     try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
-                    try   { TextNote.Create(doc, viewId, origin, text, o); }
-                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
+                    try { o.VerticalAlignment = VerticalTextAlignment.Middle; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note vertical alignment", __lex); }
+                    try   { TextNote.Create(doc, viewId, centerOrigin, text, o); }
+                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); textFails++; }
                 }
 
                 double cy = 0.0;
@@ -375,14 +383,16 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 double subPadFt   = LegendLayout.InchesToFeet(LegendLayout.SubPadIn,   scale);
 
                 // ── Title / Subtitle above first row ──────────────────────────
+                // cy tracks the TOP of the current band; notes are placed at the band's
+                // vertical centre (Middle-aligned).
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Title.Trim(), titleTid);
+                    PlaceNote(dv.Id, new XYZ(0, cy - titleFontH / 2.0, 0), layout.Title.Trim(), titleTid);
                     cy -= titleFontH + titlePadFt;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Subtitle.Trim(), subTid);
+                    PlaceNote(dv.Id, new XYZ(0, cy - subFontH / 2.0, 0), layout.Subtitle.Trim(), subTid);
                     cy -= subFontH + subPadFt;
                 }
 
@@ -399,10 +409,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                     foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     {
-                        // Group header: origin at top-left (cy = top of header text).
+                        // Group header: cy is the band top; the Middle-aligned note goes
+                        // at the band centre.
                         string header = string.IsNullOrWhiteSpace(grp.Title)
                             ? "—" : grp.Title.ToUpperInvariant();
-                        PlaceNote(dv.Id, new XYZ(cx, cy, 0), header, headerTid);
+                        PlaceNote(dv.Id, new XYZ(cx, cy - headerFontH / 2.0, 0), header, headerTid);
 
                         // First block center is below the header by hdrPad.
                         double blockY    = cy - hdrPad;
@@ -429,13 +440,19 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                 }
                                 catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); fail++; }
                             }
+                            else if (rgb.HasValue)
+                            {
+                                // The colour resolved but its FilledRegionType wasn't built
+                                // (failure already in logMsgs) — say which block lost its
+                                // swatch instead of dropping it silently.
+                                logMsgs.Add($"Swatch '{blk.Name}': no swatch type for {hex}/{fill} — drawn without a swatch.");
+                            }
 
-                            // Label: Revit TextNote Y is the baseline, so dropping it by half
-                            // the cap height centres the text on the swatch (which is centred at
-                            // blockY). Width drives the column stride below.
+                            // Label: Middle-aligned at blockY — the swatch is also centred
+                            // at blockY, so they align exactly. Width drives column stride.
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
                             PlaceNote(dv.Id,
-                                new XYZ(cx + swatchW + gapFt, blockY - labelFontH / 2.0, 0),
+                                new XYZ(cx + swatchW + gapFt, blockY, 0),
                                 label, labelTid);
                             double lw = LabelWidthFt(label, labelFontH);
                             if (lw > maxLabelW) maxLabelW = lw;
@@ -463,6 +480,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 tx.Commit();
                 // Deliverable = legend blocks/swatches drawn, not a hardcoded 1 for the view.
                 pass += blocksDone;
+                fail += textFails; // text notes that failed to create (details in logMsgs)
 
                 // Notify the caller whenever a NEW view exists — including the update-mode
                 // fallback, so the legend entry rebinds to the fresh view's id.
@@ -595,9 +613,15 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return null;
         }
 
-        // Returns the candidate if it is a valid non-null ElementId, else the fallback.
-        private static ElementId ResolveTypeId(ElementId? candidate, ElementId fallback)
-            => (candidate != null && candidate != ElementId.InvalidElementId) ? candidate : fallback;
+        // Returns the candidate when it resolves to a real TextNoteType in THIS document,
+        // else the fallback. The per-role ids persist in settings across sessions and
+        // projects, so a stale id from another model must not reach TextNote.Create —
+        // it throws, and that note (e.g. the title) silently never appears.
+        private static ElementId ResolveTypeId(Document doc, ElementId? candidate, ElementId fallback)
+            => (candidate != null && candidate != ElementId.InvalidElementId
+                && doc.GetElement(candidate) is TextNoteType)
+                ? candidate
+                : fallback;
 
         // Returns the model-space text height for a TextNoteType (feet).
         // TEXT_SIZE is in Revit internal units (paper-space feet); multiply by view scale.
