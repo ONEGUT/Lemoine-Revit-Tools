@@ -167,11 +167,15 @@ namespace LemoineTools.Lemoine
                 new ToggleItem { Id = "stagger", Label = "Stagger stacked values",
                                  Desc = "Nudges value texts on adjacent rows apart so stacked dimensions don't pile their numbers into one column.",
                                  DefaultOn = cfg.Layout.StaggerStackedText },
+                new ToggleItem { Id = "snapshot", Label = "Dump layout snapshots (diagnostic)",
+                                 Desc = "Writes a layout snapshot XML per dimensioned view to %AppData%\\LemoineTools\\LayoutSnapshots — the full problem and solution with per-dimension score breakdowns, for tuning the engine. No effect on placement.",
+                                 DefaultOn = cfg.DumpLayoutSnapshots },
             });
             layoutToggles.StateChanged += state =>
             {
                 if (state.TryGetValue("alignRows", out var a)) cfg.Layout.AlignSharedRows    = a;
                 if (state.TryGetValue("stagger",   out var s)) cfg.Layout.StaggerStackedText = s;
+                if (state.TryGetValue("snapshot",  out var d)) cfg.DumpLayoutSnapshots       = d;
                 cfg.Save();
             };
             panel.Children.Add(layoutToggles);

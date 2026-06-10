@@ -222,6 +222,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 }
             }
 
+            // ── Layout snapshot (data harvester) — full problem + solution per view ──
+            if (cfg.DumpLayoutSnapshots)
+            {
+                var snap = Core.LayoutSnapshotWriter.Build(
+                    view.Name, (int)scale, coreCfg, dims, obstacles, scorer,
+                    grouping.NearMisses, plan.Notes);
+                string? path = Core.LayoutSnapshotWriter.Write(snap);
+                _log(path != null
+                    ? $"Layout snapshot written: {path}"
+                    : "Layout snapshot FAILED to write — see diagnostics.log.", path != null ? "info" : "fail");
+                if (path != null) plan.Notes.Add($"Layout snapshot: {path}");
+            }
+
             plan.Dimensions = dims;
             return output;
         }

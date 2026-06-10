@@ -84,6 +84,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>Slab-face scoring credit for a larger / more primary boundary face.</summary>
         public double SlabLengthWeight { get; set; } = 0.05;
 
+        /// <summary>Diagnostic only: when true, every dimensioned view writes a complete layout
+        /// snapshot XML (config, obstacles, every dimension's placement + per-constraint score
+        /// breakdown) to %AppData%\LemoineTools\LayoutSnapshots — the data harvester for layout
+        /// tuning. Off by default; no behaviour change.</summary>
+        public bool DumpLayoutSnapshots { get; set; } = false;
+
         /// <summary>Diagnostic only: when true, a SlabEdge run logs a per-source-doc face tally
         /// (host vs each link: floors, vertical faces kept, drops) and a per-clash candidate ranking
         /// so the "auto mode never picks the linked slab" path can be pinpointed from the run log.

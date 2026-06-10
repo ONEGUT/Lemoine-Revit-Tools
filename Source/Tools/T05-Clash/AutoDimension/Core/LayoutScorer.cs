@@ -13,6 +13,48 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public double Total => Hard + Soft;
     }
 
+    /// <summary>Per-constraint tallies for one dimension's score — filled by
+    /// <see cref="LayoutScorer.Score"/> when supplied, consumed by the layout snapshot so a
+    /// bad placement names exactly which rule(s) it lost to.</summary>
+    public sealed class ScoreDetail
+    {
+        public double BandVsObstacles;     // line-band overlap area with static annotations
+        public double TextVsObstacles;     // value-text overlap area with static annotations
+        public double BandVsBands;         // line-band overlap area with other strings
+        public double TextVsTextOrBand;    // value-text overlap area with other text/bands
+        public int    LineCrossesLine;     // dim line × dim line crossings
+        public int    LineCrossesWitness;  // dim line × witness crossings (either direction)
+        public int    WitnessThroughText;  // witness slicing through value text
+        public int    LeaderCrossings;     // leader × leader
+        public int    LeaderLineCrossings; // leader × dim/witness line
+        public bool   OffCrop;
+        public double CrampedPenalty;
+        public double LeaderSlack;
+        public double SpacingDeviation;
+        public double StaggerPenalty;
+
+        public override string ToString()
+        {
+            var parts = new List<string>();
+            void Add(string label, double v) { if (v > 1e-9) parts.Add($"{label} {v:0.##}"); }
+            Add("band×obstacle", BandVsObstacles);
+            Add("text×obstacle", TextVsObstacles);
+            Add("band×band", BandVsBands);
+            Add("text×text/band", TextVsTextOrBand);
+            if (LineCrossesLine > 0)     parts.Add($"line×line ×{LineCrossesLine}");
+            if (LineCrossesWitness > 0)  parts.Add($"line×witness ×{LineCrossesWitness}");
+            if (WitnessThroughText > 0)  parts.Add($"witness×text ×{WitnessThroughText}");
+            if (LeaderCrossings > 0)     parts.Add($"leader×leader ×{LeaderCrossings}");
+            if (LeaderLineCrossings > 0) parts.Add($"leader×line ×{LeaderLineCrossings}");
+            if (OffCrop) parts.Add("off-crop");
+            Add("cramped", CrampedPenalty);
+            Add("leader-slack", LeaderSlack);
+            Add("spacing-dev", SpacingDeviation);
+            Add("stagger", StaggerPenalty);
+            return string.Join("; ", parts);
+        }
+    }
+
     /// <summary>
     /// Scores a candidate dimension placement against the obstacle set and other dimensions,
     /// using the full drawn anatomy (<see cref="DimAnatomy"/>) rather than one fat band.
@@ -35,11 +77,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         }
 
         /// <summary>Scores one dimension given static obstacles and the other dimensions to
-        /// respect (the already-placed set during greedy passes; everyone else during repair).</summary>
+        /// respect (the already-placed set during greedy passes; everyone else during repair).
+        /// Pass a <paramref name="detail"/> to additionally collect per-constraint tallies
+        /// (snapshot/diagnostics path — same single scoring code path either way).</summary>
         public LayoutScore Score(
             PlannedDimension d,
             IReadOnlyList<Box2> obstacles,
-            IReadOnlyList<PlannedDimension> placed)
+            IReadOnlyList<PlannedDimension> placed,
+            ScoreDetail? detail = null)
         {
             double hard = 0;
             double soft = 0;
@@ -53,9 +98,15 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             {
                 Box2 ob = obstacles[i];
                 if (!d.PaperBounds.Intersects(ob)) continue;
-                hard += an.LineBand.OverlapArea(ob) * _cfg.OverlapWeight;
+                double a1 = an.LineBand.OverlapArea(ob);
+                hard += a1 * _cfg.OverlapWeight;
+                if (detail != null) detail.BandVsObstacles += a1;
                 foreach (var tb in an.TextBoxes)
-                    hard += tb.OverlapArea(ob) * _cfg.OverlapWeight;
+                {
+                    double a2 = tb.OverlapArea(ob);
+                    hard += a2 * _cfg.OverlapWeight;
+                    if (detail != null) detail.TextVsObstacles += a2;
+                }
             }
 
             // ── vs other dimensions ────────────────────────────────────────────
@@ -68,54 +119,112 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 if (!d.PaperBounds.Intersects(p.PaperBounds)) continue;
 
                 // Line bands must not share area (string-on-string).
-                hard += an.LineBand.OverlapArea(pa.LineBand) * _cfg.OverlapWeight;
+                double bb = an.LineBand.OverlapArea(pa.LineBand);
+                hard += bb * _cfg.OverlapWeight;
+                if (detail != null) detail.BandVsBands += bb;
 
                 // Dimension lines never cross each other or any witness line (hard).
-                if (an.DimLine.Crosses(pa.DimLine)) hard += _cfg.CrossingWeight;
+                if (an.DimLine.Crosses(pa.DimLine))
+                {
+                    hard += _cfg.CrossingWeight;
+                    if (detail != null) detail.LineCrossesLine++;
+                }
                 foreach (var w in pa.Witnesses)
-                    if (an.DimLine.Crosses(w)) hard += _cfg.CrossingWeight;
+                    if (an.DimLine.Crosses(w))
+                    {
+                        hard += _cfg.CrossingWeight;
+                        if (detail != null) detail.LineCrossesWitness++;
+                    }
                 foreach (var w in an.Witnesses)
-                    if (pa.DimLine.Crosses(w)) hard += _cfg.CrossingWeight;
+                    if (pa.DimLine.Crosses(w))
+                    {
+                        hard += _cfg.CrossingWeight;
+                        if (detail != null) detail.LineCrossesWitness++;
+                    }
 
                 // Value text is sacrosanct: no other text, line band, or witness over it.
                 foreach (var tb in an.TextBoxes)
                 {
-                    hard += tb.OverlapArea(pa.LineBand) * _cfg.OverlapWeight;
+                    double tband = tb.OverlapArea(pa.LineBand);
+                    hard += tband * _cfg.OverlapWeight;
+                    if (detail != null) detail.TextVsTextOrBand += tband;
                     foreach (var otb in pa.TextBoxes)
-                        hard += tb.OverlapArea(otb) * _cfg.OverlapWeight;
+                    {
+                        double tt = tb.OverlapArea(otb);
+                        hard += tt * _cfg.OverlapWeight;
+                        if (detail != null) detail.TextVsTextOrBand += tt;
+                    }
                     foreach (var w in pa.Witnesses)
-                        if (SegIntersectsBox(w, tb)) hard += _cfg.WitnessCrossWeight;
+                        if (SegIntersectsBox(w, tb))
+                        {
+                            hard += _cfg.WitnessCrossWeight;
+                            if (detail != null) detail.WitnessThroughText++;
+                        }
                 }
                 foreach (var otb in pa.TextBoxes)
                 {
-                    hard += otb.OverlapArea(an.LineBand) * _cfg.OverlapWeight;
+                    double bt = otb.OverlapArea(an.LineBand);
+                    hard += bt * _cfg.OverlapWeight;
+                    if (detail != null) detail.TextVsTextOrBand += bt;
                     foreach (var w in an.Witnesses)
-                        if (SegIntersectsBox(w, otb)) hard += _cfg.WitnessCrossWeight;
+                        if (SegIntersectsBox(w, otb))
+                        {
+                            hard += _cfg.WitnessCrossWeight;
+                            if (detail != null) detail.WitnessThroughText++;
+                        }
                 }
 
                 // Leaders: never cross another leader (soft-high) nor lines (soft).
                 foreach (var l in an.Leaders)
                 {
                     foreach (var ol in pa.Leaders)
-                        if (l.Crosses(ol)) soft += _cfg.LeaderCrossWeight;
-                    if (l.Crosses(pa.DimLine)) soft += _cfg.LeaderLineCrossWeight;
+                        if (l.Crosses(ol))
+                        {
+                            soft += _cfg.LeaderCrossWeight;
+                            if (detail != null) detail.LeaderCrossings++;
+                        }
+                    if (l.Crosses(pa.DimLine))
+                    {
+                        soft += _cfg.LeaderLineCrossWeight;
+                        if (detail != null) detail.LeaderLineCrossings++;
+                    }
                     foreach (var w in pa.Witnesses)
-                        if (l.Crosses(w)) soft += _cfg.LeaderLineCrossWeight;
+                        if (l.Crosses(w))
+                        {
+                            soft += _cfg.LeaderLineCrossWeight;
+                            if (detail != null) detail.LeaderLineCrossings++;
+                        }
                 }
                 foreach (var ol in pa.Leaders)
                 {
-                    if (ol.Crosses(an.DimLine)) soft += _cfg.LeaderLineCrossWeight;
+                    if (ol.Crosses(an.DimLine))
+                    {
+                        soft += _cfg.LeaderLineCrossWeight;
+                        if (detail != null) detail.LeaderLineCrossings++;
+                    }
                     foreach (var w in an.Witnesses)
-                        if (ol.Crosses(w)) soft += _cfg.LeaderLineCrossWeight;
+                        if (ol.Crosses(w))
+                        {
+                            soft += _cfg.LeaderLineCrossWeight;
+                            if (detail != null) detail.LeaderLineCrossings++;
+                        }
                 }
 
                 // Stagger stacked values: texts on adjacent rows shouldn't form a column.
-                if (_cfg.StaggerStackedText) soft += StaggerPenalty(an, pa, d, p);
+                if (_cfg.StaggerStackedText)
+                {
+                    double sp = StaggerPenalty(an, pa, d, p);
+                    soft += sp;
+                    if (detail != null) detail.StaggerPenalty += sp;
+                }
             }
 
             // ── HARD: off-crop ────────────────────────────────────────────────
             if (_crop.HasValue && !_crop.Value.Contains(d.PaperBounds))
+            {
                 hard += _cfg.OffCropWeight;
+                if (detail != null) detail.OffCrop = true;
+            }
 
             // ── SOFT: cramped segment text / leadering ────────────────────────
             for (int i = 0; i < d.Segments.Count; i++)
@@ -124,6 +233,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 if (seg.TextState == SegmentTextState.LeaderOut)
                 {
                     soft += _cfg.LeaderWeight;          // leadered → no cramped penalty
+                    if (detail != null) detail.CrampedPenalty += _cfg.LeaderWeight;
                     continue;
                 }
                 if (seg.IsCramped)
@@ -133,18 +243,25 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     bool moved = seg.TextState == SegmentTextState.Staggered
                               || seg.TextState == SegmentTextState.Flipped;
                     double factor = moved ? 0.5 : 1.0;
-                    soft += overflow * _cfg.CrampedWeight * factor;
+                    double cp = overflow * _cfg.CrampedWeight * factor;
+                    soft += cp;
+                    if (detail != null) detail.CrampedPenalty += cp;
                 }
             }
 
             // ── SOFT: leader slack — keep moved tags near their segment ───────
             double minLeader = _cfg.TextHeightFt * 2.0;
             foreach (var l in an.Leaders)
-                soft += Math.Max(0, l.Length - minLeader) * _cfg.LeaderSlackWeight;
+            {
+                double slack = Math.Max(0, l.Length - minLeader) * _cfg.LeaderSlackWeight;
+                soft += slack;
+                if (detail != null) detail.LeaderSlack += slack;
+            }
 
             // ── SOFT: uneven spacing — penalise offsets off the first-offset/spacing cadence ──
             double dev = Math.Abs(d.OffsetFt - SnapToGrid(d.OffsetFt));
             soft += dev * _cfg.UnevenSpacingWeight;
+            if (detail != null) detail.SpacingDeviation += dev * _cfg.UnevenSpacingWeight;
 
             return new LayoutScore(hard, soft);
         }
