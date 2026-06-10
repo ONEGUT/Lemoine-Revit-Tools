@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Xml.Serialization;
 
 namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
@@ -22,6 +23,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         /// <summary>Text placement decided by layout. Inline until the core moves it.</summary>
         public SegmentTextState TextState { get; set; } = SegmentTextState.Inline;
+
+        /// <summary>Planned view-2D centre of this segment's relocated value text when the
+        /// layout moved it out of line (see <see cref="TagColumnPlanner"/>); null while inline.
+        /// Derived — recomputed whenever side/offset/states change.</summary>
+        [XmlIgnore]
+        public Vec2? TagPos { get; set; }
 
         /// <summary>True when this segment cannot fit its text inline at its current length.</summary>
         public bool IsCramped => TextWidthFt > LengthFt;
@@ -58,8 +65,18 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         public List<PlannedSegment> Segments { get; set; } = new List<PlannedSegment>();
 
+        /// <summary>View-2D anchor of every reference along the line (sources + target),
+        /// sorted along the measurement axis. Segment k spans anchors k → k+1; each anchor
+        /// drops one witness line. Filled by the chainer.</summary>
+        public List<Vec2> RefAnchors { get; set; } = new List<Vec2>();
+
         /// <summary>Paper-space bounds of the whole string (text + line) for collision tests.</summary>
         public Box2 PaperBounds { get; set; }
+
+        /// <summary>Drawn anatomy (lines/witnesses/text/leaders) at the current placement.
+        /// Derived — rebuilt by <see cref="DimGeometry.RecomputeBounds"/>, never serialized.</summary>
+        [XmlIgnore]
+        public DimAnatomy? Anatomy { get; set; }
     }
 
     /// <summary>A source line whose target could not be resolved. Reported, never silently dropped.</summary>

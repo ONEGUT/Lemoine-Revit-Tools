@@ -137,6 +137,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             Core.Vec2 targetPoint = it.Source2d + axis * (tgtA - srcA);
 
             string key = $"{it.SourceKey}|{AxisTag(axis)}";
+            var anchors = new List<Core.Vec2> { it.Source2d, targetPoint };
+            if (anchors[0].Dot(axis) > anchors[1].Dot(axis)) anchors.Reverse();
             var dim = new Core.PlannedDimension
             {
                 SourceKey   = key,
@@ -147,6 +149,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 AxisDir     = axis,
                 Side        = Core.DimSide.Positive,
                 OffsetFt    = cfg.FirstOffsetFt,
+                RefAnchors  = anchors,
                 Segments    = new List<Core.PlannedSegment>
                 {
                     new Core.PlannedSegment { LengthFt = len, TextWidthFt = EstimateTextWidth(len, cfg.TextHeightFt, valueFmt) },
@@ -207,6 +210,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 AxisDir     = axis,
                 Side        = Core.DimSide.Positive,
                 OffsetFt    = cfg.FirstOffsetFt,
+                RefAnchors  = deduped.Select(t => axis * t.a + perp * basePerp).ToList(),
                 Segments    = segments,
             });
             result.Refs[key] = new PlannedRefBundle { Ordered = deduped.Select(t => t.r).ToList() };

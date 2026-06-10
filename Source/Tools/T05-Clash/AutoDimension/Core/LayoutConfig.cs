@@ -24,6 +24,26 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// <summary>Paper-space text height used to size collision bands. Default 3/32".</summary>
         public double TextHeightFt { get; set; } = (3.0 / 32.0) / 12.0;
 
+        // ── Witness (extension) line anatomy (paper-space) ─────────────────────
+        /// <summary>Visible gap between the anchor and the start of its witness line.
+        /// Default 1/16" (ASME Y14.5 §1.7.2).</summary>
+        public double WitnessGapFt { get; set; } = (1.0 / 16.0) / 12.0;
+
+        /// <summary>How far a witness line extends past the outermost dimension line.
+        /// Default 1/8" (ASME Y14.5 §1.7.2).</summary>
+        public double WitnessOvershootFt { get; set; } = (1.0 / 8.0) / 12.0;
+
+        // ── Moved-tag column geometry (multiples of text height; shared by the
+        //    plan-time TagColumnPlanner and the commit-time realizer) ────────────
+        /// <summary>First tag's clearance above/below the dimension arc.</summary>
+        public double TagColumnBaseHeights { get; set; } = 2.2;
+
+        /// <summary>Perpendicular step between stacked tags.</summary>
+        public double TagColumnStepHeights { get; set; } = 1.4;
+
+        /// <summary>Column offset past the group's far text edge, along the axis.</summary>
+        public double TagColumnAlongHeights { get; set; } = 0.75;
+
         // ── Scoring weights ────────────────────────────────────────────────────
         /// <summary>Penalty per unit of paper-space overlap area with an obstacle (hard).</summary>
         public double OverlapWeight { get; set; } = 1000.0;
@@ -33,6 +53,21 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         /// <summary>Penalty when a witness line crosses dimension text (hard).</summary>
         public double WitnessCrossWeight { get; set; } = 500.0;
+
+        /// <summary>Penalty per genuine line crossing a drafting standard forbids: a dimension
+        /// line crossing another dimension line or a witness line (hard, ASME Y14.5 §1.7.2 —
+        /// witness lines may cross each other; dimension lines never cross anything).</summary>
+        public double CrossingWeight { get; set; } = 800.0;
+
+        /// <summary>Soft penalty per leader-leader crossing (drafting: leaders never cross).</summary>
+        public double LeaderCrossWeight { get; set; } = 25.0;
+
+        /// <summary>Soft penalty per leader crossing a dimension or witness line.</summary>
+        public double LeaderLineCrossWeight { get; set; } = 10.0;
+
+        /// <summary>Soft penalty per foot of leader length beyond the minimum useful reach —
+        /// keeps moved tags near their segment instead of drifting.</summary>
+        public double LeaderSlackWeight { get; set; } = 1.0;
 
         /// <summary>Soft penalty per foot of text overflow on a cramped segment. Low, so a drafter-
         /// style inline overhang on a short segment is cheap rather than forcing a move.</summary>

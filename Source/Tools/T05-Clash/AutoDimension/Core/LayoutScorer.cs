@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace LemoineTools.Tools.Clash.AutoDimension.Core
@@ -13,10 +14,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
     }
 
     /// <summary>
-    /// Scores a candidate dimension placement against the obstacle set and already-placed
-    /// dimensions. HARD constraints must reach zero (overlap, off-crop, witness crossing);
-    /// SOFT penalties (cramped text, uneven spacing, leadering) are minimised. Revit-free and
-    /// deterministic — no collection-order dependence beyond the caller-supplied ordering.
+    /// Scores a candidate dimension placement against the obstacle set and other dimensions,
+    /// using the full drawn anatomy (<see cref="DimAnatomy"/>) rather than one fat band.
+    /// HARD constraints must reach zero: text or line band overlapping anything, a dimension
+    /// line crossing another dimension line or a witness line (ASME Y14.5 §1.7.2 — witness
+    /// lines may cross each other, dimension lines never cross), a witness slicing through
+    /// value text, off-crop. SOFT penalties are minimised: cramped text, leadering, leader
+    /// crossings and slack, uneven lane spacing. Revit-free and deterministic.
     /// </summary>
     public sealed class LayoutScorer
     {
@@ -30,7 +34,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             _crop = crop;
         }
 
-        /// <summary>Scores one dimension given static obstacles and previously placed dimensions.</summary>
+        /// <summary>Scores one dimension given static obstacles and the other dimensions to
+        /// respect (the already-placed set during greedy passes; everyone else during repair).</summary>
         public LayoutScore Score(
             PlannedDimension d,
             IReadOnlyList<Box2> obstacles,
@@ -39,34 +44,77 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             double hard = 0;
             double soft = 0;
 
-            // ── HARD: overlap with obstacles ──────────────────────────────────
-            for (int i = 0; i < obstacles.Count; i++)
-                hard += d.PaperBounds.OverlapArea(obstacles[i]) * _cfg.OverlapWeight;
+            DimAnatomy an = d.Anatomy ?? (d.Anatomy = DimAnatomy.Build(d, _cfg));
 
-            // ── HARD: overlap with already-placed dimension strings ───────────
+            // ── HARD: static obstacles (existing annotations, markers, source lines) ──
+            // The line band and every value text must stay clear. Witness lines are NOT
+            // penalised here — extension lines may cross object lines (ASME Y14.5).
+            for (int i = 0; i < obstacles.Count; i++)
+            {
+                Box2 ob = obstacles[i];
+                if (!d.PaperBounds.Intersects(ob)) continue;
+                hard += an.LineBand.OverlapArea(ob) * _cfg.OverlapWeight;
+                foreach (var tb in an.TextBoxes)
+                    hard += tb.OverlapArea(ob) * _cfg.OverlapWeight;
+            }
+
+            // ── vs other dimensions ────────────────────────────────────────────
             for (int i = 0; i < placed.Count; i++)
             {
-                if (ReferenceEquals(placed[i], d)) continue;
-                hard += d.PaperBounds.OverlapArea(placed[i].PaperBounds) * _cfg.OverlapWeight;
+                var p = placed[i];
+                if (ReferenceEquals(p, d)) continue;
+                var pa = p.Anatomy;
+                if (pa == null) continue;
+                if (!d.PaperBounds.Intersects(p.PaperBounds)) continue;
+
+                // Line bands must not share area (string-on-string).
+                hard += an.LineBand.OverlapArea(pa.LineBand) * _cfg.OverlapWeight;
+
+                // Dimension lines never cross each other or any witness line (hard).
+                if (an.DimLine.Crosses(pa.DimLine)) hard += _cfg.CrossingWeight;
+                foreach (var w in pa.Witnesses)
+                    if (an.DimLine.Crosses(w)) hard += _cfg.CrossingWeight;
+                foreach (var w in an.Witnesses)
+                    if (pa.DimLine.Crosses(w)) hard += _cfg.CrossingWeight;
+
+                // Value text is sacrosanct: no other text, line band, or witness over it.
+                foreach (var tb in an.TextBoxes)
+                {
+                    hard += tb.OverlapArea(pa.LineBand) * _cfg.OverlapWeight;
+                    foreach (var otb in pa.TextBoxes)
+                        hard += tb.OverlapArea(otb) * _cfg.OverlapWeight;
+                    foreach (var w in pa.Witnesses)
+                        if (SegIntersectsBox(w, tb)) hard += _cfg.WitnessCrossWeight;
+                }
+                foreach (var otb in pa.TextBoxes)
+                {
+                    hard += otb.OverlapArea(an.LineBand) * _cfg.OverlapWeight;
+                    foreach (var w in an.Witnesses)
+                        if (SegIntersectsBox(w, otb)) hard += _cfg.WitnessCrossWeight;
+                }
+
+                // Leaders: never cross another leader (soft-high) nor lines (soft).
+                foreach (var l in an.Leaders)
+                {
+                    foreach (var ol in pa.Leaders)
+                        if (l.Crosses(ol)) soft += _cfg.LeaderCrossWeight;
+                    if (l.Crosses(pa.DimLine)) soft += _cfg.LeaderLineCrossWeight;
+                    foreach (var w in pa.Witnesses)
+                        if (l.Crosses(w)) soft += _cfg.LeaderLineCrossWeight;
+                }
+                foreach (var ol in pa.Leaders)
+                {
+                    if (ol.Crosses(an.DimLine)) soft += _cfg.LeaderLineCrossWeight;
+                    foreach (var w in an.Witnesses)
+                        if (ol.Crosses(w)) soft += _cfg.LeaderLineCrossWeight;
+                }
             }
 
             // ── HARD: off-crop ────────────────────────────────────────────────
             if (_crop.HasValue && !_crop.Value.Contains(d.PaperBounds))
                 hard += _cfg.OffCropWeight;
 
-            // ── HARD: witness line crossing another string's text ─────────────
-            // The witness drops from the source run to the dim line along the offset
-            // direction; if that segment passes through a placed string's band it crosses
-            // text. Approximated by testing the thin witness box against placed bounds.
-            Box2 witness = WitnessBox(d);
-            for (int i = 0; i < placed.Count; i++)
-            {
-                if (ReferenceEquals(placed[i], d)) continue;
-                if (witness.Intersects(placed[i].PaperBounds))
-                    hard += _cfg.WitnessCrossWeight;
-            }
-
-            // ── SOFT: cramped segment text ────────────────────────────────────
+            // ── SOFT: cramped segment text / leadering ────────────────────────
             for (int i = 0; i < d.Segments.Count; i++)
             {
                 var seg = d.Segments[i];
@@ -86,8 +134,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 }
             }
 
+            // ── SOFT: leader slack — keep moved tags near their segment ───────
+            double minLeader = _cfg.TextHeightFt * 2.0;
+            foreach (var l in an.Leaders)
+                soft += Math.Max(0, l.Length - minLeader) * _cfg.LeaderSlackWeight;
+
             // ── SOFT: uneven spacing — penalise offsets off the first-offset/spacing cadence ──
-            double dev = System.Math.Abs(d.OffsetFt - SnapToGrid(d.OffsetFt));
+            double dev = Math.Abs(d.OffsetFt - SnapToGrid(d.OffsetFt));
             soft += dev * _cfg.UnevenSpacingWeight;
 
             return new LayoutScore(hard, soft);
@@ -103,28 +156,62 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 hard += s.Hard;
                 soft += s.Soft;
             }
-            // Pairwise overlap counted twice above; halve the dim-vs-dim contribution is not
-            // necessary for convergence (monotone), but keep totals comparable run-to-run.
+            // Pairwise terms counted twice above; halving is not necessary for convergence
+            // (monotone), but keep totals comparable run-to-run.
             return new LayoutScore(hard, soft);
+        }
+
+        /// <summary>Names the hard constraints this dimension still violates — for the run
+        /// report when a dense layout is unsatisfiable.</summary>
+        public string DescribeHardViolations(
+            PlannedDimension d, IReadOnlyList<Box2> obstacles, IReadOnlyList<PlannedDimension> others)
+        {
+            var reasons = new List<string>();
+            var an = d.Anatomy;
+            if (an == null) return "";
+
+            for (int i = 0; i < obstacles.Count; i++)
+            {
+                if (!d.PaperBounds.Intersects(obstacles[i])) continue;
+                if (an.LineBand.OverlapArea(obstacles[i]) > 0) { reasons.Add("line over existing annotation"); break; }
+            }
+            foreach (var p in others)
+            {
+                if (ReferenceEquals(p, d) || p.Anatomy == null) continue;
+                var pa = p.Anatomy;
+                if (!d.PaperBounds.Intersects(p.PaperBounds)) continue;
+                if (an.LineBand.OverlapArea(pa.LineBand) > 0 && !reasons.Contains("string on string"))
+                    reasons.Add("string on string");
+                if (an.DimLine.Crosses(pa.DimLine) && !reasons.Contains("dimension lines cross"))
+                    reasons.Add("dimension lines cross");
+                foreach (var w in pa.Witnesses)
+                    if (an.DimLine.Crosses(w)) { if (!reasons.Contains("line crosses a witness")) reasons.Add("line crosses a witness"); break; }
+            }
+            return string.Join(", ", reasons);
         }
 
         private double SnapToGrid(double offset)
         {
             if (_cfg.StringSpacingFt <= 1e-9) return _cfg.FirstOffsetFt;
             double n = (offset - _cfg.FirstOffsetFt) / _cfg.StringSpacingFt;
-            double k = System.Math.Round(n);
+            double k = Math.Round(n);
             return _cfg.FirstOffsetFt + k * _cfg.StringSpacingFt;
         }
 
-        private Box2 WitnessBox(PlannedDimension d)
+        /// <summary>True when the segment touches the box: an endpoint inside, or the segment
+        /// crossing one of the box edges.</summary>
+        private static bool SegIntersectsBox(Seg2 s, Box2 b)
         {
-            Vec2 axis = d.AxisDir.Normalized();
-            Vec2 perp = axis.Perp();
-            double sign = d.Side == DimSide.Positive ? 1.0 : -1.0;
-            Vec2 top = d.SourcePoint + perp * (sign * d.OffsetFt);
-            var box = Box2.FromPoints(d.SourcePoint, top);
-            double t = _cfg.TextHeightFt * 0.25;
-            return new Box2(box.MinX - t, box.MinY - t, box.MaxX + t, box.MaxY + t);
+            if (Inside(s.A, b) || Inside(s.B, b)) return true;
+            var c00 = new Vec2(b.MinX, b.MinY);
+            var c10 = new Vec2(b.MaxX, b.MinY);
+            var c11 = new Vec2(b.MaxX, b.MaxY);
+            var c01 = new Vec2(b.MinX, b.MaxY);
+            return s.Crosses(new Seg2(c00, c10)) || s.Crosses(new Seg2(c10, c11))
+                || s.Crosses(new Seg2(c11, c01)) || s.Crosses(new Seg2(c01, c00));
         }
+
+        private static bool Inside(Vec2 p, Box2 b) =>
+            p.X > b.MinX && p.X < b.MaxX && p.Y > b.MinY && p.Y < b.MaxY;
     }
 }

@@ -126,7 +126,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         continue;
                     }
 
-                    ApplyTextStates(dim, pd, output.Projection, axis, perp, output.CoreConfig, placedTags, log);
+                    ApplyTextStates(dim, pd, output.Projection, axis, perp, output.CoreConfig,
+                                    placedTags, output.Obstacles, log);
                     result.Placed++;
                 }
                 catch (Exception ex)
@@ -147,14 +148,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// on the positive/above side, DOWN when Flipped/below) so crowded values pile straight on top
         /// of one another while their arc leaders swing out to the side. The nearest anchor sits lowest
         /// and each farther one a row higher, so the leaders nest and never cross; each tag also clears
-        /// every tag already placed this run (cross-dimension). Every move is independently guarded.
-        /// NOTE: these heights are Windows-tunable — verify the text clears the arc on a real plot.
+        /// every tag already placed this run (cross-dimension) AND every pre-existing annotation
+        /// (the engine's obstacle set). The column geometry (base/step/along multipliers) comes from
+        /// <see cref="Core.LayoutConfig"/>, shared with the plan-time <see cref="Core.TagColumnPlanner"/>
+        /// so what the scorer saw is what gets built. Every move is independently guarded.
+        /// NOTE: the heights are Windows-tunable — verify the text clears the arc on a real plot.
         /// </summary>
-        private const double ColumnBasePerpHeights = 2.2;  // first clearance above/below the dimension arc
-        private const double ColumnStepHeights     = 1.4;  // perpendicular step between stacked tags
-        private const double AlongBaseHeights      = 0.75; // column offset past the group's far text edge
-        private const int    MaxColumnSteps        = 24;   // perpendicular clash-avoidance tries before giving up
-        private const double GlyphWidthFactor      = 0.6;  // average glyph advance as a fraction of text height
+        private const int    MaxColumnSteps   = 24;   // perpendicular clash-avoidance tries before giving up
+        private const double GlyphWidthFactor = 0.6;  // average glyph advance as a fraction of text height
 
         /// <summary>
         /// Width (model ft) of a tag's actual displayed value text. Uses the real Revit ValueString
@@ -172,7 +173,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
             Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, List<Core.Box2> placedTags,
-            Action<string, string> log)
+            IReadOnlyList<Core.Box2> obstacles, Action<string, string> log)
         {
             double th = cfg.TextHeightFt;
             if (th <= 0) return;
@@ -227,7 +228,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     if (run.Count > 0)
                     {
-                        PlaceColumn(run, worldPerp, worldAxis, sign, th, projection, axis, perp, placedTags);
+                        PlaceColumn(run, worldPerp, worldAxis, sign, th, cfg, projection, axis, perp, placedTags, obstacles);
                         run.Clear();
                     }
                 }
@@ -248,7 +249,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
                             }),
                         };
-                        PlaceColumn(single, worldPerp, worldAxis, sign, th, projection, axis, perp, placedTags);
+                        PlaceColumn(single, worldPerp, worldAxis, sign, th, cfg, projection, axis, perp, placedTags, obstacles);
                     }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
@@ -278,7 +279,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// </summary>
         private static void PlaceColumn(
             List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, double th,
-            Resolvers.ViewProjection projection, Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags)
+            Core.LayoutConfig cfg, Resolvers.ViewProjection projection,
+            Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags, IReadOnlyList<Core.Box2> obstacles)
         {
             if (run.Count == 0 || th <= 0) return;
 
@@ -296,13 +298,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 if (edge > groupFarEdge) groupFarEdge = edge;
             }
             // Every tag's front edge aligns here, offset just past the dimension's furthest edge.
-            double frontLine = groupFarEdge + AlongBaseHeights * th;
+            double frontLine = groupFarEdge + cfg.TagColumnAlongHeights * th;
 
             // Nearest anchor (max axial) lowest → farthest highest, so the arcs nest without crossing.
             var ordered = run.OrderByDescending(t => Axial(t.DefaultPos)).ToList();
 
-            double level = ColumnBasePerpHeights * th;
-            double step  = ColumnStepHeights * th;
+            double level = cfg.TagColumnBaseHeights * th;
+            double step  = cfg.TagColumnStepHeights * th;
             foreach (var t in ordered)
             {
                 double halfAlong = Math.Max(t.Width, th) * 0.5;
@@ -321,9 +323,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 {
                     pos = baseOnLine + worldPerp * (sign * level);
                     box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
+                    // Clear of every tag placed this run AND every pre-existing annotation —
+                    // relocated value text must never cover what was on the view first.
                     bool clash = false;
                     for (int i = 0; i < placedTags.Count; i++)
                         if (box.Intersects(placedTags[i])) { clash = true; break; }
+                    if (!clash && obstacles != null)
+                        for (int i = 0; i < obstacles.Count; i++)
+                            if (box.Intersects(obstacles[i])) { clash = true; break; }
                     if (!clash) break;
                     level += step;
                 }

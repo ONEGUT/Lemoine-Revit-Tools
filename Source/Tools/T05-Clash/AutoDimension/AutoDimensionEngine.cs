@@ -25,6 +25,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         public ElementId DimTypeId { get; set; } = ElementId.InvalidElementId;
         public ViewProjection Projection { get; set; } = null!;
         public Core.LayoutConfig CoreConfig { get; set; } = new Core.LayoutConfig();
+
+        /// <summary>The view's static annotation obstacles (view-2D boxes) — commit uses these
+        /// so relocated tag text never lands on a pre-existing annotation.</summary>
+        public IReadOnlyList<Core.Box2> Obstacles { get; set; } = new List<Core.Box2>();
     }
 
     /// <summary>
@@ -191,6 +195,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
             _log($"Collecting obstacles + laying out {dims.Count} dimension(s) (collision-aware, ≤{coreCfg.TimeCapMs} ms)…", "info");
             var obstacles = CollectObstacles(doc, view, projection);
+            output.Obstacles = obstacles;
             var scorer = new Core.LayoutScorer(coreCfg, null /* crop scoring optional in Tier 1 */);
             var layout = new Core.GreedyLayoutEngine(coreCfg, scorer);
             layout.Arrange(dims, obstacles);
@@ -216,21 +221,30 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // actual DimensionType (textHeightPaperFt) so cramped-detection + stagger match reality.
             return new Core.LayoutConfig
             {
-                SchemaVersion       = paper.SchemaVersion,
-                StringSpacingFt     = paper.StringSpacingFt * scale,
-                FirstOffsetFt       = paper.FirstOffsetFt * scale,
-                PrecisionFt         = paper.PrecisionFt,            // display tolerance, model-space
-                TextHeightFt        = textHeightPaperFt * scale,
-                OverlapWeight       = paper.OverlapWeight,
-                OffCropWeight       = paper.OffCropWeight,
-                WitnessCrossWeight  = paper.WitnessCrossWeight,
-                CrampedWeight       = paper.CrampedWeight,
-                UnevenSpacingWeight = paper.UnevenSpacingWeight,
-                LeaderWeight        = paper.LeaderWeight,
-                MaxIterations       = paper.MaxIterations,
-                TimeCapMs           = paper.TimeCapMs,
-                PlateauEpsilon      = paper.PlateauEpsilon,
-                MaxOffsetSteps      = paper.MaxOffsetSteps,
+                SchemaVersion        = paper.SchemaVersion,
+                StringSpacingFt      = paper.StringSpacingFt * scale,
+                FirstOffsetFt        = paper.FirstOffsetFt * scale,
+                PrecisionFt          = paper.PrecisionFt,            // display tolerance, model-space
+                TextHeightFt         = textHeightPaperFt * scale,
+                WitnessGapFt         = paper.WitnessGapFt * scale,
+                WitnessOvershootFt   = paper.WitnessOvershootFt * scale,
+                TagColumnBaseHeights = paper.TagColumnBaseHeights,   // text-height multiples — scale-free
+                TagColumnStepHeights = paper.TagColumnStepHeights,
+                TagColumnAlongHeights = paper.TagColumnAlongHeights,
+                OverlapWeight        = paper.OverlapWeight,
+                OffCropWeight        = paper.OffCropWeight,
+                WitnessCrossWeight   = paper.WitnessCrossWeight,
+                CrossingWeight       = paper.CrossingWeight,
+                LeaderCrossWeight    = paper.LeaderCrossWeight,
+                LeaderLineCrossWeight = paper.LeaderLineCrossWeight,
+                LeaderSlackWeight    = paper.LeaderSlackWeight,
+                CrampedWeight        = paper.CrampedWeight,
+                UnevenSpacingWeight  = paper.UnevenSpacingWeight,
+                LeaderWeight         = paper.LeaderWeight,
+                MaxIterations        = paper.MaxIterations,
+                TimeCapMs            = paper.TimeCapMs,
+                PlateauEpsilon       = paper.PlateauEpsilon,
+                MaxOffsetSteps       = paper.MaxOffsetSteps,
             };
         }
 
@@ -340,6 +354,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     .OfClass(typeof(TextNote)).WhereElementIsNotElementType());
                 AddBoxesOf(new FilteredElementCollector(doc, view.Id)
                     .OfClass(typeof(IndependentTag)).WhereElementIsNotElementType());
+                AddBoxesOf(new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(SpotDimension)).WhereElementIsNotElementType());  // spot elevations/coords
+                AddBoxesOf(new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(FilledRegion)).WhereElementIsNotElementType());   // incl. our clash markers
                 AddBoxesOf(new FilteredElementCollector(doc, view.Id)
                     .OfCategory(BuiltInCategory.OST_Lines).WhereElementIsNotElementType(),
                     ClashTagSchema.IsOurs);                        // the source cross-lines
