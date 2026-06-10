@@ -114,8 +114,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             // ── 1b. Cluster clashes into physical runs (axis-agnostic, before resolve) ──
             // A run governs both its dimensions: chained along its length, single across it.
-            double runCrossFt = cfg.RunCrossToleranceMm / 304.8;
-            double runGapFt   = cfg.RunGapMm / 304.8;
+            double runCrossFt = cfg.RunCrossToleranceFt;
+            double runGapFt   = cfg.RunGapFt;
             var grouping = cfg.ChainAligned
                 ? ClashRunGrouper.Build(sources, runCrossFt, runGapFt)
                 : new ClashRunGrouper.GroupResult();

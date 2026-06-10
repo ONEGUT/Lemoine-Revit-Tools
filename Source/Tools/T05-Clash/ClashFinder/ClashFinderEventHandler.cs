@@ -27,9 +27,9 @@ namespace LemoineTools.Tools.Clash
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
         public double               StoreyMarginMm   { get; set; } = 609.6;  // 2 ft: sub-floor depth still counted as a level's storey
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
-        public bool                 DimChainAligned  { get; set; } = true;   // group clashes into runs (chain along, single across)
-        public double               DimRunGapMm      { get; set; } = 1524.0; // 5 ft: max along-run gap between adjacent run members
-        public double               DimRunCrossMm    { get; set; } = 152.4;  // 0.5 ft: off-line tolerance + across-run snap
+        public bool                 DimChainAligned  { get; set; } = true;  // group clashes into runs (chain along, single across)
+        public double               DimRunGapFt      { get; set; } = 5.0;   // max along-run gap between adjacent run members
+        public double               DimRunCrossFt    { get; set; } = 0.5;   // off-line tolerance + across-run snap
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
@@ -96,8 +96,8 @@ namespace LemoineTools.Tools.Clash
                         {
                             dimCfg.TargetType          = DimTargetType;
                             dimCfg.ChainAligned        = DimChainAligned;
-                            dimCfg.RunGapMm            = DimRunGapMm;
-                            dimCfg.RunCrossToleranceMm = DimRunCrossMm;
+                            dimCfg.RunGapFt            = DimRunGapFt;
+                            dimCfg.RunCrossToleranceFt = DimRunCrossFt;
                             if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                                 datums = AutoDimension.ManualDatumPicker.PickForViews(uidoc, ViewIds, (t, s) => Log(t, s));
                         }

@@ -11,12 +11,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public int SchemaVersion { get; set; } = 1;
 
         // ── Spacing / precision (paper-space, model-ft equivalent) ─────────────
-        /// <summary>Paper-space gap between stacked dimension strings. Default 1/2".</summary>
-        public double StringSpacingFt { get; set; } = (1.0 / 2.0) / 12.0;
+        /// <summary>Paper-space gap between stacked dimension strings. Default 1/4" — the
+        /// ASME Y14.5 minimum for successive parallel dimension lines (was 1/2"; tightened so
+        /// dense MEP areas stack more rows before running out of sheet).</summary>
+        public double StringSpacingFt { get; set; } = (1.0 / 4.0) / 12.0;
 
-        /// <summary>First string's offset from the source run. Default 1/4" — the dimension sits
-        /// close to the clash (halved from 1/2" to match the hand drawing).</summary>
-        public double FirstOffsetFt { get; set; } = (1.0 / 4.0) / 12.0;
+        /// <summary>First string's offset from the source run. Default 3/8" — the ASME Y14.5
+        /// minimum clearance between the object and the first dimension line.</summary>
+        public double FirstOffsetFt { get; set; } = (3.0 / 8.0) / 12.0;
 
         /// <summary>Rounding precision applied to displayed values. Default 1/8".</summary>
         public double PrecisionFt { get; set; } = (1.0 / 8.0) / 12.0;

@@ -18,9 +18,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>Config schema version. v1 first release; v2 refreshes the layout/chaining
         /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
         /// the clash; v4 replaces per-axis chaining tolerances with run-based grouping; v5 resets the
-        /// run gap / cross tolerance to the clean feet-based defaults (5 ft / 0.5 ft). Load() migrates
-        /// older files.</summary>
-        public int SchemaVersion { get; set; } = 5;
+        /// run gap / cross tolerance to the clean feet-based defaults (5 ft / 0.5 ft); v6 adopts the
+        /// ASME Y14.5 spacing defaults (first offset 3/8", row spacing 1/4"). Load() migrates older
+        /// files.</summary>
+        public int SchemaVersion { get; set; } = 6;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -46,6 +47,23 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// off the line is treated as in line, not dimensioned separately). Default 0.5 ft (152.4 mm)
         /// — the UI edits this in feet.</summary>
         public double RunCrossToleranceMm { get; set; } = 152.4;
+
+        /// <summary>Feet view of <see cref="RunGapMm"/> — every consumer works in feet; the mm
+        /// field stays the persisted storage so existing XML round-trips unchanged.</summary>
+        [XmlIgnore]
+        public double RunGapFt
+        {
+            get => RunGapMm / 304.8;
+            set => RunGapMm = value * 304.8;
+        }
+
+        /// <summary>Feet view of <see cref="RunCrossToleranceMm"/> (see <see cref="RunGapFt"/>).</summary>
+        [XmlIgnore]
+        public double RunCrossToleranceFt
+        {
+            get => RunCrossToleranceMm / 304.8;
+            set => RunCrossToleranceMm = value * 304.8;
+        }
 
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";
@@ -120,6 +138,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         if (c.SchemaVersion < 3) MigrateToV3(c);
                         if (c.SchemaVersion < 4) MigrateToV4(c);
                         if (c.SchemaVersion < 5) MigrateToV5(c);
+                        if (c.SchemaVersion < 6) MigrateToV6(c);
                         return c;
                     }
                 }
@@ -175,6 +194,18 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             c.RunGapMm            = def.RunGapMm;
             c.RunCrossToleranceMm = def.RunCrossToleranceMm;
             c.SchemaVersion = 5;
+        }
+
+        /// <summary>v5 → v6: adopt the ASME Y14.5 spacing defaults — first dimension line 3/8"
+        /// off the object, successive rows 1/4" apart. Resets only those two layout values (the
+        /// new anatomy/refinement fields take their ctor defaults when absent from older XML);
+        /// target, links, dimension-type, and run-grouping knobs stay untouched.</summary>
+        private static void MigrateToV6(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.Layout.FirstOffsetFt   = def.Layout.FirstOffsetFt;
+            c.Layout.StringSpacingFt = def.Layout.StringSpacingFt;
+            c.SchemaVersion = 6;
         }
     }
 }

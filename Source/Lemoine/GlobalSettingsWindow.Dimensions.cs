@@ -16,8 +16,6 @@ namespace LemoineTools.Lemoine
     /// </summary>
     public partial class GlobalSettingsWindow
     {
-        private const double DimMmPerFoot = 304.8;
-
         // Destination display ↔ stored TargetType, shared with the wizard's mapping.
         private const string DimGridDisplay   = "To Grid";
         private const string DimSlabDisplay   = "To Slab Edge";
@@ -85,14 +83,14 @@ namespace LemoineTools.Lemoine
             };
             panel.Children.Add(runToggles);
 
-            AddCfgStepper(panel, "Run gap (ft)",
-                "Clashes farther apart than this along a run start a separate run (and a separate dimension).",
-                cfg.RunGapMm / DimMmPerFoot, 0, 40, 0.5, 2,
-                v => { cfg.RunGapMm = v * DimMmPerFoot; cfg.Save(); });
-            AddCfgStepper(panel, "Run cross tolerance (ft)",
-                "How far a clash may sit off the run line and still belong to it. Also the across-run snap.",
-                cfg.RunCrossToleranceMm / DimMmPerFoot, 0, 8, 0.25, 2,
-                v => { cfg.RunCrossToleranceMm = v * DimMmPerFoot; cfg.Save(); });
+            AddCfgStepper(panel, "Group reach along run (ft)",
+                "Clashes within this distance of each other ALONG a shared line group into one run (one chained dimension). Farther apart starts a new run.",
+                cfg.RunGapFt, 0, 40, 0.5, 2,
+                v => { cfg.RunGapFt = v; cfg.Save(); });
+            AddCfgStepper(panel, "Line tolerance (ft)",
+                "How far a clash may sit OFF the run's line and still join it. Also the across-run snap: members within this share one dimension.",
+                cfg.RunCrossToleranceFt, 0, 8, 0.25, 2,
+                v => { cfg.RunCrossToleranceFt = v; cfg.Save(); });
 
             panel.Children.Add(HSep(12));
 

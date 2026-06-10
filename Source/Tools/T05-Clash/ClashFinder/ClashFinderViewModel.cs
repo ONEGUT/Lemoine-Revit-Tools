@@ -78,8 +78,8 @@ namespace LemoineTools.Tools.Clash
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
           : "Grid";
         private bool   _chainAligned = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
-        private double _runGapMm     = AutoDimension.AutoDimensionConfig.Instance.RunGapMm;
-        private double _runCrossMm   = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceMm;
+        private double _runGapFt     = AutoDimension.AutoDimensionConfig.Instance.RunGapFt;
+        private double _runCrossFt   = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceFt;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -330,15 +330,15 @@ namespace LemoineTools.Tools.Clash
 
             AddDivider(outer);
             AddStepperRow(outer,
-                "Run gap (ft)",
-                "Clashes farther apart than this along a run start a separate run (and a separate dimension).",
-                _runGapMm / MmPerFoot, min: 0, max: 40, step: 0.5, decimals: 2,
-                v => { _runGapMm = v * MmPerFoot; Fire(); });
+                "Group reach along run (ft)",
+                "Clashes within this distance of each other ALONG a shared line group into one run (one chained dimension). Farther apart starts a new run. Near-misses are reported in the run log.",
+                _runGapFt, min: 0, max: 40, step: 0.5, decimals: 2,
+                v => { _runGapFt = v; Fire(); });
             AddStepperRow(outer,
-                "Run cross tolerance (ft)",
-                "How far a clash may sit off the run line and still belong to it. Also the across-run snap: members within this share one dimension.",
-                _runCrossMm / MmPerFoot, min: 0, max: 8, step: 0.25, decimals: 2,
-                v => { _runCrossMm = v * MmPerFoot; Fire(); });
+                "Line tolerance (ft)",
+                "How far a clash may sit OFF the run's line and still join it. Also the across-run snap: members within this share one dimension.",
+                _runCrossFt, min: 0, max: 8, step: 0.25, decimals: 2,
+                v => { _runCrossFt = v; Fire(); });
 
             return WrapInScroll(outer);
         }
@@ -440,8 +440,8 @@ namespace LemoineTools.Tools.Clash
             _handler.StoreyMarginMm   = _storeyMarginMm;
             _handler.RoundSizeMm        = _roundSizeMm;
             _handler.DimChainAligned = _chainAligned;
-            _handler.DimRunGapMm     = _runGapMm;
-            _handler.DimRunCrossMm   = _runCrossMm;
+            _handler.DimRunGapFt     = _runGapFt;
+            _handler.DimRunCrossFt   = _runCrossFt;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
                 : new List<AutoDimension.Resolvers.SlabScope>();
