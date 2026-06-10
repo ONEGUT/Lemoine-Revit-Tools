@@ -16,6 +16,13 @@ namespace LemoineTools.Lemoine
     {
         private readonly ILemoineTool _tool;
 
+        // Callbacks the window hands to the static ExternalEvent handlers / tool ViewModels
+        // (which outlive the window) capture this sink instead of `this`. Severing it on close
+        // lets the whole window + visual tree be garbage-collected even though the long-lived
+        // handler still holds the delegate. The sink itself is tiny.
+        private sealed class WindowSink { public StepFlowWindow? Win; }
+        private readonly WindowSink _sink = new WindowSink();
+
         // Theme is now owned by LemoineSettings singleton
         private LemoineTheme ActiveTheme => LemoineSettings.Instance.ActiveTheme;
 
@@ -66,6 +73,7 @@ namespace LemoineTools.Lemoine
         {
             InitializeComponent();
             _tool  = tool ?? throw new ArgumentNullException(nameof(tool));
+            _sink.Win = this;
             Title = tool.Title;
 
             LemoineSettings.Instance.ApplyTo(Resources);
@@ -80,12 +88,17 @@ namespace LemoineTools.Lemoine
                 // The tool (VM) is retained by its static ExternalEvent handler and outlives
                 // this window — detach so a late ValidationChanged can't touch a dead window.
                 _tool.ValidationChanged -= OnToolValidationChanged;
+                // Let the tool detach any callbacks it parked on its static ExternalEvent handler.
+                (_tool as ILemoineToolCleanup)?.OnWindowClosed();
+                // Sever the sink so the static handler's retained run/refresh/activate/navigate
+                // callbacks no longer root this window — it (and its visual tree) can now be GC'd.
+                _sink.Win = null;
             };
 
             BuildChrome();
             _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
-                nav.NavigateRequested += (s, idx) => SafeBeginInvoke(() => ActivateStep(idx));
+                nav.NavigateRequested += (s, idx) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx)); };
         }
 
         // ValidationChanged can be raised from a tool's refresh callback on Revit's main
@@ -138,6 +151,29 @@ namespace LemoineTools.Lemoine
             Dispatcher.BeginInvoke(action);
         }
 
+        // Rebuilds a step's content in place (IStepAware refresh). Runs on the UI thread.
+        private void RefreshStepContent(string stepId)
+        {
+            int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
+            if (idx < 0) return;
+            var newContent = _tool.GetStepContent(stepId) ?? new Grid();
+            if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
+            {
+                cs.Children.RemoveAt(0);
+                cs.Children.Insert(0, newContent);
+            }
+        }
+
+        // Pulls this window back to the foreground after a Revit interaction (IWindowActivatable).
+        private void BringToForeground()
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+            // Nudge to the top without staying pinned, then return keyboard focus.
+            Topmost = true; Topmost = false;
+            Focus();
+        }
+
         private void UpdateRowHeights()
         {
             if (_root == null) return;
@@ -159,21 +195,12 @@ namespace LemoineTools.Lemoine
             // Wire step-activation callbacks for tools that implement IStepAware.
             if (_tool is IStepAware stepAware)
             {
+                // Captures the sink (not `this`) so a retained refresh callback can't keep the
+                // window alive after close; guarded so a late refresh doesn't hit a dead dispatcher.
                 stepAware.SetContentRefreshCallback(stepId =>
                 {
-                    // Always dispatch to WPF thread — called from any thread. Guarded so a
-                    // late refresh after the window closed doesn't throw on a dead dispatcher.
-                    SafeBeginInvoke(() =>
-                    {
-                        int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
-                        if (idx < 0) return;
-                        var newContent = _tool.GetStepContent(stepId) ?? new Grid();
-                        if (_contentBorders[idx].Child is StackPanel cs && cs.Children.Count > 0)
-                        {
-                            cs.Children.RemoveAt(0);
-                            cs.Children.Insert(0, newContent);
-                        }
-                    });
+                    var w = _sink.Win;
+                    if (w != null) w.SafeBeginInvoke(() => w.RefreshStepContent(stepId));
                 });
             }
 
@@ -182,14 +209,10 @@ namespace LemoineTools.Lemoine
             if (_tool is IWindowActivatable activatable)
             {
                 activatable.SetActivateCallback(() =>
-                    SafeBeginInvoke(() =>
-                    {
-                        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-                        Activate();
-                        // Nudge to the top without staying pinned, then return keyboard focus.
-                        Topmost = true; Topmost = false;
-                        Focus();
-                    }));
+                {
+                    var w = _sink.Win;
+                    if (w != null) w.SafeBeginInvoke(() => w.BringToForeground());
+                });
             }
 
             // Defer tab-bar rendering until after callers can RegisterLogTab()
@@ -1007,9 +1030,9 @@ namespace LemoineTools.Lemoine
                 // running while the window's dedicated STA thread processes UI updates in real
                 // time, and no-ops if the window has been closed mid-run (the handler is static
                 // and keeps calling these after the dispatcher is gone).
-                pushLog:    (t, s)          => SafeBeginInvoke(() => PushLog(t, s)),
-                onProgress: (pct, p, f, s)  => SafeBeginInvoke(() => { SetCounts(p, f, s); SetProgress(pct); }),
-                onComplete: (p, f, s)       => SafeBeginInvoke(() => CompleteRun(p, f, s)));
+                pushLog:    (t, s)          => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.PushLog(t, s)); },
+                onProgress: (pct, p, f, s)  => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => { w.SetCounts(p, f, s); w.SetProgress(pct); }); },
+                onComplete: (p, f, s)       => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.CompleteRun(p, f, s)); });
         }
 
         private void CompleteRun(int pass, int fail, int skip)

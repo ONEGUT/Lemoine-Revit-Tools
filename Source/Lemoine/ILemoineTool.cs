@@ -129,6 +129,16 @@ namespace LemoineTools.Lemoine
     }
 
     /// <summary>
+    /// Optional cleanup hook called by StepFlowWindow when its window closes. Tools that wire
+    /// callbacks onto a long-lived (static) ExternalEvent handler should null them here so the
+    /// closed window's ViewModel doesn't stay rooted by the handler until the next run.
+    /// </summary>
+    public interface ILemoineToolCleanup
+    {
+        void OnWindowClosed();
+    }
+
+    /// <summary>
     /// Optional interface for tools that need to drive accordion navigation programmatically.
     /// StepFlowWindow subscribes when the tool implements this interface.
     /// </summary>

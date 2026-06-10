@@ -18,12 +18,22 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware, ILemoineRunResult
+    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware, ILemoineRunResult, ILemoineToolCleanup
     {
         // Run strip: "files" during the run, per-format breakdown ("30 PDF · 30 DWG") on completion.
         public string? ResultNoun => "files";
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog       = null;
+            _handler.OnProgress    = null;
+            _handler.OnComplete    = null;
+            _handler.OnResultChips = null;
+        }
 
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Bulk Export";
