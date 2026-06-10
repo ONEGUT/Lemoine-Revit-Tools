@@ -151,6 +151,7 @@ Before implementing any workflow, check whether it is practical:
 - Settings windows auto-save on change (theme/size on click, tool fields via `ApplySettings`). Do not add an "Apply" button — persistence is implicit per control.
 - In a drag-able row, a name/label hit box must shrink to its text (`HorizontalAlignment.Left`), not fill the row — otherwise it covers the bar and blocks grabbing the row to drag it. The leftover space stays row background and remains drag-able; long names ellipsize at the column width.
 - Rounding tokens: tabs and pills use `LemoineRadius_Card` (10) to match the add-trade button; small chips/inputs stay on `SM` (3) / `MD` (4). Don't introduce ad-hoc radius literals.
+- When child items belong to listed parents (e.g. worksets under documents), nest the children under a per-parent **expand caret** in the parent list — not a separate, parallel picker. Deselecting a parent must auto-clear/disable its children so a selected child can never sit under an unselected parent. This was the explicit correction that replaced the clash source-document/workset "separate tabs" layout with an inline document tree.
 
 ---
 
@@ -328,6 +329,7 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | `Document.Create.NewSpotElevation(view, ref, …)` with no real geometry reference | The `Reference` must come from actual geometry — anchor it to a detail line via `CurveElement.GeometryCurve.Reference` (fallback `new Reference(element)`) |
 | Read a value to filter on via the **property-palette display** (`LookupParameter`) | Read it through the **same built-in the filter binds** — a view filter's string-rule keyword is compared against the *bound* parameter's value, not the palette. The palette "Fabrication Service" is a composite (`<abbreviation>: <name>`, e.g. `DVG - MP: Chilled Water Supply`) but `FABRICATION_SERVICE_NAME` holds only the name (`Chilled Water Supply`), so a keyword carrying the prefix never matches |
 | String filter rule against an **ElementId-storage** parameter (e.g. `ELEM_FAMILY_PARAM`) | `ParameterFilterRuleFactory.CreateContainsRule`/string rules require **String storage** — an ElementId param throws and the keyword is silently dropped (filter never created). For a string Family Name filter bind `ALL_MODEL_FAMILY_NAME`, not `ELEM_FAMILY_PARAM` |
+| `Element.WorksetId.Value` to read a workset id | `WorksetId.IntegerValue` (an `int`) — `WorksetId` still uses `IntegerValue`, unlike `ElementId.Value` (a `long`) used everywhere else in 2024. Worksharing reads: guard with `doc.IsWorkshared`, enumerate user worksets via `new FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset)`, and read an element's workset with `Element.WorksetId`. A link's worksets live in its own `GetLinkDocument()`, so read/scan them there, not the host |
 
 ---
 
