@@ -261,6 +261,18 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 ---
 
+## Viewports, Annotation Crop & Sheet Placement
+
+Discovered building **Place Dependent Views** (one sheet per parent view, its dependents packed on it).
+
+- **`doc.Regenerate()` recomputes the whole model — never call it per item in a loop.** It is the dominant cost of any bulk sheet/viewport tool. Do all mutations then regenerate once; regenerate per logical unit (e.g. per sheet) only when live progress matters more than raw speed. A single all-at-once regen also freezes the UI with no progress, so per-sheet regen reads as faster even when total work is similar — and offering a fast "estimate" mode (size from the crop box, skip the measure-regen) is worth it for expensive measure-based layout.
+- **`Viewport.GetBoxOutline()` / `GetLabelOutline()` are only valid after a `doc.Regenerate()` following `Viewport.Create`.** The box outline is the true on-sheet footprint (sheet feet) and **excludes** the viewport label; union with `GetLabelOutline()` if titles must not overlap. `Viewport.SetBoxCenter()` positions the box and needs **no** regen (the commit recomputes once). The only reliable way to know a placed view's size is place → regen → read outline; sizing from the crop box alone is an estimate.
+- **Trim a view's "bubbles"/annotations to its crop via the annotation crop, not by editing datum extents.** Enable `BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE` (with `CropBoxActive = true`), then set the four offsets on `view.GetCropRegionShapeManager()` — `Top/Bottom/Left/RightAnnotationCropOffset`. Offsets are **model feet**, so convert a desired paper gap with `view.Scale` (`modelFeet = paperFeet × Scale`). Revit **rejects 0 / negative** offsets — floor to a tiny positive value and wrap in try/catch (some view types can't carry an annotation crop) so a failure leaves the view untrimmed rather than aborting the run.
+- **Drawing area = the placed title block's bounding box**, read via `titleBlockInstance.get_BoundingBox(sheet)` (valid only after a regen), minus per-side margins. Every sheet using the same title block type shares the same area — read it once and reuse.
+- **Writing a value to a sheet's shared parameter by name is unreliable — KNOWN UNRESOLVED for the Sheet Series field.** `LookupParameter(name)` returns only the **first** name match and silently picks the wrong duplicate; `Element.GetParameters(name)` returns all matches (prefer a writable, String-storage, `IsShared` one), but even that did **not** reliably populate the shared "Sheet Series" parameter in testing. The robust fix (deferred) is to bind by **shared-parameter GUID** via `element.get_Parameter(Guid)`. Do not assume the Sheet Series write works.
+
+---
+
 ## Reusable Components — Prefer Over Hand-Rolling
 
 - **Numeric input:** `LemoineInlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.

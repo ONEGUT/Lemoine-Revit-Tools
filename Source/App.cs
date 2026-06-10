@@ -92,6 +92,10 @@ namespace LemoineTools
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
         internal static ExternalEvent?             CreateSheetsEvent    { get; private set; }
 
+        // ── Testing — Place Dependent Views ─────────────────────────────────────────
+        internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
+        internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -177,6 +181,8 @@ namespace LemoineTools
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
+            PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
+            PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -420,7 +426,9 @@ namespace LemoineTools
                 Btn("LT_CreateSheets",        "Create Sheets", "CreateSheetsCommand",
                     "Generate sheets from levels, rooms, scope boxes, or a CSV file."),
                 Btn("LT_LinkViewsDiscipline", "By Discipline", "LinkViewsDisciplineCommand",
-                    "Create one 3D view per link with a section box, with optional combined views per discipline."));
+                    "Create one 3D view per link with a section box, with optional combined views per discipline."),
+                Btn("LT_PlaceDepViews",       "Place Dep. Views", "PlaceDependentViewsCommand",
+                    "Create one sheet per view and place its dependents, trimmed and packed without overlap."));
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
