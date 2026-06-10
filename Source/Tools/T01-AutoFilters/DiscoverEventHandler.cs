@@ -292,10 +292,10 @@ namespace LemoineTools.Tools.AutoFilters
                 var key = (typeId, paramName);
                 if (typeCache.TryGetValue(key, out var cached)) return cached;
 
-                var typeEl = el.Document.GetElement(el.GetTypeId());
+                var resolvedType = el.Document.GetElement(el.GetTypeId());
                 string? resolved = paramName == "Type Name"
-                    ? (typeEl as ElementType)?.Name
-                    : (typeEl as FamilySymbol)?.FamilyName;
+                    ? (resolvedType as ElementType)?.Name
+                    : (resolvedType as FamilySymbol)?.FamilyName;
                 typeCache[key] = resolved;
                 return resolved;
             }
