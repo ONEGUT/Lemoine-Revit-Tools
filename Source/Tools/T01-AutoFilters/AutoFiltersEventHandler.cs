@@ -68,6 +68,20 @@ namespace LemoineTools.Tools.AutoFilters
         // ShowFailureDialog is set. Cleared at the start of every Execute().
         private readonly List<string> _failures = new List<string>();
 
+        // Lazily-built once per run: every view in the document, reused across all
+        // RebuildFilter calls so several rule rebuilds in one run don't each re-enumerate
+        // the whole document. Filter rebuilds create no views, so this stays valid for the
+        // run. Reset at the start of every Run().
+        private List<View>? _allViewsCache;
+
+        private List<View> AllViews(Document doc)
+        {
+            if (_allViewsCache == null)
+                _allViewsCache = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View)).Cast<View>().ToList();
+            return _allViewsCache;
+        }
+
         public string GetName() => "LemoineTools.Tools.AutoFilters.AutoFiltersEventHandler";
 
         public void Execute(UIApplication app)
@@ -136,6 +150,8 @@ namespace LemoineTools.Tools.AutoFilters
         private void Run(UIApplication app, Document doc, View view,
             ref int pass, ref int fail, ref int skip, ref int removed)
         {
+            _allViewsCache = null; // rebuild the per-run view snapshot fresh
+
             bool createOnly   = CreateOnly;
             // createOnly no longer forces an overwrite. Existing filters are updated in place
             // (SetCategories / SetElementFilter) rather than deleted and recreated, so their
@@ -410,6 +426,11 @@ namespace LemoineTools.Tools.AutoFilters
             bool refreshDef = overwriteDef
                 || (createOnly && (ChangedFilterNames == null || ChangedFilterNames.Contains(filterName)));
 
+            // When set, the filter already existed on this view and the caller asked to keep
+            // manually-adjusted overrides: skip re-applying overrides to it. A filter that is
+            // NOT yet on the view is still attached and styled (there is nothing to preserve).
+            bool keepExistingForThis = false;
+
             try
             {
                 // Whole-category rules ("all") match every element in their categories via a
@@ -484,11 +505,10 @@ namespace LemoineTools.Tools.AutoFilters
                     }
                     else if (KeepExistingOverrides)
                     {
-                        // Reuse untouched and preserve any manually-adjusted overrides —
-                        // leave the view exactly as it is.
-                        rulesDone++;
-                        Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
-                        return;
+                        // Reuse untouched. Don't return — the filter may not be on this view
+                        // yet, in which case it must still be attached below. Override
+                        // preservation is decided per-view in the apply block.
+                        keepExistingForThis = true;
                     }
                 }
                 else
@@ -510,18 +530,24 @@ namespace LemoineTools.Tools.AutoFilters
 
                 if (!createOnly)
                 {
-                    if (!existingViewFilterIds.Contains(pfe!.Id.Value))
+                    bool wasOnView = existingViewFilterIds.Contains(pfe!.Id.Value);
+                    if (!wasOnView)
                     {
                         view.AddFilter(pfe.Id);
                         existingViewFilterIds.Add(pfe.Id.Value);
                     }
 
-                    // Honor the rule's "filter active in view" flag (FilterOn). A disabled
-                    // filter stays attached to the view but has no effect.
-                    view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
+                    // Preserve overrides only for a filter that was ALREADY on this view;
+                    // a newly-attached one has nothing to preserve, so it is styled normally.
+                    if (!(keepExistingForThis && wasOnView))
+                    {
+                        // Honor the rule's "filter active in view" flag (FilterOn). A disabled
+                        // filter stays attached to the view but has no effect.
+                        view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
 
-                    // Apply graphic overrides (colors, line style, halftone, transparency)
-                    ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                        // Apply graphic overrides (colors, line style, halftone, transparency)
+                        ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                    }
                 }
             }
             catch (Exception ex)
@@ -543,7 +569,7 @@ namespace LemoineTools.Tools.AutoFilters
         // active-view re-add block entirely. To stay transparent, capture each existing view
         // assignment (enabled state + graphic overrides) before deleting, then restore them
         // onto the new ElementId.
-        private static ParameterFilterElement RebuildFilter(
+        private ParameterFilterElement RebuildFilter(
             Document doc, string filterName, ICollection<ElementId> catIds,
             ElementFilter? elementFilter, ParameterFilterElement old,
             Dictionary<string, ParameterFilterElement> existingFilters,
@@ -554,7 +580,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             // Snapshot every view/template that references the old filter.
             var assignments = new List<(View View, bool Enabled, OverrideGraphicSettings Ogs)>();
-            foreach (var v in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
+            foreach (var v in AllViews(doc))
             {
                 ICollection<ElementId> vFilters;
                 try { vFilters = v.GetFilters(); }
@@ -1021,75 +1047,6 @@ namespace LemoineTools.Tools.AutoFilters
             return keep;
         }
 
-        private static string? ReadParamValue(Element el, string paramName,
-            Dictionary<string, BuiltInParameter> bipMap)
-        {
-            if (paramName == "Fabrication Service")
-            {
-                try
-                {
-                    var sn = el.GetType().GetProperty("ServiceName")?.GetValue(el) as string;
-                    if (!string.IsNullOrEmpty(sn)) return sn;
-                }
-                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read fabrication ServiceName", __lex); }
-            }
-            if (paramName == "Type Name")
-            {
-                try
-                {
-                    var t = el.Document.GetElement(el.GetTypeId());
-                    if (t != null && !string.IsNullOrEmpty(t.Name)) return t.Name;
-                }
-                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read element type name", __lex); }
-                try
-                {
-                    var p = el.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME);
-                    if (p != null) return p.AsString() ?? p.AsValueString();
-                }
-                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read type-name parameter", __lex); }
-                return null;
-            }
-            if (paramName == "Structural Material")
-            {
-                try
-                {
-                    var p = el.LookupParameter(paramName);
-                    if (p != null)
-                    {
-                        var mid = p.AsElementId();
-                        if (mid != null && mid != ElementId.InvalidElementId)
-                        {
-                            var mat = el.Document.GetElement(mid) as Material;
-                            if (mat != null) return mat.Name;
-                        }
-                    }
-                }
-                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read material name", __lex); }
-                return null;
-            }
-            try
-            {
-                var p = el.LookupParameter(paramName);
-                if (p != null)
-                {
-                    string s = p.AsValueString();
-                    if (!string.IsNullOrEmpty(s)) return s;
-                    s = p.AsString();
-                    if (!string.IsNullOrEmpty(s)) return s;
-                }
-            }
-            catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read parameter value", __lex); }
-            if (bipMap.TryGetValue(paramName, out var bipFallback))
-            {
-                try
-                {
-                    var p = el.get_Parameter(bipFallback);
-                    if (p != null) return p.AsValueString() ?? p.AsString();
-                }
-                catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters: read fallback parameter value", __lex); }
-            }
-            return null;
-        }
 
         private static void ConfigureFailures(Transaction tx)
         {
@@ -1113,7 +1070,11 @@ namespace LemoineTools.Tools.AutoFilters
         private static ElementId GetSolidLineId()
         {
             try { return LinePatternElement.GetSolidPatternId(); }
-            catch { return ElementId.InvalidElementId; }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoFilters: resolve solid line pattern id", ex);
+                return ElementId.InvalidElementId;
+            }
         }
 
         // Routes a run message to the (optional) UI callback AND mirrors it to the

@@ -239,7 +239,14 @@ namespace LemoineTools.Tools.AutoFilters
                 // Duplicate the existing legend view
                 ElementId newLegendId = existingLegend.Duplicate(ViewDuplicateOption.Duplicate);
                 View? dv = doc.GetElement(newLegendId) as View;
-                dv!.Name = legendName;
+                if (dv == null)
+                {
+                    Log("Failed to duplicate the template legend view.", "fail");
+                    fail++;
+                    tx.Commit();
+                    return;
+                }
+                dv.Name = legendName;
 
                 var opts = new TextNoteOptions { TypeId = textTypeId };
                 try { opts.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("AutoFilters legend: set text-note alignment", __lex); }

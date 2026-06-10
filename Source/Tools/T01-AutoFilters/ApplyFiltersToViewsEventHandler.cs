@@ -118,8 +118,20 @@ namespace LemoineTools.Tools.AutoFilters
                 .GroupBy(lp => lp.Name, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
+            // Build filterName → owning rule ONCE, instead of re-scanning every trade and
+            // rule for each filter×view op (that was MakeFilterName run millions of times on
+            // a large project). First rule to claim a name wins (config order).
+            var ruleByName = new Dictionary<string, FilterRuleConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (var trade in AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>())
+                foreach (var rule in trade.Rules ?? new List<FilterRuleConfig>())
+                {
+                    string n = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
+                    if (!ruleByName.ContainsKey(n)) ruleByName[n] = rule;
+                }
+
             int totalOps = filterMap.Count * viewList.Count;
             int done     = 0;
+            int lastPct  = -1;
 
             using (var tx = new Transaction(doc, "Apply Filters to Views"))
             {
@@ -140,7 +152,7 @@ namespace LemoineTools.Tools.AutoFilters
                         if (alreadyPresent && !OverwriteExisting)
                         {
                             skip++; done++;
-                            Progress((int)(done * 90.0 / totalOps), pass, fail, skip);
+                            ReportProgress(done, totalOps, pass, fail, skip, ref lastPct);
                             continue;
                         }
 
@@ -156,8 +168,7 @@ namespace LemoineTools.Tools.AutoFilters
                             // rule via the shared engine. A filter with no matching rule (or one
                             // whose override flags are all off) is left as "no override" —
                             // nothing is fabricated here.
-                            var rule = MatchRule(filterName);
-                            if (rule != null)
+                            if (ruleByName.TryGetValue(filterName, out var rule))
                             {
                                 view.SetIsFilterEnabled(filterId, rule.FilterOn);
                                 if (ApplyColorOverrides)
@@ -179,7 +190,7 @@ namespace LemoineTools.Tools.AutoFilters
                         }
 
                         done++;
-                        Progress((int)(done * 90.0 / totalOps), pass, fail, skip);
+                        ReportProgress(done, totalOps, pass, fail, skip, ref lastPct);
                     }
                 }
 
@@ -220,18 +231,14 @@ namespace LemoineTools.Tools.AutoFilters
             }
         }
 
-        // Finds the FilterRuleConfig whose generated name matches the Revit filter name.
-        // Returns null when no current rule owns the filter, in which case the caller
-        // leaves the filter untouched (no fabricated override).
-        private static FilterRuleConfig? MatchRule(string filterName)
+        // Reports progress only when the integer percentage actually changes, so a large
+        // filter×view run doesn't flood the UI dispatcher with one marshalled call per op.
+        private void ReportProgress(int done, int totalOps, int pass, int fail, int skip, ref int lastPct)
         {
-            foreach (var trade in AutoFiltersSettings.Instance.Trades ?? new System.Collections.Generic.List<FilterTradeConfig>())
-                foreach (var rule in trade.Rules ?? new System.Collections.Generic.List<FilterRuleConfig>())
-                    if (string.Equals(filterName,
-                            AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name),
-                            StringComparison.OrdinalIgnoreCase))
-                        return rule;
-            return null;
+            int pct = totalOps > 0 ? (int)(done * 90.0 / totalOps) : 90;
+            if (pct == lastPct) return;
+            lastPct = pct;
+            Progress(pct, pass, fail, skip);
         }
 
         private static void ConfigureFailures(Transaction tx)
@@ -256,7 +263,11 @@ namespace LemoineTools.Tools.AutoFilters
         private static ElementId GetSolidLineId()
         {
             try { return LinePatternElement.GetSolidPatternId(); }
-            catch { return ElementId.InvalidElementId; }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoFilters.Apply: resolve solid line pattern id", ex);
+                return ElementId.InvalidElementId;
+            }
         }
 
         private void Log(string text, string status)
