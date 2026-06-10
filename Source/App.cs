@@ -96,6 +96,12 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
         internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
+        // ── Testing — Copy Linear Elements ──────────────────────────────────────────
+        internal static LemoineTools.Tools.CopyLinear.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
+        internal static ExternalEvent?             CopyLinearScanEvent  { get; private set; }
+        internal static LemoineTools.Tools.CopyLinear.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
+        internal static ExternalEvent?             CopyLinearRunEvent   { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -183,6 +189,10 @@ namespace LemoineTools
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
             PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
+            CopyLinearScanHandler = new LemoineTools.Tools.CopyLinear.CopyLinearScanHandler();
+            CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
+            CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
+            CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -429,6 +439,11 @@ namespace LemoineTools
                     "Create one 3D view per link with a section box, with optional combined views per discipline."),
                 Btn("LT_PlaceDepViews",       "Place Dep. Views", "PlaceDependentViewsCommand",
                     "Create one sheet per view and place its dependents, trimmed and packed without overlap."));
+
+            testingPanel.AddItem(Btn(
+                "LT_CopyLinear", "Copy\nLinear", "CopyLinearCommand",
+                "Copy linear linked runs into the host and split them into standard lengths, or replace them with a picked family at set intervals. Re-runs can process only changed elements.",
+                char.ConvertFromUtf32(0xE8C8)));  // Segoe MDL2: Copy
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
