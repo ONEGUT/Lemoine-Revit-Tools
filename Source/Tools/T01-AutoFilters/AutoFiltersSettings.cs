@@ -875,6 +875,34 @@ namespace LemoineTools.Tools.AutoFilters
         public static IReadOnlyList<string> KnownCategoryDisplayNames =>
             _runtimeDisplayNames ?? (IReadOnlyList<string>)DefaultKnownCategoryDisplayNames;
 
+        // Reverse lookup (OST_* → display name), cached and rebuilt whenever the
+        // underlying KnownCategoryMap reference changes (i.e. when a document snapshot
+        // is captured). Replaces the O(n) FirstOrDefault(kv => kv.Value == ost) scans
+        // that several call sites ran per row.
+        private static Dictionary<string, string>? _ostToDisplay;
+        private static IReadOnlyDictionary<string, string>? _ostToDisplaySource;
+
+        /// <summary>
+        /// Returns the Revit category display name for an OST_* BuiltInCategory string,
+        /// or the OST string itself when unmapped. Backed by a cached reverse map of
+        /// <see cref="KnownCategoryMap"/>; the cache rebuilds when the map is replaced by
+        /// a document capture, so callers always see the current names without re-scanning.
+        /// </summary>
+        public static string DisplayNameForOst(string ost)
+        {
+            if (string.IsNullOrEmpty(ost)) return ost ?? "";
+            var src = KnownCategoryMap;
+            if (_ostToDisplay == null || !ReferenceEquals(src, _ostToDisplaySource))
+            {
+                var rev = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var kv in src)
+                    if (!rev.ContainsKey(kv.Value)) rev[kv.Value] = kv.Key;
+                _ostToDisplay       = rev;
+                _ostToDisplaySource = src;
+            }
+            return _ostToDisplay.TryGetValue(ost, out var name) ? name : ost;
+        }
+
         /// <summary>
         /// Reads the exact filterable-category list from the open document and stores it as the
         /// runtime snapshot the category pickers read from, mirroring what Revit shows in its own

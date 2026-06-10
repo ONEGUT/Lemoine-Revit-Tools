@@ -110,6 +110,13 @@ namespace LemoineTools.Tools.AutoFilters
         private readonly List<LinkEntry>                 _links;
         private readonly List<DiscoveredRuleRow>         _discoveredRules = new List<DiscoveredRuleRow>();
 
+        // Optional: chain a CreateOnly Auto Filters pass after commit so the flow ends
+        // with real ParameterFilterElements in the project (Phase 3.3). Null in the
+        // standalone preview app, where no Revit document is available.
+        private readonly AutoFiltersEventHandler?        _createHandler;
+        private readonly Autodesk.Revit.UI.ExternalEvent? _createEvent;
+        private bool _createAfterCommit = true;
+
         private bool        _scanComplete;
         private bool        _isScanning;
         private Dispatcher? _wpfDispatcher;
@@ -134,6 +141,11 @@ namespace LemoineTools.Tools.AutoFilters
             = new List<(Action Open, Action Close)>();
         private int _openCardIndex = 0;
 
+        // S2 card header labels, keyed by link, so an S1 trade rename updates the
+        // matching S2 header in place (the scan already reads link.TradeName live).
+        private readonly Dictionary<ElementId, TextBlock> _s2HeaderTbs
+            = new Dictionary<ElementId, TextBlock>();
+
         // S4 single-expand accordion
         private readonly List<(Action Open, Action Close)> _s4CardActions
             = new List<(Action Open, Action Close)>();
@@ -155,11 +167,15 @@ namespace LemoineTools.Tools.AutoFilters
         public DiscoverViewModel(
             DiscoverEventHandler             handler,
             Autodesk.Revit.UI.ExternalEvent  externalEvent,
-            List<LinkEntry>                  links)
+            List<LinkEntry>                  links,
+            AutoFiltersEventHandler?         createHandler = null,
+            Autodesk.Revit.UI.ExternalEvent? createEvent   = null)
         {
-            _handler = handler       ?? throw new ArgumentNullException(nameof(handler));
-            _event   = externalEvent ?? throw new ArgumentNullException(nameof(externalEvent));
-            _links   = links         ?? new List<LinkEntry>();
+            _handler       = handler       ?? throw new ArgumentNullException(nameof(handler));
+            _event         = externalEvent ?? throw new ArgumentNullException(nameof(externalEvent));
+            _links         = links         ?? new List<LinkEntry>();
+            _createHandler = createHandler;
+            _createEvent   = createEvent;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -282,7 +298,12 @@ namespace LemoineTools.Tools.AutoFilters
             tradeBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
             tradeBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
             tradeBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineUiFont");
-            tradeBox.TextChanged += (s, e) => { link.TradeName = tradeBox.Text; RaiseValidation(); };
+            tradeBox.TextChanged += (s, e) =>
+            {
+                link.TradeName = tradeBox.Text;
+                if (_s2HeaderTbs.TryGetValue(link.Id, out var hdr)) hdr.Text = link.TradeName;
+                RaiseValidation();
+            };
 
             WpfGrid.SetColumn(cb,       0);
             WpfGrid.SetColumn(lbl,      1);
@@ -328,6 +349,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (_s2CardsStack == null) return;
             _s2CardsStack.Children.Clear();
             _cardActions.Clear();
+            _s2HeaderTbs.Clear();
             _openCardIndex = 0;
 
             var selectedLinks = _links.Where(l => l.IsSelected).ToList();
@@ -383,6 +405,7 @@ namespace LemoineTools.Tools.AutoFilters
             tradeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             tradeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             tradeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            _s2HeaderTbs[link.Id] = tradeTb; // S1 rename updates this header in place
 
             var labelTb = new TextBlock
             {
@@ -411,24 +434,33 @@ namespace LemoineTools.Tools.AutoFilters
             var bodyStack = new StackPanel();
 
             var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
-            catTabs.SetGroups(CategoryGroups);
             // Scroll-wheel handling is global (OnScrollViewerWheel) and MultiSelectTabs already wires
             // its own inner scrollers — no per-call-site wiring needed here.
 
             var configPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
             configPanel.Children.Add(MakeNote("Select categories above to configure the scan."));
 
+            // Subscribe BEFORE SetGroups (LemoineMultiSelectTabs contract: SetGroups fires
+            // SelectionChanged once at the end). Re-building S2 cards on any S1 toggle must
+            // restore each link's prior selection — pass link.SelectedCategories as the
+            // initial selection so configured links don't get silently cleared.
             catTabs.SelectionChanged += cats =>
             {
+                var newCats = cats?.ToList() ?? new List<string>();
+                // Restoring the saved selection (the SetGroups initial fire) reports the
+                // same set — only a real user change should invalidate a completed scan.
+                bool changed = !new HashSet<string>(newCats, StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(link.SelectedCategories);
                 link.SelectedCategories.Clear();
-                link.SelectedCategories.AddRange(cats);
+                link.SelectedCategories.AddRange(newCats);
                 _wpfDispatcher?.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
                 {
                     RebuildLinkConfigPanel(link, configPanel);
-                    _scanComplete = false;
-                    RaiseValidation();
+                    if (changed) InvalidateScan();
+                    else         RaiseValidation();
                 }));
             };
+            catTabs.SetGroups(CategoryGroups, link.SelectedCategories);
 
             bodyStack.Children.Add(catTabs);
             bodyStack.Children.Add(configPanel);
@@ -501,6 +533,12 @@ namespace LemoineTools.Tools.AutoFilters
                     link.ConfigRows.Add(existing);
                 else if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
                     link.ConfigRows.Add(new ScanConfigRow(catLabel, ost));
+                else
+                    // A curated S2 group label that the live document's category map doesn't
+                    // expose (version-specific name, or a non-builtin category): no config row
+                    // can be built, so the user's pick would silently vanish. Surface it.
+                    LemoineLog.Warn("AutoFilters.Discover",
+                        $"Category '{catLabel}' has no filterable OST mapping in this document — skipped.");
             }
 
             if (link.ConfigRows.Count == 0)
@@ -642,12 +680,32 @@ namespace LemoineTools.Tools.AutoFilters
                     row.Parameter = sel;
                 }
                 UpdateInfoTb();
-                _scanComplete = false;
-                RaiseValidation();
+                InvalidateScan();
             };
 
             card.Child = g;
             return card;
+        }
+
+        // Discards any completed scan when the S2 configuration changes, so stale
+        // discovered rules can never be carried into S4/S5 and committed. Resets the
+        // S4 panel to its placeholder and refreshes the S5 summary.
+        private void InvalidateScan()
+        {
+            _scanComplete = false;
+            if (_discoveredRules.Count > 0)
+            {
+                _discoveredRules.Clear();
+                _s4CardActions.Clear();
+                _s4OpenCardIndex = 0;
+                if (_s4Panel != null)
+                {
+                    _s4Panel.Children.Clear();
+                    _s4Panel.Children.Add(MakeNote("Run the scan in Step 2 to see discovered rules here."));
+                }
+                UpdateS5Summary();
+            }
+            RaiseValidation();
         }
 
         // ── S2 scan trigger ───────────────────────────────────────────────────
@@ -661,6 +719,11 @@ namespace LemoineTools.Tools.AutoFilters
 
             _isScanning   = true;
             _scanComplete = false;
+
+            // Auto-advance to the Scanning step so the user watches progress live
+            // instead of manually walking forward (NavigateRequested is wired in
+            // StepFlowWindow). Step index 2 = "S3".
+            RaiseNavigate(2);
 
             // Reset S3 display (called on WPF thread via OnStepConfirm)
             if (_s3LogStack != null) _s3LogStack.Children.Clear();
@@ -717,6 +780,10 @@ namespace LemoineTools.Tools.AutoFilters
                 PopulateS4(results);
                 UpdateS5Summary();
                 RaiseValidation();
+
+                // Advance to Review Rules once a successful scan has populated it
+                // (step index 3 = "S4"). On an empty scan, stay on S3.
+                if (_scanComplete) RaiseNavigate(3);
             }));
         }
 
@@ -813,24 +880,56 @@ namespace LemoineTools.Tools.AutoFilters
             _s4CardActions.Clear();
             _s4OpenCardIndex = 0;
 
+            // A value found in several categories (e.g. "Supply Air" in both Ducts and
+            // Duct Fittings) arrives as multiple ScanResults. Merge per-value rows that
+            // share (trade, value, parameter) into ONE rule whose categories are the union
+            // and whose count is the sum — otherwise commit-time dedupe-by-name silently
+            // dropped every category after the first. Whole-category rows stay one-per-
+            // category (each is its own "whole category" rule).
+            var perValueByKey = new Dictionary<(string Trade, string Param, string Value), DiscoveredRuleRow>();
             foreach (var r in results)
             {
-                _discoveredRules.Add(new DiscoveredRuleRow
+                if (r.IsWholeCategory)
                 {
-                    IsIncluded        = true,
-                    RuleName          = r.IsWholeCategory
-                        ? (AutoFiltersSettings.KnownCategoryMap
-                               .FirstOrDefault(kvp => kvp.Value == r.OstCategory).Key
-                           ?? r.OstCategory)
-                        : r.ParameterValue,
-                    HexColor          = r.HexColor,
-                    TradeName         = r.TradeName,
-                    ElementCount      = r.ElementCount,
-                    IsWholeCategory   = r.IsWholeCategory,
-                    ParameterValue    = r.ParameterValue,
-                    Parameter         = r.Parameter,
-                    BuiltInCategories = new List<string> { r.OstCategory },
-                });
+                    _discoveredRules.Add(new DiscoveredRuleRow
+                    {
+                        IsIncluded        = true,
+                        RuleName          = AutoFiltersSettings.DisplayNameForOst(r.OstCategory),
+                        HexColor          = r.HexColor,
+                        TradeName         = r.TradeName,
+                        ElementCount      = r.ElementCount,
+                        IsWholeCategory   = true,
+                        ParameterValue    = r.ParameterValue,
+                        Parameter         = r.Parameter,
+                        BuiltInCategories = new List<string> { r.OstCategory },
+                    });
+                    continue;
+                }
+
+                var key = (r.TradeName ?? "", r.Parameter ?? "", r.ParameterValue ?? "");
+                if (perValueByKey.TryGetValue(key, out var existing))
+                {
+                    existing.ElementCount += r.ElementCount;
+                    if (!existing.BuiltInCategories.Contains(r.OstCategory))
+                        existing.BuiltInCategories.Add(r.OstCategory);
+                }
+                else
+                {
+                    var rowVm = new DiscoveredRuleRow
+                    {
+                        IsIncluded        = true,
+                        RuleName          = r.ParameterValue,
+                        HexColor          = r.HexColor,
+                        TradeName         = r.TradeName,
+                        ElementCount      = r.ElementCount,
+                        IsWholeCategory   = false,
+                        ParameterValue    = r.ParameterValue,
+                        Parameter         = r.Parameter,
+                        BuiltInCategories = new List<string> { r.OstCategory },
+                    };
+                    perValueByKey[key] = rowVm;
+                    _discoveredRules.Add(rowVm);
+                }
             }
 
             if (_discoveredRules.Count == 0)
@@ -1100,10 +1199,37 @@ namespace LemoineTools.Tools.AutoFilters
             var sp = new StackPanel();
             _s5Review = new LemoineReviewSummary { Margin = new Thickness(0, 0, 0, 12) };
             sp.Children.Add(_s5Review);
-            sp.Children.Add(new LemoineWarnBanner(
-                "⚠  Existing Revit filter elements are not updated automatically. " +
-                "After committing, run 'Auto Filters' to apply updated rules to your views.",
-                bottomMargin: 0));
+
+            // When a create handler is available, offer to build the filter elements
+            // immediately after commit (Phase 3.3) so the flow ends with usable filters
+            // instead of a "now go run Auto Filters" instruction.
+            if (_createHandler != null && _createEvent != null)
+            {
+                var toggles = new LemoineToggleSwitches();
+                toggles.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem
+                    {
+                        Id        = "create",
+                        Label     = "Create filters in project after commit",
+                        Desc      = "Build the ParameterFilterElements for the committed rules right away. " +
+                                    "Off = only save rules; create them later from Auto Filters.",
+                        DefaultOn = _createAfterCommit,
+                    },
+                }, new Dictionary<string, bool> { ["create"] = _createAfterCommit });
+                toggles.StateChanged += state =>
+                {
+                    if (state.TryGetValue("create", out bool on)) _createAfterCommit = on;
+                };
+                sp.Children.Add(toggles);
+            }
+            else
+            {
+                sp.Children.Add(new LemoineWarnBanner(
+                    "⚠  Existing Revit filter elements are not updated automatically. " +
+                    "After committing, run 'Auto Filters' to apply updated rules to your views.",
+                    bottomMargin: 0));
+            }
             return sp;
         }
 
@@ -1211,11 +1337,34 @@ namespace LemoineTools.Tools.AutoFilters
                     BuiltInCategories = r.BuiltInCategories,
                 }).ToList();
 
+            bool chainCreate = _createAfterCommit && _createHandler != null && _createEvent != null;
+
+            // Explicit local (not a ternary) so the lambda has a target type under C# 7.3.
+            Action<int, int, int> commitDone = onComplete;
+            if (chainCreate)
+                commitDone = (p, f, s) =>
+                {
+                    // Commit done — chain a CreateOnly Auto Filters pass so the new rules
+                    // exist as ParameterFilterElements. Only when at least one rule
+                    // committed; otherwise finish on the commit result.
+                    if (p <= 0) { onComplete(p, f, s); return; }
+                    pushLog("Creating filter elements in project…", "info");
+                    _createHandler!.CreateOnly               = true;
+                    _createHandler.OverwriteFilterDefinition = false;
+                    _createHandler.ChangedFilterNames        = null; // create/refresh all owned filters
+                    _createHandler.SelectedDisciplines       = new List<string>(); // all trades
+                    _createHandler.SelectedLinkTitles        = new List<string>();
+                    _createHandler.PushLog                   = pushLog;
+                    _createHandler.OnProgress                = onProgress;
+                    _createHandler.OnComplete                = (cp, cf, cs, _) => onComplete(cp, cf, cs);
+                    _createEvent!.Raise();
+                };
+
             _handler.Mode        = DiscoverMode.Commit;
             _handler.CommitSpecs = specs;
             _handler.PushLog     = pushLog;
             _handler.OnProgress  = onProgress;
-            _handler.OnComplete  = onComplete;
+            _handler.OnComplete  = commitDone;
             _event.Raise();
         }
 
@@ -1237,8 +1386,6 @@ namespace LemoineTools.Tools.AutoFilters
         }
 
         private static string CategoryDisplayName(string ostCategory)
-            => AutoFiltersSettings.KnownCategoryMap
-                   .FirstOrDefault(kvp => kvp.Value == ostCategory).Key
-               ?? ostCategory;
+            => AutoFiltersSettings.DisplayNameForOst(ostCategory);
     }
 }

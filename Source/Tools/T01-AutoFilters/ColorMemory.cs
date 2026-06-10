@@ -81,7 +81,24 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public void SetColor(string value, string hex)
         {
-            if (string.IsNullOrEmpty(value)) return;
+            if (SetColorInMemory(value, hex)) Save();
+        }
+
+        /// <summary>
+        /// Updates the in-memory mapping without writing to disk. Use during a bulk update
+        /// (e.g. committing many discovered rules) and call <see cref="Flush"/> once at the
+        /// end — this replaces one full XML rewrite per entry with a single write.
+        /// </summary>
+        public void SetColorDeferred(string value, string hex) => SetColorInMemory(value, hex);
+
+        /// <summary>Persists the current in-memory mapping to disk.</summary>
+        public void Flush() => Save();
+
+        // Returns true when the value is non-empty (and was applied), so the caller can
+        // decide whether a save is warranted.
+        private bool SetColorInMemory(string value, string hex)
+        {
+            if (string.IsNullOrEmpty(value)) return false;
             if (_index.TryGetValue(value, out var e))
                 e.Hex = hex;
             else
@@ -90,7 +107,7 @@ namespace LemoineTools.Tools.AutoFilters
                 _data.Entries.Add(entry);
                 _index[value] = entry;
             }
-            Save();
+            return true;
         }
 
         private void Save()

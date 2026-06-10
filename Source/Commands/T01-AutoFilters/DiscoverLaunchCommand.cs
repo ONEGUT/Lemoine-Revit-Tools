@@ -48,8 +48,13 @@ namespace LemoineTools.Commands
             // Revit's own "Edit Filters → Categories" list (read on the main thread).
             AutoFiltersSettings.CaptureFilterableCategories(doc);
 
-            // Collect loaded link instances on the Revit main thread
-            var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>();
+            // Collect loaded link instances on the Revit main thread.
+            // The host document is offered first (DiscoverEventHandler maps LinkId -1 to it),
+            // so users can discover rules from the current model, not only from links.
+            var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>
+            {
+                new DiscoverViewModel.LinkEntry(ElementId.InvalidElementId, "Host Model"),
+            };
             foreach (RevitLinkInstance li in
                 new FilteredElementCollector(doc)
                     .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
@@ -64,7 +69,9 @@ namespace LemoineTools.Commands
             var vm = new DiscoverViewModel(
                 App.DiscoverHandler!,
                 App.DiscoverEvent!,
-                links);
+                links,
+                App.AutoFiltersHandler,
+                App.AutoFiltersEvent);
 
             // Open the window on a dedicated STA thread so Dispatcher.Run() pumps messages
             var ready = new ManualResetEventSlim(false);
