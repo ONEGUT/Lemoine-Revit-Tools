@@ -102,6 +102,10 @@ namespace LemoineTools
         internal static LemoineTools.Tools.CopyLinear.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyLinearRunEvent   { get; private set; }
 
+        // ── Testing — Copy Grids from Link ──────────────────────────────────────────
+        internal static LemoineTools.Tools.CopyLinear.CopyGridsRunHandler? CopyGridsRunHandler { get; private set; }
+        internal static ExternalEvent?             CopyGridsRunEvent    { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -193,6 +197,8 @@ namespace LemoineTools
             CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
             CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
             CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
+            CopyGridsRunHandler   = new LemoineTools.Tools.CopyLinear.CopyGridsRunHandler();
+            CopyGridsRunEvent     = ExternalEvent.Create(CopyGridsRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -444,6 +450,11 @@ namespace LemoineTools
                 "LT_CopyLinear", "Copy\nLinear", "CopyLinearCommand",
                 "Copy linear linked runs into the host and split them into standard lengths, or replace them with a picked family at set intervals. Re-runs can process only changed elements.",
                 char.ConvertFromUtf32(0xE8C8)));  // Segoe MDL2: Copy
+
+            testingPanel.AddItem(Btn(
+                "LT_CopyGrids", "Copy\nGrids", "CopyGridsCommand",
+                "Copy grids from a linked model into the host. Grids whose name already exists in the host are skipped.",
+                char.ConvertFromUtf32(0xE80A)));  // Segoe MDL2: GridView
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
