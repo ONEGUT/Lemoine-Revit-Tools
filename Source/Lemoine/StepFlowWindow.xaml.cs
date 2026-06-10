@@ -77,13 +77,26 @@ namespace LemoineTools.Lemoine
             {
                 LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+                // The tool (VM) is retained by its static ExternalEvent handler and outlives
+                // this window — detach so a late ValidationChanged can't touch a dead window.
+                _tool.ValidationChanged -= OnToolValidationChanged;
             };
 
             BuildChrome();
-            _tool.ValidationChanged += (s, e) => { RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview(); };
+            _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
-                nav.NavigateRequested += (s, idx) =>
-                    Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() => ActivateStep(idx)));
+                nav.NavigateRequested += (s, idx) => SafeBeginInvoke(() => ActivateStep(idx));
+        }
+
+        // ValidationChanged can be raised from a tool's refresh callback on Revit's main
+        // thread (not this window's STA thread) and could even arrive after the window closed.
+        // Stay synchronous on the UI thread (preserves validation timing); otherwise marshal,
+        // guarded against a terminated dispatcher.
+        private void OnToolValidationChanged(object? sender, EventArgs e)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            if (!Dispatcher.CheckAccess()) { SafeBeginInvoke(() => OnToolValidationChanged(sender, e)); return; }
+            RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview();
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -114,6 +127,17 @@ namespace LemoineTools.Lemoine
             }));
         }
 
+        // Marshals back onto this window's dispatcher, but bails if the dispatcher has begun
+        // shutting down (window closing/closed). Callbacks passed to the static ExternalEvent
+        // handlers and tool ViewModels outlive this window, so a late callback calling
+        // Dispatcher.BeginInvoke on a terminated dispatcher would throw on Revit's main thread
+        // and hard-crash Revit. This guard makes such a late callback a no-op.
+        private void SafeBeginInvoke(Action action)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(action);
+        }
+
         private void UpdateRowHeights()
         {
             if (_root == null) return;
@@ -137,8 +161,9 @@ namespace LemoineTools.Lemoine
             {
                 stepAware.SetContentRefreshCallback(stepId =>
                 {
-                    // Always dispatch to WPF thread — called from any thread.
-                    Dispatcher.BeginInvoke((Action)(() =>
+                    // Always dispatch to WPF thread — called from any thread. Guarded so a
+                    // late refresh after the window closed doesn't throw on a dead dispatcher.
+                    SafeBeginInvoke(() =>
                     {
                         int idx = Array.FindIndex(_tool.Steps, s => s.Id == stepId);
                         if (idx < 0) return;
@@ -148,7 +173,7 @@ namespace LemoineTools.Lemoine
                             cs.Children.RemoveAt(0);
                             cs.Children.Insert(0, newContent);
                         }
-                    }));
+                    });
                 });
             }
 
@@ -157,14 +182,14 @@ namespace LemoineTools.Lemoine
             if (_tool is IWindowActivatable activatable)
             {
                 activatable.SetActivateCallback(() =>
-                    Dispatcher.BeginInvoke((Action)(() =>
+                    SafeBeginInvoke(() =>
                     {
                         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
                         Activate();
                         // Nudge to the top without staying pinned, then return keyboard focus.
                         Topmost = true; Topmost = false;
                         Focus();
-                    })));
+                    }));
             }
 
             // Defer tab-bar rendering until after callers can RegisterLogTab()
@@ -978,14 +1003,13 @@ namespace LemoineTools.Lemoine
             _logScroll.Height = _logMaxH;
             _logStack.Children.Clear(); PushLog("Starting…", "info");
             _tool.Run(
-                // BeginInvoke (non-blocking) — lets Execute() keep running while
-                // the window's dedicated STA thread processes UI updates in real time.
-                pushLog:    (t, s) => Dispatcher.BeginInvoke(
-                                (Action)(() => PushLog(t, s))),
-                onProgress: (pct, p, f, s) => Dispatcher.BeginInvoke(
-                                (Action)(() => { SetCounts(p, f, s); SetProgress(pct); })),
-                onComplete: (p, f, s)       => Dispatcher.BeginInvoke(
-                                (Action)(() => CompleteRun(p, f, s))));
+                // SafeBeginInvoke (non-blocking, shutdown-guarded) — lets Execute() keep
+                // running while the window's dedicated STA thread processes UI updates in real
+                // time, and no-ops if the window has been closed mid-run (the handler is static
+                // and keeps calling these after the dispatcher is gone).
+                pushLog:    (t, s)          => SafeBeginInvoke(() => PushLog(t, s)),
+                onProgress: (pct, p, f, s)  => SafeBeginInvoke(() => { SetCounts(p, f, s); SetProgress(pct); }),
+                onComplete: (p, f, s)       => SafeBeginInvoke(() => CompleteRun(p, f, s)));
         }
 
         private void CompleteRun(int pass, int fail, int skip)
