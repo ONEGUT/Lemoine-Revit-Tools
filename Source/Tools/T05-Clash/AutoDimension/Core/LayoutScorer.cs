@@ -108,6 +108,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     foreach (var w in an.Witnesses)
                         if (ol.Crosses(w)) soft += _cfg.LeaderLineCrossWeight;
                 }
+
+                // Stagger stacked values: texts on adjacent rows shouldn't form a column.
+                if (_cfg.StaggerStackedText) soft += StaggerPenalty(an, pa, d, p);
             }
 
             // ── HARD: off-crop ────────────────────────────────────────────────
@@ -188,6 +191,42 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     if (an.DimLine.Crosses(w)) { if (!reasons.Contains("line crosses a witness")) reasons.Add("line crosses a witness"); break; }
             }
             return string.Join(", ", reasons);
+        }
+
+        /// <summary>Soft penalty when two same-axis dimensions on adjacent rows have value
+        /// texts that overlap along the axis — ASME's staggering convention: offset stacked
+        /// values sideways so they don't pile into one unreadable column.</summary>
+        private double StaggerPenalty(DimAnatomy an, DimAnatomy pa, PlannedDimension d, PlannedDimension p)
+        {
+            Vec2 da = d.AxisDir.Normalized();
+            Vec2 pb = p.AxisDir.Normalized();
+            if (Math.Abs(da.Dot(pb)) < 0.9) return 0;            // different axes — no stacking
+            bool xAxis = Math.Abs(da.X) >= Math.Abs(da.Y);
+
+            double lo = _cfg.StringSpacingFt * 0.25;             // same row → handled by overlap terms
+            double hi = _cfg.StringSpacingFt * 1.75;             // beyond the adjacent row → unrelated
+            double pen = 0;
+
+            foreach (var tb in an.TextBoxes)
+            {
+                foreach (var ob in pa.TextBoxes)
+                {
+                    double alongOverlap = xAxis
+                        ? Math.Min(tb.MaxX, ob.MaxX) - Math.Max(tb.MinX, ob.MinX)
+                        : Math.Min(tb.MaxY, ob.MaxY) - Math.Max(tb.MinY, ob.MinY);
+                    if (alongOverlap <= 0) continue;
+
+                    double perpDist = xAxis
+                        ? Math.Abs((tb.MinY + tb.MaxY) - (ob.MinY + ob.MaxY)) * 0.5
+                        : Math.Abs((tb.MinX + tb.MaxX) - (ob.MinX + ob.MaxX)) * 0.5;
+                    if (perpDist < lo || perpDist > hi) continue;
+
+                    double minWidth = Math.Max(1e-9, Math.Min(
+                        xAxis ? tb.Width : tb.Height, xAxis ? ob.Width : ob.Height));
+                    pen += _cfg.StaggerWeight * Math.Min(1.0, alongOverlap / minWidth);
+                }
+            }
+            return pen;
         }
 
         private double SnapToGrid(double offset)

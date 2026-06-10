@@ -206,7 +206,21 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             var finalScore = scorer.ScoreAll(dims, obstacles);
             if (finalScore.Hard > 1e-6)
-                plan.Notes.Add($"Layout left {finalScore.Hard:0} hard-constraint penalty — some strings may still overlap (unsatisfiable in Tier 1).");
+            {
+                plan.Notes.Add($"Layout left {finalScore.Hard:0} hard-constraint penalty — some strings may still overlap (unsatisfiable at this density).");
+                int noted = 0;
+                foreach (var d in dims)
+                {
+                    if (noted >= 8) { plan.Notes.Add("…further unresolved strings omitted."); break; }
+                    if (scorer.Score(d, obstacles, dims).Hard <= 1e-6) continue;
+                    string why = scorer.DescribeHardViolations(d, obstacles, dims);
+                    if (why.Length > 0)
+                    {
+                        plan.Notes.Add($"Unresolved: {d.SourceKey} — {why}.");
+                        noted++;
+                    }
+                }
+            }
 
             plan.Dimensions = dims;
             return output;
@@ -241,6 +255,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 CrampedWeight        = paper.CrampedWeight,
                 UnevenSpacingWeight  = paper.UnevenSpacingWeight,
                 LeaderWeight         = paper.LeaderWeight,
+                MaxRepairPasses      = paper.MaxRepairPasses,
+                AlignSharedRows      = paper.AlignSharedRows,
+                StaggerStackedText   = paper.StaggerStackedText,
+                StaggerWeight        = paper.StaggerWeight,
                 MaxIterations        = paper.MaxIterations,
                 TimeCapMs            = paper.TimeCapMs,
                 PlateauEpsilon       = paper.PlateauEpsilon,

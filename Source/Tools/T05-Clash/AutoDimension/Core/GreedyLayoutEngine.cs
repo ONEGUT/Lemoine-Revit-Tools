@@ -6,11 +6,17 @@ using System.Linq;
 namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
     /// <summary>
-    /// Tier 1 layout: a deterministic greedy arranger. For each dimension (in a stable order)
-    /// it steps the string offset outward until hard constraints clear, then resolves cramped
-    /// segments by choosing the operator (inline / flip / stagger / leader-out) with the lowest
-    /// soft penalty. Re-runs whole passes until the soft score plateaus or a iteration/time cap
-    /// is hit. No parallelism and no hashset iteration — identical input yields an identical plan.
+    /// Deterministic multi-pass arranger. Pass structure:
+    ///   1. Greedy placement in standards-true order — corridors of competing same-axis
+    ///      dimensions place shortest-span first, so short strings take the inner rows and
+    ///      long ones step outward (ASME Y14.5: shortest nearest the object). Re-runs whole
+    ///      passes until the soft score plateaus or a cap is hit.
+    ///   2. Repair passes — the worst-scoring dimensions are re-placed one at a time with a
+    ///      full side × row × text-state search against the entire frozen layout, accepted
+    ///      only on improvement. This unsticks the dense cases greedy ordering can't solve.
+    ///   3. Shared-row snap — near-level, span-disjoint pairs align onto one line
+    ///      (<see cref="RowPlanner.SnapSharedRows"/>).
+    /// No parallelism and no hashset iteration — identical input yields an identical plan.
     /// </summary>
     public sealed class GreedyLayoutEngine
     {
@@ -28,20 +34,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         {
             if (dims == null || dims.Count == 0) return;
 
-            // Processing order is placement priority: each dimension takes the closest offset that
-            // clears the ones placed before it, so whoever goes first claims the close spots. Longer
-            // chains are placed first and keep the near-source locations; shorter strings and lone
-            // spans yield and step outward to avoid them. Side/axial/key tie-break keeps it deterministic.
-            dims.Sort((a, b) =>
-            {
-                int seg = b.Segments.Count.CompareTo(a.Segments.Count);   // more segments first
-                if (seg != 0) return seg;
-                int s = a.Side.CompareTo(b.Side);
-                if (s != 0) return s;
-                int c = DimGeometry.AxialStart(a).CompareTo(DimGeometry.AxialStart(b));
-                if (c != 0) return c;
-                return string.CompareOrdinal(a.SourceKey, b.SourceKey);
-            });
+            // Placement priority: within each corridor the shortest span goes first and claims
+            // the inner row (drafting: shortest dimension nearest the object — that ordering is
+            // what keeps long strings' lines outside short strings' witness drops).
+            RowPlanner.SortForPlacement(dims);
 
             var sw = Stopwatch.StartNew();
             double prevSoft = double.MaxValue;
@@ -64,6 +60,75 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 prevSoft = total.Soft;
 
                 if (sw.ElapsedMilliseconds > _cfg.TimeCapMs) break;
+            }
+
+            Repair(dims, staticObstacles, sw);
+
+            if (_cfg.AlignSharedRows)
+                RowPlanner.SnapSharedRows(dims, _cfg, _scorer, staticObstacles);
+        }
+
+        /// <summary>
+        /// Worst-first repair: each pass ranks every dimension by its local score against the
+        /// WHOLE layout (greedy only ever saw the ones placed before it), then re-places the
+        /// offenders with a full side × row search, keeping a move only when its local score
+        /// improves. The pairwise score terms are symmetric, so improving one dimension with
+        /// everyone else frozen never worsens the total. Stops when a pass changes nothing,
+        /// passes run out, or the time cap hits — deterministic throughout.
+        /// </summary>
+        private void Repair(List<PlannedDimension> dims, IReadOnlyList<Box2> obstacles, Stopwatch sw)
+        {
+            for (int pass = 0; pass < _cfg.MaxRepairPasses; pass++)
+            {
+                if (sw.ElapsedMilliseconds > _cfg.TimeCapMs) return;
+
+                var ranked = dims
+                    .Select(d => (d, s: _scorer.Score(d, obstacles, dims)))
+                    .Where(t => t.s.Hard > 1e-6 || t.s.Soft > 1e-6)
+                    .OrderByDescending(t => t.s.Hard)
+                    .ThenByDescending(t => t.s.Soft)
+                    .ThenBy(t => t.d.SourceKey, StringComparer.Ordinal)
+                    .Select(t => t.d)
+                    .ToList();
+
+                bool changed = false;
+                foreach (var d in ranked)
+                {
+                    if (sw.ElapsedMilliseconds > _cfg.TimeCapMs) return;
+
+                    DimSide origSide   = d.Side;
+                    double  origOffset = d.OffsetFt;
+                    var     best       = _scorer.Score(d, obstacles, dims);
+                    DimSide bestSide   = origSide;
+                    double  bestOffset = origOffset;
+
+                    foreach (var side in new[] { origSide, Flip(origSide) })
+                    {
+                        for (int step = 0; step < _cfg.MaxOffsetSteps; step++)
+                        {
+                            double offset = _cfg.FirstOffsetFt + step * _cfg.StringSpacingFt;
+                            if (side == origSide && Math.Abs(offset - origOffset) <= 1e-9) continue;
+
+                            d.Side     = side;
+                            d.OffsetFt = offset;
+                            ResolveSegments(d);
+                            DimGeometry.RecomputeBounds(d, _cfg);
+                            var s = _scorer.Score(d, obstacles, dims);
+
+                            bool better = s.Hard < best.Hard - 1e-9
+                                       || (Math.Abs(s.Hard - best.Hard) <= 1e-9 && s.Soft < best.Soft - 1e-9);
+                            if (better) { best = s; bestSide = side; bestOffset = offset; }
+                        }
+                    }
+
+                    d.Side     = bestSide;
+                    d.OffsetFt = bestOffset;
+                    ResolveSegments(d);
+                    DimGeometry.RecomputeBounds(d, _cfg);
+                    if (bestSide != origSide || Math.Abs(bestOffset - origOffset) > 1e-9) changed = true;
+                }
+
+                if (!changed) return;
             }
         }
 

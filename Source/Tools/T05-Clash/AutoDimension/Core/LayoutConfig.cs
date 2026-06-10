@@ -80,6 +80,21 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// (a drafter lets short text overhang instead) and rarely beats an inline/staggered tag.</summary>
         public double LeaderWeight { get; set; } = 40.0;
 
+        // ── Stacking / refinement ──────────────────────────────────────────────
+        /// <summary>Worst-first repair passes after the greedy passes (0 disables repair).</summary>
+        public int MaxRepairPasses { get; set; } = 3;
+
+        /// <summary>Pull near-level, span-disjoint same-axis strings onto one shared line
+        /// (NCS: "align dimensions in one line").</summary>
+        public bool AlignSharedRows { get; set; } = true;
+
+        /// <summary>Penalise un-staggered value texts on adjacent rows (ASME staggering
+        /// convention for stacked dimensions).</summary>
+        public bool StaggerStackedText { get; set; } = true;
+
+        /// <summary>Soft penalty per pair of along-axis-overlapping texts on adjacent rows.</summary>
+        public double StaggerWeight { get; set; } = 2.0;
+
         // ── Convergence ────────────────────────────────────────────────────────
         /// <summary>Hard cap on layout iterations (determinism + no runaway).</summary>
         public int MaxIterations { get; set; } = 50;
