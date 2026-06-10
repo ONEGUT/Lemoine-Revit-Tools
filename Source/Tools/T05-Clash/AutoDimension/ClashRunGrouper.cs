@@ -324,6 +324,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                          .ThenBy(m => m.text, StringComparer.Ordinal)
                          .Take(MaxNearMisses))
                 result.NearMisses.Add(m.text);
+            if (misses.Count > MaxNearMisses)
+                result.NearMisses.Add(
+                    $"…and {misses.Count - MaxNearMisses} more near-miss pair(s) not listed.");
         }
     }
 }
