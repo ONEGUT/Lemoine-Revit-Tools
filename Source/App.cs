@@ -62,6 +62,10 @@ namespace LemoineTools
         internal static ViewsBulkDuplicateRunHandler? ViewsBulkDuplicateRunHandler { get; private set; }
         internal static ExternalEvent?                ViewsBulkDuplicateRunEvent   { get; private set; }
 
+        // ── Bulk Rename (Sheets & Views) ─────────────────────────────────────────────
+        internal static LemoineTools.Tools.LinkViews.BulkRename.BulkRenameRunHandler? BulkRenameRunHandler { get; private set; }
+        internal static ExternalEvent?                BulkRenameRunEvent           { get; private set; }
+
         // ── Link Views — Discipline ─────────────────────────────────────────────────
         internal static LinkViewsDisciplineRunHandler? LinkViewsDisciplineRunHandler { get; private set; }
         internal static ExternalEvent?                 LinkViewsDisciplineRunEvent   { get; private set; }
@@ -149,6 +153,8 @@ namespace LemoineTools
             ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
             ViewsBulkDuplicateRunHandler = new ViewsBulkDuplicateRunHandler();
             ViewsBulkDuplicateRunEvent   = ExternalEvent.Create(ViewsBulkDuplicateRunHandler);
+            BulkRenameRunHandler = new LemoineTools.Tools.LinkViews.BulkRename.BulkRenameRunHandler();
+            BulkRenameRunEvent   = ExternalEvent.Create(BulkRenameRunHandler);
 
             // ── Link Views — Discipline ───────────────────────────────────────
             LinkViewsDisciplineRunHandler = new LinkViewsDisciplineRunHandler();
@@ -331,6 +337,11 @@ namespace LemoineTools
                 "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
                 "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
                 char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
+
+            linkViewsPanel.AddItem(Btn(
+                "LT_BulkRename", "Bulk\nRename", "BulkRenameCommand",
+                "Bulk-rename sheets or views via find & replace, prefix/suffix, sequential numbering, or token pattern.",
+                char.ConvertFromUtf32(0xE8AC)));  // Segoe MDL2: Rename
 
             // ── T04 — Modify Elements ─────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
