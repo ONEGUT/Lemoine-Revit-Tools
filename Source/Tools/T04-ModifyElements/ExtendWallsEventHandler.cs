@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -113,6 +114,8 @@ namespace LemoineTools.Tools.ModifyElements
                 int changed = 0;
                 int failed  = 0;
 
+                var progress = new RunProgressReporter(pushLog, candidates.Count, "walls");
+
                 using (var tx = new Transaction(doc, "Extend Walls to Next Level"))
                 {
                     var fho = tx.GetFailureHandlingOptions();
@@ -143,11 +146,16 @@ namespace LemoineTools.Tools.ModifyElements
                             failed++;
                             pushLog($"✗ Wall {wall.Id}: {ex.Message}", "fail");
                         }
+
+                        progress.Tick();
+                        onProgress(progress.Percent, changed, failed, skipped + alreadyCorrect);
                     }
 
                     tx.Commit();
                 }
 
+                pushLog($"Done — {changed} extended, {failed} failed, {skipped + alreadyCorrect} skipped/already correct.",
+                        failed > 0 ? "fail" : "pass");
                 onProgress(100, changed, failed, skipped + alreadyCorrect);
                 onComplete(changed, failed, skipped + alreadyCorrect);
             }

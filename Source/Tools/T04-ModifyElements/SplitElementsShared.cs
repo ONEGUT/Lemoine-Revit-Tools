@@ -126,7 +126,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByLevel(
             Document             doc,
             IEnumerable<Element> elements,
-            List<Level>          levels)
+            List<Level>          levels,
+            RunProgressReporter? progress = null)
         {
             var stats = new SplitStats();
 
@@ -150,6 +151,12 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                }
+                finally
+                {
+                    // Tick every element regardless of outcome so the 5% interval log
+                    // reflects true progress through the selection.
+                    progress?.Tick();
                 }
             }
 
@@ -175,7 +182,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByGrid(
             Document             doc,
             IEnumerable<Element> elements,
-            List<Grid?>          grids)
+            List<Grid?>          grids,
+            RunProgressReporter? progress = null)
         {
             var planes = grids
                 .Where(g => g != null)
@@ -183,7 +191,7 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "grids");
+            return SplitByPlanesCore(doc, elements, planes, "grids", progress);
         }
 
         /// <summary>
@@ -195,7 +203,8 @@ namespace LemoineTools.Tools.ModifyElements
         public static SplitStats SplitByReferencePlane(
             Document              doc,
             IEnumerable<Element>  elements,
-            List<ReferencePlane?> refPlanes)
+            List<ReferencePlane?> refPlanes,
+            RunProgressReporter?  progress = null)
         {
             var planes = refPlanes
                 .Where(r => r != null)
@@ -203,14 +212,15 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "reference planes");
+            return SplitByPlanesCore(doc, elements, planes, "reference planes", progress);
         }
 
         private static SplitStats SplitByPlanesCore(
             Document                       doc,
             IEnumerable<Element>           elements,
             List<(XYZ Normal, XYZ Origin)> planes,
-            string                         contextLabel)
+            string                         contextLabel,
+            RunProgressReporter?           progress = null)
         {
             var stats = new SplitStats();
 
@@ -238,6 +248,12 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                }
+                finally
+                {
+                    // Tick every element regardless of outcome so the 5% interval log
+                    // reflects true progress through the selection.
+                    progress?.Tick();
                 }
             }
 
@@ -295,7 +311,7 @@ namespace LemoineTools.Tools.ModifyElements
             if (successes == copies.Count)
             {
                 doc.Delete(wall.Id);
-                stats.Split($"Wall {wall.Id} → {copies.Count} segments");
+                stats.Split(copies.Count, $"Wall {wall.Id} → {copies.Count} segments");
             }
             else
             {
@@ -347,7 +363,7 @@ namespace LemoineTools.Tools.ModifyElements
             if (successes == copies.Count)
             {
                 doc.Delete(col.Id);
-                stats.Split($"Column {col.Id} → {copies.Count} segments");
+                stats.Split(copies.Count, $"Column {col.Id} → {copies.Count} segments");
             }
             else
             {
@@ -528,12 +544,12 @@ namespace LemoineTools.Tools.ModifyElements
             }
 
             if (success == segIds.Count)
-                stats.Split($"{el.Category?.Name} {el.Id} → {success} {splitKind} segment(s)");
+                stats.Split(success, $"{el.Category?.Name} {el.Id} → {success} {splitKind} segment(s)");
             else if (success > 0)
                 // Some sub-segments failed and were removed — the run is incomplete and
                 // can leave a gap along the original curve. Report it as such rather than
                 // a clean success so the user knows to check the result.
-                stats.Split($"{el.Category?.Name} {el.Id} → {success}/{segIds.Count} {splitKind} segment(s) (some failed — result may have a gap)");
+                stats.Split(success, $"{el.Category?.Name} {el.Id} → {success}/{segIds.Count} {splitKind} segment(s) (some failed — result may have a gap)");
             else
                 stats.Fail(el.Id.ToString(), "All segment curve assignments failed.");
         }
@@ -722,9 +738,17 @@ namespace LemoineTools.Tools.ModifyElements
     public sealed class SplitStats
     {
         /// <summary>
-        /// The number of elements that were successfully split into two or more segments.
+        /// The number of source elements that were successfully split into two or more segments.
         /// </summary>
         public int SplitCount { get; private set; }
+
+        /// <summary>
+        /// The tool's real deliverable: the total number of new segments created across all
+        /// elements (e.g. one wall split into 4 contributes 4). This is what the run reports
+        /// as "pass", so the headline count reflects what the tool produced, not how many
+        /// inputs it touched.
+        /// </summary>
+        public int SegmentsCreated { get; private set; }
 
         /// <summary>
         /// The number of elements that were skipped because they had no applicable split
@@ -748,8 +772,14 @@ namespace LemoineTools.Tools.ModifyElements
         /// <summary>
         /// Records a successful split and appends a ✓-prefixed message to <see cref="Log"/>.
         /// </summary>
+        /// <param name="segments">Number of new segments this element was split into.</param>
         /// <param name="msg">Description of what was split (e.g. "Wall 12345 → 3 segments").</param>
-        public void Split(string msg) { SplitCount++; _log.Add($"✓ {msg}"); }
+        public void Split(int segments, string msg)
+        {
+            SplitCount++;
+            SegmentsCreated += segments;
+            _log.Add($"✓ {msg}");
+        }
 
         /// <summary>
         /// Records a skipped element and appends a —-prefixed message to <see cref="Log"/>.
@@ -776,8 +806,8 @@ namespace LemoineTools.Tools.ModifyElements
         /// <returns>A formatted string suitable for display in a Revit task dialog.</returns>
         public string Summary(string opName) =>
             $"{opName} complete.\n\n" +
-            $"  Split:    {SplitCount}\n" +
-            $"  Skipped:  {SkipCount}\n" +
-            $"  Failed:   {FailCount}";
+            $"  Segments created: {SegmentsCreated}  (from {SplitCount} element(s))\n" +
+            $"  Skipped:          {SkipCount}\n" +
+            $"  Failed:           {FailCount}";
     }
 }

@@ -273,6 +273,7 @@ namespace LemoineTools.Tools.AutoFilters
                             catch (Exception ex)
                             {
                                 log.Add($"Swatch '{val}': {ex.Message}");
+                                fail++;
                             }
                         }
 
@@ -289,11 +290,13 @@ namespace LemoineTools.Tools.AutoFilters
                 }
 
                 tx.Commit();
-                pass++;
+                // Deliverable = swatch rows drawn, not a hardcoded 1 for the view.
+                pass += rowsDone;
             }
 
             foreach (var l in log) Log(l, "info");
-            Log($"Created legend view '{legendName}'  ({groups.Count} groups, {rows.Count} rows).", "pass");
+            Log($"Created legend view '{legendName}' — {pass} swatch row(s) drawn across "
+              + $"{groups.Count} group(s), {fail} failed.", fail > 0 ? "fail" : "pass");
         }
 
         // ── Helpers ─────────────────────────────────────────────────────────────

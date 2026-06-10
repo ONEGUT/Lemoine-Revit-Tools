@@ -17,8 +17,12 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable
+    public class LinkViewsLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Views by Level";
         public string RunLabel => "Create Views in Revit →";

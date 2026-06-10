@@ -151,6 +151,7 @@ Before implementing any workflow, check whether it is practical:
 - Settings windows auto-save on change (theme/size on click, tool fields via `ApplySettings`). Do not add an "Apply" button — persistence is implicit per control.
 - In a drag-able row, a name/label hit box must shrink to its text (`HorizontalAlignment.Left`), not fill the row — otherwise it covers the bar and blocks grabbing the row to drag it. The leftover space stays row background and remains drag-able; long names ellipsize at the column width.
 - Rounding tokens: tabs and pills use `LemoineRadius_Card` (10) to match the add-trade button; small chips/inputs stay on `SM` (3) / `MD` (4). Don't introduce ad-hoc radius literals.
+- When child items belong to listed parents (e.g. worksets under documents), nest the children under a per-parent **expand caret** in the parent list — not a separate, parallel picker. Deselecting a parent must auto-clear/disable its children so a selected child can never sit under an unselected parent. This was the explicit correction that replaced the clash source-document/workset "separate tabs" layout with an inline document tree.
 
 ---
 
@@ -256,6 +257,19 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 - A non-sheet `View` exposes **no** `SHEET_NUMBER` / `SHEET_NAME` parameters, so a sheet-token filename pattern (`{SheetNumber}-{SheetName}`) silently resolves to a degenerate name (e.g. `-`) for views, and every view collides on the same file. Name views from `view.Name` / `view.ViewType` instead, and offer a **mode-aware token vocabulary** (sheet tokens for sheets, view tokens for views) so only valid tokens are ever presented — never a silent fallback.
 - **A resolved filename that is empty or has no alphanumeric character is a failure, not a fallback.** Detect it and report through both the run log (`pushLog(..., "warn")`) and `LemoineLog.Warn(...)` before substituting a deterministic name (`element.Name`, else element id). Export tooling must be **equally viable for views and sheets**.
+- **Uniqueness differs by field.** Revit enforces uniqueness on **sheet numbers** (`SHEET_NUMBER`) and **view names** (`View.Name`) — both setters **throw** on a duplicate — but **sheet names are *not* unique**. A bulk rename/number tool must pre-check and **skip-and-log** collisions when rewriting sheet numbers or view names (against existing elements *and* earlier items in the same batch), while a sheet-*name* rewrite needs no uniqueness check. Even with the pre-check, wrap the actual `Set` / `Name =` in try/catch — a transient swap (A→B while B→A) still trips Revit's check and must be reported, not silently dropped.
+
+---
+
+## Viewports, Annotation Crop & Sheet Placement
+
+Discovered building **Place Dependent Views** (one sheet per parent view, its dependents packed on it).
+
+- **`doc.Regenerate()` recomputes the whole model — never call it per item in a loop.** It is the dominant cost of any bulk sheet/viewport tool. Do all mutations then regenerate once; regenerate per logical unit (e.g. per sheet) only when live progress matters more than raw speed. A single all-at-once regen also freezes the UI with no progress, so per-sheet regen reads as faster even when total work is similar — and offering a fast "estimate" mode (size from the crop box, skip the measure-regen) is worth it for expensive measure-based layout.
+- **`Viewport.GetBoxOutline()` / `GetLabelOutline()` are only valid after a `doc.Regenerate()` following `Viewport.Create`.** The box outline is the true on-sheet footprint (sheet feet) and **excludes** the viewport label; union with `GetLabelOutline()` if titles must not overlap. `Viewport.SetBoxCenter()` positions the box and needs **no** regen (the commit recomputes once). The only reliable way to know a placed view's size is place → regen → read outline; sizing from the crop box alone is an estimate.
+- **Trim a view's "bubbles"/annotations to its crop via the annotation crop, not by editing datum extents.** Enable `BuiltInParameter.VIEWER_ANNOTATION_CROP_ACTIVE` (with `CropBoxActive = true`), then set the four offsets on `view.GetCropRegionShapeManager()` — `Top/Bottom/Left/RightAnnotationCropOffset`. Offsets are **model feet**, so convert a desired paper gap with `view.Scale` (`modelFeet = paperFeet × Scale`). Revit **rejects 0 / negative** offsets — floor to a tiny positive value and wrap in try/catch (some view types can't carry an annotation crop) so a failure leaves the view untrimmed rather than aborting the run.
+- **Drawing area = the placed title block's bounding box**, read via `titleBlockInstance.get_BoundingBox(sheet)` (valid only after a regen), minus per-side margins. Every sheet using the same title block type shares the same area — read it once and reuse.
+- **Writing a value to a sheet's shared parameter by name is unreliable — KNOWN UNRESOLVED for the Sheet Series field.** `LookupParameter(name)` returns only the **first** name match and silently picks the wrong duplicate; `Element.GetParameters(name)` returns all matches (prefer a writable, String-storage, `IsShared` one), but even that did **not** reliably populate the shared "Sheet Series" parameter in testing. The robust fix (deferred) is to bind by **shared-parameter GUID** via `element.get_Parameter(Guid)`. Do not assume the Sheet Series write works.
 
 ---
 
@@ -328,6 +342,7 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | `Document.Create.NewSpotElevation(view, ref, …)` with no real geometry reference | The `Reference` must come from actual geometry — anchor it to a detail line via `CurveElement.GeometryCurve.Reference` (fallback `new Reference(element)`) |
 | Read a value to filter on via the **property-palette display** (`LookupParameter`) | Read it through the **same built-in the filter binds** — a view filter's string-rule keyword is compared against the *bound* parameter's value, not the palette. The palette "Fabrication Service" is a composite (`<abbreviation>: <name>`, e.g. `DVG - MP: Chilled Water Supply`) but `FABRICATION_SERVICE_NAME` holds only the name (`Chilled Water Supply`), so a keyword carrying the prefix never matches |
 | String filter rule against an **ElementId-storage** parameter (e.g. `ELEM_FAMILY_PARAM`) | `ParameterFilterRuleFactory.CreateContainsRule`/string rules require **String storage** — an ElementId param throws and the keyword is silently dropped (filter never created). For a string Family Name filter bind `ALL_MODEL_FAMILY_NAME`, not `ELEM_FAMILY_PARAM` |
+| `Element.WorksetId.Value` to read a workset id | `WorksetId.IntegerValue` (an `int`) — `WorksetId` still uses `IntegerValue`, unlike `ElementId.Value` (a `long`) used everywhere else in 2024. Worksharing reads: guard with `doc.IsWorkshared`, enumerate user worksets via `new FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset)`, and read an element's workset with `Element.WorksetId`. A link's worksets live in its own `GetLinkDocument()`, so read/scan them there, not the host |
 
 ---
 

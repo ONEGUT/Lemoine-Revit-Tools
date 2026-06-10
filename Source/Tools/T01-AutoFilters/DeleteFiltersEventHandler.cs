@@ -52,6 +52,15 @@ namespace LemoineTools.Tools.AutoFilters
                     .Select(n => appliedFilters[n])
                     .ToList();
 
+                // Selected filters that aren't applied to this view can't be removed — count
+                // them as skipped rather than dropping them silently, so pass+fail+skip
+                // accounts for every filter the user selected.
+                foreach (var n in SelectedFilterNames.Where(n => !appliedFilters.ContainsKey(n)))
+                {
+                    Log($"— '{n}' is not applied to this view — skipped.", "info");
+                    skip++;
+                }
+
                 int total = toRemove.Count;
                 int done  = 0;
 
@@ -82,7 +91,8 @@ namespace LemoineTools.Tools.AutoFilters
                     tx.Commit();
                 }
 
-                Log($"Complete — {pass} removed, {fail} failed.", "pass");
+                Log($"Complete — {pass} removed, {fail} failed, {skip} skipped (not on this view).",
+                    fail > 0 ? "fail" : "pass");
             }
             catch (Exception ex)
             {

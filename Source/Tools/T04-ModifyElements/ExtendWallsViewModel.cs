@@ -12,8 +12,12 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class ExtendWallsViewModel : ILemoineTool, ILemoineReviewable
+    public class ExtendWallsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "walls";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         public string Title    => "Extend Walls to Level";
         public string RunLabel => "Extend in Revit →";
 

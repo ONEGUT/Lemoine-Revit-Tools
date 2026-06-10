@@ -124,8 +124,12 @@ namespace LemoineTools.Tools.LinkViews
     /// scheme, and trigger the run handler that creates dependents on each target inside a
     /// Revit transaction.
     /// </summary>
-    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable
+    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Identity ──────────────────────────────────────────────────
         /// <summary>Gets the title displayed in the step-flow window header.</summary>
         public string Title    => "Bulk Dependent Views";
