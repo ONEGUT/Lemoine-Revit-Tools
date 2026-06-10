@@ -80,6 +80,8 @@ namespace LemoineTools.Tools.Clash
                             MaxClashes        = def.MaxClashes,
                             StoreyMarginMm    = StoreyMarginMm,
                             RoundSizeMm       = RoundSizeMm,
+                            PhaseMode         = def.PhaseMode,
+                            SpecificPhaseName = def.SpecificPhaseName,
                         };
                         var engine = new ClashEngine(opts, (t, s) => Log(t, s));
                         var det = engine.Detect(doc, EffectiveSpec(def.Group1), EffectiveSpec(def.Group2));

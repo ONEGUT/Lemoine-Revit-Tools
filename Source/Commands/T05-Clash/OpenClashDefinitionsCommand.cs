@@ -59,6 +59,17 @@ namespace LemoineTools.Commands
                 }
             }
 
+            // Host phase names in sequence order (for the Specific-phase dropdown).
+            var phaseNames = new List<string>();
+            if (doc != null)
+            {
+                try
+                {
+                    foreach (Phase ph in doc.Phases) phaseNames.Add(ph.Name);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("OpenClashDefinitionsCommand: read host phases", ex); }
+            }
+
             // Source documents available to each clash group (host + each loaded link),
             // each carrying its user worksets for the per-document workset checklist.
             var docs = new List<ClashDocInfo>();
@@ -90,7 +101,7 @@ namespace LemoineTools.Commands
             var thread = new Thread(() =>
             {
                 win = new ClashDefinitionsWindow();
-                win.SetContext(lineStyleNames, docs, App.ClashPickHandler, App.ClashPickEvent);
+                win.SetContext(lineStyleNames, docs, phaseNames, App.ClashPickHandler, App.ClashPickEvent);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

@@ -20,6 +20,8 @@ namespace LemoineTools.Tools.Clash
         public int    MaxClashes;
         public double StoreyMarginMm;     // depth below a level still counted as its storey (slabs/structure)
         public double RoundSizeMm;        // marker oversize margin added to the Group 1 element size; 0 = exact
+        public string PhaseMode;          // "All" (null/empty = All) | "MatchView" | "Specific"
+        public string SpecificPhaseName;  // host phase name, used only when PhaseMode == "Specific"
         public bool   ElevationMode;      // true → draw the round in the view's vertical plane (sections/elevations)
                                           // with a single tagged diameter line for the spot-elevation pass
     }
@@ -83,6 +85,10 @@ namespace LemoineTools.Tools.Clash
             public double             HeightFt;      // round: diameter; rectangular: height; 0 = unknown
             public XYZ?               WidthDir;      // world unit vector of the rectangular width axis (null → view-aligned)
             public XYZ?               HeightDir;     // world unit vector of the rectangular height axis
+            // Phase names read in the element's OWN document ("" = none/unread). Linked-model
+            // phases are mapped to the host by NAME against ClashDetection.HostPhaseSeq.
+            public string             CreatedPhaseName    = "";
+            public string             DemolishedPhaseName = "";
         }
 
         internal class ClashResult
@@ -106,6 +112,12 @@ namespace LemoineTools.Tools.Clash
             internal List<double> LevelElevs = new List<double>();
             internal double StoreyMarginFt;
             internal double ToleranceFt;
+            /// <summary>Host phase name → sequence index, in phase order. The host timeline is
+            /// the source of truth for every phase comparison (a view phase is a host phase);
+            /// link phases match it by name. Built once in Detect, like LevelElevs.</summary>
+            internal Dictionary<string, int> HostPhaseSeq = new Dictionary<string, int>(StringComparer.Ordinal);
+            /// <summary>Phase names already warned about as unmapped — one log line per name.</summary>
+            internal HashSet<string> WarnedPhaseNames = new HashSet<string>(StringComparer.Ordinal);
             /// <summary>True when detection could not run (a group produced no elements).</summary>
             public bool Failed { get; internal set; }
             /// <summary>Distinct clashes detected, model-wide.</summary>
@@ -159,6 +171,15 @@ namespace LemoineTools.Tools.Clash
                 sources.Add((ld, li, li.GetTotalTransform()));
             }
 
+            // Host phase timeline (name → sequence), used by both phase modes. Built up front,
+            // like LevelElevs — link phase names are compared against this host sequence.
+            try
+            {
+                foreach (Phase ph in doc.Phases)
+                    det.HostPhaseSeq[ph.Name] = det.HostPhaseSeq.Count;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read host phases", ex); }
+
             // 2. Scan each group per its mode
             var group1Elements = ScanGroupSpec(group1Spec, sources, "Group 1");
             var group2Elements = ScanGroupSpec(group2Spec, sources, "Group 2");
@@ -174,6 +195,32 @@ namespace LemoineTools.Tools.Clash
             {
                 Log("Group 2 produced no elements — check its mode, selection, and source documents.", "fail");
                 det.Failed = true; return det;
+            }
+
+            // 2b. Specific-phase mode: cull both groups to the chosen host phase BEFORE the
+            // boolean-intersection pass (the cheap scoping/performance path). An unknown phase
+            // name is passed through + logged — never a silent drop.
+            if (string.Equals(_opts.PhaseMode, "Specific", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!det.HostPhaseSeq.TryGetValue(_opts.SpecificPhaseName ?? "", out int targetSeq))
+                {
+                    Log($"Phase filter: host phase '{_opts.SpecificPhaseName}' not found in this document — "
+                      + "phase filtering skipped for this run.", "fail");
+                }
+                else
+                {
+                    int b1 = group1Elements.Count, b2 = group2Elements.Count;
+                    group1Elements = group1Elements.Where(e => PhasePresent(e, targetSeq, det)).ToList();
+                    group2Elements = group2Elements.Where(e => PhasePresent(e, targetSeq, det)).ToList();
+                    Log($"Phase '{_opts.SpecificPhaseName}': kept {group1Elements.Count}/{b1} Group 1 and "
+                      + $"{group2Elements.Count}/{b2} Group 2 element(s).", "info");
+                    if (group1Elements.Count == 0 || group2Elements.Count == 0)
+                    {
+                        Log($"No {(group1Elements.Count == 0 ? "Group 1" : "Group 2")} element exists in phase "
+                          + $"'{_opts.SpecificPhaseName}' — nothing to clash.", "fail");
+                        det.Failed = true; return det;
+                    }
+                }
             }
 
             // 3. Find clashes
@@ -219,10 +266,31 @@ namespace LemoineTools.Tools.Clash
             var pr = new PlacementResult();
             if (det == null || det.Failed || det.Clashes.Count == 0) return pr;
 
+            // Phase gate (Match view phase) — a sibling of the volume gate: resolve this view's
+            // phase once, then a clash marks here only when BOTH its elements exist in it. A view
+            // without a phase, or a phase missing from the host sequence, passes through + logs.
+            bool phaseGated = false;
+            int  phaseSeq   = -1;
+            if (string.Equals(_opts.PhaseMode, "MatchView", StringComparison.OrdinalIgnoreCase))
+            {
+                string viewPhase = ReadViewPhaseName(view);
+                if (viewPhase.Length == 0)
+                    Log($"View '{view.Name}': no phase parameter — phase gate skipped for this view.", "info");
+                else if (!det.HostPhaseSeq.TryGetValue(viewPhase, out phaseSeq))
+                    Log($"View '{view.Name}': phase '{viewPhase}' not in the host phase sequence — phase gate skipped for this view.", "info");
+                else
+                    phaseGated = true;
+            }
+
             bool gated = TryGetViewWorldBox(view, det.LevelElevs, det.StoreyMarginFt, out BoundingBoxXYZ box);
+            int volumeSkipped = 0, phaseSkipped = 0;
             foreach (var clash in det.Clashes)
             {
-                if (gated && !BBoxOverlapTol(clash.OverlapBBox, box, det.ToleranceFt)) { pr.Skipped++; continue; }
+                if (gated && !BBoxOverlapTol(clash.OverlapBBox, box, det.ToleranceFt))
+                { pr.Skipped++; volumeSkipped++; continue; }
+                if (phaseGated && (!PhasePresent(clash.Group1, phaseSeq, det)
+                                || !PhasePresent(clash.Group2, phaseSeq, det)))
+                { pr.Skipped++; phaseSkipped++; continue; }
                 try
                 {
                     if (CreateClashGraphics(doc, view, clash, det.LineStyleId, det.ToleranceFt, regionTypeCache))
@@ -235,8 +303,10 @@ namespace LemoineTools.Tools.Clash
                 }
             }
 
-            if (pr.Skipped > 0)
-                Log($"View '{view.Name}': {pr.Skipped} clash(es) outside the view volume — skipped.", "info");
+            if (volumeSkipped > 0)
+                Log($"View '{view.Name}': {volumeSkipped} clash(es) outside the view volume — skipped.", "info");
+            if (phaseSkipped > 0)
+                Log($"View '{view.Name}': {phaseSkipped} clash(es) not in this view's phase — skipped.", "info");
             return pr;
         }
 
@@ -327,6 +397,83 @@ namespace LemoineTools.Tools.Clash
             return a.Min.X <= b.Max.X + tol && a.Max.X >= b.Min.X - tol
                 && a.Min.Y <= b.Max.Y + tol && a.Max.Y >= b.Min.Y - tol
                 && a.Min.Z <= b.Max.Z + tol && a.Max.Z >= b.Min.Z - tol;
+        }
+
+        // ── Phase filtering ───────────────────────────────────────────────────
+        /// <summary>True when a phase mode that needs per-element phase names is active —
+        /// gates the (otherwise wasted) parameter reads during scanning.</summary>
+        private bool PhaseFilteringActive =>
+            string.Equals(_opts.PhaseMode, "MatchView", StringComparison.OrdinalIgnoreCase)
+         || string.Equals(_opts.PhaseMode, "Specific",  StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Phase Created / Phase Demolished NAMES of an element, resolved in its own
+        /// document ("" = none). Names (not ids) so linked-model phases can be matched against
+        /// the host timeline. Never throws.</summary>
+        private static (string created, string demolished) ReadElementPhases(Element el)
+        {
+            string created = "", demolished = "";
+            try
+            {
+                var pc = el.get_Parameter(BuiltInParameter.PHASE_CREATED);
+                if (pc != null && pc.StorageType == StorageType.ElementId
+                    && el.Document.GetElement(pc.AsElementId()) is Phase phC)
+                    created = phC.Name ?? "";
+
+                var pd = el.get_Parameter(BuiltInParameter.PHASE_DEMOLISHED);
+                if (pd != null && pd.StorageType == StorageType.ElementId
+                    && el.Document.GetElement(pd.AsElementId()) is Phase phD)
+                    demolished = phD.Name ?? "";
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element phases", ex); }
+            return (created, demolished);
+        }
+
+        /// <summary>Phase name of a view ("" when the view has none). Never throws.</summary>
+        private static string ReadViewPhaseName(View view)
+        {
+            try
+            {
+                var p = view.get_Parameter(BuiltInParameter.VIEW_PHASE);
+                if (p != null && p.StorageType == StorageType.ElementId
+                    && view.Document.GetElement(p.AsElementId()) is Phase ph)
+                    return ph.Name ?? "";
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read view phase", ex); }
+            return "";
+        }
+
+        /// <summary>
+        /// "Exists in the target host phase": created at or before it, and not demolished at or
+        /// before it. A blank phase (element has none) or a name absent from the host sequence
+        /// passes through — logged once per name, never silently dropped.
+        /// </summary>
+        private bool PhasePresent(ClashElement e, int targetSeq, ClashDetection det)
+        {
+            if (e.CreatedPhaseName.Length > 0)
+            {
+                if (det.HostPhaseSeq.TryGetValue(e.CreatedPhaseName, out int createdSeq))
+                {
+                    if (createdSeq > targetSeq) return false;      // not yet created in this phase
+                }
+                else WarnUnmappedPhase(det, e.CreatedPhaseName);
+            }
+            if (e.DemolishedPhaseName.Length > 0)
+            {
+                if (det.HostPhaseSeq.TryGetValue(e.DemolishedPhaseName, out int demoSeq))
+                {
+                    if (demoSeq <= targetSeq) return false;        // already demolished by this phase
+                }
+                else WarnUnmappedPhase(det, e.DemolishedPhaseName);
+            }
+            return true;
+        }
+
+        private void WarnUnmappedPhase(ClashDetection det, string phaseName)
+        {
+            if (!det.WarnedPhaseNames.Add(phaseName)) return;
+            Log($"Phase filter: phase '{phaseName}' (from a linked model) has no same-named host phase — "
+              + "its elements pass through unfiltered.", "info");
+            LemoineLog.Warn("ClashEngine phase filter", $"unmapped phase name '{phaseName}'");
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────
@@ -431,6 +578,7 @@ namespace LemoineTools.Tools.Clash
                             var bb = GetHostBBox(el, tx);
                             if (bb == null) continue;
                             var sh = ComputeElementShape(el, tx);
+                            var (phC, phD) = PhaseFilteringActive ? ReadElementPhases(el) : ("", "");
 
                             result.Add(new ClashElement
                             {
@@ -446,6 +594,8 @@ namespace LemoineTools.Tools.Clash
                                 HeightFt      = sh.H,
                                 WidthDir      = sh.WDir,
                                 HeightDir     = sh.HDir,
+                                CreatedPhaseName    = phC,
+                                DemolishedPhaseName = phD,
                             });
                             srcCount++;
                         }
@@ -491,6 +641,7 @@ namespace LemoineTools.Tools.Clash
                         if (bb == null) continue;
                         string? ruleColor = ResolveRuleColor(el);
                         var sh = ComputeElementShape(el, tx);
+                        var (phC, phD) = PhaseFilteringActive ? ReadElementPhases(el) : ("", "");
                         result.Add(new ClashElement
                         {
                             Doc           = srcDoc,
@@ -506,6 +657,8 @@ namespace LemoineTools.Tools.Clash
                             HeightFt      = sh.H,
                             WidthDir      = sh.WDir,
                             HeightDir     = sh.HDir,
+                            CreatedPhaseName    = phC,
+                            DemolishedPhaseName = phD,
                         });
                         srcCount++;
                     }
@@ -536,6 +689,7 @@ namespace LemoineTools.Tools.Clash
 
                 string? ruleColor = ResolveRuleColor(el);
                 var sh = ComputeElementShape(el, src.tx);
+                var (phC, phD) = PhaseFilteringActive ? ReadElementPhases(el) : ("", "");
                 result.Add(new ClashElement
                 {
                     Doc           = src.doc,
@@ -551,6 +705,8 @@ namespace LemoineTools.Tools.Clash
                     HeightFt      = sh.H,
                     WidthDir      = sh.WDir,
                     HeightDir     = sh.HDir,
+                    CreatedPhaseName    = phC,
+                    DemolishedPhaseName = phD,
                 });
             }
             Log($"  Picked elements resolved: {result.Count}", "info");

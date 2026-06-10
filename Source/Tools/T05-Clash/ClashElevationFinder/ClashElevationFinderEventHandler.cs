@@ -84,6 +84,8 @@ namespace LemoineTools.Tools.Testing
                                 MaxClashes        = def.MaxClashes,
                                 StoreyMarginMm    = 0.0,        // no plan storey band — section/elevation views gate on their own crop
                                 RoundSizeMm       = RoundSizeMm,
+                                PhaseMode         = def.PhaseMode,
+                                SpecificPhaseName = def.SpecificPhaseName,
                                 ElevationMode     = true,
                             };
 
