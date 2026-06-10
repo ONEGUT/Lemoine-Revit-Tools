@@ -63,6 +63,9 @@ namespace LemoineTools.Lemoine
                 new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
                                  Desc = "Merge collinear clashes that sit close together into one multi-segment string.",
                                  DefaultOn = cfg.ChainAligned },
+                new ToggleItem { Id = "density", Label = "Auto-chain dense areas",
+                                 Desc = "Clashes packed tighter than their value texts collapse into one chained string per axis, split by nearest reference — instead of overlapping solo dimensions.",
+                                 DefaultOn = cfg.DensityChaining },
                 new ToggleItem { Id = "bothAxes", Label = "Dimension both axes",
                                  Desc = "Measure each clash in the view's X and Y directions (two dimensions per clash).",
                                  DefaultOn = cfg.DimensionBothAxes },
@@ -75,7 +78,8 @@ namespace LemoineTools.Lemoine
             });
             runToggles.StateChanged += state =>
             {
-                if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned     = c;
+                if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned      = c;
+                if (state.TryGetValue("density",  out var dc)) cfg.DensityChaining  = dc;
                 if (state.TryGetValue("bothAxes", out var b)) cfg.DimensionBothAxes = b;
                 if (state.TryGetValue("links",    out var l)) cfg.IncludeLinks      = l;
                 if (state.TryGetValue("slabDiag", out var d)) cfg.DiagnoseSlabEdge  = d;

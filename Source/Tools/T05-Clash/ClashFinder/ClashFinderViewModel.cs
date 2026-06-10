@@ -80,7 +80,7 @@ namespace LemoineTools.Tools.Clash
 
         private bool _clearPrevious    = true;
         private bool _showAllDocuments = false;
-        private bool _runDimensionPass = false;
+        private bool _runDimensionPass = true;   // dimensioning is the point — on by default
         private double _storeyMarginMm = 609.6;   // 2 ft: sub-floor depth still counted as a level's storey
         private double _roundSizeMm    = 0.0;     // round marker oversize; 0 = exact element size
 

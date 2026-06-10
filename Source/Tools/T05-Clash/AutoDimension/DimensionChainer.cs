@@ -25,6 +25,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>The run's principal (long) axis. Measurement axes parallel to this chain
         /// along the run; axes perpendicular to it collapse to one representative dimension.</summary>
         public Core.Vec2 RunLongAxis { get; set; } = new Core.Vec2(1, 0);
+
+        /// <summary>True for members of an oversaturated density cluster: chain on EVERY axis
+        /// (no along/across distinction, no representative collapse), and split the cluster's
+        /// chains by resolved target so members halfway between two references go to the
+        /// nearer one (see <see cref="DensityClusterer"/>).</summary>
+        public bool ForceChain { get; set; }
     }
 
     /// <summary>
@@ -54,10 +60,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // Group by run, then by measurement axis. Each (run, axis) group becomes either a
             // chained string (axis runs along the run) or one representative dimension (axis runs
             // across the run). A chained string deliberately relates the whole run to ONE shared edge
-            // (majority-voted in ChooseTarget). Deterministic ordering throughout.
+            // (majority-voted in ChooseTarget). Dense-cluster members (ForceChain) additionally split
+            // by their own resolved target, so a cluster between two references yields one chain to
+            // each — and they chain on BOTH axes. Deterministic ordering throughout.
             var byKey = items
-                .GroupBy(it => (it.RunId, AxisTag(it.Axis)))
-                .OrderBy(g => g.Key.Item1, StringComparer.Ordinal).ThenBy(g => g.Key.Item2, StringComparer.Ordinal);
+                .GroupBy(it => (it.RunId, AxisTag(it.Axis), it.ForceChain ? it.TargetKey : ""))
+                .OrderBy(g => g.Key.Item1, StringComparer.Ordinal)
+                .ThenBy(g => g.Key.Item2, StringComparer.Ordinal)
+                .ThenBy(g => g.Key.Item3, StringComparer.Ordinal);
 
             foreach (var g in byKey)
             {
@@ -67,8 +77,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 Core.Vec2 longAxis = group[0].RunLongAxis.Normalized();
 
                 // Along the run when the measurement axis is more parallel to the run's long axis
-                // than to its cross axis; otherwise across.
-                bool along = Math.Abs(axis.Dot(longAxis)) >= Math.Abs(axis.Dot(longAxis.Perp()));
+                // than to its cross axis; otherwise across. Dense clusters chain regardless.
+                bool along = group[0].ForceChain
+                          || Math.Abs(axis.Dot(longAxis)) >= Math.Abs(axis.Dot(longAxis.Perp()));
 
                 // One shared target for the whole group (majority vote) — adjacent members that the
                 // resolver pinned to slightly different faces are pulled onto the same edge, which is
@@ -170,16 +181,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         {
             // The whole run shares one target line → constant target axial.
             double tgtA = target.Point.Dot(axis);
+            double tgtPerp = target.Point.Dot(perp);
             Reference targetRef = target.Ref;
             double basePerp = run.Average(it => it.Source2d.Dot(perp));
 
             // Merge member sources + the single target, sorted along the axis, de-duping coincident
-            // axial positions (a zero-length segment would be rejected by Revit).
-            var refsByAxial = new List<(Reference r, double a)>();
-            foreach (var it in run) refsByAxial.Add((it.SourceRef, it.Source2d.Dot(axis)));
-            refsByAxial.Add((targetRef, tgtA));
+            // axial positions (a zero-length segment would be rejected by Revit). Each reference
+            // keeps its TRUE perpendicular coordinate, so a dense cluster's scattered members get
+            // witness lines modelled from where they actually are — not flattened onto the run line.
+            var refsByAxial = new List<(Reference r, double a, double p)>();
+            foreach (var it in run) refsByAxial.Add((it.SourceRef, it.Source2d.Dot(axis), it.Source2d.Dot(perp)));
+            refsByAxial.Add((targetRef, tgtA, tgtPerp));
 
-            var deduped = new List<(Reference r, double a)>();
+            var deduped = new List<(Reference r, double a, double p)>();
             foreach (var ra in refsByAxial.OrderBy(t => t.a))
                 if (deduped.Count == 0 || Math.Abs(ra.a - deduped[deduped.Count - 1].a) > cfg.PrecisionFt)
                     deduped.Add(ra);
@@ -210,7 +224,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 AxisDir     = axis,
                 Side        = Core.DimSide.Positive,
                 OffsetFt    = cfg.FirstOffsetFt,
-                RefAnchors  = deduped.Select(t => axis * t.a + perp * basePerp).ToList(),
+                RefAnchors  = deduped.Select(t => axis * t.a + perp * t.p).ToList(),
                 Segments    = segments,
             });
             result.Refs[key] = new PlannedRefBundle { Ordered = deduped.Select(t => t.r).ToList() };

@@ -130,6 +130,22 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                                  + "which distance kept them apart (tune group reach / line tolerance).");
             }
 
+            // ── 1c. Oversaturated areas: clashes packed tighter than their value texts get
+            // collapsed into one chain per axis (split by nearest reference) — solo strings
+            // are unplaceable there by construction (their witness forests cross everything).
+            // Link radius = the nominal value-text width (~8 glyphs) at this view's scale.
+            double nominalTextFt = coreCfg.TextHeightFt * 4.8;
+            var density = cfg.DensityChaining
+                ? DensityClusterer.Build(sources, nominalTextFt, minCount: 4)
+                : new DensityClusterer.Result();
+            if (cfg.DensityChaining && density.ClusterCount > 0)
+            {
+                _log($"Density: {density.ClusterByKey.Count} clash(es) in {density.ClusterCount} oversaturated "
+                   + $"area(s) (link ≤{nominalTextFt:0.#} ft) — chaining per axis, split by nearest reference.", "info");
+                foreach (var s in density.Summaries) _log(s, "info");
+                plan.Notes.Add($"{density.ClusterCount} dense area(s) collapsed into per-axis chains.");
+            }
+
             var resolved        = new List<ResolvedItem>();
             var resolvedSources = new HashSet<string>();
             var firstFailReason = new Dictionary<string, string>();   // sourceKey → reason, used only if no axis resolved
@@ -144,8 +160,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     var res = resolver.Resolve(src, ctx);
                     if (res.Success)
                     {
-                        // A clash with no clustered run is its own solo run (one dim per axis).
+                        // Dense-cluster members chain per axis under their cluster id; otherwise a
+                        // clash with no clustered run is its own solo run (one dim per axis).
                         runs.TryGetValue(src.SourceKey, out var run);
+                        bool dense = density.ClusterByKey.TryGetValue(src.SourceKey, out var clusterId);
                         resolved.Add(new ResolvedItem
                         {
                             SourceKey   = src.SourceKey,
@@ -156,8 +174,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                             Target2d    = res.TargetPoint2d,
                             TargetKey   = res.TargetKey,
                             TargetType  = ttEnum,
-                            RunId       = run?.RunId ?? ("solo|" + src.SourceKey),
+                            RunId       = dense ? "dense|" + clusterId
+                                                : run?.RunId ?? ("solo|" + src.SourceKey),
                             RunLongAxis = run?.LongAxis ?? new Core.Vec2(1, 0),
+                            ForceChain  = dense,
                         });
                         resolvedSources.Add(src.SourceKey);
                     }

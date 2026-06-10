@@ -64,14 +64,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                                    lineBox.MaxX + padX, lineBox.MaxY + padY);
             Box2 bounds = an.LineBand;
 
-            // ── Witness lines: anchor (+gap) → dimension line (+overshoot) ────
+            // ── Witness lines: anchor (+gap) → just past the dimension LINE LEVEL ──
+            // Each anchor keeps its true position (a dense-cluster chain has members scattered
+            // off the run line), so the witness runs from the anchor toward the line — whichever
+            // side of it the anchor sits on — and overshoots 1/8" beyond it.
             if (d.RefAnchors != null)
             {
                 foreach (var r in d.RefAnchors)
                 {
+                    double anchorPerp = r.Dot(perp);
+                    double dir = lineLevel >= anchorPerp ? 1.0 : -1.0;
                     var w = new Seg2(
-                        r + perp * (sign * cfg.WitnessGapFt),
-                        r + perp * (sign * (d.OffsetFt + cfg.WitnessOvershootFt)));
+                        r + perp * (dir * cfg.WitnessGapFt),
+                        axis * r.Dot(axis) + perp * (lineLevel + dir * cfg.WitnessOvershootFt));
                     an.Witnesses.Add(w);
                     bounds = bounds.Union(w.Bounds);
                 }

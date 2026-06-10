@@ -36,6 +36,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// dimension across it. Off = one dimension per clash per axis.</summary>
         public bool ChainAligned { get; set; } = true;
 
+        /// <summary>Collapse oversaturated areas (clashes packed tighter than their value texts)
+        /// into one chained string per axis, split by nearest reference — instead of a forest of
+        /// solo dimensions whose witness lines cross everything. Default on.</summary>
+        public bool DensityChaining { get; set; } = true;
+
         /// <summary>Max along-run gap between adjacent clashes that still belong to one run (mm).
         /// Wide enough that penetrations spread across a bay stay one run to the edge, like the
         /// manual; tight enough that a separate run further along starts its own dimension. Default

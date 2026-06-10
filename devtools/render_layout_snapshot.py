@@ -86,11 +86,16 @@ def main():
         prims.append(("line", (sx + ox, sy + oy, tx + ox, ty + oy, col, 2.0, tip), d))
         track(sx + ox, sy + oy); track(tx + ox, ty + oy)
 
-        # witnesses + anchors
+        # witnesses + anchors (anchor-aware: each witness runs from the anchor's true
+        # position toward the dimension line level, whichever side it sits on)
         anchors = [(f(p, "X"), f(p, "Y")) for p in d.findall("RefAnchors/P")]
         for (rx, ry) in anchors:
-            w0 = (rx + px * sign * wgap, ry + py * sign * wgap)
-            w1 = (rx + px * sign * (off + wover), ry + py * sign * (off + wover))
+            rp = rx * px + ry * py
+            dw = 1.0 if line_level >= rp else -1.0
+            ra = rx * ax + ry * ay
+            w0 = (rx + px * dw * wgap, ry + py * dw * wgap)
+            w1 = (ax * ra + px * (line_level + dw * wover),
+                  ay * ra + py * (line_level + dw * wover))
             prims.append(("line", (*w0, *w1, TEAL, 1.1, None), d))
             prims.append(("dot", (rx, ry, TEAL), d))
             track(*w1)
