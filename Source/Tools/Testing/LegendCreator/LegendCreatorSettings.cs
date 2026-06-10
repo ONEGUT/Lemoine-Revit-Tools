@@ -31,14 +31,37 @@ namespace LemoineTools.Tools.Testing.LegendCreator
         [XmlAttribute] public double SwatchW  { get; set; } = 0.25;
         [XmlAttribute] public double SwatchH  { get; set; } = 0.13;
         [XmlAttribute] public int    FontPt   { get; set; } = 9;
-        [XmlAttribute] public double Gap      { get; set; } = 0.08;
+
+        // Spacing (paper inches). The old single "Gap" meant the vertical row gap in the
+        // preview but the horizontal swatch→label gap in the output — the same control
+        // changed two different dimensions. These three name each dimension explicitly.
+        /// <summary>Vertical gap between stacked rows of groups.</summary>
+        [XmlAttribute] public double RowGap        { get; set; } = 0.30;
+        /// <summary>Horizontal gap between adjacent group columns within a row.</summary>
+        [XmlAttribute] public double ColGap        { get; set; } = 0.30;
+        /// <summary>Horizontal gap between a swatch and its label.</summary>
+        [XmlAttribute] public double SwatchLabelGap { get; set; } = 0.08;
+
+        // Legacy single gap: read from old XML for migration, never written back.
+        [XmlAttribute("Gap")] public double LegacyGap { get; set; } = double.NaN;
+        public bool ShouldSerializeLegacyGap() => false;
 
         public void Normalize()
         {
-            if (SwatchW > 5 || SwatchH > 5 || Gap > 3)
+            // Migrate an old file's single Gap into the swatch→label gap (its output meaning),
+            // seeding the new vertical/horizontal gaps with sensible defaults.
+            if (!double.IsNaN(LegacyGap))
             {
-                SwatchW = 0.25; SwatchH = 0.13; Gap = 0.08;
+                SwatchLabelGap = LegacyGap;
+                if (RowGap <= 0) RowGap = 0.30;
+                if (ColGap <= 0) ColGap = 0.30;
+                LegacyGap = double.NaN;
             }
+
+            if (SwatchW > 5 || SwatchH > 5) { SwatchW = 0.25; SwatchH = 0.13; }
+            if (SwatchLabelGap > 3 || SwatchLabelGap < 0) SwatchLabelGap = 0.08;
+            if (RowGap > 5 || RowGap <= 0) RowGap = 0.30;
+            if (ColGap > 5 || ColGap <= 0) ColGap = 0.30;
             if (ViewScale <= 0) ViewScale = 48;
         }
 
@@ -47,7 +70,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             Title = Title, Subtitle = Subtitle,
             ViewScale = ViewScale,
             SwatchW = SwatchW, SwatchH = SwatchH,
-            FontPt = FontPt, Gap = Gap,
+            FontPt = FontPt,
+            RowGap = RowGap, ColGap = ColGap, SwatchLabelGap = SwatchLabelGap,
         };
     }
 
@@ -302,7 +326,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         Title    = "Filter Legend",
                         Subtitle = "",
                         ViewScale = 48,
-                        SwatchW = 0.25, SwatchH = 0.13, FontPt = 9, Gap = 0.08,
+                        SwatchW = 0.25, SwatchH = 0.13, FontPt = 9,
+                        RowGap = 0.30, ColGap = 0.30, SwatchLabelGap = 0.08,
                     },
                     PreviewVisible = true,
                     Rows = new List<LegendRowConfig>

@@ -29,9 +29,10 @@ namespace LemoineTools.Lemoine
         private readonly Dictionary<string, LemoineLegendBuilder> _builders =
             new Dictionary<string, LemoineLegendBuilder>();
 
-        // ── Window-level preview overlay (grows from the floating Preview pill) ──
+        // ── Preview overlay (covers ONLY the centre builder column) ─────────────
         private LemoineLegendPreview?   _previewControl;
         private WpfGrid?                _previewOverlayGrid;
+        private WpfGrid?                _mainGrid;        // 4-column layout grid; hosts the overlay in col 1
         private bool                    _previewVisible;
         private LemoineLegendBuilder?   _activeBuilder;   // subscribed for live preview refresh
 
@@ -216,6 +217,15 @@ namespace LemoineTools.Lemoine
         private void BuildPreviewLayer()
         {
             _previewControl = new LemoineLegendPreview { Margin = new Thickness(8) };
+
+            // A long/wide legend must stay reachable — scroll instead of clipping.
+            var previewScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content                       = _previewControl,
+            };
+
             _previewOverlayGrid = new WpfGrid
             {
                 Visibility            = WpfVisibility.Collapsed,
@@ -225,8 +235,23 @@ namespace LemoineTools.Lemoine
                 RenderTransform       = new ScaleTransform(0, 0),
             };
             _previewOverlayGrid.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineSurface");
-            _previewOverlayGrid.Children.Add(_previewControl);
-            _previewLayer.Children.Add(_previewOverlayGrid);
+            _previewOverlayGrid.Children.Add(previewScroll);
+
+            // Overlay ONLY the centre builder column — the legend tabs (sidebar) and the
+            // Sizing / Text Styles panel stay visible and editable while the preview is
+            // open, and their changes refresh it live. Hosting the overlay inside the main
+            // grid's column 1 (above the builder via ZIndex) also makes it track the
+            // GridSplitter automatically.
+            if (_mainGrid != null)
+            {
+                WpfGrid.SetColumn(_previewOverlayGrid, 1);
+                System.Windows.Controls.Panel.SetZIndex(_previewOverlayGrid, 40);
+                _mainGrid.Children.Add(_previewOverlayGrid);
+            }
+            else
+            {
+                _previewLayer.Children.Add(_previewOverlayGrid); // fallback: window-wide layer
+            }
         }
 
         private void TogglePreviewFromPill()
@@ -239,7 +264,7 @@ namespace LemoineTools.Lemoine
             var builder = _builderSlot?.Content as LemoineLegendBuilder;
             if (builder == null || _previewControl == null || _previewOverlayGrid == null) return;
             _previewVisible = true;
-            _previewControl.Update(builder.Layout, builder.Rows);
+            _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
             _previewOverlayGrid.Visibility = WpfVisibility.Visible;
             var st   = (ScaleTransform)_previewOverlayGrid.RenderTransform;
             var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
@@ -270,7 +295,24 @@ namespace LemoineTools.Lemoine
         private void OnBuilderEdited()
         {
             if (_previewVisible && _previewControl != null && _activeBuilder != null)
-                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows);
+                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows, ActiveRoleCaps());
+        }
+
+        // Per-role text cap heights (paper inches) for the active legend, resolved from each
+        // role's chosen TextNoteType (captured at launch) with the font-point fallback. Lets
+        // the preview size text to the real types the generated legend will use.
+        private LegendRoleCaps ActiveRoleCaps()
+        {
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex < 0 || _activeIndex >= entries.Count)
+                return LegendRoleCaps.FromFontPt(9);
+            var e  = entries[_activeIndex];
+            int pt = e.Layout?.FontPt ?? 9;
+            return new LegendRoleCaps(
+                LegendTextTypeSizes.CapInches(e.TitleTypeId,       pt),
+                LegendTextTypeSizes.CapInches(e.SubtitleTypeId,    pt),
+                LegendTextTypeSizes.CapInches(e.GroupHeaderTypeId, pt),
+                LegendTextTypeSizes.CapInches(e.LabelTypeId,       pt));
         }
 
         // Pushes a bottom inset onto the sidebar tab list so its last item (the
@@ -331,6 +373,7 @@ namespace LemoineTools.Lemoine
             WpfGrid.SetColumn(rightBorder, 3);
             grid.Children.Add(rightBorder);
 
+            _mainGrid = grid; // BuildPreviewLayer parks the preview overlay in column 1
             _contentBorder.Child = grid;
 
             ActivateTab(0);
@@ -939,7 +982,7 @@ namespace LemoineTools.Lemoine
             if (_previewPillLabel != null)
                 _previewPillLabel.Text = _previewVisible ? "Hide Preview" : "Preview";
             if (_previewVisible && _previewControl != null)
-                _previewControl.Update(builder.Layout, builder.Rows);
+                _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
             RebuildTabStack();
         }
 
@@ -995,7 +1038,7 @@ namespace LemoineTools.Lemoine
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            for (int r = 0; r < 4; r++)
+            for (int r = 0; r < 6; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             // Scale is a dropdown of the standard Revit imperial scales (the legend
@@ -1007,8 +1050,14 @@ namespace LemoineTools.Lemoine
                 d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
             AddSizingRow(grid, 2, "Swatch H", layout.SwatchH, 0.02, 2.0, 0.05,
                 d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 3, "Gap", layout.Gap, 0.0, 1.0, 0.01,
-                d => { layout.Gap = d; builder.NotifyLayoutChanged(); });
+            // Three explicit gaps (paper inches): the old single "Gap" changed the row
+            // spacing in the preview but the swatch→label spacing in the output.
+            AddSizingRow(grid, 3, "Row Gap", layout.RowGap, 0.0, 3.0, 0.02,
+                d => { layout.RowGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 4, "Col Gap", layout.ColGap, 0.0, 3.0, 0.02,
+                d => { layout.ColGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 5, "Swatch–Label", layout.SwatchLabelGap, 0.0, 1.0, 0.01,
+                d => { layout.SwatchLabelGap = d; builder.NotifyLayoutChanged(); });
 
             return WrapCard("SIZING", grid);
         }
@@ -1133,10 +1182,15 @@ namespace LemoineTools.Lemoine
             for (int r = 0; r < 4; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => entry.TitleTypeId       = id);
-            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => entry.SubtitleTypeId    = id);
-            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => entry.GroupHeaderTypeId = id);
-            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => entry.LabelTypeId       = id);
+            // Wrap each setter so a text-style change refreshes the live preview — role
+            // text sizes come from the chosen TextNoteType, so the preview must re-resolve
+            // its caps (ActiveRoleCaps) when a selection changes.
+            void SetAndRefresh(Action<long> set, long id) { set(id); OnBuilderEdited(); }
+
+            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
+            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
+            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
+            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
 
             return WrapCard("TEXT STYLES", grid);
         }
@@ -1220,16 +1274,29 @@ namespace LemoineTools.Lemoine
             App.LegendCreatorHandler.SubtitleTypeId    = entry.SubtitleTypeId    != -1 ? new ElementId(entry.SubtitleTypeId)    : (ElementId?)null;
             App.LegendCreatorHandler.GroupHeaderTypeId = entry.GroupHeaderTypeId != -1 ? new ElementId(entry.GroupHeaderTypeId) : (ElementId?)null;
             App.LegendCreatorHandler.LabelTypeId       = entry.LabelTypeId       != -1 ? new ElementId(entry.LabelTypeId)       : (ElementId?)null;
-            App.LegendCreatorHandler.PushLog           = null;
+            // Keep the last failure line so the status chip can say WHY a run failed —
+            // discarding the log left only "Completed with N error(s)" and no reason.
+            // (Full detail also lands in diagnostics.log via the handler's Log mirror.)
+            string? lastFailMsg = null;
+            App.LegendCreatorHandler.PushLog           = (text, status) =>
+            {
+                if (status == "fail") lastFailMsg = text;
+            };
             App.LegendCreatorHandler.OnProgress        = null;
 
             int capturedIndex = _activeIndex;
+
+            // True once OnLegendCreated rebinds the entry to a NEW view — covers the
+            // update-mode fallback (stale view id → fresh legend created instead), where
+            // OnComplete must not overwrite the "created" status with "updated".
+            bool createdNewView = false;
 
             App.LegendCreatorHandler.OnLegendCreated = viewId =>
             {
                 long idValue = viewId.Value;
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    createdNewView = true;
                     var list = LegendCreatorSettings.Instance.Legends;
                     if (capturedIndex < list.Count)
                     {
@@ -1247,8 +1314,8 @@ namespace LemoineTools.Lemoine
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SetCreateBusy(false, null);
-                    if (fail > 0)          FlashStatus($"Completed with {fail} error(s).");
-                    else if (isUpdate)     FlashStatus("Legend updated.");
+                    if (fail > 0)                          FlashStatus(lastFailMsg ?? $"Completed with {fail} error(s).");
+                    else if (isUpdate && !createdNewView)  FlashStatus("Legend updated.");
                 }));
             };
 

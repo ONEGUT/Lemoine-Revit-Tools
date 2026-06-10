@@ -168,7 +168,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 PlacementTarget    = anchor,
                 Placement          = PlacementMode.Bottom,
-                StaysOpen          = false,
+                StaysOpen          = true,   // StaysOpen=false crashes Revit (see CLAUDE.md)
                 AllowsTransparency = false,
             };
 
@@ -193,6 +193,21 @@ namespace LemoineTools.Lemoine.Controls
             outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
             popup.Child = outerBorder;
+
+            // Click-off dismiss without StaysOpen=false (which crashes Revit): while open,
+            // watch for a mouse-down in the owning window outside the popup content and close.
+            // The popup hosts its own hwnd, so its own clicks never tunnel through the window.
+            var owner = Window.GetWindow(this);
+            if (owner != null)
+            {
+                MouseButtonEventHandler outsideClick = (s, e) =>
+                {
+                    if (popup.IsOpen && !outerBorder.IsMouseOver) popup.IsOpen = false;
+                };
+                popup.Opened += (s, e) => owner.AddHandler(PreviewMouseDownEvent, outsideClick, true);
+                popup.Closed += (s, e) => owner.RemoveHandler(PreviewMouseDownEvent, outsideClick);
+            }
+
             popup.IsOpen = true;
         }
     }

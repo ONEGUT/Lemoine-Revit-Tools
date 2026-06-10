@@ -193,6 +193,10 @@ using RevitColor    = Autodesk.Revit.DB.Color;
 
 Add whichever aliases are needed. Never use a bare `Grid`, `Visibility`, `Color`, `Point`, or `TextBox` in a ViewModel file that also imports `Autodesk.Revit.DB`.
 
+### CS0136 — inner-scope variable reuses an enclosing-scope name
+
+A variable declared in a `foreach` or nested block that shares a name with a parameter or local in the enclosing method fails CS0136. The compiler rejects it even when C# would otherwise permit shadowing. Fix: rename the inner variable. (Root cause: `DiscoverEventHandler.ReadParameterValue` had `typeEl` in both the outer method and an inner `foreach`.)
+
 ### Missing `using` directives that keep appearing
 
 | Symbol | Required namespace |
@@ -335,6 +339,9 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | Filter rule on `BuiltInParameter.ELEM_CATEGORY_PARAM` ("Category") | Rejected — *"parameter does not apply to this filter's categories"*. Build whole-category filters **rule-less** via the 3-arg `ParameterFilterElement.Create(doc, name, categories)` (matches every element in the categories, references no parameter) |
 | Family Name filter on `ELEM_FAMILY_PARAM` (ElementId storage) | `ALL_MODEL_FAMILY_NAME` (String storage) — a string contains/equals rule can't be built on an ElementId parameter; the rule is silently dropped and the filter never matches |
 | `TextNote` Y = top of text | TextNote Y is the **baseline** — cap height rises above it |
+| Centering a TextNote row with baseline math | Set `VerticalTextAlignment.Middle` and pass the band's vertical centre as Y — the note's midpoint lands there regardless of font/size, eliminating baseline-vs-cap ambiguity |
+| `TextNote.Create` with a TextNoteType ElementId from another project | Throws without a clear message — validate each type id with `doc.GetElement(id) as TextNoteType != null` before calling Create; fall back to a valid type in the current doc |
+| `ElementCategoryFilter(OST_FilledRegion)` to collect FilledRegions for deletion | Use `ElementClassFilter(typeof(FilledRegion))` — category filters miss FilledRegion elements in drafting views; class filters are authoritative for deletion |
 | App-level "font pt" field sizes generated text | A TextNote's size comes from its assigned `TextNoteType` (`TEXT_SIZE` param); a font-pt value can only drive a WPF preview, never the Revit output. Don't expose it as if it changed the legend. |
 | `PickObject(ObjectType.Element)` to select an element **inside a link** | `PickObject(ObjectType.LinkedElement)` — `ObjectType.Element` returns the whole `RevitLinkInstance` (its `LinkedElementId` is unset), so the linked sub-element never resolves |
 | `collector.Where(t => t.Category.Id == new ElementId(OST_SpotElevations))` to list spot-elevation types | `ElementType.Category` reads as **null** for annotation types and silently drops every match — enumerate with `new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_SpotElevations).OfClass(typeof(SpotDimensionType))` instead |

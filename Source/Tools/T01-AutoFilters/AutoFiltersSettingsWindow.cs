@@ -56,7 +56,11 @@ namespace LemoineTools.Tools.AutoFilters
                     });
                     if (_window != null) return;
                 }
-                catch { _window = null; }
+                catch (System.Exception ex)
+                {
+                    LemoineLog.Swallowed("AutoFilters: activate existing settings window", ex);
+                    _window = null;
+                }
             }
 
             // Open on a dedicated STA thread (callers are on their own STA dispatcher)

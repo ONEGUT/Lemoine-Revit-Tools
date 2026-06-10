@@ -131,6 +131,14 @@ namespace LemoineTools.Tools.AutoFilters
             var doc     = app.ActiveUIDocument.Document;
             var results = new List<ScanResult>();
 
+            // Per-document type-value cache. Type Name / Family Name resolve through the
+            // element's TYPE, shared by every instance of that type — so we look each type
+            // up once instead of once per element. On a 100k-element link this turns 100k+
+            // GetElement(typeId) calls into a few hundred, while Revit's UI thread is frozen.
+            // Keyed by Document (identity) so type ids from different docs never collide.
+            var typeValueCacheByDoc =
+                new Dictionary<Document, Dictionary<(long Type, string Param), string?>>();
+
             // Build linkId → Document map (–1 = host document)
             var linkDocMap = new Dictionary<long, Document> { [-1L] = doc };
             foreach (RevitLinkInstance li in
@@ -172,14 +180,14 @@ namespace LemoineTools.Tools.AutoFilters
 
                     if (!Enum.TryParse<BuiltInCategory>(spec.OstCategory, false, out var bic))
                     {
-                        Log($"     ✗ unknown category — skipped", "fail");
+                        Log($"     · unknown category — skipped", "info");
                         skip++;
                         continue;
                     }
 
                     if (!linkDocMap.TryGetValue(spec.LinkId, out var scanDoc))
                     {
-                        Log($"     ✗ link document not found — skipped", "fail");
+                        Log($"     · link document not found — skipped", "info");
                         skip++;
                         continue;
                     }
@@ -208,6 +216,10 @@ namespace LemoineTools.Tools.AutoFilters
                     }
                     else // PerValue
                     {
+                        if (!typeValueCacheByDoc.TryGetValue(scanDoc, out var typeCache))
+                            typeValueCacheByDoc[scanDoc] = typeCache =
+                                new Dictionary<(long Type, string Param), string?>();
+
                         var valueCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                         // A linked category can hold thousands of elements — report the scan
                         // at 5% intervals so a long per-category read isn't silent.
@@ -216,7 +228,7 @@ namespace LemoineTools.Tools.AutoFilters
                         foreach (Element el in collector)
                         {
                             scanProgress.Tick();
-                            string? val = ReadParameterValue(el, spec.Parameter);
+                            string? val = ReadParameterValue(el, spec.Parameter, typeCache);
                             if (string.IsNullOrWhiteSpace(val)) continue;
                             valueCounts.TryGetValue(val!, out int c);
                             valueCounts[val!] = c + 1;
@@ -273,17 +285,24 @@ namespace LemoineTools.Tools.AutoFilters
             return AutoPalette[_paletteIndex++ % AutoPalette.Length];
         }
 
-        private static string? ReadParameterValue(Element el, string paramName)
+        private static string? ReadParameterValue(
+            Element el, string paramName,
+            Dictionary<(long Type, string Param), string?> typeCache)
         {
-            if (paramName == "Type Name")
+            // Type Name / Family Name are properties of the element's TYPE, identical for
+            // every instance of that type — resolve once per (type, param).
+            if (paramName == "Type Name" || paramName == "Family Name")
             {
-                var et = el.Document.GetElement(el.GetTypeId()) as ElementType;
-                return et?.Name;
-            }
-            if (paramName == "Family Name")
-            {
-                var fs = el.Document.GetElement(el.GetTypeId()) as FamilySymbol;
-                return fs?.FamilyName;
+                long typeId = el.GetTypeId().Value;
+                var key = (typeId, paramName);
+                if (typeCache.TryGetValue(key, out var cached)) return cached;
+
+                var resolvedType = el.Document.GetElement(el.GetTypeId());
+                string? resolved = paramName == "Type Name"
+                    ? (resolvedType as ElementType)?.Name
+                    : (resolvedType as FamilySymbol)?.FamilyName;
+                typeCache[key] = resolved;
+                return resolved;
             }
             if (paramName == "Fabrication Service")
             {
@@ -353,12 +372,30 @@ namespace LemoineTools.Tools.AutoFilters
                         settings.Trades.Add(trade);
                     }
 
-                    // Deduplicate by rule name
-                    if (trade.Rules.Any(r =>
-                        string.Equals(r.Name, spec.RuleName, StringComparison.OrdinalIgnoreCase)))
+                    // A rule with this name already exists (same value re-discovered, or a
+                    // re-run): merge this spec's categories into it rather than dropping them
+                    // (a silent drop is how multi-category values lost all but one category).
+                    var dupe = trade.Rules.FirstOrDefault(r =>
+                        string.Equals(r.Name, spec.RuleName, StringComparison.OrdinalIgnoreCase));
+                    if (dupe != null)
                     {
-                        Log($"'{spec.RuleName}' already exists in '{spec.TradeName}' — skipped.", "info");
-                        skip++;
+                        int added = 0;
+                        foreach (var ost in spec.BuiltInCategories ?? new List<string>())
+                            if (!dupe.BuiltInCategories.Contains(ost))
+                            {
+                                dupe.BuiltInCategories.Add(ost);
+                                added++;
+                            }
+                        if (added > 0)
+                        {
+                            Log($"Merged {added} categor{(added == 1 ? "y" : "ies")} into existing '{spec.RuleName}'.", "pass");
+                            pass++;
+                        }
+                        else
+                        {
+                            Log($"'{spec.RuleName}' already exists in '{spec.TradeName}' — skipped.", "info");
+                            skip++;
+                        }
                         continue;
                     }
 
@@ -386,9 +423,10 @@ namespace LemoineTools.Tools.AutoFilters
                         rule.MatchType = "contains";
                         rule.Match     = new List<string> { spec.ParameterValue };
 
-                        // Persist colour choice so future scans remember it
+                        // Remember colour choice for future scans. Deferred: the file is
+                        // written once after the loop, not once per committed rule.
                         if (!string.IsNullOrEmpty(spec.ParameterValue))
-                            ColorMemory.Instance.SetColor(spec.ParameterValue, spec.HexColor);
+                            ColorMemory.Instance.SetColorDeferred(spec.ParameterValue, spec.HexColor);
                     }
 
                     trade.Rules.Add(rule);
@@ -401,6 +439,9 @@ namespace LemoineTools.Tools.AutoFilters
                     fail++;
                 }
             }
+
+            // Persist remembered colours once for the whole batch (deferred during the loop).
+            ColorMemory.Instance.Flush();
 
             // Guard against any duplicate trade Ids before persisting so the rules editor
             // never treats two discovered trades as one.

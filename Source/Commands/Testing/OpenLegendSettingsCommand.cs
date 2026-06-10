@@ -40,14 +40,33 @@ namespace LemoineTools.Commands
             var doc = commandData.Application.ActiveUIDocument?.Document;
 
             // Query TextNoteTypes on Revit main thread
-            var textTypes = doc == null
-                ? new List<(ElementId, string)>()
+            var textNoteTypes = doc == null
+                ? new List<TextNoteType>()
                 : new FilteredElementCollector(doc)
                     .OfClass(typeof(TextNoteType))
                     .Cast<TextNoteType>()
                     .OrderBy(t => t.Name, System.StringComparer.OrdinalIgnoreCase)
-                    .Select(t => (t.Id, t.Name))
                     .ToList();
+
+            var textTypes = textNoteTypes.Select(t => (t.Id, t.Name)).ToList();
+
+            // Capture each type's real text height (TEXT_SIZE is paper-space feet) as paper
+            // inches, so the preview (which runs off the Revit thread) can size each role's
+            // text to the real type instead of a single font-point fallback.
+            var typeCapInches = new Dictionary<long, double>();
+            foreach (var t in textNoteTypes)
+            {
+                try
+                {
+                    double feet = t.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
+                    if (feet > 0) typeCapInches[t.Id.Value] = feet * 12.0;
+                }
+                catch (System.Exception ex)
+                {
+                    LemoineLog.Swallowed("LegendCreator: read text-note type size", ex);
+                }
+            }
+            LemoineTools.Tools.Testing.LegendCreator.LegendTextTypeSizes.Set(typeCapInches);
 
             // Query existing Legend views on Revit main thread
             var legendViews = doc == null

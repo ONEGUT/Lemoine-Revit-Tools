@@ -18,9 +18,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
     /// </summary>
     public sealed class LegendCreatorEventHandler : IExternalEventHandler
     {
-        private const double GroupGap   = 0.60;   // horizontal gap between columns
-        private const double RowGap     = 0.80;   // vertical gap between rows
-        private const double LabelWidth = 4.00;   // proven-safe TextNote width ceiling (feet)
+        // Spacing is now driven by LegendLayout (paper inches) + the per-legend gap settings,
+        // so the preview and this output share one layout model. No fixed feet constants.
 
         // ── Callbacks ───────────────────────────────────────────────────────
         public Action<string, string>?    PushLog         { get; set; }
@@ -77,29 +76,26 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             var layout = this.Layout ?? new LegendLayoutConfig();
             var rows   = this.Rows   ?? new List<LegendRowConfig>();
 
-            // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
-            double scale   = layout.ViewScale > 0 ? (double)layout.ViewScale : 48.0;
-            double swatchW = layout.SwatchW / 12.0 * scale;
-            double swatchH = layout.SwatchH / 12.0 * scale;
-            double gapFt   = layout.Gap     / 12.0 * scale;
-            double colW    = swatchW + gapFt + LabelWidth + GroupGap; // horizontal column stride
+            // Model-space conversions are computed INSIDE the transaction from the view's
+            // realized Scale (see below), so a scale the view refuses can never skew the
+            // text-vs-swatch proportions away from what the preview showed.
+            int requestedScale = layout.ViewScale > 0 ? layout.ViewScale : 48;
 
-            // ── Find template legend (Create mode only) ───────────────────────
-            View? existingLegend = null;
-            if (!UpdateMode)
+            // ── Find template legend ───────────────────────────────────────────
+            // Resolved in BOTH modes: create duplicates it, and update falls back to it
+            // when the bound target view no longer exists (deleted, or another project).
+            View? templateLegend = null;
+            if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
+                templateLegend = doc.GetElement(TemplateLegendId) as View;
+            if (templateLegend?.ViewType != ViewType.Legend)
+                templateLegend = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.Legend);
+            if (!UpdateMode && templateLegend == null)
             {
-                if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
-                    existingLegend = doc.GetElement(TemplateLegendId) as View;
-                if (existingLegend?.ViewType != ViewType.Legend)
-                    existingLegend = new FilteredElementCollector(doc)
-                        .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                        .FirstOrDefault(v => v.ViewType == ViewType.Legend);
-                if (existingLegend == null)
-                {
-                    Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
-                    fail++;
-                    return;
-                }
+                Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
+                fail++;
+                return;
             }
 
             // ── Required project types ────────────────────────────────────────
@@ -165,10 +161,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         neededFrts[key] = displayName;
                     }
 
-            // ── Generate unique legend view name (Create mode only) ───────────
+            // ── Generate unique legend view name ───────────────────────────────
+            // Computed in both modes: create uses it directly, and an update whose
+            // target view is gone falls back to creating a fresh view with it.
             string baseTitle  = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
             string legendName = baseTitle;
-            if (!UpdateMode)
             {
                 var existingNames = new FilteredElementCollector(doc)
                     .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
@@ -234,9 +231,25 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 Progress(60, pass, fail, skip);
 
+                // Removes previous filled regions / text notes so a redraw starts clean.
+                void ClearLegendContents(View v)
+                {
+                    // Match FilledRegion by CLASS — matching its category (OST_FilledRegion)
+                    // missed the regions, which is why "Update Legend" stacked new colour
+                    // squares on top of the old ones instead of replacing them.
+                    var ids = new FilteredElementCollector(doc, v.Id)
+                        .WherePasses(new LogicalOrFilter(
+                            new ElementClassFilter(typeof(FilledRegion)),
+                            new ElementClassFilter(typeof(TextNote))))
+                        .ToElementIds().ToList();
+                    foreach (var id in ids)
+                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: clear legend content", __lex); }
+                }
+
                 // ── Find/create the target legend view ───────────────────────
-                View? dv;
-                if (UpdateMode)
+                View? dv = null;
+                bool updating = UpdateMode;
+                if (updating)
                 {
                     if (TargetLegendId != null && TargetLegendId != ElementId.InvalidElementId)
                         dv = doc.GetElement(TargetLegendId) as View;
@@ -255,41 +268,76 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     }
                     if (dv == null || dv.ViewType != ViewType.Legend)
                     {
-                        Log("Target legend view not found. Use 'Create Legend' to create a new one.", "fail");
+                        // The bound view was deleted, or this is a different project. Don't
+                        // dead-end the run — fall through to creating a fresh legend, which
+                        // also rebinds the entry via OnLegendCreated.
+                        Log("Bound legend view not found in this project — creating a new legend instead.", "info");
+                        updating = false;
+                        dv       = null;
+                    }
+                    else
+                    {
+                        ClearLegendContents(dv);
+                    }
+                }
+
+                bool createdNew = false;
+                if (!updating)
+                {
+                    if (templateLegend == null)
+                    {
+                        Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
                         fail++;
                         tx.Commit();
                         return;
                     }
-                    var toDelete = new FilteredElementCollector(doc, dv.Id)
-                        .WherePasses(new LogicalOrFilter(
-                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
-                            new ElementClassFilter(typeof(TextNote))))
-                        .ToElementIds().ToList();
-                    foreach (var id in toDelete)
-                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete temp element", __lex); }
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
-                }
-                else
-                {
-                    ElementId newLegendId = existingLegend!.Duplicate(ViewDuplicateOption.Duplicate);
+                    ElementId newLegendId = templateLegend.Duplicate(ViewDuplicateOption.Duplicate);
                     dv = doc.GetElement(newLegendId) as View;
-                    if (dv == null) { fail++; tx.Commit(); return; }
+                    if (dv == null)
+                    {
+                        Log("Failed to duplicate the template legend view.", "fail");
+                        fail++;
+                        tx.Commit();
+                        return;
+                    }
                     dv.Name = legendName;
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
+                    createdNew = true;
                     // Clear any content carried over from the template legend before drawing.
-                    var templateElems = new FilteredElementCollector(doc, dv.Id)
-                        .WherePasses(new LogicalOrFilter(
-                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
-                            new ElementClassFilter(typeof(TextNote))))
-                        .ToElementIds().ToList();
-                    foreach (var id in templateElems) try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete template element", __lex); }
+                    ClearLegendContents(dv);
                 }
 
-                // ── Resolve per-role TextNoteType IDs ────────────────────────
-                ElementId titleTid  = ResolveTypeId(TitleTypeId,       textTypeId);
-                ElementId subTid    = ResolveTypeId(SubtitleTypeId,    textTypeId);
-                ElementId headerTid = ResolveTypeId(GroupHeaderTypeId, textTypeId);
-                ElementId labelTid  = ResolveTypeId(LabelTypeId,       textTypeId);
+                // Both branches either assigned dv or returned — this guard makes that
+                // provable (and defends the invariant if the flow above ever changes).
+                if (dv == null)
+                {
+                    Log("No legend view resolved.", "fail");
+                    fail++;
+                    tx.Commit();
+                    return;
+                }
+
+                // ── Realized view scale drives ALL model-space sizing ─────────
+                // Request the configured scale, then read back what the view actually
+                // carries. Sizing from the realized value keeps text-vs-swatch paper
+                // proportions identical to the preview even when the set is refused.
+                try { dv.Scale = requestedScale; }
+                catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set legend view scale", __lex); }
+                double scale = dv.Scale > 0 ? dv.Scale : requestedScale;
+                if ((int)scale != requestedScale)
+                    Log($"View scale is 1:{(int)scale} (requested 1:{requestedScale}) — legend sized for the actual scale.", "info");
+
+                // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
+                double swatchW  = LegendLayout.InchesToFeet(layout.SwatchW, scale);
+                double swatchH  = LegendLayout.InchesToFeet(layout.SwatchH, scale);
+                double gapFt    = LegendLayout.InchesToFeet(layout.SwatchLabelGap, scale);
+                double colGapFt = LegendLayout.InchesToFeet(layout.ColGap, scale);
+                double rowGapFt = LegendLayout.InchesToFeet(layout.RowGap, scale);
+
+                // ── Resolve per-role TextNoteType IDs (validated against THIS doc) ──
+                ElementId titleTid  = ResolveTypeId(doc, TitleTypeId,       textTypeId);
+                ElementId subTid    = ResolveTypeId(doc, SubtitleTypeId,    textTypeId);
+                ElementId headerTid = ResolveTypeId(doc, GroupHeaderTypeId, textTypeId);
+                ElementId labelTid  = ResolveTypeId(doc, LabelTypeId,       textTypeId);
 
                 // Model-space font heights from each TextNoteType's registered size.
                 // TEXT_SIZE is stored in Revit internal units (feet, paper-space).
@@ -299,47 +347,53 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 double headerFontH = ModelFontH(doc, headerTid, scale, layout.FontPt);
                 double labelFontH  = ModelFontH(doc, labelTid,  scale, layout.FontPt);
 
-                // entryH: vertical step per block — tall enough for both swatch and label.
-                double entryH = Math.Max(swatchH, labelFontH) + 0.05;
-                // hdrPad: space from group header top to first block center.
-                double hdrPad = headerFontH + 0.08;
+                // All vertical/column math goes through LegendLayout (paper inches → feet) so
+                // the WPF preview, which calls the same formulas, matches this output exactly.
+                double entryHIn = LegendLayout.EntryHeightIn(layout.SwatchH, labelFontH * 12.0 / scale);
+                double entryH   = LegendLayout.InchesToFeet(entryHIn, scale);
+                // hdrPad: group header band top → first block CENTRE.
+                double hdrPad = LegendLayout.InchesToFeet(
+                    LegendLayout.HeaderAdvanceIn(headerFontH * 12.0 / scale, entryHIn), scale);
 
-                // NoteWidth: estimate bounding-box width from character count.
-                // The aspect ratio 0.55 is conservative for most Revit fonts.
-                // LabelWidth is the proven-safe upper bound (never causes API error).
-                double NoteWidth(string text, double fontH)
+                // Estimated label width in model feet, via the shared paper-inch estimate.
+                double LabelWidthFt(string text, double fontH)
                 {
-                    if (string.IsNullOrEmpty(text)) return LabelWidth;
-                    double w = Math.Max(text.Length * fontH * 0.55, fontH * 2.0);
-                    return Math.Min(w, LabelWidth);
+                    double capIn = scale > 0 ? fontH * 12.0 / scale : 0;
+                    return LegendLayout.InchesToFeet(LegendLayout.LabelWidthIn(text, capIn), scale);
                 }
 
-                // PlaceNote: create with computed width; fall back to LabelWidth on error.
-                void PlaceNote(ElementId viewId, XYZ origin, string text, ElementId typeId, double fontH)
+                // PlaceNote: single-line (no width arg) so a long label never wraps and
+                // overlaps the next entry — column spacing comes from the measured width.
+                // VerticalAlignment is pinned to MIDDLE and every origin below is a band
+                // CENTRE: top-vs-baseline anchor ambiguity (which mis-stacked swatches
+                // against labels) is eliminated rather than compensated for.
+                int textFails = 0;
+                void PlaceNote(ElementId viewId, XYZ centerOrigin, string text, ElementId typeId)
                 {
                     if (string.IsNullOrEmpty(text)) return;
                     var o = new TextNoteOptions { TypeId = typeId };
                     try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
-                    double w = NoteWidth(text, fontH);
-                    try   { TextNote.Create(doc, viewId, origin, w,          text, o); return; }
-                    catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: create legend text note", __lex); }
-                    try   { TextNote.Create(doc, viewId, origin, LabelWidth, text, o); }
-                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); }
+                    try { o.VerticalAlignment = VerticalTextAlignment.Middle; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note vertical alignment", __lex); }
+                    try   { TextNote.Create(doc, viewId, centerOrigin, text, o); }
+                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); textFails++; }
                 }
 
                 double cy = 0.0;
+                double titlePadFt = LegendLayout.InchesToFeet(LegendLayout.TitlePadIn, scale);
+                double subPadFt   = LegendLayout.InchesToFeet(LegendLayout.SubPadIn,   scale);
 
                 // ── Title / Subtitle above first row ──────────────────────────
-                // TextNote origin is the top-left corner; place so text sits above grid.
+                // cy tracks the TOP of the current band; notes are placed at the band's
+                // vertical centre (Middle-aligned).
                 if (!string.IsNullOrWhiteSpace(layout.Title))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Title.Trim(), titleTid, titleFontH);
-                    cy -= titleFontH + 0.08;
+                    PlaceNote(dv.Id, new XYZ(0, cy - titleFontH / 2.0, 0), layout.Title.Trim(), titleTid);
+                    cy -= titleFontH + titlePadFt;
                 }
                 if (!string.IsNullOrWhiteSpace(layout.Subtitle))
                 {
-                    PlaceNote(dv.Id, new XYZ(0, cy, 0), layout.Subtitle.Trim(), subTid, subFontH);
-                    cy -= subFontH + 0.12;
+                    PlaceNote(dv.Id, new XYZ(0, cy - subFontH / 2.0, 0), layout.Subtitle.Trim(), subTid);
+                    cy -= subFontH + subPadFt;
                 }
 
                 int totalBlocks = rows.Sum(r =>
@@ -355,14 +409,16 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                     foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     {
-                        // Group header: origin at top-left (cy = top of header text).
+                        // Group header: cy is the band top; the Middle-aligned note goes
+                        // at the band centre.
                         string header = string.IsNullOrWhiteSpace(grp.Title)
                             ? "—" : grp.Title.ToUpperInvariant();
-                        PlaceNote(dv.Id, new XYZ(cx, cy, 0), header, headerTid, headerFontH);
+                        PlaceNote(dv.Id, new XYZ(cx, cy - headerFontH / 2.0, 0), header, headerTid);
 
                         // First block center is below the header by hdrPad.
-                        double blockY   = cy - hdrPad;
-                        int    visCount = 0;
+                        double blockY    = cy - hdrPad;
+                        int    visCount  = 0;
+                        double maxLabelW = 0;
 
                         foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
                         {
@@ -384,13 +440,22 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                 }
                                 catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); fail++; }
                             }
+                            else if (rgb.HasValue)
+                            {
+                                // The colour resolved but its FilledRegionType wasn't built
+                                // (failure already in logMsgs) — say which block lost its
+                                // swatch instead of dropping it silently.
+                                logMsgs.Add($"Swatch '{blk.Name}': no swatch type for {hex}/{fill} — drawn without a swatch.");
+                            }
 
-                            // Label: origin at blockY — Revit TextNote Y is the baseline,
-                            // so cap height sits above blockY, visually centered with swatch.
+                            // Label: Middle-aligned at blockY — the swatch is also centred
+                            // at blockY, so they align exactly. Width drives column stride.
                             string label = string.IsNullOrEmpty(blk.Name) ? blk.Id : blk.Name;
                             PlaceNote(dv.Id,
                                 new XYZ(cx + swatchW + gapFt, blockY, 0),
-                                label, labelTid, labelFontH);
+                                label, labelTid);
+                            double lw = LabelWidthFt(label, labelFontH);
+                            if (lw > maxLabelW) maxLabelW = lw;
 
                             blockY -= entryH;
                             visCount++;
@@ -401,25 +466,32 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                         double groupDepth = visCount * entryH + hdrPad;
                         if (groupDepth > rowMaxDepth) rowMaxDepth = groupDepth;
-                        cx += colW;
+
+                        // Column stride from this group's actual content: swatch + gap + widest
+                        // label (or the header if wider), then the inter-column gap.
+                        double entryW  = swatchW + gapFt + maxLabelW;
+                        double headerW = LabelWidthFt(header, headerFontH);
+                        cx += Math.Max(entryW, headerW) + colGapFt;
                     }
 
-                    cy = rowStartY - rowMaxDepth - RowGap;
+                    cy = rowStartY - rowMaxDepth - rowGapFt;
                 }
 
                 tx.Commit();
                 // Deliverable = legend blocks/swatches drawn, not a hardcoded 1 for the view.
                 pass += blocksDone;
+                fail += textFails; // text notes that failed to create (details in logMsgs)
 
-                // Notify caller of the newly created view's id (Create mode only).
-                if (!UpdateMode) OnLegendCreated?.Invoke(dv.Id);
+                // Notify the caller whenever a NEW view exists — including the update-mode
+                // fallback, so the legend entry rebinds to the fresh view's id.
+                if (createdNew) OnLegendCreated?.Invoke(dv.Id);
+
+                foreach (var l in logMsgs) Log(l, "info");
+                Log(createdNew
+                    ? $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
+                    : $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
+                    fail > 0 ? "fail" : "pass");
             }
-
-            foreach (var l in logMsgs) Log(l, "info");
-            Log(UpdateMode
-                ? $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
-                : $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
-                fail > 0 ? "fail" : "pass");
         }
 
         // ── Shape helpers ─────────────────────────────────────────────────────
@@ -541,9 +613,15 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return null;
         }
 
-        // Returns the candidate if it is a valid non-null ElementId, else the fallback.
-        private static ElementId ResolveTypeId(ElementId? candidate, ElementId fallback)
-            => (candidate != null && candidate != ElementId.InvalidElementId) ? candidate : fallback;
+        // Returns the candidate when it resolves to a real TextNoteType in THIS document,
+        // else the fallback. The per-role ids persist in settings across sessions and
+        // projects, so a stale id from another model must not reach TextNote.Create —
+        // it throws, and that note (e.g. the title) silently never appears.
+        private static ElementId ResolveTypeId(Document doc, ElementId? candidate, ElementId fallback)
+            => (candidate != null && candidate != ElementId.InvalidElementId
+                && doc.GetElement(candidate) is TextNoteType)
+                ? candidate
+                : fallback;
 
         // Returns the model-space text height for a TextNoteType (feet).
         // TEXT_SIZE is in Revit internal units (paper-space feet); multiply by view scale.
@@ -573,7 +651,15 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return result.Length == 0 ? "Custom" : result;
         }
 
-        private void Log(string t, string s)      => PushLog?.Invoke(t, s);
+        // Mirror to the durable diagnostic log — the Legend Creator window runs with
+        // PushLog == null, so without this every failure reason was silently discarded
+        // (the user saw "Completed with N error(s)" and never the why).
+        private void Log(string t, string s)
+        {
+            PushLog?.Invoke(t, s);
+            if (s == "fail") LemoineLog.Warn("LegendCreator", t);
+            else             LemoineLog.Info("LegendCreator", t);
+        }
         private void Progress(int p, int a, int f, int sk) => OnProgress?.Invoke(p, a, f, sk);
         private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
     }
