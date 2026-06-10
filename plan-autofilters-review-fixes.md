@@ -175,19 +175,87 @@ the requested "auto filters menu + multi-selection" interaction.
 
 ---
 
-## Out of scope (next plan)
+## Phase 6 — Legend Creator: shared layout engine (preview = output)
 
-- **Legend Creator layout overhaul** — the fixed feet-based layout constants
-  don't account for view scale, TextNoteType size, or baseline-vs-top placement,
-  which is why generated legends never match expectations. Separate plan after
-  design discussion.
+**Problem.** The WPF preview (`LemoineLegendPreview`) and the Revit output
+(`LegendCreatorEventHandler`) are two unrelated layout implementations, so the
+preview cannot predict the generated legend:
 
+| Divergence | Preview | Revit output |
+|---|---|---|
+| Text size | `FontPt` setting for everything; title ×1.4 | Each role's real `TextNoteType.TEXT_SIZE` (`FontPt` only as fallback) |
+| `Gap` setting | Vertical gap between rows | Horizontal swatch→label gap (row gap hardcoded 0.8 ft) |
+| Column width | Natural content width per group | Fixed stride: swatch + gap + 4 ft + 0.6 ft |
+| Long labels | Never wrap | Wrap inside the 4 ft TextNote width → overlap the next entry (row pitch assumes one line) |
+| Label vertical alignment | Centered on swatch | Placed at baseline = swatch center → text sits high |
+| Group header underline | Colored underline drawn | Not created at all |
+
+**Fix: one Revit-free layout core consumed by both sides.**
+
+### 6.1 `LegendLayoutEngine` (new file, `Source/Tools/Testing/LegendCreator/`)
+- Pure function: `(LegendLayoutConfig, rows, TextMetrics) → List<LegendPrimitive>`
+  where primitives are `Text(role, x, baselineY, text)`, `SwatchRect(kind, fill,
+  color, x0, y0, x1, y1)`, `UnderlineRect(...)` — **all coordinates in paper
+  inches**, origin top-left.
+- `TextMetrics` carries each role's text height (paper inches) and a width
+  measurer. Label widths are measured once (WPF `FormattedText` at the role's
+  paper height) and passed in, so both renderers see identical column widths.
+- Column stride = widest measured label in the column + spacing (no fixed 4 ft).
+- Row pitch per block = max(swatch height, label height) + spacing; group depth
+  from actual block count — single-line labels guaranteed (see 6.3).
+- Baseline math centralised: label baseline = swatch centerY + capHeight/2
+  (TextNote Y is the baseline — documented Revit gotcha), so preview and output
+  center identically.
+
+### 6.2 Text metrics capture (Revit main thread)
+- At window launch (same pattern as `CaptureFilterableCategories`), capture each
+  TextNoteType's id, name, and `TEXT_SIZE` (paper feet → inches) into the
+  settings the window thread reads. The per-role type pickers already exist in
+  `LegendSettingsWindow` — the preview just never receives the sizes.
+- Preview re-resolves metrics when a role's type selection changes.
+
+### 6.3 `LegendCreatorEventHandler` consumes the engine
+- Replace the bespoke layout loop with: run the engine, convert inches → feet
+  (× scale ÷ 12), emit primitives.
+- Create labels with the **non-wrapping `TextNote.Create` overload** (no width
+  argument) — eliminates the wrap-overlap failure class entirely; the engine's
+  measured widths drive column stride instead.
+- Draw the group-header underline (thin filled region) so output matches the
+  preview, or — if rejected in review — delete it from the preview.
+
+### 6.4 `LemoineLegendPreview` consumes the engine
+- Replace `Redraw`'s StackPanel layout with rendering the engine's primitives on
+  a Canvas at 96 px/inch. Delete the `FontPt × 1.4` title factor; render each
+  role at its captured paper height. `FontPt` remains only as the fallback for
+  roles with no type selected (mirroring the handler).
+
+### 6.5 Spacing settings made explicit
+- `LegendLayoutConfig`: replace single `Gap` with `RowGap`, `ColGap`,
+  `SwatchLabelGap` (paper inches). Migration in `Normalize()`: old `Gap` seeds
+  `SwatchLabelGap`, new fields get defaults; old XML files load cleanly.
+- `LegendSettingsWindow` sizing rows updated accordingly (`AddSizingRow`,
+  ~line 1004–1011).
+
+### 6.6 Crash fix (independent of the rework)
+- `LemoineLegendLayoutBar.ShowEditPopup` uses `Popup { StaysOpen = false }`
+  (`LemoineLegendLayoutBar.xaml.cs:171`) — in the documented Revit-crash table.
+  Convert to `StaysOpen = true` + window-level `PreviewMouseDown` dismiss, as
+  `LegendSettingsWindow` already does (its own popups note this).
+
+### Also folded in from the T01 review
+- `AutoFiltersLegendEventHandler` (the older filter-legend tool): null-guard the
+  duplicated view, and route it through the same engine later — for now it keeps
+  its quick-generate behaviour, with the option to retire it once the Legend
+  Creator covers its use case.
+
+---
 ## Suggested branch split (one logical change per branch)
 
 1. `discover-scan-fixes` — Phases 1.1, 1.2, 2.1, 2.4, 2.6, 3.1, 3.2, 3.4, 3.5, 4 (Discover-side)
 2. `filter-engine-fixes` — Phases 1.3, 2.2, 2.3, 2.5, 4 (engine-side)
 3. `discover-chained-create` — Phase 3.3 (touches command wiring + VM)
 4. `merge-rules-batch-editor` — Phase 5
+5. `legend-layout-engine` — Phase 6 (the StaysOpen crash fix 6.6 can ride on any earlier branch if preferred)
 
 Or a single branch if preferred. After each implementation pass: run the
 post-change silent-failure scan per CLAUDE.md before committing.
