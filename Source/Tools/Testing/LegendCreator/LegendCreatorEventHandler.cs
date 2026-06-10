@@ -76,30 +76,26 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             var layout = this.Layout ?? new LegendLayoutConfig();
             var rows   = this.Rows   ?? new List<LegendRowConfig>();
 
-            // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
-            double scale   = layout.ViewScale > 0 ? (double)layout.ViewScale : 48.0;
-            double swatchW = LegendLayout.InchesToFeet(layout.SwatchW, scale);
-            double swatchH = LegendLayout.InchesToFeet(layout.SwatchH, scale);
-            double gapFt   = LegendLayout.InchesToFeet(layout.SwatchLabelGap, scale);
-            double colGapFt = LegendLayout.InchesToFeet(layout.ColGap, scale);
-            double rowGapFt = LegendLayout.InchesToFeet(layout.RowGap, scale);
+            // Model-space conversions are computed INSIDE the transaction from the view's
+            // realized Scale (see below), so a scale the view refuses can never skew the
+            // text-vs-swatch proportions away from what the preview showed.
+            int requestedScale = layout.ViewScale > 0 ? layout.ViewScale : 48;
 
-            // ── Find template legend (Create mode only) ───────────────────────
-            View? existingLegend = null;
-            if (!UpdateMode)
+            // ── Find template legend ───────────────────────────────────────────
+            // Resolved in BOTH modes: create duplicates it, and update falls back to it
+            // when the bound target view no longer exists (deleted, or another project).
+            View? templateLegend = null;
+            if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
+                templateLegend = doc.GetElement(TemplateLegendId) as View;
+            if (templateLegend?.ViewType != ViewType.Legend)
+                templateLegend = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
+                    .FirstOrDefault(v => v.ViewType == ViewType.Legend);
+            if (!UpdateMode && templateLegend == null)
             {
-                if (TemplateLegendId != null && TemplateLegendId != ElementId.InvalidElementId)
-                    existingLegend = doc.GetElement(TemplateLegendId) as View;
-                if (existingLegend?.ViewType != ViewType.Legend)
-                    existingLegend = new FilteredElementCollector(doc)
-                        .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
-                        .FirstOrDefault(v => v.ViewType == ViewType.Legend);
-                if (existingLegend == null)
-                {
-                    Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
-                    fail++;
-                    return;
-                }
+                Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
+                fail++;
+                return;
             }
 
             // ── Required project types ────────────────────────────────────────
@@ -165,10 +161,11 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         neededFrts[key] = displayName;
                     }
 
-            // ── Generate unique legend view name (Create mode only) ───────────
+            // ── Generate unique legend view name ───────────────────────────────
+            // Computed in both modes: create uses it directly, and an update whose
+            // target view is gone falls back to creating a fresh view with it.
             string baseTitle  = string.IsNullOrWhiteSpace(layout.Title) ? "Legend" : layout.Title.Trim();
             string legendName = baseTitle;
-            if (!UpdateMode)
             {
                 var existingNames = new FilteredElementCollector(doc)
                     .OfCategory(BuiltInCategory.OST_Views).Cast<View>()
@@ -234,9 +231,22 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 Progress(60, pass, fail, skip);
 
+                // Removes previous filled regions / text notes so a redraw starts clean.
+                void ClearLegendContents(View v)
+                {
+                    var ids = new FilteredElementCollector(doc, v.Id)
+                        .WherePasses(new LogicalOrFilter(
+                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
+                            new ElementClassFilter(typeof(TextNote))))
+                        .ToElementIds().ToList();
+                    foreach (var id in ids)
+                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: clear legend content", __lex); }
+                }
+
                 // ── Find/create the target legend view ───────────────────────
-                View? dv;
-                if (UpdateMode)
+                View? dv = null;
+                bool updating = UpdateMode;
+                if (updating)
                 {
                     if (TargetLegendId != null && TargetLegendId != ElementId.InvalidElementId)
                         dv = doc.GetElement(TargetLegendId) as View;
@@ -255,35 +265,70 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     }
                     if (dv == null || dv.ViewType != ViewType.Legend)
                     {
-                        Log("Target legend view not found. Use 'Create Legend' to create a new one.", "fail");
+                        // The bound view was deleted, or this is a different project. Don't
+                        // dead-end the run — fall through to creating a fresh legend, which
+                        // also rebinds the entry via OnLegendCreated.
+                        Log("Bound legend view not found in this project — creating a new legend instead.", "info");
+                        updating = false;
+                        dv       = null;
+                    }
+                    else
+                    {
+                        ClearLegendContents(dv);
+                    }
+                }
+
+                bool createdNew = false;
+                if (!updating)
+                {
+                    if (templateLegend == null)
+                    {
+                        Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
                         fail++;
                         tx.Commit();
                         return;
                     }
-                    var toDelete = new FilteredElementCollector(doc, dv.Id)
-                        .WherePasses(new LogicalOrFilter(
-                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
-                            new ElementClassFilter(typeof(TextNote))))
-                        .ToElementIds().ToList();
-                    foreach (var id in toDelete)
-                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete temp element", __lex); }
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
-                }
-                else
-                {
-                    ElementId newLegendId = existingLegend!.Duplicate(ViewDuplicateOption.Duplicate);
+                    ElementId newLegendId = templateLegend.Duplicate(ViewDuplicateOption.Duplicate);
                     dv = doc.GetElement(newLegendId) as View;
-                    if (dv == null) { fail++; tx.Commit(); return; }
+                    if (dv == null)
+                    {
+                        Log("Failed to duplicate the template legend view.", "fail");
+                        fail++;
+                        tx.Commit();
+                        return;
+                    }
                     dv.Name = legendName;
-                    try { dv.Scale = layout.ViewScale > 0 ? layout.ViewScale : 48; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set draft view scale", __lex); }
+                    createdNew = true;
                     // Clear any content carried over from the template legend before drawing.
-                    var templateElems = new FilteredElementCollector(doc, dv.Id)
-                        .WherePasses(new LogicalOrFilter(
-                            new ElementCategoryFilter(BuiltInCategory.OST_FilledRegion),
-                            new ElementClassFilter(typeof(TextNote))))
-                        .ToElementIds().ToList();
-                    foreach (var id in templateElems) try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: delete template element", __lex); }
+                    ClearLegendContents(dv);
                 }
+
+                // Both branches either assigned dv or returned — this guard makes that
+                // provable (and defends the invariant if the flow above ever changes).
+                if (dv == null)
+                {
+                    Log("No legend view resolved.", "fail");
+                    fail++;
+                    tx.Commit();
+                    return;
+                }
+
+                // ── Realized view scale drives ALL model-space sizing ─────────
+                // Request the configured scale, then read back what the view actually
+                // carries. Sizing from the realized value keeps text-vs-swatch paper
+                // proportions identical to the preview even when the set is refused.
+                try { dv.Scale = requestedScale; }
+                catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set legend view scale", __lex); }
+                double scale = dv.Scale > 0 ? dv.Scale : requestedScale;
+                if ((int)scale != requestedScale)
+                    Log($"View scale is 1:{(int)scale} (requested 1:{requestedScale}) — legend sized for the actual scale.", "info");
+
+                // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
+                double swatchW  = LegendLayout.InchesToFeet(layout.SwatchW, scale);
+                double swatchH  = LegendLayout.InchesToFeet(layout.SwatchH, scale);
+                double gapFt    = LegendLayout.InchesToFeet(layout.SwatchLabelGap, scale);
+                double colGapFt = LegendLayout.InchesToFeet(layout.ColGap, scale);
+                double rowGapFt = LegendLayout.InchesToFeet(layout.RowGap, scale);
 
                 // ── Resolve per-role TextNoteType IDs ────────────────────────
                 ElementId titleTid  = ResolveTypeId(TitleTypeId,       textTypeId);
@@ -419,15 +464,16 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 // Deliverable = legend blocks/swatches drawn, not a hardcoded 1 for the view.
                 pass += blocksDone;
 
-                // Notify caller of the newly created view's id (Create mode only).
-                if (!UpdateMode) OnLegendCreated?.Invoke(dv.Id);
-            }
+                // Notify the caller whenever a NEW view exists — including the update-mode
+                // fallback, so the legend entry rebinds to the fresh view's id.
+                if (createdNew) OnLegendCreated?.Invoke(dv.Id);
 
-            foreach (var l in logMsgs) Log(l, "info");
-            Log(UpdateMode
-                ? $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
-                : $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
-                fail > 0 ? "fail" : "pass");
+                foreach (var l in logMsgs) Log(l, "info");
+                Log(createdNew
+                    ? $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
+                    : $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
+                    fail > 0 ? "fail" : "pass");
+            }
         }
 
         // ── Shape helpers ─────────────────────────────────────────────────────
@@ -581,7 +627,15 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             return result.Length == 0 ? "Custom" : result;
         }
 
-        private void Log(string t, string s)      => PushLog?.Invoke(t, s);
+        // Mirror to the durable diagnostic log — the Legend Creator window runs with
+        // PushLog == null, so without this every failure reason was silently discarded
+        // (the user saw "Completed with N error(s)" and never the why).
+        private void Log(string t, string s)
+        {
+            PushLog?.Invoke(t, s);
+            if (s == "fail") LemoineLog.Warn("LegendCreator", t);
+            else             LemoineLog.Info("LegendCreator", t);
+        }
         private void Progress(int p, int a, int f, int sk) => OnProgress?.Invoke(p, a, f, sk);
         private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
     }

@@ -1274,16 +1274,29 @@ namespace LemoineTools.Lemoine
             App.LegendCreatorHandler.SubtitleTypeId    = entry.SubtitleTypeId    != -1 ? new ElementId(entry.SubtitleTypeId)    : (ElementId?)null;
             App.LegendCreatorHandler.GroupHeaderTypeId = entry.GroupHeaderTypeId != -1 ? new ElementId(entry.GroupHeaderTypeId) : (ElementId?)null;
             App.LegendCreatorHandler.LabelTypeId       = entry.LabelTypeId       != -1 ? new ElementId(entry.LabelTypeId)       : (ElementId?)null;
-            App.LegendCreatorHandler.PushLog           = null;
+            // Keep the last failure line so the status chip can say WHY a run failed —
+            // discarding the log left only "Completed with N error(s)" and no reason.
+            // (Full detail also lands in diagnostics.log via the handler's Log mirror.)
+            string? lastFailMsg = null;
+            App.LegendCreatorHandler.PushLog           = (text, status) =>
+            {
+                if (status == "fail") lastFailMsg = text;
+            };
             App.LegendCreatorHandler.OnProgress        = null;
 
             int capturedIndex = _activeIndex;
+
+            // True once OnLegendCreated rebinds the entry to a NEW view — covers the
+            // update-mode fallback (stale view id → fresh legend created instead), where
+            // OnComplete must not overwrite the "created" status with "updated".
+            bool createdNewView = false;
 
             App.LegendCreatorHandler.OnLegendCreated = viewId =>
             {
                 long idValue = viewId.Value;
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    createdNewView = true;
                     var list = LegendCreatorSettings.Instance.Legends;
                     if (capturedIndex < list.Count)
                     {
@@ -1301,8 +1314,8 @@ namespace LemoineTools.Lemoine
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SetCreateBusy(false, null);
-                    if (fail > 0)          FlashStatus($"Completed with {fail} error(s).");
-                    else if (isUpdate)     FlashStatus("Legend updated.");
+                    if (fail > 0)                          FlashStatus(lastFailMsg ?? $"Completed with {fail} error(s).");
+                    else if (isUpdate && !createdNewView)  FlashStatus("Legend updated.");
                 }));
             };
 
