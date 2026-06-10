@@ -239,7 +239,7 @@ namespace LemoineTools.Lemoine
             var builder = _builderSlot?.Content as LemoineLegendBuilder;
             if (builder == null || _previewControl == null || _previewOverlayGrid == null) return;
             _previewVisible = true;
-            _previewControl.Update(builder.Layout, builder.Rows);
+            _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
             _previewOverlayGrid.Visibility = WpfVisibility.Visible;
             var st   = (ScaleTransform)_previewOverlayGrid.RenderTransform;
             var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
@@ -270,7 +270,24 @@ namespace LemoineTools.Lemoine
         private void OnBuilderEdited()
         {
             if (_previewVisible && _previewControl != null && _activeBuilder != null)
-                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows);
+                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows, ActiveRoleCaps());
+        }
+
+        // Per-role text cap heights (paper inches) for the active legend, resolved from each
+        // role's chosen TextNoteType (captured at launch) with the font-point fallback. Lets
+        // the preview size text to the real types the generated legend will use.
+        private LegendRoleCaps ActiveRoleCaps()
+        {
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex < 0 || _activeIndex >= entries.Count)
+                return LegendRoleCaps.FromFontPt(9);
+            var e  = entries[_activeIndex];
+            int pt = e.Layout?.FontPt ?? 9;
+            return new LegendRoleCaps(
+                LegendTextTypeSizes.CapInches(e.TitleTypeId,       pt),
+                LegendTextTypeSizes.CapInches(e.SubtitleTypeId,    pt),
+                LegendTextTypeSizes.CapInches(e.GroupHeaderTypeId, pt),
+                LegendTextTypeSizes.CapInches(e.LabelTypeId,       pt));
         }
 
         // Pushes a bottom inset onto the sidebar tab list so its last item (the
@@ -939,7 +956,7 @@ namespace LemoineTools.Lemoine
             if (_previewPillLabel != null)
                 _previewPillLabel.Text = _previewVisible ? "Hide Preview" : "Preview";
             if (_previewVisible && _previewControl != null)
-                _previewControl.Update(builder.Layout, builder.Rows);
+                _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
             RebuildTabStack();
         }
 
@@ -995,7 +1012,7 @@ namespace LemoineTools.Lemoine
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            for (int r = 0; r < 4; r++)
+            for (int r = 0; r < 6; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             // Scale is a dropdown of the standard Revit imperial scales (the legend
@@ -1007,8 +1024,14 @@ namespace LemoineTools.Lemoine
                 d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
             AddSizingRow(grid, 2, "Swatch H", layout.SwatchH, 0.02, 2.0, 0.05,
                 d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 3, "Gap", layout.Gap, 0.0, 1.0, 0.01,
-                d => { layout.Gap = d; builder.NotifyLayoutChanged(); });
+            // Three explicit gaps (paper inches): the old single "Gap" changed the row
+            // spacing in the preview but the swatch→label spacing in the output.
+            AddSizingRow(grid, 3, "Row Gap", layout.RowGap, 0.0, 3.0, 0.02,
+                d => { layout.RowGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 4, "Col Gap", layout.ColGap, 0.0, 3.0, 0.02,
+                d => { layout.ColGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 5, "Swatch–Label", layout.SwatchLabelGap, 0.0, 1.0, 0.01,
+                d => { layout.SwatchLabelGap = d; builder.NotifyLayoutChanged(); });
 
             return WrapCard("SIZING", grid);
         }
