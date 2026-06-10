@@ -49,6 +49,8 @@ namespace LemoineTools.Lemoine
         private TextBlock    _passText        = null!;
         private TextBlock    _failText        = null!;
         private TextBlock    _skipText        = null!;
+        private TextBlock    _passLbl         = null!;   // primary-count label (renamed via ILemoineRunResult)
+        private StackPanel   _countersPanel   = null!;   // host for pass/fail/skip — swapped for chips on completion
 
         private StackPanel   _logStack  = null!;
         private ScrollViewer _logScroll = null!;
@@ -260,11 +262,17 @@ namespace LemoineTools.Lemoine
             top.Children.Add(_statusText);
 
             var counters = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            _passText = Ctr("LemoineGreen");   counters.Children.Add(_passText); counters.Children.Add(CtrLbl(" pass  "));
+            _passLbl  = CtrLbl(" pass  ");
+            _passText = Ctr("LemoineGreen");   counters.Children.Add(_passText); counters.Children.Add(_passLbl);
             _failText = Ctr("LemoineRed");     counters.Children.Add(_failText); counters.Children.Add(CtrLbl(" fail  "));
             _skipText = Ctr("LemoineTextDim"); counters.Children.Add(_skipText); counters.Children.Add(CtrLbl(" skip"));
             DockPanel.SetDock(counters, Dock.Right);
             top.Children.Add(counters);
+            _countersPanel = counters;
+
+            // Self-describing primary label, e.g. "42 segments" instead of "42 pass".
+            if (_tool is ILemoineRunResult rrLabel && !string.IsNullOrWhiteSpace(rrLabel.ResultNoun))
+                _passLbl.Text = $" {rrLabel.ResultNoun}  ";
 
             _progressTrack = new Border
             {
@@ -1001,7 +1009,27 @@ namespace LemoineTools.Lemoine
             _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineGreen");
             _resetBtn.IsEnabled = true;
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
+            // Multi-output tools replace the bare pass number with a labelled breakdown.
+            if (_tool is ILemoineRunResult rr && rr.ResultChips != null && rr.ResultChips.Count > 0)
+                RenderResultChips(rr.ResultChips);
             UpdateStepCounter();
+        }
+
+        // Swaps the pass/fail/skip counters for a tool-supplied set of labelled figures,
+        // e.g. "120 markers · 118 dims · 3 views empty". Called once on completion.
+        private void RenderResultChips(System.Collections.Generic.IReadOnlyList<ResultChip> chips)
+        {
+            _countersPanel.Children.Clear();
+            bool first = true;
+            foreach (var chip in chips)
+            {
+                if (!first) _countersPanel.Children.Add(CtrLbl("   "));
+                first = false;
+                var num = Ctr(string.IsNullOrWhiteSpace(chip.ColorKey) ? "LemoineText" : chip.ColorKey);
+                num.Text = chip.Count.ToString();
+                _countersPanel.Children.Add(num);
+                _countersPanel.Children.Add(CtrLbl($" {chip.Label}"));
+            }
         }
 
         private void ResetAll()
@@ -1018,6 +1046,7 @@ namespace LemoineTools.Lemoine
             // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
             HideStepsForRun(false);
             _logScroll.SetResourceReference(ScrollViewer.HeightProperty, "LemoineH_LogArea");
+            RestoreCounters();   // undo any result-chip swap from the previous run
             _logStack.Children.Clear(); PushLog("Ready.", "info");
             SetStatus("● Configuring…"); SetCounts(0, 0, 0); SetProgress(0);
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
@@ -1087,6 +1116,16 @@ namespace LemoineTools.Lemoine
 
         private void SetStatus(string t) => _statusText.Text = t;
         private void SetCounts(int p, int f, int s) { _passText.Text = p.ToString(); _failText.Text = f.ToString(); _skipText.Text = s.ToString(); }
+
+        // Rebuilds the pass/fail/skip layout in the counters panel (it may have been replaced
+        // by result chips at the end of a previous run). Re-uses the existing counter TextBlocks.
+        private void RestoreCounters()
+        {
+            _countersPanel.Children.Clear();
+            _countersPanel.Children.Add(_passText); _countersPanel.Children.Add(_passLbl);
+            _countersPanel.Children.Add(_failText); _countersPanel.Children.Add(CtrLbl(" fail  "));
+            _countersPanel.Children.Add(_skipText); _countersPanel.Children.Add(CtrLbl(" skip"));
+        }
         private void UpdateStepCounter()
         {
             if (_stepCounter == null) return;

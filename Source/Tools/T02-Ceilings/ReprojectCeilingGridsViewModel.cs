@@ -11,8 +11,12 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable
+    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "curves";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── Ceiling plan view entry passed in from Command ────────────────────
         public sealed class CeilingPlanViewEntry
         {

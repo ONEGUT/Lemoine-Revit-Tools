@@ -36,6 +36,7 @@ namespace LemoineTools.Tools.Clash
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Clash.ClashFinderEventHandler";
 
@@ -204,6 +205,13 @@ namespace LemoineTools.Tools.Clash
             }
 
             Progress(100, totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+            OnResultChips?.Invoke(new List<ResultChip>
+            {
+                new ResultChip("markers", totalMarkers,                       "LemoineGreen"),
+                new ResultChip("dims",    totalDims,                          "LemoineGreen"),
+                new ResultChip("failed",  totalMarkerFails + totalDimFails,   "LemoineRed"),
+                new ResultChip("empty views", viewsSkipped,                   "LemoineTextDim"),
+            });
             Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
         }
 

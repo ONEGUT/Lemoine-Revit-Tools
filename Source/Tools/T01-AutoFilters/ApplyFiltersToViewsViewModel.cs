@@ -17,8 +17,12 @@ namespace LemoineTools.Tools.AutoFilters
     /// Color overrides are sourced from AutoFiltersSettings / MepColorMap,
     /// matching the same logic as Auto Filters.
     /// </summary>
-    public class ApplyFiltersToViewsViewModel : ILemoineTool, ILemoineReviewable
+    public class ApplyFiltersToViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "applied";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Apply Filters to Views";
         public string RunLabel => "Apply to Views →";

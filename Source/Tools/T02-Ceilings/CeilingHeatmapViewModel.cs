@@ -18,8 +18,13 @@ using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class CeilingHeatmapViewModel : ILemoineTool, ILemoineReviewable
+    public class CeilingHeatmapViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Run strip: "tags" during the run, full filter/tag/failure breakdown on completion.
+        public string? ResultNoun => "tags";
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+
         // ── Identity ─────────────────────────────────────────────────────────────
         public string Title    => "Ceiling Elevation Heatmap";
         public string RunLabel => "Apply Heatmap →";
@@ -495,6 +500,8 @@ namespace LemoineTools.Tools.Ceilings
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
+            _resultChips = null;   // clear any breakdown from a previous run
+
             // Persist run options back to settings
             CeilingHeatmapSettings.Instance.PlaceTags     = _placeTags;
             CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
@@ -513,6 +520,7 @@ namespace LemoineTools.Tools.Ceilings
             _handler.PushLog         = pushLog;
             _handler.OnProgress      = onProgress;
             _handler.OnComplete      = onComplete;
+            _handler.OnResultChips   = chips => _resultChips = chips;
             pushLog("Starting Ceiling Elevation Heatmap…", "info");
             _event!.Raise();
         }

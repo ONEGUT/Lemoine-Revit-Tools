@@ -13,8 +13,12 @@ namespace LemoineTools.Tools.AutoFilters
     /// The list of applied filters is captured on the main thread in the launch
     /// command and passed into this ViewModel for display.
     /// </summary>
-    public class DeleteFiltersViewModel : ILemoineTool, ILemoineReviewable
+    public class DeleteFiltersViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "filters";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── ILemoineTool identity ──────────────────────────────────────────────
         public string Title    => "Remove Filters from View";
         public string RunLabel => "Remove Selected →";

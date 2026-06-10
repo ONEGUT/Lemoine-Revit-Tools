@@ -18,8 +18,13 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware
+    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware, ILemoineRunResult
     {
+        // Run strip: "files" during the run, per-format breakdown ("30 PDF · 30 DWG") on completion.
+        public string? ResultNoun => "files";
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Bulk Export";
         public string RunLabel => "Export in Revit →";
@@ -1172,6 +1177,8 @@ namespace LemoineTools.Tools.BulkExport
         {
             if (_handler == null || _event == null) return;
 
+            _resultChips = null;   // clear any breakdown from a previous run
+
             // Persist settings
             var s = BulkExportSettings.Instance;
             s.FilenamePattern              = _sheetPattern;
@@ -1258,6 +1265,7 @@ namespace LemoineTools.Tools.BulkExport
             _handler.PushLog                  = pushLog;
             _handler.OnProgress               = onProgress;
             _handler.OnComplete               = onComplete;
+            _handler.OnResultChips            = chips => _resultChips = chips;
 
             _event.Raise();
         }

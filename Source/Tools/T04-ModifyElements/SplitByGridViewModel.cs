@@ -12,8 +12,12 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByGridViewModel : ILemoineTool, IStepAware, ILemoineReviewable
+    public class SplitByGridViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "segments";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         public string Title    => "Split Elements by Grid Lines";
         public string RunLabel => "Split in Revit →";
 

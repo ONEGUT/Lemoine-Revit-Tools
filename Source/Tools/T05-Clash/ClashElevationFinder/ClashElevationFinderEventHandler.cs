@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.Testing
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
 
         public string GetName() => "LemoineTools.Tools.Testing.ClashElevationFinderEventHandler";
 
@@ -131,6 +132,12 @@ namespace LemoineTools.Tools.Testing
             Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
                 pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
             Progress(100, pass, fail, skip);
+            OnResultChips?.Invoke(new List<ResultChip>
+            {
+                new ResultChip("markers", pass,       "LemoineGreen"),
+                new ResultChip("tags",    tagsPlaced, "LemoineGreen"),
+                new ResultChip("failed",  fail,       "LemoineRed"),
+            });
             Complete(pass, fail, skip);
         }
 

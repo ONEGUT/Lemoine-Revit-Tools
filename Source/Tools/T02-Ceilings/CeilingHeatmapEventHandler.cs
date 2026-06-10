@@ -30,6 +30,10 @@ namespace LemoineTools.Tools.Ceilings
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
+
+        // Per-run breakdown surfaced for the result chips (filters vs tags).
+        private int _filtersCreated, _filtersReused, _tagsPlaced;
 
         public string GetName() => "LemoineTools.Tools.Ceilings.CeilingHeatmapEventHandler";
 
@@ -37,6 +41,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             var doc  = app.ActiveUIDocument.Document;
             int pass = 0, fail = 0, skip = 0;
+            _filtersCreated = _filtersReused = _tagsPlaced = 0;
 
             try
             {
@@ -49,6 +54,13 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             Progress(100, pass, fail, skip);
+            OnResultChips?.Invoke(new List<ResultChip>
+            {
+                new ResultChip("filters", _filtersCreated + _filtersReused, "LemoineGreen"),
+                new ResultChip("tags",    _tagsPlaced,                      "LemoineGreen"),
+                new ResultChip("failed",  fail,                             "LemoineRed"),
+                new ResultChip("skipped", skip,                             "LemoineTextDim"),
+            });
             Complete(pass, fail, skip);
         }
 
@@ -237,6 +249,7 @@ namespace LemoineTools.Tools.Ceilings
             double lowFt  = UnitUtils.ConvertFromInternalUnits(heightBuckets[0],       UnitTypeId.Feet);
             double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last(),    UnitTypeId.Feet);
 
+            _filtersCreated = created; _filtersReused = reused;
             Log($"Complete — {created} filter(s) created, {reused} reused.", "pass");
             Log($"Height offset range: {FormatFtIn(lowFt)} AFF (low) → {FormatFtIn(highFt)} AFF (high).", "info");
             Log($"Applied to {SelectedViewIds.Count} view{(SelectedViewIds.Count == 1 ? "" : "s")}.", "info");
@@ -379,6 +392,7 @@ namespace LemoineTools.Tools.Ceilings
             // Tags are a primary deliverable of the heatmap — count them toward pass so the
             // headline total reflects the ceilings tagged, not just the bucket filters created.
             pass += tagPlaced;
+            _tagsPlaced = tagPlaced;
         }
 
         private FamilySymbol? GetOrLoadTagSymbol(Document doc)

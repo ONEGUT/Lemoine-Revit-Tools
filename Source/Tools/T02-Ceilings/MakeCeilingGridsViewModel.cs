@@ -12,8 +12,12 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable
+    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult
     {
+        // Self-describing result label for the run strip (see ILemoineRunResult).
+        public string? ResultNoun => "views";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
         {

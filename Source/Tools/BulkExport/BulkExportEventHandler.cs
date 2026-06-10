@@ -62,6 +62,10 @@ namespace LemoineTools.Tools.BulkExport
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
+
+        // Per-format file tallies surfaced as result chips ("30 PDF · 30 DWG · …").
+        private int _pdf, _dwg, _nwc, _ifc;
 
         public string GetName() => "BulkExport";
 
@@ -72,6 +76,7 @@ namespace LemoineTools.Tools.BulkExport
             var onComplete = OnComplete ?? ((a, b, c) => { });
 
             int pass = 0, fail = 0, skip = 0;
+            _pdf = _dwg = _nwc = _ifc = 0;
 
             // TEMPORARY DEBUG — remove before release once NWC/IFC export is stable
             using var debug = new BulkExportDebugLogger(OutputFolder);
@@ -216,6 +221,7 @@ namespace LemoineTools.Tools.BulkExport
 
                 debug.Log("COMPLETE", $"Pass={pass}  Fail={fail}  Skip={skip}");
                 onProgress(100, pass, fail, skip);
+                ReportResultChips(fail, skip);
                 onComplete(pass, fail, skip);
             }
             catch (Exception ex)
@@ -224,6 +230,21 @@ namespace LemoineTools.Tools.BulkExport
                 pushLog($"Bulk Export error: {ex.Message}", "fail");
                 onComplete(pass, 1, skip);
             }
+        }
+
+        // Builds the result-strip chips from the per-format file tallies. Only formats that
+        // actually produced files appear, so the breakdown stays uncluttered.
+        private void ReportResultChips(int fail, int skip)
+        {
+            if (OnResultChips == null) return;
+            var chips = new List<ResultChip>();
+            if (_pdf > 0) chips.Add(new ResultChip("PDF", _pdf, "LemoineGreen"));
+            if (_dwg > 0) chips.Add(new ResultChip("DWG", _dwg, "LemoineGreen"));
+            if (_nwc > 0) chips.Add(new ResultChip("NWC", _nwc, "LemoineGreen"));
+            if (_ifc > 0) chips.Add(new ResultChip("IFC", _ifc, "LemoineGreen"));
+            chips.Add(new ResultChip("failed",  fail, "LemoineRed"));
+            chips.Add(new ResultChip("skipped", skip, "LemoineTextDim"));
+            OnResultChips(chips);
         }
 
         // ── Pack mode ─────────────────────────────────────────────────────────
@@ -283,7 +304,7 @@ namespace LemoineTools.Tools.BulkExport
                         bool ok         = doc.Export(outDir, packIds, opts);
                         if (ok)
                         {
-                            pass++;
+                            pass++; _pdf++;
                             pushLog($"PDF (pack): {packName}.pdf [{packIds.Count} sheets]", "pass");
                         }
                         else
@@ -331,7 +352,7 @@ namespace LemoineTools.Tools.BulkExport
                                 bool ok = doc.Export(outDir, safeName, new List<ElementId> { sheetId }, dwgOpts);
                                 if (ok)
                                 {
-                                    pass++;
+                                    pass++; _dwg++;
                                     pushLog($"DWG: {safeName}.dwg", "pass");
                                 }
                                 else
@@ -390,7 +411,7 @@ namespace LemoineTools.Tools.BulkExport
                         bool ok          = doc.Export(outDir, allIds, opts);
                         if (ok)
                         {
-                            pass++;
+                            pass++; _pdf++;
                             pushLog($"PDF (combined): {safeName}.pdf [{allIds.Count} items]", "pass");
                         }
                         else
@@ -421,7 +442,7 @@ namespace LemoineTools.Tools.BulkExport
                             bool ok       = doc.Export(outDir, new List<ElementId> { element.Id }, opts);
                             if (ok)
                             {
-                                pass++;
+                                pass++; _pdf++;
                                 pushLog($"PDF: {safeName}.pdf", "pass");
                             }
                             else
@@ -465,7 +486,7 @@ namespace LemoineTools.Tools.BulkExport
                             bool ok = doc.Export(outDir, safeName, new List<ElementId> { element.Id }, dwgOpts);
                             if (ok)
                             {
-                                pass++;
+                                pass++; _dwg++;
                                 pushLog($"DWG: {safeName}.dwg", "pass");
                             }
                             else
@@ -545,7 +566,7 @@ namespace LemoineTools.Tools.BulkExport
 
                             // NWC export uses the 3-parameter overload — ViewId is set on the options object
                             doc.Export(outDir, safeName, opts);
-                            pass++;
+                            pass++; _nwc++;
                             pushLog($"NWC: {safeName}.nwc", "pass");
                         }
                     }
@@ -589,7 +610,7 @@ namespace LemoineTools.Tools.BulkExport
                                 doc.Export(outDir, safeName, opts);
                                 t.Commit();
                             }
-                            pass++;
+                            pass++; _ifc++;
                             pushLog($"IFC: {safeName}.ifc", "pass");
                         }
                     }
