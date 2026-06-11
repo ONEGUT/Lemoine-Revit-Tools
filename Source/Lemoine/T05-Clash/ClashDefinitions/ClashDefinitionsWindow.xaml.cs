@@ -107,6 +107,11 @@ namespace LemoineTools.Lemoine
             LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
 
+            // A pick callback parked on the static handler outlives this window — sever it so a
+            // late pick can't marshal into this window's terminated dispatcher (and so the
+            // editors/window aren't retained until the next pick).
+            if (_pickHandler != null) _pickHandler.OnPicked = null;
+
             if (Serialize(_defs) != _snapshot)
             {
                 ClashDefinitionsSettings.Instance.Definitions = _defs;

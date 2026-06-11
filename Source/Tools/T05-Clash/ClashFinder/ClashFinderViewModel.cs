@@ -25,9 +25,12 @@ namespace LemoineTools.Tools.Clash
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
 
-        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close
+        // — and so a late slab pick can't marshal into this window's terminated dispatcher.
         public void OnWindowClosed()
         {
+            if (_slabPickHandler != null) _slabPickHandler.OnPicked = null;
+            _activateWindow = null;
             if (_handler == null) return;
             _handler.PushLog       = null;
             _handler.OnProgress    = null;
@@ -488,6 +491,10 @@ namespace LemoineTools.Tools.Clash
             if (_slabPickHandler == null || _slabPickEvent == null) return;
             _slabPickHandler.InLinks = inLinks;
             _slabPickHandler.OnPicked = (scope, name) =>
+            {
+                // The pick resolves on Revit's main thread and can outlive this window — an
+                // unguarded BeginInvoke on a terminated dispatcher hard-crashes Revit.
+                if (disp.HasShutdownStarted || disp.HasShutdownFinished) return;
                 disp.BeginInvoke(new Action(() =>
                 {
                     if (scope != null)   // null = cancelled / not a floor — keep the prior choice
@@ -499,6 +506,7 @@ namespace LemoineTools.Tools.Clash
                     }
                     _activateWindow?.Invoke();   // pull the wizard back in front of Revit
                 }));
+            };
             _slabPickEvent.Raise();
         }
 

@@ -496,7 +496,9 @@ namespace LemoineTools.Tools.Clash
             _pickHandler.InLinks  = inLinks;
             _pickHandler.OnPicked = picks =>
             {
-                // Runs on Revit's main thread — marshal back to the UI thread.
+                // Runs on Revit's main thread and can outlive this window — an unguarded
+                // BeginInvoke on a terminated dispatcher hard-crashes Revit.
+                if (disp.HasShutdownStarted || disp.HasShutdownFinished) return;
                 disp.BeginInvoke(new Action(() =>
                 {
                     foreach (var p in picks)
