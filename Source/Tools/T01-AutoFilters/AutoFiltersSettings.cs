@@ -945,6 +945,7 @@ namespace LemoineTools.Tools.AutoFilters
                     try { cat = Category.GetCategory(doc, id); }
                     catch (Exception __cex) { LemoineLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
                     if (cat == null) continue;
+                    if (cat.CategoryType != CategoryType.Model) continue;
 
                     string name = cat.Name;
                     if (string.IsNullOrWhiteSpace(name)) continue;

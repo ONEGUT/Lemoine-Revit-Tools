@@ -308,7 +308,7 @@ namespace LemoineTools.Tools.Clash
             // Explicit allowlist — only true architectural model categories land here;
             // everything else (Site, Areas, Spaces, annotation, etc.) goes to "Other".
             if (C("OST_Walls", "Floor", "Roof", "Ceiling", "OST_Doors", "OST_Windows",
-                  "Stair", "Ramp", "OST_Columns", "Room", "GenericModel",
+                  "Stair", "Ramp", "OST_Columns", "OST_Rooms", "GenericModel",
                   "Furniture", "Casework", "Entourage", "Planting", "OST_Mass",
                   "Curtain", "OST_Parts", "OST_Assemblies", "SpecialityEquipment",
                   "Cornices", "EdgeSlab"))                                                           return "Architectural";
