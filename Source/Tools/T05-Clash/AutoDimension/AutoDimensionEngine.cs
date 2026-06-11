@@ -327,8 +327,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
 
                     // Largest standard scale at which the demand fits (ratio scales linearly
-                    // with the view scale), and meaningfully larger than the parent.
-                    double bound = scale / ratio;
+                    // with the view scale), and meaningfully larger than the parent. The scale
+                    // pick uses a GENEROUS text width (~11 glyphs — real imperial strings like
+                    // 2'-3 1/2" — vs the 8-glyph detection nominal) so segments genuinely fit
+                    // inline at the chosen scale instead of landing just-barely cramped again.
+                    double scaleRatio = DemandRatio(cluster, thModel * 6.0, thModel);
+                    double bound = scale / Math.Max(scaleRatio, 1e-9);
                     int chosen = 12;
                     foreach (var s in CalloutScales)
                         if (s <= bound && s <= scale / 2.0) { chosen = s; break; }

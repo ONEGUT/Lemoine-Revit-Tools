@@ -313,6 +313,29 @@ namespace LemoineTools.Tools.Clash
                         Log($"Dense area {req.ClusterId}: callout failed ({ex.Message}) — its clashes stay dimensioned in the parent view.", "fail");
                     }
                 }
+
+                // The bubbles live in the parent on the Callouts annotation category — if the
+                // parent (often via its template) hides it, every callout is INVISIBLE there.
+                // Unhide when we can; when the template controls V/G, tell the user loudly.
+                if (ids.Count > 0)
+                {
+                    try
+                    {
+                        var calloutsCat = new ElementId(BuiltInCategory.OST_Callouts);
+                        if (parentView.GetCategoryHidden(calloutsCat))
+                        {
+                            bool unhidden = false;
+                            try { parentView.SetCategoryHidden(calloutsCat, false); unhidden = true; }
+                            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: unhide Callouts category", ex); }
+                            Log(unhidden
+                                ? $"'{parentView.Name}' had the Callouts annotation category hidden — enabled it so the bubbles show."
+                                : $"'{parentView.Name}' HIDES the Callouts annotation category (its view template controls visibility) — "
+                                  + "the callout bubbles exist but are invisible until that category is enabled in the template.",
+                                unhidden ? "info" : "fail");
+                        }
+                    }
+                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: check Callouts visibility", ex); }
+                }
                 tx.Commit();
             }
             return ids;
@@ -330,6 +353,7 @@ namespace LemoineTools.Tools.Clash
                 .FirstOrDefault(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.Ordinal));
             if (existing != null)
             {
+                UnpinTemplate(existing);                 // a pinned template blocks the scale
                 TrySetCalloutScale(existing, req.Scale);
                 try
                 {
@@ -349,12 +373,15 @@ namespace LemoineTools.Tools.Clash
                 return null;
             }
 
-            // Template first (it can reset view properties), then the computed scale on top.
+            // Template first (it copies V/G etc. onto the view), then UNPIN it — clearing the
+            // assignment keeps the applied settings but unlocks the parameters a template pins
+            // (the scale above all: a pinned 1:96 template silently defeated the whole tier).
             if (parentView.ViewTemplateId != null && parentView.ViewTemplateId != ElementId.InvalidElementId)
             {
                 try { callout.ViewTemplateId = parentView.ViewTemplateId; }
                 catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: apply template to callout", ex); }
             }
+            UnpinTemplate(callout);
             TrySetCalloutScale(callout, req.Scale);
 
             try { callout.Name = name; }
@@ -367,9 +394,26 @@ namespace LemoineTools.Tools.Clash
             return callout;
         }
 
+        /// <summary>Clears a view's template assignment, keeping the settings the template already
+        /// applied but unlocking the parameters it pins (scale, V/G). Failure is logged.</summary>
+        private static void UnpinTemplate(View v)
+        {
+            try
+            {
+                if (v.ViewTemplateId != null && v.ViewTemplateId != ElementId.InvalidElementId)
+                    v.ViewTemplateId = ElementId.InvalidElementId;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: unpin callout template", ex); }
+        }
+
         private void TrySetCalloutScale(View callout, int scale)
         {
-            try { callout.Scale = scale; }
+            try
+            {
+                callout.Scale = scale;
+                if (callout.Scale != scale)
+                    Log($"Callout '{callout.Name}': scale stayed 1:{callout.Scale} after setting 1:{scale} — check its view template.", "fail");
+            }
             catch (Exception ex)
             {
                 LemoineLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
