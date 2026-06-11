@@ -210,13 +210,27 @@ namespace LemoineTools.Tools.CopyLinear
             _filterContainer.Children.Clear();
 
             if (_scanning) { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
-            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to list the System / Size / Phase values to filter by. Leave a filter empty to include all.")); return; }
+            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to list every parameter value found on these elements. Leave any filter empty to include all values.")); return; }
 
-            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found. Leave a filter empty to include all of that field."));
+            if (_scan.ParameterValues.Count == 0)
+            {
+                _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found — no parameters with 2+ distinct values discovered."));
+                return;
+            }
 
-            AddFilterTabs("System Type", _scan.SystemTypes, _spec.SystemTypes, v => _spec.SystemTypes = v);
-            AddFilterTabs("Size",        _scan.Sizes,       _spec.Sizes,       v => _spec.Sizes = v);
-            AddFilterTabs("Phase",       _scan.Phases,      _spec.Phases,      v => _spec.Phases = v);
+            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} parameter(s) discovered. Leave any filter empty to include all."));
+
+            // Prune stale filter keys no longer present in the current scan.
+            var scanKeys = new HashSet<string>(_scan.ParameterValues.Keys, StringComparer.Ordinal);
+            foreach (var k in _spec.ParamFilters.Keys.Where(k => !scanKeys.Contains(k)).ToList())
+                _spec.ParamFilters.Remove(k);
+
+            foreach (var kv in _scan.ParameterValues)
+            {
+                string paramName = kv.Key;
+                var selected = _spec.ParamFilters.TryGetValue(paramName, out var sel) ? sel : new List<string>();
+                AddFilterTabs(paramName, kv.Value, selected, v => _spec.ParamFilters[paramName] = v);
+            }
         }
 
         private void AddFilterTabs(string groupTitle, List<string> all, List<string> selected, Action<List<string>> commit)
@@ -404,11 +418,8 @@ namespace LemoineTools.Tools.CopyLinear
 
         private string FilterSummary()
         {
-            var parts = new List<string>();
-            if (_spec.SystemTypes.Count > 0) parts.Add($"{_spec.SystemTypes.Count} system");
-            if (_spec.Sizes.Count       > 0) parts.Add($"{_spec.Sizes.Count} size");
-            if (_spec.Phases.Count      > 0) parts.Add($"{_spec.Phases.Count} phase");
-            return parts.Count == 0 ? "All" : string.Join(", ", parts);
+            int active = _spec.ParamFilters.Count(kv => kv.Value?.Count > 0);
+            return active == 0 ? "All" : $"{active} param filter(s)";
         }
 
         // ── Validation / Summary ────────────────────────────────────────────────

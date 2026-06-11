@@ -70,7 +70,7 @@ namespace LemoineTools.Tools.CopyLinear
                 {
                     try
                     {
-                        if (!CopyLinearSource.PassesFilters(el, src.Doc, Spec)) continue;
+                        if (!CopyLinearSource.PassesFilters(el, Spec)) continue;
                         var line = CopyLinearSource.StraightLine(el);
                         if (line == null) { nonLinear++; continue; }
 

@@ -37,23 +37,45 @@ namespace LemoineTools.Tools.CopyLinear
 
                 var elems = CopyLinearSource.Collect(src.Doc, Spec);
 
-                var systems = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-                var sizes   = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-                var phases  = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-
+                // Collect distinct formatted values for every non-double parameter across all elements.
+                // Double-storage params (dimensions, areas) are skipped — each element has a unique
+                // value, producing lists that are too long to be useful as filter chips.
+                var paramValues = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
                 foreach (var el in elems)
                 {
-                    systems.Add(CopyLinearSource.ReadSystem(el));
-                    sizes.Add(CopyLinearSource.ReadSize(el));
-                    phases.Add(CopyLinearSource.ReadPhase(src.Doc, el));
+                    try
+                    {
+                        foreach (Parameter p in el.Parameters)
+                        {
+                            try
+                            {
+                                if (p == null || p.StorageType == StorageType.None || p.StorageType == StorageType.Double) continue;
+                                var def = p.Definition;
+                                if (def == null) continue;
+                                string name = def.Name;
+                                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                                string val = CopyLinearSource.ReadParamDisplay(p);
+                                if (!paramValues.TryGetValue(name, out var set))
+                                    paramValues[name] = set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+                                set.Add(val);
+                            }
+                            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearScan: read param", ex); }
+                        }
+                    }
+                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinearScan: iterate element params", ex); }
                 }
+
+                // Keep only params with ≥2 distinct values ("value" and "(no value)" count as two).
+                var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                foreach (var kv in paramValues.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                    if (kv.Value.Count >= 2)
+                        result[kv.Key] = kv.Value.ToList();
 
                 OnScanned?.Invoke(new CopyLinearScanResult
                 {
-                    SystemTypes  = systems.ToList(),
-                    Sizes        = sizes.ToList(),
-                    Phases       = phases.ToList(),
-                    ElementCount = elems.Count,
+                    ParameterValues = result,
+                    ElementCount    = elems.Count,
                 });
             }
             catch (Exception ex)

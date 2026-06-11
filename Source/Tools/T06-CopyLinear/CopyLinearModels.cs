@@ -29,8 +29,7 @@ namespace LemoineTools.Tools.CopyLinear
 
     /// <summary>
     /// What the user picked in step 1: one source document, the categories to pull, the worksets
-    /// to exclude, and the optional system / size / phase keyword filters (empty list = "all").
-    /// Mirrors the clash group-1 picker, with Phase added.
+    /// to exclude, and the optional parameter value filters discovered by scan (empty list = "all").
     /// </summary>
     public sealed class CopyLinearSourceSpec
     {
@@ -38,17 +37,15 @@ namespace LemoineTools.Tools.CopyLinear
         public List<string> Categories { get; set; } = new List<string>();  // OST_* strings
         public List<int>    ExcludedWorksetIds { get; set; } = new List<int>();
 
-        public List<string> SystemTypes { get; set; } = new List<string>();
-        public List<string> Sizes       { get; set; } = new List<string>();
-        public List<string> Phases      { get; set; } = new List<string>();
+        // Dynamic filters keyed by parameter display name; empty value list = include all.
+        public Dictionary<string, List<string>> ParamFilters { get; set; } = new Dictionary<string, List<string>>();
     }
 
     /// <summary>Distinct filter values found by a phase-1 scan of the chosen source + categories.</summary>
     public sealed class CopyLinearScanResult
     {
-        public List<string> SystemTypes { get; set; } = new List<string>();
-        public List<string> Sizes       { get; set; } = new List<string>();
-        public List<string> Phases      { get; set; } = new List<string>();
-        public int          ElementCount { get; set; }
+        // Parameter display name → sorted distinct formatted values; only params with ≥2 distinct values included.
+        public Dictionary<string, List<string>> ParameterValues { get; set; } = new Dictionary<string, List<string>>();
+        public int ElementCount { get; set; }
     }
 }
