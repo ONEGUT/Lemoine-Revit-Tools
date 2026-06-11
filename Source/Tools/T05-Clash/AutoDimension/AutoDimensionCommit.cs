@@ -193,10 +193,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             }
             catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: tag directions", ex); return; }
 
-            // Stack side follows the plan: TagStackDir -1 mirrors the column below the
-            // dimension line (the planner's escape from witness-fouled above-line columns).
-            double sign = (pd.Side == Core.DimSide.Positive ? 1.0 : -1.0)
-                        * (pd.TagStackDir < 0 ? -1.0 : 1.0);
+            // Tags stack on the dimension's own side: above for a positive-side string,
+            // below for a negative-side (flipped) one — matching the value text's side.
+            double sign = pd.Side == Core.DimSide.Positive ? 1.0 : -1.0;
 
             // Multi-segment chain → per-segment text; single span → the whole-dimension text.
             DimensionSegmentArray? segs = null;

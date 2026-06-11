@@ -25,7 +25,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public int    LineCrossesLine;     // dim line × dim line crossings
         public int    LineCrossesWitness;  // dim line × witness crossings (either direction)
         public int    WitnessThroughText;  // witness slicing through value text
-        public int    OwnWitnessThroughText; // this dim's OWN witness slicing its own text
         public int    LeaderCrossings;     // leader × leader
         public int    LeaderLineCrossings; // leader × dim/witness line
         public bool   OffCrop;
@@ -46,7 +45,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             if (LineCrossesLine > 0)     parts.Add($"line×line ×{LineCrossesLine}");
             if (LineCrossesWitness > 0)  parts.Add($"line×witness ×{LineCrossesWitness}");
             if (WitnessThroughText > 0)  parts.Add($"witness×text ×{WitnessThroughText}");
-            if (OwnWitnessThroughText > 0) parts.Add($"own-witness×text ×{OwnWitnessThroughText}");
             if (LeaderCrossings > 0)     parts.Add($"leader×leader ×{LeaderCrossings}");
             if (LeaderLineCrossings > 0) parts.Add($"leader×line ×{LeaderLineCrossings}");
             if (OffCrop) parts.Add("off-crop");
@@ -222,19 +220,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     if (detail != null) detail.StaggerPenalty += sp;
                 }
             }
-
-            // ── HARD: this dimension's OWN witnesses through its own value text ──
-            // Witnesses from scattered cluster anchors (or the target's, past a moved-tag
-            // column) can slice this dimension's own text. That placement is invalid; the
-            // search clears it by flipping the column end (TagColumnDir) or dragging the
-            // column below the line (TagStackDir).
-            foreach (var tb in an.TextBoxes)
-                foreach (var w in an.Witnesses)
-                    if (SegIntersectsBox(w, tb))
-                    {
-                        hard += _cfg.WitnessCrossWeight;
-                        if (detail != null) detail.OwnWitnessThroughText++;
-                    }
 
             // ── HARD: off-crop ────────────────────────────────────────────────
             if (_crop.HasValue && !_crop.Value.Contains(d.PaperBounds))

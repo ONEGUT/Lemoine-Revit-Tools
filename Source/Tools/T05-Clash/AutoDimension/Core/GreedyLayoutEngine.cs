@@ -14,8 +14,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
     ///      across the whole view. Within a group, corridors place shortest-span first
     ///      (ASME Y14.5: shortest nearest the object).
     ///   2. Repair passes — the worst-scoring dimensions VIEW-WIDE are re-placed one at a time
-    ///      with a full side × row × column-end × stack-side search against the entire frozen
-    ///      layout, accepted only on improvement. This unsticks what greedy ordering can't.
+    ///      with a full side × row × column-end search against the entire frozen layout,
+    ///      accepted only on improvement. This unsticks what greedy ordering can't.
     ///   3. Shared-row snap — near-level, span-disjoint pairs align onto one line
     ///      (<see cref="RowPlanner.SnapSharedRows"/>).
     /// No parallelism and no hashset iteration — identical input yields an identical plan.
@@ -103,8 +103,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// <summary>
         /// Worst-first repair: each pass ranks every dimension by its local score against the
         /// WHOLE layout (greedy only ever saw the ones placed before it), then re-places the
-        /// offenders with a full side × row × column-end × stack-side search, keeping a move
-        /// only when its local score improves. The pairwise score terms are symmetric, so
+        /// offenders with a full side × row × column-end search, keeping a move only when its
+        /// local score improves. The pairwise score terms are symmetric, so
         /// improving one dimension with everyone else frozen never worsens the total. Stops
         /// when a pass changes nothing, passes run out, or the time cap hits — deterministic.
         /// </summary>
@@ -131,12 +131,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     DimSide origSide   = d.Side;
                     double  origOffset = d.OffsetFt;
                     int     origDir    = d.TagColumnDir;
-                    int     origStack  = d.TagStackDir;
                     var     best       = _scorer.Score(d, obstacles, dims);
                     DimSide bestSide   = origSide;
                     double  bestOffset = origOffset;
                     int     bestDir    = origDir;
-                    int     bestStack  = origStack;
 
                     foreach (var side in new[] { origSide, Flip(origSide) })
                     {
@@ -148,28 +146,18 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                             d.OffsetFt = offset;
                             ResolveSegments(d);
 
-                            bool moved = HasMovedTags(d);
-                            foreach (int dir in moved ? BothDirs : ForwardDir)
+                            foreach (int dir in HasMovedTags(d) ? BothDirs : ForwardDir)
                             {
-                                foreach (int stack in moved ? BothDirs : ForwardDir)
-                                {
-                                    if (side == origSide && Math.Abs(offset - origOffset) <= 1e-9
-                                        && dir == origDir && stack == origStack)
-                                        continue;   // current placement is already `best`
+                                if (side == origSide && Math.Abs(offset - origOffset) <= 1e-9 && dir == origDir)
+                                    continue;   // current placement is already `best`
 
-                                    d.TagColumnDir = dir;
-                                    d.TagStackDir  = stack;
-                                    DimGeometry.RecomputeBounds(d, _cfg);
-                                    var s = _scorer.Score(d, obstacles, dims);
+                                d.TagColumnDir = dir;
+                                DimGeometry.RecomputeBounds(d, _cfg);
+                                var s = _scorer.Score(d, obstacles, dims);
 
-                                    bool better = s.Hard < best.Hard - 1e-9
-                                               || (Math.Abs(s.Hard - best.Hard) <= 1e-9 && s.Soft < best.Soft - 1e-9);
-                                    if (better)
-                                    {
-                                        best = s; bestSide = side; bestOffset = offset;
-                                        bestDir = dir; bestStack = stack;
-                                    }
-                                }
+                                bool better = s.Hard < best.Hard - 1e-9
+                                           || (Math.Abs(s.Hard - best.Hard) <= 1e-9 && s.Soft < best.Soft - 1e-9);
+                                if (better) { best = s; bestSide = side; bestOffset = offset; bestDir = dir; }
                             }
                         }
                     }
@@ -177,11 +165,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     d.Side         = bestSide;
                     d.OffsetFt     = bestOffset;
                     d.TagColumnDir = bestDir;
-                    d.TagStackDir  = bestStack;
                     ResolveSegments(d);
                     DimGeometry.RecomputeBounds(d, _cfg);
-                    if (bestSide != origSide || Math.Abs(bestOffset - origOffset) > 1e-9
-                        || bestDir != origDir || bestStack != origStack)
+                    if (bestSide != origSide || Math.Abs(bestOffset - origOffset) > 1e-9 || bestDir != origDir)
                         changed = true;
                 }
 
@@ -189,7 +175,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             }
         }
 
-        /// <summary>Chooses side + offset + tag-column direction/stack side, then per-segment text states.</summary>
+        /// <summary>Chooses side + offset + tag-column direction, then per-segment text states.</summary>
         private void PlaceOne(
             PlannedDimension d,
             IReadOnlyList<Box2> obstacles,
@@ -199,12 +185,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             // take whichever clears. Dragging the string to the open/lower side keeps it near the
             // clash instead of marching one stack upward — so a dense run de-stacks across both
             // sides rather than always piling toward the top. When segments moved their tags out,
-            // both column ends AND both stack sides are tried too, so a busy right side flips the
-            // column left and a witness-fouled above-line column drops below the dimension.
+            // both column ends are tried too, so a busy right side flips the column left exactly
+            // like a busy top flips the string below. Tags always stack on the dimension's own
+            // side (above an above-line string, below a below one).
             DimSide original  = d.Side;
             DimSide bestSide   = original;
             int     bestDir    = 1;
-            int     bestStack  = 1;
             double  bestOffset = _cfg.FirstOffsetFt;
             double  bestHard   = double.MaxValue;
 
@@ -218,30 +204,23 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     d.OffsetFt = offset;
                     ResolveSegments(d);               // pick segment states at this side/offset
 
-                    bool moved = HasMovedTags(d);
-                    foreach (int dir in moved ? BothDirs : ForwardDir)
+                    foreach (int dir in HasMovedTags(d) ? BothDirs : ForwardDir)
                     {
-                        foreach (int stack in moved ? BothDirs : ForwardDir)
-                        {
-                            d.TagColumnDir = dir;
-                            d.TagStackDir  = stack;
-                            DimGeometry.RecomputeBounds(d, _cfg);
-                            double hard = _scorer.Score(d, obstacles, placed).Hard;
+                        d.TagColumnDir = dir;
+                        DimGeometry.RecomputeBounds(d, _cfg);
+                        double hard = _scorer.Score(d, obstacles, placed).Hard;
 
-                            // Lower hard wins; ties prefer the closer offset, then the original
-                            // side. Iteration order (original side, +axis column, above-line
-                            // stack first) settles remaining ties — deterministic: identical
-                            // input yields an identical plan.
-                            bool better = hard < bestHard - 1e-9;
-                            bool tie    = Math.Abs(hard - bestHard) <= 1e-9;
-                            bool closer = offset < bestOffset - 1e-9;
-                            bool sameOffset      = Math.Abs(offset - bestOffset) <= 1e-9;
-                            bool prefersOriginal = side == original && bestSide != original;
-                            if (better || (tie && (closer || (sameOffset && prefersOriginal))))
-                            {
-                                bestHard = hard; bestOffset = offset; bestSide = side;
-                                bestDir = dir; bestStack = stack;
-                            }
+                        // Lower hard wins; ties prefer the closer offset, then the original side.
+                        // Iteration order (original side, +axis column first) settles remaining
+                        // ties — deterministic: identical input yields an identical plan.
+                        bool better = hard < bestHard - 1e-9;
+                        bool tie    = Math.Abs(hard - bestHard) <= 1e-9;
+                        bool closer = offset < bestOffset - 1e-9;
+                        bool sameOffset      = Math.Abs(offset - bestOffset) <= 1e-9;
+                        bool prefersOriginal = side == original && bestSide != original;
+                        if (better || (tie && (closer || (sameOffset && prefersOriginal))))
+                        {
+                            bestHard = hard; bestOffset = offset; bestSide = side; bestDir = dir;
                         }
                     }
                 }
@@ -252,7 +231,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             d.Side         = bestSide;
             d.OffsetFt     = bestOffset;
             d.TagColumnDir = bestDir;
-            d.TagStackDir  = bestStack;
             ResolveSegments(d);
             DimGeometry.RecomputeBounds(d, _cfg);
         }
@@ -277,11 +255,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// crossbar (cramped) is pulled off the dimension into the tag column, exactly like a
         /// chained dimension's relocated values — never left overhanging inline. The moved
         /// state follows the dimension's side so the commit layer stacks the tags on the
-        /// correct side: Staggered (above) for the positive side, Flipped (below) for the
-        /// negative side. Fitting text stays inline; a tag that its OWN witness lines would
-        /// slice is cleared by the scorer's hard own-witness rule driving the column-end /
-        /// stack-side search — the tag gets dragged off the dimension, below it when the
-        /// above-line zone is fouled.
+        /// SAME side as the value text: Staggered (above) for an above-line/positive string,
+        /// Flipped (below) for a below-line/negative one. Fitting text stays inline.
         /// </summary>
         private void ResolveSegments(PlannedDimension d)
         {

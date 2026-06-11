@@ -16,7 +16,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
     [XmlRoot("LayoutSnapshot")]
     public sealed class LayoutSnapshot
     {
-        [XmlAttribute] public int    SchemaVersion { get; set; } = 2;   // v2: cluster ids + regions + tag stack side
+        [XmlAttribute] public int    SchemaVersion { get; set; } = 2;   // v2: cluster ids + regions
         [XmlAttribute] public string ViewName  { get; set; } = "";
         [XmlAttribute] public int    ViewScale { get; set; } = 1;
         [XmlAttribute] public string Timestamp { get; set; } = "";
@@ -74,7 +74,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         [XmlAttribute] public string Side  { get; set; } = "Positive";
         [XmlAttribute] public double OffsetFt { get; set; }
         [XmlAttribute] public int    TagColumnDir { get; set; } = 1;
-        [XmlAttribute] public int    TagStackDir  { get; set; } = 1;
         [XmlAttribute] public string ClusterId    { get; set; } = "";
         /// <summary>Cluster working-region box; NaN when the dimension carries none.</summary>
         [XmlAttribute] public double RegionMinX { get; set; } = double.NaN;
@@ -131,7 +130,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     Side         = d.Side.ToString(),
                     OffsetFt     = d.OffsetFt,
                     TagColumnDir = d.TagColumnDir,
-                    TagStackDir  = d.TagStackDir,
                     ClusterId    = d.ClusterId ?? "",
                     Hard         = score.Hard,
                     Soft         = score.Soft,
