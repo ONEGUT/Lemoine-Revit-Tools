@@ -41,6 +41,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// solo dimensions whose witness lines cross everything. Default on.</summary>
         public bool DensityChaining { get; set; } = true;
 
+        /// <summary>Callout tier: areas too dense even for chained strings get an enlarged-plan
+        /// callout at a computed scale and are dimensioned THERE instead of the parent view.
+        /// Used by the Clash Finder (which can create the views); default on.</summary>
+        public bool DenseCalloutsEnabled { get; set; } = true;
+
         /// <summary>Max along-run gap between adjacent clashes that still belong to one run (mm).
         /// Wide enough that penetrations spread across a bay stay one run to the edge, like the
         /// manual; tight enough that a separate run further along starts its own dimension. Default

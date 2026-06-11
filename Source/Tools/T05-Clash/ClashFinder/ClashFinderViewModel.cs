@@ -92,9 +92,10 @@ namespace LemoineTools.Tools.Clash
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
           : "Grid";
-        private bool   _chainAligned = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
-        private double _runGapFt     = AutoDimension.AutoDimensionConfig.Instance.RunGapFt;
-        private double _runCrossFt   = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceFt;
+        private bool   _chainAligned  = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
+        private bool   _denseCallouts = AutoDimension.AutoDimensionConfig.Instance.DenseCalloutsEnabled;
+        private double _runGapFt      = AutoDimension.AutoDimensionConfig.Instance.RunGapFt;
+        private double _runCrossFt    = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceFt;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -276,11 +277,14 @@ namespace LemoineTools.Tools.Clash
                                  Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
                 new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
                                  Desc = "Merge collinear clashes that sit close together into one multi-segment string instead of separate dimensions.", DefaultOn = _chainAligned },
+                new ToggleItem { Id = "callouts", Label = "Enlarged callouts for extreme density",
+                                 Desc = "Areas too dense even for chained strings get a plan callout at a computed larger scale; those clashes are dimensioned in the callout instead of this view.", DefaultOn = _denseCallouts },
             });
             toggles.StateChanged += state =>
             {
-                state.TryGetValue("dimPass", out _runDimensionPass);
-                state.TryGetValue("chain",   out _chainAligned);
+                state.TryGetValue("dimPass",  out _runDimensionPass);
+                state.TryGetValue("chain",    out _chainAligned);
+                state.TryGetValue("callouts", out _denseCallouts);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -461,9 +465,10 @@ namespace LemoineTools.Tools.Clash
             _handler.DimTargetType    = _dimTargetType;
             _handler.StoreyMarginMm   = _storeyMarginMm;
             _handler.RoundSizeMm        = _roundSizeMm;
-            _handler.DimChainAligned = _chainAligned;
-            _handler.DimRunGapFt     = _runGapFt;
-            _handler.DimRunCrossFt   = _runCrossFt;
+            _handler.DimChainAligned  = _chainAligned;
+            _handler.DimDenseCallouts = _denseCallouts;
+            _handler.DimRunGapFt      = _runGapFt;
+            _handler.DimRunCrossFt    = _runCrossFt;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
                 : new List<AutoDimension.Resolvers.SlabScope>();

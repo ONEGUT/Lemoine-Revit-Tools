@@ -28,6 +28,7 @@ namespace LemoineTools.Tools.Clash
         public double               StoreyMarginMm   { get; set; } = 609.6;  // 2 ft: sub-floor depth still counted as a level's storey
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
         public bool                 DimChainAligned  { get; set; } = true;  // group clashes into runs (chain along, single across)
+        public bool                 DimDenseCallouts { get; set; } = true;  // extreme density → enlarged-plan callout instead of parent dims
         public double               DimRunGapFt      { get; set; } = 5.0;   // max along-run gap between adjacent run members
         public double               DimRunCrossFt    { get; set; } = 0.5;   // off-line tolerance + across-run snap
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
@@ -163,10 +164,33 @@ namespace LemoineTools.Tools.Clash
                                     if (slabEdge && SlabScopes.Count > 0)
                                         oneScope = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>> { [viewId] = SlabScopes };
 
-                                    var dimResult = AutoDimensionRunner.Run(doc, new List<ElementId> { viewId }, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope);
+                                    // Callout tier: EXTREME dense areas (too packed even for chained
+                                    // strings) get an enlarged-plan callout each — marked like any view,
+                                    // dimensioned at the computed scale — and are excluded from this
+                                    // parent view's dimension pass. Moderate areas stay on the chain tier.
+                                    var dimViewIds = new List<ElementId> { viewId };
+                                    System.Collections.Generic.IDictionary<ElementId, List<string>>? excludes = null;
+                                    if (DimDenseCallouts)
+                                    {
+                                        var requests = AutoDimension.AutoDimensionEngine.SurveyDenseAreas(
+                                            doc, view, dimCfg, (t, s) => Log(t, s));
+                                        if (requests.Count > 0)
+                                        {
+                                            var deferred = new List<string>();
+                                            var calloutIds = CreateDenseCallouts(doc, view, requests, dets, deferred,
+                                                ref totalMarkers, ref totalMarkerFails);
+                                            if (calloutIds.Count > 0)
+                                            {
+                                                dimViewIds.AddRange(calloutIds);
+                                                excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
+                                            }
+                                        }
+                                    }
+
+                                    var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes);
                                     totalDims     += dimResult.Placed;
                                     totalDimFails += dimResult.Failures;
-                                    Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed, {dimResult.Failures} failure(s).",
+                                    Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed across it and {dimViewIds.Count - 1} callout(s), {dimResult.Failures} failure(s).",
                                         dimResult.Placed > 0 ? "pass" : "info");
                                 }
                             }
@@ -236,6 +260,123 @@ namespace LemoineTools.Tools.Clash
         // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the
         // cross-lines also removes any dimensions that referenced them). One view at a time, inside the
         // caller's open transaction.
+        // ── Callout tier ──────────────────────────────────────────────────────
+        /// <summary>
+        /// Creates (or reuses, by name) one enlarged-plan callout per extreme dense area, marks
+        /// each with every definition's clashes, and returns the callout view ids. Source keys of
+        /// successfully calloutted areas are appended to <paramref name="deferred"/> so the parent
+        /// view's dimension pass skips them — a failed callout leaves its area dimensioning in the
+        /// parent (degrade to the chain tier, never drop). One transaction for all callouts.
+        /// </summary>
+        private List<ElementId> CreateDenseCallouts(
+            Document doc, View parentView, List<AutoDimension.DenseCalloutRequest> requests,
+            List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)> dets,
+            List<string> deferred, ref int totalMarkers, ref int totalMarkerFails)
+        {
+            var ids = new List<ElementId>();
+            using (var tx = new Transaction(doc, $"Lemoine - Dense Area Callouts · {parentView.Name}"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
+                foreach (var req in requests)
+                {
+                    try
+                    {
+                        View? cv = GetOrCreateCalloutView(doc, parentView, req);
+                        if (cv == null) continue;
+                        doc.Regenerate();   // few callouts per view — the new view must exist before marking
+
+                        if (ClearPrevious)
+                        {
+                            int removed = ClearViewMarkers(doc, cv.Id);
+                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                        }
+
+                        int placed = 0;
+                        foreach (var (engine, det, cache) in dets)
+                        {
+                            if (det.Failed || det.ClashCount == 0) continue;
+                            var pr = engine.PlaceInView(doc, cv, det, cache);
+                            placed           += pr.Markers;
+                            totalMarkers     += pr.Markers;
+                            totalMarkerFails += pr.Fails;
+                        }
+
+                        ids.Add(cv.Id);
+                        deferred.AddRange(req.SourceKeys);
+                        Log($"Dense area {req.ClusterId} → callout '{cv.Name}' at 1:{cv.Scale} — "
+                          + $"{placed} marker(s), {req.ClashCount} clash(es) dimension there instead of the parent.", "pass");
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Error("ClashFinderEventHandler: create dense-area callout", ex);
+                        Log($"Dense area {req.ClusterId}: callout failed ({ex.Message}) — its clashes stay dimensioned in the parent view.", "fail");
+                    }
+                }
+                tx.Commit();
+            }
+            return ids;
+        }
+
+        /// <summary>Finds the prior run's callout view by its deterministic name, else creates a
+        /// new plan callout over the request rectangle. Template (if any) is applied BEFORE the
+        /// scale so the scale override wins; a template that pins the scale is reported.</summary>
+        private View? GetOrCreateCalloutView(Document doc, View parentView, AutoDimension.DenseCalloutRequest req)
+        {
+            string name = $"{parentView.Name} - Dense {req.ClusterId}";
+
+            var existing = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                .FirstOrDefault(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.Ordinal));
+            if (existing != null)
+            {
+                TrySetCalloutScale(existing, req.Scale);
+                try
+                {
+                    var cb = existing.CropBox;   // refresh the crop to the current cluster extent
+                    cb.Min = new XYZ(Math.Min(req.MinWorld.X, req.MaxWorld.X), Math.Min(req.MinWorld.Y, req.MaxWorld.Y), cb.Min.Z);
+                    cb.Max = new XYZ(Math.Max(req.MinWorld.X, req.MaxWorld.X), Math.Max(req.MinWorld.Y, req.MaxWorld.Y), cb.Max.Z);
+                    existing.CropBox = cb;
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: refresh callout crop", ex); }
+                return existing;
+            }
+
+            View callout = ViewSection.CreateCallout(doc, parentView.Id, parentView.GetTypeId(), req.MinWorld, req.MaxWorld);
+            if (callout == null)
+            {
+                Log($"Dense area {req.ClusterId}: Revit returned no callout view — skipped.", "fail");
+                return null;
+            }
+
+            // Template first (it can reset view properties), then the computed scale on top.
+            if (parentView.ViewTemplateId != null && parentView.ViewTemplateId != ElementId.InvalidElementId)
+            {
+                try { callout.ViewTemplateId = parentView.ViewTemplateId; }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: apply template to callout", ex); }
+            }
+            TrySetCalloutScale(callout, req.Scale);
+
+            try { callout.Name = name; }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("ClashFinderEventHandler: name callout (duplicate?)", ex);
+                try { callout.Name = name + " " + Guid.NewGuid().ToString("N").Substring(0, 4); }
+                catch (Exception ex2) { LemoineLog.Swallowed("ClashFinderEventHandler: name callout fallback", ex2); }
+            }
+            return callout;
+        }
+
+        private void TrySetCalloutScale(View callout, int scale)
+        {
+            try { callout.Scale = scale; }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
+                Log($"Callout '{callout.Name}': could not set scale 1:{scale} (view template may pin it) — set it manually.", "fail");
+            }
+        }
+
         private static int ClearViewMarkers(Document doc, ElementId viewId)
         {
             int removed = 0;

@@ -19,7 +19,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             Document doc, IList<ElementId> viewIds, AutoDimensionConfig cfg,
             Action<string, string> log, Action<int>? progress = null,
             IDictionary<ElementId, List<Resolvers.ManualDatum>>? datums = null,
-            IDictionary<ElementId, List<Resolvers.SlabScope>>? slabScopes = null)
+            IDictionary<ElementId, List<Resolvers.SlabScope>>? slabScopes = null,
+            IDictionary<ElementId, List<string>>? excludeSourceKeys = null)
         {
             log = log ?? ((a, b) => { });
             var total = new CommitResult();
@@ -40,9 +41,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 datums?.TryGetValue(viewId, out viewDatums);
                 List<Resolvers.SlabScope>? viewScopes = null;
                 slabScopes?.TryGetValue(viewId, out viewScopes);
+                List<string>? viewExcludes = null;
+                excludeSourceKeys?.TryGetValue(viewId, out viewExcludes);
 
                 log($"— Dimensioning '{view.Name}' —", "info");
-                var output = engine.BuildPlan(doc, view, cfg, viewDatums, viewScopes);
+                var output = engine.BuildPlan(doc, view, cfg, viewDatums, viewScopes, viewExcludes);
                 ReportPlan(view, output.Plan, log);
                 built.Add((view, output));
                 n++;

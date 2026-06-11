@@ -31,6 +31,24 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         public IReadOnlyList<Core.Box2> Obstacles { get; set; } = new List<Core.Box2>();
     }
 
+    /// <summary>One EXTREME dense area: too packed to dimension legibly even chained at this
+    /// view's scale — dimension it in an enlarged-plan callout instead (the callout tier).
+    /// Produced by <see cref="AutoDimensionEngine.SurveyDenseAreas"/>; consumed by the Clash
+    /// Finder, which creates/reuses the callout view, marks it, and dimensions it.</summary>
+    public sealed class DenseCalloutRequest
+    {
+        public string ClusterId { get; set; } = "";
+        /// <summary>World corners of the callout rectangle (cluster box + margin, on the view plane).</summary>
+        public XYZ MinWorld { get; set; } = XYZ.Zero;
+        public XYZ MaxWorld { get; set; } = XYZ.Zero;
+        /// <summary>Computed callout scale denominator (e.g. 24 for 1:24) at which the area's
+        /// text demand fits its extent.</summary>
+        public int Scale { get; set; } = 12;
+        /// <summary>Members to EXCLUDE from the parent view's dimension pass.</summary>
+        public List<string> SourceKeys { get; } = new List<string>();
+        public int ClashCount { get; set; }
+    }
+
     /// <summary>
     /// Builds a <see cref="Core.DimensionPlan"/> from a view's source cross-lines: ingest →
     /// resolve targets (Part A) → abstract layout (Part B). Read-only — touches no elements.
@@ -41,8 +59,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private readonly Action<string, string> _log;
         public AutoDimensionEngine(Action<string, string> log) { _log = log ?? ((a, b) => { }); }
 
+        /// <summary>Chain tier handles density ratios up to this; beyond it the area gets a
+        /// callout. Ratio = nominal text width × (distinct refs − 1) / extent, worst axis.</summary>
+        private const double CalloutDemandRatio = 2.5;
+
+        /// <summary>Standard callout scale denominators, coarsest first.</summary>
+        private static readonly int[] CalloutScales = { 64, 48, 32, 24, 16, 12 };
+
         public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg,
-            List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null)
+            List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null,
+            List<string>? excludeSources = null)
         {
             var output = new EngineOutput();
             var plan = output.Plan;
@@ -80,9 +106,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // ── 1. Ingest source cross-lines ──────────────────────────────────
             var sources = SourceIngest.Collect(doc, view, projection, plan.Unresolved);
             _log($"Ingest: {sources.Count} source line(s), {plan.Unresolved.Count} without a usable reference.", "info");
+
+            // Callout tier: clashes deferred to enlarged dense-area callouts are not
+            // dimensioned in this (parent) view — they keep their markers + the callout bubble.
+            if (excludeSources != null && excludeSources.Count > 0)
+            {
+                var excl = new HashSet<string>(excludeSources, StringComparer.Ordinal);
+                int before = sources.Count;
+                sources = sources.Where(s => !excl.Contains(s.SourceKey)).ToList();
+                if (before != sources.Count)
+                    _log($"{before - sources.Count} clash(es) deferred to enlarged dense-area callout(s) — not dimensioned here.", "info");
+            }
             if (sources.Count == 0)
             {
-                plan.Notes.Add("No tagged source cross-lines found in the view.");
+                plan.Notes.Add("No tagged source cross-lines found in the view (or all deferred to callouts).");
                 return output;
             }
 
@@ -257,6 +294,92 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             plan.Dimensions = dims;
             return output;
+        }
+
+        // ── Callout tier survey ────────────────────────────────────────────────
+        /// <summary>
+        /// Read-only pre-pass for the callout tier: ingests the view's source cross-lines,
+        /// clusters them, and returns one request per EXTREME cluster — too dense to dimension
+        /// legibly even chained (demand ratio &gt; <see cref="CalloutDemandRatio"/>) — with the
+        /// callout rectangle (world) and the computed scale at which its text demand fits.
+        /// Moderate clusters return nothing (the chain tier keeps them). Never throws.
+        /// </summary>
+        public static List<DenseCalloutRequest> SurveyDenseAreas(
+            Document doc, View view, AutoDimensionConfig cfg, Action<string, string>? log = null)
+        {
+            var requests = new List<DenseCalloutRequest>();
+            try
+            {
+                var projection = new ViewProjection(view);
+                var sources = SourceIngest.Collect(doc, view, projection, new List<Core.UnresolvedTarget>());
+                if (sources.Count == 0) return requests;
+
+                double scale = view.Scale <= 0 ? 1 : view.Scale;
+                double textPaperFt = ReadDimTextSizeFt(doc, ResolveDimType(doc, cfg.DimensionTypeName))
+                                  ?? cfg.Layout.TextHeightFt;
+                double thModel  = textPaperFt * scale;
+                double nominal  = thModel * 4.8;   // nominal value-text width (~8 glyphs)
+
+                var density = DensityClusterer.Build(sources, nominal, minCount: 4);
+                foreach (var cluster in density.Clusters)
+                {
+                    double ratio = DemandRatio(cluster, nominal, thModel);
+                    if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
+
+                    // Largest standard scale at which the demand fits (ratio scales linearly
+                    // with the view scale), and meaningfully larger than the parent.
+                    double bound = scale / ratio;
+                    int chosen = 12;
+                    foreach (var s in CalloutScales)
+                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+
+                    double margin = nominal * 0.75;
+                    var req = new DenseCalloutRequest
+                    {
+                        ClusterId  = cluster.Id,
+                        MinWorld   = projection.From2D(new Core.Vec2(cluster.MinX - margin, cluster.MinY - margin)),
+                        MaxWorld   = projection.From2D(new Core.Vec2(cluster.MaxX + margin, cluster.MaxY + margin)),
+                        Scale      = chosen,
+                        ClashCount = cluster.MemberKeys.Count,
+                    };
+                    req.SourceKeys.AddRange(cluster.MemberKeys);
+                    requests.Add(req);
+                    log?.Invoke($"Dense area {cluster.Id}: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} — "
+                              + $"callout tier at 1:{chosen} ({cluster.MemberKeys.Count} clashes).", "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error("AutoDimensionEngine: survey dense areas", ex);
+                log?.Invoke($"Dense-area survey failed ({ex.Message}) — callout tier skipped this view.", "fail");
+            }
+            return requests;
+        }
+
+        /// <summary>Worst-axis density ratio of a cluster: nominal text width × (distinct
+        /// reference positions − 1) over the extent — &gt;1 means texts can't sit inline,
+        /// &gt;~2.5 means even tag columns drown. Distinctness at half a text height mirrors
+        /// the chainer's coincident-reference dedupe.</summary>
+        private static double DemandRatio(DensityClusterer.ClusterInfo cluster, double nominal, double th)
+        {
+            int nx = DistinctCount(cluster.MemberPoints.Select(p => p.X), th * 0.5);
+            int ny = DistinctCount(cluster.MemberPoints.Select(p => p.Y), th * 0.5);
+            double ex = Math.Max(cluster.MaxX - cluster.MinX, nominal);
+            double ey = Math.Max(cluster.MaxY - cluster.MinY, nominal);
+            double rx = nominal * Math.Max(nx - 1, 0) / ex;
+            double ry = nominal * Math.Max(ny - 1, 0) / ey;
+            return Math.Max(rx, ry);
+        }
+
+        private static int DistinctCount(IEnumerable<double> values, double tol)
+        {
+            int n = 0;
+            double last = double.NaN;
+            foreach (var v in values.OrderBy(v => v))
+            {
+                if (double.IsNaN(last) || v - last > tol) { n++; last = v; }
+            }
+            return n;
         }
 
         // ── Helpers ────────────────────────────────────────────────────────────

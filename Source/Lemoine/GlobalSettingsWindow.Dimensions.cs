@@ -66,6 +66,9 @@ namespace LemoineTools.Lemoine
                 new ToggleItem { Id = "density", Label = "Auto-chain dense areas",
                                  Desc = "Clashes packed tighter than their value texts collapse into one chained string per axis, split by nearest reference — instead of overlapping solo dimensions.",
                                  DefaultOn = cfg.DensityChaining },
+                new ToggleItem { Id = "callouts", Label = "Enlarged callouts for extreme density",
+                                 Desc = "Areas too dense even for chained strings get a plan callout at a computed larger scale (Clash Finder runs only); their clashes are dimensioned in the callout, not the parent view.",
+                                 DefaultOn = cfg.DenseCalloutsEnabled },
                 new ToggleItem { Id = "bothAxes", Label = "Dimension both axes",
                                  Desc = "Measure each clash in the view's X and Y directions (two dimensions per clash).",
                                  DefaultOn = cfg.DimensionBothAxes },
@@ -80,6 +83,7 @@ namespace LemoineTools.Lemoine
             {
                 if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned      = c;
                 if (state.TryGetValue("density",  out var dc)) cfg.DensityChaining  = dc;
+                if (state.TryGetValue("callouts", out var co)) cfg.DenseCalloutsEnabled = co;
                 if (state.TryGetValue("bothAxes", out var b)) cfg.DimensionBothAxes = b;
                 if (state.TryGetValue("links",    out var l)) cfg.IncludeLinks      = l;
                 if (state.TryGetValue("slabDiag", out var d)) cfg.DiagnoseSlabEdge  = d;
