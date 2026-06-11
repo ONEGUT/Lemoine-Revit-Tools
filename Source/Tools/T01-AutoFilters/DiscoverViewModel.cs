@@ -437,7 +437,7 @@ namespace LemoineTools.Tools.AutoFilters
             var body      = new Border { Padding = new Thickness(10, 8, 10, 8) };
             var bodyStack = new StackPanel();
 
-            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
+            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200, Hierarchy = AutoFiltersSettings.CategorySubcategories };
             // Scroll-wheel handling is global (OnScrollViewerWheel) and MultiSelectTabs already wires
             // its own inner scrollers — no per-call-site wiring needed here.
 

@@ -455,6 +455,7 @@ namespace LemoineTools.Tools.Clash
                 return;
             }
             var tabs = new LemoineMultiSelectTabs();
+            tabs.Hierarchy = AutoFiltersSettings.CategorySubcategories;
             tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), _catDisplays);
             tabs.SelectionChanged += selected =>
             {
