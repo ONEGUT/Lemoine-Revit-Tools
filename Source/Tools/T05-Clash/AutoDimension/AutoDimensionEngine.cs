@@ -38,7 +38,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
     public sealed class DenseCalloutRequest
     {
         public string ClusterId { get; set; } = "";
-        /// <summary>World corners of the callout rectangle (cluster box + margin, on the view plane).</summary>
+        /// <summary>World corners of the callout rectangle on the view plane: the cluster box
+        /// unioned with the containing room(s)' footprints (host or linked), plus a margin —
+        /// a callout always reads a little larger than the room its clashes sit in.</summary>
         public XYZ MinWorld { get; set; } = XYZ.Zero;
         public XYZ MaxWorld { get; set; } = XYZ.Zero;
         /// <summary>Computed callout scale denominator (e.g. 24 for 1:24) at which the area's
@@ -321,6 +323,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double nominal  = thModel * 4.8;   // nominal value-text width (~8 glyphs)
 
                 var density = DensityClusterer.Build(sources, nominal, minCount: 4);
+
+                // Room growth needs the clashes' world anchors; the resolver is built lazily —
+                // most views have no extreme cluster and skip the link scan entirely.
+                var anchors = new Dictionary<string, XYZ>(StringComparer.Ordinal);
+                foreach (var s in sources)
+                    if (s != null && !string.IsNullOrEmpty(s.SourceKey)) anchors[s.SourceKey] = s.Anchor3d;
+                Resolvers.RoomBoundsResolver? rooms = null;
+
                 foreach (var cluster in density.Clusters)
                 {
                     double ratio = DemandRatio(cluster, nominal, thModel);
@@ -337,12 +347,34 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     foreach (var s in CalloutScales)
                         if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
 
+                    // The callout must always read a little larger than the room(s) its clashes
+                    // sit in (rooms usually live in a linked architectural model): union the
+                    // containing rooms' footprints with the cluster box, then add the margin.
+                    double minX = cluster.MinX, minY = cluster.MinY;
+                    double maxX = cluster.MaxX, maxY = cluster.MaxY;
+                    rooms ??= new Resolvers.RoomBoundsResolver(doc, view);
+                    var roomLabels = new List<string>();
+                    var seenRooms  = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var key in cluster.MemberKeys)
+                    {
+                        if (!anchors.TryGetValue(key, out var anchor3d)) continue;
+                        var hit = rooms.FindRoom(anchor3d);
+                        if (hit == null || !seenRooms.Add(hit.Key)) continue;
+                        foreach (var corner in hit.Corners)
+                        {
+                            var p = projection.To2D(corner);
+                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        }
+                        roomLabels.Add(hit.Label);
+                    }
+
                     double margin = nominal * 0.75;
                     var req = new DenseCalloutRequest
                     {
                         ClusterId  = cluster.Id,
-                        MinWorld   = projection.From2D(new Core.Vec2(cluster.MinX - margin, cluster.MinY - margin)),
-                        MaxWorld   = projection.From2D(new Core.Vec2(cluster.MaxX + margin, cluster.MaxY + margin)),
+                        MinWorld   = projection.From2D(new Core.Vec2(minX - margin, minY - margin)),
+                        MaxWorld   = projection.From2D(new Core.Vec2(maxX + margin, maxY + margin)),
                         Scale      = chosen,
                         ClashCount = cluster.MemberKeys.Count,
                     };
@@ -350,6 +382,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     requests.Add(req);
                     log?.Invoke($"Dense area {cluster.Id}: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} — "
                               + $"callout tier at 1:{chosen} ({cluster.MemberKeys.Count} clashes).", "info");
+                    log?.Invoke(roomLabels.Count > 0
+                        ? $"Dense area {cluster.Id}: callout grown to cover {string.Join(", ", roomLabels)} plus a margin."
+                        : $"Dense area {cluster.Id}: no room found at its clashes — callout sized to the cluster extent.",
+                        "info");
                 }
             }
             catch (Exception ex)
