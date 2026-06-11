@@ -184,7 +184,7 @@ namespace LemoineTools.Tools.CopyLinear
                 copied = ReferenceEquals(srcDoc, doc)
                     ? ElementTransformUtils.CopyElement(doc, run.Element.Id, XYZ.Zero)
                     : ElementTransformUtils.CopyElements(
-                        srcDoc, new List<ElementId> { run.Element.Id }, doc, tx, new CopyPasteOptions());
+                        srcDoc, new List<ElementId> { run.Element.Id }, doc, tx, CopyOptions());
             }
             catch (Exception ex)
             {
@@ -329,6 +329,21 @@ namespace LemoineTools.Tools.CopyLinear
                         try { c.DisconnectFrom(other); } catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: disconnect connector", ex); }
             }
             catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: disconnect connectors", ex); }
+        }
+
+        // Copy options that silently reuse the destination's types — suppresses the modal
+        // "Duplicate Types" prompt that otherwise pops for every cross-document copy.
+        private static CopyPasteOptions CopyOptions()
+        {
+            var opts = new CopyPasteOptions();
+            opts.SetDuplicateTypeNamesHandler(new UseDestinationTypes());
+            return opts;
+        }
+
+        private sealed class UseDestinationTypes : IDuplicateTypeNamesHandler
+        {
+            public DuplicateTypeAction OnDuplicateTypeNamesFound(DuplicateTypeNamesHandlerArgs args)
+                => DuplicateTypeAction.UseDestinationTypes;
         }
 
         private static void ConfigureFailures(Transaction tx)
