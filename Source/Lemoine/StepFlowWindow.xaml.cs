@@ -60,6 +60,7 @@ namespace LemoineTools.Lemoine
         private StackPanel   _logStack  = null!;
         private ScrollViewer _logScroll = null!;
         private Button       _resetBtn  = null!;
+        private Button       _rerunBtn  = null!;
         private Button       _closeBtn  = null!;
 
         // Log resize drag state
@@ -855,6 +856,18 @@ namespace LemoineTools.Lemoine
             DockPanel.SetDock(_closeBtn, Dock.Right);
             dp.Children.Add(_closeBtn);
 
+            // Centred "Rerun" — re-runs the tool with the same settings/selections by
+            // calling StartRun() again (the tool reads its config from its own ViewModel
+            // fields, which are not cleared after a run). Hidden until a run completes,
+            // since there is nothing to re-run before then. Added LAST so DockPanel's
+            // LastChildFill places it in the space between Reset (left) and Close (right).
+            _rerunBtn = BuildButton("Rerun", false);
+            _rerunBtn.Width = 90;
+            _rerunBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            _rerunBtn.Visibility = Visibility.Collapsed;
+            _rerunBtn.Click += (s, e) => StartRun();
+            dp.Children.Add(_rerunBtn);
+
             _footerBorder.Child = dp;
         }
 
@@ -1016,10 +1029,17 @@ namespace LemoineTools.Lemoine
         private void StartRun()
         {
             _isRunning = true; SetStatus("● Running…"); SetCounts(0, 0, 0);
+            // Reset any "done" visuals so a Rerun starts from a clean running baseline
+            // (StartRun is now re-entrant — the Rerun button calls it after CompleteRun).
+            _isDone = false;
+            _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
+            SetProgress(0);
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Visible;
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
             _resetBtn.IsEnabled = false;
+            _rerunBtn.IsEnabled = false;
             // True-hide every step except the last (which hosts the run controls + output
             // log), then extend the log to its max height so the run output fills the area.
             HideStepsForRun(true);
@@ -1047,6 +1067,7 @@ namespace LemoineTools.Lemoine
             _closeBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineGreen");
             _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineGreen");
             _resetBtn.IsEnabled = true;
+            _rerunBtn.Visibility = Visibility.Visible; _rerunBtn.IsEnabled = true;
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
             // Prominent, self-describing summary in the output log (the top bar keeps the
             // generic pass/fail/skip): "42 segments" plus any per-output chip breakdown.
@@ -1115,6 +1136,7 @@ namespace LemoineTools.Lemoine
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
             _resetBtn.IsEnabled = true;
+            _rerunBtn.Visibility = Visibility.Collapsed;
             // Restore the step rows hidden for the run and return the log to its default
             // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
             HideStepsForRun(false);
