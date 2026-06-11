@@ -96,6 +96,10 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
         internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
+        // ── Testing — PDF Region Wand ────────────────────────────────────────────────
+        internal static LemoineTools.Tools.Testing.PdfRegionWand.PdfRegionWandEventHandler? PdfRegionWandHandler { get; private set; }
+        internal static ExternalEvent?             PdfRegionWandEvent { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -183,6 +187,8 @@ namespace LemoineTools
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
             PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
+            PdfRegionWandHandler = new LemoineTools.Tools.Testing.PdfRegionWand.PdfRegionWandEventHandler();
+            PdfRegionWandEvent   = ExternalEvent.Create(PdfRegionWandHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -429,6 +435,11 @@ namespace LemoineTools
                     "Create one 3D view per link with a section box, with optional combined views per discipline."),
                 Btn("LT_PlaceDepViews",       "Place Dep. Views", "PlaceDependentViewsCommand",
                     "Create one sheet per view and place its dependents, trimmed and packed without overlap."));
+
+            testingPanel.AddItem(Btn(
+                "LT_PdfRegionWand", "PDF Region\nWand", "PdfRegionWandCommand",
+                "Magic-wand closed regions from a placed PDF underlay and create floors from them, one undo step per fill.",
+                char.ConvertFromUtf32(0xE790)));  // Segoe MDL2: Color
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
