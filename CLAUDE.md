@@ -218,6 +218,11 @@ Inside a `Window` (or other control) subclass, `Visibility.Visible` fails to com
 
 Any settings DTO serialized with `XmlSerializer` must be `public`. An `internal` (or otherwise non-public) root type throws *"only public types can be processed"* at `new XmlSerializer(typeof(T))` construction — and because that call usually sits inside a try/catch, every save and load fails **silently**, leaving settings stuck on defaults. This was the root cause of theme / UI-size resetting on restart (`UISettingsDto` was `internal`).
 
+### `RibbonPanel.AddStackedItems` — only 2 or 3 items
+
+`AddStackedItems` has overloads for **exactly two or three** `RibbonItemData` arguments only. A four-argument call does not compile (no matching overload). To add a fourth button to a panel that already stacks three, give it its own `panel.AddItem(...)` rather than extending the stacked call.
+
+
 ---
 
 ## Revit API Ordering Constraints
@@ -359,6 +364,17 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 - **Discover must read the filter's parameter.** When a discover/scan captures keyword values, read them through the **same** `BuiltInParameter` the generated filter binds (e.g. `FABRICATION_SERVICE_NAME`), not the property-palette composite value — otherwise the captured `contains` keyword never matches what the view filter compares against.
 - **Mirror Revit's category list from the API, never a curated map.** To make the category picker match Revit's "Edit Filters → Categories" tree exactly, capture it on the Revit main thread (the launch commands run there with the doc) via `ParameterFilterUtilities.GetAllFilterableCategories()` and resolve each with `Category.GetCategory(doc, id)` for its real `Category.Name`. Derive the picker's parent→child nesting from each category's actual `Category.Parent` — a hand-curated grouping is wrong (it nested flat siblings like Duct Fittings under Ducts; Revit only nests true sub-categories such as Roofs → Fascias/Gutters/Roof Soffits). `AutoFiltersSettings.CaptureFilterableCategories(doc)` is the reference; a hardcoded map stays only as the no-document (preview-app) fallback.
 - **Only BuiltInCategory-backed categories are storable.** The filter engine persists categories as `OST_` strings, so capture only filterable categories whose id is a negative `BuiltInCategory`; non-builtin custom subcategories (e.g. `<Path of Travel Lines>`, `<Area Based Load Boundary>`) cannot be stored and must be skipped. Disambiguate duplicate Revit sub-category names (an `Insulation` under two parents) by qualifying with the parent name so each display token maps to exactly one `OST_` string.
+
+---
+
+## Cross-Document Copy & Idempotent Re-Runs
+
+Discovered building **Copy Linear Elements** / **Copy Grids** (pull elements out of a link into the host).
+
+- **Cross-document `ElementTransformUtils.CopyElements` pops a modal "Duplicate Types" dialog for every call** when any type already exists in the host (it does for nearly every MEP/grid copy). Pass a `CopyPasteOptions` whose `SetDuplicateTypeNamesHandler` returns `DuplicateTypeAction.UseDestinationTypes` (a tiny `IDuplicateTypeNamesHandler`) to suppress it and silently reuse the destination's types. `Transaction` `SetForcedModalHandling(false)` does **not** suppress this dialog — it is a copy-paste prompt, not a failure.
+- **The cross-document `CopyElements(srcDoc, ids, destDoc, transform, opts)` overload throws when `srcDoc == destDoc`.** For a host-sourced copy use the same-document `ElementTransformUtils.CopyElement(doc, id, XYZ.Zero)` instead; only use the cross-doc overload for a real link (pass `link.GetTotalTransform()`).
+- **Idempotent re-runs over linked sources: stamp, don't track externally.** Write an Extensible Storage `Entity` onto every created host element carrying the source `UniqueId` + a geometry/param hash (constant hardcoded `Schema` GUID, `Schema.Lookup` guard — same discipline as `AutoDimOwnerSchema`). A re-run reads all stamped outputs in one pass via `new FilteredElementCollector(doc).WherePasses(new ExtensibleStorageFilter(SchemaGuid))` and reconciles: rebuild changed/new keys (deleting their prior outputs first), leave unchanged keys, delete outputs whose source key is gone. No external database, self-healing.
+- **Grids are unique by name and the setter throws on a duplicate**, so a grid copy must pre-check host grid names and **skip-and-log** any clash (it can never overwrite). Same family as the View.Name / sheet-number uniqueness rule.
 
 ---
 
