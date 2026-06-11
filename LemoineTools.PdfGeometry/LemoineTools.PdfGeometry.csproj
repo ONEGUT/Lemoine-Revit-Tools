@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Revit-free geometry core for the PDF Region Wand tool.
+
+    Zero Revit API references — everything here works in PDF point space
+    (doubles) and is unit-testable offline via LemoineTools.PdfGeometry.Tests.
+    The only external dependency is PdfPig (pure managed, netstandard2.0)
+    for PDF content probing and vector path extraction. Rasterization is
+    behind IPageRasterizer; the PDFium-backed implementation lives in the
+    main addin project so no native dependency ever enters this core.
+
+    Folder map:
+      Primitives/  Pt2, Seg2, Bounds2, PolylineOps, GeomTol
+      Raster/      BitGrid, PageRaster, LineRasterizer, ScanlineFloodFill, MooreContourTracer
+      Vector/      SegmentGraph, LoopFinder (planar face extraction)
+      Simplify/    DouglasPeucker, OrthoSnap
+      Graph/       SharedEdge / RegionFace / RegionSession / EdgeReconciler (DCEL-style shared-edge store)
+      Arcs/        ArcFitter (deterministic per-edge arc reconstruction)
+      Pdf/         IPageRasterizer, PdfContentProbe, PdfPathExtractor (PdfPig)
+      Plans/       RegionPlan, PlanCurve — serializable handoff to the Revit side
+      Transform/   WandTransform — pdf pt ↔ pixel ↔ model ft, both directions
+      Engine/      RegionWandEngine — session orchestration (mode routing, barriers, wand)
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>LemoineTools.PdfGeometry</RootNamespace>
+    <AssemblyName>LemoineTools.PdfGeometry</AssemblyName>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.9" />
+  </ItemGroup>
+
+</Project>

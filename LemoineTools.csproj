@@ -70,6 +70,29 @@
     <EmbeddedResource Remove="LemoinePreview\**\*" />
   </ItemGroup>
 
+  <!-- The PDF Region Wand geometry core and its tests are separate projects;
+       exclude them from this project's SDK wildcard globs for the same reason
+       as LemoinePreview above. The core is consumed via ProjectReference. -->
+  <ItemGroup>
+    <Compile          Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <Page             Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <None             Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <EmbeddedResource Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="LemoineTools.PdfGeometry\LemoineTools.PdfGeometry.csproj" />
+  </ItemGroup>
+
+  <!-- PDFium-backed page rasterizer for the PDF Region Wand (raster extraction mode).
+       The native pdfium.dll is copied beside the addin and loaded explicitly with
+       LoadLibrary from the addin folder (see PdfiumNativeLoader) because Revit's
+       process working directory is not the addin directory. -->
+  <ItemGroup>
+    <PackageReference Include="PdfiumViewer" Version="2.13.0" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
