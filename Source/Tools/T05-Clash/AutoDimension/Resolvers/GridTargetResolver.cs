@@ -54,15 +54,22 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 if (dist > ctx.Config.MaxDistanceFt) continue;
                 if (dist >= bestDist) continue;
 
+                // Crop-bounded views (dense callouts): only dimension to a grid whose landing
+                // point is actually visible in the crop — never out past the callout edge.
+                Core.Vec2 land = source.Anchor2d + axis * (gridAxial - srcAxial);
+                if (ctx.TargetBounds.HasValue && !ctx.TargetBounds.Value.Contains(land)) continue;
+
                 bestDist = dist;
                 bestRef  = g.Ref;
-                bestPt   = source.Anchor2d + axis * (gridAxial - srcAxial);
+                bestPt   = land;
                 bestKey  = g.Key;
             }
 
             if (bestRef == null)
                 return ResolvedTarget.Fail(source.SourceKey, Core.TargetType.Grid,
-                    "no grid within distance cap runs across the measurement axis");
+                    ctx.TargetBounds.HasValue
+                        ? "no grid visible in the view crop runs across the measurement axis"
+                        : "no grid within distance cap runs across the measurement axis");
 
             return ResolvedTarget.Ok(bestRef, bestPt, bestKey);
         }

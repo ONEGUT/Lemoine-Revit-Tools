@@ -46,6 +46,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public bool Contains(Box2 o) =>
             o.MinX >= MinX && o.MaxX <= MaxX && o.MinY >= MinY && o.MaxY <= MaxY;
 
+        public bool Contains(Vec2 p) =>
+            p.X >= MinX && p.X <= MaxX && p.Y >= MinY && p.Y <= MaxY;
+
         public Box2 Union(Box2 o) =>
             new Box2(Math.Min(MinX, o.MinX), Math.Min(MinY, o.MinY),
                      Math.Max(MaxX, o.MaxX), Math.Max(MaxY, o.MaxY));

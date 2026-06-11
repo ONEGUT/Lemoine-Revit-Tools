@@ -78,7 +78,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 // Resolved (non-null) → trust the targeted result exactly, never substitute an unrelated
                 // floor. Null → the element is gone/unloaded (already reported) → fall through to scan.
                 if (elemFaces != null)
-                    return ResolveAgainstFaces(source, ctx, axis, elemFaces, targeted: true);
+                {
+                    var targetedResult = ResolveAgainstFaces(source, ctx, axis, elemFaces, targeted: true);
+                    // Crop-bounded views (dense callouts): the stamped element's edge can sit OUTSIDE
+                    // the visible crop — fall back to scanning for the nearest edge actually shown.
+                    if (targetedResult.Success || !ctx.TargetBounds.HasValue)
+                        return targetedResult;
+                }
             }
 
             return ResolveAgainstFaces(source, ctx, axis, EnsureCache(ctx), targeted: false);
@@ -113,6 +119,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 // explicitly-clashed element, so its edge is measured however far away it is (a large
                 // slab plate can have its nearest edge well beyond the scan cap).
                 if (!targeted && radialDist > ctx.Config.MaxDistanceFt) continue;
+
+                // Crop-bounded views (dense callouts): only edges whose dimension landing point is
+                // visible in the crop are eligible — the dimension must stay inside the callout.
+                if (ctx.TargetBounds.HasValue
+                    && !ctx.TargetBounds.Value.Contains(source.Anchor2d + axis * delta)) continue;
 
                 double axisDevDeg = Math.Acos(Math.Min(1.0, axisDot)) * 180.0 / Math.PI;
                 double score = radialDist

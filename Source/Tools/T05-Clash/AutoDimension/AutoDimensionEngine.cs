@@ -70,7 +70,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg,
             List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null,
-            List<string>? excludeSources = null)
+            List<string>? excludeSources = null, bool boundTargetsToCrop = false)
         {
             var output = new EngineOutput();
             var plan = output.Plan;
@@ -103,6 +103,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     if (ld == null) continue;
                     ctx.Sources.Add(new SourceDoc { Doc = ld, Link = li, Transform = li.GetTotalTransform() });
                 }
+            }
+
+            // Dense-area callouts dimension only to references SHOWN in their crop: project the
+            // crop box into view-2D and let the resolvers reject candidates landing outside it.
+            if (boundTargetsToCrop)
+            {
+                ctx.TargetBounds = CropBounds2D(view, projection);
+                if (ctx.TargetBounds.HasValue)
+                    _log($"Targets constrained to the visible crop {ctx.TargetBounds.Value} — "
+                       + "each clash dimensions to the nearest reference shown in this callout.", "info");
             }
 
             // ── 1. Ingest source cross-lines ──────────────────────────────────
@@ -301,9 +311,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         // ── Callout tier survey ────────────────────────────────────────────────
         /// <summary>
         /// Read-only pre-pass for the callout tier: ingests the view's source cross-lines,
-        /// clusters them, and returns one request per EXTREME cluster — too dense to dimension
-        /// legibly even chained (demand ratio &gt; <see cref="CalloutDemandRatio"/>) — with the
-        /// callout rectangle (world) and the computed scale at which its text demand fits.
+        /// clusters them, and returns one request per EXTREME dense area — too dense to dimension
+        /// legibly even chained (demand ratio &gt; <see cref="CalloutDemandRatio"/>). Each area's
+        /// rectangle is grown to the room(s) its clashes sit in (host or linked) plus a margin;
+        /// overlapping areas are merged into one callout; and EVERY clash inside the final
+        /// rectangle is swept into the request (so the whole room moves to the callout).
         /// Moderate clusters return nothing (the chain tier keeps them). Never throws.
         /// </summary>
         public static List<DenseCalloutRequest> SurveyDenseAreas(
@@ -323,6 +335,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double nominal  = thModel * 4.8;   // nominal value-text width (~8 glyphs)
 
                 var density = DensityClusterer.Build(sources, nominal, minCount: 4);
+                if (density.Clusters.Count == 0) return requests;
 
                 // Room growth needs the clashes' world anchors; the resolver is built lazily —
                 // most views have no extreme cluster and skip the link scan entirely.
@@ -330,62 +343,110 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 foreach (var s in sources)
                     if (s != null && !string.IsNullOrEmpty(s.SourceKey)) anchors[s.SourceKey] = s.Anchor3d;
                 Resolvers.RoomBoundsResolver? rooms = null;
+                double margin = nominal * 0.75;
 
+                // ── 1. One room-grown, margin-padded rectangle per EXTREME cluster ──
+                // The callout must always read a little larger than the room(s) its clashes
+                // sit in (rooms usually live in a linked architectural model): union the
+                // containing rooms' footprints with the cluster box, then add the margin.
+                var areas = new List<DenseArea>();
                 foreach (var cluster in density.Clusters)
                 {
                     double ratio = DemandRatio(cluster, nominal, thModel);
                     if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
+                    log?.Invoke($"Dense area: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} "
+                              + $"({cluster.MemberKeys.Count} clashes) — callout tier.", "info");
 
-                    // Largest standard scale at which the demand fits (ratio scales linearly
-                    // with the view scale), and meaningfully larger than the parent. The scale
-                    // pick uses a GENEROUS text width (~11 glyphs — real imperial strings like
-                    // 2'-3 1/2" — vs the 8-glyph detection nominal) so segments genuinely fit
-                    // inline at the chosen scale instead of landing just-barely cramped again.
-                    double scaleRatio = DemandRatio(cluster, thModel * 6.0, thModel);
-                    double bound = scale / Math.Max(scaleRatio, 1e-9);
-                    int chosen = 12;
-                    foreach (var s in CalloutScales)
-                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
-
-                    // The callout must always read a little larger than the room(s) its clashes
-                    // sit in (rooms usually live in a linked architectural model): union the
-                    // containing rooms' footprints with the cluster box, then add the margin.
                     double minX = cluster.MinX, minY = cluster.MinY;
                     double maxX = cluster.MaxX, maxY = cluster.MaxY;
                     rooms ??= new Resolvers.RoomBoundsResolver(doc, view);
-                    var roomLabels = new List<string>();
-                    var seenRooms  = new HashSet<string>(StringComparer.Ordinal);
+                    var area = new DenseArea();
                     foreach (var key in cluster.MemberKeys)
                     {
                         if (!anchors.TryGetValue(key, out var anchor3d)) continue;
                         var hit = rooms.FindRoom(anchor3d);
-                        if (hit == null || !seenRooms.Add(hit.Key)) continue;
+                        if (hit == null || !area.RoomKeys.Add(hit.Key)) continue;
                         foreach (var corner in hit.Corners)
                         {
                             var p = projection.To2D(corner);
                             if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
                             if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
                         }
-                        roomLabels.Add(hit.Label);
+                        area.RoomLabels.Add(hit.Label);
                     }
+                    area.Rect = new Core.Box2(minX - margin, minY - margin, maxX + margin, maxY + margin);
+                    areas.Add(area);
+                }
 
-                    double margin = nominal * 0.75;
+                // ── 2. Merge overlapping rectangles ──
+                // Two clusters grown to the same (or adjacent) room would otherwise produce
+                // overlapping callouts. Repeat until stable — a merge can create a new overlap.
+                for (bool merged = true; merged; )
+                {
+                    merged = false;
+                    for (int i = 0; i < areas.Count && !merged; i++)
+                        for (int j = i + 1; j < areas.Count && !merged; j++)
+                            if (areas[i].Rect.Intersects(areas[j].Rect))
+                            {
+                                areas[i].Absorb(areas[j]);
+                                areas.RemoveAt(j);
+                                merged = true;
+                            }
+                }
+
+                // ── 3. Sweep + emit ──
+                // EVERY clash inside an area's rectangle belongs to its callout — not just the
+                // dense-cluster members — so the whole room marks/dimensions in the callout and
+                // nothing is left behind in the parent view.
+                int seq = 0;
+                foreach (var area in areas)
+                {
+                    var swept = sources.Where(s => area.Rect.Contains(s.Anchor2d)).ToList();
+                    if (swept.Count == 0) continue;
+
+                    // Largest standard scale at which the swept set's text demand fits (ratio
+                    // scales linearly with the view scale), and meaningfully larger than the
+                    // parent. The scale pick uses a GENEROUS text width (~11 glyphs — real
+                    // imperial strings like 2'-3 1/2" — vs the 8-glyph detection nominal) so
+                    // segments genuinely fit inline instead of landing just-barely cramped again.
+                    var sweptInfo = new DensityClusterer.ClusterInfo
+                    {
+                        MinX = double.MaxValue, MinY = double.MaxValue,
+                        MaxX = double.MinValue, MaxY = double.MinValue,
+                    };
+                    foreach (var s in swept)
+                    {
+                        var p = s.Anchor2d;
+                        sweptInfo.MemberPoints.Add(p);
+                        if (p.X < sweptInfo.MinX) sweptInfo.MinX = p.X; if (p.X > sweptInfo.MaxX) sweptInfo.MaxX = p.X;
+                        if (p.Y < sweptInfo.MinY) sweptInfo.MinY = p.Y; if (p.Y > sweptInfo.MaxY) sweptInfo.MaxY = p.Y;
+                    }
+                    double scaleRatio = DemandRatio(sweptInfo, thModel * 6.0, thModel);
+                    double bound = scale / Math.Max(scaleRatio, 1e-9);
+                    int chosen = 12;
+                    foreach (var s in CalloutScales)
+                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+
+                    string id = "c" + seq.ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
+                    seq++;
                     var req = new DenseCalloutRequest
                     {
-                        ClusterId  = cluster.Id,
-                        MinWorld   = projection.From2D(new Core.Vec2(minX - margin, minY - margin)),
-                        MaxWorld   = projection.From2D(new Core.Vec2(maxX + margin, maxY + margin)),
+                        ClusterId  = id,
+                        MinWorld   = projection.From2D(new Core.Vec2(area.Rect.MinX, area.Rect.MinY)),
+                        MaxWorld   = projection.From2D(new Core.Vec2(area.Rect.MaxX, area.Rect.MaxY)),
                         Scale      = chosen,
-                        ClashCount = cluster.MemberKeys.Count,
+                        ClashCount = swept.Count,
                     };
-                    req.SourceKeys.AddRange(cluster.MemberKeys);
+                    req.SourceKeys.AddRange(swept.Select(s => s.SourceKey));
                     requests.Add(req);
-                    log?.Invoke($"Dense area {cluster.Id}: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} — "
-                              + $"callout tier at 1:{chosen} ({cluster.MemberKeys.Count} clashes).", "info");
-                    log?.Invoke(roomLabels.Count > 0
-                        ? $"Dense area {cluster.Id}: callout grown to cover {string.Join(", ", roomLabels)} plus a margin."
-                        : $"Dense area {cluster.Id}: no room found at its clashes — callout sized to the cluster extent.",
-                        "info");
+
+                    string roomsTxt = area.RoomLabels.Count > 0
+                        ? $"covers {string.Join(", ", area.RoomLabels)} plus a margin"
+                        : "no room found at its clashes — sized to the cluster extent";
+                    string mergeTxt = area.MergedClusters > 1
+                        ? $", merged from {area.MergedClusters} overlapping dense areas" : "";
+                    log?.Invoke($"Dense area {id}: callout at 1:{chosen} {roomsTxt}{mergeTxt} — "
+                              + $"all {swept.Count} clash(es) inside it move to the callout.", "info");
                 }
             }
             catch (Exception ex)
@@ -394,6 +455,51 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 log?.Invoke($"Dense-area survey failed ({ex.Message}) — callout tier skipped this view.", "fail");
             }
             return requests;
+        }
+
+        /// <summary>One dense-callout footprint while merging: the room-grown, margin-padded
+        /// rectangle plus which rooms it covers. Overlapping footprints are absorbed into one.</summary>
+        private sealed class DenseArea
+        {
+            public Core.Box2 Rect;
+            public HashSet<string> RoomKeys { get; } = new HashSet<string>(StringComparer.Ordinal);
+            public List<string> RoomLabels { get; } = new List<string>();
+            public int MergedClusters = 1;
+
+            public void Absorb(DenseArea o)
+            {
+                Rect = Rect.Union(o.Rect);
+                foreach (var k in o.RoomKeys) RoomKeys.Add(k);
+                foreach (var l in o.RoomLabels) if (!RoomLabels.Contains(l)) RoomLabels.Add(l);
+                MergedClusters += o.MergedClusters;
+            }
+        }
+
+        /// <summary>The view's active crop rectangle projected into its 2D plane, or null when
+        /// the view has no usable crop. Never throws.</summary>
+        private static Core.Box2? CropBounds2D(View view, ViewProjection projection)
+        {
+            try
+            {
+                if (!view.CropBoxActive || view.CropBox == null) return null;
+                var cb = view.CropBox;
+                double minX = double.MaxValue, minY = double.MaxValue;
+                double maxX = double.MinValue, maxY = double.MinValue;
+                foreach (double x in new[] { cb.Min.X, cb.Max.X })
+                    foreach (double y in new[] { cb.Min.Y, cb.Max.Y })
+                        foreach (double z in new[] { cb.Min.Z, cb.Max.Z })
+                        {
+                            var p = projection.To2D(cb.Transform.OfPoint(new XYZ(x, y, z)));
+                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        }
+                return new Core.Box2(minX, minY, maxX, maxY);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoDimensionEngine: read crop bounds", ex);
+                return null;
+            }
         }
 
         /// <summary>Worst-axis density ratio of a cluster: nominal text width × (distinct

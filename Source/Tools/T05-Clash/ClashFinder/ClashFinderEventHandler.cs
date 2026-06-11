@@ -170,6 +170,7 @@ namespace LemoineTools.Tools.Clash
                                     // parent view's dimension pass. Moderate areas stay on the chain tier.
                                     var dimViewIds = new List<ElementId> { viewId };
                                     System.Collections.Generic.IDictionary<ElementId, List<string>>? excludes = null;
+                                    HashSet<ElementId>? cropBounded = null;
                                     if (DimDenseCallouts)
                                     {
                                         var requests = AutoDimension.AutoDimensionEngine.SurveyDenseAreas(
@@ -183,11 +184,25 @@ namespace LemoineTools.Tools.Clash
                                             {
                                                 dimViewIds.AddRange(calloutIds);
                                                 excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
+                                                // Callout dims must land on references visible IN the callout.
+                                                cropBounded = new HashSet<ElementId>(calloutIds);
+                                            }
+                                        }
+                                        else if (ClearPrevious)
+                                        {
+                                            // No dense areas this run — still clear any callouts a
+                                            // previous run left behind (their bubbles + stale markers).
+                                            using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
+                                            {
+                                                tx.Start();
+                                                ConfigureFailures(tx);
+                                                SweepStaleCallouts(doc, view, requests);
+                                                tx.Commit();
                                             }
                                         }
                                     }
 
-                                    var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes);
+                                    var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes, cropBounded);
                                     totalDims     += dimResult.Placed;
                                     totalDimFails += dimResult.Failures;
                                     Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed across it and {dimViewIds.Count - 1} callout(s), {dimResult.Failures} failure(s).",
@@ -278,6 +293,7 @@ namespace LemoineTools.Tools.Clash
             {
                 tx.Start();
                 ConfigureFailures(tx);
+                if (ClearPrevious) SweepStaleCallouts(doc, parentView, requests);
                 foreach (var req in requests)
                 {
                     try
@@ -302,10 +318,15 @@ namespace LemoineTools.Tools.Clash
                             totalMarkerFails += pr.Fails;
                         }
 
+                        // The callout owns these clashes now: remove their parent-view markers so
+                        // they show ONLY in the callout (the parent keeps the callout bubble).
+                        int parentRemoved = DeleteParentMarkers(doc, parentView.Id, req.SourceKeys);
+
                         ids.Add(cv.Id);
                         deferred.AddRange(req.SourceKeys);
                         Log($"Dense area {req.ClusterId} → callout '{cv.Name}' at 1:{cv.Scale} — "
-                          + $"{placed} marker(s), {req.ClashCount} clash(es) dimension there instead of the parent.", "pass");
+                          + $"{placed} marker(s) placed there; {parentRemoved} parent marker element(s) removed, "
+                          + $"its {req.ClashCount} clash(es) show and dimension only in the callout.", "pass");
                     }
                     catch (Exception ex)
                     {
@@ -339,6 +360,69 @@ namespace LemoineTools.Tools.Clash
                 tx.Commit();
             }
             return ids;
+        }
+
+        /// <summary>Deletes this parent's dense-area callout views from earlier runs that this
+        /// run does not reuse — leftovers keep stale bubbles (and stale markers) on the parent.
+        /// Runs inside the caller's open transaction.</summary>
+        private void SweepStaleCallouts(Document doc, View parentView, List<AutoDimension.DenseCalloutRequest> requests)
+        {
+            try
+            {
+                string prefix = parentView.Name + " - Dense ";
+                var keep = new HashSet<string>(requests.Select(r => prefix + r.ClusterId), StringComparer.Ordinal);
+                foreach (var stale in new FilteredElementCollector(doc)
+                             .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                             .Where(v => !v.IsTemplate
+                                      && v.Name.StartsWith(prefix, StringComparison.Ordinal)
+                                      && !keep.Contains(v.Name))
+                             .ToList())
+                {
+                    string staleName = stale.Name;
+                    try
+                    {
+                        doc.Delete(stale.Id);
+                        Log($"Deleted stale dense-area callout '{staleName}'.", "info");
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("ClashFinderEventHandler: delete stale callout", ex);
+                        Log($"Could not delete stale callout '{staleName}' — remove it manually.", "fail");
+                    }
+                }
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: stale callout sweep", ex); }
+        }
+
+        /// <summary>Deletes the parent view's marker elements (tagged cross lines + filled
+        /// regions) for the given clash groups — those clashes live in a dense-area callout now
+        /// and must not also show in the parent. Runs inside the caller's open transaction.</summary>
+        private static int DeleteParentMarkers(Document doc, ElementId parentViewId, List<string> groupKeys)
+        {
+            int removed = 0;
+            var keys = new HashSet<string>(groupKeys, StringComparer.Ordinal);
+            var toDelete = new List<ElementId>();
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, parentViewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+                toDelete.AddRange(new FilteredElementCollector(doc, parentViewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: collect parent markers of callout clashes", ex); }
+
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: delete parent marker", ex); }
+            }
+            return removed;
         }
 
         /// <summary>Finds the prior run's callout view by its deterministic name, else creates a
