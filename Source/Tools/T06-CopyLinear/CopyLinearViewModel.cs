@@ -1,0 +1,523 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
+using LemoineTools.Lemoine.Controls;
+
+using WpfTextBox = System.Windows.Controls.TextBox;
+
+namespace LemoineTools.Tools.CopyLinear
+{
+    /// <summary>
+    /// Copy Linear Elements — one tool, two modes. Pulls linear runs (pipes, ducts, conduit,
+    /// cable tray, framing…) out of a picked link, filters them by system / size / phase, then
+    /// either splits each into standard-length segments or replaces it with a family placed at
+    /// intervals. An optional "only changed" re-run reconciles via stamped host outputs.
+    /// </summary>
+    public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    {
+        public string Title    => "Copy Linear Elements";
+        public string RunLabel => "Run in Revit →";
+        public string? ResultNoun => _mode == "Replace" ? "instances" : "segments";
+        public IReadOnlyList<ResultChip>? ResultChips => null;
+
+        public StepDefinition[] Steps => new[]
+        {
+            new StepDefinition("source",    "Source & Filter",  required: true),
+            new StepDefinition("operation", "Operation",        required: true),
+            new StepDefinition("changes",   "Change Detection", required: false),
+            new StepDefinition("run",       "Review & Run",     required: false),
+        };
+
+        // ── Injected ───────────────────────────────────────────────────────────
+        private readonly CopyLinearScanHandler? _scanHandler;
+        private readonly ExternalEvent?         _scanEvent;
+        private readonly CopyLinearRunHandler?  _runHandler;
+        private readonly ExternalEvent?         _runEvent;
+        private readonly List<CopyLinearDocInfo>    _docs;
+        private readonly List<CopyLinearFamilyInfo> _families;
+
+        // ── State ───────────────────────────────────────────────────────────────
+        private readonly CopyLinearSourceSpec _spec = new CopyLinearSourceSpec();
+        private readonly Dictionary<string, string> _catLabelToOst = new Dictionary<string, string>();
+        private readonly Dictionary<string, long>   _docDisplayToId = new Dictionary<string, long>();
+        private readonly Dictionary<string, CopyLinearFamilyInfo> _familyByKey = new Dictionary<string, CopyLinearFamilyInfo>();
+
+        private string _mode = CopyLinearSettings.Instance.Mode;
+
+        // Split params
+        private double _segLenFeet = CopyLinearSettings.Instance.SegmentLengthFeet;
+        private double _gapInches  = CopyLinearSettings.Instance.GapInches;
+        private bool   _keepRemainder = CopyLinearSettings.Instance.KeepRemainder;
+
+        // Replace params
+        private double _intervalFeet = CopyLinearSettings.Instance.IntervalFeet;
+        private double _extraSpacingInches = CopyLinearSettings.Instance.ExtraSpacingInches;
+        private bool   _rotateToRun = CopyLinearSettings.Instance.RotateToRun;
+        private string _lengthParam = CopyLinearSettings.Instance.LengthParamName ?? "";
+        private string _familyKey   = CopyLinearSettings.Instance.FamilyKey ?? "";
+
+        // Change detection
+        private bool _onlyChanged   = CopyLinearSettings.Instance.OnlyChanged;
+        private bool _deleteOrphans = CopyLinearSettings.Instance.DeleteOrphans;
+
+        // Scan
+        private bool _scanning, _scanDone;
+        private CopyLinearScanResult _scan = new CopyLinearScanResult();
+
+        // Live UI handles
+        private StackPanel? _worksetContainer, _filterContainer, _operationBody;
+        private Dispatcher? _disp;
+
+        public event EventHandler? ValidationChanged;
+        private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        public CopyLinearViewModel(
+            CopyLinearScanHandler? scanHandler, ExternalEvent? scanEvent,
+            CopyLinearRunHandler?  runHandler,  ExternalEvent?  runEvent,
+            List<CopyLinearDocInfo>?    docs,
+            List<CopyLinearFamilyInfo>? families)
+        {
+            _scanHandler = scanHandler; _scanEvent = scanEvent;
+            _runHandler  = runHandler;  _runEvent  = runEvent;
+            _docs        = docs ?? new List<CopyLinearDocInfo>();
+            _families    = families ?? new List<CopyLinearFamilyInfo>();
+
+            foreach (var (cat, label) in CopyLinearEngine.Categories)
+                _catLabelToOst[label] = cat.ToString();
+            foreach (var f in _families) _familyByKey[f.Key] = f;
+
+            // Default source = first document (host).
+            if (_docs.Count > 0) _spec.LinkInstId = _docs[0].LinkInstId;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        public FrameworkElement? GetStepContent(string stepId)
+        {
+            switch (stepId)
+            {
+                case "source":    return BuildSourceStep();
+                case "operation": return BuildOperationStep();
+                case "changes":   return BuildChangesStep();
+                default:          return null;   // "run" rendered by framework (ILemoineReviewable)
+            }
+        }
+
+        // ── Step 1: Source & Filter ─────────────────────────────────────────────
+        private FrameworkElement BuildSourceStep()
+        {
+            _disp = Dispatcher.CurrentDispatcher;
+            var outer = new StackPanel();
+
+            if (_docs.Count == 0)
+            {
+                outer.Children.Add(Dim("No documents available. Open the host project in Revit."));
+                return outer;
+            }
+
+            // Source document (single).
+            outer.Children.Add(Label("Source document"));
+            _docDisplayToId.Clear();
+            foreach (var d in _docs) _docDisplayToId[d.Name] = d.LinkInstId;
+            var docSelect = new LemoineSingleSelect
+            {
+                Items        = _docs.Select(d => d.Name).ToList(),
+                SelectedItem = _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? _docs[0].Name,
+            };
+            docSelect.SelectionChanged += disp =>
+            {
+                if (disp != null && _docDisplayToId.TryGetValue(disp, out var id)) _spec.LinkInstId = id;
+                _spec.ExcludedWorksetIds.Clear();
+                ResetScan();
+                RebuildWorksets();
+                RebuildFilters();
+                Changed();
+            };
+            outer.Children.Add(docSelect);
+
+            Divider(outer);
+
+            // Categories.
+            outer.Children.Add(Label("Linear categories to copy"));
+            var catTabs = new LemoineMultiSelectTabs();
+            catTabs.SelectionChanged += sel =>
+            {
+                _spec.Categories = sel.Select(s => _catLabelToOst.TryGetValue(s, out var o) ? o : null)
+                                      .Where(o => o != null).Cast<string>().ToList();
+                ResetScan();
+                Changed();
+            };
+            var selectedCatLabels = _catLabelToOst.Where(kv => _spec.Categories.Contains(kv.Value)).Select(kv => kv.Key).ToList();
+            catTabs.SetGroups(new Dictionary<string, List<string>> { { "Linear Categories", _catLabelToOst.Keys.ToList() } }, selectedCatLabels);
+            outer.Children.Add(catTabs);
+
+            Divider(outer);
+
+            // Worksets (per chosen doc).
+            outer.Children.Add(Label("Worksets (unchecked = excluded)"));
+            _worksetContainer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
+            outer.Children.Add(_worksetContainer);
+            RebuildWorksets();
+
+            Divider(outer);
+
+            // Scan + filters.
+            var scanBtn = LemoineControlStyles.BuildButton("Scan source for filters");
+            scanBtn.Click += (s, e) => TriggerScan();
+            outer.Children.Add(scanBtn);
+
+            _filterContainer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            outer.Children.Add(_filterContainer);
+            RebuildFilters();
+
+            return outer;
+        }
+
+        private void RebuildWorksets()
+        {
+            if (_worksetContainer == null) return;
+            _worksetContainer.Children.Clear();
+
+            var doc = _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId);
+            var ws  = doc?.Worksets ?? new List<CopyLinearWorksetInfo>();
+            if (ws.Count == 0) { _worksetContainer.Children.Add(Dim("No user worksets in this document.")); return; }
+
+            var excluded = new HashSet<int>(_spec.ExcludedWorksetIds);
+            var tabs = new LemoineMultiSelectTabs();
+            var byName = ws.ToDictionary(w => w.Name, w => w.Id);
+            tabs.SelectionChanged += sel =>
+            {
+                var includedIds = new HashSet<int>(sel.Where(byName.ContainsKey).Select(n => byName[n]));
+                _spec.ExcludedWorksetIds = ws.Where(w => !includedIds.Contains(w.Id)).Select(w => w.Id).ToList();
+                ResetScan();
+                Changed();
+            };
+            var included = ws.Where(w => !excluded.Contains(w.Id)).Select(w => w.Name).ToList();
+            tabs.SetGroups(new Dictionary<string, List<string>> { { "Worksets", ws.Select(w => w.Name).ToList() } }, included);
+            _worksetContainer.Children.Add(tabs);
+        }
+
+        private void RebuildFilters()
+        {
+            if (_filterContainer == null) return;
+            _filterContainer.Children.Clear();
+
+            if (_scanning) { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
+            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to list the System / Size / Phase values to filter by. Leave a filter empty to include all.")); return; }
+
+            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found. Leave a filter empty to include all of that field."));
+
+            AddFilterTabs("System Type", _scan.SystemTypes, _spec.SystemTypes, v => _spec.SystemTypes = v);
+            AddFilterTabs("Size",        _scan.Sizes,       _spec.Sizes,       v => _spec.Sizes = v);
+            AddFilterTabs("Phase",       _scan.Phases,      _spec.Phases,      v => _spec.Phases = v);
+        }
+
+        private void AddFilterTabs(string groupTitle, List<string> all, List<string> selected, Action<List<string>> commit)
+        {
+            if (all == null || all.Count == 0) return;
+            _filterContainer!.Children.Add(Label(groupTitle));
+            var tabs = new LemoineMultiSelectTabs();
+            tabs.SelectionChanged += sel => { commit(sel.ToList()); Changed(); };
+            // Prune stale selections that no longer exist after a re-scan.
+            var initial = selected.Where(all.Contains).ToList();
+            commit(initial);
+            tabs.SetGroups(new Dictionary<string, List<string>> { { groupTitle, all } }, initial);
+            _filterContainer.Children.Add(tabs);
+        }
+
+        private void ResetScan() { _scanDone = false; _scanning = false; }
+
+        private void TriggerScan()
+        {
+            if (_scanHandler == null || _scanEvent == null) return;
+            if (_spec.Categories.Count == 0) { _filterContainer?.Children.Clear(); _filterContainer?.Children.Add(Dim("Pick at least one category first.")); return; }
+
+            _scanning = true; _scanDone = false;
+            RebuildFilters();
+
+            _scanHandler.Spec = CloneSpecForScan();
+            _scanHandler.OnScanned = result => _disp?.BeginInvoke((Action)(() =>
+            {
+                _scanning = false; _scanDone = true; _scan = result ?? new CopyLinearScanResult();
+                RebuildFilters(); Changed();
+            }));
+            _scanHandler.OnError = err => _disp?.BeginInvoke((Action)(() =>
+            {
+                _scanning = false;
+                _filterContainer?.Children.Clear();
+                _filterContainer?.Children.Add(Dim($"Scan error: {err}"));
+            }));
+            _scanEvent.Raise();
+        }
+
+        private CopyLinearSourceSpec CloneSpecForScan() => new CopyLinearSourceSpec
+        {
+            LinkInstId         = _spec.LinkInstId,
+            Categories         = new List<string>(_spec.Categories),
+            ExcludedWorksetIds = new List<int>(_spec.ExcludedWorksetIds),
+        };
+
+        // ── Step 2: Operation ───────────────────────────────────────────────────
+        private FrameworkElement BuildOperationStep()
+        {
+            var outer = new StackPanel();
+            outer.Children.Add(Label("Operation"));
+            var modeSelect = new LemoineSingleSelect
+            {
+                Items        = new List<string> { "Split into segments", "Replace with family" },
+                SelectedItem = _mode == "Replace" ? "Replace with family" : "Split into segments",
+            };
+            modeSelect.SelectionChanged += v =>
+            {
+                _mode = v == "Replace with family" ? "Replace" : "Split";
+                PopulateOperationBody();
+                Changed();
+            };
+            outer.Children.Add(modeSelect);
+
+            Divider(outer);
+            _operationBody = new StackPanel();
+            outer.Children.Add(_operationBody);
+            PopulateOperationBody();
+            return outer;
+        }
+
+        private void PopulateOperationBody()
+        {
+            if (_operationBody == null) return;
+            _operationBody.Children.Clear();
+            if (_mode == "Replace") BuildReplaceBody(_operationBody);
+            else                    BuildSplitBody(_operationBody);
+        }
+
+        private void BuildSplitBody(StackPanel body)
+        {
+            body.Children.Add(Label("Segment length (feet)"));
+            body.Children.Add(Stepper(_segLenFeet, 0.5, 1000, 1, 1, v => _segLenFeet = v));
+
+            body.Children.Add(Label("Gap between pieces (inches)"));
+            body.Children.Add(Stepper(_gapInches, 0, 48, 0.25, 2, v => _gapInches = v));
+
+            var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
+            toggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "rem", Label = "Keep final remainder piece",
+                    Desc = "Off = drop a trailing piece shorter than the segment length.", DefaultOn = _keepRemainder },
+            });
+            toggles.StateChanged += st => { if (st.TryGetValue("rem", out var on)) { _keepRemainder = on; Changed(); } };
+            body.Children.Add(toggles);
+        }
+
+        private void BuildReplaceBody(StackPanel body)
+        {
+            body.Children.Add(Label("Family type to place"));
+            if (_families.Count == 0)
+                body.Children.Add(Dim("No placeable family types found in the host model."));
+            else
+            {
+                var famSelect = new LemoineSingleSelect
+                {
+                    Items        = _families.Select(f => f.Key).ToList(),
+                    SelectedItem = _familyByKey.ContainsKey(_familyKey) ? _familyKey : _families[0].Key,
+                };
+                if (!_familyByKey.ContainsKey(_familyKey)) _familyKey = _families[0].Key;
+                famSelect.SelectionChanged += v => { _familyKey = v ?? ""; Changed(); };
+                body.Children.Add(famSelect);
+            }
+
+            body.Children.Add(Label("Placement interval (feet)"));
+            body.Children.Add(Stepper(_intervalFeet, 0.25, 1000, 1, 2, v => _intervalFeet = v));
+
+            body.Children.Add(Label("Extra spacing (inches)"));
+            body.Children.Add(Stepper(_extraSpacingInches, 0, 120, 0.25, 2, v => _extraSpacingInches = v));
+
+            body.Children.Add(Label("Length parameter to set (optional)"));
+            var box = TextBox(_lengthParam);
+            box.TextChanged += (s, e) => { _lengthParam = ((WpfTextBox)s).Text; };
+            body.Children.Add(box);
+
+            var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
+            toggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "rot", Label = "Rotate each instance to the run direction",
+                    Desc = "Aligns the family's X axis with the linear element it replaces.", DefaultOn = _rotateToRun },
+            });
+            toggles.StateChanged += st => { if (st.TryGetValue("rot", out var on)) { _rotateToRun = on; Changed(); } };
+            body.Children.Add(toggles);
+        }
+
+        // ── Step 3: Change Detection ────────────────────────────────────────────
+        private FrameworkElement BuildChangesStep()
+        {
+            var outer = new StackPanel();
+            outer.Children.Add(Dim("Every element this tool creates is stamped with its source identity. "
+                + "A re-run can then rebuild only the runs that changed and clean up outputs whose source was removed."));
+
+            var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
+            toggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "only", Label = "Only process elements changed since last run",
+                    Desc = "On = leave unchanged runs untouched and rebuild only new/moved/resized ones. Off = rebuild every matched run.", DefaultOn = _onlyChanged },
+                new ToggleItem { Id = "orph", Label = "Delete outputs whose source no longer matches",
+                    Desc = "Removes stamped segments/instances when their source run is gone or no longer passes the filters.", DefaultOn = _deleteOrphans },
+            });
+            toggles.StateChanged += st =>
+            {
+                if (st.TryGetValue("only", out var a)) _onlyChanged   = a;
+                if (st.TryGetValue("orph", out var b)) _deleteOrphans = b;
+                Changed();
+            };
+            outer.Children.Add(toggles);
+            return outer;
+        }
+
+        // ── Review ──────────────────────────────────────────────────────────────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("doc", "Source"), ("cats", "Categories"), ("filters", "Filters"),
+            ("mode", "Operation"), ("params", "Settings"), ("changes", "Change Detection"),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["doc"]     = _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "—",
+            ["cats"]    = _spec.Categories.Count == 0 ? "—" : $"{_spec.Categories.Count} category(ies)",
+            ["filters"] = FilterSummary(),
+            ["mode"]    = _mode == "Replace" ? "Replace with family" : "Split into segments",
+            ["params"]  = _mode == "Replace"
+                ? $"every {_intervalFeet:0.##} ft" + (_extraSpacingInches > 0 ? $" +{_extraSpacingInches:0.##}\" " : "")
+                : $"{_segLenFeet:0.##} ft" + (_gapInches > 0 ? $", {_gapInches:0.##}\" gap" : ""),
+            ["changes"] = _onlyChanged ? "Only changed" : "Rebuild all",
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => null;
+        public string?        ReviewWarning => _mode == "Replace" && string.IsNullOrEmpty(_familyKey)
+            ? "Pick a family type for Replace mode." : null;
+
+        private string FilterSummary()
+        {
+            var parts = new List<string>();
+            if (_spec.SystemTypes.Count > 0) parts.Add($"{_spec.SystemTypes.Count} system");
+            if (_spec.Sizes.Count       > 0) parts.Add($"{_spec.Sizes.Count} size");
+            if (_spec.Phases.Count      > 0) parts.Add($"{_spec.Phases.Count} phase");
+            return parts.Count == 0 ? "All" : string.Join(", ", parts);
+        }
+
+        // ── Validation / Summary ────────────────────────────────────────────────
+        public bool IsValid(string stepId)
+        {
+            switch (stepId)
+            {
+                case "source":    return _spec.Categories.Count > 0;
+                case "operation": return _mode == "Replace"
+                                       ? (_familyByKey.ContainsKey(_familyKey) && _intervalFeet > 0)
+                                       : _segLenFeet > 0;
+                default:          return true;
+            }
+        }
+
+        public string SummaryFor(string stepId)
+        {
+            switch (stepId)
+            {
+                case "source":
+                    return _spec.Categories.Count == 0 ? "—"
+                        : $"{(_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source")} · {_spec.Categories.Count} cat · {FilterSummary()}";
+                case "operation":
+                    return _mode == "Replace" ? $"Replace · every {_intervalFeet:0.##} ft" : $"Split · {_segLenFeet:0.##} ft";
+                case "changes":
+                    return _onlyChanged ? "Only changed" : "Rebuild all";
+                case "run": return "Ready to run";
+                default:    return "—";
+            }
+        }
+
+        // ── Run ──────────────────────────────────────────────────────────────────
+        public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
+        {
+            if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
+
+            SaveSettings();
+
+            _runHandler.Spec              = _spec;
+            _runHandler.Mode              = _mode;
+            _runHandler.SegmentLengthFeet = _segLenFeet;
+            _runHandler.GapFeet           = _gapInches / 12.0;
+            _runHandler.KeepRemainder     = _keepRemainder;
+            _runHandler.IntervalFeet      = _intervalFeet;
+            _runHandler.ExtraSpacingFeet  = _extraSpacingInches / 12.0;
+            _runHandler.RotateToRun       = _rotateToRun;
+            _runHandler.LengthParamName   = _lengthParam;
+            _runHandler.SymbolId          = _familyByKey.TryGetValue(_familyKey, out var f) ? f.SymbolId : 0L;
+            _runHandler.OnlyChanged       = _onlyChanged;
+            _runHandler.DeleteOrphans     = _deleteOrphans;
+            _runHandler.PushLog    = pushLog;
+            _runHandler.OnProgress = onProgress;
+            _runHandler.OnComplete = onComplete;
+
+            pushLog("Raising Revit ExternalEvent…", "info");
+            _runEvent.Raise();
+        }
+
+        private void SaveSettings()
+        {
+            var s = CopyLinearSettings.Instance;
+            s.Mode = _mode;
+            s.SegmentLengthFeet = _segLenFeet; s.GapInches = _gapInches; s.KeepRemainder = _keepRemainder;
+            s.IntervalFeet = _intervalFeet; s.ExtraSpacingInches = _extraSpacingInches;
+            s.RotateToRun = _rotateToRun; s.LengthParamName = _lengthParam; s.FamilyKey = _familyKey;
+            s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;
+            s.Save();
+        }
+
+        // ── Small WPF helpers (theme via resource refs only) ─────────────────────
+        private static TextBlock Label(string text)
+        {
+            var tb = new TextBlock { Text = text, Margin = new Thickness(0, 6, 0, 4) };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return tb;
+        }
+
+        private static TextBlock Dim(string text)
+        {
+            var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4) };
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            return tb;
+        }
+
+        private static void Divider(StackPanel parent)
+        {
+            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 8, 0, 8) };
+            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
+            parent.Children.Add(sep);
+        }
+
+        private static LemoineInlineStepper Stepper(double value, double min, double max, double step, int decimals, Action<double> onChange)
+        {
+            var st = new LemoineInlineStepper { MinValue = min, MaxValue = max, Step = step, Decimals = decimals, Value = value };
+            st.ValueChanged += (s, v) => onChange(v);
+            return st;
+        }
+
+        private static WpfTextBox TextBox(string text)
+        {
+            var box = new WpfTextBox { Text = text ?? "", Padding = new Thickness(8, 4, 8, 4), BorderThickness = new Thickness(1) };
+            box.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
+            box.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            box.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            box.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
+            box.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
+            box.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_MD");
+            return box;
+        }
+    }
+}
