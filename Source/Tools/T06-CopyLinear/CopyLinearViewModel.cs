@@ -68,6 +68,7 @@ namespace LemoineTools.Tools.CopyLinear
         // Scan
         private bool _scanning, _scanDone;
         private CopyLinearScanResult _scan = new CopyLinearScanResult();
+        private readonly List<string> _activeFilterParams = new List<string>();
 
         // Live UI handles
         private StackPanel? _worksetContainer, _filterContainer, _operationBody;
@@ -210,7 +211,7 @@ namespace LemoineTools.Tools.CopyLinear
             _filterContainer.Children.Clear();
 
             if (_scanning) { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
-            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to list every parameter value found on these elements. Leave any filter empty to include all values.")); return; }
+            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to discover parameters. Then use \"Add filter\" to narrow results by any parameter value.")); return; }
 
             if (_scan.ParameterValues.Count == 0)
             {
@@ -218,35 +219,101 @@ namespace LemoineTools.Tools.CopyLinear
                 return;
             }
 
-            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} parameter(s) discovered. Leave any filter empty to include all."));
+            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} parameter(s) with 2+ distinct values found."));
 
-            // Prune stale filter keys no longer present in the current scan.
+            // Prune filter state for params no longer in this scan.
+            _activeFilterParams.RemoveAll(p => !_scan.ParameterValues.ContainsKey(p));
             var scanKeys = new HashSet<string>(_scan.ParameterValues.Keys, StringComparer.Ordinal);
             foreach (var k in _spec.ParamFilters.Keys.Where(k => !scanKeys.Contains(k)).ToList())
                 _spec.ParamFilters.Remove(k);
 
-            foreach (var kv in _scan.ParameterValues)
+            foreach (var paramName in _activeFilterParams)
+                _filterContainer.Children.Add(BuildFilterRow(paramName));
+
+            // "Add filter" button — hidden once all discovered parameters have been added.
+            var available = _scan.ParameterValues.Keys
+                .Where(k => !_activeFilterParams.Contains(k))
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (available.Count == 0) return;
+
+            var addBtn = LemoineControlStyles.BuildButton("+ Add filter");
+            addBtn.Margin = new Thickness(0, 6, 0, 0);
+            addBtn.Click += (s, e) =>
             {
-                string paramName = kv.Key;
-                var selected = _spec.ParamFilters.TryGetValue(paramName, out var sel) ? sel : new List<string>();
-                AddFilterTabs(paramName, kv.Value, selected, v => _spec.ParamFilters[paramName] = v);
-            }
+                if (_filterContainer == null) return;
+                _filterContainer.Children.Remove(addBtn);
+
+                // Recompute available at click time in case a concurrent add narrowed the list.
+                var avail = _scan.ParameterValues.Keys
+                    .Where(k => !_activeFilterParams.Contains(k))
+                    .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (avail.Count == 0) return;
+
+                var pickerPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+                pickerPanel.Children.Add(Label("Filter by parameter"));
+                var select = new LemoineSingleSelect { Items = avail };
+                select.SelectionChanged += param =>
+                {
+                    if (param == null) return;
+                    _activeFilterParams.Add(param);
+                    RebuildFilters();
+                    Changed();
+                };
+                pickerPanel.Children.Add(select);
+                _filterContainer.Children.Add(pickerPanel);
+            };
+            _filterContainer!.Children.Add(addBtn);
         }
 
-        private void AddFilterTabs(string groupTitle, List<string> all, List<string> selected, Action<List<string>> commit)
+        private FrameworkElement BuildFilterRow(string paramName)
         {
-            if (all == null || all.Count == 0) return;
-            _filterContainer!.Children.Add(Label(groupTitle));
+            var outer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+
+            var header = new Grid();
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var nameLabel = Label(paramName);
+            Grid.SetColumn(nameLabel, 0);
+            header.Children.Add(nameLabel);
+
+            var removeBtn = new Button { Content = "×", Padding = new Thickness(6, 1, 6, 1) };
+            removeBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_SM");
+            removeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
+            removeBtn.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
+            removeBtn.VerticalAlignment = VerticalAlignment.Center;
+            removeBtn.Click += (s, e) =>
+            {
+                _activeFilterParams.Remove(paramName);
+                _spec.ParamFilters.Remove(paramName);
+                RebuildFilters();
+                Changed();
+            };
+            Grid.SetColumn(removeBtn, 1);
+            header.Children.Add(removeBtn);
+            outer.Children.Add(header);
+
+            var values   = _scan.ParameterValues.TryGetValue(paramName, out var v)   ? v   : new List<string>();
+            var selected = _spec.ParamFilters.TryGetValue(paramName,    out var sel) ? sel : new List<string>();
             var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += sel => { commit(sel.ToList()); Changed(); };
-            // Prune stale selections that no longer exist after a re-scan.
-            var initial = selected.Where(all.Contains).ToList();
-            commit(initial);
-            tabs.SetGroups(new Dictionary<string, List<string>> { { groupTitle, all } }, initial);
-            _filterContainer.Children.Add(tabs);
+            tabs.SelectionChanged += s2 => { _spec.ParamFilters[paramName] = s2.ToList(); Changed(); };
+            var initial = selected.Where(values.Contains).ToList();
+            _spec.ParamFilters[paramName] = initial;
+            tabs.SetGroups(new Dictionary<string, List<string>> { { paramName, values } }, initial);
+            outer.Children.Add(tabs);
+
+            return outer;
         }
 
-        private void ResetScan() { _scanDone = false; _scanning = false; }
+        private void ResetScan()
+        {
+            _scanDone = false;
+            _scanning = false;
+            _activeFilterParams.Clear();
+            _spec.ParamFilters.Clear();
+        }
 
         private void TriggerScan()
         {

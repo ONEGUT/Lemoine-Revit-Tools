@@ -128,7 +128,7 @@ namespace LemoineTools.Tools.CopyLinear
                 using (var tx = new Transaction(doc, "Copy Linear Elements"))
                 {
                     tx.Start();
-                    ConfigureFailures(tx);
+                    var failureHandler = ConfigureFailures(tx);
 
                     // Remove orphaned outputs, then any prior outputs for the keys we are rebuilding,
                     // so a re-run is idempotent and never duplicates.
@@ -162,6 +162,8 @@ namespace LemoineTools.Tools.CopyLinear
 
                     doc.Regenerate();
                     tx.Commit();
+                    if (failureHandler.DismissedCount > 0)
+                        Log($"— {failureHandler.DismissedCount} Revit failure(s) suppressed (e.g. no corresponding work plane) — affected element(s) were skipped.", "warn");
                 }
 
                 long issues = LemoineLog.IssuesSince(issues0);
@@ -354,16 +356,55 @@ namespace LemoineTools.Tools.CopyLinear
                 => DuplicateTypeAction.UseDestinationTypes;
         }
 
-        private static void ConfigureFailures(Transaction tx)
+        private static SilentFailureHandler ConfigureFailures(Transaction tx)
         {
+            var handler = new SilentFailureHandler();
             try
             {
                 var opts = tx.GetFailureHandlingOptions();
                 opts.SetClearAfterRollback(true);
                 opts.SetForcedModalHandling(false);
+                opts.SetFailuresPreprocessor(handler);
                 tx.SetFailureHandlingOptions(opts);
             }
             catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: configure failure handling", ex); }
+            return handler;
+        }
+
+        // Suppresses modal dialogs for warnings and resolvable errors that Revit raises during copy
+        // (e.g. "no corresponding Work Plane" when source elements are work-plane-hosted).
+        private sealed class SilentFailureHandler : IFailuresPreprocessor
+        {
+            public int DismissedCount { get; private set; }
+
+            public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
+            {
+                bool hasUnresolvable = false;
+                foreach (var msg in failuresAccessor.GetFailureMessages().ToList())
+                {
+                    var sev = msg.GetSeverity();
+                    if (sev == FailureSeverity.Warning)
+                    {
+                        failuresAccessor.DeleteWarning(msg);
+                        DismissedCount++;
+                    }
+                    else if (sev == FailureSeverity.Error)
+                    {
+                        if (msg.GetNumberOfResolutions() > 0)
+                        {
+                            failuresAccessor.ResolveFailure(msg);
+                            DismissedCount++;
+                        }
+                        else
+                        {
+                            hasUnresolvable = true;
+                        }
+                    }
+                }
+                return hasUnresolvable
+                    ? FailureProcessingResult.ProceedWithRollback
+                    : FailureProcessingResult.Continue;
+            }
         }
 
         private sealed class SourceRun
