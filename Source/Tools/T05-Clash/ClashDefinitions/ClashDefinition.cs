@@ -34,6 +34,15 @@ namespace LemoineTools.Tools.Clash
         [XmlAttribute] public bool   ClearPrevious     { get; set; } = true;
         [XmlAttribute] public int    MaxClashes        { get; set; } = 500;
 
+        // ── Phase filtering ────────────────────────────────────────────────────
+        /// <summary>"All" (no phase filtering — default, existing definitions unchanged),
+        /// "MatchView" (a clash marks in a view only when both elements exist in that view's
+        /// phase), or "Specific" (detection culled to <see cref="SpecificPhaseName"/>).</summary>
+        [XmlAttribute] public string PhaseMode { get; set; } = "All";
+
+        /// <summary>Host phase name used when <see cref="PhaseMode"/> is "Specific".</summary>
+        [XmlAttribute] public string SpecificPhaseName { get; set; } = "";
+
         /// <summary>Creates a blank definition with a time-derived id ready for editing.</summary>
         public static ClashDefinition NewBlank() => new ClashDefinition
         {

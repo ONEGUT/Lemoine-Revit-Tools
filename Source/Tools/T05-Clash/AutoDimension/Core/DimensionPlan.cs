@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Xml.Serialization;
 
 namespace LemoineTools.Tools.Clash.AutoDimension.Core
 {
@@ -22,6 +23,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         /// <summary>Text placement decided by layout. Inline until the core moves it.</summary>
         public SegmentTextState TextState { get; set; } = SegmentTextState.Inline;
+
+        /// <summary>Planned view-2D centre of this segment's relocated value text when the
+        /// layout moved it out of line (see <see cref="TagColumnPlanner"/>); null while inline.
+        /// Derived — recomputed whenever side/offset/states change.</summary>
+        [XmlIgnore]
+        public Vec2? TagPos { get; set; }
 
         /// <summary>True when this segment cannot fit its text inline at its current length.</summary>
         public bool IsCramped => TextWidthFt > LengthFt;
@@ -53,13 +60,42 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         public DimSide Side { get; set; } = DimSide.Positive;
 
+        /// <summary>Which way along the axis the moved-tag column hangs off its group:
+        /// +1 past the far edge (right for an x-string), -1 before the near edge (left).
+        /// Searched by the layout exactly like <see cref="Side"/>, so a busy right side
+        /// flips the column left as easily as a busy top flips the string below.</summary>
+        public int TagColumnDir { get; set; } = 1;
+
+        /// <summary>Id of the clash cluster this dimension belongs to ("" when unclustered).
+        /// Dimensions are laid out cluster by cluster — each cluster's group is optimized
+        /// jointly inside its working region.</summary>
+        public string ClusterId { get; set; } = "";
+
+        /// <summary>The cluster's working region in view-2D: the tight box around its clashes
+        /// and their dimension targets, ballooned outward until it meets the neighbouring
+        /// clusters' regions (equal spacing). The layout softly keeps this dimension's lines
+        /// and texts inside it, so each group fills its own empty space instead of spilling
+        /// into the next group's. Valid only when <see cref="HasRegion"/>.</summary>
+        public Box2 Region { get; set; }
+        public bool HasRegion { get; set; }
+
         /// <summary>Current paper-space offset of the dimension line from the source run (model ft).</summary>
         public double OffsetFt { get; set; }
 
         public List<PlannedSegment> Segments { get; set; } = new List<PlannedSegment>();
 
+        /// <summary>View-2D anchor of every reference along the line (sources + target),
+        /// sorted along the measurement axis. Segment k spans anchors k → k+1; each anchor
+        /// drops one witness line. Filled by the chainer.</summary>
+        public List<Vec2> RefAnchors { get; set; } = new List<Vec2>();
+
         /// <summary>Paper-space bounds of the whole string (text + line) for collision tests.</summary>
         public Box2 PaperBounds { get; set; }
+
+        /// <summary>Drawn anatomy (lines/witnesses/text/leaders) at the current placement.
+        /// Derived — rebuilt by <see cref="DimGeometry.RecomputeBounds"/>, never serialized.</summary>
+        [XmlIgnore]
+        public DimAnatomy? Anatomy { get; set; }
     }
 
     /// <summary>A source line whose target could not be resolved. Reported, never silently dropped.</summary>

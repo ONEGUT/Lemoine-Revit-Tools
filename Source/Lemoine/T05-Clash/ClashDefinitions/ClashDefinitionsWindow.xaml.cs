@@ -21,6 +21,7 @@ namespace LemoineTools.Lemoine
         // ── Context from the launching command (Revit main-thread data) ───────
         private List<string>        _lineStyleNames = new List<string>();
         private List<ClashDocInfo>  _docs           = new List<ClashDocInfo>();
+        private List<string>        _hostPhaseNames = new List<string>();   // host phases, sequence order
         private ClashPickEventHandler? _pickHandler;
         private ExternalEvent?         _pickEvent;
 
@@ -70,11 +71,12 @@ namespace LemoineTools.Lemoine
 
         /// <summary>Supplies Revit-queried data (called once before the window is shown).</summary>
         internal void SetContext(
-            List<string> lineStyleNames, List<ClashDocInfo> docs,
+            List<string> lineStyleNames, List<ClashDocInfo> docs, List<string> hostPhaseNames,
             ClashPickEventHandler? pickHandler, ExternalEvent? pickEvent)
         {
             _lineStyleNames = lineStyleNames ?? new List<string>();
             _docs           = docs ?? new List<ClashDocInfo>();
+            _hostPhaseNames = hostPhaseNames ?? new List<string>();
             _pickHandler    = pickHandler;
             _pickEvent      = pickEvent;
         }
@@ -104,6 +106,11 @@ namespace LemoineTools.Lemoine
         {
             LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+
+            // A pick callback parked on the static handler outlives this window — sever it so a
+            // late pick can't marshal into this window's terminated dispatcher (and so the
+            // editors/window aren't retained until the next pick).
+            if (_pickHandler != null) _pickHandler.OnPicked = null;
 
             if (Serialize(_defs) != _snapshot)
             {
@@ -350,6 +357,56 @@ namespace LemoineTools.Lemoine
             var targetSelect = new LemoineSingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = def.DimTarget };
             targetSelect.SelectionChanged += val => { if (val != null) def.DimTarget = val; };
             marking.Children.Add(targetSelect);
+
+            AddDivider(marking);
+            AddLabel(marking, "Phase");
+            const string PhaseAll = "All phases", PhaseMatch = "Match view phase", PhaseSpecific = "Specific phase";
+            var phaseSelect = new LemoineSingleSelect
+            {
+                Items        = new[] { PhaseAll, PhaseMatch, PhaseSpecific },
+                SelectedItem = def.PhaseMode == "MatchView" ? PhaseMatch
+                             : def.PhaseMode == "Specific"  ? PhaseSpecific : PhaseAll,
+            };
+            marking.Children.Add(phaseSelect);
+            AddDim(marking, "Match view phase: a clash marks in a view only when both elements exist in that "
+                          + "view's phase. Specific phase culls detection to one host phase. Linked-model "
+                          + "phases map to the host by name; unmapped names pass through and are logged.");
+
+            // Specific-phase picker — visible only in Specific mode. Shown default = the saved
+            // name when valid, else the last (newest) host phase; written back only on user action.
+            var specificSection = new StackPanel();
+            string shownPhase = _hostPhaseNames.Contains(def.SpecificPhaseName)
+                ? def.SpecificPhaseName
+                : (_hostPhaseNames.Count > 0 ? _hostPhaseNames[_hostPhaseNames.Count - 1] : "");
+            LemoineSingleSelect? specificSelect = null;
+            if (_hostPhaseNames.Count > 0)
+            {
+                AddLabel(specificSection, "Host phase");
+                specificSelect = new LemoineSingleSelect
+                {
+                    Items        = _hostPhaseNames.ToArray(),
+                    SelectedItem = shownPhase,
+                };
+                specificSelect.SelectionChanged += val => { if (val != null) def.SpecificPhaseName = val; };
+                specificSection.Children.Add(specificSelect);
+            }
+            else
+            {
+                AddDim(specificSection, "No host phases captured — open this window with a document active to pick one.");
+            }
+            specificSection.Visibility = def.PhaseMode == "Specific"
+                ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            marking.Children.Add(specificSection);
+
+            phaseSelect.SelectionChanged += val =>
+            {
+                def.PhaseMode = val == PhaseMatch ? "MatchView" : val == PhaseSpecific ? "Specific" : "All";
+                if (def.PhaseMode == "Specific" && specificSelect != null
+                    && !_hostPhaseNames.Contains(def.SpecificPhaseName))
+                    def.SpecificPhaseName = shownPhase;   // adopt the displayed default on entry
+                specificSection.Visibility = def.PhaseMode == "Specific"
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            };
 
             AddDivider(marking);
             AddLabel(marking, "Cross Line Style");

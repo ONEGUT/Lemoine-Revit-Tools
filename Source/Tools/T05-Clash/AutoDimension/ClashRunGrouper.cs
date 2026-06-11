@@ -9,16 +9,22 @@ namespace LemoineTools.Tools.Clash.AutoDimension
     /// <summary>
     /// Groups clash source points into physical <i>runs</i> before any axis resolution.
     /// A run is a maximal set of clashes that travel together along one straight line — a pipe
-    /// rack, a bank of penetrations — found by seeding on the nearest pair, fitting a principal
-    /// axis, and growing only with points that stay on that line (perpendicular ≤ cross tolerance)
-    /// and adjacent along it (gap ≤ run gap). One run per clash.
+    /// rack, a bank of penetrations.
     ///
-    /// The run gives the chainer a real notion of membership: dimensions measured <b>along</b> the
-    /// run chain across every member to the edge; dimensions measured <b>across</b> the run collapse
-    /// to a single representative (slightly off-line members are absorbed, not dimensioned twice).
-    /// This replaces the old per-axis fixed-tolerance bucketing + post-hoc duplicate collapse, which
-    /// both over-grouped (chaining unrelated clashes) and under-grouped (stacking near-coincident
-    /// ones). Revit-free and deterministic — all ordering is by source key, never hash order.
+    /// Clustering is agglomerative best-fit: every clash starts as its own cluster and the
+    /// best-fitting qualifying pair of clusters is merged until none qualifies. A merge
+    /// qualifies when the merged set still fits one line — every member within the cross
+    /// tolerance of the merged principal axis AND every along-axis gap between adjacent
+    /// members within the run gap. "Best" is the lowest worst-case perpendicular residual.
+    /// This replaces the previous seed-and-grow pass, which was order-dependent (clashes were
+    /// claimed first-come-first-served in ElementId order) and seed-axis-sensitive (a sideways
+    /// nearest neighbour pointed the run the wrong way and the true members then failed the
+    /// cross test). Best-fit merging also reunifies split half-runs and attaches solo clashes
+    /// to a nearby run's line — no separate repair passes needed.
+    ///
+    /// Near-miss merges (pairs that failed a tolerance by less than 2×) are reported so the
+    /// gap / cross-tolerance knobs can be tuned from the run log instead of guessed.
+    /// Revit-free and deterministic — all ordering is by source key, never hash order.
     /// </summary>
     public static class ClashRunGrouper
     {
@@ -30,16 +36,33 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             public Vec2 CrossAxis { get; set; } = new Vec2(0, 1);
         }
 
+        /// <summary>Grouping output: the per-clash run map plus tuning diagnostics.</summary>
+        public sealed class GroupResult
+        {
+            /// <summary>Keyed by <see cref="SourceLine.SourceKey"/>; a missing key is a solo run.</summary>
+            public Dictionary<string, RunInfo> Map { get; } = new Dictionary<string, RunInfo>(StringComparer.Ordinal);
+
+            /// <summary>Distinct runs (including solos) over the input set.</summary>
+            public int RunCount { get; set; }
+
+            /// <summary>Human-readable near-miss diagnostics: cluster pairs that failed a merge
+            /// tolerance by less than 2×, with the offending distance. Capped; for the run log.</summary>
+            public List<string> NearMisses { get; } = new List<string>();
+        }
+
+        /// <summary>Max near-miss lines reported (keeps the run log readable).</summary>
+        private const int MaxNearMisses = 12;
+
         /// <summary>
-        /// Clusters <paramref name="sources"/> into runs. Tolerances are in feet (model space).
-        /// Returns a map keyed by <see cref="SourceLine.SourceKey"/>; any source not present is an
-        /// isolated run of one (the caller treats a missing key as a solo run).
+        /// Clusters <paramref name="sources"/> into runs. Tolerances are in feet (model space):
+        /// <paramref name="crossTolFt"/> is how far a member may sit off the run's fitted line,
+        /// <paramref name="gapFt"/> the max along-line gap between adjacent members.
         /// </summary>
-        public static Dictionary<string, RunInfo> Build(
+        public static GroupResult Build(
             IReadOnlyList<SourceLine> sources, double crossTolFt, double gapFt)
         {
-            var map = new Dictionary<string, RunInfo>(StringComparer.Ordinal);
-            if (sources == null || sources.Count == 0) return map;
+            var result = new GroupResult();
+            if (sources == null || sources.Count == 0) return result;
 
             // Deterministic working set: (key, 2D anchor), ordered by source key.
             var pts = sources
@@ -47,127 +70,191 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 .OrderBy(s => s.SourceKey, StringComparer.Ordinal)
                 .Select(s => (key: s.SourceKey, p: s.Anchor2d))
                 .ToList();
-            if (pts.Count == 0) return map;
+            if (pts.Count == 0) return result;
 
-            var used = new bool[pts.Count];
-            int runSeq = 0;
+            // Two members that belong to one line are at most this far apart in the plane
+            // (gap along the axis, up to one cross tolerance off the line on each side) —
+            // box-distance pruning radius for candidate cluster pairs.
+            double prune = Math.Sqrt(gapFt * gapFt + 4.0 * crossTolFt * crossTolFt) + 1e-9;
 
+            var clusters = new List<Cluster>();
             for (int i = 0; i < pts.Count; i++)
+                clusters.Add(Cluster.Solo(i, pts[i].key, pts[i].p));
+
+            // Fit cache keyed by immutable cluster ids — a merge mints a new id, so stale
+            // entries are simply never looked up again.
+            var fitCache = new Dictionary<(int, int), Fit>();
+            int nextId = clusters.Count;
+
+            while (clusters.Count > 1 && gapFt > 1e-9 && crossTolFt > 1e-9)
             {
-                if (used[i]) continue;
+                int bestA = -1, bestB = -1;
+                Fit bestFit = default;
 
-                var members = new List<int> { i };
-                used[i] = true;
-
-                // Seed the run direction from the nearest unused neighbour within the gap.
-                int seed2 = NearestWithin(pts, used, i, gapFt);
-                Vec2 longAxis = new Vec2(1, 0);
-                if (seed2 >= 0)
+                for (int a = 0; a < clusters.Count; a++)
                 {
-                    used[seed2] = true;
-                    members.Add(seed2);
-                    Vec2 dir = (pts[seed2].p - pts[i].p).Normalized();
-                    if (dir.Length > 1e-9) longAxis = dir;
-                }
-
-                // Grow: add the best collinear, adjacent, unused point until none qualifies.
-                bool grew = true;
-                while (grew)
-                {
-                    grew = false;
-                    Vec2 centroid = Centroid(pts, members);
-                    if (members.Count >= 2) longAxis = PrincipalAxis(pts, members, centroid, longAxis);
-                    Vec2 cross = longAxis.Perp();
-
-                    double minA = double.MaxValue, maxA = double.MinValue;
-                    foreach (var m in members)
+                    for (int b = a + 1; b < clusters.Count; b++)
                     {
-                        double a = (pts[m].p - centroid).Dot(longAxis);
-                        if (a < minA) minA = a;
-                        if (a > maxA) maxA = a;
-                    }
+                        var ca = clusters[a];
+                        var cb = clusters[b];
+                        if (BoxGap(ca, cb) > prune) continue;
 
-                    int best = -1;
-                    double bestGap = double.MaxValue, bestPerp = double.MaxValue;
-                    string bestKey = "";
-                    for (int j = 0; j < pts.Count; j++)
-                    {
-                        if (used[j]) continue;
-                        Vec2 d = pts[j].p - centroid;
-                        double perp = Math.Abs(d.Dot(cross));
-                        if (perp > crossTolFt) continue;
-                        double a = d.Dot(longAxis);
-                        double gap = a < minA ? (minA - a) : a > maxA ? (a - maxA) : 0.0;
-                        if (gap > gapFt) continue;
+                        var fit = GetFit(fitCache, ca, cb, pts);
+                        if (fit.MaxPerp > crossTolFt || fit.MaxAdjGap > gapFt) continue;
 
-                        // Prefer the smallest along-axis gap, then the smallest perpendicular
-                        // deviation, then the lowest source key — fully deterministic.
-                        bool better = gap < bestGap - 1e-12
-                                   || (Math.Abs(gap - bestGap) <= 1e-12 && perp < bestPerp - 1e-12)
-                                   || (Math.Abs(gap - bestGap) <= 1e-12 && Math.Abs(perp - bestPerp) <= 1e-12
-                                       && string.CompareOrdinal(pts[j].key, bestKey) < 0);
-                        if (best < 0 || better)
-                        {
-                            best = j; bestGap = gap; bestPerp = perp; bestKey = pts[j].key;
-                        }
-                    }
-
-                    if (best >= 0)
-                    {
-                        used[best] = true;
-                        members.Add(best);
-                        grew = true;
+                        // Lower worst-case off-line residual wins; ties by lowest key pair —
+                        // fully deterministic.
+                        bool better = bestA < 0
+                                   || fit.MaxPerp < bestFit.MaxPerp - 1e-12
+                                   || (Math.Abs(fit.MaxPerp - bestFit.MaxPerp) <= 1e-12
+                                       && KeyPairLess(ca, cb, clusters[bestA], clusters[bestB]));
+                        if (better) { bestA = a; bestB = b; bestFit = fit; }
                     }
                 }
 
+                if (bestA < 0) break;
+                var merged = Cluster.Merge(clusters[bestA], clusters[bestB], bestFit, nextId++);
+                clusters.RemoveAt(bestB);   // bestB > bestA — remove the later index first
+                clusters.RemoveAt(bestA);
+                clusters.Add(merged);
+                clusters.Sort((x, y) => string.CompareOrdinal(x.KeyLow, y.KeyLow));
+            }
+
+            CollectNearMisses(result, clusters, fitCache, pts, crossTolFt, gapFt, prune);
+
+            // Run ids in lowest-member-key order — deterministic across runs.
+            clusters.Sort((x, y) => string.CompareOrdinal(x.KeyLow, y.KeyLow));
+            int runSeq = 0;
+            foreach (var c in clusters)
+            {
                 var info = new RunInfo
                 {
-                    RunId = "run" + runSeq.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
-                    LongAxis = longAxis,
-                    CrossAxis = longAxis.Perp(),
+                    RunId     = "run" + runSeq.ToString("D4", System.Globalization.CultureInfo.InvariantCulture),
+                    LongAxis  = c.Axis,
+                    CrossAxis = c.Axis.Perp(),
                 };
                 runSeq++;
-                foreach (var m in members) map[pts[m].key] = info;
+                foreach (var m in c.Members) result.Map[pts[m].key] = info;
             }
-
-            return map;
+            result.RunCount = clusters.Count;
+            return result;
         }
 
-        /// <summary>Index of the nearest unused point to <paramref name="from"/> within
-        /// <paramref name="gapFt"/>, or -1. Ties broken by lowest source key.</summary>
-        private static int NearestWithin(
-            List<(string key, Vec2 p)> pts, bool[] used, int from, double gapFt)
+        // ── Cluster bookkeeping ────────────────────────────────────────────────
+
+        private sealed class Cluster
         {
-            int best = -1;
-            double bestDist = double.MaxValue;
-            for (int j = 0; j < pts.Count; j++)
+            public int Id;                       // immutable per cluster generation (fit-cache key)
+            public List<int> Members = new List<int>();
+            public string KeyLow = "";           // lowest member source key (identity/tie-break)
+            public Vec2 Axis = new Vec2(1, 0);   // current fitted long axis (canonical sign)
+            public double MinX, MinY, MaxX, MaxY;
+
+            public static Cluster Solo(int idx, string key, Vec2 p) => new Cluster
             {
-                if (used[j] || j == from) continue;
-                double dist = (pts[j].p - pts[from].p).Length;
-                if (dist > gapFt) continue;
-                if (dist < bestDist - 1e-12
-                    || (Math.Abs(dist - bestDist) <= 1e-12 && best >= 0
-                        && string.CompareOrdinal(pts[j].key, pts[best].key) < 0))
+                Id = idx,
+                Members = { idx },
+                KeyLow = key,
+                MinX = p.X, MaxX = p.X, MinY = p.Y, MaxY = p.Y,
+            };
+
+            public static Cluster Merge(Cluster a, Cluster b, Fit fit, int id)
+            {
+                var c = new Cluster
                 {
-                    best = j; bestDist = dist;
-                }
+                    Id      = id,
+                    Members = a.Members.Concat(b.Members).OrderBy(i => i).ToList(),
+                    KeyLow  = string.CompareOrdinal(a.KeyLow, b.KeyLow) <= 0 ? a.KeyLow : b.KeyLow,
+                    Axis    = fit.Axis,
+                    MinX    = Math.Min(a.MinX, b.MinX), MaxX = Math.Max(a.MaxX, b.MaxX),
+                    MinY    = Math.Min(a.MinY, b.MinY), MaxY = Math.Max(a.MaxY, b.MaxY),
+                };
+                return c;
             }
-            return best;
         }
 
-        private static Vec2 Centroid(List<(string key, Vec2 p)> pts, List<int> members)
+        /// <summary>Merged-line fit of two clusters' combined members.</summary>
+        private readonly struct Fit
         {
+            public readonly Vec2 Axis;
+            public readonly double MaxPerp;     // worst member distance off the fitted line
+            public readonly double MaxAdjGap;   // worst along-axis gap between adjacent members
+            public Fit(Vec2 axis, double maxPerp, double maxAdjGap)
+            { Axis = axis; MaxPerp = maxPerp; MaxAdjGap = maxAdjGap; }
+        }
+
+        /// <summary>Planar gap between two clusters' bounding boxes (0 when they touch/overlap).
+        /// A lower bound on the true min member distance — safe for pruning.</summary>
+        private static double BoxGap(Cluster a, Cluster b)
+        {
+            double dx = Math.Max(0, Math.Max(a.MinX - b.MaxX, b.MinX - a.MaxX));
+            double dy = Math.Max(0, Math.Max(a.MinY - b.MaxY, b.MinY - a.MaxY));
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private static bool KeyPairLess(Cluster a1, Cluster b1, Cluster a2, Cluster b2)
+        {
+            string lo1 = a1.KeyLow, hi1 = b1.KeyLow;
+            if (string.CompareOrdinal(lo1, hi1) > 0) { var t = lo1; lo1 = hi1; hi1 = t; }
+            string lo2 = a2.KeyLow, hi2 = b2.KeyLow;
+            if (string.CompareOrdinal(lo2, hi2) > 0) { var t = lo2; lo2 = hi2; hi2 = t; }
+            int c = string.CompareOrdinal(lo1, lo2);
+            if (c != 0) return c < 0;
+            return string.CompareOrdinal(hi1, hi2) < 0;
+        }
+
+        private static Fit GetFit(
+            Dictionary<(int, int), Fit> cache, Cluster a, Cluster b,
+            List<(string key, Vec2 p)> pts)
+        {
+            var key = a.Id <= b.Id ? (a.Id, b.Id) : (b.Id, a.Id);
+            if (cache.TryGetValue(key, out var hit)) return hit;
+            var fit = FitLine(a, b, pts);
+            cache[key] = fit;
+            return fit;
+        }
+
+        /// <summary>Fits one line through both clusters' members: principal axis through the
+        /// centroid, worst perpendicular residual, and worst adjacent along-axis gap.</summary>
+        private static Fit FitLine(Cluster a, Cluster b, List<(string key, Vec2 p)> pts)
+        {
+            int n = a.Members.Count + b.Members.Count;
+            var members = new int[n];
+            a.Members.CopyTo(members, 0);
+            b.Members.CopyTo(members, a.Members.Count);
+
             Vec2 sum = new Vec2(0, 0);
             foreach (var m in members) sum += pts[m].p;
-            return members.Count == 0 ? sum : sum * (1.0 / members.Count);
+            Vec2 centroid = sum * (1.0 / n);
+
+            Vec2 axis = PrincipalAxis(members, pts, centroid);
+
+            double maxPerp = 0;
+            var along = new double[n];
+            Vec2 cross = axis.Perp();
+            for (int i = 0; i < n; i++)
+            {
+                Vec2 d = pts[members[i]].p - centroid;
+                double perp = Math.Abs(d.Dot(cross));
+                if (perp > maxPerp) maxPerp = perp;
+                along[i] = d.Dot(axis);
+            }
+
+            Array.Sort(along);
+            double maxGap = 0;
+            for (int i = 1; i < n; i++)
+            {
+                double g = along[i] - along[i - 1];
+                if (g > maxGap) maxGap = g;
+            }
+
+            return new Fit(axis, maxPerp, maxGap);
         }
 
-        /// <summary>Principal axis (largest-variance direction) of the member points via the
-        /// closed-form 2×2 covariance eigenvector. Falls back to <paramref name="prev"/> when the
-        /// spread is degenerate, and keeps the sign aligned with <paramref name="prev"/> so the axis
-        /// never flips between grow iterations.</summary>
-        private static Vec2 PrincipalAxis(
-            List<(string key, Vec2 p)> pts, List<int> members, Vec2 centroid, Vec2 prev)
+        /// <summary>Principal axis (largest-variance direction) via the closed-form 2×2
+        /// covariance eigenvector, with a canonical sign (+X half-plane) so identical point
+        /// sets always yield the identical axis.</summary>
+        private static Vec2 PrincipalAxis(int[] members, List<(string key, Vec2 p)> pts, Vec2 centroid)
         {
             double sxx = 0, syy = 0, sxy = 0;
             foreach (var m in members)
@@ -177,13 +264,69 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 syy += d.Y * d.Y;
                 sxy += d.X * d.Y;
             }
-            if (sxx + syy < 1e-12) return prev;
+            if (sxx + syy < 1e-12) return new Vec2(1, 0);   // coincident points — any axis works
 
             double theta = 0.5 * Math.Atan2(2.0 * sxy, sxx - syy);
             Vec2 axis = new Vec2(Math.Cos(theta), Math.Sin(theta)).Normalized();
-            if (axis.Length < 1e-9) return prev;
-            if (axis.Dot(prev) < 0) axis = axis * -1.0;   // keep direction stable
+            if (axis.Length < 1e-9) return new Vec2(1, 0);
+            return Canonical(axis);
+        }
+
+        /// <summary>Flips the axis into the +X half-plane (ties to +Y) so the sign is stable.</summary>
+        private static Vec2 Canonical(Vec2 axis)
+        {
+            if (axis.X < -1e-9 || (Math.Abs(axis.X) <= 1e-9 && axis.Y < 0)) return axis * -1.0;
             return axis;
+        }
+
+        /// <summary>
+        /// Reports cluster pairs that *almost* merged: both tolerances within 2× their limit but
+        /// at least one exceeded. Sorted by how close they came (smallest worst exceedance first)
+        /// and capped at <see cref="MaxNearMisses"/>, so the log teaches what the knobs would
+        /// need to be for the grouping the user expected.
+        /// </summary>
+        private static void CollectNearMisses(
+            GroupResult result, List<Cluster> clusters, Dictionary<(int, int), Fit> fitCache,
+            List<(string key, Vec2 p)> pts, double crossTolFt, double gapFt, double prune)
+        {
+            if (gapFt <= 1e-9 || crossTolFt <= 1e-9) return;
+
+            var misses = new List<(double ratio, string text)>();
+            for (int a = 0; a < clusters.Count; a++)
+            {
+                for (int b = a + 1; b < clusters.Count; b++)
+                {
+                    var ca = clusters[a];
+                    var cb = clusters[b];
+                    if (BoxGap(ca, cb) > prune * 2.0) continue;
+
+                    var fit = GetFit(fitCache, ca, cb, pts);
+                    double gapRatio  = fit.MaxAdjGap / gapFt;
+                    double perpRatio = fit.MaxPerp / crossTolFt;
+                    if (gapRatio <= 1.0 && perpRatio <= 1.0) continue;   // unreachable post-loop, but cheap to guard
+                    if (gapRatio > 2.0 || perpRatio > 2.0) continue;     // not "near" — skip
+
+                    var reasons = new List<string>();
+                    if (gapRatio > 1.0)
+                        reasons.Add($"along gap {fit.MaxAdjGap:0.0} ft > {gapFt:0.0} ft");
+                    if (perpRatio > 1.0)
+                        reasons.Add($"off-line {fit.MaxPerp:0.00} ft > {crossTolFt:0.00} ft");
+
+                    string label =
+                        $"Run grouping near-miss: clash {ca.KeyLow} ({ca.Members.Count}) ↔ " +
+                        $"clash {cb.KeyLow} ({cb.Members.Count}) — {string.Join(", ", reasons)}.";
+                    misses.Add((Math.Max(gapRatio, perpRatio), label));
+                }
+            }
+
+            foreach (var m in misses
+                         .OrderBy(m => m.ratio)
+                         .ThenBy(m => m.text, StringComparer.Ordinal)
+                         .Take(MaxNearMisses))
+                result.NearMisses.Add(m.text);
+            if (misses.Count > MaxNearMisses)
+                result.NearMisses.Add(
+                    $"…and {misses.Count - MaxNearMisses} more near-miss pair(s) not listed.");
         }
     }
 }

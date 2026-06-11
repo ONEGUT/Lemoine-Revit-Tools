@@ -25,6 +25,30 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         public ElementId DimTypeId { get; set; } = ElementId.InvalidElementId;
         public ViewProjection Projection { get; set; } = null!;
         public Core.LayoutConfig CoreConfig { get; set; } = new Core.LayoutConfig();
+
+        /// <summary>The view's static annotation obstacles (view-2D boxes) — commit uses these
+        /// so relocated tag text never lands on a pre-existing annotation.</summary>
+        public IReadOnlyList<Core.Box2> Obstacles { get; set; } = new List<Core.Box2>();
+    }
+
+    /// <summary>One EXTREME dense area: too packed to dimension legibly even chained at this
+    /// view's scale — dimension it in an enlarged-plan callout instead (the callout tier).
+    /// Produced by <see cref="AutoDimensionEngine.SurveyDenseAreas"/>; consumed by the Clash
+    /// Finder, which creates/reuses the callout view, marks it, and dimensions it.</summary>
+    public sealed class DenseCalloutRequest
+    {
+        public string ClusterId { get; set; } = "";
+        /// <summary>World corners of the callout rectangle on the view plane: the cluster box
+        /// unioned with the containing room(s)' footprints (host or linked), plus a margin —
+        /// a callout always reads a little larger than the room its clashes sit in.</summary>
+        public XYZ MinWorld { get; set; } = XYZ.Zero;
+        public XYZ MaxWorld { get; set; } = XYZ.Zero;
+        /// <summary>Computed callout scale denominator (e.g. 24 for 1:24) at which the area's
+        /// text demand fits its extent.</summary>
+        public int Scale { get; set; } = 12;
+        /// <summary>Members to EXCLUDE from the parent view's dimension pass.</summary>
+        public List<string> SourceKeys { get; } = new List<string>();
+        public int ClashCount { get; set; }
     }
 
     /// <summary>
@@ -37,8 +61,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private readonly Action<string, string> _log;
         public AutoDimensionEngine(Action<string, string> log) { _log = log ?? ((a, b) => { }); }
 
+        /// <summary>Chain tier handles density ratios up to this; beyond it the area gets a
+        /// callout. Ratio = nominal text width × (distinct refs − 1) / extent, worst axis.</summary>
+        private const double CalloutDemandRatio = 2.5;
+
+        /// <summary>Standard callout scale denominators, coarsest first.</summary>
+        private static readonly int[] CalloutScales = { 64, 48, 32, 24, 16, 12 };
+
         public EngineOutput BuildPlan(Document doc, View view, AutoDimensionConfig cfg,
-            List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null)
+            List<Resolvers.ManualDatum>? datums = null, List<Resolvers.SlabScope>? slabScopes = null,
+            List<string>? excludeSources = null, bool boundTargetsToCrop = false)
         {
             var output = new EngineOutput();
             var plan = output.Plan;
@@ -73,12 +105,33 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 }
             }
 
+            // Dense-area callouts dimension only to references SHOWN in their crop: project the
+            // crop box into view-2D and let the resolvers reject candidates landing outside it.
+            if (boundTargetsToCrop)
+            {
+                ctx.TargetBounds = CropBounds2D(view, projection);
+                if (ctx.TargetBounds.HasValue)
+                    _log($"Targets constrained to the visible crop {ctx.TargetBounds.Value} — "
+                       + "each clash dimensions to the nearest reference shown in this callout.", "info");
+            }
+
             // ── 1. Ingest source cross-lines ──────────────────────────────────
             var sources = SourceIngest.Collect(doc, view, projection, plan.Unresolved);
             _log($"Ingest: {sources.Count} source line(s), {plan.Unresolved.Count} without a usable reference.", "info");
+
+            // Callout tier: clashes deferred to enlarged dense-area callouts are not
+            // dimensioned in this (parent) view — they keep their markers + the callout bubble.
+            if (excludeSources != null && excludeSources.Count > 0)
+            {
+                var excl = new HashSet<string>(excludeSources, StringComparer.Ordinal);
+                int before = sources.Count;
+                sources = sources.Where(s => !excl.Contains(s.SourceKey)).ToList();
+                if (before != sources.Count)
+                    _log($"{before - sources.Count} clash(es) deferred to enlarged dense-area callout(s) — not dimensioned here.", "info");
+            }
             if (sources.Count == 0)
             {
-                plan.Notes.Add("No tagged source cross-lines found in the view.");
+                plan.Notes.Add("No tagged source cross-lines found in the view (or all deferred to callouts).");
                 return output;
             }
 
@@ -108,16 +161,71 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
                 : new[] { new Core.Vec2(1, 0) };
 
-            // ── 1b. Cluster clashes into physical runs (axis-agnostic, before resolve) ──
-            // A run governs both its dimensions: chained along its length, single across it.
-            double runCrossFt = cfg.RunCrossToleranceMm / 304.8;
-            double runGapFt   = cfg.RunGapMm / 304.8;
-            var runs = cfg.ChainAligned
-                ? ClashRunGrouper.Build(sources, runCrossFt, runGapFt)
-                : new Dictionary<string, ClashRunGrouper.RunInfo>();
+            // ── 1b. Cluster the clashes by PAPER-space proximity — the unit of the whole pass ──
+            // Every clash belongs to exactly one cluster; runs, chains, regions, layout, and
+            // callouts are all cluster-scoped. The link distance is a sheet-inch setting × the
+            // view scale, so grouping reads identically at every scale (parents and callouts).
+            double linkFt  = cfg.ClusterLinkFt(scale);
+            double crossFt = cfg.RunCrossFt(scale);
+            var clustering = ClashClusterer.Build(sources, linkFt);
+            _log($"Clustered {sources.Count} clash(es) into {clustering.Clusters.Count} cluster(s) "
+               + $"(link ≤{cfg.ClusterLinkPaperIn:0.###}\" paper = {linkFt:0.##} ft at 1:{scale:0}).", "info");
+
+            // Collinear runs WITHIN each cluster — a run never spans clusters; run ids are
+            // prefixed with the cluster id so the chainer never merges across a boundary.
+            var runs = new Dictionary<string, ClashRunGrouper.RunInfo>(StringComparer.Ordinal);
+            var nearMisses = new List<string>();
             if (cfg.ChainAligned)
-                _log($"Grouped {sources.Count} clash(es) into {runs.Values.Distinct().Count()} run(s) "
-                   + $"(cross ≤{cfg.RunCrossToleranceMm:0} mm, gap ≤{cfg.RunGapMm:0} mm).", "info");
+            {
+                int runCount = 0;
+                var srcByKey = sources.ToDictionary(s => s.SourceKey, s => s, StringComparer.Ordinal);
+                foreach (var cluster in clustering.Clusters)
+                {
+                    var subset = cluster.MemberKeys
+                        .Where(srcByKey.ContainsKey)
+                        .Select(k => srcByKey[k])
+                        .ToList();
+                    var g = ClashRunGrouper.Build(subset, crossFt, linkFt);
+                    var remap = new Dictionary<ClashRunGrouper.RunInfo, ClashRunGrouper.RunInfo>();
+                    foreach (var kv in g.Map)
+                    {
+                        if (!remap.TryGetValue(kv.Value, out var info))
+                        {
+                            remap[kv.Value] = info = new ClashRunGrouper.RunInfo
+                            {
+                                RunId     = cluster.Id + "|" + kv.Value.RunId,
+                                LongAxis  = kv.Value.LongAxis,
+                                CrossAxis = kv.Value.CrossAxis,
+                            };
+                        }
+                        runs[kv.Key] = info;
+                    }
+                    runCount += g.RunCount;
+                    nearMisses.AddRange(g.NearMisses);
+                }
+                _log($"Grouped into {runCount} run(s) within the clusters "
+                   + $"(off-line ≤{cfg.RunCrossPaperIn:0.####}\" paper = {crossFt:0.##} ft).", "info");
+                foreach (var miss in nearMisses) _log(miss, "info");
+                if (nearMisses.Count > 0)
+                    plan.Notes.Add($"{nearMisses.Count} near-miss grouping pair(s) — the log shows which "
+                                 + "distance kept them apart (tune the grouping distances in Settings → Dimensions).");
+            }
+
+            // ── 1c. Oversaturated areas: clashes packed tighter than their value texts get
+            // collapsed into one chain per axis (split by nearest reference) — solo strings
+            // are unplaceable there by construction (their witness forests cross everything).
+            // Link radius = the nominal value-text width (~8 glyphs) at this view's scale.
+            double nominalTextFt = coreCfg.TextHeightFt * 4.8;
+            var density = cfg.DensityChaining
+                ? DensityClusterer.Build(sources, nominalTextFt, minCount: 4)
+                : new DensityClusterer.Result();
+            if (cfg.DensityChaining && density.ClusterCount > 0)
+            {
+                _log($"Density: {density.ClusterByKey.Count} clash(es) in {density.ClusterCount} oversaturated "
+                   + $"area(s) (link ≤{nominalTextFt:0.#} ft) — chaining per axis, split by nearest reference.", "info");
+                foreach (var s in density.Summaries) _log(s, "info");
+                plan.Notes.Add($"{density.ClusterCount} dense area(s) collapsed into per-axis chains.");
+            }
 
             var resolved        = new List<ResolvedItem>();
             var resolvedSources = new HashSet<string>();
@@ -133,8 +241,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     var res = resolver.Resolve(src, ctx);
                     if (res.Success)
                     {
-                        // A clash with no clustered run is its own solo run (one dim per axis).
+                        // Dense-pocket members chain per axis under their pocket id; otherwise a
+                        // clash with no clustered run is its own solo run (one dim per axis).
                         runs.TryGetValue(src.SourceKey, out var run);
+                        bool dense = density.ClusterByKey.TryGetValue(src.SourceKey, out var pocketId);
+                        clustering.ClusterByKey.TryGetValue(src.SourceKey, out var groupId);
                         resolved.Add(new ResolvedItem
                         {
                             SourceKey   = src.SourceKey,
@@ -145,8 +256,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                             Target2d    = res.TargetPoint2d,
                             TargetKey   = res.TargetKey,
                             TargetType  = ttEnum,
-                            RunId       = run?.RunId ?? ("solo|" + src.SourceKey),
+                            ClusterId   = groupId ?? "",
+                            RunId       = dense ? "dense|" + pocketId
+                                                : run?.RunId ?? ("solo|" + src.SourceKey),
                             RunLongAxis = run?.LongAxis ?? new Core.Vec2(1, 0),
+                            ForceChain  = dense,
                         });
                         resolvedSources.Add(src.SourceKey);
                     }
@@ -181,23 +295,322 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
             if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
+            // ── 2c. Cluster working regions ────────────────────────────────────
+            // Each cluster's tight box grows to cover its dimensions' far side (the resolved
+            // grid / slab-edge targets), then every box balloons outward at the same rate
+            // until the neighbours' edges meet — equal spacing — so each group owns a fair
+            // share of the surrounding empty space to lay its strings and tags out in.
+            var clusterById = clustering.Clusters.ToDictionary(c => c.Id, c => c, StringComparer.Ordinal);
+            foreach (var d in dims)
+            {
+                if (string.IsNullOrEmpty(d.ClusterId)
+                    || !clusterById.TryGetValue(d.ClusterId, out var cl)) continue;
+                var grown = cl.TightBox.Union(Core.Box2.FromPoints(d.TargetPoint, d.TargetPoint));
+                foreach (var r in d.RefAnchors) grown = grown.Union(Core.Box2.FromPoints(r, r));
+                cl.TightBox = grown;
+            }
+            ClashClusterer.GrowRegions(clustering.Clusters, maxPadFt: Math.Max(linkFt, nominalTextFt));
+            foreach (var d in dims)
+            {
+                if (!string.IsNullOrEmpty(d.ClusterId)
+                    && clusterById.TryGetValue(d.ClusterId, out var cl))
+                {
+                    d.Region    = cl.Region;
+                    d.HasRegion = true;
+                }
+            }
+
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
             _log($"Collecting obstacles + laying out {dims.Count} dimension(s) (collision-aware, ≤{coreCfg.TimeCapMs} ms)…", "info");
             var obstacles = CollectObstacles(doc, view, projection);
+            output.Obstacles = obstacles;
             var scorer = new Core.LayoutScorer(coreCfg, null /* crop scoring optional in Tier 1 */);
             var layout = new Core.GreedyLayoutEngine(coreCfg, scorer);
             layout.Arrange(dims, obstacles);
             _log($"Layout done ({obstacles.Count} obstacle(s) considered).", "info");
 
-            int leadered = Core.GreedyLayoutEngine.LeaderedCount(dims);
-            if (leadered > 0) plan.Notes.Add($"{leadered} segment(s) leadered to fit dense text.");
+            int movedTags = Core.GreedyLayoutEngine.MovedTagCount(dims);
+            if (movedTags > 0) plan.Notes.Add($"{movedTags} value tag(s) wider than their crossbar pulled off into tag columns.");
 
             var finalScore = scorer.ScoreAll(dims, obstacles);
             if (finalScore.Hard > 1e-6)
-                plan.Notes.Add($"Layout left {finalScore.Hard:0} hard-constraint penalty — some strings may still overlap (unsatisfiable in Tier 1).");
+            {
+                plan.Notes.Add($"Layout left {finalScore.Hard:0} hard-constraint penalty — some strings may still overlap (unsatisfiable at this density).");
+                int noted = 0;
+                foreach (var d in dims)
+                {
+                    if (noted >= 8) { plan.Notes.Add("…further unresolved strings omitted."); break; }
+                    if (scorer.Score(d, obstacles, dims).Hard <= 1e-6) continue;
+                    string why = scorer.DescribeHardViolations(d, obstacles, dims);
+                    if (why.Length > 0)
+                    {
+                        plan.Notes.Add($"Unresolved: {d.SourceKey} — {why}.");
+                        noted++;
+                    }
+                }
+            }
+
+            // ── Layout snapshot (data harvester) — full problem + solution per view ──
+            if (cfg.DumpLayoutSnapshots)
+            {
+                var snap = Core.LayoutSnapshotWriter.Build(
+                    view.Name, (int)scale, coreCfg, dims, obstacles, scorer,
+                    nearMisses, plan.Notes);
+                string? path = Core.LayoutSnapshotWriter.Write(snap);
+                _log(path != null
+                    ? $"Layout snapshot written: {path}"
+                    : "Layout snapshot FAILED to write — see diagnostics.log.", path != null ? "info" : "fail");
+                if (path != null) plan.Notes.Add($"Layout snapshot: {path}");
+            }
 
             plan.Dimensions = dims;
             return output;
+        }
+
+        // ── Callout tier survey ────────────────────────────────────────────────
+        /// <summary>
+        /// Read-only pre-pass for the callout tier: ingests the view's source cross-lines,
+        /// clusters them, and returns one request per EXTREME dense area — too dense to dimension
+        /// legibly even chained (demand ratio &gt; <see cref="CalloutDemandRatio"/>). Each area's
+        /// rectangle is grown to the room(s) its clashes sit in (host or linked) plus a margin;
+        /// overlapping areas are merged into one callout; and EVERY clash inside the final
+        /// rectangle is swept into the request (so the whole room moves to the callout).
+        /// Moderate clusters return nothing (the chain tier keeps them). Never throws.
+        /// </summary>
+        public static List<DenseCalloutRequest> SurveyDenseAreas(
+            Document doc, View view, AutoDimensionConfig cfg, Action<string, string>? log = null)
+        {
+            var requests = new List<DenseCalloutRequest>();
+            try
+            {
+                var projection = new ViewProjection(view);
+                var sources = SourceIngest.Collect(doc, view, projection, new List<Core.UnresolvedTarget>());
+                if (sources.Count == 0) return requests;
+
+                double scale = view.Scale <= 0 ? 1 : view.Scale;
+                double textPaperFt = ReadDimTextSizeFt(doc, ResolveDimType(doc, cfg.DimensionTypeName))
+                                  ?? cfg.Layout.TextHeightFt;
+                double thModel  = textPaperFt * scale;
+                double nominal  = thModel * 4.8;   // nominal value-text width (~8 glyphs)
+                int minClashes  = Math.Max(2, cfg.CalloutMinClashes);
+
+                // One callout candidate per CLUSTER — the same paper-space clusters the
+                // dimension pass works in, so a promoted area is exactly one cluster.
+                var clustering = ClashClusterer.Build(sources, cfg.ClusterLinkFt(scale));
+                var clusters = new List<DensityClusterer.ClusterInfo>();
+                foreach (var cl in clustering.Clusters)
+                {
+                    if (cl.MemberKeys.Count < 2) continue;   // a lone clash is never a callout
+                    var info = new DensityClusterer.ClusterInfo
+                    {
+                        Id   = cl.Id,
+                        MinX = cl.TightBox.MinX, MinY = cl.TightBox.MinY,
+                        MaxX = cl.TightBox.MaxX, MaxY = cl.TightBox.MaxY,
+                    };
+                    info.MemberKeys.AddRange(cl.MemberKeys);
+                    info.MemberPoints.AddRange(cl.MemberPoints);
+                    clusters.Add(info);
+                }
+                if (clusters.Count == 0) return requests;
+
+                // Room growth needs the clashes' world anchors; the resolver is built lazily —
+                // most views have no extreme cluster and skip the link scan entirely.
+                var anchors = new Dictionary<string, XYZ>(StringComparer.Ordinal);
+                foreach (var s in sources)
+                    if (s != null && !string.IsNullOrEmpty(s.SourceKey)) anchors[s.SourceKey] = s.Anchor3d;
+                Resolvers.RoomBoundsResolver? rooms = null;
+                double margin = nominal * 0.75;
+
+                // ── 1. One room-grown, margin-padded rectangle per EXTREME cluster ──
+                // The callout must always read a little larger than the room(s) its clashes
+                // sit in (rooms usually live in a linked architectural model): union the
+                // containing rooms' footprints with the cluster box, then add the margin.
+                var areas = new List<DenseArea>();
+                foreach (var cluster in clusters)
+                {
+                    double ratio = DemandRatio(cluster, nominal, thModel);
+                    if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
+                    log?.Invoke($"Dense area: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} "
+                              + $"({cluster.MemberKeys.Count} clashes) — callout tier.", "info");
+
+                    double minX = cluster.MinX, minY = cluster.MinY;
+                    double maxX = cluster.MaxX, maxY = cluster.MaxY;
+                    rooms ??= new Resolvers.RoomBoundsResolver(doc, view);
+                    var area = new DenseArea();
+                    foreach (var key in cluster.MemberKeys)
+                    {
+                        if (!anchors.TryGetValue(key, out var anchor3d)) continue;
+                        var hit = rooms.FindRoom(anchor3d);
+                        if (hit == null || !area.RoomKeys.Add(hit.Key)) continue;
+                        foreach (var corner in hit.Corners)
+                        {
+                            var p = projection.To2D(corner);
+                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        }
+                        area.RoomLabels.Add(hit.Label);
+                    }
+                    area.Rect = new Core.Box2(minX - margin, minY - margin, maxX + margin, maxY + margin);
+                    areas.Add(area);
+                }
+
+                // ── 2. Merge overlapping rectangles ──
+                // Two clusters grown to the same (or adjacent) room would otherwise produce
+                // overlapping callouts. Repeat until stable — a merge can create a new overlap.
+                for (bool merged = true; merged; )
+                {
+                    merged = false;
+                    for (int i = 0; i < areas.Count && !merged; i++)
+                        for (int j = i + 1; j < areas.Count && !merged; j++)
+                            if (areas[i].Rect.Intersects(areas[j].Rect))
+                            {
+                                areas[i].Absorb(areas[j]);
+                                areas.RemoveAt(j);
+                                merged = true;
+                            }
+                }
+
+                // ── 3. Sweep + emit ──
+                // EVERY clash inside an area's rectangle belongs to its callout — not just the
+                // dense-cluster members — so the whole room marks/dimensions in the callout and
+                // nothing is left behind in the parent view.
+                int seq = 0;
+                foreach (var area in areas)
+                {
+                    var swept = sources.Where(s => area.Rect.Contains(s.Anchor2d)).ToList();
+                    if (swept.Count == 0) continue;
+
+                    // Minimum-marker gate: a pocket that sweeps fewer than the configured
+                    // minimum never becomes a callout — it stays chained in the parent view.
+                    if (swept.Count < minClashes)
+                    {
+                        log?.Invoke($"Dense area with {swept.Count} clash(es) is under the callout minimum "
+                                  + $"of {minClashes} — kept on the chain tier in the parent view.", "info");
+                        continue;
+                    }
+
+                    // Largest standard scale at which the swept set's text demand fits (ratio
+                    // scales linearly with the view scale), and meaningfully larger than the
+                    // parent. The scale pick uses a GENEROUS text width (~11 glyphs — real
+                    // imperial strings like 2'-3 1/2" — vs the 8-glyph detection nominal) so
+                    // segments genuinely fit inline instead of landing just-barely cramped again.
+                    var sweptInfo = new DensityClusterer.ClusterInfo
+                    {
+                        MinX = double.MaxValue, MinY = double.MaxValue,
+                        MaxX = double.MinValue, MaxY = double.MinValue,
+                    };
+                    foreach (var s in swept)
+                    {
+                        var p = s.Anchor2d;
+                        sweptInfo.MemberPoints.Add(p);
+                        if (p.X < sweptInfo.MinX) sweptInfo.MinX = p.X; if (p.X > sweptInfo.MaxX) sweptInfo.MaxX = p.X;
+                        if (p.Y < sweptInfo.MinY) sweptInfo.MinY = p.Y; if (p.Y > sweptInfo.MaxY) sweptInfo.MaxY = p.Y;
+                    }
+                    double scaleRatio = DemandRatio(sweptInfo, thModel * 6.0, thModel);
+                    double bound = scale / Math.Max(scaleRatio, 1e-9);
+                    int chosen = 12;
+                    foreach (var s in CalloutScales)
+                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+
+                    string id = "c" + seq.ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
+                    seq++;
+                    var req = new DenseCalloutRequest
+                    {
+                        ClusterId  = id,
+                        MinWorld   = projection.From2D(new Core.Vec2(area.Rect.MinX, area.Rect.MinY)),
+                        MaxWorld   = projection.From2D(new Core.Vec2(area.Rect.MaxX, area.Rect.MaxY)),
+                        Scale      = chosen,
+                        ClashCount = swept.Count,
+                    };
+                    req.SourceKeys.AddRange(swept.Select(s => s.SourceKey));
+                    requests.Add(req);
+
+                    string roomsTxt = area.RoomLabels.Count > 0
+                        ? $"covers {string.Join(", ", area.RoomLabels)} plus a margin"
+                        : "no room found at its clashes — sized to the cluster extent";
+                    string mergeTxt = area.MergedClusters > 1
+                        ? $", merged from {area.MergedClusters} overlapping dense areas" : "";
+                    log?.Invoke($"Dense area {id}: callout at 1:{chosen} {roomsTxt}{mergeTxt} — "
+                              + $"all {swept.Count} clash(es) inside it move to the callout.", "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error("AutoDimensionEngine: survey dense areas", ex);
+                log?.Invoke($"Dense-area survey failed ({ex.Message}) — callout tier skipped this view.", "fail");
+            }
+            return requests;
+        }
+
+        /// <summary>One dense-callout footprint while merging: the room-grown, margin-padded
+        /// rectangle plus which rooms it covers. Overlapping footprints are absorbed into one.</summary>
+        private sealed class DenseArea
+        {
+            public Core.Box2 Rect;
+            public HashSet<string> RoomKeys { get; } = new HashSet<string>(StringComparer.Ordinal);
+            public List<string> RoomLabels { get; } = new List<string>();
+            public int MergedClusters = 1;
+
+            public void Absorb(DenseArea o)
+            {
+                Rect = Rect.Union(o.Rect);
+                foreach (var k in o.RoomKeys) RoomKeys.Add(k);
+                foreach (var l in o.RoomLabels) if (!RoomLabels.Contains(l)) RoomLabels.Add(l);
+                MergedClusters += o.MergedClusters;
+            }
+        }
+
+        /// <summary>The view's active crop rectangle projected into its 2D plane, or null when
+        /// the view has no usable crop. Never throws.</summary>
+        private static Core.Box2? CropBounds2D(View view, ViewProjection projection)
+        {
+            try
+            {
+                if (!view.CropBoxActive || view.CropBox == null) return null;
+                var cb = view.CropBox;
+                double minX = double.MaxValue, minY = double.MaxValue;
+                double maxX = double.MinValue, maxY = double.MinValue;
+                foreach (double x in new[] { cb.Min.X, cb.Max.X })
+                    foreach (double y in new[] { cb.Min.Y, cb.Max.Y })
+                        foreach (double z in new[] { cb.Min.Z, cb.Max.Z })
+                        {
+                            var p = projection.To2D(cb.Transform.OfPoint(new XYZ(x, y, z)));
+                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        }
+                return new Core.Box2(minX, minY, maxX, maxY);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("AutoDimensionEngine: read crop bounds", ex);
+                return null;
+            }
+        }
+
+        /// <summary>Worst-axis density ratio of a cluster: nominal text width × (distinct
+        /// reference positions − 1) over the extent — &gt;1 means texts can't sit inline,
+        /// &gt;~2.5 means even tag columns drown. Distinctness at half a text height mirrors
+        /// the chainer's coincident-reference dedupe.</summary>
+        private static double DemandRatio(DensityClusterer.ClusterInfo cluster, double nominal, double th)
+        {
+            int nx = DistinctCount(cluster.MemberPoints.Select(p => p.X), th * 0.5);
+            int ny = DistinctCount(cluster.MemberPoints.Select(p => p.Y), th * 0.5);
+            double ex = Math.Max(cluster.MaxX - cluster.MinX, nominal);
+            double ey = Math.Max(cluster.MaxY - cluster.MinY, nominal);
+            double rx = nominal * Math.Max(nx - 1, 0) / ex;
+            double ry = nominal * Math.Max(ny - 1, 0) / ey;
+            return Math.Max(rx, ry);
+        }
+
+        private static int DistinctCount(IEnumerable<double> values, double tol)
+        {
+            int n = 0;
+            double last = double.NaN;
+            foreach (var v in values.OrderBy(v => v))
+            {
+                if (double.IsNaN(last) || v - last > tol) { n++; last = v; }
+            }
+            return n;
         }
 
         // ── Helpers ────────────────────────────────────────────────────────────
@@ -209,21 +622,35 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // actual DimensionType (textHeightPaperFt) so cramped-detection + stagger match reality.
             return new Core.LayoutConfig
             {
-                SchemaVersion       = paper.SchemaVersion,
-                StringSpacingFt     = paper.StringSpacingFt * scale,
-                FirstOffsetFt       = paper.FirstOffsetFt * scale,
-                PrecisionFt         = paper.PrecisionFt,            // display tolerance, model-space
-                TextHeightFt        = textHeightPaperFt * scale,
-                OverlapWeight       = paper.OverlapWeight,
-                OffCropWeight       = paper.OffCropWeight,
-                WitnessCrossWeight  = paper.WitnessCrossWeight,
-                CrampedWeight       = paper.CrampedWeight,
-                UnevenSpacingWeight = paper.UnevenSpacingWeight,
-                LeaderWeight        = paper.LeaderWeight,
-                MaxIterations       = paper.MaxIterations,
-                TimeCapMs           = paper.TimeCapMs,
-                PlateauEpsilon      = paper.PlateauEpsilon,
-                MaxOffsetSteps      = paper.MaxOffsetSteps,
+                SchemaVersion        = paper.SchemaVersion,
+                StringSpacingFt      = paper.StringSpacingFt * scale,
+                FirstOffsetFt        = paper.FirstOffsetFt * scale,
+                PrecisionFt          = paper.PrecisionFt,            // display tolerance, model-space
+                TextHeightFt         = textHeightPaperFt * scale,
+                WitnessGapFt         = paper.WitnessGapFt * scale,
+                WitnessOvershootFt   = paper.WitnessOvershootFt * scale,
+                TagColumnBaseHeights = paper.TagColumnBaseHeights,   // text-height multiples — scale-free
+                TagColumnStepHeights = paper.TagColumnStepHeights,
+                TagColumnAlongHeights = paper.TagColumnAlongHeights,
+                OverlapWeight        = paper.OverlapWeight,
+                OffCropWeight        = paper.OffCropWeight,
+                WitnessCrossWeight   = paper.WitnessCrossWeight,
+                CrossingWeight       = paper.CrossingWeight,
+                LeaderCrossWeight    = paper.LeaderCrossWeight,
+                LeaderLineCrossWeight = paper.LeaderLineCrossWeight,
+                LeaderSlackWeight    = paper.LeaderSlackWeight,
+                CrampedWeight        = paper.CrampedWeight,
+                UnevenSpacingWeight  = paper.UnevenSpacingWeight,
+                LeaderWeight         = paper.LeaderWeight,
+                RegionWeight         = paper.RegionWeight,
+                MaxRepairPasses      = paper.MaxRepairPasses,
+                AlignSharedRows      = paper.AlignSharedRows,
+                StaggerStackedText   = paper.StaggerStackedText,
+                StaggerWeight        = paper.StaggerWeight,
+                MaxIterations        = paper.MaxIterations,
+                TimeCapMs            = paper.TimeCapMs,
+                PlateauEpsilon       = paper.PlateauEpsilon,
+                MaxOffsetSteps       = paper.MaxOffsetSteps,
             };
         }
 
@@ -333,6 +760,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     .OfClass(typeof(TextNote)).WhereElementIsNotElementType());
                 AddBoxesOf(new FilteredElementCollector(doc, view.Id)
                     .OfClass(typeof(IndependentTag)).WhereElementIsNotElementType());
+                AddBoxesOf(new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(SpotDimension)).WhereElementIsNotElementType());  // spot elevations/coords
+                AddBoxesOf(new FilteredElementCollector(doc, view.Id)
+                    .OfClass(typeof(FilledRegion)).WhereElementIsNotElementType());   // incl. our clash markers
                 AddBoxesOf(new FilteredElementCollector(doc, view.Id)
                     .OfCategory(BuiltInCategory.OST_Lines).WhereElementIsNotElementType(),
                     ClashTagSchema.IsOurs);                        // the source cross-lines

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -30,6 +31,7 @@ namespace LemoineTools.Tools.Debuggers
             new StepDefinition("P4", "Folder browser + text field + select",  required: false),
             new StepDefinition("P5", "Review summary (heavy)",                required: false),
             new StepDefinition("P6", "Autocomplete + tag chips",              required: false),
+            new StepDefinition("P7", "Close-after-run callback replay",       required: false),
         };
 
         public bool   IsValid(string stepId)    => true;
@@ -49,6 +51,7 @@ namespace LemoineTools.Tools.Debuggers
                 case "P4": return Probe("FolderBrowser + TextField + SingleSelect", BuildInputs);
                 case "P5": return Probe("LemoineReviewSummary with 8 cards + chips + warning", BuildReview);
                 case "P6": return Probe("SearchAutocomplete + TagChipInput", BuildSearchAndChips);
+                case "P7": return BuildCloseReplay();
                 default:   return new Grid();
             }
         }
@@ -164,6 +167,139 @@ namespace LemoineTools.Tools.Debuggers
             chips.ItemsSource = new List<string> { "One", "Two", "Three", "Four" };
             sp.Children.Add(chips);
             return sp;
+        }
+
+        // ── P7: close-after-run callback replay ──────────────────────────────────
+        // Isolates the "Revit crashed when I closed the wizard after a successful run" class:
+        // a throwaway StepFlowWindow hands its callbacks to a dummy tool; after the user runs
+        // and CLOSES that window, each button below re-fires one captured callback from this
+        // (foreign) thread — exactly like a late ExternalEvent handler or pick resolving after
+        // close. The button that closes/hangs Revit names the crashing path.
+        private ReplayProbeTool? _replayTool;
+
+        private FrameworkElement BuildCloseReplay()
+        {
+            var sp = new StackPanel();
+
+            var hint = new TextBlock
+            {
+                Text = "1) Open the probe wizard.  2) In it, click its run button (completes instantly).  " +
+                       "3) Close it with the title-bar X.  4) Press each replay button below — the press " +
+                       "that closes or hangs Revit names the crashing callback path. A caught managed " +
+                       "exception is shown in the status line instead.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 10),
+            };
+            hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            sp.Children.Add(hint);
+
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) };
+            status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            status.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            void Report(string what) => status.Text = $"{DateTime.Now:HH:mm:ss}  {what}";
+
+            var open = LemoineControlStyles.BuildButton("▶ 1 · Open probe wizard (own STA thread)",
+                LemoineControlStyles.LemoineButtonVariant.Primary);
+            open.HorizontalAlignment = HorizontalAlignment.Left;
+            open.Margin = new Thickness(0, 0, 0, 6);
+            open.Click += (s, e) =>
+            {
+                var tool = new ReplayProbeTool();
+                _replayTool = tool;
+                var t = new Thread(() =>
+                {
+                    var win = new StepFlowWindow(tool);
+                    win.Closed += (s2, e2) =>
+                        System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+                    win.Show();
+                    System.Windows.Threading.Dispatcher.Run();
+                });
+                t.SetApartmentState(ApartmentState.STA);
+                t.IsBackground = true;
+                t.Start();
+                Report("Probe wizard opened — run it, close it, then replay below.");
+            };
+            sp.Children.Add(open);
+
+            void AddReplay(string label, Action fire)
+            {
+                var b = LemoineControlStyles.BuildButton("▶ " + label,
+                    LemoineControlStyles.LemoineButtonVariant.Primary);
+                b.HorizontalAlignment = HorizontalAlignment.Left;
+                b.Margin = new Thickness(0, 0, 0, 6);
+                b.Click += (s, e) =>
+                {
+                    if (_replayTool == null) { Report("Open the probe wizard first (button 1)."); return; }
+                    try { fire(); Report($"Replayed {label} — Revit still alive."); }
+                    catch (Exception ex) { Report($"{label} threw {ex.GetType().Name}: {ex.Message}"); }
+                };
+                sp.Children.Add(b);
+            }
+
+            AddReplay("2 · pushLog × 50",      () => { for (int i = 0; i < 50; i++) _replayTool!.PushLogCb?.Invoke($"late log {i}", "info"); });
+            AddReplay("3 · onProgress",        () => _replayTool!.ProgressCb?.Invoke(50, 1, 0, 0));
+            AddReplay("4 · onComplete",        () => _replayTool!.CompleteCb?.Invoke(1, 0, 0));
+            AddReplay("5 · ValidationChanged", () => _replayTool!.FireValidation());
+            AddReplay("6 · NavigateRequested", () => _replayTool!.FireNavigate(0));
+            AddReplay("7 · activate callback", () => _replayTool!.FireActivate());
+
+            sp.Children.Add(status);
+            return sp;
+        }
+
+        /// <summary>Dummy tool for the close-after-run replay: captures every callback the host
+        /// StepFlowWindow hands out so they can be re-fired after that window is closed.</summary>
+        private sealed class ReplayProbeTool : ILemoineTool, ILemoineNavigable, IWindowActivatable
+        {
+            public string Title    => "Close-After-Run Probe";
+            public string RunLabel => "Run (instant) →";
+
+            public Action<string, string>?     PushLogCb;
+            public Action<int, int, int, int>? ProgressCb;
+            public Action<int, int, int>?      CompleteCb;
+            private Action? _activate;
+
+            public StepDefinition[] Steps { get; } =
+                { new StepDefinition("R1", "Run, close, then replay from the harness", required: false) };
+
+            public event EventHandler? ValidationChanged;
+            public event EventHandler<int>? NavigateRequested;
+
+            public bool IsValid(string stepId)      => true;
+            public string SummaryFor(string stepId) => "";
+            public void SetActivateCallback(Action activateWindow) => _activate = activateWindow;
+
+            public FrameworkElement? GetStepContent(string stepId)
+            {
+                var tb = new TextBlock
+                {
+                    Text = "Click the run button below (it completes instantly), then CLOSE this window " +
+                           "with the title-bar X and return to the Crash Probe harness to replay the callbacks.",
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+                tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                return tb;
+            }
+
+            public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress,
+                Action<int, int, int> onComplete)
+            {
+                PushLogCb  = pushLog;
+                ProgressCb = onProgress;
+                CompleteCb = onComplete;
+                pushLog("Callbacks captured — close this window, then replay from the harness.", "pass");
+                onComplete(1, 0, 0);
+            }
+
+            public void FireValidation()      => ValidationChanged?.Invoke(this, EventArgs.Empty);
+            public void FireNavigate(int idx) => NavigateRequested?.Invoke(this, idx);
+            public void FireActivate()        => _activate?.Invoke();
         }
 
         // ── helper ───────────────────────────────────────────────────────────────

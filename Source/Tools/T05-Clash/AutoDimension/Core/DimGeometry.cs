@@ -7,33 +7,39 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
     public static class DimGeometry
     {
         /// <summary>
-        /// Recomputes <see cref="PlannedDimension.PaperBounds"/> from the source/target
-        /// anchors, the current side and offset, and the text band thickness. The dimension
-        /// line runs along the axis at the offset level; the band is widened by the text
-        /// height (plus a small pad) so collision tests cover the value text.
+        /// Recomputes the dimension's derived geometry at its current side/offset/text states:
+        /// plans the moved-tag column slots, rebuilds the full <see cref="DimAnatomy"/>
+        /// (dimension line, witnesses, text boxes, leader chords), and sets
+        /// <see cref="PlannedDimension.PaperBounds"/> to the anatomy's union box (broad-phase
+        /// pruning only — all penalties score against the anatomy primitives).
         /// </summary>
         public static void RecomputeBounds(PlannedDimension d, LayoutConfig cfg)
         {
-            Vec2 axis = d.AxisDir.Normalized();
-            Vec2 perp = axis.Perp();
-            double sign = d.Side == DimSide.Positive ? 1.0 : -1.0;
-            Vec2 offVec = perp * (sign * d.OffsetFt);
+            TagColumnPlanner.PlanColumns(d, cfg);
+            d.Anatomy = DimAnatomy.Build(d, cfg);
+            d.PaperBounds = d.Anatomy.Bounds;
+        }
 
-            Vec2 a = d.SourcePoint + offVec;
-            Vec2 b = d.TargetPoint + offVec;
+        /// <summary>
+        /// Axial coordinates of the segment boundaries (refs) along <paramref name="axis"/>,
+        /// length = segments + 1. Prefers the chainer-supplied <see cref="PlannedDimension.RefAnchors"/>;
+        /// falls back to accumulating segment lengths from the span's minimum axial coordinate
+        /// (exact for contiguous chains, which is all the chainer emits).
+        /// </summary>
+        internal static double[] SegmentBoundaries(PlannedDimension d, Vec2 axis)
+        {
+            int n = d.Segments.Count;
+            var bounds = new double[n + 1];
+            if (d.RefAnchors != null && d.RefAnchors.Count == n + 1)
+            {
+                for (int i = 0; i <= n; i++) bounds[i] = d.RefAnchors[i].Dot(axis);
+                System.Array.Sort(bounds);
+                return bounds;
+            }
 
-            // Text band thickness: text height plus a small pad. Moved text (staggered above or
-            // flipped below) reaches one extra band outward, so widen on that case.
-            double band = cfg.TextHeightFt * 1.5;
-            bool moved = false;
-            foreach (var seg in d.Segments)
-                if (seg.TextState == SegmentTextState.Staggered || seg.TextState == SegmentTextState.Flipped)
-                { moved = true; break; }
-            if (moved) band += cfg.TextHeightFt;
-
-            var box = Box2.FromPoints(a, b);
-            d.PaperBounds = new Box2(box.MinX - band, box.MinY - band,
-                                     box.MaxX + band, box.MaxY + band);
+            bounds[0] = System.Math.Min(d.SourcePoint.Dot(axis), d.TargetPoint.Dot(axis));
+            for (int k = 0; k < n; k++) bounds[k + 1] = bounds[k] + d.Segments[k].LengthFt;
+            return bounds;
         }
 
         /// <summary>Projected length of the source→target span along the measurement axis (ft).</summary>

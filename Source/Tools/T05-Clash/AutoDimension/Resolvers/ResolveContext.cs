@@ -46,6 +46,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
         /// <summary>Measurement axis for the current resolve pass (view-2D unit; +X or +Y).</summary>
         public Core.Vec2 Axis { get; set; } = new Core.Vec2(1, 0);
 
+        /// <summary>When set (view-2D rect), only candidates whose dimension landing point falls
+        /// inside it are eligible — used by dense-area callouts so every clash dimensions to a
+        /// reference actually SHOWN in the callout's crop, never something off-crop.</summary>
+        public Core.Box2? TargetBounds { get; set; }
+
         /// <summary>User-picked datums for this view (manual-datum target mode only).</summary>
         public List<ManualDatum> Datums { get; set; } = new List<ManualDatum>();
 
