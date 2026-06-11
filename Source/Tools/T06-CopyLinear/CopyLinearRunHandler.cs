@@ -371,39 +371,22 @@ namespace LemoineTools.Tools.CopyLinear
             return handler;
         }
 
-        // Suppresses modal dialogs for warnings and resolvable errors that Revit raises during copy
-        // (e.g. "no corresponding Work Plane" when source elements are work-plane-hosted).
+        // Deletes warnings that Revit raises during copy (e.g. work-plane-related notices).
+        // Errors are left for ForcedModalHandling(false) to resolve without showing a dialog.
         private sealed class SilentFailureHandler : IFailuresPreprocessor
         {
             public int DismissedCount { get; private set; }
 
             public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
             {
-                bool hasUnresolvable = false;
-                foreach (var msg in failuresAccessor.GetFailureMessages().ToList())
+                foreach (var msg in failuresAccessor.GetFailureMessages()
+                                                     .Where(m => m.GetSeverity() == FailureSeverity.Warning)
+                                                     .ToList())
                 {
-                    var sev = msg.GetSeverity();
-                    if (sev == FailureSeverity.Warning)
-                    {
-                        failuresAccessor.DeleteWarning(msg);
-                        DismissedCount++;
-                    }
-                    else if (sev == FailureSeverity.Error)
-                    {
-                        if (msg.GetNumberOfResolutions() > 0)
-                        {
-                            failuresAccessor.ResolveFailure(msg);
-                            DismissedCount++;
-                        }
-                        else
-                        {
-                            hasUnresolvable = true;
-                        }
-                    }
+                    failuresAccessor.DeleteWarning(msg);
+                    DismissedCount++;
                 }
-                return hasUnresolvable
-                    ? FailureProcessingResult.ProceedWithRollback
-                    : FailureProcessingResult.Continue;
+                return FailureProcessingResult.Continue;
             }
         }
 
