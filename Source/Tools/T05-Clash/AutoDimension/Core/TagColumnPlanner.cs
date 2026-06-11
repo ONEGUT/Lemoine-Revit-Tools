@@ -30,6 +30,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             Vec2 perp = axis.Perp();
             double sign = d.Side == DimSide.Positive ? 1.0 : -1.0;
             double dir  = d.TagColumnDir < 0 ? -1.0 : 1.0;
+            // Stack direction: +1 climbs away from the line on its offset side; -1 mirrors the
+            // column to the other side of the line ("dragged below the dimension") — the escape
+            // when witnesses from scattered cluster anchors foul the above-line column zone.
+            double stack = d.TagStackDir < 0 ? -1.0 : 1.0;
             double lineLevel = d.SourcePoint.Dot(perp) + sign * d.OffsetFt;
 
             double[] bounds = DimGeometry.SegmentBoundaries(d, axis);
@@ -46,7 +50,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 }
                 if (run.Count > 0)
                 {
-                    PlanColumn(run, axis, perp, sign, dir, lineLevel, th, cfg);
+                    PlanColumn(run, axis, perp, sign * stack, dir, lineLevel, th, cfg);
                     run.Clear();
                 }
             }

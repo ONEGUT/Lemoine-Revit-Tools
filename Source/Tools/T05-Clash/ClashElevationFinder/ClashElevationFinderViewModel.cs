@@ -68,7 +68,6 @@ namespace LemoineTools.Tools.Testing
         private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
 
         private bool   _clearPrevious    = true;
-        private bool   _showAllDocuments = false;
         private double _roundSizeMm      = 0.0;     // round marker oversize; 0 = exact element size
         private string _anchorMode       = "Centre"; // "Top" | "Centre" | "Bottom"
         private ElementId _spotTypeId    = ElementId.InvalidElementId;
@@ -218,13 +217,10 @@ namespace LemoineTools.Tools.Testing
             {
                 new ToggleItem { Id = "clear", Label = "Clear previous clash markers before running",
                                  Desc = "Removes earlier Lemoine clash markers and tags in the selected views first.", DefaultOn = _clearPrevious },
-                new ToggleItem { Id = "allDocs", Label = "Scan all documents (ignore saved source filter)",
-                                 Desc = "Overrides each definition's saved source documents and scans every loaded model.", DefaultOn = _showAllDocuments },
             });
             toggles.StateChanged += state =>
             {
-                state.TryGetValue("clear",   out _clearPrevious);
-                state.TryGetValue("allDocs", out _showAllDocuments);
+                state.TryGetValue("clear", out _clearPrevious);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -292,8 +288,7 @@ namespace LemoineTools.Tools.Testing
                 case "S3":
                 {
                     var bits = new List<string>();
-                    if (_clearPrevious)    bits.Add("clear");
-                    if (_showAllDocuments) bits.Add("all docs");
+                    if (_clearPrevious) bits.Add("clear");
                     bits.Add($"tag {(_anchorMode == "Top" ? "top" : _anchorMode == "Bottom" ? "bottom" : "centre")}");
                     bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in" : "exact size");
                     return string.Join(" · ", bits);
@@ -328,8 +323,7 @@ namespace LemoineTools.Tools.Testing
             get
             {
                 var chips = new List<string>();
-                if (_clearPrevious)    chips.Add("clear previous");
-                if (_showAllDocuments) chips.Add("all documents");
+                if (_clearPrevious) chips.Add("clear previous");
                 return chips.Count > 0 ? chips : null;
             }
         }
@@ -361,7 +355,6 @@ namespace LemoineTools.Tools.Testing
                 .Select(n => _viewNameToId[n])
                 .ToList();
             _handler.ClearPrevious    = _clearPrevious;
-            _handler.ShowAllDocuments = _showAllDocuments;
             _handler.AnchorMode       = _anchorMode;
             _handler.SpotTypeId       = _spotTypeId;
             _handler.RoundSizeMm      = _roundSizeMm;

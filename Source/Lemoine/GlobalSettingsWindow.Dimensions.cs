@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using LemoineTools.Lemoine.Controls;
+using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.Clash.AutoDimension;
 
 namespace LemoineTools.Lemoine
@@ -34,9 +35,8 @@ namespace LemoineTools.Lemoine
 
             panel.Children.Add(ContentHeader("Dimensions"));
             panel.Children.Add(DimIntro(
-                "Defaults for the auto-dimension engine. The Clash Finder & Dimension wizard starts "
-              + "each run from these values; changes there apply to that run only. Edit here to change "
-              + "the saved defaults. Saved automatically."));
+                "Settings for the auto-dimension engine. Every Clash Finder & Dimension run uses these "
+              + "values (only the destination can be overridden per run). Saved automatically."));
 
             // ── Run defaults ─────────────────────────────────────────────────
             panel.Children.Add(SubLabel("Run defaults"));
@@ -91,14 +91,24 @@ namespace LemoineTools.Lemoine
             };
             panel.Children.Add(runToggles);
 
-            AddCfgStepper(panel, "Group reach along run (ft)",
-                "Clashes within this distance of each other ALONG a shared line group into one run (one chained dimension). Farther apart starts a new run.",
-                cfg.RunGapFt, 0, 40, 0.5, 2,
-                v => { cfg.RunGapFt = v; cfg.Save(); });
-            AddCfgStepper(panel, "Line tolerance (ft)",
-                "How far a clash may sit OFF the run's line and still join it. Also the across-run snap: members within this share one dimension.",
-                cfg.RunCrossToleranceFt, 0, 8, 0.25, 2,
-                v => { cfg.RunCrossToleranceFt = v; cfg.Save(); });
+            AddCfgStepper(panel, "Cluster grouping distance (paper in)",
+                "Clashes within this distance of each other ON PAPER group into one cluster (and one chained run). Paper-space, so the same value groups identically at any view scale — including enlarged callouts. 5/8\" equals 5 ft at 1:96.",
+                cfg.ClusterLinkPaperIn, 0, 4, 0.0625, 4,
+                v => { cfg.ClusterLinkPaperIn = v; cfg.Save(); });
+            AddCfgStepper(panel, "Run line tolerance (paper in)",
+                "How far a clash may sit OFF a run's line, on paper, and still join it. Also the across-run snap: members within this share one dimension. 1/16\" equals 0.5 ft at 1:96.",
+                cfg.RunCrossPaperIn, 0, 1, 0.03125, 5,
+                v => { cfg.RunCrossPaperIn = v; cfg.Save(); });
+            AddCfgStepper(panel, "Callout minimum clashes",
+                "A dense area only becomes an enlarged callout when at least this many clash markers fall inside it; smaller pockets stay chained in the parent view.",
+                cfg.CalloutMinClashes, 2, 50, 1, 0,
+                v => { cfg.CalloutMinClashes = (int)Math.Round(v); cfg.Save(); });
+
+            var clashSettings = ClashDimensionSettings.Instance;
+            AddCfgStepper(panel, "Storey depth margin (ft)",
+                "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
+                clashSettings.StoreyMarginMm / 304.8, 0, 12, 0.5, 2,
+                v => { clashSettings.StoreyMarginMm = v * 304.8; clashSettings.Save(); });
 
             panel.Children.Add(HSep(12));
 

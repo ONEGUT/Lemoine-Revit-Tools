@@ -1186,7 +1186,24 @@ namespace LemoineTools.Tools.Clash
             double mHalfW = (elemW + overFt) / 2.0;
             double mHalfH = (elemH + overFt) / 2.0;
             double radius = mHalfW;                                  // circle (mHalfW == mHalfH when round)
-            double armLen = Math.Max(0.5, Math.Min(Math.Max(mHalfW, mHalfH) * 1.5, 3.0));
+            // Cross lines end AT the marker's edge — never past it (fixed rule, no option).
+            // Circle: the radius in any direction. Rectangle: the distance from centre to the
+            // (possibly rotated) rectangle's edge along the view axis — slab test against the
+            // element's own width/height axes, so a rotated duct's arms still stop at its edge.
+            double EdgeDist(XYZ u)
+            {
+                if (!rect) return radius;
+                XYZ wd = clash.Group1.WidthDir  ?? XYZ.BasisX;
+                XYZ hd = clash.Group1.HeightDir ?? XYZ.BasisY;
+                double cw = Math.Abs(u.DotProduct(wd));
+                double ch = Math.Abs(u.DotProduct(hd));
+                double t = double.MaxValue;
+                if (cw > 1e-9) t = Math.Min(t, mHalfW / cw);
+                if (ch > 1e-9) t = Math.Min(t, mHalfH / ch);
+                return t == double.MaxValue ? Math.Max(mHalfW, mHalfH) : t;
+            }
+            double armX = EdgeDist(XYZ.BasisX);
+            double armY = EdgeDist(XYZ.BasisY);
 
             // One id shared by this clash's region + every cross line, so the dimension pass can
             // re-group the 2–4 lines back into a single clash and dimension it once (not per line).
@@ -1226,16 +1243,16 @@ namespace LemoineTools.Tools.Clash
             // ── Cross lines (tagged so the discovery pass can re-find them) ────
             if (_opts.DimTarget == "Centre")
             {
-                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx,       cy, 0), clashGroup, tgtLink, tgtElem);
-                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup, tgtLink, tgtElem);
-                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy,       0), clashGroup, tgtLink, tgtElem);
-                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armLen, 0), clashGroup, tgtLink, tgtElem);
+                var hLeft  = CreateLine(doc, view, lineStyleId, new XYZ(cx - armX, cy, 0), new XYZ(cx,       cy, 0), clashGroup, tgtLink, tgtElem);
+                var hRight = CreateLine(doc, view, lineStyleId, new XYZ(cx,       cy, 0), new XYZ(cx + armX, cy, 0), clashGroup, tgtLink, tgtElem);
+                var vBot   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armY, 0), new XYZ(cx, cy,       0), clashGroup, tgtLink, tgtElem);
+                var vTop   = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy,       0), new XYZ(cx, cy + armY, 0), clashGroup, tgtLink, tgtElem);
                 return hLeft != null && hRight != null && vBot != null && vTop != null;
             }
             else
             {
-                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armLen, cy, 0), new XYZ(cx + armLen, cy, 0), clashGroup, tgtLink, tgtElem);
-                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armLen, 0), new XYZ(cx, cy + armLen, 0), clashGroup, tgtLink, tgtElem);
+                var hLine = CreateLine(doc, view, lineStyleId, new XYZ(cx - armX, cy, 0), new XYZ(cx + armX, cy, 0), clashGroup, tgtLink, tgtElem);
+                var vLine = CreateLine(doc, view, lineStyleId, new XYZ(cx, cy - armY, 0), new XYZ(cx, cy + armY, 0), clashGroup, tgtLink, tgtElem);
                 return hLine != null && vLine != null;
             }
         }

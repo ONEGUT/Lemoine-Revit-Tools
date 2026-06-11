@@ -25,6 +25,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public int    LineCrossesLine;     // dim line × dim line crossings
         public int    LineCrossesWitness;  // dim line × witness crossings (either direction)
         public int    WitnessThroughText;  // witness slicing through value text
+        public int    OwnWitnessThroughText; // this dim's OWN witness slicing its own text
         public int    LeaderCrossings;     // leader × leader
         public int    LeaderLineCrossings; // leader × dim/witness line
         public bool   OffCrop;
@@ -32,6 +33,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         public double LeaderSlack;
         public double SpacingDeviation;
         public double StaggerPenalty;
+        public double RegionOverflow;      // line/text area outside the cluster's working region
 
         public override string ToString()
         {
@@ -44,6 +46,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             if (LineCrossesLine > 0)     parts.Add($"line×line ×{LineCrossesLine}");
             if (LineCrossesWitness > 0)  parts.Add($"line×witness ×{LineCrossesWitness}");
             if (WitnessThroughText > 0)  parts.Add($"witness×text ×{WitnessThroughText}");
+            if (OwnWitnessThroughText > 0) parts.Add($"own-witness×text ×{OwnWitnessThroughText}");
             if (LeaderCrossings > 0)     parts.Add($"leader×leader ×{LeaderCrossings}");
             if (LeaderLineCrossings > 0) parts.Add($"leader×line ×{LeaderLineCrossings}");
             if (OffCrop) parts.Add("off-crop");
@@ -51,6 +54,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
             Add("leader-slack", LeaderSlack);
             Add("spacing-dev", SpacingDeviation);
             Add("stagger", StaggerPenalty);
+            Add("region-overflow", RegionOverflow);
             return string.Join("; ", parts);
         }
     }
@@ -219,11 +223,38 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 }
             }
 
+            // ── HARD: this dimension's OWN witnesses through its own value text ──
+            // Witnesses from scattered cluster anchors (or the target's, past a moved-tag
+            // column) can slice this dimension's own text. That placement is invalid; the
+            // search clears it by flipping the column end (TagColumnDir) or dragging the
+            // column below the line (TagStackDir).
+            foreach (var tb in an.TextBoxes)
+                foreach (var w in an.Witnesses)
+                    if (SegIntersectsBox(w, tb))
+                    {
+                        hard += _cfg.WitnessCrossWeight;
+                        if (detail != null) detail.OwnWitnessThroughText++;
+                    }
+
             // ── HARD: off-crop ────────────────────────────────────────────────
             if (_crop.HasValue && !_crop.Value.Contains(d.PaperBounds))
             {
                 hard += _cfg.OffCropWeight;
                 if (detail != null) detail.OffCrop = true;
+            }
+
+            // ── SOFT: stay inside the cluster's working region ────────────────
+            // Each cluster's strings/tags should fill the empty space the region carved out
+            // for them (clashes → targets, ballooned to the neighbours) — spilling into the
+            // next group's space costs per square foot.
+            if (d.HasRegion)
+            {
+                double outside = Math.Max(0, an.LineBand.Area - an.LineBand.OverlapArea(d.Region));
+                foreach (var tb in an.TextBoxes)
+                    outside += Math.Max(0, tb.Area - tb.OverlapArea(d.Region));
+                double rp = outside * _cfg.RegionWeight;
+                soft += rp;
+                if (detail != null) detail.RegionOverflow += rp;
             }
 
             // ── SOFT: cramped segment text / leadering ────────────────────────

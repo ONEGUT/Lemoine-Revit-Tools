@@ -22,6 +22,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <see cref="ClashRunGrouper"/>). Isolated clashes get a unique solo id.</summary>
         public string RunId { get; set; } = "";
 
+        /// <summary>Identity of the paper-space clash cluster this clash belongs to (from
+        /// <see cref="ClashClusterer"/>) — the unit the layout optimizes jointly.</summary>
+        public string ClusterId { get; set; } = "";
+
         /// <summary>The run's principal (long) axis. Measurement axes parallel to this chain
         /// along the run; axes perpendicular to it collapse to one representative dimension.</summary>
         public Core.Vec2 RunLongAxis { get; set; } = new Core.Vec2(1, 0);
@@ -64,10 +68,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // by their own resolved target, so a cluster between two references yields one chain to
             // each — and they chain on BOTH axes. Deterministic ordering throughout.
             var byKey = items
-                .GroupBy(it => (it.RunId, AxisTag(it.Axis), it.ForceChain ? it.TargetKey : ""))
+                .GroupBy(it => (it.ClusterId, it.RunId, AxisTag(it.Axis), it.ForceChain ? it.TargetKey : ""))
                 .OrderBy(g => g.Key.Item1, StringComparer.Ordinal)
                 .ThenBy(g => g.Key.Item2, StringComparer.Ordinal)
-                .ThenBy(g => g.Key.Item3, StringComparer.Ordinal);
+                .ThenBy(g => g.Key.Item3, StringComparer.Ordinal)
+                .ThenBy(g => g.Key.Item4, StringComparer.Ordinal);
 
             foreach (var g in byKey)
             {
@@ -155,6 +160,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 SourceKey   = key,
                 TargetKey   = $"{target.Key}|{AxisTag(axis)}",
                 TargetType  = it.TargetType,
+                ClusterId   = it.ClusterId,
                 SourcePoint = it.Source2d,
                 TargetPoint = targetPoint,
                 AxisDir     = axis,
@@ -219,6 +225,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 SourceKey   = key,
                 TargetKey   = $"{target.Key}|chain|{AxisTag(axis)}",
                 TargetType  = run[0].TargetType,
+                ClusterId   = run[0].ClusterId,
                 SourcePoint = sp,
                 TargetPoint = tp,
                 AxisDir     = axis,

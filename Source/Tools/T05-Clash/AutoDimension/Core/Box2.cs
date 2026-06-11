@@ -23,6 +23,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
 
         public double Width  => MaxX - MinX;
         public double Height => MaxY - MinY;
+        public double Area   => Width * Height;
+
+        /// <summary>This box grown outward by <paramref name="pad"/> on every side (negative shrinks).</summary>
+        public Box2 Expand(double pad) =>
+            new Box2(MinX - pad, MinY - pad, MaxX + pad, MaxY + pad);
+
+        /// <summary>Chebyshev gap between two boxes: the uniform per-box expansion at which they
+        /// would meet is half this. 0 when they already touch or overlap.</summary>
+        public double ChebyshevGap(Box2 o)
+        {
+            double gx = Math.Max(0, Math.Max(o.MinX - MaxX, MinX - o.MaxX));
+            double gy = Math.Max(0, Math.Max(o.MinY - MaxY, MinY - o.MaxY));
+            return Math.Max(gx, gy);
+        }
 
         public static Box2 FromCenter(Vec2 c, double halfW, double halfH) =>
             new Box2(c.X - halfW, c.Y - halfH, c.X + halfW, c.Y + halfH);

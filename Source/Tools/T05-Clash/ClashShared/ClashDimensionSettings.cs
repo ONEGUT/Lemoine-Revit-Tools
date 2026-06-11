@@ -31,7 +31,9 @@ namespace LemoineTools.Tools.Clash
         public string CrossLineTypeName { get; set; } = "";
         public bool   ClearPrevious     { get; set; } = true;
         public int    MaxClashes        { get; set; } = 500;
-        public bool   ShowAllDocuments  { get; set; } = false;
+        // Depth below a level still counted as that level's storey when assigning clashes to
+        // plan views (mm). Settings-only — edited in Settings → Dimensions, no per-run override.
+        public double StoreyMarginMm    { get; set; } = 609.6;
 
         [XmlArray("Group1RuleKeys")] [XmlArrayItem("Key")]
         public List<string> Group1RuleKeys { get; set; } = new List<string>();

@@ -22,15 +22,9 @@ namespace LemoineTools.Tools.Clash
         public List<ElementId>      ViewIds          { get; set; } = new List<ElementId>();
         public List<ClashDefinition> Definitions     { get; set; } = new List<ClashDefinition>();
         public bool                 ClearPrevious    { get; set; } = true;
-        public bool                 ShowAllDocuments { get; set; } = false;
         public bool                 RunDimensionPass { get; set; } = false;
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
-        public double               StoreyMarginMm   { get; set; } = 609.6;  // 2 ft: sub-floor depth still counted as a level's storey
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
-        public bool                 DimChainAligned  { get; set; } = true;  // group clashes into runs (chain along, single across)
-        public bool                 DimDenseCallouts { get; set; } = true;  // extreme density → enlarged-plan callout instead of parent dims
-        public double               DimRunGapFt      { get; set; } = 5.0;   // max along-run gap between adjacent run members
-        public double               DimRunCrossFt    { get; set; } = 0.5;   // off-line tolerance + across-run snap
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
 
@@ -79,13 +73,13 @@ namespace LemoineTools.Tools.Clash
                             CrossLineTypeName = def.CrossLineTypeName,
                             DimTarget         = def.DimTarget,
                             MaxClashes        = def.MaxClashes,
-                            StoreyMarginMm    = StoreyMarginMm,
+                            StoreyMarginMm    = ClashDimensionSettings.Instance.StoreyMarginMm,
                             RoundSizeMm       = RoundSizeMm,
                             PhaseMode         = def.PhaseMode,
                             SpecificPhaseName = def.SpecificPhaseName,
                         };
                         var engine = new ClashEngine(opts, (t, s) => Log(t, s));
-                        var det = engine.Detect(doc, EffectiveSpec(def.Group1), EffectiveSpec(def.Group2));
+                        var det = engine.Detect(doc, def.Group1, def.Group2);
                         dets.Add((engine, det, new Dictionary<string, ElementId?>()));
                     }
 
@@ -93,19 +87,15 @@ namespace LemoineTools.Tools.Clash
                     // finally), and pick manual datums up front so all picks stay together. ──
                     var dimCfg = AutoDimensionConfig.Instance;
                     var snapTarget = dimCfg.TargetType;
-                    var snapChain  = dimCfg.ChainAligned;
-                    var snapGap    = dimCfg.RunGapMm;
-                    var snapCross  = dimCfg.RunCrossToleranceMm;
                     System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
                     bool slabEdge = string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
                     try
                     {
                         if (RunDimensionPass)
                         {
-                            dimCfg.TargetType          = DimTargetType;
-                            dimCfg.ChainAligned        = DimChainAligned;
-                            dimCfg.RunGapFt            = DimRunGapFt;
-                            dimCfg.RunCrossToleranceFt = DimRunCrossFt;
+                            // Destination is the only per-run override; chaining, callouts, and
+                            // grouping tolerances always come from the saved settings.
+                            dimCfg.TargetType = DimTargetType;
                             if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                                 datums = AutoDimension.ManualDatumPicker.PickForViews(uidoc, ViewIds, (t, s) => Log(t, s));
                         }
@@ -168,37 +158,59 @@ namespace LemoineTools.Tools.Clash
                                     // strings) get an enlarged-plan callout each — marked like any view,
                                     // dimensioned at the computed scale — and are excluded from this
                                     // parent view's dimension pass. Moderate areas stay on the chain tier.
+                                    // Each callout REMOVES its clashes from the parent, which changes the
+                                    // clustering of everything left behind — so the survey re-runs on the
+                                    // remaining markers until no further dense area qualifies, and only
+                                    // then is the parent dimensioned (full reassessment per promotion).
                                     var dimViewIds = new List<ElementId> { viewId };
                                     System.Collections.Generic.IDictionary<ElementId, List<string>>? excludes = null;
                                     HashSet<ElementId>? cropBounded = null;
-                                    if (DimDenseCallouts)
+                                    if (dimCfg.DenseCalloutsEnabled)
                                     {
-                                        var requests = AutoDimension.AutoDimensionEngine.SurveyDenseAreas(
-                                            doc, view, dimCfg, (t, s) => Log(t, s));
-                                        if (requests.Count > 0)
+                                        var deferred    = new List<string>();
+                                        var calloutIds  = new List<ElementId>();
+                                        var allRequests = new List<AutoDimension.DenseCalloutRequest>();
+                                        int calloutSeq  = 0;
+                                        const int maxCalloutPasses = 4;   // each pass deletes markers, so this terminates fast
+                                        for (int pass = 0; pass < maxCalloutPasses; pass++)
                                         {
-                                            var deferred = new List<string>();
-                                            var calloutIds = CreateDenseCallouts(doc, view, requests, dets, deferred,
+                                            var requests = AutoDimension.AutoDimensionEngine.SurveyDenseAreas(
+                                                doc, view, dimCfg, (t, s) => Log(t, s));
+                                            if (requests.Count == 0) break;
+                                            // Continuous ids across passes — a re-survey restarts at c000
+                                            // and must not collide with (and silently reuse) an earlier
+                                            // pass's callout view of the same name.
+                                            foreach (var r in requests)
+                                                r.ClusterId = "c" + (calloutSeq++).ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
+                                            if (pass > 0)
+                                                Log($"Re-assessed the remaining clashes — {requests.Count} more dense area(s) qualify for callouts.", "info");
+                                            var ids = CreateDenseCallouts(doc, view, requests, dets, deferred,
                                                 ref totalMarkers, ref totalMarkerFails);
-                                            if (calloutIds.Count > 0)
-                                            {
-                                                dimViewIds.AddRange(calloutIds);
-                                                excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
-                                                // Callout dims must land on references visible IN the callout.
-                                                cropBounded = new HashSet<ElementId>(calloutIds);
-                                            }
+                                            allRequests.AddRange(requests);
+                                            calloutIds.AddRange(ids);
+                                            if (ids.Count == 0) break;   // every callout failed — re-surveying would loop on the same areas
                                         }
-                                        else if (ClearPrevious)
+
+                                        if (ClearPrevious)
                                         {
-                                            // No dense areas this run — still clear any callouts a
-                                            // previous run left behind (their bubbles + stale markers).
+                                            // Clear callouts a previous run left behind that this run did
+                                            // not reuse (their bubbles + stale markers) — after the loop,
+                                            // so the sweep keeps every callout created this run.
                                             using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
                                             {
                                                 tx.Start();
                                                 ConfigureFailures(tx);
-                                                SweepStaleCallouts(doc, view, requests);
+                                                SweepStaleCallouts(doc, view, allRequests);
                                                 tx.Commit();
                                             }
+                                        }
+
+                                        if (calloutIds.Count > 0)
+                                        {
+                                            dimViewIds.AddRange(calloutIds);
+                                            excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
+                                            // Callout dims must land on references visible IN the callout.
+                                            cropBounded = new HashSet<ElementId>(calloutIds);
                                         }
                                     }
 
@@ -227,10 +239,7 @@ namespace LemoineTools.Tools.Clash
                     }
                     finally
                     {
-                        dimCfg.TargetType          = snapTarget;
-                        dimCfg.ChainAligned        = snapChain;
-                        dimCfg.RunGapMm            = snapGap;
-                        dimCfg.RunCrossToleranceMm = snapCross;
+                        dimCfg.TargetType = snapTarget;
                     }
 
                     Log($"Done — {totalMarkers} marker(s) and {totalDims} dimension(s) placed "
@@ -256,22 +265,6 @@ namespace LemoineTools.Tools.Clash
             Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
         }
 
-        // When "Show all documents" is on, ignore the definition's saved per-group source
-        // filter so every loaded document is scanned. Otherwise honour the stored selection.
-        private ClashGroupSpec EffectiveSpec(ClashGroupSpec spec)
-        {
-            if (!ShowAllDocuments) return spec;
-            return new ClashGroupSpec
-            {
-                Mode          = spec.Mode,
-                RuleKeys      = spec.RuleKeys,
-                Categories    = spec.Categories,
-                ElemIds       = spec.ElemIds,
-                ElemLinkIds   = spec.ElemLinkIds,
-                SourceLinkIds = new List<long>(),   // empty = scan every available document
-            };
-        }
-
         // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the
         // cross-lines also removes any dimensions that referenced them). One view at a time, inside the
         // caller's open transaction.
@@ -293,7 +286,6 @@ namespace LemoineTools.Tools.Clash
             {
                 tx.Start();
                 ConfigureFailures(tx);
-                if (ClearPrevious) SweepStaleCallouts(doc, parentView, requests);
                 foreach (var req in requests)
                 {
                     try

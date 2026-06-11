@@ -16,7 +16,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
     [XmlRoot("LayoutSnapshot")]
     public sealed class LayoutSnapshot
     {
-        [XmlAttribute] public int    SchemaVersion { get; set; } = 1;
+        [XmlAttribute] public int    SchemaVersion { get; set; } = 2;   // v2: cluster ids + regions + tag stack side
         [XmlAttribute] public string ViewName  { get; set; } = "";
         [XmlAttribute] public int    ViewScale { get; set; } = 1;
         [XmlAttribute] public string Timestamp { get; set; } = "";
@@ -74,6 +74,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         [XmlAttribute] public string Side  { get; set; } = "Positive";
         [XmlAttribute] public double OffsetFt { get; set; }
         [XmlAttribute] public int    TagColumnDir { get; set; } = 1;
+        [XmlAttribute] public int    TagStackDir  { get; set; } = 1;
+        [XmlAttribute] public string ClusterId    { get; set; } = "";
+        /// <summary>Cluster working-region box; NaN when the dimension carries none.</summary>
+        [XmlAttribute] public double RegionMinX { get; set; } = double.NaN;
+        [XmlAttribute] public double RegionMinY { get; set; } = double.NaN;
+        [XmlAttribute] public double RegionMaxX { get; set; } = double.NaN;
+        [XmlAttribute] public double RegionMaxY { get; set; } = double.NaN;
         [XmlAttribute] public double Hard { get; set; }
         [XmlAttribute] public double Soft { get; set; }
         /// <summary>Per-constraint breakdown of the hard/soft score, human-readable.</summary>
@@ -124,10 +131,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                     Side         = d.Side.ToString(),
                     OffsetFt     = d.OffsetFt,
                     TagColumnDir = d.TagColumnDir,
+                    TagStackDir  = d.TagStackDir,
+                    ClusterId    = d.ClusterId ?? "",
                     Hard         = score.Hard,
                     Soft         = score.Soft,
                     ScoreDetail  = detail.ToString(),
                 };
+                if (d.HasRegion)
+                {
+                    sd.RegionMinX = d.Region.MinX;
+                    sd.RegionMinY = d.Region.MinY;
+                    sd.RegionMaxX = d.Region.MaxX;
+                    sd.RegionMaxY = d.Region.MaxY;
+                }
                 foreach (var p in d.RefAnchors ?? new List<Vec2>())
                     sd.RefAnchors.Add(new SnapshotPoint { X = p.X, Y = p.Y });
                 foreach (var seg in d.Segments)

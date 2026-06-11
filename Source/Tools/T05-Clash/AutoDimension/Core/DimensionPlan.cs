@@ -66,6 +66,26 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// flips the column left as easily as a busy top flips the string below.</summary>
         public int TagColumnDir { get; set; } = 1;
 
+        /// <summary>Which side of the dimension LINE the moved-tag column stacks toward:
+        /// +1 the offset side (above a positive-side string), -1 the opposite side (dragged
+        /// below the dimension). Searched by the layout like <see cref="TagColumnDir"/> — the
+        /// below side is what clears a column fouled by its own witness lines (witnesses from
+        /// scattered cluster anchors can cross the above-line column zone).</summary>
+        public int TagStackDir { get; set; } = 1;
+
+        /// <summary>Id of the clash cluster this dimension belongs to ("" when unclustered).
+        /// Dimensions are laid out cluster by cluster — each cluster's group is optimized
+        /// jointly inside its working region.</summary>
+        public string ClusterId { get; set; } = "";
+
+        /// <summary>The cluster's working region in view-2D: the tight box around its clashes
+        /// and their dimension targets, ballooned outward until it meets the neighbouring
+        /// clusters' regions (equal spacing). The layout softly keeps this dimension's lines
+        /// and texts inside it, so each group fills its own empty space instead of spilling
+        /// into the next group's. Valid only when <see cref="HasRegion"/>.</summary>
+        public Box2 Region { get; set; }
+        public bool HasRegion { get; set; }
+
         /// <summary>Current paper-space offset of the dimension line from the source run (model ft).</summary>
         public double OffsetFt { get; set; }
 

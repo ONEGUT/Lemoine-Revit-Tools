@@ -51,7 +51,6 @@ namespace LemoineTools.Tools.Clash
         };
 
         // ── Unit conversion (UI imperial ↔ stored mm) ─────────────────────────
-        private const double MmPerFoot = 304.8;
         private const double MmPerInch = 25.4;
 
         public event EventHandler? ValidationChanged;
@@ -82,12 +81,12 @@ namespace LemoineTools.Tools.Clash
         private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
 
         private bool _clearPrevious    = true;
-        private bool _showAllDocuments = false;
         private bool _runDimensionPass = true;   // dimensioning is the point — on by default
-        private double _storeyMarginMm = 609.6;   // 2 ft: sub-floor depth still counted as a level's storey
         private double _roundSizeMm    = 0.0;     // round marker oversize; 0 = exact element size
 
-        // Dimension-pass destination + chaining, seeded from the shared auto-dimension config.
+        // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
+        // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
+        // Dimensions) — the run always uses the saved values.
         private const string GridDisplay   = "To Grid";
         private const string SlabDisplay   = "To Slab Edge";
         private const string ManualDisplay = "To Picked Edge";
@@ -95,10 +94,6 @@ namespace LemoineTools.Tools.Clash
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
           : "Grid";
-        private bool   _chainAligned  = AutoDimension.AutoDimensionConfig.Instance.ChainAligned;
-        private bool   _denseCallouts = AutoDimension.AutoDimensionConfig.Instance.DenseCalloutsEnabled;
-        private double _runGapFt      = AutoDimension.AutoDimensionConfig.Instance.RunGapFt;
-        private double _runCrossFt    = AutoDimension.AutoDimensionConfig.Instance.RunCrossToleranceFt;
 
         public ClashFinderViewModel(
             ClashFinderEventHandler? handler,
@@ -236,13 +231,10 @@ namespace LemoineTools.Tools.Clash
             {
                 new ToggleItem { Id = "clear", Label = "Clear previous clash markers before running",
                                  Desc = "Removes earlier Lemoine clash markers in the selected views first.", DefaultOn = _clearPrevious },
-                new ToggleItem { Id = "allDocs", Label = "Scan all documents (ignore saved source filter)",
-                                 Desc = "Overrides each definition's saved source documents and scans every loaded model.", DefaultOn = _showAllDocuments },
             });
             toggles.StateChanged += state =>
             {
-                state.TryGetValue("clear",   out _clearPrevious);
-                state.TryGetValue("allDocs", out _showAllDocuments);
+                state.TryGetValue("clear", out _clearPrevious);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -255,11 +247,8 @@ namespace LemoineTools.Tools.Clash
                 v => { _roundSizeMm = v * MmPerInch; Fire(); });
 
             AddDivider(outer);
-            AddStepperRow(outer,
-                "Storey depth margin (ft)",
-                "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
-                _storeyMarginMm / MmPerFoot, min: 0, max: 12, step: 0.5, decimals: 2,
-                v => { _storeyMarginMm = v * MmPerFoot; Fire(); });
+            AddDim(outer, "The storey depth margin (how far below a level a clash still counts as "
+                        + "that level's storey) lives in Settings → Dimensions.");
 
             return WrapInScroll(outer);
         }
@@ -269,8 +258,8 @@ namespace LemoineTools.Tools.Clash
         {
             var outer = new StackPanel();
 
-            AddDim(outer, "Per-run overrides — these start from the saved defaults "
-                        + "(Settings → Dimensions) and apply to this run only; the defaults are never changed here.");
+            AddDim(outer, "Chaining, callouts, grouping distances, and layout spacing are saved "
+                        + "defaults (Settings → Dimensions) and apply to every run.");
             AddDivider(outer);
 
             var toggles = new LemoineToggleSwitches();
@@ -278,16 +267,10 @@ namespace LemoineTools.Tools.Clash
             {
                 new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
                                  Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
-                new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
-                                 Desc = "Merge collinear clashes that sit close together into one multi-segment string instead of separate dimensions.", DefaultOn = _chainAligned },
-                new ToggleItem { Id = "callouts", Label = "Enlarged callouts for extreme density",
-                                 Desc = "Areas too dense even for chained strings get a plan callout at a computed larger scale; those clashes are dimensioned in the callout instead of this view.", DefaultOn = _denseCallouts },
             });
             toggles.StateChanged += state =>
             {
-                state.TryGetValue("dimPass",  out _runDimensionPass);
-                state.TryGetValue("chain",    out _chainAligned);
-                state.TryGetValue("callouts", out _denseCallouts);
+                state.TryGetValue("dimPass", out _runDimensionPass);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -354,18 +337,6 @@ namespace LemoineTools.Tools.Clash
             };
             syncDestSections();
 
-            AddDivider(outer);
-            AddStepperRow(outer,
-                "Group reach along run (ft)",
-                "Clashes within this distance of each other ALONG a shared line group into one run (one chained dimension). Farther apart starts a new run. Near-misses are reported in the run log.",
-                _runGapFt, min: 0, max: 40, step: 0.5, decimals: 2,
-                v => { _runGapFt = v; Fire(); });
-            AddStepperRow(outer,
-                "Line tolerance (ft)",
-                "How far a clash may sit OFF the run's line and still join it. Also the across-run snap: members within this share one dimension.",
-                _runCrossFt, min: 0, max: 8, step: 0.25, decimals: 2,
-                v => { _runCrossFt = v; Fire(); });
-
             return WrapInScroll(outer);
         }
 
@@ -389,14 +360,13 @@ namespace LemoineTools.Tools.Clash
                 case "S3":
                 {
                     var bits = new List<string>();
-                    if (_clearPrevious)    bits.Add("clear");
-                    if (_showAllDocuments) bits.Add("all docs");
+                    if (_clearPrevious) bits.Add("clear");
                     bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in" : "exact size");
                     return string.Join(" · ", bits);
                 }
                 case "S4":
                     return _runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}{(_chainAligned ? $" · grouped ({_runGapFt:0.#} ft / {_runCrossFt:0.##} ft)" : "")}"
+                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
                         : "dim pass off";
                 case "S5": return "Ready to run";
                 default: return "—";
@@ -419,7 +389,6 @@ namespace LemoineTools.Tools.Clash
             ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
             ["dim"]    = _runDimensionPass
                 ? $"{(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
-                  + (_chainAligned ? $" · grouped, reach {_runGapFt:0.#} ft / line tol {_runCrossFt:0.##} ft" : " · ungrouped")
                 : "off",
         };
 
@@ -428,8 +397,7 @@ namespace LemoineTools.Tools.Clash
             get
             {
                 var chips = new List<string>();
-                if (_clearPrevious)    chips.Add("clear previous");
-                if (_showAllDocuments) chips.Add("all documents");
+                if (_clearPrevious) chips.Add("clear previous");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
                     chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
                 return chips.Count > 0 ? chips : null;
@@ -463,15 +431,9 @@ namespace LemoineTools.Tools.Clash
                 .Select(n => _viewNameToId[n])
                 .ToList();
             _handler.ClearPrevious    = _clearPrevious;
-            _handler.ShowAllDocuments = _showAllDocuments;
             _handler.RunDimensionPass = _runDimensionPass;
             _handler.DimTargetType    = _dimTargetType;
-            _handler.StoreyMarginMm   = _storeyMarginMm;
-            _handler.RoundSizeMm        = _roundSizeMm;
-            _handler.DimChainAligned  = _chainAligned;
-            _handler.DimDenseCallouts = _denseCallouts;
-            _handler.DimRunGapFt      = _runGapFt;
-            _handler.DimRunCrossFt    = _runCrossFt;
+            _handler.RoundSizeMm      = _roundSizeMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
                 : new List<AutoDimension.Resolvers.SlabScope>();

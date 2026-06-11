@@ -22,7 +22,6 @@ namespace LemoineTools.Tools.Testing
         public List<ElementId>       ViewIds          { get; set; } = new List<ElementId>();
         public List<ClashDefinition> Definitions      { get; set; } = new List<ClashDefinition>();
         public bool                  ClearPrevious    { get; set; } = true;
-        public bool                  ShowAllDocuments { get; set; } = false;
         public string                AnchorMode       { get; set; } = "Centre";  // "Top" | "Centre" | "Bottom"
         public ElementId             SpotTypeId       { get; set; } = ElementId.InvalidElementId;
         public double                RoundSizeMm      { get; set; } = 0.0;       // marker oversize added to the Group 1 element size; 0 = exact
@@ -90,8 +89,7 @@ namespace LemoineTools.Tools.Testing
                             };
 
                             var engine = new ClashEngine(opts, (t, s) => Log(t, s));
-                            var r = engine.Run(doc, ViewIds,
-                                EffectiveSpec(def.Group1), EffectiveSpec(def.Group2));
+                            var r = engine.Run(doc, ViewIds, def.Group1, def.Group2);
 
                             pass += r.Markers;
                             fail += r.Fails;
@@ -141,22 +139,6 @@ namespace LemoineTools.Tools.Testing
                 new ResultChip("failed",  fail,       "LemoineRed"),
             });
             Complete(pass, fail, skip);
-        }
-
-        // When "Show all documents" is on, ignore the definition's saved per-group source filter so
-        // every loaded document is scanned. Otherwise honour the stored selection.
-        private ClashGroupSpec EffectiveSpec(ClashGroupSpec spec)
-        {
-            if (!ShowAllDocuments) return spec;
-            return new ClashGroupSpec
-            {
-                Mode          = spec.Mode,
-                RuleKeys      = spec.RuleKeys,
-                Categories    = spec.Categories,
-                ElemIds       = spec.ElemIds,
-                ElemLinkIds   = spec.ElemLinkIds,
-                SourceLinkIds = new List<long>(),   // empty = scan every available document
-            };
         }
 
         private int ClearPreviousMarkers(Document doc)

@@ -161,22 +161,54 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 ? new[] { new Core.Vec2(1, 0), new Core.Vec2(0, 1) }
                 : new[] { new Core.Vec2(1, 0) };
 
-            // ── 1b. Cluster clashes into physical runs (axis-agnostic, before resolve) ──
-            // A run governs both its dimensions: chained along its length, single across it.
-            double runCrossFt = cfg.RunCrossToleranceFt;
-            double runGapFt   = cfg.RunGapFt;
-            var grouping = cfg.ChainAligned
-                ? ClashRunGrouper.Build(sources, runCrossFt, runGapFt)
-                : new ClashRunGrouper.GroupResult();
-            var runs = grouping.Map;
+            // ── 1b. Cluster the clashes by PAPER-space proximity — the unit of the whole pass ──
+            // Every clash belongs to exactly one cluster; runs, chains, regions, layout, and
+            // callouts are all cluster-scoped. The link distance is a sheet-inch setting × the
+            // view scale, so grouping reads identically at every scale (parents and callouts).
+            double linkFt  = cfg.ClusterLinkFt(scale);
+            double crossFt = cfg.RunCrossFt(scale);
+            var clustering = ClashClusterer.Build(sources, linkFt);
+            _log($"Clustered {sources.Count} clash(es) into {clustering.Clusters.Count} cluster(s) "
+               + $"(link ≤{cfg.ClusterLinkPaperIn:0.###}\" paper = {linkFt:0.##} ft at 1:{scale:0}).", "info");
+
+            // Collinear runs WITHIN each cluster — a run never spans clusters; run ids are
+            // prefixed with the cluster id so the chainer never merges across a boundary.
+            var runs = new Dictionary<string, ClashRunGrouper.RunInfo>(StringComparer.Ordinal);
+            var nearMisses = new List<string>();
             if (cfg.ChainAligned)
             {
-                _log($"Grouped {sources.Count} clash(es) into {grouping.RunCount} run(s) "
-                   + $"(group reach ≤{runGapFt:0.#} ft along the line, off-line ≤{runCrossFt:0.##} ft).", "info");
-                foreach (var miss in grouping.NearMisses) _log(miss, "info");
-                if (grouping.NearMisses.Count > 0)
-                    plan.Notes.Add($"{grouping.NearMisses.Count} near-miss grouping pair(s) — the log shows "
-                                 + "which distance kept them apart (tune group reach / line tolerance).");
+                int runCount = 0;
+                var srcByKey = sources.ToDictionary(s => s.SourceKey, s => s, StringComparer.Ordinal);
+                foreach (var cluster in clustering.Clusters)
+                {
+                    var subset = cluster.MemberKeys
+                        .Where(srcByKey.ContainsKey)
+                        .Select(k => srcByKey[k])
+                        .ToList();
+                    var g = ClashRunGrouper.Build(subset, crossFt, linkFt);
+                    var remap = new Dictionary<ClashRunGrouper.RunInfo, ClashRunGrouper.RunInfo>();
+                    foreach (var kv in g.Map)
+                    {
+                        if (!remap.TryGetValue(kv.Value, out var info))
+                        {
+                            remap[kv.Value] = info = new ClashRunGrouper.RunInfo
+                            {
+                                RunId     = cluster.Id + "|" + kv.Value.RunId,
+                                LongAxis  = kv.Value.LongAxis,
+                                CrossAxis = kv.Value.CrossAxis,
+                            };
+                        }
+                        runs[kv.Key] = info;
+                    }
+                    runCount += g.RunCount;
+                    nearMisses.AddRange(g.NearMisses);
+                }
+                _log($"Grouped into {runCount} run(s) within the clusters "
+                   + $"(off-line ≤{cfg.RunCrossPaperIn:0.####}\" paper = {crossFt:0.##} ft).", "info");
+                foreach (var miss in nearMisses) _log(miss, "info");
+                if (nearMisses.Count > 0)
+                    plan.Notes.Add($"{nearMisses.Count} near-miss grouping pair(s) — the log shows which "
+                                 + "distance kept them apart (tune the grouping distances in Settings → Dimensions).");
             }
 
             // ── 1c. Oversaturated areas: clashes packed tighter than their value texts get
@@ -209,10 +241,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     var res = resolver.Resolve(src, ctx);
                     if (res.Success)
                     {
-                        // Dense-cluster members chain per axis under their cluster id; otherwise a
+                        // Dense-pocket members chain per axis under their pocket id; otherwise a
                         // clash with no clustered run is its own solo run (one dim per axis).
                         runs.TryGetValue(src.SourceKey, out var run);
-                        bool dense = density.ClusterByKey.TryGetValue(src.SourceKey, out var clusterId);
+                        bool dense = density.ClusterByKey.TryGetValue(src.SourceKey, out var pocketId);
+                        clustering.ClusterByKey.TryGetValue(src.SourceKey, out var groupId);
                         resolved.Add(new ResolvedItem
                         {
                             SourceKey   = src.SourceKey,
@@ -223,7 +256,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                             Target2d    = res.TargetPoint2d,
                             TargetKey   = res.TargetKey,
                             TargetType  = ttEnum,
-                            RunId       = dense ? "dense|" + clusterId
+                            ClusterId   = groupId ?? "",
+                            RunId       = dense ? "dense|" + pocketId
                                                 : run?.RunId ?? ("solo|" + src.SourceKey),
                             RunLongAxis = run?.LongAxis ?? new Core.Vec2(1, 0),
                             ForceChain  = dense,
@@ -261,6 +295,31 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
             if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
 
+            // ── 2c. Cluster working regions ────────────────────────────────────
+            // Each cluster's tight box grows to cover its dimensions' far side (the resolved
+            // grid / slab-edge targets), then every box balloons outward at the same rate
+            // until the neighbours' edges meet — equal spacing — so each group owns a fair
+            // share of the surrounding empty space to lay its strings and tags out in.
+            var clusterById = clustering.Clusters.ToDictionary(c => c.Id, c => c, StringComparer.Ordinal);
+            foreach (var d in dims)
+            {
+                if (string.IsNullOrEmpty(d.ClusterId)
+                    || !clusterById.TryGetValue(d.ClusterId, out var cl)) continue;
+                var grown = cl.TightBox.Union(Core.Box2.FromPoints(d.TargetPoint, d.TargetPoint));
+                foreach (var r in d.RefAnchors) grown = grown.Union(Core.Box2.FromPoints(r, r));
+                cl.TightBox = grown;
+            }
+            ClashClusterer.GrowRegions(clustering.Clusters, maxPadFt: Math.Max(linkFt, nominalTextFt));
+            foreach (var d in dims)
+            {
+                if (!string.IsNullOrEmpty(d.ClusterId)
+                    && clusterById.TryGetValue(d.ClusterId, out var cl))
+                {
+                    d.Region    = cl.Region;
+                    d.HasRegion = true;
+                }
+            }
+
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
             _log($"Collecting obstacles + laying out {dims.Count} dimension(s) (collision-aware, ≤{coreCfg.TimeCapMs} ms)…", "info");
             var obstacles = CollectObstacles(doc, view, projection);
@@ -270,8 +329,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             layout.Arrange(dims, obstacles);
             _log($"Layout done ({obstacles.Count} obstacle(s) considered).", "info");
 
-            int leadered = Core.GreedyLayoutEngine.LeaderedCount(dims);
-            if (leadered > 0) plan.Notes.Add($"{leadered} segment(s) leadered to fit dense text.");
+            int movedTags = Core.GreedyLayoutEngine.MovedTagCount(dims);
+            if (movedTags > 0) plan.Notes.Add($"{movedTags} value tag(s) wider than their crossbar pulled off into tag columns.");
 
             var finalScore = scorer.ScoreAll(dims, obstacles);
             if (finalScore.Hard > 1e-6)
@@ -296,7 +355,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             {
                 var snap = Core.LayoutSnapshotWriter.Build(
                     view.Name, (int)scale, coreCfg, dims, obstacles, scorer,
-                    grouping.NearMisses, plan.Notes);
+                    nearMisses, plan.Notes);
                 string? path = Core.LayoutSnapshotWriter.Write(snap);
                 _log(path != null
                     ? $"Layout snapshot written: {path}"
@@ -333,9 +392,26 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                                   ?? cfg.Layout.TextHeightFt;
                 double thModel  = textPaperFt * scale;
                 double nominal  = thModel * 4.8;   // nominal value-text width (~8 glyphs)
+                int minClashes  = Math.Max(2, cfg.CalloutMinClashes);
 
-                var density = DensityClusterer.Build(sources, nominal, minCount: 4);
-                if (density.Clusters.Count == 0) return requests;
+                // One callout candidate per CLUSTER — the same paper-space clusters the
+                // dimension pass works in, so a promoted area is exactly one cluster.
+                var clustering = ClashClusterer.Build(sources, cfg.ClusterLinkFt(scale));
+                var clusters = new List<DensityClusterer.ClusterInfo>();
+                foreach (var cl in clustering.Clusters)
+                {
+                    if (cl.MemberKeys.Count < 2) continue;   // a lone clash is never a callout
+                    var info = new DensityClusterer.ClusterInfo
+                    {
+                        Id   = cl.Id,
+                        MinX = cl.TightBox.MinX, MinY = cl.TightBox.MinY,
+                        MaxX = cl.TightBox.MaxX, MaxY = cl.TightBox.MaxY,
+                    };
+                    info.MemberKeys.AddRange(cl.MemberKeys);
+                    info.MemberPoints.AddRange(cl.MemberPoints);
+                    clusters.Add(info);
+                }
+                if (clusters.Count == 0) return requests;
 
                 // Room growth needs the clashes' world anchors; the resolver is built lazily —
                 // most views have no extreme cluster and skip the link scan entirely.
@@ -350,7 +426,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 // sit in (rooms usually live in a linked architectural model): union the
                 // containing rooms' footprints with the cluster box, then add the margin.
                 var areas = new List<DenseArea>();
-                foreach (var cluster in density.Clusters)
+                foreach (var cluster in clusters)
                 {
                     double ratio = DemandRatio(cluster, nominal, thModel);
                     if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
@@ -403,6 +479,15 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 {
                     var swept = sources.Where(s => area.Rect.Contains(s.Anchor2d)).ToList();
                     if (swept.Count == 0) continue;
+
+                    // Minimum-marker gate: a pocket that sweeps fewer than the configured
+                    // minimum never becomes a callout — it stays chained in the parent view.
+                    if (swept.Count < minClashes)
+                    {
+                        log?.Invoke($"Dense area with {swept.Count} clash(es) is under the callout minimum "
+                                  + $"of {minClashes} — kept on the chain tier in the parent view.", "info");
+                        continue;
+                    }
 
                     // Largest standard scale at which the swept set's text demand fits (ratio
                     // scales linearly with the view scale), and meaningfully larger than the
@@ -557,6 +642,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 CrampedWeight        = paper.CrampedWeight,
                 UnevenSpacingWeight  = paper.UnevenSpacingWeight,
                 LeaderWeight         = paper.LeaderWeight,
+                RegionWeight         = paper.RegionWeight,
                 MaxRepairPasses      = paper.MaxRepairPasses,
                 AlignSharedRows      = paper.AlignSharedRows,
                 StaggerStackedText   = paper.StaggerStackedText,

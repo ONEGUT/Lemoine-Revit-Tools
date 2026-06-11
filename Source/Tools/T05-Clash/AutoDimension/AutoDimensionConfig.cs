@@ -19,9 +19,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// numbers to match hand-drafted output; v3 halves FirstOffset so the string sits closer to
         /// the clash; v4 replaces per-axis chaining tolerances with run-based grouping; v5 resets the
         /// run gap / cross tolerance to the clean feet-based defaults (5 ft / 0.5 ft); v6 adopts the
-        /// ASME Y14.5 spacing defaults (first offset 3/8", row spacing 1/4"). Load() migrates older
-        /// files.</summary>
-        public int SchemaVersion { get; set; } = 6;
+        /// ASME Y14.5 spacing defaults (first offset 3/8", row spacing 1/4"); v7 replaces the
+        /// model-feet grouping tolerances with paper-space (sheet inch) values so grouping reads
+        /// identically at every view scale — including enlarged callouts — and adds the callout
+        /// minimum-clash threshold. Load() migrates older files.</summary>
+        public int SchemaVersion { get; set; } = 7;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -46,34 +48,29 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// Used by the Clash Finder (which can create the views); default on.</summary>
         public bool DenseCalloutsEnabled { get; set; } = true;
 
-        /// <summary>Max along-run gap between adjacent clashes that still belong to one run (mm).
-        /// Wide enough that penetrations spread across a bay stay one run to the edge, like the
-        /// manual; tight enough that a separate run further along starts its own dimension. Default
-        /// 5 ft (1524 mm) — the UI edits this in feet.</summary>
-        public double RunGapMm { get; set; } = 1524.0;
+        /// <summary>Cluster grouping distance in PAPER inches: clashes whose anchors sit within
+        /// this distance on the printed sheet group into one cluster (single-link), and it is also
+        /// the max along-run gap between adjacent members of one chained run. Paper-space, so the
+        /// same value groups identically at 1:96 and inside a 1:16 callout — the model-feet knob it
+        /// replaces grouped callouts wildly differently from their parents. Default 5/8" (= 5 ft at
+        /// 1:96). Settings-only; no per-run override.</summary>
+        public double ClusterLinkPaperIn { get; set; } = 0.625;
 
-        /// <summary>How far a clash may sit off the run's line and still belong to it (mm). Also the
-        /// across-run snap: members within this of the run offset share one dimension (a pipe a hair
-        /// off the line is treated as in line, not dimensioned separately). Default 0.5 ft (152.4 mm)
-        /// — the UI edits this in feet.</summary>
-        public double RunCrossToleranceMm { get; set; } = 152.4;
+        /// <summary>How far a clash may sit off a run's fitted line and still belong to it, in
+        /// PAPER inches (see <see cref="ClusterLinkPaperIn"/> for why paper-space). Also the
+        /// across-run snap: members within this share one dimension. Default 1/16" (= 0.5 ft at
+        /// 1:96). Settings-only; no per-run override.</summary>
+        public double RunCrossPaperIn { get; set; } = 0.0625;
 
-        /// <summary>Feet view of <see cref="RunGapMm"/> — every consumer works in feet; the mm
-        /// field stays the persisted storage so existing XML round-trips unchanged.</summary>
-        [XmlIgnore]
-        public double RunGapFt
-        {
-            get => RunGapMm / 304.8;
-            set => RunGapMm = value * 304.8;
-        }
+        /// <summary>A dense area only becomes an enlarged callout when at least this many clash
+        /// markers fall inside it — smaller pockets stay on the chain tier in the parent view.</summary>
+        public int CalloutMinClashes { get; set; } = 8;
 
-        /// <summary>Feet view of <see cref="RunCrossToleranceMm"/> (see <see cref="RunGapFt"/>).</summary>
-        [XmlIgnore]
-        public double RunCrossToleranceFt
-        {
-            get => RunCrossToleranceMm / 304.8;
-            set => RunCrossToleranceMm = value * 304.8;
-        }
+        /// <summary>Model-feet cluster link distance at a view scale (1:<paramref name="scale"/>).</summary>
+        public double ClusterLinkFt(double scale) => ClusterLinkPaperIn / 12.0 * System.Math.Max(scale, 1.0);
+
+        /// <summary>Model-feet off-line run tolerance at a view scale (see <see cref="ClusterLinkFt"/>).</summary>
+        public double RunCrossFt(double scale) => RunCrossPaperIn / 12.0 * System.Math.Max(scale, 1.0);
 
         /// <summary>Name of the DimensionType to place with; empty = the document default.</summary>
         public string DimensionTypeName { get; set; } = "";
@@ -155,6 +152,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         if (c.SchemaVersion < 4) MigrateToV4(c);
                         if (c.SchemaVersion < 5) MigrateToV5(c);
                         if (c.SchemaVersion < 6) MigrateToV6(c);
+                        if (c.SchemaVersion < 7) MigrateToV7(c);
                         return c;
                     }
                 }
@@ -194,9 +192,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// user's target, links, dimension-type, and layout numbers untouched.</summary>
         private static void MigrateToV4(AutoDimensionConfig c)
         {
-            var def = new AutoDimensionConfig();
-            c.RunGapMm            = def.RunGapMm;
-            c.RunCrossToleranceMm = def.RunCrossToleranceMm;
+            // The old run knobs this migration used to seed were themselves replaced by the
+            // paper-space fields in v7 (which take their ctor defaults when absent), so the
+            // version bump is all that remains.
             c.SchemaVersion = 4;
         }
 
@@ -206,9 +204,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// and layout numbers untouched — same shape as the v2/v3/v4 resets above.</summary>
         private static void MigrateToV5(AutoDimensionConfig c)
         {
-            var def = new AutoDimensionConfig();
-            c.RunGapMm            = def.RunGapMm;
-            c.RunCrossToleranceMm = def.RunCrossToleranceMm;
+            // Same as v4: the feet-based run knobs are gone in v7 — version bump only.
             c.SchemaVersion = 5;
         }
 
@@ -222,6 +218,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             c.Layout.FirstOffsetFt   = def.Layout.FirstOffsetFt;
             c.Layout.StringSpacingFt = def.Layout.StringSpacingFt;
             c.SchemaVersion = 6;
+        }
+
+        /// <summary>v6 → v7: grouping tolerances move from model feet (RunGapMm /
+        /// RunCrossToleranceMm — old XML elements now ignored on load) to paper-space inches
+        /// (<see cref="ClusterLinkPaperIn"/> / <see cref="RunCrossPaperIn"/>), seeded with the
+        /// defaults equivalent to the old 5 ft / 0.5 ft at 1:96. Adds
+        /// <see cref="CalloutMinClashes"/>. Everything else untouched.</summary>
+        private static void MigrateToV7(AutoDimensionConfig c)
+        {
+            var def = new AutoDimensionConfig();
+            c.ClusterLinkPaperIn = def.ClusterLinkPaperIn;
+            c.RunCrossPaperIn    = def.RunCrossPaperIn;
+            c.CalloutMinClashes  = def.CalloutMinClashes;
+            c.SchemaVersion = 7;
         }
     }
 }

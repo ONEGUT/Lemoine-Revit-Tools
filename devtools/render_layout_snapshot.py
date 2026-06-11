@@ -14,7 +14,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 BLUE = "#1f6fd6"; TEAL = "#0e9f9a"; ORANGE = "#e8772e"; PURPLE = "#8a4fd3"
-GREY = "#9aa1a9"; RED = "#d23f31"; INK = "#2b2f33"
+GREY = "#9aa1a9"; RED = "#d23f31"; INK = "#2b2f33"; GREEN = "#3f9b46"
 
 
 def f(el, name, default=0.0):
@@ -62,6 +62,18 @@ def main():
     for (x0, y0, x1, y1) in obstacles:
         prims.append(("rect", (x0, y0, x1, y1, GREY, 0.16, GREY, 1.0, None), None))
         track(x0, y0); track(x1, y1)
+
+    # cluster working regions (one dashed green box per cluster, deduped by id)
+    seen_regions = set()
+    for d in dims:
+        cid = d.get("ClusterId", "")
+        rx0 = f(d, "RegionMinX", float("nan"))
+        if not cid or cid in seen_regions or math.isnan(rx0):
+            continue
+        seen_regions.add(cid)
+        ry0, rx1, ry1 = f(d, "RegionMinY"), f(d, "RegionMaxX"), f(d, "RegionMaxY")
+        prims.append(("region", (rx0, ry0, rx1, ry1, cid), None))
+        track(rx0, ry0); track(rx1, ry1)
 
     total_hard = 0.0
     for d in dims:
@@ -153,10 +165,17 @@ def main():
          f'{root.get("Timestamp","")}</text>',
          f'<text x="14" y="44" font-size="12" fill="{GREY}">blue/red = dimension line (red carries a hard violation '
          f'&#8212; hover for the breakdown) &#183; teal = witnesses &#183; orange = value text boxes &#183; '
-         f'purple = leader chords &#183; grey = obstacles</text>']
+         f'purple = leader chords &#183; grey = obstacles &#183; dashed green = cluster regions</text>']
 
     for kind, p, _d in prims:
-        if kind == "rect":
+        if kind == "region":
+            x0, y0, x1, y1, cid = p
+            o.append(f'<rect x="{X(x0):.1f}" y="{Y(y1):.1f}" width="{(x1-x0)*sc:.1f}" '
+                     f'height="{(y1-y0)*sc:.1f}" fill="none" stroke="{GREEN}" '
+                     f'stroke-width="1.4" stroke-dasharray="7 5"><title>{esc(cid)}</title></rect>')
+            o.append(f'<text x="{X(x0)+4:.1f}" y="{Y(y1)+14:.1f}" font-size="11" '
+                     f'fill="{GREEN}">{esc(cid)}</text>')
+        elif kind == "rect":
             x0, y0, x1, y1, fill, fop, stroke, sw, tip = p
             t = f"<title>{esc(tip)}</title>" if tip else ""
             o.append(f'<rect x="{X(x0):.1f}" y="{Y(y1):.1f}" width="{(x1-x0)*sc:.1f}" '

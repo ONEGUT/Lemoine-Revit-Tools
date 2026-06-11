@@ -82,6 +82,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
         /// (a drafter lets short text overhang instead) and rarely beats an inline/staggered tag.</summary>
         public double LeaderWeight { get; set; } = 40.0;
 
+        /// <summary>Soft penalty per square foot of a dimension's line band or value text landing
+        /// OUTSIDE its cluster's working region — each cluster's group is pushed to fill its own
+        /// empty space (clashes → targets, ballooned to the neighbours) instead of spilling into
+        /// the next cluster's.</summary>
+        public double RegionWeight { get; set; } = 15.0;
+
         // ── Stacking / refinement ──────────────────────────────────────────────
         /// <summary>Worst-first repair passes after the greedy passes (0 disables repair).</summary>
         public int MaxRepairPasses { get; set; } = 3;
