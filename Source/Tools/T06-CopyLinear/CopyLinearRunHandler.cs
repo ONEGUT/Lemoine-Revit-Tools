@@ -65,13 +65,14 @@ namespace LemoineTools.Tools.CopyLinear
 
                 // ── Gather current source runs (straight lines only) keyed by stable identity ──
                 var current = new Dictionary<string, SourceRun>(StringComparer.Ordinal);
+                int nonLinear = 0;
                 foreach (var el in CopyLinearSource.Collect(src.Doc, Spec))
                 {
                     try
                     {
                         if (!CopyLinearSource.PassesFilters(el, src.Doc, Spec)) continue;
                         var line = CopyLinearSource.StraightLine(el);
-                        if (line == null) { skip++; Log($"— {el.Id}: not a straight run, skipped.", "info"); continue; }
+                        if (line == null) { nonLinear++; continue; }
 
                         XYZ a = src.Transform.OfPoint(line.Value.A);
                         XYZ b = src.Transform.OfPoint(line.Value.B);
@@ -88,6 +89,9 @@ namespace LemoineTools.Tools.CopyLinear
                         LemoineLog.Swallowed($"CopyLinear: read source {el?.Id}", ex);
                     }
                 }
+
+                skip += nonLinear;
+                if (nonLinear > 0) Log($"— {nonLinear} element(s) skipped — no straight location curve.", "info");
 
                 // ── Read existing stamps and decide what to (re)build / delete ──
                 var stampsByKey = new Dictionary<string, (List<ElementId> ids, string hash)>(StringComparer.Ordinal);
@@ -139,11 +143,12 @@ namespace LemoineTools.Tools.CopyLinear
                     {
                         try
                         {
-                            int made = Mode == "Replace"
+                            var (made, innerFail) = Mode == "Replace"
                                 ? BuildReplace(doc, run, symbol!, runId)
                                 : BuildSplit(doc, src.Doc!, run, src.Transform, runId);
-                            if (made > 0) pass += made;
-                            else          skip++;
+                            pass += made;
+                            fail += innerFail;
+                            if (made == 0 && innerFail == 0) skip++;
                         }
                         catch (Exception ex)
                         {
@@ -174,7 +179,7 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         // ── Split: copy the run into the host, then break it into standard-length cells ──
-        private int BuildSplit(Document doc, Document srcDoc, SourceRun run, Transform tx, string runId)
+        private (int made, int failed) BuildSplit(Document doc, Document srcDoc, SourceRun run, Transform tx, string runId)
         {
             ICollection<ElementId> copied;
             try
@@ -188,8 +193,9 @@ namespace LemoineTools.Tools.CopyLinear
             }
             catch (Exception ex)
             {
+                LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
                 Log($"✗ {run.Element.Id}: copy failed — {ex.Message}", "fail");
-                return 0;
+                return (0, 1);
             }
 
             var hostCopy = copied?.Select(doc.GetElement).FirstOrDefault(e => e?.Location is LocationCurve lc && lc.Curve is Line);
@@ -197,7 +203,7 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 SafeDelete(doc, copied?.ToList() ?? new List<ElementId>());
                 Log($"— {run.Element.Id}: copy has no straight curve, skipped.", "info");
-                return 0;
+                return (0, 0);
             }
 
             var hostLine = ((LocationCurve)hostCopy.Location).Curve as Line;
@@ -209,7 +215,7 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 SafeDelete(doc, new List<ElementId> { hostCopy.Id });
                 Log($"— {run.Element.Id}: run shorter than one segment, skipped.", "info");
-                return 0;
+                return (0, 0);
             }
 
             // Make every segment id FIRST, copying the pristine full-length element, then reassign
@@ -226,7 +232,7 @@ namespace LemoineTools.Tools.CopyLinear
                 segIds.Add(c.First());
             }
 
-            int made = 0;
+            int made = 0, innerFailed = 0;
             for (int i = 0; i < segIds.Count && i < cells.Count; i++)
             {
                 Element seg = doc.GetElement(segIds[i]);
@@ -254,21 +260,22 @@ namespace LemoineTools.Tools.CopyLinear
                     if (i > 0) SafeDelete(doc, new List<ElementId> { seg.Id });
                     LemoineLog.Error($"CopyLinear: set segment curve {run.Element.Id}#{i}", ex);
                     Log($"✗ {run.Element.Id} seg {i}: {ex.Message}", "fail");
+                    innerFailed++;
                 }
             }
-            return made;
+            return (made, innerFailed);
         }
 
         // ── Replace: place the picked family at intervals along the run ──
-        private int BuildReplace(Document doc, SourceRun run, FamilySymbol symbol, string runId)
+        private (int made, int failed) BuildReplace(Document doc, SourceRun run, FamilySymbol symbol, string runId)
         {
             XYZ a = run.A, b = run.B;
             double totalLen = a.DistanceTo(b);
             var stations = CopyLinearEngine.PlacementStations(totalLen, IntervalFeet, ExtraSpacingFeet);
-            if (stations.Count == 0) { Log($"— {run.Element.Id}: no placement points, skipped.", "info"); return 0; }
+            if (stations.Count == 0) { Log($"— {run.Element.Id}: no placement points, skipped.", "info"); return (0, 0); }
 
             double angle = RotateToRun ? CopyLinearEngine.PlanRotation(b - a) : 0.0;
-            int made = 0;
+            int made = 0, innerFail = 0;
             foreach (double s in stations)
             {
                 XYZ p = CopyLinearEngine.PointAlong(a, b, s);
@@ -278,9 +285,10 @@ namespace LemoineTools.Tools.CopyLinear
                 {
                     LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id}", ex);
                     Log($"✗ {run.Element.Id}: place failed — {ex.Message}", "fail");
+                    innerFail++;
                     continue;
                 }
-                if (inst == null) continue;
+                if (inst == null) { innerFail++; continue; }
 
                 if (Math.Abs(angle) > 1e-6)
                 {
@@ -302,7 +310,7 @@ namespace LemoineTools.Tools.CopyLinear
                     LemoineLog.Warn("CopyLinear: stamp", $"instance for {run.Element.Id} not stamped — it won't reconcile on a later run.");
                 made++;
             }
-            return made;
+            return (made, innerFail);
         }
 
         // ── helpers ────────────────────────────────────────────────────────────

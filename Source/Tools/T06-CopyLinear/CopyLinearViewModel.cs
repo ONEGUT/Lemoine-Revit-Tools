@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
+using LemoineTools.Tools.AutoFilters;
 
 using WpfTextBox = System.Windows.Controls.TextBox;
 
@@ -43,7 +44,6 @@ namespace LemoineTools.Tools.CopyLinear
 
         // ── State ───────────────────────────────────────────────────────────────
         private readonly CopyLinearSourceSpec _spec = new CopyLinearSourceSpec();
-        private readonly Dictionary<string, string> _catLabelToOst = new Dictionary<string, string>();
         private readonly Dictionary<string, long>   _docDisplayToId = new Dictionary<string, long>();
         private readonly Dictionary<string, CopyLinearFamilyInfo> _familyByKey = new Dictionary<string, CopyLinearFamilyInfo>();
 
@@ -87,8 +87,6 @@ namespace LemoineTools.Tools.CopyLinear
             _docs        = docs ?? new List<CopyLinearDocInfo>();
             _families    = families ?? new List<CopyLinearFamilyInfo>();
 
-            foreach (var (cat, label) in CopyLinearEngine.Categories)
-                _catLabelToOst[label] = cat.ToString();
             foreach (var f in _families) _familyByKey[f.Key] = f;
 
             // Default source = first document (host).
@@ -141,18 +139,23 @@ namespace LemoineTools.Tools.CopyLinear
 
             Divider(outer);
 
-            // Categories.
-            outer.Children.Add(Label("Linear categories to copy"));
+            // Categories — all filterable Revit categories, grouped by discipline (same pattern as ClashGroupEditor).
+            outer.Children.Add(Label("Categories to copy"));
             var catTabs = new LemoineMultiSelectTabs();
             catTabs.SelectionChanged += sel =>
             {
-                _spec.Categories = sel.Select(s => _catLabelToOst.TryGetValue(s, out var o) ? o : null)
+                var map = AutoFiltersSettings.KnownCategoryMap;
+                _spec.Categories = sel.Select(s => map.TryGetValue(s, out var o) ? o : null)
                                       .Where(o => o != null).Cast<string>().ToList();
                 ResetScan();
                 Changed();
             };
-            var selectedCatLabels = _catLabelToOst.Where(kv => _spec.Categories.Contains(kv.Value)).Select(kv => kv.Key).ToList();
-            catTabs.SetGroups(new Dictionary<string, List<string>> { { "Linear Categories", _catLabelToOst.Keys.ToList() } }, selectedCatLabels);
+            var catGroups = BuildCategoryGroups();
+            var allCatDisplayNames = new HashSet<string>(catGroups.Values.SelectMany(v => v), StringComparer.Ordinal);
+            var selectedCatLabels = AutoFiltersSettings.KnownCategoryMap
+                .Where(kv => _spec.Categories.Contains(kv.Value) && allCatDisplayNames.Contains(kv.Key))
+                .Select(kv => kv.Key).ToList();
+            catTabs.SetGroups(catGroups, selectedCatLabels);
             outer.Children.Add(catTabs);
 
             Divider(outer);
@@ -473,6 +476,33 @@ namespace LemoineTools.Tools.CopyLinear
             s.RotateToRun = _rotateToRun; s.LengthParamName = _lengthParam; s.FamilyKey = _familyKey;
             s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;
             s.Save();
+        }
+
+        // ── Category grouping (mirrors ClashGroupEditor) ──────────────────────────
+        private static Dictionary<string, List<string>> BuildCategoryGroups()
+        {
+            var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var kv in AutoFiltersSettings.KnownCategoryMap)
+            {
+                string disc = DisciplineOf(kv.Value);
+                if (!groups.ContainsKey(disc)) groups[disc] = new List<string>();
+                groups[disc].Add(kv.Key);
+            }
+            foreach (var k in groups.Keys.ToList())
+                groups[k].Sort(StringComparer.OrdinalIgnoreCase);
+            return groups;
+        }
+
+        private static string DisciplineOf(string ost)
+        {
+            bool C(params string[] needles) => needles.Any(n => ost.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (C("Duct", "MechanicalEquipment", "FlexDuct"))                                      return "Mechanical";
+            if (C("Pipe", "Plumbing", "Sprinkler", "FlexPipe", "FabricationPipe",
+                  "FabricationHangers", "FabricationContainment"))                                  return "Piping";
+            if (C("Cable", "Conduit", "Electrical", "Lighting", "Communication",
+                  "FireAlarm", "Security", "Data", "Telephone", "NurseCall"))                       return "Electrical";
+            if (C("Structural", "Rebar", "Reinforcement", "Fabric"))                                return "Structural";
+            return "Architectural / Other";
         }
 
         // ── Small WPF helpers (theme via resource refs only) ─────────────────────

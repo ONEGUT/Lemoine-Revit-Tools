@@ -16,18 +16,6 @@ namespace LemoineTools.Tools.CopyLinear
     /// </summary>
     public static class CopyLinearEngine
     {
-        /// <summary>Linear (curve-driven) categories this tool can copy off one backbone.</summary>
-        public static readonly IReadOnlyList<(BuiltInCategory Cat, string Label)> Categories = new[]
-        {
-            (BuiltInCategory.OST_PipeCurves,       "Pipes"),
-            (BuiltInCategory.OST_DuctCurves,       "Ducts"),
-            (BuiltInCategory.OST_Conduit,          "Conduit"),
-            (BuiltInCategory.OST_CableTray,        "Cable Trays"),
-            (BuiltInCategory.OST_FlexPipeCurves,   "Flex Pipes"),
-            (BuiltInCategory.OST_FlexDuctCurves,   "Flex Ducts"),
-            (BuiltInCategory.OST_StructuralFraming, "Structural Framing"),
-        };
-
         private const double Tol = 1e-4;
 
         // ── Stations ──────────────────────────────────────────────────────────
