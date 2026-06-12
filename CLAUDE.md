@@ -253,6 +253,12 @@ A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world 
 
 For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups` rather than hand-rolling radios or coercing a multi-select down to one: checking an item then clears any prior selection (across all group tabs) and hides the per-group "All" row. Defaults to `false` (multi-select), so existing pickers are unaffected.
 
+**Hierarchy nesting** — `LemoineMultiSelectTabs` accepts a `Hierarchy` property (`IReadOnlyDictionary<string, IReadOnlyList<string>>?`, same contract as `LemoineTagChipInput.Hierarchy`). Set it before `SetGroups`. Children whose parent is in the same group tab are hidden from the flat list and shown indented (32 px) under a ▸/▾ expand caret; the parent checkbox goes indeterminate when some-but-not-all of its children are selected. For any category picker, pass `AutoFiltersSettings.CategorySubcategories` as the source.
+
+**Tab ordering** — `SetGroups` auto-sorts tabs alphabetically with `"Other"` pinned last. Callers do not need to pre-sort their group dictionaries.
+
+**Annotation categories** — Annotation categories (`CategoryType != Model`) must never appear in model-element category pickers. `AutoFiltersSettings.CaptureFilterableCategories` already filters them out; do not re-introduce them.
+
 ---
 
 ## Step Flow — Conditional & Data-Dependent Steps
