@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.CopyLinear
         public double IntervalFeet      { get; set; } = 10.0;
         public double ExtraSpacingInches{ get; set; } = 0.0;
         public bool   RotateToRun       { get; set; } = true;
+        public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
         public string FamilyKey         { get; set; } = "";  // "Category — Family: Type"
 

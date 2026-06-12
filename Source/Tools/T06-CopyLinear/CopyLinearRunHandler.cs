@@ -30,6 +30,7 @@ namespace LemoineTools.Tools.CopyLinear
         public double IntervalFeet      { get; set; } = 10.0;
         public double ExtraSpacingFeet  { get; set; } = 0.0;
         public bool   RotateToRun       { get; set; } = true;
+        public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
 
         public bool   OnlyChanged       { get; set; }
@@ -46,9 +47,18 @@ namespace LemoineTools.Tools.CopyLinear
 
         private bool _loggedPlacement;   // one placement-path line per run
 
+        // Align-to-source calibration: measured once from the first source run + first placed
+        // instance, then re-applied to every later placement through each run's own frame.
+        private CopyLinearEngine.AlignmentCorrection? _alignCorrection;
+        private bool _alignCalibrationFailed;
+        private bool _alignApplyWarned;
+
         public void Execute(UIApplication app)
         {
             _loggedPlacement = false;
+            _alignCorrection = null;
+            _alignCalibrationFailed = false;
+            _alignApplyWarned = false;
             int pass = 0, fail = 0, skip = 0;
             long issues0 = LemoineLog.IssueCount;
             try
@@ -84,7 +94,21 @@ namespace LemoineTools.Tools.CopyLinear
                         string hash = CopyLinearEngine.GeoHash(a, b,
                             CopyLinearSource.ReadSize(el), CopyLinearSource.ReadSystem(el),
                             typeName, CopyLinearSource.ReadPhase(src.Doc, el));
-                        current[key] = new SourceRun { Element = el, A = a, B = b, Key = key, Hash = hash };
+
+                        // World-space box corners feed the align-to-source calibration; only
+                        // Replace mode reads them (Split copies the source element itself).
+                        List<XYZ>? corners = null;
+                        if (Mode == "Replace" && AlignToSource)
+                        {
+                            try
+                            {
+                                var bb = el.get_BoundingBox(null);
+                                if (bb != null) corners = BoxCorners(bb, src.Transform);
+                            }
+                            catch (Exception ex) { LemoineLog.Swallowed($"CopyLinear: source box {el.Id}", ex); }
+                        }
+
+                        current[key] = new SourceRun { Element = el, A = a, B = b, Key = key, Hash = hash, BoxCorners = corners };
                     }
                     catch (Exception ex)
                     {
@@ -378,6 +402,8 @@ namespace LemoineTools.Tools.CopyLinear
                 Log($"Replace family '{symbol.Name}' — placement type {placement}, path: "
                     + (curveBased ? "line + sketch plane" :
                        placement == FamilyPlacementType.WorkPlaneBased ? "level plane reference" : "point + level"), "info");
+                if (AlignToSource && curveBased)
+                    Log("Align to source: skipped — a line-based family already follows the run's curve.", "info");
             }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
@@ -456,6 +482,19 @@ namespace LemoineTools.Tools.CopyLinear
                     catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: rotate instance", ex); }
                 }
 
+                // Align to source: the first placed instance calibrates the correction (one regen
+                // to read its real box), then the same run-frame fix is applied to every later
+                // placement with no further regens. Curve-based families are skipped — they
+                // already follow the run's curve, and moving/rotating them would pull the curve
+                // off its sketch plane.
+                if (AlignToSource && !curveBased)
+                {
+                    if (_alignCorrection == null && !_alignCalibrationFailed)
+                        CalibrateAlignment(doc, run, inst, a, b, p);
+                    if (_alignCorrection != null)
+                        ApplyAlignment(doc, inst, a, b, p, _alignCorrection);
+                }
+
                 // A line-based instance's length is driven by its curve — skip the parameter write.
                 if (!curveBased && !string.IsNullOrWhiteSpace(LengthParamName))
                 {
@@ -471,6 +510,89 @@ namespace LemoineTools.Tools.CopyLinear
                 made++;
             }
             return (made, innerFail);
+        }
+
+        // ── Align-to-source calibration ────────────────────────────────────────
+
+        // Measures the first placed instance against its source run and stores the correction.
+        // Costs the run's single calibration regen (never per item — CLAUDE.md). A failure logs
+        // a warning once and leaves every placement at the standard position.
+        private void CalibrateAlignment(Document doc, SourceRun run, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
+        {
+            if (run.BoxCorners == null || run.BoxCorners.Count == 0)
+            {
+                _alignCalibrationFailed = true;
+                Log("Align to source: the source element has no bounding box — placements keep the standard position.", "warn");
+                LemoineLog.Warn("CopyLinear: align", $"no source box for {run.Element.Id}; calibration skipped");
+                return;
+            }
+            try
+            {
+                doc.Regenerate();   // one calibration regen for the whole run command
+                var bb = inst.get_BoundingBox(null);
+                var corr = bb == null ? null : CopyLinearEngine.ComputeAlignment(
+                    run.BoxCorners, BoxCorners(bb, Transform.Identity), a, b, p);
+                if (corr == null)
+                {
+                    _alignCalibrationFailed = true;
+                    Log("Align to source: could not measure the first placed instance — placements keep the standard position.", "warn");
+                    LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
+                    return;
+                }
+                _alignCorrection = corr;
+                Log("Align to source: "
+                    + (Math.Abs(corr.ExtraRotation) > 1e-6 ? "rotate 90 deg, " : "")
+                    + $"offset along {corr.OffsetAlong:0.00} ft, side {corr.OffsetSide:0.00} ft, up {corr.OffsetUp:0.00} ft"
+                    + " — applied to every placement.", "info");
+            }
+            catch (Exception ex)
+            {
+                _alignCalibrationFailed = true;
+                LemoineLog.Error("CopyLinear: align calibration", ex);
+                Log($"Align to source failed ({ex.GetType().Name}: {ex.Message}) — placements keep the standard position.", "warn");
+            }
+        }
+
+        // Applies the stored correction: extra plan rotation about the station point, then the
+        // run-frame offset re-projected through THIS run's frame (so it transfers across runs
+        // pointing different directions). A failing instance keeps its standard position; the
+        // first failure warns in the run log, the rest go to diagnostics only.
+        private void ApplyAlignment(
+            Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p, CopyLinearEngine.AlignmentCorrection c)
+        {
+            try
+            {
+                if (Math.Abs(c.ExtraRotation) > 1e-6)
+                    ElementTransformUtils.RotateElement(doc, inst.Id,
+                        Line.CreateBound(p, p + XYZ.BasisZ), c.ExtraRotation);
+                var (along, side, up) = CopyLinearEngine.RunFrame(a, b);
+                XYZ off = c.OffsetAlong * along + c.OffsetSide * side + c.OffsetUp * up;
+                if (off.GetLength() > 1e-6)
+                    ElementTransformUtils.MoveElement(doc, inst.Id, off);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: apply alignment", ex);
+                if (!_alignApplyWarned)
+                {
+                    _alignApplyWarned = true;
+                    Log($"Align to source: instance {inst.Id} could not be adjusted ({ex.GetType().Name}) — it keeps the standard position; further failures go to the diagnostics log.", "warn");
+                }
+            }
+        }
+
+        // The 8 world-space corners of a bounding box: bb.Min/Max live in bb.Transform's space,
+        // so each corner goes through bb.Transform first, then the extra (link) transform.
+        private static List<XYZ> BoxCorners(BoundingBoxXYZ bb, Transform extra)
+        {
+            var t = extra.Multiply(bb.Transform);
+            var pts = new List<XYZ>(8);
+            for (int i = 0; i < 8; i++)
+                pts.Add(t.OfPoint(new XYZ(
+                    (i & 1) == 0 ? bb.Min.X : bb.Max.X,
+                    (i & 2) == 0 ? bb.Min.Y : bb.Max.Y,
+                    (i & 4) == 0 ? bb.Min.Z : bb.Max.Z)));
+            return pts;
         }
 
         // ── helpers ────────────────────────────────────────────────────────────
@@ -696,6 +818,7 @@ namespace LemoineTools.Tools.CopyLinear
             public XYZ     B = XYZ.Zero;
             public string  Key  = "";
             public string  Hash = "";
+            public List<XYZ>? BoxCorners;   // world-space, for align-to-source calibration
         }
     }
 }
