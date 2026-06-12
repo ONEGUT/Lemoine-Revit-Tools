@@ -137,14 +137,22 @@ namespace LemoineTools.Tools.CopyLinear
                         if (stampsByKey.TryGetValue(run.Key, out var prior))
                             SafeDelete(doc, prior.ids);
 
-                    if (Mode == "Replace") { if (!symbol!.IsActive) symbol.Activate(); }
+                    // Levels (sorted by elevation) resolve an explicit host plane for family placement,
+                    // so a work-plane/level-based family no longer depends on the active view's work plane.
+                    List<Level>? levels = null;
+                    if (Mode == "Replace")
+                    {
+                        if (!symbol!.IsActive) symbol.Activate();
+                        levels = new FilteredElementCollector(doc).OfClass(typeof(Level))
+                            .Cast<Level>().OrderBy(l => l.Elevation).ToList();
+                    }
 
                     foreach (var run in toBuild)
                     {
                         try
                         {
                             var (made, innerFail) = Mode == "Replace"
-                                ? BuildReplace(doc, run, symbol!, runId)
+                                ? BuildReplace(doc, run, symbol!, levels, runId)
                                 : BuildSplit(doc, src.Doc!, run, src.Transform, runId);
                             pass += made;
                             fail += innerFail;
@@ -269,12 +277,15 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         // ── Replace: place the picked family at intervals along the run ──
-        private (int made, int failed) BuildReplace(Document doc, SourceRun run, FamilySymbol symbol, string runId)
+        private (int made, int failed) BuildReplace(Document doc, SourceRun run, FamilySymbol symbol, List<Level>? levels, string runId)
         {
             XYZ a = run.A, b = run.B;
             double totalLen = a.DistanceTo(b);
             var stations = CopyLinearEngine.PlacementStations(totalLen, IntervalFeet, ExtraSpacingFeet);
             if (stations.Count == 0) { Log($"— {run.Element.Id}: no placement points, skipped.", "info"); return (0, 0); }
+
+            // Host the instances on the level nearest the run, not the active view's work plane.
+            Level? level = NearestLevel(levels, (a.Z + b.Z) * 0.5);
 
             double angle = RotateToRun ? CopyLinearEngine.PlanRotation(b - a) : 0.0;
             int made = 0, innerFail = 0;
@@ -282,7 +293,7 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 XYZ p = CopyLinearEngine.PointAlong(a, b, s);
                 FamilyInstance? inst;
-                try { inst = doc.Create.NewFamilyInstance(p, symbol, StructuralType.NonStructural); }
+                try { inst = PlaceInstance(doc, p, symbol, level); }
                 catch (Exception ex)
                 {
                     LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id}", ex);
@@ -316,6 +327,31 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         // ── helpers ────────────────────────────────────────────────────────────
+
+        // Places one family instance at a point. The point-only NewFamilyInstance overload hosts
+        // the instance on the ACTIVE VIEW's work plane — which throws "no corresponding Work Plane"
+        // whenever the active view is a 3D/schedule view with none. Passing an explicit Level gives
+        // Revit a host plane independent of whatever view happens to be active.
+        private static FamilyInstance PlaceInstance(Document doc, XYZ p, FamilySymbol symbol, Level? level)
+        {
+            if (level != null)
+                return doc.Create.NewFamilyInstance(p, symbol, level, StructuralType.NonStructural);
+            return doc.Create.NewFamilyInstance(p, symbol, StructuralType.NonStructural);
+        }
+
+        // Highest level at or below z (levels pre-sorted ascending); falls back to the lowest level.
+        private static Level? NearestLevel(List<Level>? levels, double z)
+        {
+            if (levels == null || levels.Count == 0) return null;
+            Level? best = levels[0];
+            foreach (var l in levels)
+            {
+                if (l.Elevation <= z + 1e-6) best = l;
+                else break;
+            }
+            return best;
+        }
+
         private static void SafeDelete(Document doc, List<ElementId> ids)
         {
             if (ids == null) return;

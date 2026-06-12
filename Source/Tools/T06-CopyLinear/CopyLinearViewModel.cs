@@ -19,7 +19,7 @@ namespace LemoineTools.Tools.CopyLinear
     /// either splits each into standard-length segments or replaces it with a family placed at
     /// intervals. An optional "only changed" re-run reconciles via stamped host outputs.
     /// </summary>
-    public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware
     {
         public string Title    => "Copy Linear Elements";
         public string RunLabel => "Run in Revit →";
@@ -28,10 +28,11 @@ namespace LemoineTools.Tools.CopyLinear
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source",    "Source & Filter",  required: true),
-            new StepDefinition("operation", "Operation",        required: true),
-            new StepDefinition("changes",   "Change Detection", required: false),
-            new StepDefinition("run",       "Review & Run",     required: false),
+            new StepDefinition("source",    "Source",            required: true),
+            new StepDefinition("filters",   "Parameter Filters", required: false),
+            new StepDefinition("operation", "Operation",         required: true),
+            new StepDefinition("changes",   "Change Detection",  required: false),
+            new StepDefinition("run",       "Review & Run",      required: false),
         };
 
         // ── Injected ───────────────────────────────────────────────────────────
@@ -67,12 +68,15 @@ namespace LemoineTools.Tools.CopyLinear
 
         // Scan
         private bool _scanning, _scanDone;
+        private string? _scanError;
         private CopyLinearScanResult _scan = new CopyLinearScanResult();
+        // Parameters the user has added a filter row for, in display order (one row each).
         private readonly List<string> _activeFilterParams = new List<string>();
 
         // Live UI handles
         private StackPanel? _worksetContainer, _filterContainer, _operationBody;
         private Dispatcher? _disp;
+        private Action<string>? _refreshStep;   // IStepAware content-refresh callback
 
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -100,6 +104,7 @@ namespace LemoineTools.Tools.CopyLinear
             switch (stepId)
             {
                 case "source":    return BuildSourceStep();
+                case "filters":   return BuildFiltersStep();
                 case "operation": return BuildOperationStep();
                 case "changes":   return BuildChangesStep();
                 default:          return null;   // "run" rendered by framework (ILemoineReviewable)
@@ -167,18 +172,37 @@ namespace LemoineTools.Tools.CopyLinear
             outer.Children.Add(_worksetContainer);
             RebuildWorksets();
 
-            Divider(outer);
+            return outer;
+        }
 
-            // Scan + filters.
-            var scanBtn = LemoineControlStyles.BuildButton("Scan source for filters");
-            scanBtn.Click += (s, e) => TriggerScan();
-            outer.Children.Add(scanBtn);
+        // ── Step 2: Parameter Filters ───────────────────────────────────────────
+        // Scanning the source is the result of confirming step 1 — OnStepActivated("filters")
+        // kicks the scan, and this content renders the discovered parameters once it returns.
+        private FrameworkElement BuildFiltersStep()
+        {
+            _disp = Dispatcher.CurrentDispatcher;
+            var outer = new StackPanel();
+            outer.Children.Add(Label("Parameter filters"));
+            outer.Children.Add(Dim("Narrow the copied elements by any parameter found on the scanned source. "
+                + "Add a filter, choose its parameter, then tick the values to keep. No filters = copy every matched element."));
 
-            _filterContainer = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            _filterContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             outer.Children.Add(_filterContainer);
             RebuildFilters();
-
             return outer;
+        }
+
+        // ── IStepAware ───────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent) => _refreshStep = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "filters") return;
+            _disp = Dispatcher.CurrentDispatcher;
+            // Confirming the Source step lands here — scan now if we have categories and no fresh result.
+            if (_spec.Categories.Count == 0) { _scanDone = false; RebuildFilters(); return; }
+            if (!_scanDone && !_scanning) TriggerScan();
+            else                          RebuildFilters();
         }
 
         private void RebuildWorksets()
@@ -210,107 +234,141 @@ namespace LemoineTools.Tools.CopyLinear
             if (_filterContainer == null) return;
             _filterContainer.Children.Clear();
 
-            if (_scanning) { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
-            if (!_scanDone) { _filterContainer.Children.Add(Dim("Scan to discover parameters. Then use \"Add filter\" to narrow results by any parameter value.")); return; }
-
+            if (_scanning)        { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
+            if (_scanError != null) { _filterContainer.Children.Add(Dim($"Scan error: {_scanError}")); return; }
+            if (!_scanDone)
+            {
+                _filterContainer.Children.Add(Dim(_spec.Categories.Count == 0
+                    ? "Pick at least one category in the Source step, then return here."
+                    : "Confirm the Source step to scan for parameters."));
+                return;
+            }
             if (_scan.ParameterValues.Count == 0)
             {
-                _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found — no parameters with 2+ distinct values discovered."));
+                _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found — no parameters with 2+ distinct values to filter on."));
                 return;
             }
 
-            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} parameter(s) with 2+ distinct values found."));
+            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} filterable parameter(s)."));
 
-            // Prune filter state for params no longer in this scan.
+            // Prune filter state for params no longer present in this scan.
             _activeFilterParams.RemoveAll(p => !_scan.ParameterValues.ContainsKey(p));
-            var scanKeys = new HashSet<string>(_scan.ParameterValues.Keys, StringComparer.Ordinal);
-            foreach (var k in _spec.ParamFilters.Keys.Where(k => !scanKeys.Contains(k)).ToList())
+            foreach (var k in _spec.ParamFilters.Keys.Where(k => !_scan.ParameterValues.ContainsKey(k)).ToList())
                 _spec.ParamFilters.Remove(k);
 
-            foreach (var paramName in _activeFilterParams)
+            foreach (var paramName in _activeFilterParams.ToList())
                 _filterContainer.Children.Add(BuildFilterRow(paramName));
 
-            // "Add filter" button — hidden once all discovered parameters have been added.
-            var available = _scan.ParameterValues.Keys
-                .Where(k => !_activeFilterParams.Contains(k))
-                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (available.Count == 0) return;
+            // "Add filter" — only while some parameter is still unused (one row per parameter).
+            var used = new HashSet<string>(_activeFilterParams, StringComparer.Ordinal);
+            if (!_scan.ParameterValues.Keys.Any(k => !used.Contains(k))) return;
 
             var addBtn = LemoineControlStyles.BuildButton("+ Add filter");
-            addBtn.Margin = new Thickness(0, 6, 0, 0);
+            addBtn.Margin = new Thickness(0, 8, 0, 0);
             addBtn.Click += (s, e) =>
             {
-                if (_filterContainer == null) return;
-                _filterContainer.Children.Remove(addBtn);
-
-                // Recompute available at click time in case a concurrent add narrowed the list.
-                var avail = _scan.ParameterValues.Keys
+                var firstAvail = _scan.ParameterValues.Keys
                     .Where(k => !_activeFilterParams.Contains(k))
                     .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                if (avail.Count == 0) return;
-
-                var pickerPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-                pickerPanel.Children.Add(Label("Filter by parameter"));
-                var select = new LemoineSingleSelect { Items = avail };
-                select.SelectionChanged += param =>
-                {
-                    if (param == null) return;
-                    _activeFilterParams.Add(param);
-                    RebuildFilters();
-                    Changed();
-                };
-                pickerPanel.Children.Add(select);
-                _filterContainer.Children.Add(pickerPanel);
+                    .FirstOrDefault();
+                if (firstAvail == null) return;
+                _activeFilterParams.Add(firstAvail);
+                RebuildFilters();
+                Changed();
             };
-            _filterContainer!.Children.Add(addBtn);
+            _filterContainer.Children.Add(addBtn);
         }
 
-        private FrameworkElement BuildFilterRow(string paramName)
+        // One filter = a bordered card holding the parameter dropdown AND the value checkbox list
+        // together (same visual). The checkbox list renders immediately from the dropdown's current
+        // selection — it never waits on a SelectionChanged that may not fire for the default item.
+        private FrameworkElement BuildFilterRow(string initialParam)
         {
-            var outer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+            string currentParam = initialParam;
 
-            var header = new Grid();
+            var card = new Border { Padding = new Thickness(10), Margin = new Thickness(0, 6, 0, 0) };
+            card.SetResourceReference(Border.BorderBrushProperty,   "LemoineBorder");
+            card.SetResourceReference(Border.CornerRadiusProperty,  "LemoineRadius_Card");
+            card.BorderThickness = new Thickness(1);
+            var inner = new StackPanel();
+            card.Child = inner;
+
+            // Header: parameter dropdown + remove. The dropdown lists every scanned parameter
+            // except those already used by OTHER rows, so each parameter appears at most once.
+            var header = new Grid { Margin = new Thickness(0, 0, 0, 6) };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var nameLabel = Label(paramName);
-            Grid.SetColumn(nameLabel, 0);
-            header.Children.Add(nameLabel);
+            var others  = new HashSet<string>(_activeFilterParams.Where(p => p != currentParam), StringComparer.Ordinal);
+            var options = _scan.ParameterValues.Keys
+                .Where(k => !others.Contains(k))
+                .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            var removeBtn = new Button { Content = "×", Padding = new Thickness(6, 1, 6, 1) };
-            removeBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_SM");
+            var picker = new LemoineSingleSelect { Label = "Parameter", Items = options };
+            picker.SelectedItem = currentParam;   // safe before the handler is wired
+            Grid.SetColumn(picker, 0);
+            header.Children.Add(picker);
+
+            var removeBtn = new Button
+            {
+                Content = "×", Padding = new Thickness(8, 1, 8, 1),
+                VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(8, 0, 0, 0),
+            };
+            removeBtn.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_MD");
             removeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             removeBtn.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
-            removeBtn.VerticalAlignment = VerticalAlignment.Center;
             removeBtn.Click += (s, e) =>
             {
-                _activeFilterParams.Remove(paramName);
-                _spec.ParamFilters.Remove(paramName);
+                _activeFilterParams.Remove(currentParam);
+                _spec.ParamFilters.Remove(currentParam);
                 RebuildFilters();
                 Changed();
             };
             Grid.SetColumn(removeBtn, 1);
             header.Children.Add(removeBtn);
-            outer.Children.Add(header);
+            inner.Children.Add(header);
 
+            // Value checkbox list — rebuilt in place whenever the dropdown changes parameter.
+            var valueHost = new StackPanel();
+            inner.Children.Add(valueHost);
+            LoadFilterValues(valueHost, currentParam);
+
+            picker.SelectionChanged += param =>
+            {
+                if (string.IsNullOrEmpty(param) || param == currentParam) return;
+                // Move this row to a different parameter: drop the old key, claim the new one.
+                int idx = _activeFilterParams.IndexOf(currentParam);
+                _spec.ParamFilters.Remove(currentParam);
+                currentParam = param!;
+                if (idx >= 0) _activeFilterParams[idx] = currentParam;
+                RebuildFilters();   // re-render so every row's dropdown excludes the new pick
+                Changed();
+            };
+
+            return card;
+        }
+
+        // Builds the value checkbox list for one parameter into the supplied host panel.
+        private void LoadFilterValues(StackPanel host, string paramName)
+        {
+            host.Children.Clear();
             var values   = _scan.ParameterValues.TryGetValue(paramName, out var v)   ? v   : new List<string>();
             var selected = _spec.ParamFilters.TryGetValue(paramName,    out var sel) ? sel : new List<string>();
+
             var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += s2 => { _spec.ParamFilters[paramName] = s2.ToList(); Changed(); };
+            tabs.SelectionChanged += picked => { _spec.ParamFilters[paramName] = picked.ToList(); Changed(); };
             var initial = selected.Where(values.Contains).ToList();
             _spec.ParamFilters[paramName] = initial;
             tabs.SetGroups(new Dictionary<string, List<string>> { { paramName, values } }, initial);
-            outer.Children.Add(tabs);
-
-            return outer;
+            host.Children.Add(tabs);
         }
 
         private void ResetScan()
         {
             _scanDone = false;
             _scanning = false;
+            _scanError = null;
             _activeFilterParams.Clear();
             _spec.ParamFilters.Clear();
         }
@@ -318,10 +376,10 @@ namespace LemoineTools.Tools.CopyLinear
         private void TriggerScan()
         {
             if (_scanHandler == null || _scanEvent == null) return;
-            if (_spec.Categories.Count == 0) { _filterContainer?.Children.Clear(); _filterContainer?.Children.Add(Dim("Pick at least one category first.")); return; }
+            if (_spec.Categories.Count == 0) { _scanDone = false; RebuildFilters(); return; }
 
-            _scanning = true; _scanDone = false;
-            RebuildFilters();
+            _scanning = true; _scanDone = false; _scanError = null;
+            RebuildFilters();   // show "Scanning…" in the live container
 
             _scanHandler.Spec = CloneSpecForScan();
             _scanHandler.OnScanned = result => _disp?.BeginInvoke((Action)(() =>
@@ -331,9 +389,8 @@ namespace LemoineTools.Tools.CopyLinear
             }));
             _scanHandler.OnError = err => _disp?.BeginInvoke((Action)(() =>
             {
-                _scanning = false;
-                _filterContainer?.Children.Clear();
-                _filterContainer?.Children.Add(Dim($"Scan error: {err}"));
+                _scanning = false; _scanError = err;
+                RebuildFilters();
             }));
             _scanEvent.Raise();
         }
@@ -508,7 +565,9 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 case "source":
                     return _spec.Categories.Count == 0 ? "—"
-                        : $"{(_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source")} · {_spec.Categories.Count} cat · {FilterSummary()}";
+                        : $"{(_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source")} · {_spec.Categories.Count} cat";
+                case "filters":
+                    return FilterSummary();
                 case "operation":
                     return _mode == "Replace" ? $"Replace · every {_intervalFeet:0.##} ft" : $"Split · {_segLenFeet:0.##} ft";
                 case "changes":
