@@ -11,10 +11,11 @@ namespace LemoineTools.Tools.CopyLinear
     /// <summary>
     /// Main run for the Copy Linear Elements tool. Pulls the chosen source runs out of a link and
     /// either splits each into standard-length segments or replaces each with a picked family placed
-    /// at intervals. Every created host element is stamped (<see cref="CopyLinearStampSchema"/>) so a
-    /// re-run can reconcile against the model: rebuild only changed/new sources, leave unchanged ones,
-    /// and delete outputs whose source is gone. All work happens in one transaction with a single
-    /// regen at the end (never per item — CLAUDE.md).
+    /// at intervals. In delete-previous mode every created host element is stamped
+    /// (<see cref="CopyLinearStampSchema"/>) so a re-run can reconcile against the model: rebuild only
+    /// changed/new sources, leave unchanged ones, and delete outputs whose source is gone. Otherwise
+    /// outputs are left unstamped — finished elements detach from the tool and later runs never touch
+    /// them. All work happens in one transaction with a single regen at the end (never per item — CLAUDE.md).
     /// </summary>
     public sealed class CopyLinearRunHandler : IExternalEventHandler
     {
@@ -32,6 +33,16 @@ namespace LemoineTools.Tools.CopyLinear
         public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
 
+        // Manual placement override (Replace mode, AlignToSource off) — run-frame components
+        // relative to each placement's own source run, plus a plan rotation about the station.
+        public double ManualOffsetAlongFeet { get; set; }
+        public double ManualOffsetSideFeet  { get; set; }
+        public double ManualOffsetUpFeet    { get; set; }
+        public double ManualRotationRad     { get; set; }
+
+        // Off = previous runs' outputs are never touched and this run's outputs are left
+        // unstamped — finished elements detach from the tool. On = stamped reconciliation.
+        public bool   DeletePrevious    { get; set; }
         public bool   OnlyChanged       { get; set; }
         public bool   DeleteOrphans     { get; set; } = true;
 
@@ -54,6 +65,7 @@ namespace LemoineTools.Tools.CopyLinear
         private bool _alignCalibrationFailed;
         private bool _alignApplyWarned;
         private bool _alignNoBoxWarned;
+        private bool _manualApplyWarned;
 
         public void Execute(UIApplication app)
         {
@@ -62,6 +74,7 @@ namespace LemoineTools.Tools.CopyLinear
             _alignCalibrationFailed = false;
             _alignApplyWarned = false;
             _alignNoBoxWarned = false;
+            _manualApplyWarned = false;
             int pass = 0, fail = 0, skip = 0;
             long issues0 = LemoineLog.IssueCount;
             try
@@ -144,28 +157,35 @@ namespace LemoineTools.Tools.CopyLinear
                 }
 
                 // Orphans: stamped outputs whose source no longer exists in the current selection.
+                // Only the delete-previous mode ever removes earlier outputs.
                 var orphanIds = new List<ElementId>();
-                if (DeleteOrphans)
+                if (DeletePrevious && DeleteOrphans)
                     foreach (var kv in stampsByKey)
                         if (!current.ContainsKey(kv.Key))
                             orphanIds.AddRange(kv.Value.ids);
 
                 string runId = Guid.NewGuid().ToString("N");
                 int total = toBuild.Count, done = 0;
-                Log($"{Mode} mode — {current.Count} source run(s); building {toBuild.Count}, "
-                    + $"{unchanged} unchanged, {orphanIds.Count} orphaned output(s) to remove.", "info");
+                Log($"{Mode} mode — {current.Count} source run(s); building {toBuild.Count}, {unchanged} unchanged, "
+                    + (DeletePrevious
+                        ? $"{orphanIds.Count} orphaned output(s) to remove."
+                        : "previous outputs left untouched."), "info");
 
                 using (var tx = new Transaction(doc, "Copy Linear Elements"))
                 {
                     tx.Start();
                     var failureHandler = ConfigureFailures(tx);
 
-                    // Remove orphaned outputs, then any prior outputs for the keys we are rebuilding,
-                    // so a re-run is idempotent and never duplicates.
-                    SafeDelete(doc, orphanIds);
-                    foreach (var run in toBuild)
-                        if (stampsByKey.TryGetValue(run.Key, out var prior))
-                            SafeDelete(doc, prior.ids);
+                    // Delete-previous mode: remove orphaned outputs, then any prior outputs for the
+                    // keys we are rebuilding, so a re-run is idempotent and never duplicates.
+                    // Otherwise previous runs' elements are plain model elements — never touched.
+                    if (DeletePrevious)
+                    {
+                        SafeDelete(doc, orphanIds);
+                        foreach (var run in toBuild)
+                            if (stampsByKey.TryGetValue(run.Key, out var prior))
+                                SafeDelete(doc, prior.ids);
+                    }
 
                     // Levels (sorted by elevation) resolve an explicit host plane for family placement,
                     // so a work-plane/level-based family no longer depends on the active view's work plane.
@@ -354,7 +374,9 @@ namespace LemoineTools.Tools.CopyLinear
                     Line newCurve = Line.CreateBound(segA, segB);  // validate before touching connectors
                     DisconnectConnectors(seg);
                     ((LocationCurve)seg.Location).Curve = newCurve;
-                    if (!CopyLinearStampSchema.Stamp(seg, run.Key, run.Hash, runId, "Split"))
+                    // Stamp only in delete-previous mode — otherwise the finished segment is a
+                    // plain element, detached from this tool's reconciliation.
+                    if (DeletePrevious && !CopyLinearStampSchema.Stamp(seg, run.Key, run.Hash, runId, "Split"))
                         LemoineLog.Warn("CopyLinear: stamp", $"segment for {run.Element.Id} not stamped — it won't reconcile on a later run.");
                     made++;
                 }
@@ -399,6 +421,11 @@ namespace LemoineTools.Tools.CopyLinear
             bool curveBased = placement == FamilyPlacementType.CurveBased
                            || placement == FamilyPlacementType.CurveDrivenStructural;
 
+            bool hasLengthParam = !string.IsNullOrWhiteSpace(LengthParamName);
+            bool hasManual = !AlignToSource
+                && (Math.Abs(ManualOffsetAlongFeet) > 1e-9 || Math.Abs(ManualOffsetSideFeet) > 1e-9
+                 || Math.Abs(ManualOffsetUpFeet)    > 1e-9 || Math.Abs(ManualRotationRad)    > 1e-9);
+
             if (!_loggedPlacement)
             {
                 _loggedPlacement = true;
@@ -407,6 +434,8 @@ namespace LemoineTools.Tools.CopyLinear
                        placement == FamilyPlacementType.WorkPlaneBased ? "level plane reference" : "point + level"), "info");
                 if (AlignToSource && curveBased)
                     Log("Align to source: skipped — a line-based family already follows the run's curve.", "info");
+                if (hasManual)
+                    Log("Manual placement override active — each instance is moved/rotated relative to its own source run.", "info");
             }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
@@ -422,6 +451,11 @@ namespace LemoineTools.Tools.CopyLinear
             int made = 0, innerFail = 0;
             foreach (double s in stations)
             {
+                // Trim to fit: a sized element placed at the run's very end has no length left —
+                // skip it, the same way Split never emits a zero-length final cell.
+                double remaining = totalLen - s;
+                if (!curveBased && hasLengthParam && remaining < 1e-4) continue;
+
                 XYZ p = CopyLinearEngine.PointAlong(a, b, s);
                 FamilyInstance? inst;
                 try
@@ -499,7 +533,7 @@ namespace LemoineTools.Tools.CopyLinear
                         if (run.BoxCorners != null && run.BoxCorners.Count > 0)
                         {
                             var corr = CopyLinearEngine.ComputeAlignment(run.BoxCorners, _alignProfile, a, b, p);
-                            if (corr != null) ApplyAlignment(doc, inst, a, b, p, corr);
+                            if (corr != null) ApplyAlignment(doc, inst, a, b, corr);
                         }
                         else if (!_alignNoBoxWarned)
                         {
@@ -508,18 +542,26 @@ namespace LemoineTools.Tools.CopyLinear
                         }
                     }
                 }
+                else if (hasManual)
+                {
+                    // Auto-align is off — the manual override takes control instead.
+                    ApplyManualOverride(doc, inst, a, b, p);
+                }
 
                 // A line-based instance's length is driven by its curve — skip the parameter write.
-                if (!curveBased && !string.IsNullOrWhiteSpace(LengthParamName))
+                // The value is trimmed to the remaining run so the last piece never overhangs the end.
+                if (!curveBased && hasLengthParam)
                 {
                     var lp = inst.LookupParameter(LengthParamName);
                     if (lp != null && !lp.IsReadOnly && lp.StorageType == StorageType.Double)
-                        try { lp.Set(IntervalFeet); } catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: set length param", ex); }
+                        try { lp.Set(Math.Min(IntervalFeet, remaining)); } catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: set length param", ex); }
                     else if (lp == null)
                         LemoineLog.Warn("CopyLinear: length parameter", $"'{LengthParamName}' not found on {symbol.Name}");
                 }
 
-                if (!CopyLinearStampSchema.Stamp(inst, run.Key, run.Hash, runId, "Replace"))
+                // Stamp only in delete-previous mode — otherwise the finished instance is a
+                // plain element, detached from this tool's reconciliation.
+                if (DeletePrevious && !CopyLinearStampSchema.Stamp(inst, run.Key, run.Hash, runId, "Replace"))
                     LemoineLog.Warn("CopyLinear: stamp", $"instance for {run.Element.Id} not stamped — it won't reconcile on a later run.");
                 made++;
             }
@@ -547,15 +589,9 @@ namespace LemoineTools.Tools.CopyLinear
                     LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
                     return;
                 }
-                profile.VoidTurn = MeasureVoidTurn(inst, a, b);
                 _alignProfile = profile;
                 Log("Align to source: family footprint measured from the first placement — "
-                    + "each instance is now aligned to its own source element. "
-                    + (profile.VoidTurn == null
-                        ? "No decisive void axis — orientation uses box extents per source."
-                        : profile.VoidTurn.Value
-                            ? "Void axis points sideways — every instance gets a 90 deg turn."
-                            : "Void axis already faces the run."), "info");
+                    + "each instance is now aligned to its own source element.", "info");
             }
             catch (Exception ex)
             {
@@ -565,18 +601,15 @@ namespace LemoineTools.Tools.CopyLinear
             }
         }
 
-        // Applies the stored correction: extra plan rotation about the station point, then the
-        // run-frame offset re-projected through THIS run's frame (so it transfers across runs
-        // pointing different directions). A failing instance keeps its standard position; the
-        // first failure warns in the run log, the rest go to diagnostics only.
+        // Applies the stored correction: the run-frame offset re-projected through THIS run's
+        // frame (so it transfers across runs pointing different directions). A failing instance
+        // keeps its standard position; the first failure warns in the run log, the rest go to
+        // diagnostics only.
         private void ApplyAlignment(
-            Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p, CopyLinearEngine.AlignmentCorrection c)
+            Document doc, FamilyInstance inst, XYZ a, XYZ b, CopyLinearEngine.AlignmentCorrection c)
         {
             try
             {
-                if (Math.Abs(c.ExtraRotation) > 1e-6)
-                    ElementTransformUtils.RotateElement(doc, inst.Id,
-                        Line.CreateBound(p, p + XYZ.BasisZ), c.ExtraRotation);
                 var (along, side, up) = CopyLinearEngine.RunFrame(a, b);
                 XYZ off = c.OffsetAlong * along + c.OffsetSide * side + c.OffsetUp * up;
                 if (off.GetLength() > 1e-6)
@@ -593,71 +626,28 @@ namespace LemoineTools.Tools.CopyLinear
             }
         }
 
-        // Decides the family's void orientation from its solid faces, measured once at
-        // calibration. The open "through" axis of a section (duct, culvert, sleeve) carries
-        // almost no face area — just the end rims — while the closed walls carry a lot, so the
-        // axis with the LESS face area is the void axis and must point along the run. Returns
-        // true = needs a 90 deg turn, false = already faces the run, null = no decisive void
-        // (the two axes are within 15% — e.g. a closed box), letting box extents decide.
-        private static bool? MeasureVoidTurn(FamilyInstance inst, XYZ a, XYZ b)
+        // Manual placement override: a fixed rotation about +Z at the station point, then a
+        // fixed offset given in run-frame components — so every instance moves relative to its
+        // own source run, never in a global direction. Pure user input, no measuring.
+        private void ApplyManualOverride(Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
         {
             try
             {
-                var (along, side, _) = CopyLinearEngine.RunFrame(a, b);
-                var opts = new Options { DetailLevel = ViewDetailLevel.Fine, ComputeReferences = false };
-                var ge = inst.get_Geometry(opts);
-                if (ge == null) return null;
-
-                double areaAlong = 0, areaSide = 0;
-                AccumulateFaceAreas(ge, along, side, ref areaAlong, ref areaSide);
-
-                if (areaAlong + areaSide < 1e-6) return null;
-                if (Math.Abs(areaAlong - areaSide) < 0.15 * Math.Max(areaAlong, areaSide)) return null;
-                // More material facing along the run than sideways means the closed walls face
-                // the run — i.e. the open through-axis points sideways and needs the turn.
-                return areaAlong > areaSide;
+                if (Math.Abs(ManualRotationRad) > 1e-9)
+                    ElementTransformUtils.RotateElement(doc, inst.Id,
+                        Line.CreateBound(p, p + XYZ.BasisZ), ManualRotationRad);
+                var (along, side, up) = CopyLinearEngine.RunFrame(a, b);
+                XYZ off = ManualOffsetAlongFeet * along + ManualOffsetSideFeet * side + ManualOffsetUpFeet * up;
+                if (off.GetLength() > 1e-9)
+                    ElementTransformUtils.MoveElement(doc, inst.Id, off);
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: measure void orientation", ex);
-                return null;
-            }
-        }
-
-        // Sums face area weighted by how squarely each face's normal points along vs across the
-        // run. GeometryInstance children are read via GetInstanceGeometry(), which is already in
-        // world coordinates. One normal sample per face — exact for planar walls (the dominant
-        // contributors), approximate for curved ones, which is fine for a 0-vs-90 verdict.
-        private static void AccumulateFaceAreas(
-            GeometryElement ge, XYZ along, XYZ side, ref double areaAlong, ref double areaSide)
-        {
-            foreach (GeometryObject go in ge)
-            {
-                if (go is Solid solid && solid.Volume > 1e-9)
+                LemoineLog.Swallowed("CopyLinear: apply manual override", ex);
+                if (!_manualApplyWarned)
                 {
-                    foreach (Face f in solid.Faces)
-                    {
-                        try
-                        {
-                            XYZ n;
-                            if (f is PlanarFace pf) n = pf.FaceNormal;
-                            else
-                            {
-                                var uv = f.GetBoundingBox();
-                                n = f.ComputeNormal(new UV(
-                                    (uv.Min.U + uv.Max.U) * 0.5, (uv.Min.V + uv.Max.V) * 0.5));
-                            }
-                            n = n.Normalize();
-                            areaAlong += f.Area * Math.Abs(n.DotProduct(along));
-                            areaSide  += f.Area * Math.Abs(n.DotProduct(side));
-                        }
-                        catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: face normal", ex); }
-                    }
-                }
-                else if (go is GeometryInstance gi)
-                {
-                    var child = gi.GetInstanceGeometry();
-                    if (child != null) AccumulateFaceAreas(child, along, side, ref areaAlong, ref areaSide);
+                    _manualApplyWarned = true;
+                    Log($"Manual override: instance {inst.Id} could not be adjusted ({ex.GetType().Name}) — it keeps the standard position; further failures go to the diagnostics log.", "warn");
                 }
             }
         }

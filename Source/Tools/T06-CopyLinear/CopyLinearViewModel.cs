@@ -62,7 +62,15 @@ namespace LemoineTools.Tools.CopyLinear
         private string _lengthParam = CopyLinearSettings.Instance.LengthParamName ?? "";
         private string _familyKey   = CopyLinearSettings.Instance.FamilyKey ?? "";
 
+        // Manual placement override (Replace mode, shown when align-to-source is off) —
+        // offsets are in each placement's own source-run frame, never global axes.
+        private double _manualXInches = CopyLinearSettings.Instance.ManualOffsetXInches;
+        private double _manualYInches = CopyLinearSettings.Instance.ManualOffsetYInches;
+        private double _manualZInches = CopyLinearSettings.Instance.ManualOffsetZInches;
+        private double _manualRotDeg  = CopyLinearSettings.Instance.ManualRotationDegrees;
+
         // Change detection
+        private bool _deletePrevious = CopyLinearSettings.Instance.DeletePrevious;
         private bool _onlyChanged   = CopyLinearSettings.Instance.OnlyChanged;
         private bool _deleteOrphans = CopyLinearSettings.Instance.DeleteOrphans;
 
@@ -460,14 +468,22 @@ namespace LemoineTools.Tools.CopyLinear
                 body.Children.Add(Dim("No placeable family types found in the host model."));
             else
             {
-                var famSelect = new LemoineSingleSelect
-                {
-                    Items        = _families.Select(f => f.Key).ToList(),
-                    SelectedItem = _familyByKey.ContainsKey(_familyKey) ? _familyKey : _families[0].Key,
-                };
                 if (!_familyByKey.ContainsKey(_familyKey)) _familyKey = _families[0].Key;
-                famSelect.SelectionChanged += v => { _familyKey = v ?? ""; Changed(); };
-                body.Children.Add(famSelect);
+                var famSearch = new LemoineSearchAutocomplete
+                {
+                    Items          = _families.Select(f => f.Key).ToList(),
+                    Placeholder    = "Search family types…",
+                    MaxSuggestions = 12,
+                    Value          = _familyKey,
+                };
+                // Fires per keystroke with the raw text — only an exact item is a valid pick,
+                // so a partial query simply invalidates the step until one is chosen.
+                famSearch.SelectionChanged += v =>
+                {
+                    _familyKey = v != null && _familyByKey.ContainsKey(v) ? v : "";
+                    Changed();
+                };
+                body.Children.Add(famSearch);
             }
 
             body.Children.Add(Label("Placement interval (feet)"));
@@ -482,39 +498,92 @@ namespace LemoineTools.Tools.CopyLinear
             body.Children.Add(box);
 
             // Every instance is always rotated to its run direction; the toggle only governs
-            // the box-based alignment pass on top of that.
+            // the box-based alignment pass on top of that. Unchecking expands the manual
+            // placement override below, which takes control instead.
+            var manualHost = new StackPanel();
+            void PopulateManual()
+            {
+                manualHost.Children.Clear();
+                if (_alignToSource) return;
+                manualHost.Children.Add(Dim("Manual placement override — applied to every instance relative to "
+                    + "its own source element's run (X = along the run, Y = sideways, Z = up), instead of the "
+                    + "automatic alignment."));
+                manualHost.Children.Add(Label("Move X — along run (inches)"));
+                manualHost.Children.Add(Stepper(_manualXInches, -1200, 1200, 1, 2, v => _manualXInches = v));
+                manualHost.Children.Add(Label("Move Y — side (inches)"));
+                manualHost.Children.Add(Stepper(_manualYInches, -1200, 1200, 1, 2, v => _manualYInches = v));
+                manualHost.Children.Add(Label("Move Z — up (inches)"));
+                manualHost.Children.Add(Stepper(_manualZInches, -1200, 1200, 1, 2, v => _manualZInches = v));
+                manualHost.Children.Add(Label("Rotation about placement point (degrees)"));
+                manualHost.Children.Add(Stepper(_manualRotDeg, -360, 360, 5, 1, v => _manualRotDeg = v));
+            }
+
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "align", Label = "Align each instance to its source element",
-                    Desc = "After rotating to the run, each placement is corrected relative to its own source element's box — fixes 90-degree families and Z/side offsets. Line-based families are skipped.", DefaultOn = _alignToSource },
+                    Desc = "After rotating to the run, each placement is corrected relative to its own source element's box — fixes Z/side offsets. Line-based families are skipped. Off = set the offsets yourself below.", DefaultOn = _alignToSource },
             });
-            toggles.StateChanged += st => { if (st.TryGetValue("align", out var al)) { _alignToSource = al; Changed(); } };
+            toggles.StateChanged += st =>
+            {
+                if (!st.TryGetValue("align", out var al)) return;
+                _alignToSource = al;
+                PopulateManual();
+                Changed();
+            };
             body.Children.Add(toggles);
+            body.Children.Add(manualHost);
+            PopulateManual();
         }
 
         // ── Step 3: Change Detection ────────────────────────────────────────────
         private FrameworkElement BuildChangesStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(Dim("Every element this tool creates is stamped with its source identity. "
-                + "A re-run can then rebuild only the runs that changed and clean up outputs whose source was removed."));
+            outer.Children.Add(Dim("By default each run's outputs are finished elements — once created they are "
+                + "detached from this tool and a later run never deletes them. Turn on delete-previous to keep "
+                + "outputs stamped so a re-run on the same source elements replaces them instead of adding duplicates."));
+
+            // The reconciliation toggles only mean anything in delete-previous mode — they
+            // expand beneath the master toggle when it is on.
+            var reconcileHost = new StackPanel();
+            void PopulateReconcile()
+            {
+                reconcileHost.Children.Clear();
+                if (!_deletePrevious) return;
+                var sub = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
+                sub.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem { Id = "only", Label = "Only process elements changed since last run",
+                        Desc = "On = leave unchanged runs untouched and rebuild only new/moved/resized ones. Off = rebuild every matched run.", DefaultOn = _onlyChanged },
+                    new ToggleItem { Id = "orph", Label = "Delete outputs whose source no longer matches",
+                        Desc = "Removes stamped segments/instances when their source run is gone or no longer passes the filters.", DefaultOn = _deleteOrphans },
+                });
+                sub.StateChanged += st =>
+                {
+                    if (st.TryGetValue("only", out var a)) _onlyChanged   = a;
+                    if (st.TryGetValue("orph", out var b)) _deleteOrphans = b;
+                    Changed();
+                };
+                reconcileHost.Children.Add(sub);
+            }
 
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "only", Label = "Only process elements changed since last run",
-                    Desc = "On = leave unchanged runs untouched and rebuild only new/moved/resized ones. Off = rebuild every matched run.", DefaultOn = _onlyChanged },
-                new ToggleItem { Id = "orph", Label = "Delete outputs whose source no longer matches",
-                    Desc = "Removes stamped segments/instances when their source run is gone or no longer passes the filters.", DefaultOn = _deleteOrphans },
+                new ToggleItem { Id = "prev", Label = "Delete previous run outputs",
+                    Desc = "On = outputs from earlier runs of the same source elements are deleted and rebuilt, and this run's outputs stay linked for the next one. Off = nothing from previous runs is touched and this run's outputs are left as plain elements.", DefaultOn = _deletePrevious },
             });
             toggles.StateChanged += st =>
             {
-                if (st.TryGetValue("only", out var a)) _onlyChanged   = a;
-                if (st.TryGetValue("orph", out var b)) _deleteOrphans = b;
+                if (!st.TryGetValue("prev", out var p)) return;
+                _deletePrevious = p;
+                PopulateReconcile();
                 Changed();
             };
             outer.Children.Add(toggles);
+            outer.Children.Add(reconcileHost);
+            PopulateReconcile();
             return outer;
         }
 
@@ -533,9 +602,9 @@ namespace LemoineTools.Tools.CopyLinear
             ["mode"]    = _mode == "Replace" ? "Replace with family" : "Split into segments",
             ["params"]  = _mode == "Replace"
                 ? $"every {_intervalFeet:0.##} ft" + (_extraSpacingInches > 0 ? $" +{_extraSpacingInches:0.##}\" " : "")
-                    + (_alignToSource ? " · aligned to source" : "")
+                    + (_alignToSource ? " · aligned to source" : HasManualOverride ? " · manual override" : "")
                 : $"{_segLenFeet:0.##} ft" + (_gapInches > 0 ? $", {_gapInches:0.##}\" gap" : ""),
-            ["changes"] = _onlyChanged ? "Only changed" : "Rebuild all",
+            ["changes"] = ChangesSummary(),
         };
 
         public IList<string>? ReviewChips   => null;
@@ -548,6 +617,14 @@ namespace LemoineTools.Tools.CopyLinear
             int active = _spec.ParamFilters.Count(kv => kv.Value?.Count > 0);
             return active == 0 ? "All" : $"{active} param filter(s)";
         }
+
+        private bool HasManualOverride =>
+            Math.Abs(_manualXInches) > 1e-9 || Math.Abs(_manualYInches) > 1e-9
+            || Math.Abs(_manualZInches) > 1e-9 || Math.Abs(_manualRotDeg) > 1e-9;
+
+        private string ChangesSummary() => !_deletePrevious
+            ? "Keep previous outputs"
+            : _onlyChanged ? "Delete previous · only changed" : "Delete previous · rebuild all";
 
         // ── Validation / Summary ────────────────────────────────────────────────
         public bool IsValid(string stepId)
@@ -574,7 +651,7 @@ namespace LemoineTools.Tools.CopyLinear
                 case "operation":
                     return _mode == "Replace" ? $"Replace · every {_intervalFeet:0.##} ft" : $"Split · {_segLenFeet:0.##} ft";
                 case "changes":
-                    return _onlyChanged ? "Only changed" : "Rebuild all";
+                    return ChangesSummary();
                 case "run": return "Ready to run";
                 default:    return "—";
             }
@@ -597,8 +674,14 @@ namespace LemoineTools.Tools.CopyLinear
             _runHandler.AlignToSource     = _alignToSource;
             _runHandler.LengthParamName   = _lengthParam;
             _runHandler.SymbolId          = _familyByKey.TryGetValue(_familyKey, out var f) ? f.SymbolId : 0L;
-            _runHandler.OnlyChanged       = _onlyChanged;
-            _runHandler.DeleteOrphans     = _deleteOrphans;
+            // Manual override only takes control when auto-align is off.
+            _runHandler.ManualOffsetAlongFeet = _alignToSource ? 0.0 : _manualXInches / 12.0;
+            _runHandler.ManualOffsetSideFeet  = _alignToSource ? 0.0 : _manualYInches / 12.0;
+            _runHandler.ManualOffsetUpFeet    = _alignToSource ? 0.0 : _manualZInches / 12.0;
+            _runHandler.ManualRotationRad     = _alignToSource ? 0.0 : _manualRotDeg * Math.PI / 180.0;
+            _runHandler.DeletePrevious    = _deletePrevious;
+            _runHandler.OnlyChanged       = _deletePrevious && _onlyChanged;
+            _runHandler.DeleteOrphans     = _deletePrevious && _deleteOrphans;
             _runHandler.PushLog    = pushLog;
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
@@ -614,7 +697,10 @@ namespace LemoineTools.Tools.CopyLinear
             s.SegmentLengthFeet = _segLenFeet; s.GapInches = _gapInches; s.KeepRemainder = _keepRemainder;
             s.IntervalFeet = _intervalFeet; s.ExtraSpacingInches = _extraSpacingInches;
             s.AlignToSource = _alignToSource;
+            s.ManualOffsetXInches = _manualXInches; s.ManualOffsetYInches = _manualYInches;
+            s.ManualOffsetZInches = _manualZInches; s.ManualRotationDegrees = _manualRotDeg;
             s.LengthParamName = _lengthParam; s.FamilyKey = _familyKey;
+            s.DeletePrevious = _deletePrevious;
             s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;
             s.Save();
         }

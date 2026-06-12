@@ -33,7 +33,15 @@ namespace LemoineTools.Tools.CopyLinear
         public string LengthParamName   { get; set; } = "";
         public string FamilyKey         { get; set; } = "";  // "Category — Family: Type"
 
+        // Manual placement override (used when AlignToSource is off) — source-run-frame
+        // offsets plus a plan rotation, applied identically to every placed instance.
+        public double ManualOffsetXInches   { get; set; } = 0.0;  // along the run
+        public double ManualOffsetYInches   { get; set; } = 0.0;  // sideways
+        public double ManualOffsetZInches   { get; set; } = 0.0;  // up
+        public double ManualRotationDegrees { get; set; } = 0.0;
+
         // Change detection
+        public bool   DeletePrevious    { get; set; } = false;
         public bool   OnlyChanged       { get; set; } = false;
         public bool   DeleteOrphans     { get; set; } = true;
 
