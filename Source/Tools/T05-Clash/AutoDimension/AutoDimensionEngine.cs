@@ -579,7 +579,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             try
             {
                 var callouts = CollectUserCallouts(doc, view);
-                if (callouts.Count == 0) return requests;
+                if (callouts.Count == 0)
+                {
+                    // Say so explicitly — a drawn callout the collector failed to see would
+                    // otherwise be indistinguishable from "none drawn" in the run log.
+                    log?.Invoke($"No user-drawn callouts found on '{view.Name}'.", "info");
+                    return requests;
+                }
+                log?.Invoke($"Found {callouts.Count} user-drawn callout(s) on '{view.Name}'.", "info");
 
                 var projection = new ViewProjection(view);
                 var sources = SourceIngest.Collect(doc, view, projection, new List<Core.UnresolvedTarget>());
@@ -709,24 +716,28 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             return requests;
         }
 
-        /// <summary>Non-template plan callouts whose parent is <paramref name="parentView"/>,
+        /// <summary>Non-template callout views whose parent is <paramref name="parentView"/>,
         /// excluding the dense tier's own "- Dense" views, ordered by id so claiming is
-        /// deterministic. A collector failure propagates to the survey's catch, which reports
-        /// it to the run log (user callouts skipped for the view) — never silently.</summary>
-        private static List<ViewPlan> CollectUserCallouts(Document doc, View parentView)
+        /// deterministic. Covers EVERY callout class — Revit's default callout type on a plan
+        /// is a Detail view (a <see cref="ViewSection"/>, not a <see cref="ViewPlan"/>), so
+        /// filtering to ViewPlan silently missed most user-drawn callouts. A collector failure
+        /// propagates to the survey's catch, which reports it to the run log (user callouts
+        /// skipped for the view) — never silently.</summary>
+        private static List<View> CollectUserCallouts(Document doc, View parentView)
         {
-            var result = new List<ViewPlan>();
+            var result = new List<View>();
             string densePrefix = parentView.Name + " - Dense ";
             foreach (var v in new FilteredElementCollector(doc)
-                         .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
-                         .Where(vp => !vp.IsTemplate)
-                         .OrderBy(vp => vp.Id.Value))
+                         .OfClass(typeof(View)).Cast<View>()
+                         .Where(vw => !vw.IsTemplate)
+                         .OrderBy(vw => vw.Id.Value))
             {
                 if (v.Name.StartsWith(densePrefix, StringComparison.Ordinal)) continue;
                 ElementId parentId;
-                // A plan view that is not a callout has no parent — GetCalloutParentId
-                // throwing here is the expected probe result for most views, not a failure
-                // (deliberately not routed to LemoineLog: it would fire per plan view per run).
+                // A view that is not a callout has no parent — GetCalloutParentId returning
+                // InvalidElementId (or throwing on view kinds that can never be callouts) is
+                // the expected probe result for most views, not a failure (deliberately not
+                // routed to LemoineLog: it would fire per view per run).
                 try { parentId = v.GetCalloutParentId(); }
                 catch { continue; }
                 if (parentId == parentView.Id) result.Add(v);
