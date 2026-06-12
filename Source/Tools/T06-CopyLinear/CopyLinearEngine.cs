@@ -119,6 +119,15 @@ namespace LemoineTools.Tools.CopyLinear
         {
             public XYZ Min0  = XYZ.Zero, Max0  = XYZ.Zero;  // as placed (rotated to the run)
             public XYZ Min90 = XYZ.Zero, Max90 = XYZ.Zero;  // after an extra 90° turn about Z
+
+            /// <summary>
+            /// Void-axis verdict from the family's solid faces: true = the open through-axis
+            /// points sideways and the instance needs a 90° turn; false = it already faces the
+            /// run; null = no decisive void (near-symmetric solid), fall back to box extents.
+            /// Box extents alone cannot orient a square-plan section — its 0° and 90° boxes
+            /// are identical — which is why the void carries the decision when available.
+            /// </summary>
+            public bool? VoidTurn;
         }
 
         /// <summary>
@@ -192,7 +201,10 @@ namespace LemoineTools.Tools.CopyLinear
             double Score(XYZ min, XYZ max) =>
                 Math.Abs((max.Y - min.Y) - srcW) + Math.Abs((max.Z - min.Z) - srcH);
 
-            bool turn = Score(profile.Min90, profile.Max90) + Tol < Score(profile.Min0, profile.Max0);
+            // The void-axis verdict wins when available — box extents can't orient a
+            // square-plan section (its 0° and 90° boxes score identically).
+            bool turn = profile.VoidTurn
+                ?? (Score(profile.Min90, profile.Max90) + Tol < Score(profile.Min0, profile.Max0));
             XYZ extMin = turn ? profile.Min90 : profile.Min0;
             XYZ extMax = turn ? profile.Max90 : profile.Max0;
 

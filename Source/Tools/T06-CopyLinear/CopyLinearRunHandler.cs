@@ -547,9 +547,15 @@ namespace LemoineTools.Tools.CopyLinear
                     LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
                     return;
                 }
+                profile.VoidTurn = MeasureVoidTurn(inst, a, b);
                 _alignProfile = profile;
                 Log("Align to source: family footprint measured from the first placement — "
-                    + "each instance is now aligned to its own source element.", "info");
+                    + "each instance is now aligned to its own source element. "
+                    + (profile.VoidTurn == null
+                        ? "No decisive void axis — orientation uses box extents per source."
+                        : profile.VoidTurn.Value
+                            ? "Void axis points sideways — every instance gets a 90 deg turn."
+                            : "Void axis already faces the run."), "info");
             }
             catch (Exception ex)
             {
@@ -583,6 +589,75 @@ namespace LemoineTools.Tools.CopyLinear
                 {
                     _alignApplyWarned = true;
                     Log($"Align to source: instance {inst.Id} could not be adjusted ({ex.GetType().Name}) — it keeps the standard position; further failures go to the diagnostics log.", "warn");
+                }
+            }
+        }
+
+        // Decides the family's void orientation from its solid faces, measured once at
+        // calibration. The open "through" axis of a section (duct, culvert, sleeve) carries
+        // almost no face area — just the end rims — while the closed walls carry a lot, so the
+        // axis with the LESS face area is the void axis and must point along the run. Returns
+        // true = needs a 90 deg turn, false = already faces the run, null = no decisive void
+        // (the two axes are within 15% — e.g. a closed box), letting box extents decide.
+        private static bool? MeasureVoidTurn(FamilyInstance inst, XYZ a, XYZ b)
+        {
+            try
+            {
+                var (along, side, _) = CopyLinearEngine.RunFrame(a, b);
+                var opts = new Options { DetailLevel = ViewDetailLevel.Fine, ComputeReferences = false };
+                var ge = inst.get_Geometry(opts);
+                if (ge == null) return null;
+
+                double areaAlong = 0, areaSide = 0;
+                AccumulateFaceAreas(ge, along, side, ref areaAlong, ref areaSide);
+
+                if (areaAlong + areaSide < 1e-6) return null;
+                if (Math.Abs(areaAlong - areaSide) < 0.15 * Math.Max(areaAlong, areaSide)) return null;
+                // More material facing along the run than sideways means the closed walls face
+                // the run — i.e. the open through-axis points sideways and needs the turn.
+                return areaAlong > areaSide;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: measure void orientation", ex);
+                return null;
+            }
+        }
+
+        // Sums face area weighted by how squarely each face's normal points along vs across the
+        // run. GeometryInstance children are read via GetInstanceGeometry(), which is already in
+        // world coordinates. One normal sample per face — exact for planar walls (the dominant
+        // contributors), approximate for curved ones, which is fine for a 0-vs-90 verdict.
+        private static void AccumulateFaceAreas(
+            GeometryElement ge, XYZ along, XYZ side, ref double areaAlong, ref double areaSide)
+        {
+            foreach (GeometryObject go in ge)
+            {
+                if (go is Solid solid && solid.Volume > 1e-9)
+                {
+                    foreach (Face f in solid.Faces)
+                    {
+                        try
+                        {
+                            XYZ n;
+                            if (f is PlanarFace pf) n = pf.FaceNormal;
+                            else
+                            {
+                                var uv = f.GetBoundingBox();
+                                n = f.ComputeNormal(new UV(
+                                    (uv.Min.U + uv.Max.U) * 0.5, (uv.Min.V + uv.Max.V) * 0.5));
+                            }
+                            n = n.Normalize();
+                            areaAlong += f.Area * Math.Abs(n.DotProduct(along));
+                            areaSide  += f.Area * Math.Abs(n.DotProduct(side));
+                        }
+                        catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: face normal", ex); }
+                    }
+                }
+                else if (go is GeometryInstance gi)
+                {
+                    var child = gi.GetInstanceGeometry();
+                    if (child != null) AccumulateFaceAreas(child, along, side, ref areaAlong, ref areaSide);
                 }
             }
         }
