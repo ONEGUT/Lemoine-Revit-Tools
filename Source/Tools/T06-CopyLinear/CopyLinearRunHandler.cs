@@ -44,8 +44,11 @@ namespace LemoineTools.Tools.CopyLinear
 
         private void Log(string t, string s) => PushLog?.Invoke(t, s);
 
+        private bool _loggedPlacement;   // one placement-path line per run
+
         public void Execute(UIApplication app)
         {
+            _loggedPlacement = false;
             int pass = 0, fail = 0, skip = 0;
             long issues0 = LemoineLog.IssueCount;
             try
@@ -147,8 +150,10 @@ namespace LemoineTools.Tools.CopyLinear
                             .Cast<Level>().OrderBy(l => l.Elevation).ToList();
                     }
 
+                    bool described = false;
                     foreach (var run in toBuild)
                     {
+                        if (!described) { described = true; Log(DescribeSource(run.Element), "info"); }
                         try
                         {
                             var (made, innerFail) = Mode == "Replace"
@@ -170,8 +175,14 @@ namespace LemoineTools.Tools.CopyLinear
 
                     doc.Regenerate();
                     tx.Commit();
-                    if (failureHandler.DismissedCount > 0)
-                        Log($"— {failureHandler.DismissedCount} Revit failure(s) suppressed (e.g. no corresponding work plane) — affected element(s) were skipped.", "warn");
+
+                    // Report each distinct Revit failure by its real description — this is the
+                    // ground truth for diagnosing "work plane" style errors.
+                    foreach (var f in failureHandler.Captured.Distinct().Take(15))
+                    {
+                        Log($"Revit failure: {f}", "warn");
+                        LemoineLog.Warn("CopyLinear: revit failure", f);
+                    }
                 }
 
                 long issues = LemoineLog.IssuesSince(issues0);
@@ -213,7 +224,7 @@ namespace LemoineTools.Tools.CopyLinear
             catch (Exception ex)
             {
                 LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
-                Log($"✗ {run.Element.Id}: copy failed — {ex.Message}", "fail");
+                Log($"✗ {run.Element.Id}: copy failed — {ex.GetType().Name}: {ex.Message}", "fail");
                 return (0, 1);
             }
 
@@ -278,7 +289,7 @@ namespace LemoineTools.Tools.CopyLinear
                 {
                     if (i > 0) SafeDelete(doc, new List<ElementId> { seg.Id });
                     LemoineLog.Error($"CopyLinear: set segment curve {run.Element.Id}#{i}", ex);
-                    Log($"✗ {run.Element.Id} seg {i}: {ex.Message}", "fail");
+                    Log($"✗ {run.Element.Id} seg {i}: {ex.GetType().Name}: {ex.Message}", "fail");
                     innerFailed++;
                 }
             }
@@ -314,6 +325,14 @@ namespace LemoineTools.Tools.CopyLinear
 
             bool curveBased = placement == FamilyPlacementType.CurveBased
                            || placement == FamilyPlacementType.CurveDrivenStructural;
+
+            if (!_loggedPlacement)
+            {
+                _loggedPlacement = true;
+                Log($"Replace family '{symbol.Name}' — placement type {placement}, path: "
+                    + (curveBased ? "line + sketch plane" :
+                       placement == FamilyPlacementType.WorkPlaneBased ? "level plane reference" : "point + level"), "info");
+            }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
             Level? level = NearestLevel(levels, (a.Z + b.Z) * 0.5);
@@ -377,7 +396,7 @@ namespace LemoineTools.Tools.CopyLinear
                 catch (Exception ex)
                 {
                     LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id} ({placement})", ex);
-                    Log($"✗ {run.Element.Id}: place failed ({placement}) — {ex.Message}", "fail");
+                    Log($"✗ {run.Element.Id}: place failed ({placement}) — {ex.GetType().Name}: {ex.Message}", "fail");
                     innerFail++;
                     continue;
                 }
@@ -438,7 +457,7 @@ namespace LemoineTools.Tools.CopyLinear
                     if (Math.Abs(pln.Normal.Z - 1.0) < 1e-4 && Math.Abs(pln.Origin.Z - z) < tol)
                         return sp;
                 }
-                catch { }
+                catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read sketch plane", ex); }
             }
             try
             {
@@ -463,6 +482,35 @@ namespace LemoineTools.Tools.CopyLinear
                 else break;
             }
             return best;
+        }
+
+        // One-line identity of a source element — class, category, and for family instances the
+        // family name, placement type, and host kind. This is what tells us which placement/copy
+        // path the element actually needs.
+        private static string DescribeSource(Element el)
+        {
+            try
+            {
+                string cls = el.GetType().Name;
+                string cat;
+                try { cat = el.Category?.Name ?? "?"; }
+                catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: describe category", ex); cat = "?"; }
+                string extra = "";
+                if (el is FamilyInstance fi)
+                {
+                    var fam = fi.Symbol?.Family;
+                    string host;
+                    try { host = fi.Host?.GetType().Name ?? "none"; }
+                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: describe host", ex); host = "?"; }
+                    extra = $", family '{fam?.Name}', placement {(fam?.FamilyPlacementType.ToString() ?? "?")}, host {host}";
+                }
+                return $"Source element {el.Id}: {cls} [{cat}]{extra}";
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: describe source", ex);
+                return $"Source element {el.Id}";
+            }
         }
 
         private static void SafeDelete(Document doc, List<ElementId> ids)
@@ -520,20 +568,33 @@ namespace LemoineTools.Tools.CopyLinear
             return handler;
         }
 
-        // Deletes warnings that Revit raises during copy (e.g. work-plane-related notices).
-        // Errors are left for ForcedModalHandling(false) to resolve without showing a dialog.
+        // Captures every Revit failure raised during the transaction — name, severity, elements —
+        // so the run log can report exactly which failure fired instead of an anonymous count.
+        // Warnings are deleted (suppressed); errors are recorded and left to ForcedModalHandling.
         private sealed class SilentFailureHandler : IFailuresPreprocessor
         {
             public int DismissedCount { get; private set; }
+            private readonly List<string> _captured = new List<string>();
+            public IReadOnlyList<string> Captured => _captured;
 
             public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
             {
-                foreach (var msg in failuresAccessor.GetFailureMessages()
-                                                     .Where(m => m.GetSeverity() == FailureSeverity.Warning)
-                                                     .ToList())
+                foreach (var msg in failuresAccessor.GetFailureMessages().ToList())
                 {
-                    failuresAccessor.DeleteWarning(msg);
-                    DismissedCount++;
+                    var sev = msg.GetSeverity();
+                    string desc;
+                    try { desc = msg.GetDescriptionText(); }
+                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read failure description", ex); desc = "(no description)"; }
+                    string ids = "";
+                    try { ids = string.Join(", ", msg.GetFailingElementIds().Select(i => i.Value)); }
+                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read failing ids", ex); }
+                    _captured.Add($"[{sev}] {desc}" + (ids.Length > 0 ? $" — elements {ids}" : ""));
+
+                    if (sev == FailureSeverity.Warning)
+                    {
+                        failuresAccessor.DeleteWarning(msg);
+                        DismissedCount++;
+                    }
                 }
                 return FailureProcessingResult.Continue;
             }
