@@ -194,6 +194,15 @@ namespace LemoineTools.Tools.CopyLinear
             ICollection<ElementId> copied;
             try
             {
+                // Work-plane-based / CurveBased elements from a linked model require a geometrically
+                // equivalent SketchPlane to already exist in the host before CopyElements runs —
+                // otherwise Revit can't resolve the sketch plane reference and shows the work-plane
+                // error even when the active view has a visible work plane. Creating it here (inside
+                // the transaction) gives CopyElements a target to match by geometric equivalence.
+                // Same-document copies skip this: the sketch plane is already in the host.
+                if (!ReferenceEquals(srcDoc, doc))
+                    EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
+
                 // Host source → same-document copy (the cross-document overload rejects identical
                 // source/dest); link source → cross-document copy with the link transform applied.
                 copied = ReferenceEquals(srcDoc, doc)
@@ -329,8 +338,28 @@ namespace LemoineTools.Tools.CopyLinear
                         // interval (clamped to the run end) instead of a point.
                         XYZ q = CopyLinearEngine.PointAlong(a, b, Math.Min(s + IntervalFeet, totalLen));
                         if (p.DistanceTo(q) < 1e-4) continue;   // degenerate tail segment
-                        inst = doc.Create.NewFamilyInstance(
-                            Line.CreateBound(p, q), symbol, level!, StructuralType.NonStructural);
+                        var line = Line.CreateBound(p, q);
+
+                        if (placement == FamilyPlacementType.CurveDrivenStructural)
+                        {
+                            // Structural curve families use the level-based overload.
+                            inst = doc.Create.NewFamilyInstance(line, symbol, level!, StructuralType.NonStructural);
+                        }
+                        else
+                        {
+                            // Non-structural CurveBased families (site lines, generic model line-based)
+                            // need NewFamilyInstance(Reference, Line, FamilySymbol) where the Reference
+                            // is a SketchPlane. The level-based overload is for CurveDrivenStructural
+                            // only and throws "no work plane" for CurveBased families.
+                            var sp = EnsureHorizontalSketchPlane(doc, (p.Z + q.Z) * 0.5);
+                            if (sp == null)
+                            {
+                                Log($"✗ {run.Element.Id}: could not create sketch plane for CurveBased placement.", "fail");
+                                innerFail++;
+                                continue;
+                            }
+                            inst = doc.Create.NewFamilyInstance(sp.GetPlaneReference(), line, symbol);
+                        }
                     }
                     else if (placement == FamilyPlacementType.WorkPlaneBased)
                     {
@@ -381,15 +410,46 @@ namespace LemoineTools.Tools.CopyLinear
 
         // ── helpers ────────────────────────────────────────────────────────────
 
-        // Places one family instance at a point. The point-only NewFamilyInstance overload hosts
-        // the instance on the ACTIVE VIEW's work plane — which throws "no corresponding Work Plane"
-        // whenever the active view is a 3D/schedule view with none. Passing an explicit Level gives
-        // Revit a host plane independent of whatever view happens to be active.
+        // Places one point-based family instance. Level overload avoids dependence on the active
+        // view's work plane (which throws in 3D / schedule views with no work plane).
         private static FamilyInstance PlaceInstance(Document doc, XYZ p, FamilySymbol symbol, Level? level)
         {
             if (level != null)
                 return doc.Create.NewFamilyInstance(p, symbol, level, StructuralType.NonStructural);
             return doc.Create.NewFamilyInstance(p, symbol, StructuralType.NonStructural);
+        }
+
+        // Returns (or creates) a horizontal SketchPlane at the given Z elevation.
+        // Work-plane-based and CurveBased families in a linked document carry a sketch-plane
+        // reference. CopyElements resolves it by searching the host for a geometrically equivalent
+        // plane; if none exists it falls back to the active view's work plane, and if that is also
+        // absent it shows the "no corresponding Work Plane" error. Pre-creating the matching plane
+        // here gives CopyElements (and NewFamilyInstance) something to bind to regardless of which
+        // view the user happens to have active.
+        private static SketchPlane? EnsureHorizontalSketchPlane(Document doc, double z)
+        {
+            const double tol = 0.01;   // feet — generous enough to match level rounding
+            foreach (var sp in new FilteredElementCollector(doc)
+                                   .OfClass(typeof(SketchPlane)).Cast<SketchPlane>())
+            {
+                try
+                {
+                    var pln = sp.GetPlane();
+                    if (Math.Abs(pln.Normal.Z - 1.0) < 1e-4 && Math.Abs(pln.Origin.Z - z) < tol)
+                        return sp;
+                }
+                catch { }
+            }
+            try
+            {
+                return SketchPlane.Create(doc,
+                    Plane.CreateByNormalAndOrigin(XYZ.BasisZ, new XYZ(0, 0, z)));
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: create sketch plane", ex);
+                return null;
+            }
         }
 
         // Highest level at or below z (levels pre-sorted ascending); falls back to the lowest level.
