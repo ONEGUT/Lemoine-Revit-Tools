@@ -299,13 +299,20 @@ namespace LemoineTools.Tools.Clash
         private static string DisciplineOf(string ost)
         {
             bool C(params string[] needles) => needles.Any(n => ost.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0);
-            if (C("Duct", "MechanicalEquipment", "FlexDuct"))                                      return "Mechanical";
+            if (C("Duct", "MechanicalEquipment", "FlexDuct", "AirTerminal"))                        return "Mechanical";
             if (C("Pipe", "Plumbing", "Sprinkler", "FlexPipe", "FabricationPipe",
                   "FabricationHangers", "FabricationContainment"))                                  return "Piping";
             if (C("Cable", "Conduit", "Electrical", "Lighting", "Communication",
                   "FireAlarm", "Security", "Data", "Telephone", "NurseCall"))                       return "Electrical";
             if (C("Structural", "Rebar", "Reinforcement", "Fabric"))                                return "Structural";
-            return "Architectural";
+            // Explicit allowlist — only true architectural model categories land here;
+            // everything else (Site, Areas, Spaces, annotation, etc.) goes to "Other".
+            if (C("OST_Walls", "Floor", "Roof", "Ceiling", "OST_Doors", "OST_Windows",
+                  "Stair", "Ramp", "OST_Columns", "OST_Rooms", "GenericModel",
+                  "Furniture", "Casework", "Entourage", "Planting", "OST_Mass",
+                  "Curtain", "OST_Parts", "OST_Assemblies", "SpecialityEquipment",
+                  "Cornices", "EdgeSlab"))                                                           return "Architectural";
+            return "Other";
         }
 
         private void RestoreFromSpec()
@@ -448,6 +455,7 @@ namespace LemoineTools.Tools.Clash
                 return;
             }
             var tabs = new LemoineMultiSelectTabs();
+            tabs.Hierarchy = AutoFiltersSettings.CategorySubcategories;
             tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), _catDisplays);
             tabs.SelectionChanged += selected =>
             {
