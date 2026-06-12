@@ -13,7 +13,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// Step 1 — select which filters to delete (grouped by discipline prefix).
     /// Step 2 — Review &amp; Run (with explicit warning card).
     /// </summary>
-    public class DeleteFiltersFromProjectViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class DeleteFiltersFromProjectViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "filters";
@@ -35,6 +35,16 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Validation change notification ─────────────────────────────────────
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── ExternalEvent wiring ────────────────────────────────────────────────

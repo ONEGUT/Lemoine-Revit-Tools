@@ -36,25 +36,33 @@ namespace LemoineTools.Tools.LinkViews
             long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
 
-            if (doc == null)
+            try
             {
-                Log("No active Revit document.", "fail");
-                Complete(0, 1, 0);
-                return;
-            }
+                if (doc == null)
+                {
+                    Log("No active Revit document.", "fail");
+                    Complete(0, 1, 0);
+                    return;
+                }
 
-            try { RunDuplicates(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex)
+                try { RunDuplicates(doc, ref pass, ref fail, ref skip); }
+                catch (Exception ex)
+                {
+                    LemoineLog.Error("Bulk duplicate views: run aborted", ex);
+                    Log($"Error: {ex.Message}", "fail");
+                    fail++;
+                }
+
+                Progress(100, pass, fail, skip);
+                long __issues = LemoineLog.IssuesSince(__issues0);
+                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                Complete(pass, fail, skip);
+            }
+            finally
             {
-                LemoineLog.Error("Bulk duplicate views: run aborted", ex);
-                Log($"Error: {ex.Message}", "fail");
-                fail++;
+                // Session-long static handler (App.ViewsBulkDuplicateRunHandler) — drop the run's payload.
+                SelectedViewIds = new List<ElementId>();
             }
-
-            Progress(100, pass, fail, skip);
-            long __issues = LemoineLog.IssuesSince(__issues0);
-            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-            Complete(pass, fail, skip);
         }
 
         // ── Main logic ─────────────────────────────────────────────────

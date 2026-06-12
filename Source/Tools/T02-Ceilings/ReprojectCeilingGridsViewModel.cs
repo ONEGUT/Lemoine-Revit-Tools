@@ -11,7 +11,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "curves";
@@ -48,6 +48,16 @@ namespace LemoineTools.Tools.Ceilings
         private          List<ElementId>                    _selectedViewIds = new List<ElementId>();
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── ExternalEvent wiring ───────────────────────────────────────────

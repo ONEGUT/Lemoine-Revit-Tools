@@ -122,6 +122,13 @@ namespace LemoineTools.Tools.AutoFilters
             }
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
+
+            // Session-long static handler — drop the run's payload. OnComplete grabs the
+            // ScanResults reference synchronously (inside Complete above), so swapping in a
+            // fresh list here never races the ViewModel's read.
+            ScanSpecs   = new List<ScanSpec>();
+            CommitSpecs = new List<CommitRuleSpec>();
+            ScanResults = new List<ScanResult>();
         }
 
         // ── MainScan ─────────────────────────────────────────────────────────

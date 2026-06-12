@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByCellViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class SplitByCellViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "pieces";
@@ -54,6 +54,16 @@ namespace LemoineTools.Tools.ModifyElements
         private readonly ExternalEvent           _event;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.OnLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public SplitByCellViewModel(

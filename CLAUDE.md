@@ -78,6 +78,7 @@ Refactor ILemoineTool to support async execute
 - Always `await` async operations or attach a `.ContinueWith` / `.GetAwaiter().GetResult()` handler. Fire-and-forget `Task` calls that can fail silently are not allowed.
 - Check return values where failure is meaningful (e.g. Revit API calls that return `null` on failure, `bool` results indicating success).
 - Validate inputs at system boundaries: user input, external APIs, Revit API calls, file I/O. Do not validate internal calls that are already guaranteed by the framework or calling code.
+- A survey/collector that finds **zero** items must say so in the run log ("Found N …" / "No … found") — a silent empty result is indistinguishable from a broken collector, and that silence has hidden real bugs (the user-callout collector missing Detail-view callouts presented as "didn't even register").
 
 ### Post-change silent failure scan
 
@@ -253,6 +254,12 @@ A `FilledRegion` or `DetailCurve` placed in a plan view can be built from world 
 
 For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups` rather than hand-rolling radios or coercing a multi-select down to one: checking an item then clears any prior selection (across all group tabs) and hides the per-group "All" row. Defaults to `false` (multi-select), so existing pickers are unaffected.
 
+**Hierarchy nesting** — `LemoineMultiSelectTabs` accepts a `Hierarchy` property (`IReadOnlyDictionary<string, IReadOnlyList<string>>?`, same contract as `LemoineTagChipInput.Hierarchy`). Set it before `SetGroups`. Children whose parent is in the same group tab are hidden from the flat list and shown indented (32 px) under a ▸/▾ expand caret; the parent checkbox goes indeterminate when some-but-not-all of its children are selected. For any category picker, pass `AutoFiltersSettings.CategorySubcategories` as the source.
+
+**Tab ordering** — `SetGroups` auto-sorts tabs alphabetically with `"Other"` pinned last. Callers do not need to pre-sort their group dictionaries.
+
+**Annotation categories** — Annotation categories (`CategoryType != Model`) must never appear in model-element category pickers. `AutoFiltersSettings.CaptureFilterableCategories` already filters them out; do not re-introduce them.
+
 ---
 
 ## Step Flow — Conditional & Data-Dependent Steps
@@ -286,6 +293,15 @@ Discovered building **Place Dependent Views** (one sheet per parent view, its de
 
 - **Numeric input:** `LemoineInlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.
 - **Drag ghost / list reorder:** use `LemoineDragGhost` and `LemoineListReorder` (see *WPF Drag Ghosts & Overlays*), never a bespoke Popup ghost or grip-handle reorder.
+
+---
+
+## Memory & Lifetime Discipline
+
+Discovered auditing why tools held RAM after running.
+
+- **Static ExternalEvent handlers live for the whole Revit session** (they're parked on `App` statics), so anything left on one outlives the run. Every handler must clear its per-run payload (input lists, specs, cached `View`/`Element` references, scan results) in a `finally` at the end of `Execute` — ViewModels reassign all inputs before each `Raise()`, so clearing is always safe. And every ViewModel that parks callbacks (`PushLog`, `OnProgress`, `OnComplete`, scan/pick callbacks) on a static handler must implement `ILemoineToolCleanup.OnWindowClosed` and null them — otherwise the closed window's ViewModel (and the WPF step content it references) stays rooted until the tool's next run, or forever that session.
+- **`uidoc.ActiveView = view` opens that view in the Revit UI**, and Revit holds every open view's graphics in native RAM for the rest of the session — GC can never reclaim it. Any picker/loop that activates views (e.g. per-view `PickObject`) must snapshot the open `UIView`s and active view first, then afterwards restore the original active view and close only the views it opened (`PickerViewGuard` is the reference). Never close a view the user already had open.
 
 ---
 
@@ -351,6 +367,8 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | `PickObject(ObjectType.Element)` to select an element **inside a link** | `PickObject(ObjectType.LinkedElement)` — `ObjectType.Element` returns the whole `RevitLinkInstance` (its `LinkedElementId` is unset), so the linked sub-element never resolves |
 | `collector.Where(t => t.Category.Id == new ElementId(OST_SpotElevations))` to list spot-elevation types | `ElementType.Category` reads as **null** for annotation types and silently drops every match — enumerate with `new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_SpotElevations).OfClass(typeof(SpotDimensionType))` instead |
 | Reading `…_DIAMETER` before width/height to classify an MEP cross-section | A rectangular duct can also expose an *equivalent-diameter* parameter, so test `RBS_CURVE_WIDTH_PARAM` + `RBS_CURVE_HEIGHT_PARAM` **first**; only fall back to a `…_DIAMETER` param when both are absent |
+| `OfClass(typeof(ViewPlan))` to collect user-drawn callouts | Revit's default callout type is a **Detail view** (`ViewSection`), not a `ViewPlan`, so a ViewPlan filter silently misses most user callouts — probe **all** view classes and match `View.GetCalloutParentId() == parent.Id` |
+| Matching clash markers across views by their stamped `ClashTagSchema` group key | Group ids are **fresh GUIDs minted per `PlaceInView` call** — the same clash carries a different group id in every view it is marked in, so cross-view key comparison matches nothing (and a key-based prune deletes everything). Match markers across views **geometrically** (clash anchor inside a world rectangle) |
 | `Document.Create.NewSpotElevation(view, ref, …)` with no real geometry reference | The `Reference` must come from actual geometry — anchor it to a detail line via `CurveElement.GeometryCurve.Reference` (fallback `new Reference(element)`) |
 | Read a value to filter on via the **property-palette display** (`LookupParameter`) | Read it through the **same built-in the filter binds** — a view filter's string-rule keyword is compared against the *bound* parameter's value, not the palette. The palette "Fabrication Service" is a composite (`<abbreviation>: <name>`, e.g. `DVG - MP: Chilled Water Supply`) but `FABRICATION_SERVICE_NAME` holds only the name (`Chilled Water Supply`), so a keyword carrying the prefix never matches |
 | String filter rule against an **ElementId-storage** parameter (e.g. `ELEM_FAMILY_PARAM`) | `ParameterFilterRuleFactory.CreateContainsRule`/string rules require **String storage** — an ElementId param throws and the keyword is silently dropped (filter never created). For a string Family Name filter bind `ALL_MODEL_FAMILY_NAME`, not `ELEM_FAMILY_PARAM` |

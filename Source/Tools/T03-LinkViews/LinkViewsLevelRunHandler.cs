@@ -156,12 +156,23 @@ namespace LemoineTools.Tools.LinkViews
             var doc  = app.ActiveUIDocument.Document;
             long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
-            try { RunViews(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
-            Progress(100, pass, fail, skip);
-            long __issues = LemoineLog.IssuesSince(__issues0);
-            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-            Complete(pass, fail, skip);
+            try
+            {
+                try { RunViews(doc, ref pass, ref fail, ref skip); }
+                catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+                Progress(100, pass, fail, skip);
+                long __issues = LemoineLog.IssuesSince(__issues0);
+                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                Complete(pass, fail, skip);
+            }
+            finally
+            {
+                // This handler is a session-long static (App.LinkViewsLevelRunHandler) —
+                // drop the run's payload so it doesn't outlive the run.
+                LinkInstIds      = new List<ElementId>();
+                SelectedLevelIds = new List<ElementId>();
+                LevelModelNames  = new Dictionary<long, string>();
+            }
         }
 
         // ── Main logic ─────────────────────────────────────────────────

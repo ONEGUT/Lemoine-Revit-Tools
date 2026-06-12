@@ -25,7 +25,7 @@ namespace LemoineTools.Tools.AutoFilters
     //   S5  Summary card + Confirm triggers DiscoverEventHandler (Commit)
     // =========================================================================
 
-    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable, ILemoineRunResult
+    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "rules";
@@ -102,6 +102,23 @@ namespace LemoineTools.Tools.AutoFilters
         public event EventHandler<int>? NavigateRequested;
         private void RaiseValidation() => ValidationChanged?.Invoke(this, EventArgs.Empty);
         private void RaiseNavigate(int index) => NavigateRequested?.Invoke(this, index);
+
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler != null)
+            {
+                _handler.PushLog    = null;
+                _handler.OnProgress = null;
+                _handler.OnComplete = null;
+            }
+            if (_createHandler != null)
+            {
+                _createHandler.PushLog    = null;
+                _createHandler.OnProgress = null;
+                _createHandler.OnComplete = null;
+            }
+        }
 
         // ── ILemoineStepConfirmable ────────────────────────────────────────────
         public string? ConfirmLabelFor(string stepId) => stepId == "S2" ? "Discover Rules →" : null;
@@ -437,7 +454,7 @@ namespace LemoineTools.Tools.AutoFilters
             var body      = new Border { Padding = new Thickness(10, 8, 10, 8) };
             var bodyStack = new StackPanel();
 
-            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200 };
+            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200, Hierarchy = AutoFiltersSettings.CategorySubcategories };
             // Scroll-wheel handling is global (OnScrollViewerWheel) and MultiSelectTabs already wires
             // its own inner scrollers — no per-call-site wiring needed here.
 

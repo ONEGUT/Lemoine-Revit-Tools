@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
     /// rewrite Name only. A live preview (shared with the run handler through
     /// <see cref="BulkRenameEngine.Plan"/>) shows exactly what will be written.
     /// </summary>
-    public class BulkRenameViewModel : ILemoineTool, ILemoineReviewable, IStepAware
+    public class BulkRenameViewModel : ILemoineTool, ILemoineReviewable, IStepAware, ILemoineToolCleanup
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Rename";
@@ -84,6 +84,16 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         private readonly ExternalEvent?        _runEvent;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public BulkRenameViewModel(
