@@ -529,7 +529,7 @@ namespace LemoineTools.Lemoine.Controls
             var sp = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin      = new Thickness(16, 0, 0, 5), // indent = caret column width
+                Margin      = new Thickness(32, 0, 0, 5), // indent past parent caret (16) + checkbox (~16)
                 Cursor      = Cursors.Hand,
             };
             sp.Children.Add(cb);
