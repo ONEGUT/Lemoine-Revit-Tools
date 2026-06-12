@@ -62,6 +62,9 @@ namespace LemoineTools.Tools.Ceilings
                 new ResultChip("skipped", skip,                             "LemoineTextDim"),
             });
             Complete(pass, fail, skip);
+
+            // Session-long static handler (App.CeilingHeatmapHandler) — drop the run's payload.
+            SelectedViewIds = new List<ElementId>();
         }
 
         // ─────────────────────────────────────────────────────────────────────────

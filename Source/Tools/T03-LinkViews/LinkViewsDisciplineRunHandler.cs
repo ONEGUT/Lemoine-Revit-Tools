@@ -36,12 +36,20 @@ namespace LemoineTools.Tools.LinkViews
             var doc  = app.ActiveUIDocument.Document;
             long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
-            try { RunViews(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { LemoineLog.Error("LinkViews discipline: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
-            Progress(100, pass, fail, skip);
-            long __issues = LemoineLog.IssuesSince(__issues0);
-            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-            Complete(pass, fail, skip);
+            try
+            {
+                try { RunViews(doc, ref pass, ref fail, ref skip); }
+                catch (Exception ex) { LemoineLog.Error("LinkViews discipline: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+                Progress(100, pass, fail, skip);
+                long __issues = LemoineLog.IssuesSince(__issues0);
+                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                Complete(pass, fail, skip);
+            }
+            finally
+            {
+                // Session-long static handler (App.LinkViewsDisciplineRunHandler) — drop the run's payload.
+                Assignments = new List<DisciplineAssignment>();
+            }
         }
 
         private void RunViews(Document doc, ref int pass, ref int fail, ref int skip)

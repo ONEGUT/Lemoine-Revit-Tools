@@ -20,7 +20,7 @@ namespace LemoineTools.Tools.LinkViews
     /// options (Duplicate, Duplicate with Detailing, Duplicate as Dependent) and names
     /// each copy from a token/chip pattern (the Bulk Export naming control).
     /// </summary>
-    public class ViewsBulkDuplicateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ViewsBulkDuplicateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -76,6 +76,16 @@ namespace LemoineTools.Tools.LinkViews
         private readonly ExternalEvent?                _runEvent;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public ViewsBulkDuplicateViewModel(

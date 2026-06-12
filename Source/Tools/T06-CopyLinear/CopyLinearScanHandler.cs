@@ -61,6 +61,11 @@ namespace LemoineTools.Tools.CopyLinear
                 LemoineLog.Error("CopyLinearScanHandler.Execute", ex);
                 OnError?.Invoke(ex.Message);
             }
+            finally
+            {
+                // Session-long static handler — drop the scan's payload.
+                Spec = new CopyLinearSourceSpec();
+            }
         }
     }
 }

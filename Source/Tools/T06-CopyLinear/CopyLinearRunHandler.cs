@@ -171,6 +171,11 @@ namespace LemoineTools.Tools.CopyLinear
                 Log($"Run aborted: {ex.Message}", "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                Spec = new CopyLinearSourceSpec();
+            }
         }
 
         // ── Split: copy the run into the host, then break it into standard-length cells ──

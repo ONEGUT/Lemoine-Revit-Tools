@@ -25,43 +25,53 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
             var doc = uidoc.Document;
             var filter = new FloorFilter(doc);
-            foreach (var viewId in viewIds)
+            var before = PickerViewGuard.Snapshot(uidoc);
+            try
             {
-                if (!(doc.GetElement(viewId) is View view)) continue;
-
-                try { uidoc.ActiveView = view; }
-                catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: set active view", ex); }
-
-                try
+                foreach (var viewId in viewIds)
                 {
-                    // A single PickObject can't reach both host and linked floors, so the in-canvas
-                    // flow cascades on Esc: host floor → linked floor → scan all floors.
-                    log($"ACTION — view '{view.Name}': click a HOST floor to dimension to (Esc = pick from a link instead).", "info");
-                    var scope = PickFloor(uidoc, filter, ObjectType.Element,
-                        $"Pick a HOST floor for view '{view.Name}' (Esc to pick from a link).", out string name);
+                    if (!(doc.GetElement(viewId) is View view)) continue;
 
-                    if (scope == null)
-                    {
-                        log($"ACTION — view '{view.Name}': click a LINKED floor to dimension to (Esc = scan all floors).", "info");
-                        scope = PickFloor(uidoc, filter, ObjectType.LinkedElement,
-                            $"Pick a LINKED floor for view '{view.Name}' (Esc to scan all floors).", out name);
-                    }
+                    try { uidoc.ActiveView = view; }
+                    catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: set active view", ex); }
 
-                    if (scope != null)
+                    try
                     {
-                        map[viewId] = new List<SlabScope> { scope };
-                        log($"View '{view.Name}': slab scoped to {name}.", "info");
+                        // A single PickObject can't reach both host and linked floors, so the in-canvas
+                        // flow cascades on Esc: host floor → linked floor → scan all floors.
+                        log($"ACTION — view '{view.Name}': click a HOST floor to dimension to (Esc = pick from a link instead).", "info");
+                        var scope = PickFloor(uidoc, filter, ObjectType.Element,
+                            $"Pick a HOST floor for view '{view.Name}' (Esc to pick from a link).", out string name);
+
+                        if (scope == null)
+                        {
+                            log($"ACTION — view '{view.Name}': click a LINKED floor to dimension to (Esc = scan all floors).", "info");
+                            scope = PickFloor(uidoc, filter, ObjectType.LinkedElement,
+                                $"Pick a LINKED floor for view '{view.Name}' (Esc to scan all floors).", out name);
+                        }
+
+                        if (scope != null)
+                        {
+                            map[viewId] = new List<SlabScope> { scope };
+                            log($"View '{view.Name}': slab scoped to {name}.", "info");
+                        }
+                        else
+                        {
+                            log($"View '{view.Name}': no floor picked — scanning all floors.", "info");
+                        }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        log($"View '{view.Name}': no floor picked — scanning all floors.", "info");
+                        LemoineLog.Error("SlabScopePicker: pick", ex);
+                        log($"View '{view.Name}': floor pick failed — {ex.Message}", "fail");
                     }
                 }
-                catch (Exception ex)
-                {
-                    LemoineLog.Error("SlabScopePicker: pick", ex);
-                    log($"View '{view.Name}': floor pick failed — {ex.Message}", "fail");
-                }
+            }
+            finally
+            {
+                // Activating each view opened it in the UI — close what the pick pass opened
+                // so the run doesn't leave dozens of views (and their graphics RAM) behind.
+                PickerViewGuard.CloseOpenedViews(uidoc, before, log);
             }
             return map;
         }

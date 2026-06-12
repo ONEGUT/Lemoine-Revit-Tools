@@ -12,7 +12,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult
+    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -71,6 +71,23 @@ namespace LemoineTools.Tools.Ceilings
         private readonly Autodesk.Revit.UI.ExternalEvent?  _runEvent;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_phase1Handler != null)
+            {
+                _phase1Handler.OnTypesLoaded = null;
+                _phase1Handler.OnError = null;
+            }
+            if (_runHandler != null)
+            {
+                _runHandler.PushLog    = null;
+                _runHandler.OnProgress = null;
+                _runHandler.OnComplete = null;
+            }
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public MakeCeilingGridsViewModel(

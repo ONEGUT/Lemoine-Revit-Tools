@@ -33,12 +33,22 @@ namespace LemoineTools.Tools.LinkViews
             var doc  = app.ActiveUIDocument.Document;
             long __issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
-            try { Run(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
-            Progress(100, pass, fail, skip);
-            long __issues = LemoineLog.IssuesSince(__issues0);
-            if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-            Complete(pass, fail, skip);
+            try
+            {
+                try { Run(doc, ref pass, ref fail, ref skip); }
+                catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+                Progress(100, pass, fail, skip);
+                long __issues = LemoineLog.IssuesSince(__issues0);
+                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                Complete(pass, fail, skip);
+            }
+            finally
+            {
+                // Session-long static handler (App.ReplicateDependentViewsRunHandler) — drop the
+                // run's payload (the entries carry view/crop data, not just ids).
+                SourceEntry   = null!;
+                TargetEntries = new List<TargetViewEntry>();
+            }
         }
 
         private void Run(Document doc, ref int pass, ref int fail, ref int skip)

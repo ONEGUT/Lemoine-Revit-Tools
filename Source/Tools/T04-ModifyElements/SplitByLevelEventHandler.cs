@@ -114,6 +114,13 @@ namespace LemoineTools.Tools.ModifyElements
                 pushLog($"Error: {ex.Message}", "fail");
                 onComplete(0, 1, 0);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SelectedCategoryNames = new List<string>();
+                SelectedLevelIds      = new List<ElementId>();
+                PreSelectedIds        = null;
+            }
         }
 
         private static List<Element> CollectByName(Document doc, View? view, List<string> names)

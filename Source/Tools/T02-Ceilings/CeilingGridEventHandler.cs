@@ -53,6 +53,12 @@ namespace LemoineTools.Tools.Ceilings
                 LemoineLog.Error("CeilingGrid: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                PreSelectedIds  = new List<ElementId>();
+                SelectedViewIds = new List<ElementId>();
+            }
 
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);
