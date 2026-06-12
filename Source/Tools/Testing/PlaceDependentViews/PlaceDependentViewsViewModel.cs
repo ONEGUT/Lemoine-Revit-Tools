@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Testing.PlaceDependentViews
 {
-    public sealed class PlaceDependentViewsViewModel : ILemoineTool, ILemoineReviewable
+    public sealed class PlaceDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
         private static readonly (string Label, string Token)[] NamingTokens =
         {
@@ -36,6 +36,16 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         };
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── State ─────────────────────────────────────────────────────────────

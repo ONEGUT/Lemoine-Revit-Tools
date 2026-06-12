@@ -17,7 +17,7 @@ using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.LinkViews
 {
-    public class LinkViewsLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult
+    public class LinkViewsLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -106,6 +106,23 @@ namespace LemoineTools.Tools.LinkViews
 
         public event EventHandler? ValidationChanged;
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        // Null the callbacks parked on the static handlers so this VM (and the closed
+        // window's content it references) isn't retained until the tool's next run.
+        public void OnWindowClosed()
+        {
+            if (_phase1Handler != null)
+            {
+                _phase1Handler.OnLevelsLoaded = null;
+                _phase1Handler.OnError        = null;
+            }
+            if (_runHandler != null)
+            {
+                _runHandler.PushLog    = null;
+                _runHandler.OnProgress = null;
+                _runHandler.OnComplete = null;
+            }
+        }
 
         public LinkViewsLevelViewModel(
             LinkViewsLevelPhase1Handler? phase1Handler, ExternalEvent? phase1Event,

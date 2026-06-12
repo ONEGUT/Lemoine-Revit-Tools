@@ -164,6 +164,11 @@ namespace LemoineTools.Tools.ModifyElements
                 pushLog($"Error: {ex.Message}", "fail");
                 onComplete(0, 1, 0);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SelectedLevelIds = new List<ElementId>();
+            }
         }
 
         // ── Ceiling threshold lookup ──────────────────────────────────────────

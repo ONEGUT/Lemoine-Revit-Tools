@@ -35,25 +35,34 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             long issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
 
-            if (doc == null)
+            try
             {
-                Log("No active Revit document.", "fail");
-                Complete(0, 1, 0);
-                return;
-            }
+                if (doc == null)
+                {
+                    Log("No active Revit document.", "fail");
+                    Complete(0, 1, 0);
+                    return;
+                }
 
-            try { RunRename(doc, ref pass, ref fail, ref skip); }
-            catch (Exception ex)
+                try { RunRename(doc, ref pass, ref fail, ref skip); }
+                catch (Exception ex)
+                {
+                    LemoineLog.Error("Bulk rename: run aborted", ex);
+                    Log($"Error: {ex.Message}", "fail");
+                    fail++;
+                }
+
+                Progress(100, pass, fail, skip);
+                long issues = LemoineLog.IssuesSince(issues0);
+                if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                Complete(pass, fail, skip);
+            }
+            finally
             {
-                LemoineLog.Error("Bulk rename: run aborted", ex);
-                Log($"Error: {ex.Message}", "fail");
-                fail++;
+                // Session-long static handler (App.BulkRenameRunHandler) — drop the run's payload.
+                OrderedIds = new List<ElementId>();
+                Config     = new RenameConfig();
             }
-
-            Progress(100, pass, fail, skip);
-            long issues = LemoineLog.IssuesSince(issues0);
-            if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-            Complete(pass, fail, skip);
         }
 
         // ── Main logic ─────────────────────────────────────────────────

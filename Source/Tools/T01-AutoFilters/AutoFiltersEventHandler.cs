@@ -100,6 +100,14 @@ namespace LemoineTools.Tools.AutoFilters
                 LemoineLog.Error("AutoFilters: run aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler — the cache holds live View objects; drop it
+                // (and the run's inputs) so they don't outlive the run.
+                _allViewsCache      = null;
+                SelectedLinkTitles  = new List<string>();
+                SelectedDisciplines = new List<string>();
+            }
 
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip, removed);

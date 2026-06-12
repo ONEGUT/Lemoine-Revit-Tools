@@ -18,7 +18,7 @@ namespace LemoineTools.Tools.CopyLinear
     /// either splits each into standard-length segments or replaces it with a family placed at
     /// intervals. An optional "only changed" re-run reconciles via stamped host outputs.
     /// </summary>
-    public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         public string Title    => "Copy Linear Elements";
         public string RunLabel => "Run in Revit →";
@@ -74,6 +74,23 @@ namespace LemoineTools.Tools.CopyLinear
         private Dispatcher? _disp;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_scanHandler != null)
+            {
+                _scanHandler.OnScanned = null;
+                _scanHandler.OnError = null;
+            }
+            if (_runHandler != null)
+            {
+                _runHandler.PushLog    = null;
+                _runHandler.OnProgress = null;
+                _runHandler.OnComplete = null;
+            }
+        }
+
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public CopyLinearViewModel(

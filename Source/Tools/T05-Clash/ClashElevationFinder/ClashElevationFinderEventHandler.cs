@@ -139,6 +139,10 @@ namespace LemoineTools.Tools.Testing
                 new ResultChip("failed",  fail,       "LemoineRed"),
             });
             Complete(pass, fail, skip);
+
+            // Session-long static handler (App.ClashElevationFinderHandler) — drop the run's payload.
+            ViewIds     = new List<ElementId>();
+            Definitions = new List<ClashDefinition>();
         }
 
         private int ClearPreviousMarkers(Document doc)

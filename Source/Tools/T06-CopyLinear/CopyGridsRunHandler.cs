@@ -115,6 +115,11 @@ namespace LemoineTools.Tools.CopyLinear
                 Log($"Run aborted: {ex.Message}", "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                GridElemIds = new List<long>();
+            }
         }
 
         private static void ConfigureFailures(Transaction tx)

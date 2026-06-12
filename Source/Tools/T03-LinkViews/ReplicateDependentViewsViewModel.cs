@@ -124,7 +124,7 @@ namespace LemoineTools.Tools.LinkViews
     /// scheme, and trigger the run handler that creates dependents on each target inside a
     /// Revit transaction.
     /// </summary>
-    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -186,6 +186,16 @@ namespace LemoineTools.Tools.LinkViews
         /// the host window subscribes to this to recompute the Next/Run button states.
         /// </summary>
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         /// <summary>

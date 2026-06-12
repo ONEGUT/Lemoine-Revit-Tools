@@ -263,6 +263,11 @@ namespace LemoineTools.Tools.Clash
                 new ResultChip("empty views", viewsSkipped,                   "LemoineTextDim"),
             });
             Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+
+            // Session-long static handler (App.ClashFinderHandler) — drop the run's payload.
+            ViewIds     = new List<ElementId>();
+            Definitions = new List<ClashDefinition>();
+            SlabScopes  = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();
         }
 
         // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the

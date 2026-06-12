@@ -153,6 +153,11 @@ namespace LemoineTools.Tools.Testing
                 pushLog($"Create Sheets error: {ex.Message}", "fail");
                 onComplete(pass, 1, skip);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SourceElementIds = new List<ElementId>();
+            }
         }
 
         // ── Token builders ────────────────────────────────────────────────────

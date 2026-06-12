@@ -24,33 +24,43 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             if (uidoc == null || viewIds == null) return map;
 
             var doc = uidoc.Document;
-            foreach (var viewId in viewIds)
+            var before = PickerViewGuard.Snapshot(uidoc);
+            try
             {
-                if (!(doc.GetElement(viewId) is View view)) continue;
-
-                try { uidoc.ActiveView = view; }
-                catch (Exception ex) { LemoineLog.Swallowed("ManualDatumPicker: set active view", ex); }
-
-                try
+                foreach (var viewId in viewIds)
                 {
-                    var r = uidoc.Selection.PickObject(ObjectType.Edge,
-                        $"Pick the datum edge for view '{view.Name}' (Esc to skip this view).");
-                    var datum = BuildDatum(doc, r);
-                    if (datum != null)
+                    if (!(doc.GetElement(viewId) is View view)) continue;
+
+                    try { uidoc.ActiveView = view; }
+                    catch (Exception ex) { LemoineLog.Swallowed("ManualDatumPicker: set active view", ex); }
+
+                    try
                     {
-                        map[viewId] = new List<ManualDatum> { datum };
-                        log($"View '{view.Name}': datum picked{(datum.WorldDir == null ? " (edge direction unread — serves every axis)" : "")}.", "info");
+                        var r = uidoc.Selection.PickObject(ObjectType.Edge,
+                            $"Pick the datum edge for view '{view.Name}' (Esc to skip this view).");
+                        var datum = BuildDatum(doc, r);
+                        if (datum != null)
+                        {
+                            map[viewId] = new List<ManualDatum> { datum };
+                            log($"View '{view.Name}': datum picked{(datum.WorldDir == null ? " (edge direction unread — serves every axis)" : "")}.", "info");
+                        }
+                    }
+                    catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+                    {
+                        log($"View '{view.Name}': datum pick skipped.", "info");
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Error("ManualDatumPicker: pick", ex);
+                        log($"View '{view.Name}': datum pick failed — {ex.Message}", "fail");
                     }
                 }
-                catch (Autodesk.Revit.Exceptions.OperationCanceledException)
-                {
-                    log($"View '{view.Name}': datum pick skipped.", "info");
-                }
-                catch (Exception ex)
-                {
-                    LemoineLog.Error("ManualDatumPicker: pick", ex);
-                    log($"View '{view.Name}': datum pick failed — {ex.Message}", "fail");
-                }
+            }
+            finally
+            {
+                // Activating each view opened it in the UI — close what the pick pass opened
+                // so the run doesn't leave dozens of views (and their graphics RAM) behind.
+                PickerViewGuard.CloseOpenedViews(uidoc, before, log);
             }
             return map;
         }
