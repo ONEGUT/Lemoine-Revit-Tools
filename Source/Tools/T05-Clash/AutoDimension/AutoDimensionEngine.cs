@@ -711,29 +711,26 @@ namespace LemoineTools.Tools.Clash.AutoDimension
 
         /// <summary>Non-template plan callouts whose parent is <paramref name="parentView"/>,
         /// excluding the dense tier's own "- Dense" views, ordered by id so claiming is
-        /// deterministic. Never throws.</summary>
+        /// deterministic. A collector failure propagates to the survey's catch, which reports
+        /// it to the run log (user callouts skipped for the view) — never silently.</summary>
         private static List<ViewPlan> CollectUserCallouts(Document doc, View parentView)
         {
             var result = new List<ViewPlan>();
-            try
+            string densePrefix = parentView.Name + " - Dense ";
+            foreach (var v in new FilteredElementCollector(doc)
+                         .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                         .Where(vp => !vp.IsTemplate)
+                         .OrderBy(vp => vp.Id.Value))
             {
-                string densePrefix = parentView.Name + " - Dense ";
-                foreach (var v in new FilteredElementCollector(doc)
-                             .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
-                             .Where(vp => !vp.IsTemplate)
-                             .OrderBy(vp => vp.Id.Value))
-                {
-                    if (v.Name.StartsWith(densePrefix, StringComparison.Ordinal)) continue;
-                    ElementId parentId;
-                    // A plan view that is not a callout has no parent — GetCalloutParentId
-                    // throwing here is the expected probe result for most views, not a failure
-                    // (deliberately not routed to LemoineLog: it would fire per plan view per run).
-                    try { parentId = v.GetCalloutParentId(); }
-                    catch { continue; }
-                    if (parentId == parentView.Id) result.Add(v);
-                }
+                if (v.Name.StartsWith(densePrefix, StringComparison.Ordinal)) continue;
+                ElementId parentId;
+                // A plan view that is not a callout has no parent — GetCalloutParentId
+                // throwing here is the expected probe result for most views, not a failure
+                // (deliberately not routed to LemoineLog: it would fire per plan view per run).
+                try { parentId = v.GetCalloutParentId(); }
+                catch { continue; }
+                if (parentId == parentView.Id) result.Add(v);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: collect user callouts", ex); }
             return result;
         }
 
