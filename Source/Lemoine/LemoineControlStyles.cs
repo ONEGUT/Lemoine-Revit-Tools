@@ -528,15 +528,82 @@ namespace LemoineTools.Lemoine
   </Setter>
 </Style>";
 
-        // ── CheckBox ──────────────────────────────────────────────────────────
-        private static Style MakeCheckBoxStyle()
-        {
-            var s = new Style(typeof(CheckBox));
-            s.Setters.Add(new Setter(CheckBox.ForegroundProperty,  new DynamicResourceExtension("LemoineText")));
-            s.Setters.Add(new Setter(CheckBox.FontFamilyProperty,  new DynamicResourceExtension("LemoineUiFont")));
-            s.Setters.Add(new Setter(CheckBox.FontSizeProperty,    new DynamicResourceExtension("LemoineFS_MD")));
-            return s;
-        }
+        // ── CheckBox — the standard Lemoine checkbox ──────────────────────────
+        // 13×13 box, LemoineRadius_SM corner, LemoineBorder stroke.
+        // Checked:        LemoineAccent fill + LemoineKnobOn check glyph.
+        // Indeterminate:  LemoineAccentDim fill, LemoineAccent border + dash.
+        // This injected implicit style is the project-wide checkbox visual — never
+        // hand-roll a checkbox look-alike; use a plain CheckBox and it picks this up.
+        private const string CheckBoxXaml = @"
+<Style TargetType=""{x:Type CheckBox}"">
+  <Setter Property=""Foreground"" Value=""{DynamicResource LemoineText}""/>
+  <Setter Property=""FontFamily"" Value=""{DynamicResource LemoineUiFont}""/>
+  <Setter Property=""FontSize""   Value=""{DynamicResource LemoineFS_MD}""/>
+  <Setter Property=""Cursor""     Value=""Hand""/>
+  <Setter Property=""VerticalContentAlignment"" Value=""Center""/>
+  <Setter Property=""Template"">
+    <Setter.Value>
+      <ControlTemplate TargetType=""{x:Type CheckBox}"">
+        <Grid Background=""Transparent"">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width=""Auto""/>
+            <ColumnDefinition Width=""*""/>
+          </Grid.ColumnDefinitions>
+          <Border x:Name=""Box"" Grid.Column=""0"" Width=""13"" Height=""13""
+                  CornerRadius=""{DynamicResource LemoineRadius_SM}""
+                  Background=""Transparent""
+                  BorderBrush=""{DynamicResource LemoineBorder}""
+                  BorderThickness=""1.2""
+                  VerticalAlignment=""Center"">
+            <Grid>
+              <Path x:Name=""Check"" Data=""M 2.4 5.8 L 4.8 8.2 L 8.8 3.2""
+                    Stroke=""{DynamicResource LemoineKnobOn}"" StrokeThickness=""1.8""
+                    StrokeStartLineCap=""Round"" StrokeEndLineCap=""Round""
+                    StrokeLineJoin=""Round"" Visibility=""Collapsed""/>
+              <Rectangle x:Name=""Dash"" Width=""6.6"" Height=""2"" RadiusX=""1"" RadiusY=""1""
+                         HorizontalAlignment=""Center"" VerticalAlignment=""Center""
+                         Fill=""{DynamicResource LemoineAccent}"" Visibility=""Collapsed""/>
+            </Grid>
+          </Border>
+          <ContentPresenter x:Name=""Label"" Grid.Column=""1"" Margin=""7,0,0,0""
+                            VerticalAlignment=""Center"" RecognizesAccessKey=""True""/>
+        </Grid>
+        <ControlTemplate.Triggers>
+          <Trigger Property=""IsChecked"" Value=""True"">
+            <Setter TargetName=""Box"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccent}""/>
+            <Setter TargetName=""Box"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+            <Setter TargetName=""Check"" Property=""Visibility"" Value=""Visible""/>
+          </Trigger>
+          <Trigger Property=""IsChecked"" Value=""{x:Null}"">
+            <Setter TargetName=""Box"" Property=""Background""
+                    Value=""{DynamicResource LemoineAccentDim}""/>
+            <Setter TargetName=""Box"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineAccent}""/>
+            <Setter TargetName=""Dash"" Property=""Visibility"" Value=""Visible""/>
+          </Trigger>
+          <MultiTrigger>
+            <MultiTrigger.Conditions>
+              <Condition Property=""IsMouseOver"" Value=""True""/>
+              <Condition Property=""IsChecked"" Value=""False""/>
+            </MultiTrigger.Conditions>
+            <Setter TargetName=""Box"" Property=""BorderBrush""
+                    Value=""{DynamicResource LemoineBorderMid}""/>
+          </MultiTrigger>
+          <Trigger Property=""Content"" Value=""{x:Null}"">
+            <Setter TargetName=""Label"" Property=""Visibility"" Value=""Collapsed""/>
+          </Trigger>
+          <Trigger Property=""IsEnabled"" Value=""False"">
+            <Setter Property=""Opacity"" Value=""0.45""/>
+          </Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
+
+        private static Style MakeCheckBoxStyle() => ParseStyle(CheckBoxXaml)!;
 
         // ── DatePicker ────────────────────────────────────────────────────────
         private static Style MakeDatePickerStyle()
