@@ -330,9 +330,15 @@ namespace LemoineTools.Lemoine.Controls
             };
             row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
             if (selected)
+            {
                 row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            }
             else
+            {
+                // Transparent (never null) so the whole row is hit-testable for click/hover.
+                row.Background = Brushes.Transparent;
                 LemoineMotion.WireHover(row, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
+            }
 
             row.MouseLeftButtonDown += (s, e) =>
             {

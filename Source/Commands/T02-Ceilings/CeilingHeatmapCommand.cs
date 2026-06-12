@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.Ceilings;
 
@@ -67,7 +68,8 @@ namespace LemoineTools.Commands
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
             // ── Spin up dedicated STA thread for the WPF window ──────────────────
-            var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel);
+            var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
+                                                    BrowserTreeCapture.Capture(doc));
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 

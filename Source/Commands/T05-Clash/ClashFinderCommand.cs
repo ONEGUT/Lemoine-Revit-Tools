@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.Clash;
 
@@ -53,7 +54,8 @@ namespace LemoineTools.Commands
 
             var vm = new ClashFinderViewModel(
                 App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions,
-                App.SlabPickHandler, App.SlabPickEvent);
+                App.SlabPickHandler, App.SlabPickEvent,
+                BrowserTreeCapture.Capture(doc));
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
