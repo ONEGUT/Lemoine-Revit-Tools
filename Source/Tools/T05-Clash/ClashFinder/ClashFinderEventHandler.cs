@@ -385,12 +385,20 @@ namespace LemoineTools.Tools.Clash
                 doc, parentView, AutoDimension.AutoDimensionConfig.Instance, (t, s) => Log(t, s));
             if (requests.Count == 0) return ids;
 
+            // Membership is tested geometrically (same basis as the survey): marker group ids
+            // are minted fresh per placement, so the parent-derived source keys can NEVER match
+            // the markers placed in the callout — key-based pruning deleted every marker there.
+            var projection   = new AutoDimension.Resolvers.ViewProjection(parentView);
+            var claimedRects = new List<AutoDimension.Core.Box2>();
+
             using (var tx = new Transaction(doc, $"Lemoine - User Callout Adoption · {parentView.Name}"))
             {
                 tx.Start();
                 ConfigureFailures(tx);
                 foreach (var req in requests)
                 {
+                    var membership = AutoDimension.Core.Box2.FromPoints(
+                        projection.To2D(req.MembershipMinWorld), projection.To2D(req.MembershipMaxWorld));
                     string calloutName = "";
                     try
                     {
@@ -443,7 +451,7 @@ namespace LemoineTools.Tools.Clash
                         // The grown crop can cover NON-member clashes (the next group over, or a
                         // second user callout in the same room) — those keep marking and
                         // dimensioning in the parent, so their markers must not also show here.
-                        int pruned = DeleteMarkersExcept(doc, cv.Id, req.SourceKeys);
+                        int pruned = PruneMarkersToMembership(doc, cv, projection, membership, claimedRects);
 
                         // This callout owns its members now: remove their parent-view markers so
                         // they show ONLY here (the parent keeps the callout bubble).
@@ -467,40 +475,98 @@ namespace LemoineTools.Tools.Clash
                         Log($"User callout '{calloutName}': adoption failed ({ex.Message}) — its clashes stay "
                           + "dimensioned in the parent view.", "fail");
                     }
+                    // The survey claimed this rectangle's clashes for THIS callout (first
+                    // containment wins) whether or not adoption succeeded — later callouts
+                    // must prune them either way.
+                    claimedRects.Add(membership);
                 }
                 tx.Commit();
             }
             return ids;
         }
 
-        /// <summary>Deletes the tagged marker elements (cross lines + filled regions) in a view
-        /// whose clash group is NOT in <paramref name="keepKeys"/> — used to prune non-member
-        /// clashes the marker pass placed inside an adopted user callout's grown crop. Runs
-        /// inside the caller's open transaction.</summary>
-        private static int DeleteMarkersExcept(Document doc, ElementId viewId, List<string> keepKeys)
+        /// <summary>Deletes the tagged marker elements (cross lines + filled regions) in an
+        /// adopted user callout whose clash anchor falls OUTSIDE the membership rectangle, or
+        /// inside an earlier-adopted callout's rectangle (first containment wins). Membership
+        /// must be geometric: every <c>PlaceInView</c> call mints fresh group GUIDs, so the
+        /// parent view's source keys never match the markers placed here — key-based pruning
+        /// deleted every marker, members included. The anchor mirrors the survey's ingest (the
+        /// line endpoint nearest the clash centroid), and a whole clash — every element sharing
+        /// one group id — is kept or deleted atomically. A clash whose geometry cannot be read
+        /// is KEPT (never guess-delete). Runs inside the caller's open transaction.</summary>
+        private int PruneMarkersToMembership(
+            Document doc, View calloutView, AutoDimension.Resolvers.ViewProjection projection,
+            AutoDimension.Core.Box2 membership, List<AutoDimension.Core.Box2> claimedEarlier)
         {
-            int removed = 0;
-            var keys = new HashSet<string>(keepKeys, StringComparer.Ordinal);
-            var toDelete = new List<ElementId>();
+            // Gather this view's tagged elements per clash group: line endpoints anchor the
+            // clash exactly like SourceIngest; region bbox centres are a fallback for a group
+            // whose lines are unreadable. Ungrouped legacy markers evaluate individually.
+            var groups = new Dictionary<string, (List<ElementId> Ids, List<XYZ> LinePts, List<XYZ> RegionPts)>(StringComparer.Ordinal);
+            int anon = 0;
+            (List<ElementId> Ids, List<XYZ> LinePts, List<XYZ> RegionPts) Entry(Element e)
+            {
+                string g = ClashTagSchema.ReadGroup(e);
+                if (string.IsNullOrEmpty(g)) g = "!" + anon++;
+                if (!groups.TryGetValue(g, out var entry))
+                    groups[g] = entry = (new List<ElementId>(), new List<XYZ>(), new List<XYZ>());
+                entry.Ids.Add(e.Id);
+                return entry;
+            }
             try
             {
-                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                    .OfCategory(BuiltInCategory.OST_Lines)
-                    .WhereElementIsNotElementType()
-                    .Where(e => ClashTagSchema.IsOurs(e) && !keys.Contains(ClashTagSchema.ReadGroup(e)))
-                    .Select(e => e.Id));
-                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                    .OfClass(typeof(FilledRegion))
-                    .WhereElementIsNotElementType()
-                    .Where(e => ClashTagSchema.IsOurs(e) && !keys.Contains(ClashTagSchema.ReadGroup(e)))
-                    .Select(e => e.Id));
+                foreach (var dc in new FilteredElementCollector(doc, calloutView.Id)
+                             .OfCategory(BuiltInCategory.OST_Lines)
+                             .WhereElementIsNotElementType()
+                             .Where(ClashTagSchema.IsOurs)
+                             .OfType<DetailCurve>())
+                {
+                    var entry = Entry(dc);
+                    Curve? gc = null;
+                    try { gc = dc.GeometryCurve; }
+                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: read marker line geometry", ex); }
+                    if (gc == null) continue;
+                    entry.LinePts.Add(gc.GetEndPoint(0));
+                    entry.LinePts.Add(gc.GetEndPoint(1));
+                }
+                foreach (var fr in new FilteredElementCollector(doc, calloutView.Id)
+                             .OfClass(typeof(FilledRegion))
+                             .WhereElementIsNotElementType()
+                             .Where(ClashTagSchema.IsOurs)
+                             .Cast<FilledRegion>())
+                {
+                    var entry = Entry(fr);
+                    var bb = fr.get_BoundingBox(calloutView);
+                    if (bb != null) entry.RegionPts.Add((bb.Min + bb.Max) * 0.5);
+                }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: collect non-member callout markers", ex); }
-
-            foreach (var id in toDelete)
+            catch (Exception ex)
             {
-                try { if (doc.Delete(id).Count > 0) removed++; }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
+                LemoineLog.Swallowed("ClashFinderEventHandler: collect callout markers for membership prune", ex);
+                Log($"User callout '{calloutView.Name}': could not scan its markers for membership pruning "
+                  + $"({ex.Message}) — markers of clashes outside the drawn boundary may remain.", "fail");
+            }
+
+            int removed = 0;
+            foreach (var entry in groups.Values)
+            {
+                var pts = entry.LinePts.Count > 0 ? entry.LinePts : entry.RegionPts;
+                if (pts.Count == 0) continue;          // unreadable geometry — keep, never guess-delete
+
+                XYZ sum = XYZ.Zero;
+                foreach (var p in pts) sum += p;
+                XYZ centre = sum.Divide(pts.Count);
+                XYZ anchor = pts[0];
+                foreach (var p in pts)
+                    if (p.DistanceTo(centre) < anchor.DistanceTo(centre)) anchor = p;
+
+                var a = projection.To2D(anchor);
+                if (membership.Contains(a) && !claimedEarlier.Any(r => r.Contains(a))) continue;
+
+                foreach (var id in entry.Ids)
+                {
+                    try { if (doc.Delete(id).Count > 0) removed++; }
+                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
+                }
             }
             return removed;
         }
