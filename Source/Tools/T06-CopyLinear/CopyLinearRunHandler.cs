@@ -33,12 +33,19 @@ namespace LemoineTools.Tools.CopyLinear
         public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
 
-        // Manual placement override (Replace mode, AlignToSource off) — run-frame components
-        // relative to each placement's own source run, plus a plan rotation about the station.
+        // Manual placement override (Replace mode, AlignToSource off) — run-frame offset
+        // components relative to each placement's own source run.
         public double ManualOffsetAlongFeet { get; set; }
         public double ManualOffsetSideFeet  { get; set; }
         public double ManualOffsetUpFeet    { get; set; }
-        public double ManualRotationRad     { get; set; }
+
+        // Extra rotation applied to EVERY placed instance (with or without align-to-source),
+        // about the station point in the source run's own frame: X = about the run direction,
+        // Y = about the horizontal perpendicular, Z = about the frame's up axis. Applied in
+        // X→Y→Z order, before alignment so calibration measures the rotated footprint.
+        public double RotationXRad { get; set; }
+        public double RotationYRad { get; set; }
+        public double RotationZRad { get; set; }
 
         // Off = previous runs' outputs are never touched and this run's outputs are left
         // unstamped — finished elements detach from the tool. On = stamped reconciliation.
@@ -66,6 +73,7 @@ namespace LemoineTools.Tools.CopyLinear
         private bool _alignApplyWarned;
         private bool _alignNoBoxWarned;
         private bool _manualApplyWarned;
+        private bool _rotationApplyWarned;
 
         public void Execute(UIApplication app)
         {
@@ -75,6 +83,7 @@ namespace LemoineTools.Tools.CopyLinear
             _alignApplyWarned = false;
             _alignNoBoxWarned = false;
             _manualApplyWarned = false;
+            _rotationApplyWarned = false;
             int pass = 0, fail = 0, skip = 0;
             long issues0 = LemoineLog.IssueCount;
             try
@@ -424,7 +433,9 @@ namespace LemoineTools.Tools.CopyLinear
             bool hasLengthParam = !string.IsNullOrWhiteSpace(LengthParamName);
             bool hasManual = !AlignToSource
                 && (Math.Abs(ManualOffsetAlongFeet) > 1e-9 || Math.Abs(ManualOffsetSideFeet) > 1e-9
-                 || Math.Abs(ManualOffsetUpFeet)    > 1e-9 || Math.Abs(ManualRotationRad)    > 1e-9);
+                 || Math.Abs(ManualOffsetUpFeet)    > 1e-9);
+            bool hasRotation = Math.Abs(RotationXRad) > 1e-9 || Math.Abs(RotationYRad) > 1e-9
+                            || Math.Abs(RotationZRad) > 1e-9;
 
             if (!_loggedPlacement)
             {
@@ -434,8 +445,10 @@ namespace LemoineTools.Tools.CopyLinear
                        placement == FamilyPlacementType.WorkPlaneBased ? "level plane reference" : "point + level"), "info");
                 if (AlignToSource && curveBased)
                     Log("Align to source: skipped — a line-based family already follows the run's curve.", "info");
+                if (hasRotation && curveBased)
+                    Log("Placement rotation: skipped — a line-based family follows the run's curve and cannot be rotated off it.", "info");
                 if (hasManual)
-                    Log("Manual placement override active — each instance is moved/rotated relative to its own source run.", "info");
+                    Log("Manual placement override active — each instance is moved relative to its own source run.", "info");
             }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
@@ -518,6 +531,11 @@ namespace LemoineTools.Tools.CopyLinear
                     try { ElementTransformUtils.RotateElement(doc, inst.Id, axis, angle); }
                     catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: rotate instance", ex); }
                 }
+
+                // User X/Y/Z rotation, in this run's own frame — before alignment so the
+                // calibration below measures the rotated footprint.
+                if (!curveBased && hasRotation)
+                    ApplyUserRotation(doc, inst, a, b, p);
 
                 // Align to source: the family's footprint is measured once from the first placed
                 // instance (one regen), then each placement's correction is computed against ITS
@@ -626,16 +644,39 @@ namespace LemoineTools.Tools.CopyLinear
             }
         }
 
-        // Manual placement override: a fixed rotation about +Z at the station point, then a
-        // fixed offset given in run-frame components — so every instance moves relative to its
-        // own source run, never in a global direction. Pure user input, no measuring.
+        // User rotation: X about the run direction, Y about the side axis, Z about the frame's
+        // up axis — all about the station point, in X→Y→Z order, in this run's own frame so the
+        // same dial rotates every instance identically relative to its source run.
+        private void ApplyUserRotation(Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
+        {
+            try
+            {
+                var (along, side, up) = CopyLinearEngine.RunFrame(a, b);
+                if (Math.Abs(RotationXRad) > 1e-9)
+                    ElementTransformUtils.RotateElement(doc, inst.Id, Line.CreateBound(p, p + along), RotationXRad);
+                if (Math.Abs(RotationYRad) > 1e-9)
+                    ElementTransformUtils.RotateElement(doc, inst.Id, Line.CreateBound(p, p + side), RotationYRad);
+                if (Math.Abs(RotationZRad) > 1e-9)
+                    ElementTransformUtils.RotateElement(doc, inst.Id, Line.CreateBound(p, p + up), RotationZRad);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: apply rotation", ex);
+                if (!_rotationApplyWarned)
+                {
+                    _rotationApplyWarned = true;
+                    Log($"Placement rotation: instance {inst.Id} could not be rotated ({ex.GetType().Name}) — further failures go to the diagnostics log.", "warn");
+                }
+            }
+        }
+
+        // Manual placement override: a fixed offset given in run-frame components — so every
+        // instance moves relative to its own source run, never in a global direction. Pure user
+        // input, no measuring. (Rotation lives in ApplyUserRotation and works in both modes.)
         private void ApplyManualOverride(Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
         {
             try
             {
-                if (Math.Abs(ManualRotationRad) > 1e-9)
-                    ElementTransformUtils.RotateElement(doc, inst.Id,
-                        Line.CreateBound(p, p + XYZ.BasisZ), ManualRotationRad);
                 var (along, side, up) = CopyLinearEngine.RunFrame(a, b);
                 XYZ off = ManualOffsetAlongFeet * along + ManualOffsetSideFeet * side + ManualOffsetUpFeet * up;
                 if (off.GetLength() > 1e-9)

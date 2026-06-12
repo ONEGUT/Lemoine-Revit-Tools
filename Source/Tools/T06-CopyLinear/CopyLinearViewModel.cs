@@ -67,7 +67,17 @@ namespace LemoineTools.Tools.CopyLinear
         private double _manualXInches = CopyLinearSettings.Instance.ManualOffsetXInches;
         private double _manualYInches = CopyLinearSettings.Instance.ManualOffsetYInches;
         private double _manualZInches = CopyLinearSettings.Instance.ManualOffsetZInches;
-        private double _manualRotDeg  = CopyLinearSettings.Instance.ManualRotationDegrees;
+
+        // Extra placement rotation (degrees, source-run frame) — applied in both modes.
+        private double _rotXDeg = CopyLinearSettings.Instance.RotationXDegrees;
+        private double _rotYDeg = CopyLinearSettings.Instance.RotationYDegrees;
+        private double _rotZDeg = CopyLinearSettings.Instance.RotationZDegrees;
+
+        // Length-parameter dropdown: writable double instance parameters per family, fetched
+        // lazily on the Revit thread (symbol id → names) and cached for the session.
+        private readonly Dictionary<long, List<string>> _famParamCache = new Dictionary<long, List<string>>();
+        private bool _famParamsLoading;
+        private StackPanel? _lengthParamHost;
 
         // Change detection
         private bool _deletePrevious = CopyLinearSettings.Instance.DeletePrevious;
@@ -389,6 +399,7 @@ namespace LemoineTools.Tools.CopyLinear
             _scanning = true; _scanDone = false; _scanError = null;
             RebuildFilters();   // show "Scanning…" in the live container
 
+            _scanHandler.ScanRequested = true;
             _scanHandler.Spec = CloneSpecForScan();
             _scanHandler.OnScanned = result => _disp?.BeginInvoke((Action)(() =>
             {
@@ -463,6 +474,7 @@ namespace LemoineTools.Tools.CopyLinear
 
         private void BuildReplaceBody(StackPanel body)
         {
+            _disp = Dispatcher.CurrentDispatcher;
             body.Children.Add(Label("Family type to place"));
             if (_families.Count == 0)
                 body.Children.Add(Dim("No placeable family types found in the host model."));
@@ -480,7 +492,12 @@ namespace LemoineTools.Tools.CopyLinear
                 // so a partial query simply invalidates the step until one is chosen.
                 famSearch.SelectionChanged += v =>
                 {
-                    _familyKey = v != null && _familyByKey.ContainsKey(v) ? v : "";
+                    string newKey = v != null && _familyByKey.ContainsKey(v) ? v : "";
+                    if (newKey != _familyKey)
+                    {
+                        _familyKey = newKey;
+                        PopulateLengthParam();   // the dropdown lists THIS family's parameters
+                    }
                     Changed();
                 };
                 body.Children.Add(famSearch);
@@ -493,9 +510,21 @@ namespace LemoineTools.Tools.CopyLinear
             body.Children.Add(Stepper(_extraSpacingInches, 0, 120, 0.25, 2, v => _extraSpacingInches = v));
 
             body.Children.Add(Label("Length parameter to set (optional)"));
-            var box = TextBox(_lengthParam);
-            box.TextChanged += (s, e) => { _lengthParam = ((WpfTextBox)s).Text; };
-            body.Children.Add(box);
+            body.Children.Add(Dim("Pick the family parameter that gets the placement interval written into it "
+                + "(trimmed to the remaining run on the last piece)."));
+            _lengthParamHost = new StackPanel();
+            body.Children.Add(_lengthParamHost);
+            PopulateLengthParam();
+
+            body.Children.Add(Label("Rotate placements (degrees — about each source run's own axes)"));
+            body.Children.Add(Dim("Applied to every instance, with or without auto-align: X = about the run "
+                + "direction, Y = about the side axis, Z = plan rotation. Line-based families are skipped."));
+            body.Children.Add(Label("Rotate X — about the run"));
+            body.Children.Add(Stepper(_rotXDeg, -360, 360, 5, 1, v => _rotXDeg = v));
+            body.Children.Add(Label("Rotate Y — about the side axis"));
+            body.Children.Add(Stepper(_rotYDeg, -360, 360, 5, 1, v => _rotYDeg = v));
+            body.Children.Add(Label("Rotate Z — plan rotation"));
+            body.Children.Add(Stepper(_rotZDeg, -360, 360, 5, 1, v => _rotZDeg = v));
 
             // Every instance is always rotated to its run direction; the toggle only governs
             // the box-based alignment pass on top of that. Unchecking expands the manual
@@ -514,8 +543,6 @@ namespace LemoineTools.Tools.CopyLinear
                 manualHost.Children.Add(Stepper(_manualYInches, -1200, 1200, 1, 2, v => _manualYInches = v));
                 manualHost.Children.Add(Label("Move Z — up (inches)"));
                 manualHost.Children.Add(Stepper(_manualZInches, -1200, 1200, 1, 2, v => _manualZInches = v));
-                manualHost.Children.Add(Label("Rotation about placement point (degrees)"));
-                manualHost.Children.Add(Stepper(_manualRotDeg, -360, 360, 5, 1, v => _manualRotDeg = v));
             }
 
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
@@ -534,6 +561,76 @@ namespace LemoineTools.Tools.CopyLinear
             body.Children.Add(toggles);
             body.Children.Add(manualHost);
             PopulateManual();
+        }
+
+        // ── Length-parameter dropdown ───────────────────────────────────────────
+        private const string NoLengthParam = "(none)";
+
+        private long CurrentSymbolId => _familyByKey.TryGetValue(_familyKey, out var f) ? f.SymbolId : 0L;
+
+        // Renders the dropdown for the CURRENT family: cached parameter names render
+        // immediately; a cache miss shows a loading line and kicks the Revit-thread fetch.
+        private void PopulateLengthParam()
+        {
+            if (_lengthParamHost == null) return;
+            _lengthParamHost.Children.Clear();
+
+            long symbolId = CurrentSymbolId;
+            if (symbolId == 0L) { _lengthParamHost.Children.Add(Dim("Pick a family type first.")); return; }
+
+            // No Revit thread available (preview hosting) — fall back to free text.
+            if (_scanHandler == null || _scanEvent == null)
+            {
+                var box = TextBox(_lengthParam);
+                box.TextChanged += (s, e) => { _lengthParam = ((WpfTextBox)s).Text; };
+                _lengthParamHost.Children.Add(box);
+                return;
+            }
+
+            if (_famParamCache.TryGetValue(symbolId, out var names))
+            {
+                if (names.Count == 0)
+                {
+                    _lengthParam = "";
+                    _lengthParamHost.Children.Add(Dim("No writable length-type parameters found on this family "
+                        + "(or it couldn't be read — see the diagnostics log)."));
+                    return;
+                }
+                // Re-anchor the saved name onto this family's actual list (case-normalised).
+                _lengthParam = names.FirstOrDefault(n =>
+                    string.Equals(n, _lengthParam, StringComparison.OrdinalIgnoreCase)) ?? "";
+                var picker = new LemoineSingleSelect
+                {
+                    Items        = new List<string> { NoLengthParam }.Concat(names).ToList(),
+                    SelectedItem = string.IsNullOrEmpty(_lengthParam) ? NoLengthParam : _lengthParam,
+                };
+                picker.SelectionChanged += v =>
+                {
+                    _lengthParam = (v == null || v == NoLengthParam) ? "" : v;
+                    Changed();
+                };
+                _lengthParamHost.Children.Add(picker);
+                return;
+            }
+
+            _lengthParamHost.Children.Add(Dim("Reading family parameters…"));
+            TriggerFamilyParams(symbolId);
+        }
+
+        private void TriggerFamilyParams(long symbolId)
+        {
+            // One in-flight fetch at a time; the completion callback re-populates, which
+            // re-triggers automatically if the user has switched family meanwhile.
+            if (_scanHandler == null || _scanEvent == null || _famParamsLoading) return;
+            _famParamsLoading = true;
+            _scanHandler.FamilyParamRequest = symbolId;
+            _scanHandler.OnFamilyParams = (id, names) => _disp?.BeginInvoke((Action)(() =>
+            {
+                _famParamsLoading = false;
+                _famParamCache[id] = names ?? new List<string>();
+                PopulateLengthParam();
+            }));
+            _scanEvent.Raise();
         }
 
         // ── Step 3: Change Detection ────────────────────────────────────────────
@@ -603,6 +700,7 @@ namespace LemoineTools.Tools.CopyLinear
             ["params"]  = _mode == "Replace"
                 ? $"every {_intervalFeet:0.##} ft" + (_extraSpacingInches > 0 ? $" +{_extraSpacingInches:0.##}\" " : "")
                     + (_alignToSource ? " · aligned to source" : HasManualOverride ? " · manual override" : "")
+                    + (HasRotation ? " · rotated" : "")
                 : $"{_segLenFeet:0.##} ft" + (_gapInches > 0 ? $", {_gapInches:0.##}\" gap" : ""),
             ["changes"] = ChangesSummary(),
         };
@@ -620,7 +718,10 @@ namespace LemoineTools.Tools.CopyLinear
 
         private bool HasManualOverride =>
             Math.Abs(_manualXInches) > 1e-9 || Math.Abs(_manualYInches) > 1e-9
-            || Math.Abs(_manualZInches) > 1e-9 || Math.Abs(_manualRotDeg) > 1e-9;
+            || Math.Abs(_manualZInches) > 1e-9;
+
+        private bool HasRotation =>
+            Math.Abs(_rotXDeg) > 1e-9 || Math.Abs(_rotYDeg) > 1e-9 || Math.Abs(_rotZDeg) > 1e-9;
 
         private string ChangesSummary() => !_deletePrevious
             ? "Keep previous outputs"
@@ -678,7 +779,10 @@ namespace LemoineTools.Tools.CopyLinear
             _runHandler.ManualOffsetAlongFeet = _alignToSource ? 0.0 : _manualXInches / 12.0;
             _runHandler.ManualOffsetSideFeet  = _alignToSource ? 0.0 : _manualYInches / 12.0;
             _runHandler.ManualOffsetUpFeet    = _alignToSource ? 0.0 : _manualZInches / 12.0;
-            _runHandler.ManualRotationRad     = _alignToSource ? 0.0 : _manualRotDeg * Math.PI / 180.0;
+            // Rotation applies in both modes (run-frame axes per source).
+            _runHandler.RotationXRad          = _rotXDeg * Math.PI / 180.0;
+            _runHandler.RotationYRad          = _rotYDeg * Math.PI / 180.0;
+            _runHandler.RotationZRad          = _rotZDeg * Math.PI / 180.0;
             _runHandler.DeletePrevious    = _deletePrevious;
             _runHandler.OnlyChanged       = _deletePrevious && _onlyChanged;
             _runHandler.DeleteOrphans     = _deletePrevious && _deleteOrphans;
@@ -698,7 +802,8 @@ namespace LemoineTools.Tools.CopyLinear
             s.IntervalFeet = _intervalFeet; s.ExtraSpacingInches = _extraSpacingInches;
             s.AlignToSource = _alignToSource;
             s.ManualOffsetXInches = _manualXInches; s.ManualOffsetYInches = _manualYInches;
-            s.ManualOffsetZInches = _manualZInches; s.ManualRotationDegrees = _manualRotDeg;
+            s.ManualOffsetZInches = _manualZInches;
+            s.RotationXDegrees = _rotXDeg; s.RotationYDegrees = _rotYDeg; s.RotationZDegrees = _rotZDeg;
             s.LengthParamName = _lengthParam; s.FamilyKey = _familyKey;
             s.DeletePrevious = _deletePrevious;
             s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;

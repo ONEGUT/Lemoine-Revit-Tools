@@ -34,11 +34,16 @@ namespace LemoineTools.Tools.CopyLinear
         public string FamilyKey         { get; set; } = "";  // "Category — Family: Type"
 
         // Manual placement override (used when AlignToSource is off) — source-run-frame
-        // offsets plus a plan rotation, applied identically to every placed instance.
+        // offsets applied identically to every placed instance.
         public double ManualOffsetXInches   { get; set; } = 0.0;  // along the run
         public double ManualOffsetYInches   { get; set; } = 0.0;  // sideways
         public double ManualOffsetZInches   { get; set; } = 0.0;  // up
-        public double ManualRotationDegrees { get; set; } = 0.0;
+
+        // Extra placement rotation (degrees) about each source run's own axes, applied to every
+        // instance in both align and manual modes: X = about the run, Y = side, Z = up.
+        public double RotationXDegrees      { get; set; } = 0.0;
+        public double RotationYDegrees      { get; set; } = 0.0;
+        public double RotationZDegrees      { get; set; } = 0.0;
 
         // Change detection
         public bool   DeletePrevious    { get; set; } = false;
