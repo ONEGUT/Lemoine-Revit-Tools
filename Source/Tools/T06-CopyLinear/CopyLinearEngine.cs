@@ -98,7 +98,8 @@ namespace LemoineTools.Tools.CopyLinear
         /// <summary>
         /// Correction that makes a placed instance line up with its source run: an extra plan
         /// rotation about +Z at the station point, then a translation stored as run-frame
-        /// components so the same fix can be re-applied to runs pointing any direction.
+        /// components. Computed per source element from its own box, so every placement is
+        /// corrected relative to the element it replaces.
         /// </summary>
         public sealed class AlignmentCorrection
         {
@@ -106,6 +107,18 @@ namespace LemoineTools.Tools.CopyLinear
             public double OffsetAlong;    // feet along the run direction
             public double OffsetSide;     // feet along the horizontal perpendicular
             public double OffsetUp;       // feet along the frame's up axis
+        }
+
+        /// <summary>
+        /// The placed family's footprint relative to its station, in run-frame components —
+        /// measured once from the first placed instance (the only part of alignment that costs
+        /// a regen) and then reused for every placement, because a family's box relative to its
+        /// own rotated-to-run placement point is constant. X = along, Y = side, Z = up.
+        /// </summary>
+        public sealed class InstanceProfile
+        {
+            public XYZ Min0  = XYZ.Zero, Max0  = XYZ.Zero;  // as placed (rotated to the run)
+            public XYZ Min90 = XYZ.Zero, Max90 = XYZ.Zero;  // after an extra 90° turn about Z
         }
 
         /// <summary>
@@ -144,48 +157,58 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         /// <summary>
-        /// Compares the source run's box with the first placed instance's box (both as
-        /// world-space corner sets) and returns the correction that best aligns their outer
-        /// faces: the instance's cross-section is centred on the source's (side + up) and
-        /// slid the minimum distance that keeps its body inside the source's along-run span;
-        /// an extra 90° about Z is chosen when that makes the instance's cross-section extents
-        /// match the source better (a family modelled along its local Y axis). Null on
-        /// degenerate input.
+        /// Builds the placed family's station-relative footprint from its world-space box
+        /// corners: extents in the run frame as placed, plus the extents after an analytic
+        /// 90° turn about Z at the station. Null on degenerate input.
+        /// </summary>
+        public static InstanceProfile? MeasureInstance(
+            IReadOnlyList<XYZ> instanceCorners, XYZ a, XYZ b, XYZ station)
+        {
+            if (instanceCorners == null || instanceCorners.Count == 0) return null;
+            var (along, side, up) = RunFrame(a, b);
+            var e0     = ExtentsInFrame(instanceCorners, station, along, side, up);
+            var turned = instanceCorners.Select(c => RotateAboutZ(c, station, Math.PI / 2)).ToList();
+            var e90    = ExtentsInFrame(turned, station, along, side, up);
+            return new InstanceProfile { Min0 = e0.Min, Max0 = e0.Max, Min90 = e90.Min, Max90 = e90.Max };
+        }
+
+        /// <summary>
+        /// Correction that aligns one placement's outer faces with <em>its own</em> source
+        /// element: the source's box is measured in this run's frame relative to this station,
+        /// then the instance footprint is centred on it (side + up), slid only enough to keep
+        /// the body inside the source's along-run span, with an extra 90° about Z when that
+        /// makes the cross-section extents match this source better (a family modelled along
+        /// its local Y axis). Pure math — call it for every placement. Null on degenerate input.
         /// </summary>
         public static AlignmentCorrection? ComputeAlignment(
-            IReadOnlyList<XYZ> sourceCorners, IReadOnlyList<XYZ> instanceCorners,
-            XYZ a, XYZ b, XYZ station)
+            IReadOnlyList<XYZ> sourceCorners, InstanceProfile profile, XYZ a, XYZ b, XYZ station)
         {
-            if (sourceCorners == null   || sourceCorners.Count == 0)   return null;
-            if (instanceCorners == null || instanceCorners.Count == 0) return null;
+            if (sourceCorners == null || sourceCorners.Count == 0 || profile == null) return null;
 
             var (along, side, up) = RunFrame(a, b);
             var src = ExtentsInFrame(sourceCorners, station, along, side, up);
 
-            var inst0  = ExtentsInFrame(instanceCorners, station, along, side, up);
-            var turned = instanceCorners.Select(c => RotateAboutZ(c, station, Math.PI / 2)).ToList();
-            var inst90 = ExtentsInFrame(turned, station, along, side, up);
-
             double srcW = src.Max.Y - src.Min.Y, srcH = src.Max.Z - src.Min.Z;
-            double Score((XYZ Min, XYZ Max) e) =>
-                Math.Abs((e.Max.Y - e.Min.Y) - srcW) + Math.Abs((e.Max.Z - e.Min.Z) - srcH);
+            double Score(XYZ min, XYZ max) =>
+                Math.Abs((max.Y - min.Y) - srcW) + Math.Abs((max.Z - min.Z) - srcH);
 
-            bool turn = Score(inst90) + Tol < Score(inst0);   // prefer no rotation on a tie
-            var ext = turn ? inst90 : inst0;
+            bool turn = Score(profile.Min90, profile.Max90) + Tol < Score(profile.Min0, profile.Max0);
+            XYZ extMin = turn ? profile.Min90 : profile.Min0;
+            XYZ extMax = turn ? profile.Max90 : profile.Max0;
 
             var corr = new AlignmentCorrection { ExtraRotation = turn ? Math.PI / 2 : 0.0 };
-            corr.OffsetSide = ((src.Min.Y + src.Max.Y) - (ext.Min.Y + ext.Max.Y)) * 0.5;
-            corr.OffsetUp   = ((src.Min.Z + src.Max.Z) - (ext.Min.Z + ext.Max.Z)) * 0.5;
+            corr.OffsetSide = ((src.Min.Y + src.Max.Y) - (extMin.Y + extMax.Y)) * 0.5;
+            corr.OffsetUp   = ((src.Min.Z + src.Max.Z) - (extMin.Z + extMax.Z)) * 0.5;
 
             // Along the run the stations govern position — only slide enough to stop the body
             // overhanging an end of the source span (centre on the span if it can't fit).
-            double instLen = ext.Max.X - ext.Min.X, srcLen = src.Max.X - src.Min.X;
+            double instLen = extMax.X - extMin.X, srcLen = src.Max.X - src.Min.X;
             if (instLen >= srcLen)
-                corr.OffsetAlong = ((src.Min.X + src.Max.X) - (ext.Min.X + ext.Max.X)) * 0.5;
-            else if (ext.Min.X < src.Min.X)
-                corr.OffsetAlong = src.Min.X - ext.Min.X;
-            else if (ext.Max.X > src.Max.X)
-                corr.OffsetAlong = src.Max.X - ext.Max.X;
+                corr.OffsetAlong = ((src.Min.X + src.Max.X) - (extMin.X + extMax.X)) * 0.5;
+            else if (extMin.X < src.Min.X)
+                corr.OffsetAlong = src.Min.X - extMin.X;
+            else if (extMax.X > src.Max.X)
+                corr.OffsetAlong = src.Max.X - extMax.X;
 
             return corr;
         }

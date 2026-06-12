@@ -29,7 +29,6 @@ namespace LemoineTools.Tools.CopyLinear
         public long   SymbolId          { get; set; }       // Replace mode
         public double IntervalFeet      { get; set; } = 10.0;
         public double ExtraSpacingFeet  { get; set; } = 0.0;
-        public bool   RotateToRun       { get; set; } = true;
         public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
 
@@ -47,18 +46,22 @@ namespace LemoineTools.Tools.CopyLinear
 
         private bool _loggedPlacement;   // one placement-path line per run
 
-        // Align-to-source calibration: measured once from the first source run + first placed
-        // instance, then re-applied to every later placement through each run's own frame.
-        private CopyLinearEngine.AlignmentCorrection? _alignCorrection;
+        // Align-to-source: the family's footprint is measured once from the first placed
+        // instance (the only regen alignment costs); the correction itself is then computed
+        // per placement against THAT placement's own source element box, so every fix is
+        // relative to the element it replaces.
+        private CopyLinearEngine.InstanceProfile? _alignProfile;
         private bool _alignCalibrationFailed;
         private bool _alignApplyWarned;
+        private bool _alignNoBoxWarned;
 
         public void Execute(UIApplication app)
         {
             _loggedPlacement = false;
-            _alignCorrection = null;
+            _alignProfile = null;
             _alignCalibrationFailed = false;
             _alignApplyWarned = false;
+            _alignNoBoxWarned = false;
             int pass = 0, fail = 0, skip = 0;
             long issues0 = LemoineLog.IssueCount;
             try
@@ -415,7 +418,7 @@ namespace LemoineTools.Tools.CopyLinear
             }
 
             XYZ dir = b - a;
-            double angle = RotateToRun ? CopyLinearEngine.PlanRotation(dir) : 0.0;
+            double angle = CopyLinearEngine.PlanRotation(dir);   // always rotate to the run
             int made = 0, innerFail = 0;
             foreach (double s in stations)
             {
@@ -457,7 +460,7 @@ namespace LemoineTools.Tools.CopyLinear
                         // Work-plane-based families reject point+level placement; host them on the
                         // level's own plane reference. The direction vector doubles as rotation.
                         var flat = new XYZ(dir.X, dir.Y, 0.0);
-                        XYZ refDir = (RotateToRun && flat.GetLength() > 1e-6) ? flat.Normalize() : XYZ.BasisX;
+                        XYZ refDir = flat.GetLength() > 1e-6 ? flat.Normalize() : XYZ.BasisX;
                         inst = doc.Create.NewFamilyInstance(level!.GetPlaneReference(), p, refDir, symbol);
                     }
                     else
@@ -482,17 +485,28 @@ namespace LemoineTools.Tools.CopyLinear
                     catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: rotate instance", ex); }
                 }
 
-                // Align to source: the first placed instance calibrates the correction (one regen
-                // to read its real box), then the same run-frame fix is applied to every later
-                // placement with no further regens. Curve-based families are skipped — they
-                // already follow the run's curve, and moving/rotating them would pull the curve
-                // off its sketch plane.
+                // Align to source: the family's footprint is measured once from the first placed
+                // instance (one regen), then each placement's correction is computed against ITS
+                // OWN source element's box — a relative transform per source, not a global one.
+                // Curve-based families are skipped — they already follow the run's curve, and
+                // moving/rotating them would pull the curve off its sketch plane.
                 if (AlignToSource && !curveBased)
                 {
-                    if (_alignCorrection == null && !_alignCalibrationFailed)
-                        CalibrateAlignment(doc, run, inst, a, b, p);
-                    if (_alignCorrection != null)
-                        ApplyAlignment(doc, inst, a, b, p, _alignCorrection);
+                    if (_alignProfile == null && !_alignCalibrationFailed)
+                        CalibrateAlignment(doc, inst, a, b, p);
+                    if (_alignProfile != null)
+                    {
+                        if (run.BoxCorners != null && run.BoxCorners.Count > 0)
+                        {
+                            var corr = CopyLinearEngine.ComputeAlignment(run.BoxCorners, _alignProfile, a, b, p);
+                            if (corr != null) ApplyAlignment(doc, inst, a, b, p, corr);
+                        }
+                        else if (!_alignNoBoxWarned)
+                        {
+                            _alignNoBoxWarned = true;
+                            Log($"Align to source: source {run.Element.Id} has no bounding box — its placements keep the standard position.", "warn");
+                        }
+                    }
                 }
 
                 // A line-based instance's length is driven by its curve — skip the parameter write.
@@ -514,36 +528,28 @@ namespace LemoineTools.Tools.CopyLinear
 
         // ── Align-to-source calibration ────────────────────────────────────────
 
-        // Measures the first placed instance against its source run and stores the correction.
-        // Costs the run's single calibration regen (never per item — CLAUDE.md). A failure logs
-        // a warning once and leaves every placement at the standard position.
-        private void CalibrateAlignment(Document doc, SourceRun run, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
+        // Measures the family's footprint from the first placed instance — extents relative to
+        // its station, in run-frame components. Costs the run's single calibration regen (never
+        // per item — CLAUDE.md). The per-source correction is then pure math for every placement.
+        // A failure logs a warning once and leaves every placement at the standard position.
+        private void CalibrateAlignment(Document doc, FamilyInstance inst, XYZ a, XYZ b, XYZ p)
         {
-            if (run.BoxCorners == null || run.BoxCorners.Count == 0)
-            {
-                _alignCalibrationFailed = true;
-                Log("Align to source: the source element has no bounding box — placements keep the standard position.", "warn");
-                LemoineLog.Warn("CopyLinear: align", $"no source box for {run.Element.Id}; calibration skipped");
-                return;
-            }
             try
             {
                 doc.Regenerate();   // one calibration regen for the whole run command
                 var bb = inst.get_BoundingBox(null);
-                var corr = bb == null ? null : CopyLinearEngine.ComputeAlignment(
-                    run.BoxCorners, BoxCorners(bb, Transform.Identity), a, b, p);
-                if (corr == null)
+                var profile = bb == null ? null : CopyLinearEngine.MeasureInstance(
+                    BoxCorners(bb, Transform.Identity), a, b, p);
+                if (profile == null)
                 {
                     _alignCalibrationFailed = true;
                     Log("Align to source: could not measure the first placed instance — placements keep the standard position.", "warn");
                     LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
                     return;
                 }
-                _alignCorrection = corr;
-                Log("Align to source: "
-                    + (Math.Abs(corr.ExtraRotation) > 1e-6 ? "rotate 90 deg, " : "")
-                    + $"offset along {corr.OffsetAlong:0.00} ft, side {corr.OffsetSide:0.00} ft, up {corr.OffsetUp:0.00} ft"
-                    + " — applied to every placement.", "info");
+                _alignProfile = profile;
+                Log("Align to source: family footprint measured from the first placement — "
+                    + "each instance is now aligned to its own source element.", "info");
             }
             catch (Exception ex)
             {

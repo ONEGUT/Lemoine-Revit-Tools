@@ -58,7 +58,6 @@ namespace LemoineTools.Tools.CopyLinear
         // Replace params
         private double _intervalFeet = CopyLinearSettings.Instance.IntervalFeet;
         private double _extraSpacingInches = CopyLinearSettings.Instance.ExtraSpacingInches;
-        private bool   _rotateToRun = CopyLinearSettings.Instance.RotateToRun;
         private bool   _alignToSource = CopyLinearSettings.Instance.AlignToSource;
         private string _lengthParam = CopyLinearSettings.Instance.LengthParamName ?? "";
         private string _familyKey   = CopyLinearSettings.Instance.FamilyKey ?? "";
@@ -482,20 +481,15 @@ namespace LemoineTools.Tools.CopyLinear
             box.TextChanged += (s, e) => { _lengthParam = ((WpfTextBox)s).Text; };
             body.Children.Add(box);
 
+            // Every instance is always rotated to its run direction; the toggle only governs
+            // the box-based alignment pass on top of that.
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "rot", Label = "Rotate each instance to the run direction",
-                    Desc = "Spins each instance about Z so the family's X axis points along the run. Position is untouched.", DefaultOn = _rotateToRun },
-                new ToggleItem { Id = "align", Label = "Align to source (calibrate from first placement)",
-                    Desc = "Compares the first placed instance's box to its source run, then applies the same rotation/offset fix to every placement. Fixes 90-degree families and Z/side offsets. Line-based families are skipped.", DefaultOn = _alignToSource },
+                new ToggleItem { Id = "align", Label = "Align each instance to its source element",
+                    Desc = "After rotating to the run, each placement is corrected relative to its own source element's box — fixes 90-degree families and Z/side offsets. Line-based families are skipped.", DefaultOn = _alignToSource },
             });
-            toggles.StateChanged += st =>
-            {
-                if (st.TryGetValue("rot",   out var on))  _rotateToRun   = on;
-                if (st.TryGetValue("align", out var al))  _alignToSource = al;
-                Changed();
-            };
+            toggles.StateChanged += st => { if (st.TryGetValue("align", out var al)) { _alignToSource = al; Changed(); } };
             body.Children.Add(toggles);
         }
 
@@ -600,7 +594,6 @@ namespace LemoineTools.Tools.CopyLinear
             _runHandler.KeepRemainder     = _keepRemainder;
             _runHandler.IntervalFeet      = _intervalFeet;
             _runHandler.ExtraSpacingFeet  = _extraSpacingInches / 12.0;
-            _runHandler.RotateToRun       = _rotateToRun;
             _runHandler.AlignToSource     = _alignToSource;
             _runHandler.LengthParamName   = _lengthParam;
             _runHandler.SymbolId          = _familyByKey.TryGetValue(_familyKey, out var f) ? f.SymbolId : 0L;
@@ -620,7 +613,7 @@ namespace LemoineTools.Tools.CopyLinear
             s.Mode = _mode;
             s.SegmentLengthFeet = _segLenFeet; s.GapInches = _gapInches; s.KeepRemainder = _keepRemainder;
             s.IntervalFeet = _intervalFeet; s.ExtraSpacingInches = _extraSpacingInches;
-            s.RotateToRun = _rotateToRun; s.AlignToSource = _alignToSource;
+            s.AlignToSource = _alignToSource;
             s.LengthParamName = _lengthParam; s.FamilyKey = _familyKey;
             s.OnlyChanged = _onlyChanged; s.DeleteOrphans = _deleteOrphans;
             s.Save();
