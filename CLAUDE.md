@@ -295,6 +295,15 @@ Discovered building **Place Dependent Views** (one sheet per parent view, its de
 
 ---
 
+## Memory & Lifetime Discipline
+
+Discovered auditing why tools held RAM after running.
+
+- **Static ExternalEvent handlers live for the whole Revit session** (they're parked on `App` statics), so anything left on one outlives the run. Every handler must clear its per-run payload (input lists, specs, cached `View`/`Element` references, scan results) in a `finally` at the end of `Execute` — ViewModels reassign all inputs before each `Raise()`, so clearing is always safe. And every ViewModel that parks callbacks (`PushLog`, `OnProgress`, `OnComplete`, scan/pick callbacks) on a static handler must implement `ILemoineToolCleanup.OnWindowClosed` and null them — otherwise the closed window's ViewModel (and the WPF step content it references) stays rooted until the tool's next run, or forever that session.
+- **`uidoc.ActiveView = view` opens that view in the Revit UI**, and Revit holds every open view's graphics in native RAM for the rest of the session — GC can never reclaim it. Any picker/loop that activates views (e.g. per-view `PickObject`) must snapshot the open `UIView`s and active view first, then afterwards restore the original active view and close only the views it opened (`PickerViewGuard` is the reference). Never close a view the user already had open.
+
+---
+
 ## WPF Hit-Testing
 
 - A `TextBlock` or `Grid` with a null `Background` is only hit-testable on its rendered glyphs/borders, not its empty bounds. An element meant as a click target (a button label, a clickable row, the inner panel of a custom button) will respond only on the text unless you set `Background = Brushes.Transparent` (direct assignment — never via `SetResourceReference`). This was the "only the text is clickable" bug on the colour-picker set dropdown.
