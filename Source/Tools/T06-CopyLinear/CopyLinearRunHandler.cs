@@ -277,6 +277,15 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         // ── Replace: place the picked family at intervals along the run ──
+        //
+        // Which NewFamilyInstance overload is VALID depends on the family's FamilyPlacementType —
+        // a line-based (CurveBased) family throws the "work plane" error from EVERY point-based
+        // overload no matter what work plane the active view carries, so the placement must
+        // dispatch on placement type rather than use one overload for all families:
+        //   CurveBased / CurveDrivenStructural → NewFamilyInstance(Line, symbol, level, type)
+        //   WorkPlaneBased                     → NewFamilyInstance(level.GetPlaneReference(), p, dir, symbol)
+        //   level/point families               → NewFamilyInstance(p, symbol, level, type)
+        //   CurveBasedDetail                   → view-specific; reported as unsupported.
         private (int made, int failed) BuildReplace(Document doc, SourceRun run, FamilySymbol symbol, List<Level>? levels, string runId)
         {
             XYZ a = run.A, b = run.B;
@@ -284,33 +293,77 @@ namespace LemoineTools.Tools.CopyLinear
             var stations = CopyLinearEngine.PlacementStations(totalLen, IntervalFeet, ExtraSpacingFeet);
             if (stations.Count == 0) { Log($"— {run.Element.Id}: no placement points, skipped.", "info"); return (0, 0); }
 
+            FamilyPlacementType placement = FamilyPlacementType.OneLevelBased;
+            try { placement = symbol.Family?.FamilyPlacementType ?? FamilyPlacementType.OneLevelBased; }
+            catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read FamilyPlacementType", ex); }
+
+            if (placement == FamilyPlacementType.CurveBasedDetail || placement == FamilyPlacementType.ViewBased)
+            {
+                Log($"✗ {symbol.Name} is a detail (view-specific) family — pick a model family for Replace mode.", "fail");
+                return (0, 1);
+            }
+
+            bool curveBased = placement == FamilyPlacementType.CurveBased
+                           || placement == FamilyPlacementType.CurveDrivenStructural;
+
             // Host the instances on the level nearest the run, not the active view's work plane.
             Level? level = NearestLevel(levels, (a.Z + b.Z) * 0.5);
+            if (level == null && (curveBased || placement == FamilyPlacementType.WorkPlaneBased))
+            {
+                Log($"✗ {run.Element.Id}: the project has no level to host '{symbol.Name}' on.", "fail");
+                return (0, 1);
+            }
 
-            double angle = RotateToRun ? CopyLinearEngine.PlanRotation(b - a) : 0.0;
+            XYZ dir = b - a;
+            double angle = RotateToRun ? CopyLinearEngine.PlanRotation(dir) : 0.0;
             int made = 0, innerFail = 0;
             foreach (double s in stations)
             {
                 XYZ p = CopyLinearEngine.PointAlong(a, b, s);
                 FamilyInstance? inst;
-                try { inst = PlaceInstance(doc, p, symbol, level); }
+                try
+                {
+                    if (curveBased)
+                    {
+                        // A line-based family IS its curve — give each station a segment of one
+                        // interval (clamped to the run end) instead of a point.
+                        XYZ q = CopyLinearEngine.PointAlong(a, b, Math.Min(s + IntervalFeet, totalLen));
+                        if (p.DistanceTo(q) < 1e-4) continue;   // degenerate tail segment
+                        inst = doc.Create.NewFamilyInstance(
+                            Line.CreateBound(p, q), symbol, level!, StructuralType.NonStructural);
+                    }
+                    else if (placement == FamilyPlacementType.WorkPlaneBased)
+                    {
+                        // Work-plane-based families reject point+level placement; host them on the
+                        // level's own plane reference. The direction vector doubles as rotation.
+                        var flat = new XYZ(dir.X, dir.Y, 0.0);
+                        XYZ refDir = (RotateToRun && flat.GetLength() > 1e-6) ? flat.Normalize() : XYZ.BasisX;
+                        inst = doc.Create.NewFamilyInstance(level!.GetPlaneReference(), p, refDir, symbol);
+                    }
+                    else
+                    {
+                        inst = PlaceInstance(doc, p, symbol, level);
+                    }
+                }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id}", ex);
-                    Log($"✗ {run.Element.Id}: place failed — {ex.Message}", "fail");
+                    LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id} ({placement})", ex);
+                    Log($"✗ {run.Element.Id}: place failed ({placement}) — {ex.Message}", "fail");
                     innerFail++;
                     continue;
                 }
                 if (inst == null) { innerFail++; continue; }
 
-                if (Math.Abs(angle) > 1e-6)
+                // Curve-based and work-plane-based placements already carry the run direction.
+                if (!curveBased && placement != FamilyPlacementType.WorkPlaneBased && Math.Abs(angle) > 1e-6)
                 {
                     var axis = Line.CreateBound(p, p + XYZ.BasisZ);
                     try { ElementTransformUtils.RotateElement(doc, inst.Id, axis, angle); }
                     catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: rotate instance", ex); }
                 }
 
-                if (!string.IsNullOrWhiteSpace(LengthParamName))
+                // A line-based instance's length is driven by its curve — skip the parameter write.
+                if (!curveBased && !string.IsNullOrWhiteSpace(LengthParamName))
                 {
                     var lp = inst.LookupParameter(LengthParamName);
                     if (lp != null && !lp.IsReadOnly && lp.StorageType == StorageType.Double)
