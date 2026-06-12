@@ -202,42 +202,88 @@ namespace LemoineTools.Tools.CopyLinear
         // ── Split: copy the run into the host, then break it into standard-length cells ──
         private (int made, int failed) BuildSplit(Document doc, Document srcDoc, SourceRun run, Transform tx, string runId)
         {
-            ICollection<ElementId> copied;
-            try
-            {
-                // Work-plane-based / CurveBased elements from a linked model require a geometrically
-                // equivalent SketchPlane to already exist in the host before CopyElements runs —
-                // otherwise Revit can't resolve the sketch plane reference and shows the work-plane
-                // error even when the active view has a visible work plane. Creating it here (inside
-                // the transaction) gives CopyElements a target to match by geometric equivalence.
-                // Same-document copies skip this: the sketch plane is already in the host.
-                if (!ReferenceEquals(srcDoc, doc))
-                    EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
+            Element? hostCopy = null;
 
-                // Host source → same-document copy (the cross-document overload rejects identical
-                // source/dest); link source → cross-document copy with the link transform applied.
-                copied = ReferenceEquals(srcDoc, doc)
-                    ? ElementTransformUtils.CopyElement(doc, run.Element.Id, XYZ.Zero)
-                    : ElementTransformUtils.CopyElements(
-                        srcDoc, new List<ElementId> { run.Element.Id }, doc, tx, CopyOptions());
-            }
-            catch (Exception ex)
+            // Face-hosted CurveBased elements (e.g. a site culvert hosted ON a Duct in the link)
+            // cannot be copied with CopyElements: the host element doesn't exist in the destination
+            // document, so Revit throws [DocumentCorruption] "no corresponding Work Plane". Detect
+            // this before attempting CopyElements and reconstruct directly on a horizontal sketch
+            // plane using NewFamilyInstance(sketchPlane, line, symbol) instead — the same re-hosting
+            // strategy that BimorphNodes' CopyToActiveDocument uses.
+            bool faceHosted = false;
+            if (!ReferenceEquals(srcDoc, doc) && run.Element is FamilyInstance fhFi && fhFi.Host != null)
             {
-                LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
-                Log($"✗ {run.Element.Id}: copy failed — {ex.GetType().Name}: {ex.Message}", "fail");
-                return (0, 1);
+                var fp = fhFi.Symbol?.Family?.FamilyPlacementType;
+                faceHosted = fp == FamilyPlacementType.CurveBased;
             }
 
-            var hostCopy = copied?.Select(doc.GetElement).FirstOrDefault(e => e?.Location is LocationCurve lc && lc.Curve is Line);
-            if (hostCopy == null)
+            if (faceHosted)
             {
-                SafeDelete(doc, copied?.ToList() ?? new List<ElementId>());
-                Log($"— {run.Element.Id}: copy has no straight curve, skipped.", "info");
+                var srcFi = (FamilyInstance)run.Element;
+                var hostSymbol = FindOrCopySymbol(doc, srcDoc, srcFi.Symbol);
+                if (hostSymbol == null)
+                {
+                    Log($"✗ {run.Element.Id}: family '{srcFi.Symbol?.Family?.Name}' is not loaded in the host document — load it first.", "fail");
+                    return (0, 1);
+                }
+                if (!hostSymbol.IsActive) hostSymbol.Activate();
+
+                var sp = EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
+                if (sp == null)
+                {
+                    Log($"✗ {run.Element.Id}: could not create sketch plane for face-hosted split.", "fail");
+                    return (0, 1);
+                }
+                try
+                {
+                    hostCopy = doc.Create.NewFamilyInstance(sp.GetPlaneReference(), Line.CreateBound(run.A, run.B), hostSymbol);
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Error($"CopyLinear: reconstruct face-hosted {run.Element.Id}", ex);
+                    Log($"✗ {run.Element.Id}: reconstruct failed — {ex.GetType().Name}: {ex.Message}", "fail");
+                    return (0, 1);
+                }
+            }
+            else
+            {
+                // Normal path: CopyElements resolves the sketch plane automatically (or same-doc copy).
+                ICollection<ElementId>? copied = null;
+                try
+                {
+                    if (!ReferenceEquals(srcDoc, doc))
+                        EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
+
+                    copied = ReferenceEquals(srcDoc, doc)
+                        ? ElementTransformUtils.CopyElement(doc, run.Element.Id, XYZ.Zero)
+                        : ElementTransformUtils.CopyElements(
+                            srcDoc, new List<ElementId> { run.Element.Id }, doc, tx, CopyOptions());
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
+                    Log($"✗ {run.Element.Id}: copy failed — {ex.GetType().Name}: {ex.Message}", "fail");
+                    return (0, 1);
+                }
+
+                hostCopy = copied?.Select(doc.GetElement).FirstOrDefault(e => e?.Location is LocationCurve lc && lc.Curve is Line);
+                if (hostCopy == null)
+                {
+                    SafeDelete(doc, copied?.ToList() ?? new List<ElementId>());
+                    Log($"— {run.Element.Id}: copy has no straight curve, skipped.", "info");
+                    return (0, 0);
+                }
+            }
+
+            // ── Both paths converge: read the placed element's curve ──────────────
+            if (!(hostCopy.Location is LocationCurve hostLocCurve) || !(hostLocCurve.Curve is Line hostLine))
+            {
+                SafeDelete(doc, new List<ElementId> { hostCopy.Id });
+                Log($"— {run.Element.Id}: placed instance has no straight location curve, skipped.", "info");
                 return (0, 0);
             }
 
-            var hostLine = ((LocationCurve)hostCopy.Location).Curve as Line;
-            XYZ a = hostLine!.GetEndPoint(0), b = hostLine.GetEndPoint(1);
+            XYZ a = hostLine.GetEndPoint(0), b = hostLine.GetEndPoint(1);
             double totalLen = a.DistanceTo(b);
 
             var cells = CopyLinearEngine.SplitStations(totalLen, SegmentLengthFeet, GapFeet, KeepRemainder);
@@ -436,6 +482,49 @@ namespace LemoineTools.Tools.CopyLinear
             if (level != null)
                 return doc.Create.NewFamilyInstance(p, symbol, level, StructuralType.NonStructural);
             return doc.Create.NewFamilyInstance(p, symbol, StructuralType.NonStructural);
+        }
+
+        // Finds the matching FamilySymbol (by family name + type name) in the host document.
+        // If not present, attempts to copy just the type from the source document so the family
+        // is available for NewFamilyInstance reconstruction of face-hosted elements.
+        private static FamilySymbol? FindOrCopySymbol(Document doc, Document srcDoc, FamilySymbol? srcSymbol)
+        {
+            if (srcSymbol == null) return null;
+            string familyName = srcSymbol.Family?.Name ?? "";
+            string typeName   = srcSymbol.Name ?? "";
+
+            // Search the host document first — fastest path.
+            var existing = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .Cast<FamilySymbol>()
+                .FirstOrDefault(s =>
+                    string.Equals(s.Family?.Name, familyName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(s.Name, typeName, StringComparison.OrdinalIgnoreCase));
+            if (existing != null) return existing;
+
+            // Not in host — try to copy the type element from the source document.
+            // CopyElements with a FamilySymbol id loads the family into the destination and
+            // returns the corresponding local symbol (or the existing one via UseDestinationTypes).
+            try
+            {
+                var opts = new CopyPasteOptions();
+                opts.SetDuplicateTypeNamesHandler(new UseDestinationTypes());
+                var copied = ElementTransformUtils.CopyElements(
+                    srcDoc, new List<ElementId> { srcSymbol.Id }, doc, Transform.Identity, opts);
+                var sym = copied?.Select(id => doc.GetElement(id) as FamilySymbol)
+                                 .FirstOrDefault(s => s != null);
+                if (sym != null) return sym;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("CopyLinear: copy family symbol to host", ex);
+            }
+
+            // Final fallback: any type in the host that belongs to the same family.
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilySymbol))
+                .Cast<FamilySymbol>()
+                .FirstOrDefault(s => string.Equals(s.Family?.Name, familyName, StringComparison.OrdinalIgnoreCase));
         }
 
         // Returns (or creates) a horizontal SketchPlane at the given Z elevation.
