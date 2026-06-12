@@ -23,6 +23,7 @@ namespace LemoineTools.Tools.Clash
         public List<ClashDefinition> Definitions     { get; set; } = new List<ClashDefinition>();
         public bool                 ClearPrevious    { get; set; } = true;
         public bool                 RunDimensionPass { get; set; } = false;
+        public bool                 AdoptUserCallouts { get; set; } = true;   // user-drawn callouts become pre-defined groups
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
@@ -165,10 +166,19 @@ namespace LemoineTools.Tools.Clash
                                     var dimViewIds = new List<ElementId> { viewId };
                                     System.Collections.Generic.IDictionary<ElementId, List<string>>? excludes = null;
                                     HashSet<ElementId>? cropBounded = null;
+                                    var deferred   = new List<string>();
+                                    var calloutIds = new List<ElementId>();
+
+                                    // User-callout tier: callouts the USER drew on this view are
+                                    // pre-defined groups — adopted BEFORE the dense survey, whose
+                                    // ingest then never sees their clashes (their parent markers
+                                    // are deleted here), so they cannot cluster with anything else.
+                                    if (AdoptUserCallouts)
+                                        calloutIds.AddRange(AdoptUserCalloutViews(doc, view, dets, deferred,
+                                            ref totalMarkers, ref totalMarkerFails));
+
                                     if (dimCfg.DenseCalloutsEnabled)
                                     {
-                                        var deferred    = new List<string>();
-                                        var calloutIds  = new List<ElementId>();
                                         var allRequests = new List<AutoDimension.DenseCalloutRequest>();
                                         int calloutSeq  = 0;
                                         const int maxCalloutPasses = 4;   // each pass deletes markers, so this terminates fast
@@ -195,7 +205,8 @@ namespace LemoineTools.Tools.Clash
                                         {
                                             // Clear callouts a previous run left behind that this run did
                                             // not reuse (their bubbles + stale markers) — after the loop,
-                                            // so the sweep keeps every callout created this run.
+                                            // so the sweep keeps every callout created this run. User
+                                            // callouts never match the "- Dense" prefix and are never swept.
                                             using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
                                             {
                                                 tx.Start();
@@ -204,14 +215,14 @@ namespace LemoineTools.Tools.Clash
                                                 tx.Commit();
                                             }
                                         }
+                                    }
 
-                                        if (calloutIds.Count > 0)
-                                        {
-                                            dimViewIds.AddRange(calloutIds);
-                                            excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
-                                            // Callout dims must land on references visible IN the callout.
-                                            cropBounded = new HashSet<ElementId>(calloutIds);
-                                        }
+                                    if (calloutIds.Count > 0)
+                                    {
+                                        dimViewIds.AddRange(calloutIds);
+                                        excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
+                                        // Callout dims must land on references visible IN the callout.
+                                        cropBounded = new HashSet<ElementId>(calloutIds);
                                     }
 
                                     var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes, cropBounded);
@@ -352,6 +363,146 @@ namespace LemoineTools.Tools.Clash
                 tx.Commit();
             }
             return ids;
+        }
+
+        /// <summary>
+        /// Adopts USER-drawn callouts on this view as pre-defined clash groups (surveyed by
+        /// <see cref="AutoDimension.AutoDimensionEngine.SurveyUserCallouts"/>): each adopted
+        /// callout is marked, its members' parent markers are deleted (so neither the dense
+        /// survey nor the parent dimension pass ever sees them again), its crop is grown to the
+        /// containing room(s), its scale coarsened only when the text demand needs it, and the
+        /// membership rectangle is stamped via <see cref="UserCalloutSchema"/> for idempotent
+        /// re-runs. The callout keeps its name, is never swept, and a failed adoption leaves its
+        /// clashes dimensioning in the parent (degrade, never drop). One transaction for all.
+        /// </summary>
+        private List<ElementId> AdoptUserCalloutViews(
+            Document doc, View parentView,
+            List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)> dets,
+            List<string> deferred, ref int totalMarkers, ref int totalMarkerFails)
+        {
+            var ids = new List<ElementId>();
+            var requests = AutoDimension.AutoDimensionEngine.SurveyUserCallouts(
+                doc, parentView, AutoDimension.AutoDimensionConfig.Instance, (t, s) => Log(t, s));
+            if (requests.Count == 0) return ids;
+
+            using (var tx = new Transaction(doc, $"Lemoine - User Callout Adoption · {parentView.Name}"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
+                foreach (var req in requests)
+                {
+                    string calloutName = "";
+                    try
+                    {
+                        var cv = doc.GetElement(req.ExistingViewId) as View;
+                        if (cv == null) continue;
+                        calloutName = cv.Name;
+
+                        // Only touch the scale when the survey computed a change — and a pinned
+                        // template blocks the setter, so unpin only in that case (an untouched
+                        // callout keeps its template assignment).
+                        if (cv.Scale != req.Scale)
+                        {
+                            UnpinTemplate(cv);
+                            TrySetCalloutScale(cv, req.Scale);
+                        }
+
+                        try
+                        {
+                            var cb = cv.CropBox;   // grow the crop to the room-grown rectangle
+                            cb.Min = new XYZ(Math.Min(req.MinWorld.X, req.MaxWorld.X), Math.Min(req.MinWorld.Y, req.MaxWorld.Y), cb.Min.Z);
+                            cb.Max = new XYZ(Math.Max(req.MinWorld.X, req.MaxWorld.X), Math.Max(req.MinWorld.Y, req.MaxWorld.Y), cb.Max.Z);
+                            cv.CropBox = cb;
+                        }
+                        catch (Exception ex)
+                        {
+                            // A crop that fails to grow starves the cropBounded dimension pass of
+                            // references outside the drawn boundary — tell the run log, don't just swallow.
+                            LemoineLog.Swallowed("ClashFinderEventHandler: grow user callout crop", ex);
+                            Log($"User callout '{cv.Name}': could not grow its crop ({ex.Message}) — "
+                              + "dimensions may miss references outside the drawn boundary.", "fail");
+                        }
+                        doc.Regenerate();   // crop/scale must be current before the marker pass filters by view volume
+
+                        if (ClearPrevious)
+                        {
+                            int removed = ClearViewMarkers(doc, cv.Id);
+                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                        }
+
+                        int placed = 0;
+                        foreach (var (engine, det, cache) in dets)
+                        {
+                            if (det.Failed || det.ClashCount == 0) continue;
+                            var pr = engine.PlaceInView(doc, cv, det, cache);
+                            placed           += pr.Markers;
+                            totalMarkers     += pr.Markers;
+                            totalMarkerFails += pr.Fails;
+                        }
+
+                        // The grown crop can cover NON-member clashes (the next group over, or a
+                        // second user callout in the same room) — those keep marking and
+                        // dimensioning in the parent, so their markers must not also show here.
+                        int pruned = DeleteMarkersExcept(doc, cv.Id, req.SourceKeys);
+
+                        // This callout owns its members now: remove their parent-view markers so
+                        // they show ONLY here (the parent keeps the callout bubble).
+                        int parentRemoved = DeleteParentMarkers(doc, parentView.Id, req.SourceKeys);
+
+                        if (!UserCalloutSchema.Stamp(cv, req.MembershipMinWorld, req.MembershipMaxWorld,
+                                req.MinWorld, req.MaxWorld))
+                            Log($"User callout '{cv.Name}': could not stamp its group boundary — a re-run "
+                              + "will re-baseline the group to the grown crop.", "fail");
+
+                        ids.Add(cv.Id);
+                        deferred.AddRange(req.SourceKeys);
+                        Log($"User callout '{cv.Name}' adopted at 1:{cv.Scale} — {placed} marker(s) placed"
+                          + (pruned > 0 ? $", {pruned} non-member marker element(s) pruned" : "")
+                          + $"; {parentRemoved} parent marker element(s) removed, its {req.ClashCount} "
+                          + "clash(es) show and dimension only in this callout.", "pass");
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Error("ClashFinderEventHandler: adopt user callout", ex);
+                        Log($"User callout '{calloutName}': adoption failed ({ex.Message}) — its clashes stay "
+                          + "dimensioned in the parent view.", "fail");
+                    }
+                }
+                tx.Commit();
+            }
+            return ids;
+        }
+
+        /// <summary>Deletes the tagged marker elements (cross lines + filled regions) in a view
+        /// whose clash group is NOT in <paramref name="keepKeys"/> — used to prune non-member
+        /// clashes the marker pass placed inside an adopted user callout's grown crop. Runs
+        /// inside the caller's open transaction.</summary>
+        private static int DeleteMarkersExcept(Document doc, ElementId viewId, List<string> keepKeys)
+        {
+            int removed = 0;
+            var keys = new HashSet<string>(keepKeys, StringComparer.Ordinal);
+            var toDelete = new List<ElementId>();
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && !keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && !keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: collect non-member callout markers", ex); }
+
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
+            }
+            return removed;
         }
 
         /// <summary>Deletes this parent's dense-area callout views from earlier runs that this

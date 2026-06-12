@@ -80,9 +80,10 @@ namespace LemoineTools.Tools.Clash
         private List<string> _selectedViewNames    = new List<string>();
         private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
 
-        private bool _clearPrevious    = true;
-        private bool _runDimensionPass = true;   // dimensioning is the point — on by default
-        private double _roundSizeMm    = 0.0;     // round marker oversize; 0 = exact element size
+        private bool _clearPrevious     = true;
+        private bool _runDimensionPass  = true;   // dimensioning is the point — on by default
+        private bool _adoptUserCallouts = true;   // user-drawn callouts become pre-defined clash groups
+        private double _roundSizeMm     = 0.0;    // round marker oversize; 0 = exact element size
 
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
@@ -267,10 +268,13 @@ namespace LemoineTools.Tools.Clash
             {
                 new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
                                  Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
+                new ToggleItem { Id = "userCallouts", Label = "Use my drawn callouts as clash groups",
+                                 Desc = "Any callout you drew on a selected view becomes its own pre-defined group: the clashes inside it mark and dimension only there — never clustered with markers outside it — and the tool grows its crop to the room and sets a legible scale, like an automatic dense-area callout.", DefaultOn = _adoptUserCallouts },
             });
             toggles.StateChanged += state =>
             {
                 state.TryGetValue("dimPass", out _runDimensionPass);
+                state.TryGetValue("userCallouts", out _adoptUserCallouts);
                 Fire();
             };
             outer.Children.Add(toggles);
@@ -367,6 +371,7 @@ namespace LemoineTools.Tools.Clash
                 case "S4":
                     return _runDimensionPass
                         ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
+                          + (_adoptUserCallouts ? " · my callouts" : "")
                         : "dim pass off";
                 case "S5": return "Ready to run";
                 default: return "—";
@@ -398,6 +403,7 @@ namespace LemoineTools.Tools.Clash
             {
                 var chips = new List<string>();
                 if (_clearPrevious) chips.Add("clear previous");
+                if (_runDimensionPass && _adoptUserCallouts) chips.Add("my callouts = groups");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
                     chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
                 return chips.Count > 0 ? chips : null;
@@ -430,9 +436,10 @@ namespace LemoineTools.Tools.Clash
                 .Where(n => _viewNameToId.ContainsKey(n))
                 .Select(n => _viewNameToId[n])
                 .ToList();
-            _handler.ClearPrevious    = _clearPrevious;
-            _handler.RunDimensionPass = _runDimensionPass;
-            _handler.DimTargetType    = _dimTargetType;
+            _handler.ClearPrevious     = _clearPrevious;
+            _handler.RunDimensionPass  = _runDimensionPass;
+            _handler.AdoptUserCallouts = _adoptUserCallouts;
+            _handler.DimTargetType     = _dimTargetType;
             _handler.RoundSizeMm      = _roundSizeMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
