@@ -11,11 +11,12 @@ namespace LemoineTools.Lemoine
     /// </summary>
     public sealed class LemoineBrowserTree
     {
-        /// <summary>Root folder titled like the browser's view node, e.g. "Views (Discipline)".</summary>
-        public LemoineBrowserNode? ViewsRoot { get; set; }
-
-        /// <summary>Root folder titled like the browser's sheet node, e.g. "Sheets (all sheets)".</summary>
-        public LemoineBrowserNode? SheetsRoot { get; set; }
+        /// <summary>
+        /// Top-level browser nodes in display order — "Views (Discipline)",
+        /// "Legends", "Schedules/Quantities", "Sheets (all sheets)". Roots that
+        /// end up with no eligible leaves are hidden by the picker.
+        /// </summary>
+        public List<LemoineBrowserNode> Roots { get; } = new List<LemoineBrowserNode>();
     }
 
     /// <summary>

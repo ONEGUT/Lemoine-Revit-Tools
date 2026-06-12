@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.LinkViews;
 
@@ -65,7 +66,8 @@ namespace LemoineTools.Commands
                 .ToList();
 
             var vm = new ViewsBulkDuplicateViewModel(
-                App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!, views);
+                App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!, views,
+                BrowserTreeCapture.Capture(doc));
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

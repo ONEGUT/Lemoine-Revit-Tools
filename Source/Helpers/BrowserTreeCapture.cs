@@ -19,11 +19,21 @@ namespace LemoineTools.Helpers
         public static LemoineBrowserTree Capture(Document doc)
         {
             var tree = new LemoineBrowserTree();
-            try { tree.ViewsRoot = CaptureViews(doc); }
-            catch (Exception ex) { LemoineLog.Error("BrowserTreeCapture: views tree capture failed — picker falls back to empty", ex); }
-            try { tree.SheetsRoot = CaptureSheets(doc); }
-            catch (Exception ex) { LemoineLog.Error("BrowserTreeCapture: sheets tree capture failed — picker falls back to empty", ex); }
+            // Browser display order: Views, Legends, Schedules/Quantities, Sheets.
+            AddRoot(tree, "views",     () => CaptureViews(doc));
+            AddRoot(tree, "legends",   () => CaptureLegends(doc));
+            AddRoot(tree, "schedules", () => CaptureSchedules(doc));
+            AddRoot(tree, "sheets",    () => CaptureSheets(doc));
             return tree;
+        }
+
+        private static void AddRoot(LemoineBrowserTree tree, string what, Func<LemoineBrowserNode> capture)
+        {
+            try { tree.Roots.Add(capture()); }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"BrowserTreeCapture: {what} capture failed — that browser node is missing from pickers", ex);
+            }
         }
 
         // ── Views (graphical views only — schedules/legends live under their own
@@ -83,6 +93,34 @@ namespace LemoineTools.Helpers
             }
 
             SortRecursive(root, IsDescending(org));
+            return root;
+        }
+
+        // ── Legends (flat under their own browser root) ───────────────────────
+        private static LemoineBrowserNode CaptureLegends(Document doc)
+        {
+            var root = new LemoineBrowserNode { Title = "Legends" };
+            var legends = new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => !v.IsTemplate && v.ViewType == ViewType.Legend)
+                .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var v in legends)
+                root.Children.Add(new LemoineBrowserNode { Title = v.Name, Id = v.Id.Value });
+            return root;
+        }
+
+        // ── Schedules (flat; titleblock revision schedules are browser-hidden) ─
+        private static LemoineBrowserNode CaptureSchedules(Document doc)
+        {
+            var root = new LemoineBrowserNode { Title = "Schedules/Quantities" };
+            var schedules = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewSchedule))
+                .Cast<ViewSchedule>()
+                .Where(s => !s.IsTemplate && !s.IsTitleblockRevisionSchedule)
+                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase);
+            foreach (var s in schedules)
+                root.Children.Add(new LemoineBrowserNode { Title = s.Name, Id = s.Id.Value });
             return root;
         }
 

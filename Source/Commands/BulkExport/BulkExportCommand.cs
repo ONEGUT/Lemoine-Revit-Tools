@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.BulkExport;
 
@@ -64,9 +65,12 @@ namespace LemoineTools.Commands
                 .OrderBy(n => n)
                 .ToList();
 
+            // Snapshot of the Project Browser organization so the picker mirrors it exactly.
+            var browserTree = BrowserTreeCapture.Capture(doc);
+
             var vm    = new BulkExportViewModel(
                 App.BulkExportHandler!, App.BulkExportEvent!,
-                dwgSetupNames, allSheets, allViews);
+                dwgSetupNames, allSheets, allViews, browserTree);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

@@ -102,14 +102,16 @@ namespace LemoineTools.Lemoine.Controls
             _isSheetById.Clear();
 
             var eligible = eligibleIds != null ? new HashSet<long>(eligibleIds) : null;
-            foreach (var src in new[] { tree?.ViewsRoot, tree?.SheetsRoot })
+            if (tree != null)
             {
-                if (src == null) continue;
-                var root = BuildNode(src, 0, eligible);
-                if (root != null)
+                foreach (var src in tree.Roots)
                 {
-                    _roots.Add(root);
-                    _expanded.Add(root); // roots start expanded, folders collapsed
+                    var root = BuildNode(src, 0, eligible);
+                    if (root != null)
+                    {
+                        _roots.Add(root);
+                        _expanded.Add(root); // roots start expanded, folders collapsed
+                    }
                 }
             }
 
