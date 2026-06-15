@@ -50,7 +50,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
         // ── State ─────────────────────────────────────────────────────────────
         private readonly List<ParentViewEntry>          _parents;
-        private readonly Dictionary<string, ElementId>  _parentLabelToId = new Dictionary<string, ElementId>();
+        private readonly LemoineBrowserTree             _browserTree;
         private List<ElementId>                          _selectedParentIds = new List<ElementId>();
 
         private readonly List<string>                   _titleblockNames;
@@ -85,19 +85,15 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             PlaceDependentViewsEventHandler? handler,
             ExternalEvent?                   externalEvent,
             List<ParentViewEntry>?           parents,
-            List<FamilySymbol>?              titleblocks)
+            List<FamilySymbol>?              titleblocks,
+            LemoineBrowserTree?              browserTree = null)
         {
-            _handler = handler;
-            _event   = externalEvent;
+            _handler     = handler;
+            _event       = externalEvent;
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             _parents = (parents ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
-            foreach (var p in _parents)
-            {
-                // Labels are unique by construction (view names are unique in Revit).
-                if (!_parentLabelToId.ContainsKey(p.DisplayLabel))
-                    _parentLabelToId[p.DisplayLabel] = p.Id;
-            }
 
             _titleblockMap   = new Dictionary<string, ElementId>();
             _titleblockNames = new List<string>();
@@ -137,23 +133,21 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 return Hint("No views with dependent views were found in this project. " +
                             "Create dependents first, then reopen this tool.");
 
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = "Views to place" };
-            tabs.SelectionChanged += selected =>
+            var picker = new LemoineBrowserTreePicker
             {
-                _selectedParentIds = selected
-                    .Where(l => _parentLabelToId.ContainsKey(l))
-                    .Select(l => _parentLabelToId[l])
-                    .ToList();
+                Height         = 300,
+                AccessibleName = "Views to place",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedParentIds = ids.Select(id => new ElementId(id)).ToList();
                 OnValidationChanged();
             };
-
-            // Group by view type so the tabs read FloorPlan / CeilingPlan / Section …
-            var groups = _parents
-                .GroupBy(p => string.IsNullOrEmpty(p.TypeLabel) ? "Views" : p.TypeLabel)
-                .ToDictionary(g => g.Key, g => g.Select(p => p.DisplayLabel).ToList());
-
-            tabs.SetGroups(groups);
-            return tabs;
+            picker.SetTree(_browserTree,
+                _parents.Select(p => p.Id.Value),
+                _selectedParentIds.Select(id => id.Value).ToList());
+            return picker;
         }
 
         // ── Step 2 — Title block ──────────────────────────────────────────────

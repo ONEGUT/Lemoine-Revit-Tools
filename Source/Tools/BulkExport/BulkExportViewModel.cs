@@ -193,6 +193,8 @@ namespace LemoineTools.Tools.BulkExport
         private readonly List<View>                  _allViews;
         private readonly List<string>                _dwgSetupNames;
         private readonly Dictionary<ElementId, ViewSheet> _sheetById;
+        private readonly LemoineBrowserTree          _browserTree;
+        private readonly Dictionary<long, string>    _idToName = new Dictionary<long, string>();
 
         // ── Preview (token preview in S3) ─────────────────────────────────────
         private string _previewSheetNumber = "A101";
@@ -208,13 +210,15 @@ namespace LemoineTools.Tools.BulkExport
             ExternalEvent?           externalEvent,
             List<string>             dwgSetupNames,
             List<ViewSheet>          allSheets,
-            List<View>               allViews)
+            List<View>               allViews,
+            LemoineBrowserTree       browserTree)
         {
             _handler       = handler;
             _event         = externalEvent;
             _dwgSetupNames = dwgSetupNames;
             _allSheets     = allSheets;
             _allViews      = allViews;
+            _browserTree   = browserTree;
 
             // Build fast ID→Sheet lookup
             _sheetById = new Dictionary<ElementId, ViewSheet>();
@@ -223,11 +227,13 @@ namespace LemoineTools.Tools.BulkExport
                 _sheetById[s.Id] = s;
                 string key = $"{s.SheetNumber} — {s.Name}";
                 if (!_nameToId.ContainsKey(key)) _nameToId[key] = s.Id;
+                if (!_idToName.ContainsKey(s.Id.Value)) _idToName[s.Id.Value] = key;
             }
             foreach (var v in _allViews)
             {
                 string key = v.Name;
                 if (!_nameToId.ContainsKey(key)) _nameToId[key] = v.Id;
+                if (!_idToName.ContainsKey(v.Id.Value)) _idToName[v.Id.Value] = key;
             }
 
             // Seed preview from first sheet
@@ -315,26 +321,29 @@ namespace LemoineTools.Tools.BulkExport
             outer.Tag = showAllCb;
             outer.Children.Add(showAllCb);
 
-            var multiSelect = BuildMultiSelect(showAllCb);
+            var multiSelect = BuildTreePicker(showAllCb);
             multiSelect.Tag = "multiselect";
             outer.Children.Add(multiSelect);
 
             return outer;
         }
 
-        private LemoineMultiSelectTabs BuildMultiSelect(CheckBox showAllCb)
+        private LemoineBrowserTreePicker BuildTreePicker(CheckBox showAllCb)
         {
-            var tabs = new LemoineMultiSelectTabs();
-            // Subscribe BEFORE SetGroups — per the LemoineMultiSelectTabs contract, the
-            // single SelectionChanged fired at the end of SetGroups is the only mechanism
+            var picker = new LemoineBrowserTreePicker { Height = 300 };
+            // Subscribe BEFORE SetTree — per the LemoineBrowserTreePicker contract, the
+            // single SelectionChanged fired at the end of SetTree is the only mechanism
             // that initialises the mirror field.
-            tabs.SelectionChanged += selected =>
+            picker.SelectionChanged += ids =>
             {
-                _selectedNames = new List<string>(selected);
+                _selectedNames = ids
+                    .Where(id => _idToName.ContainsKey(id))
+                    .Select(id => _idToName[id])
+                    .ToList();
                 Fire();
             };
-            tabs.SetGroups(BuildGroups((bool)(showAllCb.Tag ?? false)));
-            return tabs;
+            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)));
+            return picker;
         }
 
         private void RefreshMultiSelect(StackPanel outer)
@@ -352,54 +361,32 @@ namespace LemoineTools.Tools.BulkExport
             if (showAllCb != null)
                 showAllCb.Visibility = _exportMode == "Views" ? WpfVisibility.Visible : WpfVisibility.Collapsed;
 
-            var newTabs = BuildMultiSelect(showAllCb ?? new CheckBox { Tag = false });
-            newTabs.Tag = "multiselect";
-            outer.Children.Add(newTabs);
+            var newPicker = BuildTreePicker(showAllCb ?? new CheckBox { Tag = false });
+            newPicker.Tag = "multiselect";
+            outer.Children.Add(newPicker);
             _selectedNames.Clear();
             Fire();
         }
 
-        private Dictionary<string, List<string>> BuildGroups(bool showAll)
+        // Which captured browser-tree leaves are pickable in the current mode. Roots
+        // with no eligible leaves (e.g. Views while exporting sheets) are hidden.
+        private IEnumerable<long> BuildEligibleIds(bool showAll)
         {
-            var groups = new Dictionary<string, List<string>>();
-
             if (_exportMode == "Sheets")
-            {
-                foreach (var sheet in _allSheets)
-                {
-                    string key    = $"{sheet.SheetNumber} — {sheet.Name}";
-                    string prefix = GetSheetPrefix(sheet.SheetNumber);
-                    if (!groups.ContainsKey(prefix)) groups[prefix] = new List<string>();
-                    groups[prefix].Add(key);
-                    if (!_nameToId.ContainsKey(key)) _nameToId[key] = sheet.Id;
-                }
-            }
-            else
-            {
-                var allowedFamilies = new HashSet<ViewFamily>
-                {
-                    ViewFamily.FloorPlan, ViewFamily.CeilingPlan,
-                    ViewFamily.Section,   ViewFamily.Elevation,
-                    ViewFamily.Detail,    ViewFamily.ThreeDimensional,
-                };
-                foreach (var view in _allViews)
-                {
-                    if (!showAll && !allowedFamilies.Contains(
-                            view.ViewType == ViewType.DraftingView
-                                ? ViewFamily.Detail
-                                : GetViewFamily(view)))
-                        continue;
+                return _allSheets.Select(s => s.Id.Value);
 
-                    string groupName = GetViewGroupName(view);
-                    if (!groups.ContainsKey(groupName)) groups[groupName] = new List<string>();
-                    string key = view.Name;
-                    groups[groupName].Add(key);
-                    if (!_nameToId.ContainsKey(key)) _nameToId[key] = view.Id;
-                }
-            }
-
-            if (groups.Count == 0) groups["(No items)"] = new List<string>();
-            return groups;
+            var allowedFamilies = new HashSet<ViewFamily>
+            {
+                ViewFamily.FloorPlan, ViewFamily.CeilingPlan,
+                ViewFamily.Section,   ViewFamily.Elevation,
+                ViewFamily.Detail,    ViewFamily.ThreeDimensional,
+            };
+            return _allViews
+                .Where(v => showAll || allowedFamilies.Contains(
+                    v.ViewType == ViewType.DraftingView
+                        ? ViewFamily.Detail
+                        : GetViewFamily(v)))
+                .Select(v => v.Id.Value);
         }
 
         // ── S2 — Build Packs ──────────────────────────────────────────────────
@@ -1578,14 +1565,6 @@ namespace LemoineTools.Tools.BulkExport
         //  Sheet / view grouping helpers
         // ═════════════════════════════════════════════════════════════════════
 
-        private static string GetSheetPrefix(string sheetNumber)
-        {
-            if (string.IsNullOrEmpty(sheetNumber)) return "Other";
-            int i = 0;
-            while (i < sheetNumber.Length && char.IsLetter(sheetNumber[i])) i++;
-            return i > 0 ? sheetNumber.Substring(0, i) + "-" : "Other";
-        }
-
         private static ViewFamily GetViewFamily(View v)
         {
             if (v is View3D)    return ViewFamily.ThreeDimensional;
@@ -1596,15 +1575,5 @@ namespace LemoineTools.Tools.BulkExport
             return ViewFamily.Invalid;
         }
 
-        private static string GetViewGroupName(View v)
-        {
-            if (v is View3D)    return "3D Views";
-            if (v is ViewPlan vp)
-                return vp.ViewType == ViewType.CeilingPlan ? "Reflected Ceiling Plans" : "Floor Plans";
-            if (v is ViewSection)
-                return v.ViewType == ViewType.Elevation ? "Elevations" : "Sections";
-            if (v.ViewType == ViewType.DraftingView) return "Drafting Views";
-            return v.ViewType.ToString();
-        }
     }
 }

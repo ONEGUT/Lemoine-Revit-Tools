@@ -77,8 +77,8 @@ namespace LemoineTools.Tools.Clash
 
         // ── State ─────────────────────────────────────────────────────────────
         private List<string> _selectedDefDisplays  = new List<string>();
-        private List<string> _selectedViewNames    = new List<string>();
-        private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
+        private List<long>   _selectedViewIds      = new List<long>();
+        private readonly LemoineBrowserTree _browserTree;
 
         private bool _clearPrevious     = true;
         private bool _runDimensionPass  = true;   // dimensioning is the point — on by default
@@ -102,7 +102,8 @@ namespace LemoineTools.Tools.Clash
             List<View>               allViews,
             List<ClashDefinition>    definitions,
             AutoDimension.SlabPickEventHandler? slabPickHandler = null,
-            ExternalEvent?                      slabPickEvent   = null)
+            ExternalEvent?                      slabPickEvent   = null,
+            LemoineBrowserTree?                 browserTree     = null)
         {
             _handler          = handler;
             _event            = externalEvent;
@@ -110,6 +111,7 @@ namespace LemoineTools.Tools.Clash
             _slabPickEvent    = slabPickEvent;
             _allViews    = allViews ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             var used = new HashSet<string>();
             foreach (var def in _definitions)
@@ -120,10 +122,6 @@ namespace LemoineTools.Tools.Clash
                 while (!used.Add(display)) display = $"{baseName} ({n++})";
                 _defDisplayToDef[display] = def;
             }
-
-            foreach (var v in _allViews)
-                if (!_viewNameToId.ContainsKey(v.Name))
-                    _viewNameToId[v.Name] = v.Id;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -186,40 +184,23 @@ namespace LemoineTools.Tools.Clash
         // ── S2 — Select Views ─────────────────────────────────────────────────
         private FrameworkElement BuildViewsStep()
         {
-            var outer = new StackPanel();
-            var tabs  = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += selected =>
+            var outer  = new StackPanel();
+            var picker = new LemoineBrowserTreePicker
             {
-                _selectedViewNames = new List<string>(selected);
+                Height         = 300,
+                AccessibleName = "Views to scan",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedViewIds = ids.ToList();
                 Fire();
             };
-            tabs.SetGroups(BuildViewGroups(), _selectedViewNames);
-            outer.Children.Add(tabs);
+            picker.SetTree(_browserTree,
+                _allViews.Select(v => v.Id.Value),
+                _selectedViewIds.ToList());
+            outer.Children.Add(picker);
             return WrapInScroll(outer);
-        }
-
-        private Dictionary<string, List<string>> BuildViewGroups()
-        {
-            var groups = new Dictionary<string, List<string>>
-            {
-                ["Floor Plans"]             = new List<string>(),
-                ["Reflected Ceiling Plans"] = new List<string>(),
-            };
-
-            foreach (var v in _allViews)
-            {
-                if (!_viewNameToId.ContainsKey(v.Name)) _viewNameToId[v.Name] = v.Id;
-                if (v.ViewType == ViewType.CeilingPlan)
-                    groups["Reflected Ceiling Plans"].Add(v.Name);
-                else
-                    groups["Floor Plans"].Add(v.Name);
-            }
-
-            foreach (var k in groups.Keys.Where(k => groups[k].Count == 0).ToList())
-                groups.Remove(k);
-
-            if (groups.Count == 0) groups["(No plan views)"] = new List<string>();
-            return groups;
         }
 
         // ── S3 — Marker Settings ──────────────────────────────────────────────
@@ -350,7 +331,7 @@ namespace LemoineTools.Tools.Clash
             switch (stepId)
             {
                 case "S1": return _selectedDefDisplays.Count > 0;
-                case "S2": return _selectedViewNames.Count > 0;
+                case "S2": return _selectedViewIds.Count > 0;
                 default:   return true;
             }
         }
@@ -360,7 +341,7 @@ namespace LemoineTools.Tools.Clash
             switch (stepId)
             {
                 case "S1": return _selectedDefDisplays.Count == 0 ? "—" : $"{_selectedDefDisplays.Count} definition(s)";
-                case "S2": return _selectedViewNames.Count   == 0 ? "—" : $"{_selectedViewNames.Count} view(s)";
+                case "S2": return _selectedViewIds.Count     == 0 ? "—" : $"{_selectedViewIds.Count} view(s)";
                 case "S3":
                 {
                     var bits = new List<string>();
@@ -390,7 +371,7 @@ namespace LemoineTools.Tools.Clash
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["defs"]   = _selectedDefDisplays.Count > 0 ? $"{_selectedDefDisplays.Count} definition(s)" : "—",
-            ["views"]  = _selectedViewNames.Count   > 0 ? $"{_selectedViewNames.Count} view(s)"        : "—",
+            ["views"]  = _selectedViewIds.Count     > 0 ? $"{_selectedViewIds.Count} view(s)"          : "—",
             ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
             ["dim"]    = _runDimensionPass
                 ? $"{(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
@@ -432,9 +413,8 @@ namespace LemoineTools.Tools.Clash
                 .Where(d => _defDisplayToDef.ContainsKey(d))
                 .Select(d => _defDisplayToDef[d])
                 .ToList();
-            _handler.ViewIds = _selectedViewNames
-                .Where(n => _viewNameToId.ContainsKey(n))
-                .Select(n => _viewNameToId[n])
+            _handler.ViewIds = _selectedViewIds
+                .Select(id => new ElementId(id))
                 .ToList();
             _handler.ClearPrevious     = _clearPrevious;
             _handler.RunDimensionPass  = _runDimensionPass;
