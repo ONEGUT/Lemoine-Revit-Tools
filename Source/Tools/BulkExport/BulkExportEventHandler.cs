@@ -531,44 +531,7 @@ namespace LemoineTools.Tools.BulkExport
                         {
                             string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "NWC") : OutputFolder;
 
-                            var opts = new NavisworksExportOptions();
-
-                            // Scope: always View for per-view batch — ViewId drives which view exports
-                            opts.ExportScope = NavisworksExportScope.View;
-                            opts.ViewId      = view3d.Id;
-
-                            opts.Coordinates = NwcCoordinates == "Internal"
-                                ? NavisworksCoordinates.Internal
-                                : NavisworksCoordinates.Shared;
-
-                            opts.Parameters = NwcParameters switch
-                            {
-                                "Elements" => NavisworksParameters.Elements,
-                                "None"     => NavisworksParameters.None,
-                                _          => NavisworksParameters.All,
-                            };
-
-                            opts.ConvertElementProperties = NwcConvertElementProps;
-                            opts.DivideFileIntoLevels     = NwcDivideByLevel;
-                            opts.ExportLinks              = NwcExportLinks;
-                            opts.ExportParts              = NwcExportParts;
-                            opts.ExportElementIds         = NwcExportElementIds;
-                            opts.ExportUrls               = NwcExportUrls;
-                            opts.FindMissingMaterials     = NwcFindMissingMaterials;
-                            opts.ExportRoomGeometry       = NwcExportRoomGeometry;
-                            opts.ExportRoomAsAttribute    = NwcExportRoomAsAttribute;
-                            opts.ConvertLights            = NwcConvertLights;
-                            opts.FacetingFactor           = NwcFacetingFactor;
-
-                            // ConvertLinkedCADFormats was added mid-cycle — guard for older API versions.
-                            // Only warn the user if they actually had it enabled, but always record it.
-                            try { opts.ConvertLinkedCADFormats = NwcConvertLinkedCad; }
-                            catch (Exception ex)
-                            {
-                                LemoineLog.Swallowed("BulkExport: NWC ConvertLinkedCADFormats unsupported by this API", ex);
-                                if (NwcConvertLinkedCad)
-                                    pushLog("NWC: ConvertLinkedCADFormats is not supported by this Revit/Navisworks version — setting ignored.", "warn");
-                            }
+                            var opts = ExportOptionsFactory.BuildNwcOptions(BuildNwcOptionSet(), view3d.Id, pushLog);
 
                             // NWC export uses the 3-parameter overload — ViewId is set on the options object
                             doc.Export(outDir, safeName, opts);
@@ -605,9 +568,7 @@ namespace LemoineTools.Tools.BulkExport
                         {
                             string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "IFC") : OutputFolder;
 
-                            var opts = new IFCExportOptions();
-                            opts.FileVersion  = IfcVersion == "IFC4" ? IFCVersion.IFC4 : IFCVersion.IFC2x3;
-                            opts.FilterViewId = element.Id;
+                            var opts = ExportOptionsFactory.BuildIfcOptions(IfcVersion, element.Id);
 
                             // IFC export writes IFC-specific data to the document and requires a transaction
                             using (var t = new Transaction(doc, "Batch IFC Export"))
@@ -633,74 +594,34 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── Builders ──────────────────────────────────────────────────────────
 
+        // Option construction is delegated to ExportOptionsFactory so Bulk Export and
+        // Print View build identical PDF/DWG output.
         private PDFExportOptions BuildPdfOptions(string fileName, bool combine)
-        {
-            var opts = new PDFExportOptions
-            {
-                FileName                     = fileName,
-                Combine                      = combine,
-                PaperPlacement               = PdfPlacement == "Center"
-                                                   ? PaperPlacementType.Center
-                                                   : PaperPlacementType.LowerLeft,
-                ColorDepth                   = MapColorDepth(ColorDepth),
-                RasterQuality                = MapRasterQuality(RasterQuality),
-                ViewLinksInBlue              = ViewLinksInBlue,
-                ReplaceHalftoneWithThinLines = ReplaceHalftoneWithThinLines,
-            };
-
-            if (ZoomSetting == "Scale %")
-            {
-                opts.ZoomType       = ZoomType.Zoom;
-                opts.ZoomPercentage = ZoomPercent;
-            }
-            else
-            {
-                opts.ZoomType = ZoomType.FitToPage;
-            }
-
-            return opts;
-        }
+            => ExportOptionsFactory.BuildPdfOptions(
+                   fileName, combine, PdfPlacement, ColorDepth, RasterQuality,
+                   ZoomSetting, ZoomPercent, ViewLinksInBlue, ReplaceHalftoneWithThinLines);
 
         // Returns null when a named setup is specified but does not exist in the document.
         private DWGExportOptions? BuildDwgOptions(Document doc)
-        {
-            if (!string.IsNullOrEmpty(DwgSetupName))
-            {
-                bool found = false;
-                foreach (var s in new FilteredElementCollector(doc)
-                    .OfClass(typeof(ExportDWGSettings))
-                    .Cast<ExportDWGSettings>())
-                {
-                    if (s.Name == DwgSetupName) { found = true; break; }
-                }
-                if (!found) return null;
-            }
-            return new DWGExportOptions { MergedViews = true };
-        }
+            => ExportOptionsFactory.BuildDwgOptions(doc, DwgSetupName);
 
-        // ── Enum mappers ──────────────────────────────────────────────────────
-
-        private static ColorDepthType MapColorDepth(string value)
+        private NwcOptionSet BuildNwcOptionSet() => new NwcOptionSet
         {
-            switch (value)
-            {
-                case "Grayscale":     return ColorDepthType.GrayScale;
-                case "Black & White": return ColorDepthType.BlackLine;
-                default:              return ColorDepthType.Color;
-            }
-        }
-
-        private static RasterQualityType MapRasterQuality(string value)
-        {
-            switch (value)
-            {
-                case "Draft":        return RasterQualityType.Low;   // Draft removed in Revit 2024; map to Low
-                case "Low":          return RasterQualityType.Low;
-                case "Medium":       return RasterQualityType.Medium;
-                case "Presentation": return RasterQualityType.Presentation;
-                default:             return RasterQualityType.High;
-            }
-        }
+            Coordinates           = NwcCoordinates,
+            Parameters            = NwcParameters,
+            ConvertElementProps   = NwcConvertElementProps,
+            DivideByLevel         = NwcDivideByLevel,
+            ExportLinks           = NwcExportLinks,
+            ExportParts           = NwcExportParts,
+            ExportElementIds      = NwcExportElementIds,
+            ExportUrls            = NwcExportUrls,
+            FindMissingMaterials  = NwcFindMissingMaterials,
+            ExportRoomGeometry    = NwcExportRoomGeometry,
+            ExportRoomAsAttribute = NwcExportRoomAsAttribute,
+            ConvertLights         = NwcConvertLights,
+            ConvertLinkedCad      = NwcConvertLinkedCad,
+            FacetingFactor        = NwcFacetingFactor,
+        };
 
         // ── Helpers ───────────────────────────────────────────────────────────
 

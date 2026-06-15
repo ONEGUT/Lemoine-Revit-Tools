@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
@@ -48,9 +50,21 @@ namespace LemoineTools.Commands
                 ? $"{sheet.SheetNumber} — {sheet.Name}"
                 : activeView.Name;
 
+            // NWC/IFC export 3D views only — used to decide which formats the tool offers.
+            bool isThreeD = activeView is View3D;
+
+            // DWG export setup names (same source as Bulk Export).
+            var doc = uidoc!.Document;
+            var dwgSetupNames = new FilteredElementCollector(doc)
+                .OfClass(typeof(ExportDWGSettings))
+                .Cast<ExportDWGSettings>()
+                .Select(setting => setting.Name)
+                .OrderBy(n => n)
+                .ToList();
+
             var vm = new PrintViewViewModel(
                 App.PrintViewHandler!, App.PrintViewEvent!,
-                activeView.Id, displayName);
+                activeView.Id, displayName, isThreeD, dwgSetupNames);
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

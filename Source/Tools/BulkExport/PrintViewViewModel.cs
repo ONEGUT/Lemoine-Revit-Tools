@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,27 +15,61 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class PrintViewViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public class PrintViewViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, ILemoineToolCleanup
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
         public string Title    => "Print View";
         public string RunLabel => "Print in Revit →";
 
+        // Each format's settings live in its own step, shown only when that format is
+        // enabled (ILemoineConditionalSteps). The settings steps are never last —
+        // S6 (Output) and S7 (Review & Run) are always visible.
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "PDF Settings", required: false),
-            new StepDefinition("S2", "Output",       required: true),
-            new StepDefinition("S3", "Review & Run", required: false),
+            new StepDefinition("S1", "Formats",       required: true),
+            new StepDefinition("S2", "PDF Settings",  required: false),
+            new StepDefinition("S3", "DWG Settings",  required: false),
+            new StepDefinition("S4", "NWC Settings",  required: false),
+            new StepDefinition("S5", "IFC Settings",  required: false),
+            new StepDefinition("S6", "Output",        required: true),
+            new StepDefinition("S7", "Review & Run",  required: false),
         };
+
+        // ── ILemoineConditionalSteps ──────────────────────────────────────────
+        public bool IsStepVisible(string stepId)
+        {
+            switch (stepId)
+            {
+                case "S2": return _pdfOn;
+                case "S3": return _dwgOn;
+                case "S4": return _nwcOn;
+                case "S5": return _ifcOn;
+                default:   return true;
+            }
+        }
 
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── View info (set from command, immutable) ────────────────────────────
-        private readonly ElementId _viewId;
-        private readonly string    _viewDisplayName;
+        private readonly ElementId    _viewId;
+        private readonly string       _viewDisplayName;
+        private readonly bool          _isThreeD;        // active view is a 3D view → NWC/IFC eligible
+        private readonly List<string> _dwgSetupNames;
 
-        // ── S1 state — PDF settings ───────────────────────────────────────────
+        // ── NWC faceting presets (label→value) ────────────────────────────────
+        private static readonly string[] NwcFacetingLabels = { "Low — 0.5", "Standard — 1.0", "High — 2.0", "Ultra — 5.0" };
+        private static readonly double[] NwcFacetingValues = { 0.5, 1.0, 2.0, 5.0 };
+
+        // ── S1 state — formats ────────────────────────────────────────────────
+        // Default from the shared settings so the choice tracks Bulk Export; NWC/IFC are
+        // forced off on a non-3D view regardless of the saved flag.
+        private bool _pdfOn = BulkExportSettings.Instance.ExportPdf;
+        private bool _dwgOn = BulkExportSettings.Instance.ExportDwg;
+        private bool _nwcOn;
+        private bool _ifcOn;
+
+        // ── PDF settings state ────────────────────────────────────────────────
         private string _zoomSetting     = BulkExportSettings.Instance.ZoomSetting;
         private int    _zoomPct         = BulkExportSettings.Instance.ZoomPercent;
         private string _colorDepth      = BulkExportSettings.Instance.ColorDepth;
@@ -42,7 +77,29 @@ namespace LemoineTools.Tools.BulkExport
         private bool   _viewLinksBlue   = BulkExportSettings.Instance.ViewLinksInBlue;
         private bool   _replaceHalftone = BulkExportSettings.Instance.ReplaceHalftoneWithThinLines;
 
-        // ── S2 state — output folder ──────────────────────────────────────────
+        // ── DWG settings state ────────────────────────────────────────────────
+        private string _dwgSetup        = BulkExportSettings.Instance.DwgExportSetupName;
+
+        // ── NWC settings state (all NavisworksExportOptions properties) ───────
+        private string _nwcCoordinates         = BulkExportSettings.Instance.NwcCoordinates;
+        private string _nwcParameters          = BulkExportSettings.Instance.NwcParameters;
+        private bool   _nwcConvertElementProps  = BulkExportSettings.Instance.NwcConvertElementProps;
+        private bool   _nwcDivideByLevel        = BulkExportSettings.Instance.NwcDivideByLevel;
+        private bool   _nwcExportLinks          = BulkExportSettings.Instance.NwcExportLinks;
+        private bool   _nwcExportParts          = BulkExportSettings.Instance.NwcExportParts;
+        private bool   _nwcExportElementIds     = BulkExportSettings.Instance.NwcExportElementIds;
+        private bool   _nwcExportUrls           = BulkExportSettings.Instance.NwcExportUrls;
+        private bool   _nwcFindMissingMaterials = BulkExportSettings.Instance.NwcFindMissingMaterials;
+        private bool   _nwcExportRoomGeometry   = BulkExportSettings.Instance.NwcExportRoomGeometry;
+        private bool   _nwcExportRoomAsAttr     = BulkExportSettings.Instance.NwcExportRoomAsAttribute;
+        private bool   _nwcConvertLights        = BulkExportSettings.Instance.NwcConvertLights;
+        private bool   _nwcConvertLinkedCad     = BulkExportSettings.Instance.NwcConvertLinkedCad;
+        private double _nwcFacetingFactor       = BulkExportSettings.Instance.NwcFacetingFactor;
+
+        // ── IFC settings state ────────────────────────────────────────────────
+        private string _ifcVersion       = BulkExportSettings.Instance.IfcVersion;
+
+        // ── Output state ──────────────────────────────────────────────────────
         private string _outputFolder = BulkExportSettings.Instance.OutputFolder;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
@@ -54,12 +111,28 @@ namespace LemoineTools.Tools.BulkExport
             PrintViewEventHandler? handler,
             ExternalEvent?          externalEvent,
             ElementId               viewId,
-            string                  viewDisplayName)
+            string                  viewDisplayName,
+            bool                    isThreeD,
+            List<string>            dwgSetupNames)
         {
             _handler         = handler;
             _event           = externalEvent;
             _viewId          = viewId;
             _viewDisplayName = viewDisplayName;
+            _isThreeD        = isThreeD;
+            _dwgSetupNames   = dwgSetupNames ?? new List<string>();
+
+            // 3D-only formats only matter for a 3D view; honour the saved flag there.
+            if (_isThreeD)
+            {
+                _nwcOn = BulkExportSettings.Instance.ExportNwc;
+                _ifcOn = BulkExportSettings.Instance.ExportIfc;
+            }
+
+            // Default the DWG setup to the first available so the combo's shown value
+            // matches what actually gets used.
+            if (string.IsNullOrEmpty(_dwgSetup) && _dwgSetupNames.Count > 0)
+                _dwgSetup = _dwgSetupNames[0];
         }
 
         // ── ILemoineToolCleanup ───────────────────────────────────────────────
@@ -78,14 +151,67 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S1": return BuildS1PdfSettings();
-                case "S2": return BuildS2Output();
+                case "S1": return BuildS1Formats();
+                case "S2": return BuildS2PdfSettings();
+                case "S3": return BuildS3Dwg();
+                case "S4": return BuildS4Nwc();
+                case "S5": return BuildS5Ifc();
+                case "S6": return BuildS6Output();
                 default:   return null;
             }
         }
 
-        // ── S1 — PDF Settings ─────────────────────────────────────────────────
-        private FrameworkElement BuildS1PdfSettings()
+        // ── S1 — Formats ──────────────────────────────────────────────────────
+        private FrameworkElement BuildS1Formats()
+        {
+            var outer = new StackPanel();
+            AddSectionLabel(outer, "FORMATS");
+
+            var items = new List<ToggleItem>
+            {
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = "Vector PDF via Revit engine",  DefaultOn = _pdfOn },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = "AutoCAD DWG via Revit export", DefaultOn = _dwgOn },
+            };
+            if (_isThreeD)
+            {
+                items.Add(new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC via Navisworks Manage", DefaultOn = _nwcOn });
+                items.Add(new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine",        DefaultOn = _ifcOn });
+            }
+
+            var formatToggles = new LemoineToggleSwitches();
+            formatToggles.SetItems(items);
+            formatToggles.StateChanged += state =>
+            {
+                _pdfOn = state.TryGetValue("pdf", out bool pdfVal) && pdfVal;
+                _dwgOn = state.TryGetValue("dwg", out bool dwgVal) && dwgVal;
+                _nwcOn = _isThreeD && state.TryGetValue("nwc", out bool nwcVal) && nwcVal;
+                _ifcOn = _isThreeD && state.TryGetValue("ifc", out bool ifcVal) && ifcVal;
+                Fire();
+            };
+            outer.Children.Add(formatToggles);
+
+            // Tell the user why NWC/IFC aren't offered for a non-3D view, rather than
+            // silently omitting them.
+            if (!_isThreeD)
+            {
+                var hint = new TextBlock
+                {
+                    Text         = "NWC and IFC export 3D views only — open a 3D view to print those formats.",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 8, 0, 0),
+                };
+                hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                hint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                outer.Children.Add(hint);
+            }
+
+            return outer;
+        }
+
+        // ── S2 — PDF Settings ─────────────────────────────────────────────────
+        private FrameworkElement BuildS2PdfSettings()
         {
             var outer = new StackPanel();
 
@@ -182,8 +308,131 @@ namespace LemoineTools.Tools.BulkExport
             return outer;
         }
 
-        // ── S2 — Output ───────────────────────────────────────────────────────
-        private FrameworkElement BuildS2Output()
+        // ── S3 — DWG Settings ─────────────────────────────────────────────────
+        private FrameworkElement BuildS3Dwg()
+        {
+            var outer = new StackPanel();
+            AddSectionLabel(outer, "DWG OPTIONS");
+
+            var setupNames = _dwgSetupNames.Count > 0
+                ? _dwgSetupNames.ToArray()
+                : new[] { "(No DWG setups found in project)" };
+            int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
+            AddLabeledComboBox(outer, "Export Setup", setupNames, initIdx,
+                val => { _dwgSetup = val; Fire(); });
+
+            var note = new TextBlock
+            {
+                Text         = "The export setup must already exist in the project (File → Export → DWG → modify a setup).",
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+                Margin       = new Thickness(0, 6, 0, 0),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(note);
+
+            return outer;
+        }
+
+        // ── S4 — NWC Settings ─────────────────────────────────────────────────
+        private FrameworkElement BuildS4Nwc()
+        {
+            var outer = new StackPanel();
+            AddSectionLabel(outer, "NWC OPTIONS");
+
+            var note = new TextBlock
+            {
+                Text         = "Exports the active 3D view via Navisworks Manage. Requires Navisworks Manage installed and loaded.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 4),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(note);
+
+            AddDivider(outer);
+
+            // ── Coordinates & Parameters ──────────────────────────────────────
+            AddSectionLabel(outer, "COORDINATES & PARAMETERS");
+
+            AddLabeledComboBox(outer, "Coordinate System",
+                new[] { "Shared", "Internal" },
+                _nwcCoordinates == "Internal" ? 1 : 0,
+                val => { _nwcCoordinates = val; Fire(); });
+
+            AddLabeledComboBox(outer, "Element Parameters",
+                new[] { "All", "Elements", "None" },
+                _nwcParameters == "Elements" ? 1 : _nwcParameters == "None" ? 2 : 0,
+                val => { _nwcParameters = val; Fire(); });
+
+            AddDivider(outer);
+
+            // ── Geometry & Mesh ───────────────────────────────────────────────
+            AddSectionLabel(outer, "GEOMETRY & MESH");
+
+            int initFacetIdx = Array.IndexOf(NwcFacetingValues, _nwcFacetingFactor);
+            if (initFacetIdx < 0) initFacetIdx = 1; // fallback to Standard
+
+            AddLabeledComboBox(outer, "Mesh Quality (Faceting Factor)",
+                NwcFacetingLabels, initFacetIdx,
+                val =>
+                {
+                    int idx = Array.IndexOf(NwcFacetingLabels, val);
+                    _nwcFacetingFactor = idx >= 0 ? NwcFacetingValues[idx] : 1.0;
+                    Fire();
+                });
+
+            AddNwcCheckBox(outer, "Convert element properties", _nwcConvertElementProps, v => _nwcConvertElementProps = v);
+            AddNwcCheckBox(outer, "Convert Revit lights",       _nwcConvertLights,       v => _nwcConvertLights       = v);
+            AddNwcCheckBox(outer, "Convert linked CAD formats", _nwcConvertLinkedCad,    v => _nwcConvertLinkedCad    = v);
+
+            AddDivider(outer);
+
+            // ── Content to Include ────────────────────────────────────────────
+            AddSectionLabel(outer, "CONTENT TO INCLUDE");
+
+            AddNwcCheckBox(outer, "Divide file into levels",                    _nwcDivideByLevel,        v => _nwcDivideByLevel        = v);
+            AddNwcCheckBox(outer, "Include linked Revit models",                _nwcExportLinks,          v => _nwcExportLinks          = v);
+            AddNwcCheckBox(outer, "Include Revit parts",                        _nwcExportParts,          v => _nwcExportParts          = v);
+            AddNwcCheckBox(outer, "Include element IDs (round-trip selection)", _nwcExportElementIds,     v => _nwcExportElementIds     = v);
+            AddNwcCheckBox(outer, "Include URL parameters",                     _nwcExportUrls,           v => _nwcExportUrls           = v);
+            AddNwcCheckBox(outer, "Find missing materials",                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
+            AddNwcCheckBox(outer, "Export room geometry (ignored in per-view exports)", _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
+            AddNwcCheckBox(outer, "Attach room data as element attributes",     _nwcExportRoomAsAttr,     v => _nwcExportRoomAsAttr     = v);
+
+            return outer;
+        }
+
+        // ── S5 — IFC Settings ─────────────────────────────────────────────────
+        private FrameworkElement BuildS5Ifc()
+        {
+            var outer = new StackPanel();
+            AddSectionLabel(outer, "IFC OPTIONS");
+
+            var note = new TextBlock
+            {
+                Text         = "Exports the active 3D view via Revit's IFC engine.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 4),
+            };
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(note);
+
+            AddLabeledComboBox(outer, "IFC Version",
+                new[] { "IFC2x3", "IFC4" },
+                _ifcVersion == "IFC4" ? 1 : 0,
+                val => { _ifcVersion = val; Fire(); });
+
+            return outer;
+        }
+
+        // ── S6 — Output ───────────────────────────────────────────────────────
+        private FrameworkElement BuildS6Output()
         {
             var outer = new StackPanel();
             AddSectionLabel(outer, "OUTPUT FOLDER");
@@ -191,7 +440,7 @@ namespace LemoineTools.Tools.BulkExport
             var folder = new LemoineFolderBrowser
             {
                 Path        = _outputFolder,
-                DialogTitle = "Select output folder for PDF",
+                DialogTitle = "Select output folder",
             };
             folder.PathChanged += p => { _outputFolder = p; Fire(); };
             outer.Children.Add(folder);
@@ -205,13 +454,15 @@ namespace LemoineTools.Tools.BulkExport
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
             ("view",    "View"),
-            ("quality", "Quality"),
+            ("formats", "Formats"),
+            ("quality", "PDF Quality"),
             ("folder",  "Output Folder"),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["view"]    = _viewDisplayName,
+            ["formats"] = FormatsSummary(),
             ["quality"] = $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}",
             ["folder"]  = string.IsNullOrEmpty(_outputFolder) ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
@@ -229,8 +480,8 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S1": return true;
-                case "S2": return !string.IsNullOrWhiteSpace(_outputFolder);
+                case "S1": return _pdfOn || _dwgOn || _nwcOn || _ifcOn;
+                case "S6": return !string.IsNullOrWhiteSpace(_outputFolder);
                 default:   return true;
             }
         }
@@ -239,10 +490,24 @@ namespace LemoineTools.Tools.BulkExport
         {
             switch (stepId)
             {
-                case "S1": return $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}";
-                case "S2": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
+                case "S1": return FormatsSummary();
+                case "S2": return $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}";
+                case "S3": return string.IsNullOrEmpty(_dwgSetup) ? "Default setup" : _dwgSetup;
+                case "S4": return $"{_nwcCoordinates} · {_nwcParameters}";
+                case "S5": return _ifcVersion;
+                case "S6": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
                 default:   return "—";
             }
+        }
+
+        private string FormatsSummary()
+        {
+            var on = new List<string>();
+            if (_pdfOn) on.Add("PDF");
+            if (_dwgOn) on.Add("DWG");
+            if (_nwcOn) on.Add("NWC");
+            if (_ifcOn) on.Add("IFC");
+            return on.Count > 0 ? string.Join(" · ", on) : "No format selected";
         }
 
         public void Run(
@@ -252,7 +517,9 @@ namespace LemoineTools.Tools.BulkExport
         {
             if (_handler == null || _event == null) return;
 
-            // Persist PDF settings back to BulkExportSettings so both tools share quality prefs
+            // Persist shared quality/format settings so both tools track each other.
+            // The format on/off flags are intentionally NOT written back — they depend on
+            // the transient active-view type and would clobber Bulk Export's selection.
             var s = BulkExportSettings.Instance;
             s.ZoomSetting                  = _zoomSetting;
             s.ZoomPercent                  = _zoomPct;
@@ -260,20 +527,62 @@ namespace LemoineTools.Tools.BulkExport
             s.RasterQuality                = _rasterQuality;
             s.ViewLinksInBlue              = _viewLinksBlue;
             s.ReplaceHalftoneWithThinLines = _replaceHalftone;
+            s.DwgExportSetupName           = _dwgSetup;
+            s.NwcCoordinates               = _nwcCoordinates;
+            s.NwcParameters                = _nwcParameters;
+            s.NwcConvertElementProps       = _nwcConvertElementProps;
+            s.NwcDivideByLevel             = _nwcDivideByLevel;
+            s.NwcExportLinks               = _nwcExportLinks;
+            s.NwcExportParts               = _nwcExportParts;
+            s.NwcExportElementIds          = _nwcExportElementIds;
+            s.NwcExportUrls                = _nwcExportUrls;
+            s.NwcFindMissingMaterials      = _nwcFindMissingMaterials;
+            s.NwcExportRoomGeometry        = _nwcExportRoomGeometry;
+            s.NwcExportRoomAsAttribute     = _nwcExportRoomAsAttr;
+            s.NwcConvertLights             = _nwcConvertLights;
+            s.NwcConvertLinkedCad          = _nwcConvertLinkedCad;
+            s.NwcFacetingFactor            = _nwcFacetingFactor;
+            s.IfcVersion                   = _ifcVersion;
             s.OutputFolder                 = _outputFolder;
             s.Save();
 
-            _handler.ViewId                      = _viewId;
-            _handler.OutputFolder                = _outputFolder;
-            _handler.ZoomSetting                 = _zoomSetting;
-            _handler.ZoomPercent                 = _zoomPct;
-            _handler.ColorDepth                  = _colorDepth;
-            _handler.RasterQuality               = _rasterQuality;
-            _handler.ViewLinksInBlue             = _viewLinksBlue;
+            _handler.ViewId       = _viewId;
+            _handler.OutputFolder = _outputFolder;
+
+            _handler.ExportPdf = _pdfOn;
+            _handler.ExportDwg = _dwgOn;
+            _handler.ExportNwc = _nwcOn;
+            _handler.ExportIfc = _ifcOn;
+
+            _handler.ZoomSetting                  = _zoomSetting;
+            _handler.ZoomPercent                  = _zoomPct;
+            _handler.ColorDepth                   = _colorDepth;
+            _handler.RasterQuality                = _rasterQuality;
+            _handler.ViewLinksInBlue              = _viewLinksBlue;
             _handler.ReplaceHalftoneWithThinLines = _replaceHalftone;
-            _handler.PushLog                     = pushLog;
-            _handler.OnProgress                  = onProgress;
-            _handler.OnComplete                  = onComplete;
+
+            _handler.DwgSetupName = _dwgSetup;
+
+            _handler.NwcCoordinates           = _nwcCoordinates;
+            _handler.NwcParameters            = _nwcParameters;
+            _handler.NwcConvertElementProps   = _nwcConvertElementProps;
+            _handler.NwcDivideByLevel         = _nwcDivideByLevel;
+            _handler.NwcExportLinks           = _nwcExportLinks;
+            _handler.NwcExportParts           = _nwcExportParts;
+            _handler.NwcExportElementIds      = _nwcExportElementIds;
+            _handler.NwcExportUrls            = _nwcExportUrls;
+            _handler.NwcFindMissingMaterials  = _nwcFindMissingMaterials;
+            _handler.NwcExportRoomGeometry    = _nwcExportRoomGeometry;
+            _handler.NwcExportRoomAsAttribute = _nwcExportRoomAsAttr;
+            _handler.NwcConvertLights         = _nwcConvertLights;
+            _handler.NwcConvertLinkedCad      = _nwcConvertLinkedCad;
+            _handler.NwcFacetingFactor        = _nwcFacetingFactor;
+
+            _handler.IfcVersion = _ifcVersion;
+
+            _handler.PushLog    = pushLog;
+            _handler.OnProgress = onProgress;
+            _handler.OnComplete = onComplete;
 
             _event.Raise();
         }
@@ -320,6 +629,17 @@ namespace LemoineTools.Tools.BulkExport
         {
             ApplyModeButtonStyle(a, aActive);
             ApplyModeButtonStyle(b, !aActive);
+        }
+
+        private void AddNwcCheckBox(System.Windows.Controls.Panel parent, string label, bool isChecked, Action<bool> onChange)
+        {
+            var cb = new CheckBox { Content = label, IsChecked = isChecked, Margin = new Thickness(0, 0, 0, 4) };
+            cb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
+            cb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
+            cb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
+            cb.Checked   += (s, e) => { onChange(true);  Fire(); };
+            cb.Unchecked += (s, e) => { onChange(false); Fire(); };
+            parent.Children.Add(cb);
         }
 
         private static void AddSectionLabel(System.Windows.Controls.Panel parent, string text)
