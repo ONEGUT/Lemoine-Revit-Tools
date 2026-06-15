@@ -405,16 +405,19 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 int totalBlocks = rows.Sum(r =>
                     r.Groups?.Sum(g => g.Blocks?.Count(b => b.Visible) ?? 0) ?? 0);
                 int blocksDone = 0;
+                bool cancelled = false;
 
                 // ── Row loop ──────────────────────────────────────────────────
                 foreach (var row in rows)
                 {
+                    if (cancelled) break;   // falls through to tx.Commit() below
                     double rowStartY   = cy;
                     double rowMaxDepth = 0;
                     double cx          = 0.0;
 
                     foreach (var grp in row.Groups ?? new List<LegendGroupConfig>())
                     {
+                        if (cancelled) break;
                         // Group header: cy is the band top; the Middle-aligned note goes
                         // at the band centre.
                         string header = string.IsNullOrWhiteSpace(grp.Title)
@@ -428,6 +431,12 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                         foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
                         {
+                            if (LemoineRun.CancelRequested)
+                            {
+                                cancelled = true;
+                                Log($"Stopped by user — {blocksDone} of {totalBlocks} block(s) drawn; work so far preserved.", "warn");
+                                break;   // breaks block loop; the group/row loops break on the cancelled flag
+                            }
                             if (!blk.Visible) { skip++; continue; }
 
                             var rgb     = ResolveColor(blk, ruleMap);

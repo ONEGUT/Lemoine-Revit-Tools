@@ -97,6 +97,12 @@ namespace LemoineTools.Tools.LinkViews
 
                 foreach (var view in views)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;   // falls through to the existing tx.Commit() below
+                    }
+
                     string name = LemoineTokenInput.Resolve(NamePattern,
                         new Dictionary<string, string>
                         {

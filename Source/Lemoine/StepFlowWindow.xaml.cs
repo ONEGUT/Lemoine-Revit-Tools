@@ -843,7 +843,8 @@ namespace LemoineTools.Lemoine
 
             _resetBtn = BuildButton("Reset", false);
             _resetBtn.Width = 90;
-            _resetBtn.Click += (s, e) => ResetAll();
+            // While a run is in flight the button is a Cancel control; otherwise it resets.
+            _resetBtn.Click += (s, e) => { if (_isRunning) RequestCancelRun(); else ResetAll(); };
             DockPanel.SetDock(_resetBtn, Dock.Left);
             dp.Children.Add(_resetBtn);
 
@@ -1019,7 +1020,9 @@ namespace LemoineTools.Lemoine
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Visible;
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
-            _resetBtn.IsEnabled = false;
+            // Keep the footer button live so the run can be abandoned; flip it to Cancel.
+            LemoineRun.Begin();
+            SetResetButtonToCancel();
             // True-hide every step except the last (which hosts the run controls + output
             // log), then extend the log to its max height so the run output fills the area.
             HideStepsForRun(true);
@@ -1038,15 +1041,18 @@ namespace LemoineTools.Lemoine
         private void CompleteRun(int pass, int fail, int skip)
         {
             _isRunning = false; _isDone = true;
-            SetStatus("● Done"); SetCounts(pass, fail, skip); SetProgress(100);
-            _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineGreen");
-            foreach (var p in _pipRects) p.SetResourceReference(Rectangle.FillProperty, "LemoineGreen");
-            _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineGreen");
-            _closeBtn.Content = "Close ✓"; _closeBtn.IsEnabled = true;
-            _closeBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineGreenDim");
-            _closeBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineGreen");
-            _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineGreen");
-            _resetBtn.IsEnabled = true;
+            bool wasCancelled = LemoineRun.CancelRequested;
+            LemoineRun.End();
+            SetResetButtonToReset();
+            SetStatus(wasCancelled ? "● Stopped" : "● Done"); SetCounts(pass, fail, skip); SetProgress(100);
+            string finishKey = wasCancelled ? "LemoineWarnText" : "LemoineGreen";
+            _statusText.SetResourceReference(TextBlock.ForegroundProperty, finishKey);
+            foreach (var p in _pipRects) p.SetResourceReference(Rectangle.FillProperty, finishKey);
+            _progressFill.SetResourceReference(Rectangle.FillProperty, finishKey);
+            _closeBtn.Content = wasCancelled ? "Close" : "Close ✓"; _closeBtn.IsEnabled = true;
+            _closeBtn.SetResourceReference(Button.BackgroundProperty,  wasCancelled ? "LemoineWarnBg"     : "LemoineGreenDim");
+            _closeBtn.SetResourceReference(Button.BorderBrushProperty, wasCancelled ? "LemoineWarnBorder" : "LemoineGreen");
+            _closeBtn.SetResourceReference(Button.ForegroundProperty,  finishKey);
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
             // Prominent, self-describing summary in the output log (the top bar keeps the
             // generic pass/fail/skip): "42 segments" plus any per-output chip breakdown.
@@ -1108,13 +1114,14 @@ namespace LemoineTools.Lemoine
         private void ResetAll()
         {
             _isRunning = false; _isDone = false;
+            LemoineRun.End();
+            SetResetButtonToReset();
             _closeBtn.Content = "Close"; _closeBtn.IsEnabled = false;
             _closeBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineAccentDim");
             _closeBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineAccent");
             _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineAccent");
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
-            _resetBtn.IsEnabled = true;
             // Restore the step rows hidden for the run and return the log to its default
             // height. ActivateStep(0) → RefreshStepVisibility re-collapses conditional steps.
             HideStepsForRun(false);
@@ -1146,14 +1153,17 @@ namespace LemoineTools.Lemoine
         {
             var now    = DateTime.Now;
             var row    = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 1) };
-            var colKey = status == "pass" ? "LemoineGreen" : status == "fail" ? "LemoineRed" : "LemoineTextDim";
+            var colKey = status == "pass" ? "LemoineGreen"
+                       : status == "fail" ? "LemoineRed"
+                       : status == "warn" ? "LemoineWarnText"
+                       : "LemoineTextDim";
 
             var timeTb = new TextBlock { Text = $"{now:HH:mm:ss}.{now.Millisecond:000}", Margin = new Thickness(0, 0, 8, 0), MinWidth = 80 };
             timeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             timeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             timeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-            var iconTb = new TextBlock { Text = status == "pass" ? "✓" : status == "fail" ? "✗" : "·", Margin = new Thickness(0, 0, 6, 0) };
+            var iconTb = new TextBlock { Text = status == "pass" ? "✓" : status == "fail" ? "✗" : status == "warn" ? "■" : "·", Margin = new Thickness(0, 0, 6, 0) };
             iconTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             iconTb.SetResourceReference(TextBlock.ForegroundProperty, colKey);
             iconTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1270,6 +1280,37 @@ namespace LemoineTools.Lemoine
         }
 
         // BuildButton is the primary factory used by steps
+        // ═══════════════════════════════════════ CANCEL ══════════════════════
+        // User clicked the footer button while a run is in flight. Request the stop;
+        // the running handler halts at its next log checkpoint (LemoineRun.Checkpoint),
+        // commits the work done so far, and calls onComplete → CompleteRun finalises.
+        private void RequestCancelRun()
+        {
+            if (!_isRunning || LemoineRun.CancelRequested) return;
+            LemoineRun.RequestCancel();
+            _resetBtn.IsEnabled = false;
+            _resetBtn.Content   = "Cancelling…";
+            PushLog("Cancelling — will stop at the next checkpoint…", "warn");
+        }
+
+        // Footer button → red "Cancel" affordance for the duration of a run.
+        private void SetResetButtonToCancel()
+        {
+            _resetBtn.IsEnabled = true;
+            _resetBtn.Content   = "Cancel";
+            _resetBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineWarnBorder");
+            _resetBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineWarnText");
+        }
+
+        // Footer button → default "Reset" affordance (matches BuildButton's non-accent look).
+        private void SetResetButtonToReset()
+        {
+            _resetBtn.IsEnabled = true;
+            _resetBtn.Content   = "Reset";
+            _resetBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+            _resetBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+        }
+
         private Button BuildButton(string label, bool accent)
         {
             var btn = new Button

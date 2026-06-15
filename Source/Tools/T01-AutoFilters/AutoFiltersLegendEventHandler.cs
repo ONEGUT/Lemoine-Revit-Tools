@@ -207,8 +207,16 @@ namespace LemoineTools.Tools.AutoFilters
 
                 // Create/reuse one FilledRegionType per unique color
                 var colorTypeMap = new Dictionary<(int, int, int), ElementId>();
+                int swatchesDone = 0;
                 foreach (var rgb in needed)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {swatchesDone} of {needed.Count} swatch type(s) processed; work so far preserved.", "warn");
+                        break;
+                    }
+                    swatchesDone++;
+
                     string tname = $"LegendSwatch_{rgb.R}_{rgb.G}_{rgb.B}";
                     if (frtByName.TryGetValue(tname, out ElementId existing))
                     {
@@ -254,15 +262,25 @@ namespace LemoineTools.Tools.AutoFilters
                 double cy = 0.0;
                 int totalRows = rows.Count;
                 int rowsDone  = 0;
+                bool cancelled = false;
 
                 foreach (var (disc, entries) in groups)
                 {
+                    if (cancelled) break;
+
                     TextNote.Create(doc, dv.Id, new XYZ(0, cy, 0), LabelWidth,
                         disc.ToUpperInvariant(), opts);
                     cy -= RowHeight + HdrPad;
 
                     foreach (var (_, val, rgb) in entries)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {rowsDone} of {totalRows} legend row(s) processed; work so far preserved.", "warn");
+                            cancelled = true;
+                            break;
+                        }
+
                         if (rgb.HasValue && colorTypeMap.TryGetValue(rgb.Value, out ElementId ftId))
                         {
                             double x0 = 0, y0 = cy - SwatchNudge;

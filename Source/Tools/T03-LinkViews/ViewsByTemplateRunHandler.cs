@@ -100,10 +100,19 @@ namespace LemoineTools.Tools.LinkViews
                 ConfigureFailures(tx);
                 tx.Start();
 
+                bool cancelled = false;
                 foreach (var view in views)
                 {
+                    if (cancelled) break;
                     foreach (var template in templates)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            cancelled = true;
+                            break;   // breaks inner loop; outer loop guard breaks too → existing tx.Commit() runs
+                        }
+
                         string name = LemoineTokenInput.Resolve(NamePattern,
                             new Dictionary<string, string>
                             {

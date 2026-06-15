@@ -74,6 +74,12 @@ namespace LemoineTools.Tools.AutoFilters
 
                     foreach (var id in toRemove)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            break;
+                        }
+
                         try
                         {
                             view.RemoveFilter(id);

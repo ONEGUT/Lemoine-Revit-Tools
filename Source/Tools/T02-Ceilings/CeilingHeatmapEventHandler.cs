@@ -84,6 +84,12 @@ namespace LemoineTools.Tools.Ceilings
             int viewCount = SelectedViewIds.Count;
             for (int vi = 0; vi < viewCount; vi++)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {vi} of {viewCount} processed; work so far preserved.", "warn");
+                    break;
+                }
+
                 var viewId = SelectedViewIds[vi];
                 var vp     = doc.GetElement(viewId) as ViewPlan;
                 if (vp == null) { skip++; continue; }
@@ -168,6 +174,12 @@ namespace LemoineTools.Tools.Ceilings
                 int total = heightBuckets.Count;
                 for (int i = 0; i < total; i++)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {i} of {total} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     double heightOffset = heightBuckets[i];
                     Autodesk.Revit.DB.Color color = rampColors[i];
 
@@ -294,6 +306,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 for (int vi = 0; vi < viewCount; vi++)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {vi} of {viewCount} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     var viewId = SelectedViewIds[vi];
                     var vp     = doc.GetElement(viewId) as ViewPlan;
                     if (vp == null) continue;   // already counted as skipped in the scan pass

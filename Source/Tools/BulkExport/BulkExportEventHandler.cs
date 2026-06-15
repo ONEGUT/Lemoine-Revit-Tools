@@ -283,6 +283,11 @@ namespace LemoineTools.Tools.BulkExport
 
             foreach (var pack in Packs)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                    break;
+                }
                 var packIds = pack.SheetNumbers
                     .Where(n => keyToId.ContainsKey(n))
                     .Select(n => keyToId[n])
@@ -349,6 +354,11 @@ namespace LemoineTools.Tools.BulkExport
                     {
                         foreach (var sheetId in packIds)
                         {
+                            if (LemoineRun.CancelRequested)
+                            {
+                                pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                                return;
+                            }
                             var sheet   = doc.GetElement(sheetId);
                             string safeName = ResolveExportName(sheet, projNumber, projName, "DWG", pushLog);
 
@@ -439,6 +449,11 @@ namespace LemoineTools.Tools.BulkExport
                     // One call per element
                     foreach (var element in elements)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                            return;
+                        }
                         string safeName = ResolveExportName(element, projNumber, projName, "PDF", pushLog);
 
                         try
@@ -484,6 +499,11 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     foreach (var element in elements)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                            return;
+                        }
                         string safeName = ResolveExportName(element, projNumber, projName, "DWG", pushLog);
 
                         try
@@ -518,6 +538,11 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                        return;
+                    }
                     string safeName = ResolveExportName(element, projNumber, projName, "NWC", pushLog);
 
                     try
@@ -592,6 +617,11 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        pushLog($"Stopped by user — {pass} export(s) written; files so far preserved.", "warn");
+                        return;
+                    }
                     string safeName = ResolveExportName(element, projNumber, projName, "IFC", pushLog);
 
                     try

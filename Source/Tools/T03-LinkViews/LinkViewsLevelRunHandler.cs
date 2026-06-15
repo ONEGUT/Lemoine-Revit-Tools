@@ -243,6 +243,12 @@ namespace LemoineTools.Tools.LinkViews
 
                 for (int idx = 0; idx < keptLevels.Count; idx++)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {idx} of {keptLevels.Count} levels processed; work so far preserved.", "warn");
+                        break;   // falls through to the existing tx.Commit() below
+                    }
+
                     Level  lvl      = keptLevels[idx];
                     string lname    = lvl.Name;
                     bool   hasRooms = roomsByLevel.TryGetValue(lname, out var levelRooms);

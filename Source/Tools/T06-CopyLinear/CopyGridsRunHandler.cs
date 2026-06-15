@@ -85,6 +85,11 @@ namespace LemoineTools.Tools.CopyLinear
                         LemoineLog.Swallowed("CopyGrids: batch copy failed, retrying per grid", ex);
                         foreach (var id in toCopy)
                         {
+                            if (LemoineRun.CancelRequested)
+                            {
+                                Log($"Stopped by user — {pass} grid(s) copied so far; work preserved.", "warn");
+                                break;   // falls through to doc.Regenerate() + tx.Commit() below
+                            }
                             try
                             {
                                 var c = ElementTransformUtils.CopyElements(src.Doc, new List<ElementId> { id }, doc, src.Transform, opts);

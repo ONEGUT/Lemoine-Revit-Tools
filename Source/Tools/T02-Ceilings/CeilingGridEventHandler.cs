@@ -99,6 +99,12 @@ namespace LemoineTools.Tools.Ceilings
 
             foreach (var dwgFile in dwgFiles)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                    break;
+                }
+
                 string viewName = Path.GetFileNameWithoutExtension(dwgFile);
                 if (!ceilingPlanViews.TryGetValue(viewName, out var targetView))
                 {
@@ -130,6 +136,12 @@ namespace LemoineTools.Tools.Ceilings
 
             foreach (var viewId in SelectedViewIds)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                    break;
+                }
+
                 var view = doc.GetElement(viewId) as View;
                 if (view == null || view.IsTemplate)
                 {
@@ -198,6 +210,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var cad in cadCurves)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     var projected = CeilingGridHelpers.ProjectCurveOntoCeilings(cad, faces);
                     if (projected.Count == 0) { noMatch++; }
                     else
@@ -284,6 +302,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var (id, src) in sourceGeom)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     var projs = CeilingGridHelpers.ProjectCurveOntoCeilings(src, faces);
                     if (projs.Count == 0)
                     {
@@ -310,6 +334,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var proj in projected)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     try
                     {
                         CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);

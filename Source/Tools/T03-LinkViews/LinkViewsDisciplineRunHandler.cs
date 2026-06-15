@@ -82,6 +82,12 @@ namespace LemoineTools.Tools.LinkViews
                 // ── Combined views for designated disciplines ─────────
                 foreach (string disc in s.CombinedDisciplines)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;   // falls through to the existing tx.Commit() below
+                    }
+
                     if (!byDisc.TryGetValue(disc, out var discLinks)) continue;
 
                     string viewName = $"Combined {disc}";
@@ -138,6 +144,12 @@ namespace LemoineTools.Tools.LinkViews
                 // ── Per-link views ────────────────────────────────────
                 foreach (var a in active)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;   // falls through to the existing tx.Commit() below
+                    }
+
                     string viewName = $"Link - {a.LinkName}";
                     if (View3dExists(doc, viewName))
                     {

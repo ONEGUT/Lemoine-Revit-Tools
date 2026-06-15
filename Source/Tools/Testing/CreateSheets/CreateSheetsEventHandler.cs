@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Tools.Testing
@@ -140,6 +141,14 @@ namespace LemoineTools.Tools.Testing
 
                         int pct = total > 0 ? (int)((i + 1) * 90.0 / total) : 90;
                         onProgress(pct, pass, fail, skip);
+
+                        // Abandon point: stop after the current sheet; the tx.Commit() below
+                        // still runs so every sheet created so far is preserved.
+                        if (LemoineRun.CancelRequested)
+                        {
+                            pushLog($"Stopped by user — {i + 1} of {total} processed; work so far preserved.", "warn");
+                            break;
+                        }
                     }
 
                     tx.Commit();

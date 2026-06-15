@@ -63,8 +63,18 @@ namespace LemoineTools.Tools.Clash
                     // ── Phase 1: detect each definition's clashes ONCE (view-independent) ──
                     Progress(5, viewsDone, viewsFailed, viewsSkipped);
                     var dets = new List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)>();
+                    int defsDetected = 0;
                     foreach (var def in Definitions)
                     {
+                        // Abandon mid-run during detection: stop scanning more definitions. Nothing
+                        // is committed yet in this phase; Phase 2 below sees the same cancel flag and
+                        // marks only what was already detected (its own check then stops it too).
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {defsDetected} of {Definitions.Count} definition(s) detected; work so far preserved.", "warn");
+                            break;
+                        }
+
                         Log($"— Detecting '{def.Name}' —", "info");
                         var opts = new ClashMarkingOptions
                         {
@@ -82,6 +92,7 @@ namespace LemoineTools.Tools.Clash
                         var engine = new ClashEngine(opts, (t, s) => Log(t, s));
                         var det = engine.Detect(doc, def.Group1, def.Group2);
                         dets.Add((engine, det, new Dictionary<string, ElementId?>()));
+                        defsDetected++;
                     }
 
                     // ── Dimension-pass prep: apply run-level config overrides once (restored in
@@ -105,6 +116,14 @@ namespace LemoineTools.Tools.Clash
                         int processed = 0;
                         foreach (var viewId in ViewIds)
                         {
+                            // Abandon mid-run: stop marking/dimensioning more views. Each view commits
+                            // in its own transaction below, so every view already processed is preserved.
+                            if (LemoineRun.CancelRequested)
+                            {
+                                Log($"Stopped by user — {processed} of {ViewIds.Count} view(s) processed; work so far preserved.", "warn");
+                                break;
+                            }
+
                             processed++;
                             var view = doc.GetElement(viewId) as View;
                             if (view == null)

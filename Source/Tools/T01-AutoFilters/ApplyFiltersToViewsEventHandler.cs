@@ -144,13 +144,23 @@ namespace LemoineTools.Tools.AutoFilters
                 ConfigureFailures(tx);
                 tx.Start();
 
+                bool cancelled = false;
                 foreach (var view in viewList)
                 {
+                    if (cancelled) break;
+
                     var existingIds = new HashSet<long>(
                         view.GetFilters().Select(id => id.Value));
 
                     foreach (var pair in filterMap)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {done} of {totalOps} operation(s) processed; work so far preserved.", "warn");
+                            cancelled = true;
+                            break;
+                        }
+
                         string    filterName = pair.Key;
                         ElementId filterId   = pair.Value;
                         bool alreadyPresent  = existingIds.Contains(filterId.Value);

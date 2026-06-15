@@ -70,6 +70,14 @@ namespace LemoineTools.Tools.Testing
                         int done = 0;
                         foreach (var def in Definitions)
                         {
+                            // Abandon mid-run: stop detecting/marking more definitions but let tx.Commit()
+                            // (below) still run so markers placed for definitions done so far are preserved.
+                            if (LemoineRun.CancelRequested)
+                            {
+                                Log($"Stopped by user — {done} of {Definitions.Count} definition(s) processed; work so far preserved.", "warn");
+                                break;
+                            }
+
                             Progress(10 + (int)(done * 70.0 / Definitions.Count), pass, fail, skip);
                             Log($"— Definition '{def.Name}' —", "info");
 

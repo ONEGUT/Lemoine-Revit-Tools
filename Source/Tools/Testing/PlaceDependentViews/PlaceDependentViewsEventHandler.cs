@@ -148,6 +148,11 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     // only touches that sheet's changes, so the commit at the end is cheap.
                     for (int i = 0; i < ParentViewIds.Count; i++)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {i} of {total} sheet(s) processed; work so far preserved.", "warn");
+                            break;   // falls through to tx.Commit() below
+                        }
                         var parent = doc.GetElement(ParentViewIds[i]) as View;
                         if (parent == null)
                         {

@@ -94,6 +94,12 @@ namespace LemoineTools.Tools.AutoFilters
 
                 foreach (var pair in filterMap)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     string    name = pair.Key;
                     ElementId id   = pair.Value;
                     try
