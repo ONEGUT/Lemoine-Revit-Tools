@@ -8,14 +8,28 @@ using LemoineTools.Lemoine.Controls;
 
 namespace LemoineTools.Tools.Testing.PlaceDependentViews
 {
+    /// <summary>How the selected views are turned into sheets.</summary>
+    public enum PlaceViewsMode
+    {
+        /// <summary>One sheet per parent view, holding that view's dependent views.</summary>
+        DependentsPerParent,
+        /// <summary>One sheet per source view, holding the view itself (anchored top- or
+        /// left-center) plus every callout/section/elevation visible in it.</summary>
+        CompositeOneSheet,
+    }
+
     /// <summary>
-    /// Creates one sheet per selected parent view and places that view's dependents on
-    /// it — trimmed (annotation crop) and packed without overlap, centered with even
-    /// edge spacing. Runs on the Revit API thread; set all inputs before Raise().
+    /// Creates one sheet per selected parent view and places either that view's
+    /// dependents (packed without overlap, centered) or — in composite mode — the view
+    /// itself plus its visible callouts/sections/elevations (source anchored top- or
+    /// left-center, sub views in aligned rows/columns). Sub views are trimmed
+    /// (annotation crop) when enabled; the composite source view never is.
+    /// Runs on the Revit API thread; set all inputs before Raise().
     /// </summary>
     public sealed class PlaceDependentViewsEventHandler : IExternalEventHandler
     {
         // ── Inputs set by the view model before Raise() ───────────────────────
+        public PlaceViewsMode  Mode           { get; set; } = PlaceViewsMode.DependentsPerParent;
         public List<ElementId> ParentViewIds  { get; set; } = new List<ElementId>();
         public ElementId       TitleBlockTypeId { get; set; } = ElementId.InvalidElementId;
         public int             StartingNumber { get; set; } = 1;
@@ -109,6 +123,27 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         ? "Quick estimate — sizing views from their crop boxes."
                         : "Accurate — measuring each placed view.", "info");
 
+                    bool composite = Mode == PlaceViewsMode.CompositeOneSheet;
+
+                    // Composite mode lookups, built once: section/callout markers resolve
+                    // to views by their (unique) view name, and views already on a sheet
+                    // are pre-read so a placed source fails before its sheet is created.
+                    Dictionary<string, View>? viewsByName  = null;
+                    HashSet<ElementId>?       placedViewIds = null;
+                    if (composite)
+                    {
+                        viewsByName = new Dictionary<string, View>(StringComparer.Ordinal);
+                        foreach (var v in new FilteredElementCollector(doc)
+                                     .OfClass(typeof(View)).Cast<View>())
+                        {
+                            if (!v.IsTemplate && !viewsByName.ContainsKey(v.Name))
+                                viewsByName[v.Name] = v;
+                        }
+                        placedViewIds = new HashSet<ElementId>(
+                            new FilteredElementCollector(doc).OfClass(typeof(Viewport))
+                                .Cast<Viewport>().Select(vp => vp.ViewId));
+                    }
+
                     // One sheet at a time: progress updates per sheet and (accurate mode) each regen
                     // only touches that sheet's changes, so the commit at the end is cheap.
                     for (int i = 0; i < ParentViewIds.Count; i++)
@@ -123,13 +158,46 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             continue;
                         }
 
-                        var depIds = parent.GetDependentViewIds()?.ToList() ?? new List<ElementId>();
-                        if (depIds.Count == 0)
+                        // Views going onto this sheet, in placement order. Composite mode
+                        // puts the source view first — the layout anchors it.
+                        View? sourceView = null;
+                        List<ElementId> candidateIds;
+
+                        if (composite)
                         {
-                            Log($"[SKIP] '{parent.Name}' has no dependent views.", "warn");
-                            skip++;
-                            onProgress(Pct(i + 1, total), pass, fail, skip);
-                            continue;
+                            if (placedViewIds!.Contains(parent.Id))
+                            {
+                                Log($"[FAIL] '{parent.Name}' is already placed on a sheet — " +
+                                    "composite sheet not created.", "fail");
+                                fail++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
+
+                            var subs = DiscoverSubViews(doc, parent, viewsByName!);
+                            if (subs.Count == 0)
+                            {
+                                Log($"[SKIP] '{parent.Name}' has no visible callouts, sections " +
+                                    "or elevations.", "warn");
+                                skip++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
+
+                            sourceView   = parent;
+                            candidateIds = new List<ElementId>(subs.Count + 1) { parent.Id };
+                            candidateIds.AddRange(subs.Select(s => s.Id));
+                        }
+                        else
+                        {
+                            candidateIds = parent.GetDependentViewIds()?.ToList() ?? new List<ElementId>();
+                            if (candidateIds.Count == 0)
+                            {
+                                Log($"[SKIP] '{parent.Name}' has no dependent views.", "warn");
+                                skip++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
                         }
 
                         // ── Sheet number / name ──────────────────────────────
@@ -164,23 +232,37 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         if (!string.IsNullOrWhiteSpace(SheetSeries))
                             WriteSeries(sheet, ref seriesWarned);
 
-                        // ── Trim each dependent's annotation crop ────────────
+                        // ── Trim each placed view's annotation crop ──────────
+                        // The composite source view is never trimmed — its callout
+                        // boundaries and section heads must stay visible.
                         if (TrimBubbles)
-                            foreach (var depId in depIds)
+                            foreach (var depId in candidateIds)
+                            {
+                                if (sourceView != null && depId == sourceView.Id) continue;
                                 TrimAnnotationCrop(doc.GetElement(depId) as View, trimPaperFt);
+                            }
 
-                        // ── Which dependents can actually be placed ──────────
-                        var toPlace = new List<View>(depIds.Count);
-                        foreach (var depId in depIds)
+                        // ── Which views can actually be placed ───────────────
+                        var toPlace = new List<View>(candidateIds.Count);
+                        foreach (var depId in candidateIds)
                         {
                             if (!Viewport.CanAddViewToSheet(doc, sheet.Id, depId))
                             {
                                 var dv0 = doc.GetElement(depId) as View;
-                                Log($"[SKIP] '{dv0?.Name ?? depId.ToString()}' is already placed on a sheet.", "warn");
+                                Log($"[SKIP] '{dv0?.Name ?? depId.ToString()}' can't be placed " +
+                                    "(already on a sheet, or not placeable).", "warn");
                                 skip++;
                                 continue;
                             }
                             if (doc.GetElement(depId) is View dv) toPlace.Add(dv);
+                        }
+                        if (sourceView != null && (toPlace.Count == 0 || toPlace[0].Id != sourceView.Id))
+                        {
+                            Log($"[FAIL] Source view '{sourceView.Name}' can't be placed — " +
+                                $"sheet {sheetNumber} left empty.", "fail");
+                            fail++;
+                            onProgress(Pct(i + 1, total), pass, fail, skip);
+                            continue;
                         }
                         if (toPlace.Count == 0)
                         {
@@ -209,12 +291,19 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 continue;
                             }
 
-                            // Estimate footprints from the crop box, pack, place directly — no regen.
-                            var rects = toPlace.Select(v => EstimateRect(v, TrimBubbles, trimPaperFt)).ToList();
-                            var result = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
+                            // Estimate footprints from the crop box, lay out, place directly — no
+                            // regen. The untrimmed composite source gets the default annotation pad.
+                            var rects = toPlace
+                                .Select(v => EstimateRect(
+                                    v,
+                                    TrimBubbles && (sourceView == null || v.Id != sourceView.Id),
+                                    trimPaperFt))
+                                .ToList();
+                            var (centers, overflow) = LayOutSheet(rects, sourceView != null,
+                                                                  areaW, areaH, gap, sheetNumber);
                             for (int k = 0; k < toPlace.Count; k++)
                             {
-                                var p = result.Placements[k];
+                                var p = centers[k];
                                 try
                                 {
                                     Viewport.Create(doc, sheet.Id, toPlace[k].Id,
@@ -228,7 +317,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                     fail++;
                                 }
                             }
-                            if (result.Overflow)
+                            if (overflow)
                                 Log($"[WARN] Sheet {sheetNumber}: estimated views don't fit the drawing area — " +
                                     "they may extend past the margins.", "warn");
                         }
@@ -283,15 +372,28 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 }
                             }
 
+                            // Composite layout anchors on the source view's measured size, so a
+                            // source that reported no outline fails the whole sheet (viewports
+                            // are left at the origin for manual cleanup).
+                            if (sourceView != null && (keep.Count == 0 || keep[0].ViewId != sourceView.Id))
+                            {
+                                Log($"[FAIL] Source view '{sourceView.Name}' reported no size — " +
+                                    $"sheet {sheetNumber} left unarranged.", "fail");
+                                fail++;
+                                onProgress(Pct(i + 1, total), pass, fail, skip);
+                                continue;
+                            }
+
                             if (keep.Count > 0)
                             {
-                                var result = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
+                                var (centers, overflow) = LayOutSheet(rects, sourceView != null,
+                                                                      areaW, areaH, gap, sheetNumber);
                                 for (int k = 0; k < keep.Count; k++)
                                 {
-                                    var p = result.Placements[k];
+                                    var p = centers[k];
                                     keep[k].SetBoxCenter(new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
                                 }
-                                if (result.Overflow)
+                                if (overflow)
                                     Log($"[WARN] Sheet {sheetNumber}: {keep.Count} view(s) don't fit the drawing " +
                                         "area at this scale — they extend past the margins.", "warn");
                             }
@@ -299,7 +401,9 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         }
 
                         pass++;
-                        Log($"✓ Sheet {sheetNumber} — {sheetName}  ({placedCount} view(s) placed)", "pass");
+                        Log(composite
+                            ? $"✓ Sheet {sheetNumber} — {sheetName}  (source + {Math.Max(0, placedCount - 1)} sub view(s))"
+                            : $"✓ Sheet {sheetNumber} — {sheetName}  ({placedCount} view(s) placed)", "pass");
                         onProgress(Pct(i + 1, total), pass, fail, skip);
                     }
 
@@ -324,6 +428,88 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 // Session-long static handler — drop the run's payload.
                 ParentViewIds = new List<ElementId>();
             }
+        }
+
+        // ── Layout per sheet ──────────────────────────────────────────────────
+        /// <summary>
+        /// Runs the layout for one sheet's rects: composite mode anchors the first rect
+        /// (the source view) top- or left-center with the rest in aligned rows/columns;
+        /// dependents mode packs everything without overlap. Centers come back in rect
+        /// order, relative to the drawing-area bottom-left.
+        /// </summary>
+        private (IReadOnlyList<SheetLayoutPacker.Placement> Centers, bool Overflow) LayOutSheet(
+            List<SheetLayoutPacker.Rect> rects, bool composite,
+            double areaW, double areaH, double gap, string sheetNumber)
+        {
+            if (composite)
+            {
+                var res = CompositeSheetLayout.Pack(rects[0], rects.Skip(1).ToList(), areaW, areaH, gap);
+                var centers = new List<SheetLayoutPacker.Placement>(rects.Count) { res.Parent };
+                centers.AddRange(res.Children);
+                Log($"Sheet {sheetNumber}: source {(res.ParentOnTop ? "top-center, sub views in rows below" : "left-center, sub views in columns right")}.", "info");
+                return (centers, res.Overflow);
+            }
+            var packed = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
+            return (packed.Placements, packed.Overflow);
+        }
+
+        // ── Composite sub-view discovery ──────────────────────────────────────
+        /// <summary>
+        /// Finds the views whose markers are visible in <paramref name="source"/>:
+        /// section/callout markers (OST_Viewers, resolved to views by their unique
+        /// name) plus elevation markers (real view ids per used index). The scoped
+        /// collector only returns visible markers, so hidden ones are excluded.
+        /// </summary>
+        private List<View> DiscoverSubViews(Document doc, View source, Dictionary<string, View> viewsByName)
+        {
+            var subs = new List<View>();
+            var seen = new HashSet<ElementId> { source.Id };
+
+            try
+            {
+                foreach (Element marker in new FilteredElementCollector(doc, source.Id)
+                             .OfCategory(BuiltInCategory.OST_Viewers)
+                             .WhereElementIsNotElementType())
+                {
+                    string name = marker.Name ?? "";
+                    if (viewsByName.TryGetValue(name, out var v))
+                    {
+                        if (seen.Add(v.Id)) subs.Add(v);
+                    }
+                    else
+                    {
+                        Log($"[SKIP] Marker '{name}' in '{source.Name}' doesn't resolve to a view.", "warn");
+                        LemoineLog.Warn("PlaceDependentViews",
+                            $"Unresolved viewer marker '{name}' in view {source.Id.Value}.");
+                    }
+                }
+
+                foreach (ElevationMarker m in new FilteredElementCollector(doc, source.Id)
+                             .OfClass(typeof(ElevationMarker)))
+                {
+                    for (int idx = 0; idx < m.MaximumViewCount; idx++)
+                    {
+                        ElementId vid;
+                        try { vid = m.GetViewId(idx); }
+                        catch (Exception ex)
+                        {
+                            // An unused marker index can throw rather than return invalid.
+                            LemoineLog.Swallowed("PlaceDependentViews: ElevationMarker.GetViewId", ex);
+                            continue;
+                        }
+                        if (vid == null || vid == ElementId.InvalidElementId) continue;
+                        if (doc.GetElement(vid) is View ev && !ev.IsTemplate && seen.Add(ev.Id))
+                            subs.Add(ev);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[WARN] Could not scan '{source.Name}' for markers: {ex.Message}", "warn");
+                LemoineLog.Error($"PlaceDependentViews: discover sub views in {source.Id.Value}", ex);
+            }
+
+            return subs;
         }
 
         // ── Annotation crop trimming ──────────────────────────────────────────

@@ -48,10 +48,18 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
+        private const string ModeDependents = "Dependents → one sheet per parent";
+        private const string ModeComposite  = "View + callouts/sections → one sheet";
+
         // ── State ─────────────────────────────────────────────────────────────
+        private bool _compositeMode = false;
+
         private readonly List<ParentViewEntry>          _parents;
         private readonly LemoineBrowserTree             _browserTree;
         private List<ElementId>                          _selectedParentIds = new List<ElementId>();
+
+        private readonly List<ParentViewEntry>          _compositeCandidates;
+        private List<ElementId>                          _selectedCompositeIds = new List<ElementId>();
 
         private readonly List<string>                   _titleblockNames;
         private readonly Dictionary<string, ElementId>  _titleblockMap;
@@ -85,6 +93,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             PlaceDependentViewsEventHandler? handler,
             ExternalEvent?                   externalEvent,
             List<ParentViewEntry>?           parents,
+            List<ParentViewEntry>?           compositeCandidates,
             List<FamilySymbol>?              titleblocks,
             LemoineBrowserTree?              browserTree = null)
         {
@@ -93,6 +102,9 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             _browserTree = browserTree ?? new LemoineBrowserTree();
 
             _parents = (parents ?? new List<ParentViewEntry>())
+                .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
+
+            _compositeCandidates = (compositeCandidates ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
 
             _titleblockMap   = new Dictionary<string, ElementId>();
@@ -110,7 +122,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         }
 
         /// <summary>Settings-only constructor (no document open).</summary>
-        public PlaceDependentViewsViewModel() : this(null, null, null, null) { }
+        public PlaceDependentViewsViewModel() : this(null, null, null, null, null) { }
 
         // ── Content ───────────────────────────────────────────────────────────
         public FrameworkElement? GetStepContent(string stepId)
@@ -126,28 +138,88 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             }
         }
 
-        // ── Step 1 — Views to place ───────────────────────────────────────────
+        // ── Step 1 — Mode + views to place ────────────────────────────────────
         private FrameworkElement BuildS1()
         {
-            if (_parents.Count == 0)
-                return Hint("No views with dependent views were found in this project. " +
-                            "Create dependents first, then reopen this tool.");
+            var outer = new StackPanel();
 
-            var picker = new LemoineBrowserTreePicker
+            outer.Children.Add(SectionLabel("MODE"));
+            var modeSelect = new LemoineSingleSelect();
+            modeSelect.Items = new List<string> { ModeDependents, ModeComposite };
+            modeSelect.SelectedItem = _compositeMode ? ModeComposite : ModeDependents;
+            outer.Children.Add(modeSelect);
+
+            var modeNote = Note(ModeNoteText());
+            modeNote.Margin = new Thickness(0, 4, 0, 0);
+            outer.Children.Add(modeNote);
+
+            var pickerHost = new Border { Margin = new Thickness(0, 12, 0, 0) };
+            pickerHost.Child = BuildModePicker();
+            outer.Children.Add(pickerHost);
+
+            modeSelect.SelectionChanged += s =>
             {
-                Height         = 300,
-                AccessibleName = "Views to place",
-            };
-            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
-            picker.SelectionChanged += ids =>
-            {
-                _selectedParentIds = ids.Select(id => new ElementId(id)).ToList();
+                _compositeMode = s == ModeComposite;
+                modeNote.Text  = ModeNoteText();
+                pickerHost.Child = BuildModePicker();
                 OnValidationChanged();
             };
-            picker.SetTree(_browserTree,
-                _parents.Select(p => p.Id.Value),
-                _selectedParentIds.Select(id => id.Value).ToList());
-            return picker;
+
+            return outer;
+        }
+
+        private string ModeNoteText() => _compositeMode
+            ? "One sheet per selected view: the view is anchored top- or left-center and every " +
+              "callout, section and elevation visible in it is arranged in aligned rows or columns."
+            : "One sheet per selected view, holding that view's dependent views packed without overlap.";
+
+        // Both modes pick views from the same Project-Browser tree; the mode only
+        // changes which views are selectable and where the selection is mirrored.
+        private FrameworkElement BuildModePicker()
+        {
+            if (_compositeMode)
+            {
+                if (_compositeCandidates.Count == 0)
+                    return Hint("No plan, section, elevation or detail views were found in this project.");
+
+                var picker = new LemoineBrowserTreePicker
+                {
+                    Height         = 300,
+                    AccessibleName = "Source views to place",
+                };
+                // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+                picker.SelectionChanged += ids =>
+                {
+                    _selectedCompositeIds = ids.Select(id => new ElementId(id)).ToList();
+                    OnValidationChanged();
+                };
+                picker.SetTree(_browserTree,
+                    _compositeCandidates.Select(p => p.Id.Value),
+                    _selectedCompositeIds.Select(id => id.Value).ToList());
+                return picker;
+            }
+            else
+            {
+                if (_parents.Count == 0)
+                    return Hint("No views with dependent views were found in this project. " +
+                                "Create dependents first, then reopen this tool.");
+
+                var picker = new LemoineBrowserTreePicker
+                {
+                    Height         = 300,
+                    AccessibleName = "Views to place",
+                };
+                // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+                picker.SelectionChanged += ids =>
+                {
+                    _selectedParentIds = ids.Select(id => new ElementId(id)).ToList();
+                    OnValidationChanged();
+                };
+                picker.SetTree(_browserTree,
+                    _parents.Select(p => p.Id.Value),
+                    _selectedParentIds.Select(id => id.Value).ToList());
+                return picker;
+            }
         }
 
         // ── Step 2 — Title block ──────────────────────────────────────────────
@@ -289,8 +361,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             trim.Unchecked += (s, e) => { _trimBubbles = false; OnValidationChanged(); };
             outer.Children.Add(trim);
 
-            outer.Children.Add(Note("Permanently shrinks each dependent's annotation crop — grid bubbles, " +
-                                    "tags and section heads are clipped to the chosen distance past the crop."));
+            outer.Children.Add(Note("Permanently shrinks each placed view's annotation crop — grid bubbles, " +
+                                    "tags and section heads are clipped to the chosen distance past the crop. " +
+                                    "In composite mode the source view itself is never trimmed, so its " +
+                                    "callout boundaries and section heads stay visible."));
 
             outer.Children.Add(Spaced(SectionLabel("TRIM DISTANCE (inches on sheet)"), 14));
             outer.Children.Add(Stepper(_trimInches, 0.0, 5.0, 0.0625, 3, v => _trimInches = v));
@@ -342,6 +416,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         // ── ILemoineReviewable ────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
+            ("mode",   "Mode"),
             ("views",  "Views"),
             ("tb",     "Title Block"),
             ("naming", "Naming / Numbering"),
@@ -350,11 +425,14 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             ("layout", "Layout"),
         };
 
+        private List<ElementId> ActiveSelection => _compositeMode ? _selectedCompositeIds : _selectedParentIds;
+
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]  = _selectedParentIds.Count == 0
+            ["mode"]   = _compositeMode ? ModeComposite : ModeDependents,
+            ["views"]  = ActiveSelection.Count == 0
                 ? "— (none selected)"
-                : $"{_selectedParentIds.Count} view(s) → {_selectedParentIds.Count} sheet(s)",
+                : $"{ActiveSelection.Count} view(s) → {ActiveSelection.Count} sheet(s)",
             ["tb"]     = string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
             ["naming"] = $"No.: {_numberPrefix}{_startingNumber}{_numberSuffix} (+1…)  |  Name: {_namingPattern}",
             ["series"] = string.IsNullOrWhiteSpace(_sheetSeries)
@@ -367,17 +445,19 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         };
 
         public IList<string>? ReviewChips => null;
-        public string?        ReviewNote  =>
-            "Creates one sheet per selected view and places that view's dependents, packed without overlap.";
+        public string?        ReviewNote  => _compositeMode
+            ? "Creates one sheet per selected view, anchoring it top- or left-center with its " +
+              "visible callouts/sections/elevations in aligned rows or columns."
+            : "Creates one sheet per selected view and places that view's dependents, packed without overlap.";
         public string?        ReviewWarning =>
-            _trimBubbles ? "Trimming permanently changes the dependent views' annotation crop." : null;
+            _trimBubbles ? "Trimming permanently changes the placed sub views' annotation crop." : null;
 
         // ── Validation / summary ──────────────────────────────────────────────
         public bool IsValid(string stepId)
         {
             switch (stepId)
             {
-                case "S1": return _selectedParentIds.Count > 0;
+                case "S1": return ActiveSelection.Count > 0;
                 case "S2": return !string.IsNullOrEmpty(_selectedTitleblock) &&
                                   _titleblockMap.ContainsKey(_selectedTitleblock);
                 case "S3": return !string.IsNullOrWhiteSpace(_namingPattern);
@@ -389,7 +469,9 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         {
             switch (stepId)
             {
-                case "S1": return _selectedParentIds.Count == 0 ? "—" : $"{_selectedParentIds.Count} selected";
+                case "S1": return ActiveSelection.Count == 0
+                    ? "—"
+                    : $"{ActiveSelection.Count} selected  |  {(_compositeMode ? "composite" : "dependents")}";
                 case "S2": return string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock;
                 case "S3": return $"{_namingPattern}  |  start {_startingNumber}";
                 case "S4": return $"{(_estimateMode ? "Estimate" : "Accurate")}  |  " +
@@ -408,7 +490,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         {
             if (_handler == null || _event == null) return;
 
-            _handler.ParentViewIds   = new List<ElementId>(_selectedParentIds);
+            _handler.Mode            = _compositeMode
+                                       ? PlaceViewsMode.CompositeOneSheet
+                                       : PlaceViewsMode.DependentsPerParent;
+            _handler.ParentViewIds   = new List<ElementId>(ActiveSelection);
             _handler.TitleBlockTypeId = _titleblockMap.TryGetValue(_selectedTitleblock, out var tbId)
                                         ? tbId : ElementId.InvalidElementId;
             _handler.StartingNumber  = _startingNumber;
