@@ -49,6 +49,18 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>Members to EXCLUDE from the parent view's dimension pass.</summary>
         public List<string> SourceKeys { get; } = new List<string>();
         public int ClashCount { get; set; }
+
+        /// <summary>For a USER-drawn callout adopted as a pre-defined group: the existing
+        /// callout view to take over. <see cref="ElementId.InvalidElementId"/> for the
+        /// automatic dense tier, which creates its own views.</summary>
+        public ElementId ExistingViewId { get; set; } = ElementId.InvalidElementId;
+
+        /// <summary>World corners of the MEMBERSHIP rectangle of an adopted user callout —
+        /// the boundary the user drew, which defines the group. Stamped on the view (via
+        /// <c>UserCalloutSchema</c>) so room growth on this run never widens the group on
+        /// the next. Unused by the automatic dense tier.</summary>
+        public XYZ MembershipMinWorld { get; set; } = XYZ.Zero;
+        public XYZ MembershipMaxWorld { get; set; } = XYZ.Zero;
     }
 
     /// <summary>
@@ -541,6 +553,203 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             }
             return requests;
         }
+
+        // ── User-callout tier survey ───────────────────────────────────────────
+        /// <summary>Two crop rectangles within this match (per axis, model ft) count as "the
+        /// tool's own growth still in place" — beyond it the user resized the callout by hand.</summary>
+        private const double UserCalloutRectTolFt = 0.01;
+
+        /// <summary>
+        /// Read-only pre-pass for USER-drawn callouts: every plan callout of this view that the
+        /// user drew (anything not named by the automatic dense tier) and that contains at least
+        /// one clash marker becomes one pre-defined group — its clashes mark and dimension in
+        /// THAT callout and never cluster with markers outside it. Group membership is the
+        /// rectangle the user drew (re-read from the <c>UserCalloutSchema</c> stamp on re-runs,
+        /// so the tool's own room growth never widens the group; a hand-resized callout
+        /// re-baselines to the user's new boundary). The emitted crop is grown to the containing
+        /// room(s) plus a margin — same as the dense tier — and the scale is only coarsened when
+        /// the members' text demand needs it. User areas are NEVER merged with each other or
+        /// with automatic dense areas: separation is the point. A clash inside two user callouts
+        /// joins the first (lowest view id). Never throws.
+        /// </summary>
+        public static List<DenseCalloutRequest> SurveyUserCallouts(
+            Document doc, View view, AutoDimensionConfig cfg, Action<string, string>? log = null)
+        {
+            var requests = new List<DenseCalloutRequest>();
+            try
+            {
+                var callouts = CollectUserCallouts(doc, view);
+                if (callouts.Count == 0)
+                {
+                    // Say so explicitly — a drawn callout the collector failed to see would
+                    // otherwise be indistinguishable from "none drawn" in the run log.
+                    log?.Invoke($"No user-drawn callouts found on '{view.Name}'.", "info");
+                    return requests;
+                }
+                log?.Invoke($"Found {callouts.Count} user-drawn callout(s) on '{view.Name}'.", "info");
+
+                var projection = new ViewProjection(view);
+                var sources = SourceIngest.Collect(doc, view, projection, new List<Core.UnresolvedTarget>());
+                if (sources.Count == 0) return requests;
+
+                double scale = view.Scale <= 0 ? 1 : view.Scale;
+                double textPaperFt = ReadDimTextSizeFt(doc, ResolveDimType(doc, cfg.DimensionTypeName))
+                                  ?? cfg.Layout.TextHeightFt;
+                double thModel = textPaperFt * scale;
+                double nominal = thModel * 4.8;
+                double margin  = nominal * 0.75;
+
+                Resolvers.RoomBoundsResolver? rooms = null;
+                var claimed = new HashSet<string>(StringComparer.Ordinal);
+                int seq = 0;
+
+                foreach (var callout in callouts)
+                {
+                    var cropRect = CropBounds2D(callout, projection);
+                    if (cropRect == null)
+                    {
+                        log?.Invoke($"User callout '{callout.Name}': no readable crop — skipped.", "info");
+                        continue;
+                    }
+
+                    // Membership: the user's original boundary survives the tool's own room
+                    // growth (read back from the stamp), but a hand-resized callout wins.
+                    var membership = cropRect.Value;
+                    var stamped = UserCalloutSchema.Read(callout);
+                    if (stamped != null)
+                    {
+                        var applied = Core.Box2.FromPoints(
+                            projection.To2D(stamped.AppliedMin), projection.To2D(stamped.AppliedMax));
+                        if (RectsMatch(cropRect.Value, applied))
+                            membership = Core.Box2.FromPoints(
+                                projection.To2D(stamped.MembershipMin), projection.To2D(stamped.MembershipMax));
+                        else
+                            log?.Invoke($"User callout '{callout.Name}' was resized by hand — its group "
+                                      + "re-baselines to the new boundary.", "info");
+                    }
+
+                    var members = sources
+                        .Where(s => membership.Contains(s.Anchor2d) && !claimed.Contains(s.SourceKey))
+                        .ToList();
+                    int overlapped = sources.Count(s => membership.Contains(s.Anchor2d)) - members.Count;
+                    if (overlapped > 0)
+                        log?.Invoke($"User callout '{callout.Name}': {overlapped} clash(es) already claimed "
+                                  + "by an earlier user callout — first containment wins.", "info");
+                    if (members.Count == 0)
+                    {
+                        log?.Invoke($"User callout '{callout.Name}' contains no clash markers — left untouched.", "info");
+                        continue;
+                    }
+                    foreach (var m in members) claimed.Add(m.SourceKey);
+
+                    // Grow the CROP (not the membership) to the containing room(s) + margin,
+                    // exactly like the dense tier — dimensions need their grid/slab references
+                    // visible inside the callout.
+                    double minX = membership.MinX, minY = membership.MinY;
+                    double maxX = membership.MaxX, maxY = membership.MaxY;
+                    rooms ??= new Resolvers.RoomBoundsResolver(doc, view);
+                    var roomKeys = new HashSet<string>(StringComparer.Ordinal);
+                    var roomLabels = new List<string>();
+                    foreach (var m in members)
+                    {
+                        var hit = rooms.FindRoom(m.Anchor3d);
+                        if (hit == null || !roomKeys.Add(hit.Key)) continue;
+                        foreach (var corner in hit.Corners)
+                        {
+                            var p = projection.To2D(corner);
+                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+                        }
+                        roomLabels.Add(hit.Label);
+                    }
+                    var grown = new Core.Box2(minX - margin, minY - margin, maxX + margin, maxY + margin);
+
+                    // Scale: the dense tier's pick (generous ~11-glyph text width), applied only
+                    // when it is coarser-to-fit than what the user already set — a callout the
+                    // user already enlarged further is left alone.
+                    var info = new DensityClusterer.ClusterInfo
+                    {
+                        MinX = double.MaxValue, MinY = double.MaxValue,
+                        MaxX = double.MinValue, MaxY = double.MinValue,
+                    };
+                    foreach (var m in members)
+                    {
+                        var p = m.Anchor2d;
+                        info.MemberPoints.Add(p);
+                        if (p.X < info.MinX) info.MinX = p.X; if (p.X > info.MaxX) info.MaxX = p.X;
+                        if (p.Y < info.MinY) info.MinY = p.Y; if (p.Y > info.MaxY) info.MaxY = p.Y;
+                    }
+                    double ratio = DemandRatio(info, thModel * 6.0, thModel);
+                    double bound = scale / Math.Max(ratio, 1e-9);
+                    int chosen = 12;
+                    foreach (var s in CalloutScales)
+                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+                    int current = callout.Scale <= 0 ? (int)scale : callout.Scale;
+                    int finalScale = Math.Min(current, chosen);
+
+                    var req = new DenseCalloutRequest
+                    {
+                        ClusterId  = "u" + (seq++).ToString("D3", System.Globalization.CultureInfo.InvariantCulture),
+                        MinWorld   = projection.From2D(new Core.Vec2(grown.MinX, grown.MinY)),
+                        MaxWorld   = projection.From2D(new Core.Vec2(grown.MaxX, grown.MaxY)),
+                        Scale      = finalScale,
+                        ClashCount = members.Count,
+                        ExistingViewId     = callout.Id,
+                        MembershipMinWorld = projection.From2D(new Core.Vec2(membership.MinX, membership.MinY)),
+                        MembershipMaxWorld = projection.From2D(new Core.Vec2(membership.MaxX, membership.MaxY)),
+                    };
+                    req.SourceKeys.AddRange(members.Select(m => m.SourceKey));
+                    requests.Add(req);
+
+                    string roomsTxt = roomLabels.Count > 0
+                        ? $"crop grown to {string.Join(", ", roomLabels)} plus a margin"
+                        : "no room found at its clashes — crop kept at the drawn boundary plus a margin";
+                    log?.Invoke($"User callout '{callout.Name}': pre-defined group of {members.Count} "
+                              + $"clash(es) at 1:{finalScale} — {roomsTxt}.", "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error("AutoDimensionEngine: survey user callouts", ex);
+                log?.Invoke($"User-callout survey failed ({ex.Message}) — user callouts skipped this view.", "fail");
+            }
+            return requests;
+        }
+
+        /// <summary>Non-template callout views whose parent is <paramref name="parentView"/>,
+        /// excluding the dense tier's own "- Dense" views, ordered by id so claiming is
+        /// deterministic. Covers EVERY callout class — Revit's default callout type on a plan
+        /// is a Detail view (a <see cref="ViewSection"/>, not a <see cref="ViewPlan"/>), so
+        /// filtering to ViewPlan silently missed most user-drawn callouts. A collector failure
+        /// propagates to the survey's catch, which reports it to the run log (user callouts
+        /// skipped for the view) — never silently.</summary>
+        private static List<View> CollectUserCallouts(Document doc, View parentView)
+        {
+            var result = new List<View>();
+            string densePrefix = parentView.Name + " - Dense ";
+            foreach (var v in new FilteredElementCollector(doc)
+                         .OfClass(typeof(View)).Cast<View>()
+                         .Where(vw => !vw.IsTemplate)
+                         .OrderBy(vw => vw.Id.Value))
+            {
+                if (v.Name.StartsWith(densePrefix, StringComparison.Ordinal)) continue;
+                ElementId parentId;
+                // A view that is not a callout has no parent — GetCalloutParentId returning
+                // InvalidElementId (or throwing on view kinds that can never be callouts) is
+                // the expected probe result for most views, not a failure (deliberately not
+                // routed to LemoineLog: it would fire per view per run).
+                try { parentId = v.GetCalloutParentId(); }
+                catch { continue; }
+                if (parentId == parentView.Id) result.Add(v);
+            }
+            return result;
+        }
+
+        private static bool RectsMatch(Core.Box2 a, Core.Box2 b) =>
+            Math.Abs(a.MinX - b.MinX) <= UserCalloutRectTolFt
+         && Math.Abs(a.MinY - b.MinY) <= UserCalloutRectTolFt
+         && Math.Abs(a.MaxX - b.MaxX) <= UserCalloutRectTolFt
+         && Math.Abs(a.MaxY - b.MaxY) <= UserCalloutRectTolFt;
 
         /// <summary>One dense-callout footprint while merging: the room-grown, margin-padded
         /// rectangle plus which rooms it covers. Overlapping footprints are absorbed into one.</summary>

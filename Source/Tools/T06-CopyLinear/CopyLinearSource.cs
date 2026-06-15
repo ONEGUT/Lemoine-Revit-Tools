@@ -80,14 +80,38 @@ namespace LemoineTools.Tools.CopyLinear
             return result;
         }
 
-        /// <summary>True when the element clears the system / size / phase keyword filters (empty filter = pass).</summary>
-        public static bool PassesFilters(Element el, Document srcDoc, CopyLinearSourceSpec spec)
+        /// <summary>True when the element passes every active parameter filter (empty value list = pass all).</summary>
+        public static bool PassesFilters(Element el, CopyLinearSourceSpec spec)
         {
-            if (spec == null) return true;
-            if (spec.SystemTypes?.Count > 0 && !spec.SystemTypes.Contains(ReadSystem(el))) return false;
-            if (spec.Sizes?.Count       > 0 && !spec.Sizes.Contains(ReadSize(el)))         return false;
-            if (spec.Phases?.Count      > 0 && !spec.Phases.Contains(ReadPhase(srcDoc, el))) return false;
+            if (spec?.ParamFilters == null || spec.ParamFilters.Count == 0) return true;
+            foreach (var kv in spec.ParamFilters)
+            {
+                if (kv.Value == null || kv.Value.Count == 0) continue;
+                try
+                {
+                    string val = ReadParamDisplay(el?.LookupParameter(kv.Key));
+                    if (!kv.Value.Contains(val)) return false;
+                }
+                catch (Exception ex) { LemoineLog.Swallowed($"CopyLinearSource.PassesFilters: param '{kv.Key}'", ex); }
+            }
             return true;
+        }
+
+        /// <summary>
+        /// Formatted display string for a parameter value. Returns "(no value)" when the parameter
+        /// is absent, has no value, or uses Double storage (numerics are excluded from filter chips).
+        /// </summary>
+        public static string ReadParamDisplay(Parameter? p)
+        {
+            if (p == null || p.StorageType == StorageType.None || p.StorageType == StorageType.Double)
+                return "(no value)";
+            if (p.StorageType == StorageType.String)
+            {
+                var s = p.AsString();
+                return string.IsNullOrEmpty(s) ? "(no value)" : s;
+            }
+            var vs = p.AsValueString();
+            return string.IsNullOrEmpty(vs) ? "(no value)" : vs;
         }
 
         // ── Keyword readers (one source of truth for scan + run) ───────────────

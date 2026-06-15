@@ -64,8 +64,8 @@ namespace LemoineTools.Tools.Testing
 
         // ── State ─────────────────────────────────────────────────────────────
         private List<string> _selectedDefDisplays = new List<string>();
-        private List<string> _selectedViewNames   = new List<string>();
-        private readonly Dictionary<string, ElementId> _viewNameToId = new Dictionary<string, ElementId>();
+        private List<long>   _selectedViewIds     = new List<long>();
+        private readonly LemoineBrowserTree _browserTree;
 
         private bool   _clearPrevious    = true;
         private double _roundSizeMm      = 0.0;     // round marker oversize; 0 = exact element size
@@ -81,13 +81,15 @@ namespace LemoineTools.Tools.Testing
             ExternalEvent?                    externalEvent,
             List<View>                        allViews,
             List<ClashDefinition>             definitions,
-            List<(string Name, ElementId Id)> spotTypes)
+            List<(string Name, ElementId Id)> spotTypes,
+            LemoineBrowserTree?               browserTree = null)
         {
             _handler     = handler;
             _event       = externalEvent;
             _allViews    = allViews    ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
             _spotTypes   = spotTypes   ?? new List<(string, ElementId)>();
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             var used = new HashSet<string>();
             foreach (var def in _definitions)
@@ -98,10 +100,6 @@ namespace LemoineTools.Tools.Testing
                 while (!used.Add(display)) display = $"{baseName} ({n++})";
                 _defDisplayToDef[display] = def;
             }
-
-            foreach (var v in _allViews)
-                if (!_viewNameToId.ContainsKey(v.Name))
-                    _viewNameToId[v.Name] = v.Id;
 
             foreach (var t in _spotTypes)
                 if (!_spotTypeByName.ContainsKey(t.Name))
@@ -172,39 +170,22 @@ namespace LemoineTools.Tools.Testing
         {
             var outer = new StackPanel();
             AddLabel(outer, "Pick the section and/or elevation views to mark and tag.");
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += selected =>
+            var picker = new LemoineBrowserTreePicker
             {
-                _selectedViewNames = new List<string>(selected);
+                Height         = 300,
+                AccessibleName = "Views to mark and tag",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedViewIds = ids.ToList();
                 Fire();
             };
-            tabs.SetGroups(BuildViewGroups(), _selectedViewNames);
-            outer.Children.Add(tabs);
+            picker.SetTree(_browserTree,
+                _allViews.Select(v => v.Id.Value),
+                _selectedViewIds.ToList());
+            outer.Children.Add(picker);
             return WrapInScroll(outer);
-        }
-
-        private Dictionary<string, List<string>> BuildViewGroups()
-        {
-            var groups = new Dictionary<string, List<string>>
-            {
-                ["Sections"]   = new List<string>(),
-                ["Elevations"] = new List<string>(),
-            };
-
-            foreach (var v in _allViews)
-            {
-                if (!_viewNameToId.ContainsKey(v.Name)) _viewNameToId[v.Name] = v.Id;
-                if (v.ViewType == ViewType.Elevation)
-                    groups["Elevations"].Add(v.Name);
-                else
-                    groups["Sections"].Add(v.Name);
-            }
-
-            foreach (var k in groups.Keys.Where(k => groups[k].Count == 0).ToList())
-                groups.Remove(k);
-
-            if (groups.Count == 0) groups["(No section or elevation views)"] = new List<string>();
-            return groups;
         }
 
         // ── S3 — Marker & Tag Settings ────────────────────────────────────────
@@ -274,7 +255,7 @@ namespace LemoineTools.Tools.Testing
             switch (stepId)
             {
                 case "S1": return _selectedDefDisplays.Count > 0;
-                case "S2": return _selectedViewNames.Count > 0;
+                case "S2": return _selectedViewIds.Count > 0;
                 default:   return true;
             }
         }
@@ -284,7 +265,7 @@ namespace LemoineTools.Tools.Testing
             switch (stepId)
             {
                 case "S1": return _selectedDefDisplays.Count == 0 ? "—" : $"{_selectedDefDisplays.Count} definition(s)";
-                case "S2": return _selectedViewNames.Count   == 0 ? "—" : $"{_selectedViewNames.Count} view(s)";
+                case "S2": return _selectedViewIds.Count     == 0 ? "—" : $"{_selectedViewIds.Count} view(s)";
                 case "S3":
                 {
                     var bits = new List<string>();
@@ -310,7 +291,7 @@ namespace LemoineTools.Tools.Testing
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["defs"]   = _selectedDefDisplays.Count > 0 ? $"{_selectedDefDisplays.Count} definition(s)" : "—",
-            ["views"]  = _selectedViewNames.Count   > 0 ? $"{_selectedViewNames.Count} view(s)"        : "—",
+            ["views"]  = _selectedViewIds.Count     > 0 ? $"{_selectedViewIds.Count} view(s)"          : "—",
             ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
             ["tag"]    = $"{(_anchorMode == "Top" ? "top" : _anchorMode == "Bottom" ? "bottom" : "centre")}"
                 + (_spotTypes.Count > 0
@@ -350,9 +331,8 @@ namespace LemoineTools.Tools.Testing
                 .Where(d => _defDisplayToDef.ContainsKey(d))
                 .Select(d => _defDisplayToDef[d])
                 .ToList();
-            _handler.ViewIds = _selectedViewNames
-                .Where(n => _viewNameToId.ContainsKey(n))
-                .Select(n => _viewNameToId[n])
+            _handler.ViewIds = _selectedViewIds
+                .Select(id => new ElementId(id))
                 .ToList();
             _handler.ClearPrevious    = _clearPrevious;
             _handler.AnchorMode       = _anchorMode;

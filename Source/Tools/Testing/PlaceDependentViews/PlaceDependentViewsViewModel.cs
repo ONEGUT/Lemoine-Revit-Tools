@@ -12,7 +12,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Testing.PlaceDependentViews
 {
-    public sealed class PlaceDependentViewsViewModel : ILemoineTool, ILemoineReviewable
+    public sealed class PlaceDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
         private static readonly (string Label, string Token)[] NamingTokens =
         {
@@ -36,6 +36,16 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         };
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         private const string ModeDependents = "Dependents → one sheet per parent";
@@ -45,11 +55,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         private bool _compositeMode = false;
 
         private readonly List<ParentViewEntry>          _parents;
-        private readonly Dictionary<string, ElementId>  _parentLabelToId = new Dictionary<string, ElementId>();
+        private readonly LemoineBrowserTree             _browserTree;
         private List<ElementId>                          _selectedParentIds = new List<ElementId>();
 
         private readonly List<ParentViewEntry>          _compositeCandidates;
-        private readonly Dictionary<string, ElementId>  _compositeLabelToId = new Dictionary<string, ElementId>();
         private List<ElementId>                          _selectedCompositeIds = new List<ElementId>();
 
         private readonly List<string>                   _titleblockNames;
@@ -85,27 +94,18 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             ExternalEvent?                   externalEvent,
             List<ParentViewEntry>?           parents,
             List<ParentViewEntry>?           compositeCandidates,
-            List<FamilySymbol>?              titleblocks)
+            List<FamilySymbol>?              titleblocks,
+            LemoineBrowserTree?              browserTree = null)
         {
-            _handler = handler;
-            _event   = externalEvent;
+            _handler     = handler;
+            _event       = externalEvent;
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             _parents = (parents ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
-            foreach (var p in _parents)
-            {
-                // Labels are unique by construction (view names are unique in Revit).
-                if (!_parentLabelToId.ContainsKey(p.DisplayLabel))
-                    _parentLabelToId[p.DisplayLabel] = p.Id;
-            }
 
             _compositeCandidates = (compositeCandidates ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
-            foreach (var p in _compositeCandidates)
-            {
-                if (!_compositeLabelToId.ContainsKey(p.DisplayLabel))
-                    _compositeLabelToId[p.DisplayLabel] = p.Id;
-            }
 
             _titleblockMap   = new Dictionary<string, ElementId>();
             _titleblockNames = new List<string>();
@@ -173,6 +173,8 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
               "callout, section and elevation visible in it is arranged in aligned rows or columns."
             : "One sheet per selected view, holding that view's dependent views packed without overlap.";
 
+        // Both modes pick views from the same Project-Browser tree; the mode only
+        // changes which views are selectable and where the selection is mirrored.
         private FrameworkElement BuildModePicker()
         {
             if (_compositeMode)
@@ -180,17 +182,21 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 if (_compositeCandidates.Count == 0)
                     return Hint("No plan, section, elevation or detail views were found in this project.");
 
-                var tabs = new LemoineMultiSelectTabs { AccessibleName = "Source views to place" };
-                tabs.SelectionChanged += selected =>
+                var picker = new LemoineBrowserTreePicker
                 {
-                    _selectedCompositeIds = selected
-                        .Where(l => _compositeLabelToId.ContainsKey(l))
-                        .Select(l => _compositeLabelToId[l])
-                        .ToList();
+                    Height         = 300,
+                    AccessibleName = "Source views to place",
+                };
+                // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+                picker.SelectionChanged += ids =>
+                {
+                    _selectedCompositeIds = ids.Select(id => new ElementId(id)).ToList();
                     OnValidationChanged();
                 };
-                tabs.SetGroups(GroupByType(_compositeCandidates));
-                return tabs;
+                picker.SetTree(_browserTree,
+                    _compositeCandidates.Select(p => p.Id.Value),
+                    _selectedCompositeIds.Select(id => id.Value).ToList());
+                return picker;
             }
             else
             {
@@ -198,25 +204,23 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     return Hint("No views with dependent views were found in this project. " +
                                 "Create dependents first, then reopen this tool.");
 
-                var tabs = new LemoineMultiSelectTabs { AccessibleName = "Views to place" };
-                tabs.SelectionChanged += selected =>
+                var picker = new LemoineBrowserTreePicker
                 {
-                    _selectedParentIds = selected
-                        .Where(l => _parentLabelToId.ContainsKey(l))
-                        .Select(l => _parentLabelToId[l])
-                        .ToList();
+                    Height         = 300,
+                    AccessibleName = "Views to place",
+                };
+                // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+                picker.SelectionChanged += ids =>
+                {
+                    _selectedParentIds = ids.Select(id => new ElementId(id)).ToList();
                     OnValidationChanged();
                 };
-                tabs.SetGroups(GroupByType(_parents));
-                return tabs;
+                picker.SetTree(_browserTree,
+                    _parents.Select(p => p.Id.Value),
+                    _selectedParentIds.Select(id => id.Value).ToList());
+                return picker;
             }
         }
-
-        /// <summary>Group by view type so the tabs read FloorPlan / CeilingPlan / Section …</summary>
-        private static Dictionary<string, List<string>> GroupByType(List<ParentViewEntry> entries) =>
-            entries
-                .GroupBy(p => string.IsNullOrEmpty(p.TypeLabel) ? "Views" : p.TypeLabel)
-                .ToDictionary(g => g.Key, g => g.Select(p => p.DisplayLabel).ToList());
 
         // ── Step 2 — Title block ──────────────────────────────────────────────
         private FrameworkElement BuildS2()

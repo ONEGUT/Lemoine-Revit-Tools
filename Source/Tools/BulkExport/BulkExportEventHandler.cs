@@ -230,6 +230,12 @@ namespace LemoineTools.Tools.BulkExport
                 pushLog($"Bulk Export error: {ex.Message}", "fail");
                 onComplete(pass, 1, skip);
             }
+            finally
+            {
+                // Session-long static handler (App.BulkExportHandler) — drop the run's payload.
+                SelectedIds = new List<ElementId>();
+                Packs       = new List<SheetPackLayout>();
+            }
         }
 
         // Builds the result-strip chips from the per-format file tallies. Only formats that

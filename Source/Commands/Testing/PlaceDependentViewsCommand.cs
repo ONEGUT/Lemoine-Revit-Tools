@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.Testing.PlaceDependentViews;
 
@@ -90,7 +91,8 @@ namespace LemoineTools.Commands
 
             var vm = new PlaceDependentViewsViewModel(
                 App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
-                parents, composites, titleblocks);
+                parents, composites, titleblocks,
+                BrowserTreeCapture.Capture(doc));
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

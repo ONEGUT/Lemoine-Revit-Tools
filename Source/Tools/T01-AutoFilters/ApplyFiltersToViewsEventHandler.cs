@@ -45,6 +45,12 @@ namespace LemoineTools.Tools.AutoFilters
                 LemoineLog.Error("AutoFilters: apply filters to views aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SelectedFilterNames = new List<string>();
+                SelectedViewIds     = new List<long>();
+            }
 
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);

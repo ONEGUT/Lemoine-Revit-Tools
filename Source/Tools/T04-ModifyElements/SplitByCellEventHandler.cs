@@ -164,6 +164,12 @@ namespace LemoineTools.Tools.ModifyElements
                 pushLog($"Error: {ex.Message}", "fail");
                 onComplete(0, 1, 0);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SelectedCategoryLabels = new List<string>();
+                PreSelectedIds         = null;
+            }
         }
     }
 }

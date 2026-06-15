@@ -68,9 +68,9 @@ namespace LemoineTools.Tools.Ceilings
         private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
 
         // ── View selection state ─────────────────────────────────────────────────
-        private List<string>                                _selectedViewNames = new List<string>();
-        private readonly Dictionary<string, ElementId>     _viewNameToId;
-        private readonly Dictionary<string, List<string>>  _viewsByLevel;
+        private List<long>                  _selectedViewIds = new List<long>();
+        private readonly List<long>         _allViewIds      = new List<long>();
+        private readonly LemoineBrowserTree _browserTree;
 
         // ── Debug wiring ─────────────────────────────────────────────────────────
         private static CeilingHeatmapDebugHandler _debugHandler;
@@ -94,27 +94,17 @@ namespace LemoineTools.Tools.Ceilings
         public CeilingHeatmapViewModel(
             CeilingHeatmapEventHandler? handler,
             ExternalEvent?              externalEvent,
-            Dictionary<string, List<(string Name, ElementId Id)>>? viewsByLevel = null)
+            Dictionary<string, List<(string Name, ElementId Id)>>? viewsByLevel = null,
+            LemoineBrowserTree?         browserTree = null)
         {
-            _handler = handler;
-            _event   = externalEvent;
-
-            _viewNameToId = new Dictionary<string, ElementId>();
-            _viewsByLevel = new Dictionary<string, List<string>>();
+            _handler     = handler;
+            _event       = externalEvent;
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             if (viewsByLevel != null)
-            {
                 foreach (var kvp in viewsByLevel)
-                {
-                    var names = new List<string>();
-                    foreach (var (n, id) in kvp.Value)
-                    {
-                        _viewNameToId[n] = id;
-                        names.Add(n);
-                    }
-                    _viewsByLevel[kvp.Key] = names;
-                }
-            }
+                    foreach (var (_, id) in kvp.Value)
+                        _allViewIds.Add(id.Value);
         }
 
         // ═════════════════════════════════════════════════════════════════════════
@@ -135,7 +125,7 @@ namespace LemoineTools.Tools.Ceilings
         // ── S1: View selection ───────────────────────────────────────────────────
         private FrameworkElement BuildS1()
         {
-            if (_viewsByLevel.Count == 0)
+            if (_allViewIds.Count == 0)
             {
                 var msg = new TextBlock
                 {
@@ -149,14 +139,19 @@ namespace LemoineTools.Tools.Ceilings
                 return msg;
             }
 
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SetGroups(_viewsByLevel);
-            tabs.SelectionChanged += selected =>
+            var picker = new LemoineBrowserTreePicker
             {
-                _selectedViewNames = new List<string>(selected);
+                Height         = 300,
+                AccessibleName = "Ceiling plan views",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedViewIds = ids.ToList();
                 OnValidationChanged();
             };
-            return tabs;
+            picker.SetTree(_browserTree, _allViewIds, _selectedViewIds.ToList());
+            return picker;
         }
 
         // ── S_RAMP: Color Ramp step ──────────────────────────────────────────────
@@ -462,8 +457,8 @@ namespace LemoineTools.Tools.Ceilings
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]  = _selectedViewNames.Count == 0 ? "—"
-                : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")}",
+            ["views"]  = _selectedViewIds.Count == 0 ? "—"
+                : $"{_selectedViewIds.Count} view{(_selectedViewIds.Count == 1 ? "" : "s")}",
             ["ramp"]   = $"{_colorLow} → {_colorMid} → {_colorHigh}",
             ["delete"] = _deleteExisting ? "Yes" : "No",
             ["tags"]   = _placeTags ? "Yes" : "No",
@@ -482,15 +477,15 @@ namespace LemoineTools.Tools.Ceilings
         // ═════════════════════════════════════════════════════════════════════════
         public bool IsValid(string stepId)
         {
-            if (stepId == "S1") return _selectedViewNames.Count > 0;
+            if (stepId == "S1") return _selectedViewIds.Count > 0;
             return true;
         }
 
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1")
-                return _selectedViewNames.Count == 0 ? "—"
-                    : $"{_selectedViewNames.Count} view{(_selectedViewNames.Count == 1 ? "" : "s")} selected";
+                return _selectedViewIds.Count == 0 ? "—"
+                    : $"{_selectedViewIds.Count} view{(_selectedViewIds.Count == 1 ? "" : "s")} selected";
             if (stepId == "S_RAMP")
                 return $"{_colorLow} → {_colorMid} → {_colorHigh}";
             if (stepId == "S2")
@@ -517,9 +512,8 @@ namespace LemoineTools.Tools.Ceilings
             CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
             SaveColorsToSettings();
 
-            _handler!.SelectedViewIds = _selectedViewNames
-                .Where(n => _viewNameToId.ContainsKey(n))
-                .Select(n => _viewNameToId[n])
+            _handler!.SelectedViewIds = _selectedViewIds
+                .Select(id => new ElementId(id))
                 .ToList();
             _handler.DeleteExisting  = _deleteExisting;
             _handler.PlaceTags       = _placeTags;

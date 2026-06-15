@@ -124,7 +124,7 @@ namespace LemoineTools.Tools.LinkViews
     /// scheme, and trigger the run handler that creates dependents on each target inside a
     /// Revit transaction.
     /// </summary>
-    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ReplicateDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -159,6 +159,11 @@ namespace LemoineTools.Tools.LinkViews
         private readonly Dictionary<string, TargetViewEntry> _targetByKey =
             new Dictionary<string, TargetViewEntry>(StringComparer.Ordinal);
 
+        // Reverse lookups: browser-tree picker selections (ElementId.Value) → entry key.
+        private readonly Dictionary<long, string> _sourceIdToKey = new Dictionary<long, string>();
+        private readonly Dictionary<long, string> _targetIdToKey = new Dictionary<long, string>();
+        private readonly LemoineBrowserTree _browserTree;
+
         private string?      _selectedSourceKey;
         private List<string> _selectedTargetKeys = new List<string>();
 
@@ -186,6 +191,16 @@ namespace LemoineTools.Tools.LinkViews
         /// the host window subscribes to this to recompute the Next/Run button states.
         /// </summary>
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         /// <summary>
@@ -197,18 +212,21 @@ namespace LemoineTools.Tools.LinkViews
         /// <param name="allTargets">All views in the project that are eligible to receive replicated dependents.</param>
         public ReplicateDependentViewsViewModel(
             ReplicateDependentViewsRunHandler runHandler, ExternalEvent runEvent,
-            List<SourceViewEntry> allSources, List<TargetViewEntry> allTargets)
+            List<SourceViewEntry> allSources, List<TargetViewEntry> allTargets,
+            LemoineBrowserTree? browserTree = null)
         {
-            _runHandler = runHandler;
-            _runEvent   = runEvent;
-            _allSources = allSources ?? new List<SourceViewEntry>();
-            _allTargets = allTargets ?? new List<TargetViewEntry>();
+            _runHandler  = runHandler;
+            _runEvent    = runEvent;
+            _allSources  = allSources ?? new List<SourceViewEntry>();
+            _allTargets  = allTargets ?? new List<TargetViewEntry>();
+            _browserTree = browserTree ?? new LemoineBrowserTree();
 
             foreach (var s in _allSources)
             {
                 int depCount = s.Deps?.Count ?? 0;
                 string key = $"{s.TypeLabel}  ·  {s.Name}  ({depCount} dep{(depCount != 1 ? "s" : "")})";
                 _sourceByKey[key] = s;
+                if (!_sourceIdToKey.ContainsKey(s.ViewId.Value)) _sourceIdToKey[s.ViewId.Value] = key;
             }
 
             foreach (var t in _allTargets)
@@ -218,6 +236,7 @@ namespace LemoineTools.Tools.LinkViews
                     : t.Name;
                 if (_targetByKey.ContainsKey(key)) key += $"  [{t.ViewId.Value}]";
                 _targetByKey[key] = t;
+                if (!_targetIdToKey.ContainsKey(t.ViewId.Value)) _targetIdToKey[t.ViewId.Value] = key;
             }
         }
 
@@ -263,26 +282,30 @@ namespace LemoineTools.Tools.LinkViews
             if (_allSources.Count == 0)
                 return Message("No views with existing dependent views were found in this project.");
 
-            var groups = _sourceByKey.Keys
-                .GroupBy(k => _sourceByKey[k].TypeLabel)
-                .ToDictionary(g => g.Key, g => g.OrderBy(k => k).ToList());
-
-            var preSelected = _selectedSourceKey != null
-                ? new List<string> { _selectedSourceKey }
-                : new List<string>();
+            var preSelected = _selectedSourceKey != null && _sourceByKey.TryGetValue(_selectedSourceKey, out var sel)
+                ? new List<long> { sel.ViewId.Value }
+                : new List<long>();
 
             // Source is a single view — restrict the picker to one checkbox at a time.
-            var tabs = new LemoineMultiSelectTabs { SingleSelect = true };
-            tabs.SelectionChanged += selected =>
+            var picker = new LemoineBrowserTreePicker
             {
-                string? newKey = selected.FirstOrDefault();
+                Height         = 300,
+                SingleSelect   = true,
+                AccessibleName = "Source view",
+            };
+            picker.SelectionChanged += ids =>
+            {
+                string? newKey = ids
+                    .Where(id => _sourceIdToKey.ContainsKey(id))
+                    .Select(id => _sourceIdToKey[id])
+                    .FirstOrDefault();
                 if (newKey == _selectedSourceKey) return;
                 _selectedSourceKey  = newKey;
                 _selectedTargetKeys = new List<string>();
                 OnValidationChanged();
             };
-            tabs.SetGroups(groups, preSelected);
-            return tabs;
+            picker.SetTree(_browserTree, _sourceIdToKey.Keys.ToList(), preSelected);
+            return picker;
         }
 
         // ── S2: Dependent Preview (live) ───────────────────────────────
@@ -398,26 +421,29 @@ namespace LemoineTools.Tools.LinkViews
                 outer.Children.Add(warn);
             }
 
-            // Group by view type label (same type since source-filtered, but makes the
-            // tab header clear). Within each group, sort by name.
-            var byType = compatibleKvs
-                .OrderBy(kv => kv.Key)
-                .GroupBy(kv => kv.Value.TypeLabel)
-                .ToDictionary(g => g.Key, g => g.Select(kv => kv.Key).ToList());
-
             // Preserve prior selections that are still compatible; default = nothing selected
-            var preSelected = _selectedTargetKeys.Count > 0
-                ? _selectedTargetKeys.Where(k => compatibleKvs.Any(kv => kv.Key == k)).ToList()
-                : new List<string>();
+            var preSelected = _selectedTargetKeys
+                .Where(k => compatibleKvs.Any(kv => kv.Key == k))
+                .Select(k => _targetByKey[k].ViewId.Value)
+                .ToList();
 
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += selected =>
+            var picker = new LemoineBrowserTreePicker
             {
-                _selectedTargetKeys = new List<string>(selected);
+                Height         = 300,
+                AccessibleName = "Target views",
+            };
+            picker.SelectionChanged += ids =>
+            {
+                _selectedTargetKeys = ids
+                    .Where(id => _targetIdToKey.ContainsKey(id))
+                    .Select(id => _targetIdToKey[id])
+                    .ToList();
                 OnValidationChanged();
             };
-            tabs.SetGroups(byType, preSelected);
-            outer.Children.Add(tabs);
+            picker.SetTree(_browserTree,
+                compatibleKvs.Select(kv => kv.Value.ViewId.Value),
+                preSelected);
+            outer.Children.Add(picker);
             return outer;
         }
 

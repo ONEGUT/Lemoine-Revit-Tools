@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
     /// rewrite Name only. A live preview (shared with the run handler through
     /// <see cref="BulkRenameEngine.Plan"/>) shows exactly what will be written.
     /// </summary>
-    public class BulkRenameViewModel : ILemoineTool, ILemoineReviewable, IStepAware
+    public class BulkRenameViewModel : ILemoineTool, ILemoineReviewable, IStepAware, ILemoineToolCleanup
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => "Bulk Rename";
@@ -64,8 +64,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         private const string FieldName   = "Sheet Name";
 
         // ── State ──────────────────────────────────────────────────────
-        private readonly List<SheetEntry> _sheets;
-        private readonly List<ViewEntry>  _views;
+        private readonly List<SheetEntry>  _sheets;
+        private readonly List<ViewEntry>   _views;
+        private readonly LemoineBrowserTree _browserTree;
 
         private RenameTarget _target = RenameTarget.Sheets;
         private RenameField  _field  = RenameField.Name;
@@ -84,16 +85,28 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         private readonly ExternalEvent?        _runEvent;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public BulkRenameViewModel(
             BulkRenameRunHandler? runHandler, ExternalEvent? runEvent,
-            List<SheetEntry>? sheets, List<ViewEntry>? views)
+            List<SheetEntry>? sheets, List<ViewEntry>? views,
+            LemoineBrowserTree? browserTree = null)
         {
-            _runHandler = runHandler;
-            _runEvent   = runEvent;
-            _sheets     = sheets ?? new List<SheetEntry>();
-            _views      = views  ?? new List<ViewEntry>();
+            _runHandler  = runHandler;
+            _runEvent    = runEvent;
+            _sheets      = sheets ?? new List<SheetEntry>();
+            _views       = views  ?? new List<ViewEntry>();
+            _browserTree = browserTree ?? new LemoineBrowserTree();
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -148,56 +161,31 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         }
 
         // ── S2: Select items ───────────────────────────────────────────
-        private readonly Dictionary<string, ElementId> _keyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
-
         private FrameworkElement BuildItemPicker()
         {
-            _keyToId.Clear();
-            var groups = new Dictionary<string, List<string>>();
-
-            if (_target == RenameTarget.Sheets)
+            var picker = new LemoineBrowserTreePicker
             {
-                var list = new List<string>();
-                foreach (var s in _sheets.OrderBy(s => s.Number, StringComparer.OrdinalIgnoreCase))
-                {
-                    string key = $"{s.Number} — {s.Name}";
-                    if (_keyToId.ContainsKey(key)) key = $"{key}  [{s.Id.Value}]";
-                    _keyToId[key] = s.Id;
-                    list.Add(key);
-                }
-                groups["Sheets"] = list;
-            }
-            else
+                Height         = 300,
+                AccessibleName = "Items to rename",
+            };
+            // Subscribe BEFORE SetTree — the single SelectionChanged fired at the end
+            // of SetTree is what re-seeds the mirror sets on step rebuild.
+            picker.SelectionChanged += ids =>
             {
-                foreach (var v in _views.OrderBy(v => v.TypeLabel).ThenBy(v => v.Name))
-                {
-                    string key = v.Name;
-                    if (_keyToId.ContainsKey(key)) key = $"{v.Name}  [{v.Id.Value}]";
-                    _keyToId[key] = v.Id;
-
-                    if (!groups.TryGetValue(v.TypeLabel, out var list))
-                        groups[v.TypeLabel] = list = new List<string>();
-                    list.Add(key);
-                }
-            }
-
-            var selectedIds = SelectedIds();
-
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = "Items to rename" };
-            tabs.SelectionChanged += selected =>
-            {
-                var ids = selected.Where(s => _keyToId.ContainsKey(s)).Select(s => _keyToId[s]).ToList();
                 var set = _target == RenameTarget.Sheets ? _selectedSheetIds : _selectedViewIds;
                 set.Clear();
-                foreach (var id in ids) set.Add(id.Value);
+                foreach (var id in ids) set.Add(id);
                 OnValidationChanged();
             };
-            tabs.SetGroups(groups, _keyToId
-                .Where(kv => selectedIds.Contains(kv.Value.Value))
-                .Select(kv => kv.Key));
+
+            var eligible = _target == RenameTarget.Sheets
+                ? _sheets.Select(s => s.Id.Value)
+                : _views.Select(v => v.Id.Value);
+            // Copy: SetTree's end-of-setup SelectionChanged clears+refills this same set.
+            picker.SetTree(_browserTree, eligible, SelectedIds().ToList());
 
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            outer.Children.Add(tabs);
+            outer.Children.Add(picker);
             return outer;
         }
 

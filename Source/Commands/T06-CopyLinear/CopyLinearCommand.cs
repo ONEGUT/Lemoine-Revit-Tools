@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
+using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.CopyLinear;
 
 namespace LemoineTools.Commands
@@ -35,6 +36,9 @@ namespace LemoineTools.Commands
             }
 
             var doc = commandData.Application.ActiveUIDocument.Document;
+
+            // Capture the full filterable-category list on the Revit main thread (same as DiscoverLaunchCommand).
+            AutoFiltersSettings.CaptureFilterableCategories(doc);
 
             var docs     = CollectDocs(doc);
             var families = CollectFamilies(doc);

@@ -56,6 +56,12 @@ namespace LemoineTools.Tools.Ceilings
                 Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                LinkInstIds       = new List<ElementId>();
+                ExcludedTypeNames = new List<(string, string)>();
+            }
 
             Progress(100, pass, fail, skip);
             long __issues = LemoineLog.IssuesSince(__issues0);

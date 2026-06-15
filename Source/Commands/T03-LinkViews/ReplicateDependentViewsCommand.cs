@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Helpers;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.LinkViews;
 
@@ -130,7 +131,8 @@ namespace LemoineTools.Commands
                 App.ReplicateDependentViewsRunHandler!,
                 App.ReplicateDependentViewsRunEvent!,
                 allSources,
-                allTargets);
+                allTargets,
+                BrowserTreeCapture.Capture(doc));
 
             // Inject orientation warnings into each target relative to the selected source
             // — done by storing all targets' BasisX for the ViewModel to compare lazily.

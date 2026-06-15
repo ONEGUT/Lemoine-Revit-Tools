@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using Autodesk.Revit.DB;
 
 namespace LemoineTools.Tools.CopyLinear
@@ -16,18 +15,6 @@ namespace LemoineTools.Tools.CopyLinear
     /// </summary>
     public static class CopyLinearEngine
     {
-        /// <summary>Linear (curve-driven) categories this tool can copy off one backbone.</summary>
-        public static readonly IReadOnlyList<(BuiltInCategory Cat, string Label)> Categories = new[]
-        {
-            (BuiltInCategory.OST_PipeCurves,       "Pipes"),
-            (BuiltInCategory.OST_DuctCurves,       "Ducts"),
-            (BuiltInCategory.OST_Conduit,          "Conduit"),
-            (BuiltInCategory.OST_CableTray,        "Cable Trays"),
-            (BuiltInCategory.OST_FlexPipeCurves,   "Flex Pipes"),
-            (BuiltInCategory.OST_FlexDuctCurves,   "Flex Ducts"),
-            (BuiltInCategory.OST_StructuralFraming, "Structural Framing"),
-        };
-
         private const double Tol = 1e-4;
 
         // ── Stations ──────────────────────────────────────────────────────────
@@ -103,6 +90,111 @@ namespace LemoineTools.Tools.CopyLinear
             var flat = new XYZ(dir.X, dir.Y, 0.0);
             if (flat.GetLength() < Tol) return 0.0;
             return Math.Atan2(flat.Y, flat.X);
+        }
+
+        // ── Alignment calibration (Replace mode) ─────────────────────────────
+
+        /// <summary>
+        /// Correction that makes a placed instance line up with its source run: a translation
+        /// stored as run-frame components. Computed per source element from its own box, so
+        /// every placement is corrected relative to the element it replaces.
+        /// </summary>
+        public sealed class AlignmentCorrection
+        {
+            public double OffsetAlong;    // feet along the run direction
+            public double OffsetSide;    // feet along the horizontal perpendicular
+            public double OffsetUp;      // feet along the frame's up axis
+        }
+
+        /// <summary>
+        /// The placed family's footprint relative to its station, in run-frame components —
+        /// measured once from the first placed instance (the only part of alignment that costs
+        /// a regen) and then reused for every placement, because a family's box relative to its
+        /// own rotated-to-run placement point is constant. X = along, Y = side, Z = up.
+        /// </summary>
+        public sealed class InstanceProfile
+        {
+            public XYZ Min = XYZ.Zero, Max = XYZ.Zero;  // as placed (rotated to the run)
+        }
+
+        /// <summary>
+        /// Orthonormal run-local frame: Along = a→b, Side = horizontal perpendicular,
+        /// Up completes the set (world +Z for a horizontal run). A vertical run falls
+        /// back to BasisY for Side so the frame is always well-defined.
+        /// </summary>
+        public static (XYZ Along, XYZ Side, XYZ Up) RunFrame(XYZ a, XYZ b)
+        {
+            XYZ along = b - a;
+            along = along.GetLength() < Tol ? XYZ.BasisX : along.Normalize();
+            XYZ side = XYZ.BasisZ.CrossProduct(along);
+            side = side.GetLength() < Tol ? XYZ.BasisY : side.Normalize();
+            XYZ up = along.CrossProduct(side).Normalize();
+            return (along, side, up);
+        }
+
+        /// <summary>
+        /// Min/max extents of a point set measured along each frame axis, relative to
+        /// <paramref name="origin"/>. X = along, Y = side, Z = up components.
+        /// </summary>
+        public static (XYZ Min, XYZ Max) ExtentsInFrame(
+            IReadOnlyList<XYZ> points, XYZ origin, XYZ along, XYZ side, XYZ up)
+        {
+            double minA = double.MaxValue, minS = double.MaxValue, minU = double.MaxValue;
+            double maxA = double.MinValue, maxS = double.MinValue, maxU = double.MinValue;
+            foreach (var pt in points)
+            {
+                var d = pt - origin;
+                double va = d.DotProduct(along), vs = d.DotProduct(side), vu = d.DotProduct(up);
+                if (va < minA) minA = va; if (va > maxA) maxA = va;
+                if (vs < minS) minS = vs; if (vs > maxS) maxS = vs;
+                if (vu < minU) minU = vu; if (vu > maxU) maxU = vu;
+            }
+            return (new XYZ(minA, minS, minU), new XYZ(maxA, maxS, maxU));
+        }
+
+        /// <summary>
+        /// Builds the placed family's station-relative footprint from its world-space box
+        /// corners: extents in the run frame as placed. Null on degenerate input.
+        /// </summary>
+        public static InstanceProfile? MeasureInstance(
+            IReadOnlyList<XYZ> instanceCorners, XYZ a, XYZ b, XYZ station)
+        {
+            if (instanceCorners == null || instanceCorners.Count == 0) return null;
+            var (along, side, up) = RunFrame(a, b);
+            var e = ExtentsInFrame(instanceCorners, station, along, side, up);
+            return new InstanceProfile { Min = e.Min, Max = e.Max };
+        }
+
+        /// <summary>
+        /// Correction that aligns one placement's outer faces with <em>its own</em> source
+        /// element: the source's box is measured in this run's frame relative to this station,
+        /// then the instance footprint is centred on it (side + up) and slid only enough to
+        /// keep the body inside the source's along-run span. Pure math — call it for every
+        /// placement. Null on degenerate input.
+        /// </summary>
+        public static AlignmentCorrection? ComputeAlignment(
+            IReadOnlyList<XYZ> sourceCorners, InstanceProfile profile, XYZ a, XYZ b, XYZ station)
+        {
+            if (sourceCorners == null || sourceCorners.Count == 0 || profile == null) return null;
+
+            var (along, side, up) = RunFrame(a, b);
+            var src = ExtentsInFrame(sourceCorners, station, along, side, up);
+
+            var corr = new AlignmentCorrection();
+            corr.OffsetSide = ((src.Min.Y + src.Max.Y) - (profile.Min.Y + profile.Max.Y)) * 0.5;
+            corr.OffsetUp   = ((src.Min.Z + src.Max.Z) - (profile.Min.Z + profile.Max.Z)) * 0.5;
+
+            // Along the run the stations govern position — only slide enough to stop the body
+            // overhanging an end of the source span (centre on the span if it can't fit).
+            double instLen = profile.Max.X - profile.Min.X, srcLen = src.Max.X - src.Min.X;
+            if (instLen >= srcLen)
+                corr.OffsetAlong = ((src.Min.X + src.Max.X) - (profile.Min.X + profile.Max.X)) * 0.5;
+            else if (profile.Min.X < src.Min.X)
+                corr.OffsetAlong = src.Min.X - profile.Min.X;
+            else if (profile.Max.X > src.Max.X)
+                corr.OffsetAlong = src.Max.X - profile.Max.X;
+
+            return corr;
         }
 
         // ── Identity hash ─────────────────────────────────────────────────────

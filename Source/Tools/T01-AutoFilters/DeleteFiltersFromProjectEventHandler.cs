@@ -37,6 +37,11 @@ namespace LemoineTools.Tools.AutoFilters
                 LemoineLog.Error("AutoFilters: delete filters from project aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                SelectedFilterNames = new List<string>();
+            }
 
             Progress(100, pass, fail, skip);
             Complete(pass, fail, skip);

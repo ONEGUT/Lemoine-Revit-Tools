@@ -423,6 +423,11 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 LemoineLog.Error("PlaceDependentViews.Execute", ex);
                 onComplete(pass, fail + 1, skip);
             }
+            finally
+            {
+                // Session-long static handler — drop the run's payload.
+                ParentViewIds = new List<ElementId>();
+            }
         }
 
         // ── Layout per sheet ──────────────────────────────────────────────────

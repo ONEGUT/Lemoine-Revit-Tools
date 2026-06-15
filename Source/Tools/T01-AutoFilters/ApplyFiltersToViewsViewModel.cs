@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// Color overrides are sourced from AutoFiltersSettings / MepColorMap,
     /// matching the same logic as Auto Filters.
     /// </summary>
-    public class ApplyFiltersToViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ApplyFiltersToViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "applied";
@@ -40,13 +40,9 @@ namespace LemoineTools.Tools.AutoFilters
         private readonly IReadOnlyList<(long Id, string Name, string ViewType)> _allViews;
 
         private List<string> _selectedFilters = new List<string>();
-        // S2 selection is keyed by the multiselect's display label; the map below
-        // resolves each label back to its view ElementId (the value passed to the
-        // handler). Labels are made unique in GetStepContent so colliding view names
-        // remain individually targetable.
-        private List<string> _selectedViews   = new List<string>();
-        private readonly Dictionary<string, long> _viewLabelToId =
-            new Dictionary<string, long>(StringComparer.Ordinal);
+        // S2 selection: view ElementId values straight from the browser-tree picker.
+        private List<long>   _selectedViewIds = new List<long>();
+        private readonly LemoineBrowserTree _browserTree;
         private Dictionary<string, bool> _optionState = new Dictionary<string, bool>
         {
             ["overwrite"] = false,
@@ -55,6 +51,16 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Validation change notification ─────────────────────────────────────
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── ExternalEvent wiring ────────────────────────────────────────────────
@@ -65,12 +71,14 @@ namespace LemoineTools.Tools.AutoFilters
             ApplyFiltersToViewsEventHandler handler,
             Autodesk.Revit.UI.ExternalEvent externalEvent,
             IReadOnlyList<string> allFilterNames,
-            IReadOnlyList<(long Id, string Name, string ViewType)> allViews)
+            IReadOnlyList<(long Id, string Name, string ViewType)> allViews,
+            LemoineBrowserTree? browserTree = null)
         {
             _handler        = handler;
             _event          = externalEvent;
             _allFilterNames = allFilterNames ?? new List<string>();
             _allViews       = allViews       ?? new List<(long, string, string)>();
+            _browserTree    = browserTree    ?? new LemoineBrowserTree();
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -123,35 +131,22 @@ namespace LemoineTools.Tools.AutoFilters
                     return none;
                 }
 
-                // View names are NOT unique in Revit (a Floor Plan and its RCP, or two
-                // 3D views, can share a name), but the multiselect keys items by their
-                // display string. Give each view a unique label so colliding names stay
-                // individually selectable — without exposing the ElementId: the first
-                // occurrence keeps the plain name and later duplicates get a " (2)",
-                // " (3)" suffix. The label→id map (not the label) is what the handler
-                // resolves against.
-                _viewLabelToId.Clear();
-                var groups = new Dictionary<string, List<string>>();
-                foreach (var (id, name, vt) in _allViews)
+                var picker = new LemoineBrowserTreePicker
                 {
-                    string label = name;
-                    int dup = 1;
-                    while (_viewLabelToId.ContainsKey(label))
-                        label = $"{name} ({++dup})";
-                    _viewLabelToId[label] = id;
-                    if (!groups.ContainsKey(vt)) groups[vt] = new List<string>();
-                    groups[vt].Add(label);
-                }
-
-                var tabs = new LemoineMultiSelectTabs();
-                // Pass the current selection so re-entering the step keeps prior picks.
-                tabs.SetGroups(groups, _selectedViews);
-                tabs.SelectionChanged += selected =>
+                    Height         = 300,
+                    AccessibleName = "Target views",
+                };
+                // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+                picker.SelectionChanged += ids =>
                 {
-                    _selectedViews = new List<string>(selected);
+                    _selectedViewIds = ids.ToList();
                     OnValidationChanged();
                 };
-                return tabs;
+                // Pass the current selection so re-entering the step keeps prior picks.
+                picker.SetTree(_browserTree,
+                    _allViews.Select(v => v.Id),
+                    _selectedViewIds.ToList());
+                return picker;
             }
 
             if (stepId == "S3")
@@ -206,7 +201,7 @@ namespace LemoineTools.Tools.AutoFilters
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["filters"]   = $"{_selectedFilters.Count} selected",
-            ["views"]     = $"{_selectedViews.Count} selected",
+            ["views"]     = $"{_selectedViewIds.Count} selected",
             ["overwrite"] = GetOpt("overwrite") ? "Yes — replace overrides" : "No — skip if present",
             ["color"]     = GetOpt("color")     ? "Apply from color map"    : "None",
         };
@@ -218,14 +213,14 @@ namespace LemoineTools.Tools.AutoFilters
         public bool IsValid(string stepId)
         {
             if (stepId == "S1") return _selectedFilters.Count > 0;
-            if (stepId == "S2") return _selectedViews.Count > 0;
+            if (stepId == "S2") return _selectedViewIds.Count > 0;
             return true;
         }
 
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1") return $"{_selectedFilters.Count} filter(s) selected";
-            if (stepId == "S2") return $"{_selectedViews.Count} view(s) selected";
+            if (stepId == "S2") return $"{_selectedViewIds.Count} view(s) selected";
             if (stepId == "S3") return "Ready to run";
             return "—";
         }
@@ -236,22 +231,15 @@ namespace LemoineTools.Tools.AutoFilters
             Action<int, int, int>      onComplete)
         {
             _handler.SelectedFilterNames = new List<string>(_selectedFilters);
-            // Resolve the selected display labels back to view ElementIds. A label
-            // missing from the map can only happen if state desynced; skip it rather
-            // than guessing a view by name.
-            _handler.SelectedViewIds = _selectedViews
-                .Where(lbl => _viewLabelToId.ContainsKey(lbl))
-                .Select(lbl => _viewLabelToId[lbl])
-                .ToList();
-            if (_handler.SelectedViewIds.Count < _selectedViews.Count)
-                pushLog($"{_selectedViews.Count - _handler.SelectedViewIds.Count} selected view(s) could not be resolved and were skipped.", "fail");
+            // The picker hands back view ElementId values directly — no label resolution.
+            _handler.SelectedViewIds     = new List<long>(_selectedViewIds);
             _handler.OverwriteExisting   = GetOpt("overwrite");
             _handler.ApplyColorOverrides = GetOpt("color");
             _handler.PushLog             = pushLog;
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;
 
-            pushLog($"Applying {_selectedFilters.Count} filter(s) to {_selectedViews.Count} view(s)…", "info");
+            pushLog($"Applying {_selectedFilters.Count} filter(s) to {_selectedViewIds.Count} view(s)…", "info");
             _event.Raise();
         }
 

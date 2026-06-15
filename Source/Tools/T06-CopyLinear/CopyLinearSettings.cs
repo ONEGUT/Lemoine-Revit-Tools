@@ -29,11 +29,24 @@ namespace LemoineTools.Tools.CopyLinear
         // Replace mode
         public double IntervalFeet      { get; set; } = 10.0;
         public double ExtraSpacingInches{ get; set; } = 0.0;
-        public bool   RotateToRun       { get; set; } = true;
+        public bool   AlignToSource     { get; set; } = true;
         public string LengthParamName   { get; set; } = "";
         public string FamilyKey         { get; set; } = "";  // "Category — Family: Type"
 
+        // Manual placement override (used when AlignToSource is off) — source-run-frame
+        // offsets applied identically to every placed instance.
+        public double ManualOffsetXInches   { get; set; } = 0.0;  // along the run
+        public double ManualOffsetYInches   { get; set; } = 0.0;  // sideways
+        public double ManualOffsetZInches   { get; set; } = 0.0;  // up
+
+        // Extra placement rotation (degrees) about each source run's own axes, applied to every
+        // instance in both align and manual modes: X = about the run, Y = side, Z = up.
+        public double RotationXDegrees      { get; set; } = 0.0;
+        public double RotationYDegrees      { get; set; } = 0.0;
+        public double RotationZDegrees      { get; set; } = 0.0;
+
         // Change detection
+        public bool   DeletePrevious    { get; set; } = false;
         public bool   OnlyChanged       { get; set; } = false;
         public bool   DeleteOrphans     { get; set; } = true;
 

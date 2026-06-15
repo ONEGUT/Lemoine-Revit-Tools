@@ -74,6 +74,11 @@ namespace LemoineTools.Tools.Ceilings
             {
                 OnError?.Invoke(ex.Message);
             }
+            finally
+            {
+                // Session-long static handler — drop the scan's payload.
+                LinkInstIds = new List<ElementId>();
+            }
         }
     }
 }

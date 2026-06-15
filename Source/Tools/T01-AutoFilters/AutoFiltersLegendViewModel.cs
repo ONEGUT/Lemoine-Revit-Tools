@@ -13,7 +13,7 @@ namespace LemoineTools.Tools.AutoFilters
     /// Legend view with colored swatches. No user inputs required beyond
     /// confirming the run.
     /// </summary>
-    public class AutoFiltersLegendViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class AutoFiltersLegendViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "swatches";
@@ -32,6 +32,16 @@ namespace LemoineTools.Tools.AutoFilters
         // Required by ILemoineTool; never raised because this tool has no inputs.
 #pragma warning disable CS0067
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
 #pragma warning restore CS0067
 
         // ── ExternalEvent wiring ────────────────────────────────────────────────

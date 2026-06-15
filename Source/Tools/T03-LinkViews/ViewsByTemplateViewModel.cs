@@ -20,7 +20,7 @@ namespace LemoineTools.Tools.LinkViews
     /// view×template pair it duplicates the view (With Detailing), applies the template,
     /// and names the result from a token/chip pattern (the Bulk Export naming control).
     /// </summary>
-    public class ViewsByTemplateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ViewsByTemplateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "views";
@@ -65,8 +65,8 @@ namespace LemoineTools.Tools.LinkViews
         // ── State ──────────────────────────────────────────────────────
         private readonly List<ViewEntry>     _views;
         private readonly List<TemplateEntry> _templates;
+        private readonly LemoineBrowserTree  _browserTree;
 
-        private readonly Dictionary<string, ElementId> _viewKeyToId     = new Dictionary<string, ElementId>(StringComparer.Ordinal);
         private readonly Dictionary<string, ElementId> _templateKeyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
 
         private List<ElementId> _selectedViewIds     = new List<ElementId>();
@@ -80,15 +80,26 @@ namespace LemoineTools.Tools.LinkViews
         public event EventHandler? ValidationChanged;
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         public ViewsByTemplateViewModel(
             ViewsByTemplateRunHandler? runHandler, ExternalEvent? runEvent,
             List<ViewEntry>?           views,
-            List<TemplateEntry>?       templates)
+            List<TemplateEntry>?       templates,
+            LemoineBrowserTree?        browserTree = null)
         {
-            _runHandler = runHandler;
-            _runEvent   = runEvent;
-            _views      = views     ?? new List<ViewEntry>();
-            _templates  = templates ?? new List<TemplateEntry>();
+            _runHandler  = runHandler;
+            _runEvent    = runEvent;
+            _views       = views     ?? new List<ViewEntry>();
+            _templates   = templates ?? new List<TemplateEntry>();
+            _browserTree = browserTree ?? new LemoineBrowserTree();
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -106,36 +117,23 @@ namespace LemoineTools.Tools.LinkViews
         // ── S1: Source Views ───────────────────────────────────────────
         private FrameworkElement BuildViewPicker()
         {
-            _viewKeyToId.Clear();
-
-            var groups = new Dictionary<string, List<string>>();
-            foreach (var v in _views.OrderBy(v => v.TypeLabel).ThenBy(v => v.Name))
+            var picker = new LemoineBrowserTreePicker
             {
-                string key = v.Name;                 // view names are unique in a document
-                if (_viewKeyToId.ContainsKey(key))   // defensive: disambiguate any rare clash
-                    key = $"{v.Name}  [{v.Id.Value}]";
-                _viewKeyToId[key] = v.Id;
-
-                if (!groups.TryGetValue(v.TypeLabel, out var list))
-                    groups[v.TypeLabel] = list = new List<string>();
-                list.Add(key);
-            }
-
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = "Source views" };
-            tabs.SelectionChanged += selected =>
+                Height         = 300,
+                AccessibleName = "Source views",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
             {
-                _selectedViewIds = selected
-                    .Where(s => _viewKeyToId.ContainsKey(s))
-                    .Select(s => _viewKeyToId[s])
-                    .ToList();
+                _selectedViewIds = ids.Select(id => new ElementId(id)).ToList();
                 OnValidationChanged();
             };
-            tabs.SetGroups(groups, _selectedViewIds
-                .Select(id => _viewKeyToId.FirstOrDefault(kv => kv.Value.Value == id.Value).Key)
-                .Where(k => k != null));
+            picker.SetTree(_browserTree,
+                _views.Select(v => v.Id.Value),
+                _selectedViewIds.Select(id => id.Value).ToList());
 
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            outer.Children.Add(tabs);
+            outer.Children.Add(picker);
             return outer;
         }
 

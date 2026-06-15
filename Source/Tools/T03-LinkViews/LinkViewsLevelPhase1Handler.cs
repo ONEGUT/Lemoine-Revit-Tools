@@ -30,8 +30,8 @@ namespace LemoineTools.Tools.LinkViews
         public List<ElementId> LinkInstIds { get; set; } = new List<ElementId>();
 
         // ── Callbacks ─────────────────────────────────────────────────
-        public Action<List<LevelScanResult>> OnLevelsLoaded { get; set; }
-        public Action<string>                OnError        { get; set; }
+        public Action<List<LevelScanResult>>? OnLevelsLoaded { get; set; }
+        public Action<string>?                OnError        { get; set; }
 
         public string GetName() => "LemoineTools.Tools.LinkViews.LinkViewsLevelPhase1Handler";
 
@@ -134,6 +134,11 @@ namespace LemoineTools.Tools.LinkViews
             catch (Exception ex)
             {
                 OnError?.Invoke(ex.Message);
+            }
+            finally
+            {
+                // Session-long static handler (App.LinkViewsLevelPhase1Handler) — drop the scan's payload.
+                LinkInstIds = new List<ElementId>();
             }
         }
     }

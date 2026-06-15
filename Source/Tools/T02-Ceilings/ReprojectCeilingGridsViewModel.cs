@@ -11,7 +11,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult
+    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // Self-describing result label for the run strip (see ILemoineRunResult).
         public string? ResultNoun => "curves";
@@ -44,10 +44,20 @@ namespace LemoineTools.Tools.Ceilings
 
         // ── State ─────────────────────────────────────────────────────────────
         private readonly List<CeilingPlanViewEntry>         _availableViews;
-        private readonly Dictionary<string, ElementId>      _nameToId;
+        private readonly LemoineBrowserTree                 _browserTree;
         private          List<ElementId>                    _selectedViewIds = new List<ElementId>();
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         // ── ExternalEvent wiring ───────────────────────────────────────────
@@ -57,15 +67,13 @@ namespace LemoineTools.Tools.Ceilings
         public ReprojectCeilingGridsViewModel(
             CeilingGridEventHandler handler,
             Autodesk.Revit.UI.ExternalEvent externalEvent,
-            List<CeilingPlanViewEntry>? availableViews)
+            List<CeilingPlanViewEntry>? availableViews,
+            LemoineBrowserTree? browserTree = null)
         {
             _handler        = handler;
             _event          = externalEvent;
             _availableViews = availableViews ?? new List<CeilingPlanViewEntry>();
-
-            _nameToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
-            foreach (var v in _availableViews)
-                _nameToId[v.Name] = v.Id;
+            _browserTree    = browserTree ?? new LemoineBrowserTree();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -97,27 +105,21 @@ namespace LemoineTools.Tools.Ceilings
                 return outer;
             }
 
-            // Group views by level
-            var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            foreach (var v in _availableViews.OrderBy(x => x.LevelName).ThenBy(x => x.Name))
+            var picker = new LemoineBrowserTreePicker
             {
-                string group = string.IsNullOrEmpty(v.LevelName) ? "Other" : v.LevelName;
-                if (!groups.ContainsKey(group))
-                    groups[group] = new List<string>();
-                groups[group].Add(v.Name);
-            }
-
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += selected =>
+                Height         = 300,
+                AccessibleName = "Ceiling plan views",
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
             {
-                _selectedViewIds = selected
-                    .Where(name => _nameToId.ContainsKey(name))
-                    .Select(name => _nameToId[name])
-                    .ToList();
+                _selectedViewIds = ids.Select(id => new ElementId(id)).ToList();
                 OnValidationChanged();
             };
-            tabs.SetGroups(groups, Enumerable.Empty<string>());
-            outer.Children.Add(tabs);
+            picker.SetTree(_browserTree,
+                _availableViews.Select(v => v.Id.Value),
+                _selectedViewIds.Select(id => id.Value).ToList());
+            outer.Children.Add(picker);
 
             var warning = new TextBlock
             {

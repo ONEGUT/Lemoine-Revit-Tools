@@ -14,7 +14,7 @@ namespace LemoineTools.Tools.CopyLinear
     /// Grids whose name already exists in the host are hidden from the list and skipped at run time,
     /// because Revit enforces unique grid names.
     /// </summary>
-    public class CopyGridsViewModel : ILemoineTool, ILemoineReviewable
+    public class CopyGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
         public string Title    => "Copy Grids from Link";
         public string RunLabel => "Copy in Revit →";
@@ -37,6 +37,16 @@ namespace LemoineTools.Tools.CopyLinear
         private StackPanel? _gridContainer;
 
         public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_runHandler == null) return;
+            _runHandler.PushLog    = null;
+            _runHandler.OnProgress = null;
+            _runHandler.OnComplete = null;
+        }
+
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
         public CopyGridsViewModel(CopyGridsRunHandler? runHandler, ExternalEvent? runEvent, List<CopyGridLinkInfo>? links)
