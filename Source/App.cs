@@ -77,6 +77,8 @@ namespace LemoineTools
         // ── T03 — Bulk Export ───────────────────────────────────────────────────────
         internal static BulkExportEventHandler?   BulkExportHandler   { get; private set; }
         internal static ExternalEvent?             BulkExportEvent     { get; private set; }
+        internal static PrintViewEventHandler?     PrintViewHandler    { get; private set; }
+        internal static ExternalEvent?             PrintViewEvent      { get; private set; }
 
         // ── T05 — Clash (Definitions + Finder & Dimensioning) ───────────────────────
         internal static ClashPickEventHandler?      ClashPickHandler      { get; private set; }
@@ -181,6 +183,8 @@ namespace LemoineTools
             // ── Testing — new tools ───────────────────────────────────────────
             BulkExportHandler   = new BulkExportEventHandler();
             BulkExportEvent     = ExternalEvent.Create(BulkExportHandler);
+            PrintViewHandler    = new PrintViewEventHandler();
+            PrintViewEvent      = ExternalEvent.Create(PrintViewHandler);
             ClashPickHandler      = new ClashPickEventHandler();
             ClashPickEvent        = ExternalEvent.Create(ClashPickHandler);
             ClashFinderHandler    = new ClashFinderEventHandler();
@@ -359,6 +363,11 @@ namespace LemoineTools
                 "LT_BulkExport", "Bulk\nExport", "BulkExportCommand",
                 "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames.",
                 char.ConvertFromUtf32(0xEDE1)));  // Segoe MDL2: Share / Export
+
+            linkViewsPanel.AddItem(Btn(
+                "LT_PrintView", "Print\nView", "PrintViewCommand",
+                "Export the active view or sheet to PDF using the same PDF settings as Bulk Export.",
+                char.ConvertFromUtf32(0xE749)));  // Segoe MDL2: Print
 
             linkViewsPanel.AddItem(Btn(
                 "LT_BulkRename", "Bulk\nRename", "BulkRenameCommand",
