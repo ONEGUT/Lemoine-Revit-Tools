@@ -72,11 +72,17 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         private string _sheetSeries     = "";
         private string _seriesParamName = "Sheet Series";
 
-        private bool   _estimateMode  = false;
+        private LayoutMode _layoutMode = LayoutMode.Measured;
         private bool   _trimBubbles   = true;
 
         private const string ModeAccurate = "Accurate (measured)";
+        private const string ModeGrouped  = "Accurate (grouped)";
         private const string ModeEstimate = "Quick estimate (fast)";
+
+        /// <summary>Short label for the active layout mode, used in the review/summary rows.</summary>
+        private string LayoutLabel => _layoutMode == LayoutMode.Estimate ? "Quick estimate"
+                                    : _layoutMode == LayoutMode.Grouped  ? "Accurate (grouped)"
+                                    : "Accurate";
         private double _trimInches    = 0.125;
         private double _marginTop     = 0.5;
         private double _marginBottom  = 0.5;
@@ -337,11 +343,21 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             // ── Placement mode ────────────────────────────────────────────────
             outer.Children.Add(SectionLabel("PLACEMENT MODE"));
             var modeSelect = new LemoineSingleSelect();
-            modeSelect.Items = new List<string> { ModeAccurate, ModeEstimate };
-            modeSelect.SelectedItem = _estimateMode ? ModeEstimate : ModeAccurate;
-            modeSelect.SelectionChanged += s => { _estimateMode = s == ModeEstimate; OnValidationChanged(); };
+            modeSelect.Items = new List<string> { ModeAccurate, ModeGrouped, ModeEstimate };
+            modeSelect.SelectedItem = _layoutMode == LayoutMode.Estimate ? ModeEstimate
+                                    : _layoutMode == LayoutMode.Grouped  ? ModeGrouped
+                                    : ModeAccurate;
+            modeSelect.SelectionChanged += s =>
+            {
+                _layoutMode = s == ModeEstimate ? LayoutMode.Estimate
+                            : s == ModeGrouped  ? LayoutMode.Grouped
+                            : LayoutMode.Measured;
+                OnValidationChanged();
+            };
             outer.Children.Add(modeSelect);
             outer.Children.Add(Note("Accurate measures every placed view (one regen per sheet, with progress). " +
+                                    "Accurate (grouped) measures only the first view of each identical size, then " +
+                                    "reuses it for the rest — much faster when many views match (requires Trim on). " +
                                     "Quick estimate sizes views from their crop boxes for a fast, approximate " +
                                     "layout — best for testing margins, gap and trim before a final accurate run."));
 
@@ -439,7 +455,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 ? "—"
                 : $"\"{_sheetSeries}\" → param '{_seriesParamName}'",
             ["trim"]   = _trimBubbles ? $"On — {_trimInches:0.###}\" past crop (permanent)" : "Off",
-            ["layout"] = $"{(_estimateMode ? "Quick estimate" : "Accurate")}  |  auto best-fit  |  " +
+            ["layout"] = $"{LayoutLabel}  |  auto best-fit  |  " +
                          $"gap {_gapInches:0.###}\"  |  margins " +
                          $"T{_marginTop:0.##} B{_marginBottom:0.##} L{_marginLeft:0.##} R{_marginRight:0.##}\"",
         };
@@ -474,7 +490,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     : $"{ActiveSelection.Count} selected  |  {(_compositeMode ? "composite" : "dependents")}";
                 case "S2": return string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock;
                 case "S3": return $"{_namingPattern}  |  start {_startingNumber}";
-                case "S4": return $"{(_estimateMode ? "Estimate" : "Accurate")}  |  " +
+                case "S4": return $"{LayoutLabel}  |  " +
                                   (_trimBubbles ? $"trim {_trimInches:0.###}\"" : "no trim") +
                                   $"  |  gap {_gapInches:0.###}\"";
                 case "S5": return "Ready to run";
@@ -502,7 +518,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             _handler.NumberSuffix    = _numberSuffix;
             _handler.SheetSeries     = _sheetSeries;
             _handler.SeriesParamName = _seriesParamName;
-            _handler.EstimateMode    = _estimateMode;
+            _handler.Layout          = _layoutMode;
             _handler.TrimBubbles     = _trimBubbles;
             _handler.TrimInches      = _trimInches;
             _handler.MarginTopIn     = _marginTop;
