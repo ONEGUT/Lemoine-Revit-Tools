@@ -126,6 +126,12 @@ namespace LemoineTools
 
         public Result OnStartup(UIControlledApplication application)
         {
+            // Surface Revit's transaction failures and modal dialogs into the running tool's
+            // Output log (and suppress warning dialogs). Both handlers no-op unless a Lemoine
+            // run is active, so non-Lemoine work is never affected.
+            application.ControlledApplication.FailuresProcessing += LemoineFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         += LemoineFailureCapture.OnDialogBoxShowing;
+
             ProjectHandler   = new CeilingGridEventHandler();
             ProjectEvent     = ExternalEvent.Create(ProjectHandler);
             ReprojectHandler = new CeilingGridEventHandler();
@@ -484,7 +490,12 @@ namespace LemoineTools
             return Result.Succeeded;
         }
 
-        public Result OnShutdown(UIControlledApplication application) => Result.Succeeded;
+        public Result OnShutdown(UIControlledApplication application)
+        {
+            application.ControlledApplication.FailuresProcessing -= LemoineFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         -= LemoineFailureCapture.OnDialogBoxShowing;
+            return Result.Succeeded;
+        }
 
         // ── Simple programmatic gear bitmap for the ribbon button ─────────────
         private static System.Windows.Media.Imaging.BitmapSource CreateGlyphBitmap(int size, string glyph)

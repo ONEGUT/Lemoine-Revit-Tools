@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
@@ -93,12 +95,31 @@ namespace LemoineTools.Lemoine
                 // Sever the sink so the static handler's retained run/refresh/activate/navigate
                 // callbacks no longer root this window — it (and its visual tree) can now be GC'd.
                 _sink.Win = null;
+                // Defensive: if the window is closed mid-run, stop routing Revit failures here.
+                LemoineRunLog.Clear();
             };
 
             BuildChrome();
             _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested += (s, idx) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx)); };
+        }
+
+        // Own this window to Revit's main window so Revit's modal dialogs (transaction failure
+        // dialogs, TaskDialogs — modal to the main window) render ON TOP of the tool window
+        // instead of behind it, and the tool stays pinned to Revit on Alt-Tab. The window runs
+        // on its own STA thread, so the owner is set by HWND (cross-thread safe) via interop —
+        // never via ComponentManager.ApplicationWindow (that crashes Revit; see CLAUDE.md).
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            try
+            {
+                IntPtr revitHwnd = Process.GetCurrentProcess().MainWindowHandle;
+                if (revitHwnd != IntPtr.Zero)
+                    new WindowInteropHelper(this).Owner = revitHwnd;
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("StepFlowWindow: set Revit owner", ex); }
         }
 
         // ValidationChanged can be raised from a tool's refresh callback on Revit's main
@@ -1028,12 +1049,17 @@ namespace LemoineTools.Lemoine
             HideStepsForRun(true);
             _logScroll.Height = _logMaxH;
             _logStack.Children.Clear(); PushLog("Starting…", "info");
+            // SafeBeginInvoke (non-blocking, shutdown-guarded) — lets Execute() keep running while
+            // the window's dedicated STA thread processes UI updates in real time, and no-ops if
+            // the window has been closed mid-run (the handler is static and keeps calling these
+            // after the dispatcher is gone).
+            Action<string, string> pushLog = (t, s) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.PushLog(t, s)); };
+            // Route Revit's own failures/dialogs (caught process-wide by LemoineFailureCapture)
+            // into this run's Output log for the duration of the run.
+            LemoineFailureCapture.BeginRun();
+            LemoineRunLog.Set(pushLog);
             _tool.Run(
-                // SafeBeginInvoke (non-blocking, shutdown-guarded) — lets Execute() keep
-                // running while the window's dedicated STA thread processes UI updates in real
-                // time, and no-ops if the window has been closed mid-run (the handler is static
-                // and keeps calling these after the dispatcher is gone).
-                pushLog:    (t, s)          => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.PushLog(t, s)); },
+                pushLog:    pushLog,
                 onProgress: (pct, p, f, s)  => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => { w.SetCounts(p, f, s); w.SetProgress(pct); }); },
                 onComplete: (p, f, s)       => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.CompleteRun(p, f, s)); });
         }
@@ -1043,6 +1069,7 @@ namespace LemoineTools.Lemoine
             _isRunning = false; _isDone = true;
             bool wasCancelled = LemoineRun.CancelRequested;
             LemoineRun.End();
+            LemoineRunLog.Clear();
             SetResetButtonToReset();
             SetStatus(wasCancelled ? "● Stopped" : "● Done"); SetCounts(pass, fail, skip); SetProgress(100);
             string finishKey = wasCancelled ? "LemoineWarnText" : "LemoineGreen";
@@ -1115,6 +1142,7 @@ namespace LemoineTools.Lemoine
         {
             _isRunning = false; _isDone = false;
             LemoineRun.End();
+            LemoineRunLog.Clear();
             SetResetButtonToReset();
             _closeBtn.Content = "Close"; _closeBtn.IsEnabled = false;
             _closeBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineAccentDim");
