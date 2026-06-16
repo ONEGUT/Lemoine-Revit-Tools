@@ -18,6 +18,18 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         CompositeOneSheet,
     }
 
+    /// <summary>How placed viewports are sized for layout.</summary>
+    public enum LayoutMode
+    {
+        /// <summary>Place every view, regen per sheet, and measure each viewport's real outline.</summary>
+        Measured,
+        /// <summary>Measure the first view of each identical size (crop+scale) group, then reuse that
+        /// footprint for the rest — far fewer regens when many views match. Requires trim on.</summary>
+        Grouped,
+        /// <summary>Size every view from its crop box and scale; no measure regen. Fast, approximate.</summary>
+        Estimate,
+    }
+
     /// <summary>
     /// Creates one sheet per selected parent view and places either that view's
     /// dependents (packed without overlap, centered) or — in composite mode — the view
@@ -39,8 +51,8 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
         public string          SheetSeries    { get; set; } = "";
         public string          SeriesParamName { get; set; } = "Sheet Series";
 
-        /// <summary>Fast, approximate layout: size viewports from the crop box instead of measuring placed outlines.</summary>
-        public bool            EstimateMode   { get; set; } = false;
+        /// <summary>How placed viewports are sized for layout (measured / grouped / estimate).</summary>
+        public LayoutMode      Layout         { get; set; } = LayoutMode.Measured;
 
         public bool   TrimBubbles { get; set; } = true;
         public double TrimInches  { get; set; } = 0.125;   // paper inches past the model crop
@@ -119,9 +131,26 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     bool   areaKnown = false;
                     double areaMinX = 0, areaMinY = 0, areaW = 0, areaH = 0;
 
-                    Log(EstimateMode
+                    // Grouped layout only reliably predicts a view's real outline when the annotation
+                    // crop is uniform across a group — which only trimming guarantees. Without trim the
+                    // key is approximate, so fall back to a full measured run rather than mis-size silently.
+                    LayoutMode layout = Layout;
+                    if (layout == LayoutMode.Grouped && !TrimBubbles)
+                    {
+                        Log("[WARN] Grouped layout needs Trim on to be reliable — using Accurate (measured) this run.", "warn");
+                        LemoineLog.Warn("PlaceDependentViews", "Grouped layout requested with trim off — fell back to measured.");
+                        layout = LayoutMode.Measured;
+                    }
+
+                    // Run-level cache of measured footprints, keyed by (cropWidth, cropHeight, scale).
+                    // The first view of each group is measured for real; the rest reuse its size.
+                    var sizeCache = new Dictionary<(long, long, int), (double w, double h)>();
+
+                    Log(layout == LayoutMode.Estimate
                         ? "Quick estimate — sizing views from their crop boxes."
-                        : "Accurate — measuring each placed view.", "info");
+                        : layout == LayoutMode.Grouped
+                            ? "Accurate (grouped) — measuring the first of each identical size, reusing the rest."
+                            : "Accurate — measuring each placed view.", "info");
 
                     bool composite = Mode == PlaceViewsMode.CompositeOneSheet;
 
@@ -278,7 +307,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
                         int placedCount = 0;
 
-                        if (EstimateMode)
+                        if (layout == LayoutMode.Estimate)
                         {
                             // Resolve the area once (one regen so the title-block bbox is valid).
                             if (!areaKnown)
@@ -328,26 +357,42 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         }
                         else
                         {
-                            // Accurate: place provisionally, regen this sheet, measure, pack, position.
-                            var placed = new List<Viewport>(toPlace.Count);
+                            // Accurate / grouped: place provisionally, then size each viewport. In grouped
+                            // mode a view whose (crop+scale) group is already cached reuses that measured
+                            // footprint; only unseen groups (and uncacheable views) are measured — so a sheet
+                            // with no new groups skips the regen entirely.
+                            bool grouped = layout == LayoutMode.Grouped;
+                            var recs = new List<PlaceRec>(toPlace.Count);
                             foreach (var dv in toPlace)
                             {
-                                try { placed.Add(Viewport.Create(doc, sheet.Id, dv.Id, XYZ.Zero)); }
+                                Viewport vp;
+                                try { vp = Viewport.Create(doc, sheet.Id, dv.Id, XYZ.Zero); }
                                 catch (Exception ex)
                                 {
                                     Log($"[FAIL] Could not place '{dv.Name}': {ex.Message}", "fail");
                                     LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create", ex);
                                     fail++;
+                                    continue;
                                 }
+                                // The composite source is never trimmed (non-uniform annotation crop) and a
+                                // crop-inactive view's footprint isn't crop-bound, so neither is cacheable.
+                                bool cacheable = grouped && dv.CropBoxActive
+                                                 && (sourceView == null || dv.Id != sourceView.Id);
+                                var key = cacheable ? GroupKey(dv) : default((long, long, int));
+                                recs.Add(new PlaceRec(vp, cacheable, key, cacheable && sizeCache.ContainsKey(key)));
                             }
-                            if (placed.Count == 0)
+                            if (recs.Count == 0)
                             {
                                 Log($"[WARN] Nothing placed on sheet {sheetNumber} — {sheetName}.", "warn");
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
                             }
 
-                            doc.Regenerate(); // outlines are only valid after a regen
+                            // Outlines are only valid after a regen; skip it when every group is cached
+                            // and the drawing area is already known.
+                            bool anyMeasure = false;
+                            foreach (var r in recs) if (!r.Cached) { anyMeasure = true; break; }
+                            if (anyMeasure || !areaKnown) doc.Regenerate();
 
                             if (!areaKnown)
                                 areaKnown = TryGetDrawingArea(doc, sheet, marginLeft, marginRight, marginTop, marginBottom,
@@ -362,20 +407,39 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 continue;
                             }
 
-                            var rects = new List<SheetLayoutPacker.Rect>(placed.Count);
-                            var keep  = new List<Viewport>(placed.Count);
-                            foreach (var vp in placed)
+                            var rects = new List<SheetLayoutPacker.Rect>(recs.Count);
+                            var keep  = new List<Viewport>(recs.Count);
+                            int measured = 0, reused = 0;
+                            foreach (var r in recs)
                             {
-                                if (TryGetOutlineSize(vp, out double w, out double h))
+                                double w, h;
+                                bool have;
+                                if (r.Cached)
+                                {
+                                    var s = sizeCache[r.Key];
+                                    w = s.w; h = s.h; have = true; reused++;
+                                }
+                                else
+                                {
+                                    have = TryGetOutlineSize(r.Vp, out w, out h);
+                                    if (have)
+                                    {
+                                        measured++;
+                                        if (r.Cacheable) sizeCache[r.Key] = (w, h);
+                                    }
+                                }
+                                if (have)
                                 {
                                     rects.Add(new SheetLayoutPacker.Rect(w, h));
-                                    keep.Add(vp);
+                                    keep.Add(r.Vp);
                                 }
                                 else
                                 {
                                     Log("[WARN] A viewport reported no size and was left at the sheet origin.", "warn");
                                 }
                             }
+                            if (grouped)
+                                Log($"  Grouped {keep.Count} view(s) — measured {measured}, reused {reused}.", "info");
 
                             // Composite layout anchors on the source view's measured size, so a
                             // source that reported no outline fails the whole sheet (viewports
@@ -621,6 +685,38 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 if (used.Add(candidate)) return candidate;   // Add is false when already present
             }
             return null;
+        }
+
+        /// <summary>A provisionally-placed viewport plus its grouped-layout size source.</summary>
+        private readonly struct PlaceRec
+        {
+            public PlaceRec(Viewport vp, bool cacheable, (long, long, int) key, bool cached)
+            {
+                Vp = vp; Cacheable = cacheable; Key = key; Cached = cached;
+            }
+            /// <summary>The placed viewport (positioned later via SetBoxCenter).</summary>
+            public Viewport Vp { get; }
+            /// <summary>Whether this view's measured size may be stored and reused for its group.</summary>
+            public bool Cacheable { get; }
+            /// <summary>The (cropW, cropH, scale) group key; default when not cacheable.</summary>
+            public (long, long, int) Key { get; }
+            /// <summary>Whether the group's size is already known (reuse it, skip measuring).</summary>
+            public bool Cached { get; }
+        }
+
+        /// <summary>
+        /// Group key for grouped layout: views sharing crop-box size and scale render to the same
+        /// on-sheet outline (with a uniform annotation crop). Paper dimensions are bucketed to a
+        /// 1/64" grid so near-identical crops collapse into one group. Only called for crop-active views.
+        /// </summary>
+        private static (long, long, int) GroupKey(View v)
+        {
+            double scale = v.Scale > 0 ? v.Scale : 1.0;
+            BoundingBoxXYZ cb = v.CropBox;
+            double wPaper = Math.Abs(cb.Max.X - cb.Min.X) / scale;
+            double hPaper = Math.Abs(cb.Max.Y - cb.Min.Y) / scale;
+            long Bucket(double ft) => (long)Math.Round(ft * 12.0 * 64.0);   // 1/64" units
+            return (Bucket(wPaper), Bucket(hPaper), (int)Math.Round(scale));
         }
 
         /// <summary>Per-side paper pad assumed for un-trimmed views (rough bubble allowance) in estimate mode.</summary>
