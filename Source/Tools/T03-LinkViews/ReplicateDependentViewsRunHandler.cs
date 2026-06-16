@@ -74,8 +74,16 @@ namespace LemoineTools.Tools.LinkViews
                 ConfigureFailures(tx);
                 tx.Start();
 
+                bool cancelled = false;
                 foreach (var target in TargetEntries)
                 {
+                    if (cancelled) break;
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;   // falls through to the existing tx.Commit() below
+                    }
+
                     View targetView = doc.GetElement(target.ViewId) as View;
                     if (targetView == null)
                     {
@@ -101,6 +109,13 @@ namespace LemoineTools.Tools.LinkViews
 
                     foreach (var dep in deps)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            cancelled = true;
+                            break;   // breaks inner loop; outer loop guard breaks too → existing tx.Commit() runs
+                        }
+
                         string newName = BuildDepName(SourceEntry, target, dep.Suffix);
 
                         // Skip if already exists

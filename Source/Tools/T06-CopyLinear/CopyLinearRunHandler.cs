@@ -209,6 +209,11 @@ namespace LemoineTools.Tools.CopyLinear
                     bool described = false;
                     foreach (var run in toBuild)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            break;   // falls through to doc.Regenerate() + tx.Commit() below
+                        }
                         if (!described) { described = true; Log(DescribeSource(run.Element), "info"); }
                         try
                         {

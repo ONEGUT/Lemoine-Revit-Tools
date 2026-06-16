@@ -125,6 +125,14 @@ namespace LemoineTools.Tools.ModifyElements
 
                     foreach (var (wall, nextLevel) in candidates)
                     {
+                        // Abandon mid-run: stop processing more walls but let tx.Commit() (below)
+                        // still run so every wall already extended this run is preserved.
+                        if (LemoineRun.CancelRequested)
+                        {
+                            pushLog($"Stopped by user — {progress.Done} of {candidates.Count} processed; work so far preserved.", "warn");
+                            break;
+                        }
+
                         try
                         {
                             Parameter pTop = wall.get_Parameter(PTop);

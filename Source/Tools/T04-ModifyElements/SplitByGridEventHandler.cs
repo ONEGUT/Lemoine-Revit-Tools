@@ -102,6 +102,12 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(entry, status);
                 }
 
+                if (LemoineRun.CancelRequested)
+                {
+                    int processed = stats.SplitCount + stats.SkipCount + stats.FailCount;
+                    pushLog($"Stopped by user — {processed} of {elements.Count} processed; work so far preserved.", "warn");
+                }
+
                 pushLog($"Done — {stats.SegmentsCreated} segment(s) created from {stats.SplitCount} element(s), "
                       + $"{stats.SkipCount} skipped, {stats.FailCount} failed.",
                         stats.FailCount > 0 ? "fail" : "pass");

@@ -306,6 +306,14 @@ Discovered auditing why tools held RAM after running.
 
 ---
 
+## Run Lifecycle — Window Ownership, Failure Routing, Cancellation
+
+- **Own the tool window to Revit's main HWND or Revit's modal dialogs render behind it.** Revit's transaction-failure dialogs and `TaskDialog`s are modal to Revit's main window, so they appear *behind* a Lemoine tool window (and the tool drops off Alt-Tab) unless the window is owned to it. Set `new WindowInteropHelper(this).Owner = Process.GetCurrentProcess().MainWindowHandle` in `OnSourceInitialized` — owning by **HWND** is cross-thread safe from the window's own STA thread, unlike `ComponentManager.ApplicationWindow` (which crashes Revit). `StepFlowWindow` is the reference.
+- **Route Revit's own warnings/errors/dialogs into the active run's Output log.** `LemoineFailureCapture` (process-wide `FailuresProcessing` + `DialogBoxShowing` handlers, subscribed once in `App`) feeds the active run's log via `LemoineRunLog`; both **no-op outside a Lemoine run** so other transactions are untouched. Call `LemoineFailureCapture.BeginRun()` + `LemoineRunLog.Set(pushLog)` at run start and `LemoineRunLog.Clear()` when the window closes.
+- **Make every long run cooperatively cancellable.** `LemoineRun` holds a thread-safe cancel flag (`Begin`/`Checkpoint`); while a run is in flight the footer Reset button flips to a red Cancel. Every **looping** `ExternalEvent` handler must break at its Output-log checkpoint and **fall through to the existing commit** so committed work is preserved (finish state `Stopped` with partial counts). Read-only single-shot pick/print handlers need no cancel break.
+
+---
+
 ## WPF Hit-Testing
 
 - A `TextBlock` or `Grid` with a null `Background` is only hit-testable on its rendered glyphs/borders, not its empty bounds. An element meant as a click target (a button label, a clickable row, the inner panel of a custom button) will respond only on the text unless you set `Background = Brushes.Transparent` (direct assignment — never via `SetResourceReference`). This was the "only the text is clickable" bug on the colour-picker set dropdown.
@@ -433,4 +441,7 @@ The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) are checked in to `libs/`.
 |------|---------|
 | `LEMOINE_UI.md` | UI architecture, design system, component library, and tool contract |
 | `LemoineTools.csproj` | Project file (targets .NET Framework 4.8) |
+| `Source/Lemoine/LemoineFailureCapture.cs` | Process-wide `FailuresProcessing`/`DialogBoxShowing` capture that routes Revit's own failures into the active run's log |
+| `Source/Lemoine/LemoineRunLog.cs` | Active run's log sink, set/cleared by the tool window |
+| `Source/Lemoine/LemoineRun.cs` | Thread-safe cancel flag + `Checkpoint` for cooperative run cancellation |
 | `Source/` | All C# source and XAML files |

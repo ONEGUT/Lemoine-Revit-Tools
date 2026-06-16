@@ -133,6 +133,11 @@ namespace LemoineTools.Tools.ModifyElements
 
             foreach (Element el in elements)
             {
+                // Abandon mid-run: stop processing more elements but let the caller's
+                // tx.Commit() still run so every element split so far is preserved. The
+                // handler logs the "Stopped by user" warn notice after this returns.
+                if (LemoineRun.CancelRequested) break;
+
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
@@ -232,6 +237,11 @@ namespace LemoineTools.Tools.ModifyElements
 
             foreach (Element el in elements)
             {
+                // Abandon mid-run: stop processing more elements but let the caller's
+                // tx.Commit() still run so every element split so far is preserved. The
+                // handler logs the "Stopped by user" warn notice after this returns.
+                if (LemoineRun.CancelRequested) break;
+
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }

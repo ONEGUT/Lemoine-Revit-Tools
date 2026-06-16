@@ -62,8 +62,15 @@ namespace LemoineTools.Tools.CopyLinear
                 // Double-storage params (dimensions, areas) are skipped — each element has a unique
                 // value, producing lists that are too long to be useful as filter chips.
                 var paramValues = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+                int scanned = 0;
                 foreach (var el in elems)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        OnError?.Invoke($"Stopped by user — {scanned} of {elems.Count} scanned; partial values returned.");
+                        break;   // falls through to the OnScanned callback with what was collected
+                    }
+                    scanned++;
                     try
                     {
                         foreach (Parameter p in el.Parameters)

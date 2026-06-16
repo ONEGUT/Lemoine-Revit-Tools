@@ -107,6 +107,12 @@ namespace LemoineTools.Tools.Ceilings
 
             foreach (var level in levels)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                    break;
+                }
+
                 try
                 {
                     string viewName = Sanitize(level.Name) + "_CeilingGrid";
@@ -184,6 +190,12 @@ namespace LemoineTools.Tools.Ceilings
             int exported = 0;
             for (int i = 0; i < createdViews.Count; i++)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {i} of {createdViews.Count} processed; work so far preserved.", "warn");
+                    break;
+                }
+
                 var (view, name) = createdViews[i];
                 try
                 {
@@ -243,6 +255,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var (family, type) in excluded)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {cgRules.Count} of {excluded.Count} processed; work so far preserved.", "warn");
+                        break;
+                    }
+
                     // Rule name carries the family for readability; the filter still
                     // matches on Type Name (one discriminating parameter per rule, as in
                     // the AutoFilters rule model).

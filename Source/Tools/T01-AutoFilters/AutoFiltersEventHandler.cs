@@ -271,6 +271,12 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         foreach (var orphanName in prevCreated)
                         {
+                            if (LemoineRun.CancelRequested)
+                            {
+                                Log($"Stopped by user — {removed} orphan(s) removed; work so far preserved.", "warn");
+                                break;
+                            }
+
                             if (!expectedFilterNames.Contains(orphanName)
                                 && existingFilters.TryGetValue(orphanName, out var orphan))
                             {
@@ -299,8 +305,11 @@ namespace LemoineTools.Tools.AutoFilters
                 // (parameter × category-set) across many rules.
                 var paramCache = new Dictionary<string, ParamResolve>(StringComparer.Ordinal);
 
+                bool cancelled = false;
                 foreach (var trade in trades)
                 {
+                    if (cancelled) break;
+
                     // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
                     // matching and are maintained by their own tool — never regenerate here.
                     if (trade.ExternallyManaged) continue;
@@ -313,6 +322,13 @@ namespace LemoineTools.Tools.AutoFilters
 
                     foreach (var rule in trade.Rules)
                     {
+                        if (LemoineRun.CancelRequested)
+                        {
+                            Log($"Stopped by user — {rulesDone} of {totalRules} rule(s) processed; work so far preserved.", "warn");
+                            cancelled = true;
+                            break;
+                        }
+
                         ProcessRule(doc, sourceDocs, view, trade, rule, bipMap, matMap, paramCache,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
                             existingFilters, existingViewFilterIds,

@@ -126,6 +126,12 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 foreach (var item in plan)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        break;   // per-item boundary: each applied rename is a final plan value, so committed state stays consistent; falls through to tx.Commit()
+                    }
+
                     done++;
                     Progress((int)(done * 95.0 / Math.Max(total, 1)), pass, fail, skip);
 

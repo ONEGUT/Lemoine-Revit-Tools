@@ -93,6 +93,14 @@ namespace LemoineTools.Tools.ModifyElements
 
                     foreach (ElementId id in targetIds)
                     {
+                        // Abandon mid-run: stop processing more elements but let tg.Assimilate()
+                        // (below) still run so every per-element split already committed survives.
+                        if (LemoineRun.CancelRequested)
+                        {
+                            pushLog($"Stopped by user — {progress.Done} of {targetIds.Count} processed; work so far preserved.", "warn");
+                            break;
+                        }
+
                         Element el = doc.GetElement(id);
                         if (el == null)
                         {

@@ -165,6 +165,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             int total = ScanSpecs.Count;
             int done  = 0;
+            bool cancelled = false;
 
             // Log queued links upfront so user can see what will be scanned
             foreach (var link in specsByLink)
@@ -175,11 +176,20 @@ namespace LemoineTools.Tools.AutoFilters
 
             foreach (var link in specsByLink)
             {
+                if (cancelled) break;
+
                 Log($"→  Scanning {link.TradeName}…", "info");
                 int resultsBefore = results.Count;
 
                 foreach (var spec in link.Specs)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        cancelled = true;
+                        break;
+                    }
+
                     done++;
                     Progress((int)(5 + 90.0 * done / Math.Max(1, total)), pass, fail, skip);
 
@@ -363,8 +373,16 @@ namespace LemoineTools.Tools.AutoFilters
             Log("Saving rules to Auto Filters settings…", "info");
             var settings = AutoFiltersSettings.Instance;
 
+            int committed = 0;
             foreach (var spec in CommitSpecs)
             {
+                if (LemoineRun.CancelRequested)
+                {
+                    Log($"Stopped by user — {committed} of {CommitSpecs.Count} processed; work so far preserved.", "warn");
+                    break;
+                }
+                committed++;
+
                 try
                 {
                     // Find or create trade by label

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -62,6 +63,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var id in LinkInstIds)
                 {
+                    if (LemoineRun.CancelRequested)
+                    {
+                        LemoineLog.Warn("MakeCeilingGridsPhase1", "Stopped by user — work so far preserved.");
+                        break;
+                    }
+
                     var li = doc.GetElement(id) as RevitLinkInstance;
                     var ld = li?.GetLinkDocument();
                     if (ld == null) continue;
