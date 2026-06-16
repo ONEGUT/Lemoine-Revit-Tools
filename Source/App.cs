@@ -89,6 +89,8 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashElevationFinderEvent   { get; private set; }
         internal static LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
+        internal static LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
+        internal static ExternalEvent?              RefineDimensionsEvent { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -199,6 +201,8 @@ namespace LemoineTools
             ClashElevationFinderEvent   = ExternalEvent.Create(ClashElevationFinderHandler);
             SlabPickHandler       = new LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
+            RefineDimensionsHandler = new LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler();
+            RefineDimensionsEvent   = ExternalEvent.Create(RefineDimensionsHandler);
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
@@ -449,6 +453,11 @@ namespace LemoineTools
                 "LT_ClashElevationFinder", "Clash Finder\n& Elevation", "ClashElevationFinderCommand",
                 "Run saved clash definitions across selected sections and elevations: detect clashes, place coloured round markers, and tag each with a spot elevation at the top, centre, or bottom of the round.",
                 char.ConvertFromUtf32(0xE898)));  // Segoe MDL2: Up (elevation/height)
+
+            clashPanel.AddItem(Btn(
+                "LT_RefineDimensions", "Refine\nDimensions", "RefineDimensionsCommand",
+                "Re-dimension views that already have clash markers: dimension each marker to the nearest grid or slab edge visible in the view. Never detects clashes, creates callouts, or changes a view's scale.",
+                char.ConvertFromUtf32(0xE70F)));  // Segoe MDL2: Edit (pencil)
 
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
