@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
@@ -103,23 +102,6 @@ namespace LemoineTools.Lemoine
             _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested += (s, idx) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx)); };
-        }
-
-        // Own this window to Revit's main window so Revit's modal dialogs (transaction failure
-        // dialogs, TaskDialogs — modal to the main window) render ON TOP of the tool window
-        // instead of behind it, and the tool stays pinned to Revit on Alt-Tab. The window runs
-        // on its own STA thread, so the owner is set by HWND (cross-thread safe) via interop —
-        // never via ComponentManager.ApplicationWindow (that crashes Revit; see CLAUDE.md).
-        protected override void OnSourceInitialized(EventArgs e)
-        {
-            base.OnSourceInitialized(e);
-            try
-            {
-                IntPtr revitHwnd = Process.GetCurrentProcess().MainWindowHandle;
-                if (revitHwnd != IntPtr.Zero)
-                    new WindowInteropHelper(this).Owner = revitHwnd;
-            }
-            catch (Exception ex) { LemoineLog.Swallowed("StepFlowWindow: set Revit owner", ex); }
         }
 
         // ValidationChanged can be raised from a tool's refresh callback on Revit's main
