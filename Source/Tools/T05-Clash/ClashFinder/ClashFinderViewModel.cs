@@ -85,9 +85,29 @@ namespace LemoineTools.Tools.Clash
         private bool _adoptUserCallouts = true;   // user-drawn callouts become pre-defined clash groups
         private double _roundSizeMm     = 0.0;    // round marker oversize; 0 = exact element size
 
-        // Finest scale (1:N) a callout may auto-enlarge to — run override of the saved default.
-        private static readonly int[] CalloutScaleOptions = { 12, 16, 24, 32, 48 };
+        // Finest scale a callout may auto-enlarge to — run override of the saved default. Offered as
+        // the standard US architectural scales (shown the way the industry writes them, e.g.
+        // 1/4" = 1'-0"), ordered smallest→largest callout. The int is the Revit scale denominator.
+        private static readonly int[] CalloutScaleOptions = { 48, 32, 24, 16, 12 };
         private int _maxCalloutScale = AutoDimension.AutoDimensionConfig.Instance.MaxCalloutScale;
+
+        /// <summary>US architectural scale label for a Revit scale denominator (e.g. 48 → 1/4" = 1'-0").</summary>
+        private static string ArchScaleLabel(int denom)
+        {
+            switch (denom)
+            {
+                case 96: return "1/8\" = 1'-0\"";
+                case 64: return "3/16\" = 1'-0\"";
+                case 48: return "1/4\" = 1'-0\"";
+                case 32: return "3/8\" = 1'-0\"";
+                case 24: return "1/2\" = 1'-0\"";
+                case 16: return "3/4\" = 1'-0\"";
+                case 12: return "1\" = 1'-0\"";
+                case 8:  return "1 1/2\" = 1'-0\"";
+                case 4:  return "3\" = 1'-0\"";
+                default: return $"1:{denom}";
+            }
+        }
 
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
@@ -265,14 +285,16 @@ namespace LemoineTools.Tools.Clash
             outer.Children.Add(toggles);
 
             AddDivider(outer);
-            AddLabel(outer, "Finest callout scale — a dense area won't enlarge past this "
-                          + "(a bigger denominator = a smaller, less-zoomed callout).");
+            AddLabel(outer, "Finest callout scale — a dense area won't enlarge past this. A smaller "
+                          + "scale (e.g. 1/4\" = 1'-0\") keeps callouts smaller; a larger one (e.g. "
+                          + "1\" = 1'-0\") lets them zoom in further.");
             var calloutScalePicker = new LemoineSingleSelect { Label = "Finest callout scale" };
-            calloutScalePicker.Items        = CalloutScaleOptions.Select(s => $"1:{s}").ToList();
-            calloutScalePicker.SelectedItem = $"1:{_maxCalloutScale}";
+            calloutScalePicker.Items        = CalloutScaleOptions.Select(ArchScaleLabel).ToList();
+            calloutScalePicker.SelectedItem = ArchScaleLabel(_maxCalloutScale);
             calloutScalePicker.SelectionChanged += sel =>
             {
-                if (int.TryParse(sel.Replace("1:", ""), out int v) && v > 0) _maxCalloutScale = v;
+                foreach (var d in CalloutScaleOptions)
+                    if (ArchScaleLabel(d) == sel) { _maxCalloutScale = d; break; }
                 Fire();
             };
             outer.Children.Add(calloutScalePicker);
@@ -404,7 +426,7 @@ namespace LemoineTools.Tools.Clash
                 if (_runDimensionPass && _adoptUserCallouts) chips.Add("my callouts = groups");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
                     chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
-                if (_runDimensionPass) chips.Add($"callouts ≤ 1:{_maxCalloutScale}");
+                if (_runDimensionPass) chips.Add($"callouts ≤ {ArchScaleLabel(_maxCalloutScale)}");
                 return chips.Count > 0 ? chips : null;
             }
         }
