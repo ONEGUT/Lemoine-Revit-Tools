@@ -69,6 +69,17 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             // Realized text-box footprints (view-2D) of every moved tag placed so far, so a later
             // tag can be slid sideways until it clears earlier ones — cross-dimension clash avoidance.
             var placedTags = new List<Core.Box2>();
+            // Sibling dimension geometry (view-2D). This run's own new dims are NOT in the obstacle
+            // set — that was collected before any were placed — so moved tags would otherwise land on
+            // other strings' dimension/witness LINES. Collect every dim's line + witnesses once so the
+            // column placer can slide a tag clear of them, not just clear of boxes.
+            var staticLines = new List<OwnedSeg>();
+            foreach (var d in plan.Dimensions)
+            {
+                var an = d.Anatomy ?? (d.Anatomy = Core.DimAnatomy.Build(d, output.CoreConfig));
+                staticLines.Add(new OwnedSeg(d, an.DimLine));
+                foreach (var w in an.Witnesses) staticLines.Add(new OwnedSeg(d, w));
+            }
             foreach (var pd in plan.Dimensions)
             {
                 if (++processed % 200 == 0)
@@ -127,7 +138,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
 
                     ApplyTextStates(dim, pd, output.Projection, axis, perp, output.CoreConfig,
-                                    placedTags, output.Obstacles, log);
+                                    placedTags, output.Obstacles, staticLines, log);
                     result.Placed++;
                 }
                 catch (Exception ex)
@@ -157,6 +168,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// NOTE: the heights are Windows-tunable — verify the text clears the arc on a real plot.
         /// </summary>
         private const int    MaxColumnSteps   = 24;   // perpendicular clash-avoidance tries before giving up
+        private const int    MaxAlongSteps    = 8;    // along-column nudges tried at each level before bumping out
         private const double GlyphWidthFactor = 0.6;  // average glyph advance as a fraction of text height
 
         /// <summary>
@@ -175,7 +187,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private static void ApplyTextStates(
             Dimension dim, Core.PlannedDimension pd, Resolvers.ViewProjection projection,
             Core.Vec2 axis, Core.Vec2 perp, Core.LayoutConfig cfg, List<Core.Box2> placedTags,
-            IReadOnlyList<Core.Box2> obstacles, Action<string, string> log)
+            IReadOnlyList<Core.Box2> obstacles, IReadOnlyList<OwnedSeg> lines, Action<string, string> log)
         {
             double th = cfg.TextHeightFt;
             if (th <= 0) return;
@@ -232,7 +244,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     if (run.Count > 0)
                     {
-                        PlaceColumn(run, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles);
+                        PlaceColumn(run, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles, lines, pd);
                         run.Clear();
                     }
                 }
@@ -253,7 +265,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
                             }),
                         };
-                        PlaceColumn(single, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles);
+                        PlaceColumn(single, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles, lines, pd);
                     }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
@@ -284,7 +296,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private static void PlaceColumn(
             List<ColumnTag> run, XYZ worldPerp, XYZ worldAxis, double sign, int colDir, double th,
             Core.LayoutConfig cfg, Resolvers.ViewProjection projection,
-            Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags, IReadOnlyList<Core.Box2> obstacles)
+            Core.Vec2 axis, Core.Vec2 perp, List<Core.Box2> placedTags, IReadOnlyList<Core.Box2> obstacles,
+            IReadOnlyList<OwnedSeg> lines, Core.PlannedDimension self)
         {
             if (run.Count == 0 || th <= 0) return;
 
@@ -311,8 +324,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 ? run.OrderByDescending(t => Axial(t.DefaultPos))
                 : run.OrderBy(t => Axial(t.DefaultPos))).ToList();
 
-            double level = cfg.TagColumnBaseHeights * th;
+            // Below-line tags need an extra downward push: Revit anchors dimension value text near
+            // its baseline, so a below tag at the same magnitude as an above tag renders hard against
+            // the line (it appears to move only sideways). ⚠ tunable — verify on a Windows plot.
+            double baseLevel = cfg.TagColumnBaseHeights * th;
+            if (sign < 0) baseLevel += th;
             double step  = cfg.TagColumnStepHeights * th;
+
+            double level = baseLevel;
             foreach (var t in ordered)
             {
                 double halfAlong = Math.Max(t.Width, th) * 0.5;
@@ -326,28 +345,78 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double along = (frontLine - refAxial) + dir * halfAlong;
                 XYZ baseOnLine = refTag.DefaultPos + worldAxis * along;
 
-                XYZ pos = baseOnLine;
-                Core.Box2 box = default;
-                for (int s = 0; s < MaxColumnSteps; s++)
+                // Keep the tag as near the line as possible and slide it ALONG the column to clear
+                // already-placed tags, pre-existing annotations, AND sibling dimension/witness LINES —
+                // bumping perpendicular only when no along-position at the current level is clear.
+                // Moving the dragged text (along) is preferred over stacking it further out, so it
+                // stops covering other strings' lines.
+                XYZ pos = baseOnLine + worldPerp * (sign * level);
+                Core.Box2 box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
+                bool clear = false;
+                for (int p = 0; p < MaxColumnSteps && !clear; p++)
                 {
-                    pos = baseOnLine + worldPerp * (sign * level);
-                    box = Core.Box2.FromCenter(projection.To2D(pos), halfX, halfY);
-                    // Clear of every tag placed this run AND every pre-existing annotation —
-                    // relocated value text must never cover what was on the view first.
-                    bool clash = false;
-                    for (int i = 0; i < placedTags.Count; i++)
-                        if (box.Intersects(placedTags[i])) { clash = true; break; }
-                    if (!clash && obstacles != null)
-                        for (int i = 0; i < obstacles.Count; i++)
-                            if (box.Intersects(obstacles[i])) { clash = true; break; }
-                    if (!clash) break;
-                    level += step;
+                    double lvl = level + p * step;
+                    for (int a = 0; a <= MaxAlongSteps && !clear; a++)
+                    {
+                        XYZ cand = baseOnLine + worldAxis * (dir * a * step) + worldPerp * (sign * lvl);
+                        Core.Box2 cbox = Core.Box2.FromCenter(projection.To2D(cand), halfX, halfY);
+                        if (!ClashesAny(cbox, placedTags, obstacles, lines, self))
+                        {
+                            pos = cand; box = cbox; clear = true;
+                        }
+                    }
                 }
                 t.SetPos(pos);   // ⚠ leader appearance depends on the DimensionType — verify on Windows
                 placedTags.Add(box);
-                level += step;    // next tag at least one row higher (monotonic → leaders never cross)
+                level += step;    // next tag starts a row higher (the search still guarantees clearance)
             }
         }
+
+        /// <summary>One sibling dimension's view-2D line (dimension line or a witness) plus the
+        /// dimension it belongs to, so a tag never tries to avoid its OWN dimension's lines.</summary>
+        private readonly struct OwnedSeg
+        {
+            public readonly Core.PlannedDimension Owner;
+            public readonly Core.Seg2 Seg;
+            public OwnedSeg(Core.PlannedDimension owner, Core.Seg2 seg) { Owner = owner; Seg = seg; }
+        }
+
+        /// <summary>True when a candidate tag box overlaps any already-placed tag, any pre-existing
+        /// annotation obstacle, or any sibling dimension/witness line (its own dimension's lines are
+        /// skipped — the tag is legitimately offset off its own line).</summary>
+        private static bool ClashesAny(
+            Core.Box2 box, List<Core.Box2> placedTags, IReadOnlyList<Core.Box2> obstacles,
+            IReadOnlyList<OwnedSeg> lines, Core.PlannedDimension self)
+        {
+            for (int i = 0; i < placedTags.Count; i++)
+                if (box.Intersects(placedTags[i])) return true;
+            if (obstacles != null)
+                for (int i = 0; i < obstacles.Count; i++)
+                    if (box.Intersects(obstacles[i])) return true;
+            if (lines != null)
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    if (ReferenceEquals(lines[i].Owner, self)) continue;
+                    if (SegIntersectsBox(lines[i].Seg, box)) return true;
+                }
+            return false;
+        }
+
+        /// <summary>True when the segment touches the box: an endpoint inside, or the segment
+        /// crossing a box edge. Mirrors the scorer's test so commit and plan agree.</summary>
+        private static bool SegIntersectsBox(Core.Seg2 s, Core.Box2 b)
+        {
+            if (PointInBox(s.A, b) || PointInBox(s.B, b)) return true;
+            var c00 = new Core.Vec2(b.MinX, b.MinY);
+            var c10 = new Core.Vec2(b.MaxX, b.MinY);
+            var c11 = new Core.Vec2(b.MaxX, b.MaxY);
+            var c01 = new Core.Vec2(b.MinX, b.MaxY);
+            return s.Crosses(new Core.Seg2(c00, c10)) || s.Crosses(new Core.Seg2(c10, c11))
+                || s.Crosses(new Core.Seg2(c11, c01)) || s.Crosses(new Core.Seg2(c01, c00));
+        }
+
+        private static bool PointInBox(Core.Vec2 p, Core.Box2 b) =>
+            p.X > b.MinX && p.X < b.MaxX && p.Y > b.MinY && p.Y < b.MaxY;
 
         private static bool IsMoved(Core.SegmentTextState s) =>
             s == Core.SegmentTextState.LeaderOut ||

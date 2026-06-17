@@ -25,6 +25,7 @@ namespace LemoineTools.Tools.Clash
         public bool                 RunDimensionPass { get; set; } = false;
         public bool                 AdoptUserCallouts { get; set; } = true;   // user-drawn callouts become pre-defined groups
         public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
+        public int                  MaxCalloutScale  { get; set; } = 12;     // finest scale (1:N) the callout auto-pick may reach
         public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
         public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
             = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
@@ -98,7 +99,8 @@ namespace LemoineTools.Tools.Clash
                     // ── Dimension-pass prep: apply run-level config overrides once (restored in
                     // finally), and pick manual datums up front so all picks stay together. ──
                     var dimCfg = AutoDimensionConfig.Instance;
-                    var snapTarget = dimCfg.TargetType;
+                    var snapTarget     = dimCfg.TargetType;
+                    var snapMaxCallout = dimCfg.MaxCalloutScale;
                     System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
                     bool slabEdge = string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
                     try
@@ -108,6 +110,7 @@ namespace LemoineTools.Tools.Clash
                             // Destination is the only per-run override; chaining, callouts, and
                             // grouping tolerances always come from the saved settings.
                             dimCfg.TargetType = DimTargetType;
+                            if (MaxCalloutScale > 0) dimCfg.MaxCalloutScale = MaxCalloutScale;
                             if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
                                 datums = AutoDimension.ManualDatumPicker.PickForViews(uidoc, ViewIds, (t, s) => Log(t, s));
                         }
@@ -269,7 +272,8 @@ namespace LemoineTools.Tools.Clash
                     }
                     finally
                     {
-                        dimCfg.TargetType = snapTarget;
+                        dimCfg.TargetType      = snapTarget;
+                        dimCfg.MaxCalloutScale = snapMaxCallout;
                     }
 
                     Log($"Done — {totalMarkers} marker(s) and {totalDims} dimension(s) placed "

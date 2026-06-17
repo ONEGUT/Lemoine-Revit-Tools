@@ -85,6 +85,10 @@ namespace LemoineTools.Tools.Clash
         private bool _adoptUserCallouts = true;   // user-drawn callouts become pre-defined clash groups
         private double _roundSizeMm     = 0.0;    // round marker oversize; 0 = exact element size
 
+        // Finest scale (1:N) a callout may auto-enlarge to — run override of the saved default.
+        private static readonly int[] CalloutScaleOptions = { 12, 16, 24, 32, 48 };
+        private int _maxCalloutScale = AutoDimension.AutoDimensionConfig.Instance.MaxCalloutScale;
+
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
         // Dimensions) — the run always uses the saved values.
@@ -261,6 +265,19 @@ namespace LemoineTools.Tools.Clash
             outer.Children.Add(toggles);
 
             AddDivider(outer);
+            AddLabel(outer, "Finest callout scale — a dense area won't enlarge past this "
+                          + "(a bigger denominator = a smaller, less-zoomed callout).");
+            var calloutScalePicker = new LemoineSingleSelect { Label = "Finest callout scale" };
+            calloutScalePicker.Items        = CalloutScaleOptions.Select(s => $"1:{s}").ToList();
+            calloutScalePicker.SelectedItem = $"1:{_maxCalloutScale}";
+            calloutScalePicker.SelectionChanged += sel =>
+            {
+                if (int.TryParse(sel.Replace("1:", ""), out int v) && v > 0) _maxCalloutScale = v;
+                Fire();
+            };
+            outer.Children.Add(calloutScalePicker);
+
+            AddDivider(outer);
             AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
             var destPicker = new LemoineSingleSelect { Label = "Destination" };
             destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
@@ -387,6 +404,7 @@ namespace LemoineTools.Tools.Clash
                 if (_runDimensionPass && _adoptUserCallouts) chips.Add("my callouts = groups");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
                     chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
+                if (_runDimensionPass) chips.Add($"callouts ≤ 1:{_maxCalloutScale}");
                 return chips.Count > 0 ? chips : null;
             }
         }
@@ -420,6 +438,7 @@ namespace LemoineTools.Tools.Clash
             _handler.RunDimensionPass  = _runDimensionPass;
             _handler.AdoptUserCallouts = _adoptUserCallouts;
             _handler.DimTargetType     = _dimTargetType;
+            _handler.MaxCalloutScale   = _maxCalloutScale;
             _handler.RoundSizeMm      = _roundSizeMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }
