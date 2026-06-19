@@ -521,7 +521,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     double scaleRatio = DemandRatio(sweptInfo, thModel * 6.0, thModel);
                     double bound = scale / Math.Max(scaleRatio, 1e-9);
                     // Never zoom in past the configured finest scale — keeps callouts from blowing up.
-                    int floorScale = Math.Max(2, cfg.MaxCalloutScale);
+                    int floorScale = Math.Max(1, cfg.MaxCalloutScale);
                     int chosen = floorScale;
                     foreach (var s in CalloutScales)
                         if (s >= floorScale && s <= bound && s <= scale / 2.0) { chosen = s; break; }
@@ -670,7 +670,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     double ratio = DemandRatio(info, thModel * 6.0, thModel);
                     double bound = scale / Math.Max(ratio, 1e-9);
-                    int floorScale = Math.Max(2, cfg.MaxCalloutScale);   // finest scale the pick may reach
+                    int floorScale = Math.Max(1, cfg.MaxCalloutScale);   // finest scale the pick may reach
                     int chosen = floorScale;
                     foreach (var s in CalloutScales)
                         if (s >= floorScale && s <= bound && s <= scale / 2.0) { chosen = s; break; }
