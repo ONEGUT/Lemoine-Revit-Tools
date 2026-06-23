@@ -173,8 +173,9 @@ namespace LemoineNavisworks.SearchSets
 
         private static int FindRootIndexByName(Document doc, string name)
         {
-            // Root-level saved items (v1 is flat; folder nesting comes later).     // ⚠ verify (RootItems)
-            var roots = doc.SelectionSets.RootItems;
+            // Root-level saved items (v1 is flat; folder nesting comes later).
+            // DocumentSelectionSets exposes the root collection as .Value.
+            var roots = doc.SelectionSets.Value;
             for (int i = 0; i < roots.Count; i++)
             {
                 if (string.Equals(roots[i].DisplayName, name, StringComparison.OrdinalIgnoreCase))
