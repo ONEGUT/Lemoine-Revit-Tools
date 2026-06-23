@@ -1,0 +1,81 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>LemoineNavisworks</AssemblyName>
+    <RootNamespace>LemoineNavisworks</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
+    <!--
+      Navisworks install dir: try Manage 2026, then 2025; otherwise fall back to a
+      vendored libs-navis\ folder (mirrors how LemoineTools.csproj resolves the
+      Revit API). The fallback lets the project at least author/restore without
+      Navisworks installed, but a real build needs the API DLL present.
+    -->
+    <NavisDir Condition="Exists('C:\Program Files\Autodesk\Navisworks Manage 2026')">C:\Program Files\Autodesk\Navisworks Manage 2026</NavisDir>
+    <NavisDir Condition="'$(NavisDir)' == '' and Exists('C:\Program Files\Autodesk\Navisworks Manage 2025')">C:\Program Files\Autodesk\Navisworks Manage 2025</NavisDir>
+    <NavisDir Condition="'$(NavisDir)' == ''">$(MSBuildThisFileDirectory)..\libs-navis</NavisDir>
+  </PropertyGroup>
+
+  <!-- Navisworks .NET API (AddInPlugin base classes + document/model API live here). -->
+  <ItemGroup>
+    <Reference Include="Autodesk.Navisworks.Api">
+      <HintPath>$(NavisDir)\Autodesk.Navisworks.Api.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Shared Lemoine UI framework — LINKED in place from the Revit project tree so
+    there is no duplicated source. These files compile into THIS assembly
+    (LemoineNavisworks); the Revit project compiles the same files into its own.
+
+    The Link paths mirror a "Lemoine\" virtual folder; the icon-font pack URI in
+    LemoineTheme resolves against the executing assembly name at runtime, so it is
+    correct in either assembly.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Source\Lemoine\**\*.cs" Link="Lemoine\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\Source\Lemoine\**\*.xaml" Link="Lemoine\%(RecursiveDir)%(Filename)%(Extension)">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+
+    <!-- Revit-coupled framework pieces — NOT host-agnostic, excluded from the link. -->
+    <Compile Remove="..\Source\Lemoine\GlobalSettingsWindow.xaml.cs" />
+    <Compile Remove="..\Source\Lemoine\GlobalSettingsWindow.Dimensions.cs" />
+    <Compile Remove="..\Source\Lemoine\GlobalSettingsWindow.General.cs" />
+    <Page    Remove="..\Source\Lemoine\GlobalSettingsWindow.xaml" />
+    <Compile Remove="..\Source\Lemoine\LemoineFailureCapture.Revit.cs" />
+    <Compile Remove="..\Source\Lemoine\Controls\Legend\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\Controls\Legend\**\*.xaml" />
+    <Compile Remove="..\Source\Lemoine\T01-AutoFilters\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\T01-AutoFilters\**\*.xaml" />
+    <Compile Remove="..\Source\Lemoine\T02-Ceilings\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\T02-Ceilings\**\*.xaml" />
+    <Compile Remove="..\Source\Lemoine\T03-LinkViews\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\T03-LinkViews\**\*.xaml" />
+    <Compile Remove="..\Source\Lemoine\T05-Clash\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\T05-Clash\**\*.xaml" />
+    <Compile Remove="..\Source\Lemoine\Testing\**\*.cs" />
+    <Page    Remove="..\Source\Lemoine\Testing\**\*.xaml" />
+  </ItemGroup>
+
+  <!--
+    Icon font embedded as a WPF <Resource>. The Link path MUST match the logical
+    path the Revit project uses (Source\Resources\Fonts\...) so the pack URI built
+    in LemoineTheme ("./Source/Resources/Fonts/IcoMoonFree.ttf") resolves here too.
+  -->
+  <ItemGroup>
+    <Resource Include="..\Source\Resources\Fonts\IcoMoonFree.ttf" Link="Source\Resources\Fonts\IcoMoonFree.ttf" />
+  </ItemGroup>
+
+</Project>

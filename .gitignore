@@ -21,3 +21,6 @@ packages/
 
 # Revit deploy target (local only)
 *.addin.bak
+
+# Navisworks API DLLs (licensed — resolve from the install dir, do not commit)
+libs-navis/*.dll
