@@ -60,14 +60,23 @@
     own named folder under Commands\ and Tools\ with a descriptive namespace.
   -->
 
-  <!-- Exclude the LemoinePreview sub-project from this project's SDK wildcard globs.
-       Without this, MSBuild sweeps LemoinePreview\obj\ and picks up its XAML-generated
-       *.g.cs / *.g.i.cs files, causing CS0102/CS0111/CS0579/CS8646 duplicate definitions. -->
+  <!-- Exclude sibling sub-projects from this project's SDK wildcard globs.
+       LemoineTools.csproj sits at the repo root, so its default '**\*' globs would
+       otherwise sweep these sub-projects' obj\ folders and pick up their XAML-generated
+       *.g.cs / *.g.i.cs and *.AssemblyAttributes.cs files, causing CS0102/CS0111/CS0579/
+       CS8646 duplicate definitions. LemoineNavisworks lives on its own branch with its own
+       .csproj; its obj\ output can linger here after a branch switch (untracked obj\ folders
+       survive checkout), so the exclusion is kept unconditionally. -->
   <ItemGroup>
     <Compile          Remove="LemoinePreview\**\*" />
     <Page             Remove="LemoinePreview\**\*" />
     <None             Remove="LemoinePreview\**\*" />
     <EmbeddedResource Remove="LemoinePreview\**\*" />
+
+    <Compile          Remove="LemoineNavisworks\**\*" />
+    <Page             Remove="LemoineNavisworks\**\*" />
+    <None             Remove="LemoineNavisworks\**\*" />
+    <EmbeddedResource Remove="LemoineNavisworks\**\*" />
   </ItemGroup>
 
   <ItemGroup>
