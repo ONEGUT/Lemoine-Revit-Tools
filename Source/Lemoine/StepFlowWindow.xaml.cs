@@ -82,8 +82,15 @@ namespace LemoineTools.Lemoine
 
             LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+            // Last-resort safety net for this window's dedicated STA thread. An unhandled
+            // exception in any tool's event handler would otherwise tear down this dispatcher
+            // and hard-crash Revit with NO diagnostics.log entry (there is no other
+            // DispatcherUnhandledException handler in the app). Route it through LemoineLog and
+            // keep the window alive. Named handler, detached on Closed.
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
             Closed += (s, e) =>
             {
+                Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
                 LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
                 // The tool (VM) is retained by its static ExternalEvent handler and outlives
@@ -113,6 +120,16 @@ namespace LemoineTools.Lemoine
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             if (!Dispatcher.CheckAccess()) { SafeBeginInvoke(() => OnToolValidationChanged(sender, e)); return; }
             RefreshStepVisibility(); RefreshStepState(_activeStep); PopulateReview();
+        }
+
+        // Catches any exception that bubbles to this STA thread's dispatcher (event handlers,
+        // layout, etc.). Without this an unhandled UI exception terminates Revit with no trace;
+        // here it is logged and swallowed so the window stays usable. The originating handler's
+        // partial work may be lost, but the process survives.
+        private void OnDispatcherUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            LemoineLog.Error($"StepFlowWindow '{_tool.Title}' unhandled UI exception", e.Exception);
+            e.Handled = true;
         }
 
         private void OnThemeChanged(LemoineTheme t)
