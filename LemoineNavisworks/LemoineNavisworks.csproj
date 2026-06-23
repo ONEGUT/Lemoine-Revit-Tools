@@ -78,4 +78,30 @@
     <Resource Include="..\Source\Resources\Fonts\IcoMoonFree.ttf" Link="Source\Resources\Fonts\IcoMoonFree.ttf" />
   </ItemGroup>
 
+  <!--
+    Auto-deploy to the per-user Navisworks 2026 Plugins folder after every build,
+    so you just restart Navisworks to pick up changes (no admin needed).
+
+    Navisworks' rule is strict: the DLL must sit in a subfolder whose name EXACTLY
+    equals the assembly base name ($(AssemblyName) = LemoineNavisworks), else it
+    silently won't load.
+
+    Guarded to no-op on machines without Navisworks 2026 (CI, Revit-only devs):
+    runs only if the per-user or install Navisworks 2026 folder exists.
+  -->
+  <Target Name="DeployToNavisworks2026" AfterTargets="Build"
+          Condition="Exists('$(APPDATA)\Autodesk\Navisworks Manage 2026') or Exists('C:\Program Files\Autodesk\Navisworks Manage 2026')">
+    <PropertyGroup>
+      <NavisPluginDir>$(APPDATA)\Autodesk\Navisworks Manage 2026\Plugins\$(AssemblyName)\</NavisPluginDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NavisDeploy Include="$(TargetPath)" />
+      <_NavisDeploy Include="$(TargetDir)$(AssemblyName).pdb"       Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+      <_NavisDeploy Include="$(TargetDir)$(AssemblyName).deps.json" Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
+    </ItemGroup>
+    <MakeDir Directories="$(NavisPluginDir)" />
+    <Copy SourceFiles="@(_NavisDeploy)" DestinationFolder="$(NavisPluginDir)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(AssemblyName) -&gt; $(NavisPluginDir)" />
+  </Target>
+
 </Project>
