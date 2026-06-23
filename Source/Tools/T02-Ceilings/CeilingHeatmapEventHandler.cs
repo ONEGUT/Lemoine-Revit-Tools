@@ -218,12 +218,16 @@ namespace LemoineTools.Tools.Ceilings
                     var ogs = new OverrideGraphicSettings();
                     if (solidFillId != ElementId.InvalidElementId)
                     {
-                        ogs.SetSurfaceForegroundPatternId(solidFillId);
-                        ogs.SetSurfaceForegroundPatternColor(color);
-                        ogs.SetSurfaceForegroundPatternVisible(true);
-                        ogs.SetCutForegroundPatternId(solidFillId);
-                        ogs.SetCutForegroundPatternColor(color);
-                        ogs.SetCutForegroundPatternVisible(true);
+                        // Color the BACKGROUND pattern with the filter's solid fill so the
+                        // foreground is left at its default (<No Override>, black) — matching the
+                        // Fill Pattern Graphics dialog: Background = solid fill in the ramp color,
+                        // Foreground = no override.
+                        ogs.SetSurfaceBackgroundPatternId(solidFillId);
+                        ogs.SetSurfaceBackgroundPatternColor(color);
+                        ogs.SetSurfaceBackgroundPatternVisible(true);
+                        ogs.SetCutBackgroundPatternId(solidFillId);
+                        ogs.SetCutBackgroundPatternColor(color);
+                        ogs.SetCutBackgroundPatternVisible(true);
                     }
 
                     foreach (ElementId viewId in SelectedViewIds)
