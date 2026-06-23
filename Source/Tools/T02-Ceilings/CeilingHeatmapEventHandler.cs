@@ -216,12 +216,18 @@ namespace LemoineTools.Tools.Ceilings
                     }
 
                     var ogs = new OverrideGraphicSettings();
+
+                    // Foreground: explicit black color, no fill-pattern override.
+                    var black = new RevitColor(0, 0, 0);
+                    ogs.SetSurfaceForegroundPatternColor(black);
+                    ogs.SetCutForegroundPatternColor(black);
+
                     if (solidFillId != ElementId.InvalidElementId)
                     {
                         // Color the BACKGROUND pattern with the filter's solid fill so the
-                        // foreground is left at its default (<No Override>, black) — matching the
-                        // Fill Pattern Graphics dialog: Background = solid fill in the ramp color,
-                        // Foreground = no override.
+                        // foreground keeps its (black) color with no pattern override — matching
+                        // the Fill Pattern Graphics dialog: Background = solid fill in the ramp
+                        // color, Foreground = black, no pattern.
                         ogs.SetSurfaceBackgroundPatternId(solidFillId);
                         ogs.SetSurfaceBackgroundPatternColor(color);
                         ogs.SetSurfaceBackgroundPatternVisible(true);
