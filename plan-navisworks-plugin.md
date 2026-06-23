@@ -21,8 +21,11 @@ delivers four capabilities Navisworks handles poorly natively:
 
 ## Confirmed decisions
 
-- **Target:** Navisworks **2025/2026** → `net8.0-windows`. The Revit plugin
-  stays `net48`. The shared UI source must compile under **both** TFMs.
+- **Target:** Navisworks **2026** → **`net48`** (.NET Framework 4.8). Navisworks
+  2026 hosts plugins on .NET Framework 4.8 (confirmed by the crash + Autodesk's
+  placement doc), the **same TFM as Revit 2024** — so the shared framework is a
+  clean single-TFM share with **no multi-targeting**. (Original assumption of
+  `net8.0-windows` was wrong: that is Revit 2025+, not Navisworks.)
 - **Areas:** **Tag the outputs, don't constrain the inputs.** Search sets stay
   trade-only and dynamic; area/level becomes post-process metadata on clash
   results via a separate grouping pass. No static per-area selection sets, no
@@ -81,7 +84,7 @@ Constraints discovered that drive this:
 ```
 LemoineTools.sln
 ├── LemoineTools            (net48, Revit 2024)         — UNCHANGED, keeps building
-├── LemoineNavisworks       (net8.0-windows, Navis 25/26)
+├── LemoineNavisworks       (net48, Navisworks 2026)
 │     ├── links  Source/Lemoine/*.cs + Controls/** + Templates/**  (the framework)
 │     ├── links  Source/Resources/Fonts/IcoMoonFree.ttf  as <Resource>
 │     └── own Source/  — Navis plugin entry + tools (Discover, Areas, Clash, UI)
@@ -101,8 +104,8 @@ the hardcoded font pack URI to resolve the **executing assembly name at runtime*
 file compiles into `LemoineTools` or `LemoineNavisworks`.
 
 **Later hardening (own phase, once the plugin works):** extract the shared core
-into a real multi-targeted class library `Lemoine.Core` (`net48;net8.0-windows`)
-with `InternalsVisibleTo`, and have both hosts reference it. Deferred because a
+into a real `net48` class library `Lemoine.Core` with `InternalsVisibleTo`, and
+have both hosts reference it (both are net48, so no multi-targeting). Deferred because a
 ~100-file extraction is high-risk to the working Revit build and **cannot be
 compiled in this Linux environment** to verify.
 
@@ -114,8 +117,8 @@ URI resolves to `LemoineTools` exactly as before). No behavior change. *(Done in
 the opening commit alongside this plan.)*
 
 **Phase 1 — Navisworks skeleton.** New `LemoineNavisworks` project
-(`net8.0-windows`, `UseWPF`) that **links** the shared framework files + the icon
-font `<Resource>`, references the Navisworks 2025/26 API via install-path with a
+(`net48`, `UseWPF`) that **links** the shared framework files + the icon
+font `<Resource>`, references the Navisworks 2026 API via install-path with a
 `libs-navis/` fallback (mirroring the Revit csproj pattern), and adds it to the
 `.sln`. A `[Plugin]` `AddInPlugin` entry + ribbon/tool button shows
 `StepFlowWindow` hosting a trivial tool to prove the shared UI renders under

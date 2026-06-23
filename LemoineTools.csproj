@@ -70,7 +70,7 @@
     <EmbeddedResource Remove="LemoinePreview\**\*" />
   </ItemGroup>
 
-  <!-- Exclude the LemoineNavisworks sibling project (net8.0-windows, Navisworks API).
+  <!-- Exclude the LemoineNavisworks sibling project (net48, Navisworks API).
        It sits at the repo root inside this project's SDK wildcard cone, so without
        these removes the Revit build would try to compile Navisworks-only code that
        references Autodesk.Navisworks.Api (not referenced here). -->

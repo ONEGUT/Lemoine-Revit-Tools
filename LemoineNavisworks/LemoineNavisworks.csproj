@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Navisworks 2026 hosts plugins on .NET Framework 4.8 (same as Revit 2024),
+         NOT .NET 8. A net8 assembly crashes the Navisworks plugin loader at startup. -->
+    <TargetFramework>net48</TargetFramework>
     <AssemblyName>LemoineNavisworks</AssemblyName>
     <RootNamespace>LemoineNavisworks</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
