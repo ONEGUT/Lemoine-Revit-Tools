@@ -120,8 +120,13 @@ namespace LemoineTools.Lemoine
         // ─────────────────────────────────────────────────────────────────
         // Shared icon font — same for every theme
         // ─────────────────────────────────────────────────────────────────
+        // Base URI uses the *executing* assembly name so this resolves correctly
+        // whether the framework compiles into LemoineTools (Revit) or
+        // LemoineNavisworks. Both embed IcoMoonFree.ttf as a WPF <Resource>.
         private static readonly FontFamily _iconFont = new FontFamily(
-            new Uri("pack://application:,,,/LemoineTools;component/"),
+            new Uri("pack://application:,,,/"
+                + System.Reflection.Assembly.GetExecutingAssembly().GetName().Name
+                + ";component/"),
             "./Source/Resources/Fonts/IcoMoonFree.ttf#IcoMoon-Free");
 
         // ─────────────────────────────────────────────────────────────────
