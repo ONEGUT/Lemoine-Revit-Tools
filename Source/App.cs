@@ -7,6 +7,7 @@ using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.BulkExport;
 using LemoineTools.Tools.Clash;
+using LemoineTools.Tools.ExplodeViews;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
 using System;
@@ -91,6 +92,10 @@ namespace LemoineTools
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
         internal static LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
         internal static ExternalEvent?              RefineDimensionsEvent { get; private set; }
+
+        // ── T06 — Views (Explode 3D View by Trade) ──────────────────────────────────
+        internal static ExplodeViewByTradeEventHandler? ExplodeViewByTradeHandler { get; private set; }
+        internal static ExternalEvent?                  ExplodeViewByTradeEvent   { get; private set; }
 
         // ── Testing — Create Sheets ─────────────────────────────────────────────────
         internal static CreateSheetsEventHandler?  CreateSheetsHandler  { get; private set; }
@@ -209,6 +214,11 @@ namespace LemoineTools
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
             RefineDimensionsHandler = new LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler();
             RefineDimensionsEvent   = ExternalEvent.Create(RefineDimensionsHandler);
+
+            // ── T06 — Views ───────────────────────────────────────────────────
+            ExplodeViewByTradeHandler = new ExplodeViewByTradeEventHandler();
+            ExplodeViewByTradeEvent   = ExternalEvent.Create(ExplodeViewByTradeHandler);
+
             CreateSheetsHandler  = new CreateSheetsEventHandler();
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
@@ -468,6 +478,15 @@ namespace LemoineTools
                 "LT_RefineDimensions", "Refine\nDimensions", "RefineDimensionsCommand",
                 "Re-dimension views that already have clash markers: dimension each marker to the nearest grid or slab edge visible in the view. Never detects clashes, creates callouts, or changes a view's scale.",
                 char.ConvertFromUtf32(0xE70F)));  // Segoe MDL2: Edit (pencil)
+
+            // ── T06 — Views ───────────────────────────────────────────────────
+            var viewsPanel = application.CreateRibbonPanel("Lemoine Tools", "T06  Views");
+
+            viewsPanel.AddItem(Btn(
+                "LT_ExplodeViewByTrade", "Explode View\nby Trade", "ExplodeViewByTradeCommand",
+                "Duplicate a 3D view once per AutoFilters trade at the same camera angle and section box, "
+                + "isolating each trade by its view filters and stacking the views by element elevation.",
+                char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── Testing ───────────────────────────────────────────────────────
             var testingPanel = application.CreateRibbonPanel("Lemoine Tools", "Testing");
