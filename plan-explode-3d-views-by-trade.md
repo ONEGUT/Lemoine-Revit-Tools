@@ -98,18 +98,18 @@ Create Filters first") and skipped — this tool reuses filters, it does not cre
 
 ---
 
-## Decisions needed before coding
+## Decisions (resolved)
 
-1. **Isolation model.** Each exploded view toggles the **selected trades'** filters
-   on/off (matches the "filters on/off" framing). Elements not covered by any selected
-   trade — e.g. architecture/structure if not chosen — stay visible as background
-   context. *Recommended:* keep that behaviour; to drop the background, the user includes
-   those as trades too. (Alternative: a "hide everything not in a selected trade" option
-   via category isolation — more complex, can add later.)
-2. **Ribbon placement** — new **"T06  Views"** panel (recommended), or fold into an
-   existing panel.
-3. **Missing filters** — skip-and-log trades whose filters aren't created yet
-   (recommended), vs. auto-running the AutoFilters create engine here.
+1. **Isolation model — a tool option.** Each exploded view always toggles the **selected
+   trades'** filters on/off. A **"Hide all other elements"** toggle (default off) controls
+   non-trade elements: off keeps them as background context; on hides every model category
+   not in the isolated trade (`view.SetCategoryHidden`), which also cascades onto links shown
+   "By Host View". The RVT Links container category is always kept visible.
+2. **Ribbon placement** — new **"T06  Views"** panel. Source folder is `T07-ExplodeViews`
+   (a `T06-CopyLinear` folder already exists; the panel number and folder number differ here
+   exactly as CopyLinear's do).
+3. **Missing filters** — skip-and-log trades whose filters aren't created yet; the picker
+   only lists trades that already have created filters and notes any it hid.
 
 ---
 

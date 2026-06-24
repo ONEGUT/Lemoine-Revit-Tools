@@ -28,6 +28,9 @@ namespace LemoineTools.Tools.ExplodeViews
         public bool          OrderByElevation  { get; set; } = true;
         public bool          NumberPrefix       { get; set; } = true;
         public bool          ApplyColorOverride { get; set; } = true;
+        // When true, every model category that does not belong to the isolated trade is hidden
+        // in its exploded view (full isolation). When false, non-trade elements stay as context.
+        public bool          HideOthers         { get; set; } = false;
         public string        NamePattern        { get; set; } = "{nn}_{Source} - {Trade}";
 
         // ── Callbacks (BeginInvoke-wrapped by StepFlowWindow) ─────────────────
@@ -342,8 +345,14 @@ namespace LemoineTools.Tools.ExplodeViews
                             }
                         }
 
+                        // Full isolation: hide every model category not in this trade. When the
+                        // link is "By Host View" the host view's category visibility cascades onto
+                        // its elements, so non-trade linked geometry is hidden too.
+                        if (HideOthers)
+                            HideNonTradeCategories(doc, dup, plan.Filters);
+
                         _viewsCreated++; pass++;
-                        Log($"Created \"{uniqueName}\" isolating \"{plan.Label}\".", "pass");
+                        Log($"Created \"{uniqueName}\" isolating \"{plan.Label}\"{(HideOthers ? " (others hidden)" : "")}.", "pass");
                     }
                     catch (Exception ex)
                     {
@@ -360,6 +369,50 @@ namespace LemoineTools.Tools.ExplodeViews
 
             Log($"Complete — {_viewsCreated} view(s) created from \"{srcName}\", "
                 + $"{_tradesSkipped} trade(s) skipped.", "pass");
+        }
+
+        /// <summary>
+        /// Hides every model category in <paramref name="view"/> that the isolated trade's
+        /// filters don't target. The RVT Links container category is always kept visible (the
+        /// link's per-category visibility is governed individually when it is "By Host View");
+        /// categories that can't be hidden in this view type are skipped.
+        /// </summary>
+        private void HideNonTradeCategories(
+            Document doc, View3D view, List<ParameterFilterElement> tradeFilters)
+        {
+            var keep = new HashSet<long>();
+            foreach (var pfe in tradeFilters)
+            {
+                try
+                {
+                    foreach (ElementId cid in pfe.GetCategories()) keep.Add(cid.Value);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: read filter categories", ex); }
+            }
+
+            long rvtLinks = new ElementId(BuiltInCategory.OST_RvtLinks).Value;
+            int hidden = 0;
+
+            foreach (Category cat in doc.Settings.Categories)
+            {
+                try
+                {
+                    if (cat == null || cat.CategoryType != CategoryType.Model) continue;
+                    long cid = cat.Id.Value;
+                    if (cid == rvtLinks) continue;       // keep the link container visible
+                    if (keep.Contains(cid)) continue;    // keep the isolated trade's categories
+                    if (!view.CanCategoryBeHidden(cat.Id)) continue;
+                    view.SetCategoryHidden(cat.Id, true);
+                    hidden++;
+                }
+                catch (Exception ex)
+                {
+                    LemoineLog.Swallowed($"ExplodeViewByTrade: hide category '{cat?.Name}'", ex);
+                }
+            }
+
+            if (hidden > 0)
+                Log($"Hid {hidden} non-trade model categor{(hidden == 1 ? "y" : "ies")} in \"{view.Name}\".", "info");
         }
 
         // ── Elevation scan ────────────────────────────────────────────────────────

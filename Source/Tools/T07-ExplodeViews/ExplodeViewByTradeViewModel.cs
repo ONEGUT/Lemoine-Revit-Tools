@@ -57,6 +57,7 @@ namespace LemoineTools.Tools.ExplodeViews
         private bool _orderByElevation  = true;
         private bool _numberPrefix      = true;
         private bool _applyColorOverride = true;
+        private bool _hideOthers        = false;
 
         // ── Validation ───────────────────────────────────────────────────────────
         public event EventHandler? ValidationChanged;
@@ -205,12 +206,22 @@ namespace LemoineTools.Tools.ExplodeViews
                     Desc      = "Apply each trade's AutoFilters colour/line overrides to the trade shown in its view.",
                     DefaultOn = _applyColorOverride,
                 },
+                new ToggleItem
+                {
+                    Id        = "hide",
+                    Label     = "Hide all other elements",
+                    Desc      = "Hide every model category that isn't part of the isolated trade, so only that "
+                              + "trade is visible. Off keeps the rest of the model as light background context. "
+                              + "(Cascades onto links shown \"By Host View\".)",
+                    DefaultOn = _hideOthers,
+                },
             });
             tog.StateChanged += state =>
             {
                 _orderByElevation   = state.TryGetValue("order",  out bool ov) && ov;
                 _numberPrefix       = state.TryGetValue("number", out bool nv) && nv;
                 _applyColorOverride = state.TryGetValue("color",  out bool cv) && cv;
+                _hideOthers         = state.TryGetValue("hide",   out bool hv) && hv;
                 OnValidationChanged();
             };
             return tog;
@@ -224,6 +235,7 @@ namespace LemoineTools.Tools.ExplodeViews
             ("order",  "Order by Elevation"),
             ("number", "Number Prefix"),
             ("color",  "Colour Overrides"),
+            ("hide",   "Hide Other Elements"),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -234,6 +246,7 @@ namespace LemoineTools.Tools.ExplodeViews
             ["order"]  = _orderByElevation ? "Yes" : "No",
             ["number"] = _numberPrefix ? "Yes" : "No",
             ["color"]  = _applyColorOverride ? "Yes" : "No",
+            ["hide"]   = _hideOthers ? "Yes" : "No",
         };
 
         public IList<string>? ReviewChips => _selectedTradeIds.Count == 0 ? null
@@ -269,6 +282,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 parts.Add(_orderByElevation ? "By elevation" : "Config order");
                 if (_numberPrefix)       parts.Add("Numbered");
                 if (_applyColorOverride) parts.Add("Coloured");
+                parts.Add(_hideOthers ? "Isolated" : "With context");
                 return string.Join(" · ", parts);
             }
             if (stepId == "S4") return "Ready to run";
@@ -288,6 +302,7 @@ namespace LemoineTools.Tools.ExplodeViews
             _handler.OrderByElevation    = _orderByElevation;
             _handler.NumberPrefix        = _numberPrefix;
             _handler.ApplyColorOverride  = _applyColorOverride;
+            _handler.HideOthers          = _hideOthers;
             _handler.PushLog             = pushLog;
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;
