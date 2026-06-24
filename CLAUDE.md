@@ -266,6 +266,13 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 - **Step content is built eagerly at window construction.** A step whose content depends on an earlier step's choice (the live selection, the export mode, etc.) must implement `IStepAware` and rebuild itself in `OnStepActivated(stepId)` via the content-refresh callback — otherwise it renders once with stale/empty state and never updates. This was the root cause of Bulk Export's "Build Packs" appearing empty: the pack editor read the selection at construction (before anything was selected) and was never refreshed.
 - **Hide steps conditionally with `ILemoineConditionalSteps`.** `IsStepVisible(stepId)` returning false collapses that step's accordion row and progress pip and skips it during forward/back navigation; visibility is re-evaluated on activation and on `ValidationChanged`. A conditional (hideable) step must **never be the last step** — the final step carries the Run button, log area, and review summary and is always shown. Tools that don't implement the interface are unaffected (every step visible).
+- **Refresh a step ONLY through `IStepAware` — never re-parent children by hand.** To rebuild a step's content live (e.g. after a "Load preset" button), implement `IStepAware`, store the `SetContentRefreshCallback` delegate, and call it with the step id so `StepFlowWindow.RefreshStepContent` swaps the content child in place. **Do not** hand-roll a rebuild that moves children out of a freshly-built throwaway panel into the live container (`foreach (child in newPanel.Children) container.Children.Add(child)`) — a WPF `UIElement` can have only one logical parent, so `Children.Add` **throws `InvalidOperationException`** ("already the logical child of another element"), and that unhandled throw in a click handler hard-crashed Revit (Ceiling Heatmap "Load color ramp"). Even if it didn't throw, the rebuilt content's handlers would close over the orphan panel, not the live tree.
+
+---
+
+## Unhandled UI Exceptions Crash Revit — STA Dispatcher Safety Net
+
+- **Every tool window runs on its own dedicated STA thread, and an unhandled exception on that dispatcher terminates Revit with NO `diagnostics.log` entry** (it is never routed through `LemoineLog`). `StepFlowWindow` installs a named `Dispatcher.UnhandledException` handler in its constructor (detached on `Closed`) that routes the exception through `LemoineLog.Error` and sets `e.Handled = true`, keeping the window alive. Keep this last-resort net; never assume a stray throw in an event handler is "just a managed exception that gets logged" — without this handler it is a silent hard crash.
 
 ---
 
@@ -384,6 +391,7 @@ These were discovered fixing the "category pill dropdown scrolls down but not up
 | `Element.WorksetId.Value` to read a workset id | `WorksetId.IntegerValue` (an `int`) — `WorksetId` still uses `IntegerValue`, unlike `ElementId.Value` (a `long`) used everywhere else in 2024. Worksharing reads: guard with `doc.IsWorkshared`, enumerate user worksets via `new FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset)`, and read an element's workset with `Element.WorksetId`. A link's worksets live in its own `GetLinkDocument()`, so read/scan them there, not the host |
 | `ElevationMarker.GetViewId(idx)` assuming it returns `InvalidElementId` for an empty slot | An **unused** marker index can **throw** rather than return invalid — loop `for (idx = 0; idx < m.MaximumViewCount; idx++)` and wrap each `GetViewId(idx)` in try/catch, `continue`-on-throw (then still skip `null` / `InvalidElementId`) |
 | Resolving which views a section/callout marker points to by reading a target-id property | Section/callout markers are `OST_Viewers`; resolve each to its target view by **unique name** (`marker.Name` → view-by-name map). Scope the collector to the source view id (`new FilteredElementCollector(doc, source.Id)`) so only **visible** markers are returned — hidden ones are excluded |
+| Coloring a surface fill via `OverrideGraphicSettings` without distinguishing foreground/background | Foreground and background are **independent** layers. A "solid color fill with black lines" needs the **background** pattern set (`SetSurfaceBackgroundPatternId(solidFill)` + `…Color(c)` + `…Visible(true)`, and the cut equivalents) and only the **foreground pattern *color*** set to black (`SetSurfaceForegroundPatternColor` / `SetCutForegroundPatternColor`) with **no** foreground pattern id — setting a pattern *color* without a pattern *id* yields the color with no fill pattern (the Fill Pattern Graphics dialog's `<No Override>` foreground). Putting the solid fill on the foreground instead hides the element's own linework |
 
 ---
 
@@ -432,6 +440,8 @@ Discovered while making **Make Ceiling Grids** hide linked ceilings.
 This project cannot be built on Linux. `UseWPF=true` + `net48` requires `Microsoft.NET.Sdk.WindowsDesktop`, which is Windows-only — neither the Linux .NET SDK nor Mono can satisfy it. Do not attempt Linux CI or cloud builds. Build and test on Windows only.
 
 The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) are checked in to `libs/`. The `.csproj` falls back to `libs/` when the standard Revit 2024 install path (`C:\Program Files\Autodesk\Revit 2024`) does not exist, so cloning the repo is sufficient to resolve references without a local Revit installation.
+
+**`LemoineTools.csproj` is a root-level SDK-style project, so its default `**\*` globs sweep every subfolder — including sibling sub-projects' `obj\` output.** Each sibling project (`LemoinePreview`, `LemoineNavisworks`, any future one) must be `Remove`-excluded from `Compile`/`Page`/`None`/`EmbeddedResource`, or MSBuild compiles its generated `*.AssemblyAttributes.cs` (→ **CS0579** duplicate `TargetFrameworkAttribute`, sometimes for *both* net48 and net8 targets) and its XAML `*.g.cs` (→ **CS0102** duplicate `_root`/`_outer` field). Keep the exclusion **unconditional**: an untracked `obj\` folder survives a branch switch, so a sibling project that lives only on another branch can still poison this build locally.
 
 ---
 
