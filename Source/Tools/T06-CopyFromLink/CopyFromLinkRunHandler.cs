@@ -66,7 +66,9 @@ namespace LemoineTools.Tools.CopyFromLink
                         string typeKey = CopyFromLinkSource.TypeKey(src.Doc!, el);
                         if (!selectedKeys.Contains(typeKey)) { unmatched++; continue; }
                         string key  = CopyFromLinkSource.SourceKey(src.LinkInstUid, el.UniqueId);
-                        string hash = CopyFromLinkSource.GeoHash(src.Doc!, el, src.Transform, typeKey);
+                        // The geometry hash (bounding-box read per element) only drives change
+                        // detection + re-run reconciliation, so skip it entirely unless stamping.
+                        string hash = DeletePrevious ? CopyFromLinkSource.GeoHash(src.Doc!, el, src.Transform, typeKey) : "";
                         current[key] = new SourceElem { Id = el.Id, Key = key, Hash = hash, TypeKey = typeKey };
                     }
                     catch (Exception ex)
@@ -132,46 +134,97 @@ namespace LemoineTools.Tools.CopyFromLink
                                 SafeDelete(doc, prior.ids);
                     }
 
-                    foreach (var s in toBuild)
+                    // ── Batch copy (chunked) ───────────────────────────────────────────
+                    // One CopyElements call per element is dominated by per-call overhead; copying
+                    // many elements in a single call is dramatically faster (and keeps connected MEP
+                    // networks wired, since they copy together). Chunked so the run stays cancellable
+                    // and reports progress; a chunk that throws falls back to per-element copy so one
+                    // bad element (e.g. an unsupported host) can't sink the whole batch.
+                    const int ChunkSize = 500;
+                    var attributable = new List<ElementId>();   // batch-copied outputs to stamp by hash
+                    for (int i = 0; i < toBuild.Count; i += ChunkSize)
                     {
                         if (LemoineRun.CancelRequested)
                         {
                             Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
                             break;   // falls through to doc.Regenerate() + tx.Commit() below
                         }
+                        var slice    = toBuild.GetRange(i, Math.Min(ChunkSize, toBuild.Count - i));
+                        var sliceIds = slice.Select(s => s.Id).ToList();
                         try
                         {
-                            ICollection<ElementId>? copied = ElementTransformUtils.CopyElements(
-                                src.Doc!, new List<ElementId> { s.Id }, doc, src.Transform, opts);
-
-                            if (copied == null || copied.Count == 0)
-                            {
-                                skip++;
-                                Log($"— {s.Id} ({s.TypeKey}): nothing copied.", "info");
-                            }
-                            else
+                            var copied = ElementTransformUtils.CopyElements(src.Doc!, sliceIds, doc, src.Transform, opts);
+                            if (copied != null && copied.Count > 0)
                             {
                                 pass += copied.Count;
-                                if (DeletePrevious)
-                                    foreach (var id in copied)
-                                    {
-                                        var made = doc.GetElement(id);
-                                        if (made != null && !CopyFromLinkStampSchema.Stamp(made, s.Key, s.Hash, runId))
-                                            LemoineLog.Warn("CopyFromLink: stamp", $"output for {s.Id} not stamped — it won't reconcile on a later run.");
-                                    }
+                                if (DeletePrevious) attributable.AddRange(copied);
                             }
                         }
                         catch (Exception ex)
                         {
-                            fail++;
-                            LemoineLog.Error($"CopyFromLink: copy {s.Key}", ex);
-                            Log($"✗ {s.Id} ({s.TypeKey}): copy failed — {ex.GetType().Name}: {ex.Message}", "fail");
+                            // Isolate the offender: re-copy this chunk one element at a time, stamping
+                            // directly (the source is known here, so no hash attribution is needed).
+                            Log($"Batch of {slice.Count} failed ({ex.GetType().Name}) — retrying individually to isolate.", "warn");
+                            LemoineLog.Swallowed("CopyFromLink: batch copy chunk", ex);
+                            foreach (var s in slice)
+                            {
+                                try
+                                {
+                                    var one = ElementTransformUtils.CopyElements(src.Doc!, new List<ElementId> { s.Id }, doc, src.Transform, opts);
+                                    if (one == null || one.Count == 0) { skip++; continue; }
+                                    pass += one.Count;
+                                    if (DeletePrevious)
+                                        foreach (var id in one)
+                                        {
+                                            var made = doc.GetElement(id);
+                                            if (made != null) CopyFromLinkStampSchema.Stamp(made, s.Key, s.Hash, runId);
+                                        }
+                                }
+                                catch (Exception ex2)
+                                {
+                                    fail++;
+                                    LemoineLog.Error($"CopyFromLink: copy {s.Key}", ex2);
+                                    Log($"✗ {s.Id} ({s.TypeKey}): copy failed — {ex2.GetType().Name}: {ex2.Message}", "fail");
+                                }
+                            }
                         }
-                        done++;
-                        if (total > 0) OnProgress?.Invoke((int)(done * 95.0 / total), pass, fail, skip);
+                        done += slice.Count;
+                        if (total > 0) OnProgress?.Invoke((int)(done * 90.0 / total), pass, fail, skip);
                     }
 
-                    doc.Regenerate();
+                    doc.Regenerate();   // single regen for the whole run; also makes copied geometry readable for stamping
+
+                    // ── Stamp batch-copied outputs by world-position hash ────────────────
+                    // A cross-document copy doesn't report which output came from which source, so
+                    // attribute each output to a source by matching the world-space identity hash: the
+                    // copy applied the link transform, so an output's host-world hash equals its
+                    // source's link-world hash. (Per-element fallback copies above already stamped.)
+                    if (DeletePrevious && attributable.Count > 0)
+                    {
+                        var byHash = new Dictionary<string, Queue<SourceElem>>(StringComparer.Ordinal);
+                        foreach (var s in toBuild)
+                        {
+                            if (!byHash.TryGetValue(s.Hash, out var q)) byHash[s.Hash] = q = new Queue<SourceElem>();
+                            q.Enqueue(s);
+                        }
+                        int unattributed = 0;
+                        foreach (var id in attributable)
+                        {
+                            var made = doc.GetElement(id);
+                            if (made == null) continue;
+                            string tk = CopyFromLinkSource.TypeKey(doc, made);
+                            string h  = CopyFromLinkSource.GeoHash(doc, made, Transform.Identity, tk);
+                            if (byHash.TryGetValue(h, out var q) && q.Count > 0)
+                            {
+                                var s = q.Dequeue();
+                                CopyFromLinkStampSchema.Stamp(made, s.Key, s.Hash, runId);
+                            }
+                            else unattributed++;
+                        }
+                        if (unattributed > 0)
+                            Log($"{unattributed} copied element(s) could not be linked back to a source for change-tracking — they won't reconcile on a re-run.", "warn");
+                    }
+
                     tx.Commit();
 
                     foreach (var f in failureHandler.Captured.Distinct().Take(15))
