@@ -18,8 +18,11 @@ using LemoineTools.Lemoine.Templates;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class CeilingHeatmapViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class CeilingHeatmapViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
+        // IStepAware: framework callback that rebuilds a step's content widget in place.
+        private Action<string>? _rebuildContent;
+
         // Run strip: "tags" during the run, full filter/tag/failure breakdown on completion.
         public string? ResultNoun => "tags";
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
@@ -237,8 +240,11 @@ namespace LemoineTools.Tools.Ceilings
                         _colorMid  = ramp.Mid;
                         _colorHigh = ramp.High;
                         SaveColorsToSettings();
-                        // Rebuild the step to reflect new colors
-                        RebuildRampStep(outer);
+                        // Rebuild the step through the framework so the swapped-in content is a
+                        // real child of the step's host (StepFlowWindow.RefreshStepContent). The
+                        // previous hand-rolled rebuild re-parented children that still belonged to
+                        // a throwaway panel — Children.Add then threw and hard-crashed Revit.
+                        _rebuildContent?.Invoke("S_RAMP");
                         OnValidationChanged();
                     }
                 }
@@ -342,18 +348,15 @@ namespace LemoineTools.Tools.Ceilings
             _gradientRect.Fill = brush;
         }
 
-        private void RebuildRampStep(StackPanel container)
-        {
-            // Null out handles so they get re-assigned when the step is rebuilt
-            _gradientRect = null;
-            _rampCombo    = null;
-            // Rebuild by clearing and re-populating the container
-            container.Children.Clear();
-            var rebuilt = BuildS_RAMP();
-            if (rebuilt is StackPanel sp)
-                foreach (UIElement child in sp.Children)
-                    container.Children.Add(child);
-        }
+        // ── IStepAware ────────────────────────────────────────────────────────────
+        // Store the framework's in-place content-refresh callback (set by StepFlowWindow).
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        // The ramp step depends only on its own state, so no rebuild is needed on entry;
+        // each BuildS_RAMP reassigns _gradientRect / _rampCombo, so a framework rebuild is
+        // self-consistent.
+        public void OnStepActivated(string stepId) { }
 
         private void SaveColorsToSettings()
         {
