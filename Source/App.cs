@@ -100,6 +100,10 @@ namespace LemoineTools
         internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
         internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
+        // ── Testing — Align Sheet Views ─────────────────────────────────────────────
+        internal static LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler? AlignSheetViewsHandler { get; private set; }
+        internal static ExternalEvent?             AlignSheetViewsEvent { get; private set; }
+
         // ── Testing — Copy Linear Elements ──────────────────────────────────────────
         internal static LemoineTools.Tools.CopyLinear.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
         internal static ExternalEvent?             CopyLinearScanEvent  { get; private set; }
@@ -213,6 +217,8 @@ namespace LemoineTools
             CreateSheetsEvent    = ExternalEvent.Create(CreateSheetsHandler);
             PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
             PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
+            AlignSheetViewsHandler     = new LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler();
+            AlignSheetViewsEvent       = ExternalEvent.Create(AlignSheetViewsHandler);
             CopyLinearScanHandler = new LemoineTools.Tools.CopyLinear.CopyLinearScanHandler();
             CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
             CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
@@ -494,6 +500,11 @@ namespace LemoineTools
                 "LT_CopyFromLink", "Copy\nElements", "CopyFromLinkCommand",
                 "Copy elements from a linked model into the host: pick categories, then tick which family types within them to copy. Re-runs can process only changed elements.",
                 char.ConvertFromUtf32(0xE8C8)));  // Segoe MDL2: Copy
+
+            testingPanel.AddItem(Btn(
+                "LT_AlignSheetViews", "Align\nSheet Views", "AlignSheetViewsCommand",
+                "Align the viewports on selected sheets to a reference sheet so matching views overlay exactly. Matches views by model-region overlap; missing or ambiguous counterparts are reported.",
+                char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
