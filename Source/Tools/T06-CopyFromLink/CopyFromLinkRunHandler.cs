@@ -137,19 +137,20 @@ namespace LemoineTools.Tools.CopyFromLink
                     // ── Batch copy (chunked) ───────────────────────────────────────────
                     // One CopyElements call per element is dominated by per-call overhead; copying
                     // many elements in a single call is dramatically faster (and keeps connected MEP
-                    // networks wired, since they copy together). Chunked so the run stays cancellable
-                    // and reports progress; a chunk that throws falls back to per-element copy so one
-                    // bad element (e.g. an unsupported host) can't sink the whole batch.
-                    const int ChunkSize = 500;
+                    // networks wired, since they copy together). Split the run into ~20 batches of
+                    // 5% each so the run stays cancellable and reports progress to the output log
+                    // every 5%; a chunk that throws falls back to per-element copy so one bad element
+                    // (e.g. an unsupported host) can't sink the whole batch.
+                    int chunkSize = Math.Max(1, (int)Math.Ceiling(total / 20.0));
                     var attributable = new List<ElementId>();   // batch-copied outputs to stamp by hash
-                    for (int i = 0; i < toBuild.Count; i += ChunkSize)
+                    for (int i = 0; i < toBuild.Count; i += chunkSize)
                     {
                         if (LemoineRun.CancelRequested)
                         {
                             Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
                             break;   // falls through to doc.Regenerate() + tx.Commit() below
                         }
-                        var slice    = toBuild.GetRange(i, Math.Min(ChunkSize, toBuild.Count - i));
+                        var slice    = toBuild.GetRange(i, Math.Min(chunkSize, toBuild.Count - i));
                         var sliceIds = slice.Select(s => s.Id).ToList();
                         try
                         {
@@ -189,7 +190,9 @@ namespace LemoineTools.Tools.CopyFromLink
                             }
                         }
                         done += slice.Count;
-                        if (total > 0) OnProgress?.Invoke((int)(done * 90.0 / total), pass, fail, skip);
+                        int pct = (int)(done * 100.0 / total);
+                        Log($"{pct}% — {done} of {total} processed ({pass} copied).", "info");
+                        OnProgress?.Invoke((int)(done * 90.0 / total), pass, fail, skip);
                     }
 
                     doc.Regenerate();   // single regen for the whole run; also makes copied geometry readable for stamping
