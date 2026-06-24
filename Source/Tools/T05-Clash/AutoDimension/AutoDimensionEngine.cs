@@ -520,9 +520,11 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     double scaleRatio = DemandRatio(sweptInfo, thModel * 6.0, thModel);
                     double bound = scale / Math.Max(scaleRatio, 1e-9);
-                    int chosen = 12;
+                    // Never zoom in past the configured finest scale — keeps callouts from blowing up.
+                    int floorScale = Math.Max(1, cfg.MaxCalloutScale);
+                    int chosen = floorScale;
                     foreach (var s in CalloutScales)
-                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+                        if (s >= floorScale && s <= bound && s <= scale / 2.0) { chosen = s; break; }
 
                     string id = "c" + seq.ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
                     seq++;
@@ -599,7 +601,6 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 double nominal = thModel * 4.8;
                 double margin  = nominal * 0.75;
 
-                Resolvers.RoomBoundsResolver? rooms = null;
                 var claimed = new HashSet<string>(StringComparer.Ordinal);
                 int seq = 0;
 
@@ -642,27 +643,15 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     foreach (var m in members) claimed.Add(m.SourceKey);
 
-                    // Grow the CROP (not the membership) to the containing room(s) + margin,
-                    // exactly like the dense tier — dimensions need their grid/slab references
-                    // visible inside the callout.
-                    double minX = membership.MinX, minY = membership.MinY;
-                    double maxX = membership.MaxX, maxY = membership.MaxY;
-                    rooms ??= new Resolvers.RoomBoundsResolver(doc, view);
-                    var roomKeys = new HashSet<string>(StringComparer.Ordinal);
-                    var roomLabels = new List<string>();
-                    foreach (var m in members)
-                    {
-                        var hit = rooms.FindRoom(m.Anchor3d);
-                        if (hit == null || !roomKeys.Add(hit.Key)) continue;
-                        foreach (var corner in hit.Corners)
-                        {
-                            var p = projection.To2D(corner);
-                            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
-                            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
-                        }
-                        roomLabels.Add(hit.Label);
-                    }
-                    var grown = new Core.Box2(minX - margin, minY - margin, maxX + margin, maxY + margin);
+                    // Crop to the boundary the USER drew (plus a small margin), NOT the containing
+                    // room. Growing the crop out to the room moved the dimensioned region away from
+                    // where the callout was drawn — and could leave the drawn spot bare — so the
+                    // user's boundary is authoritative. Dimensions reach only references visible
+                    // inside it; a clash whose target sits outside is reported unresolved (the run
+                    // log says so), never silently relocated to another area.
+                    var grown = new Core.Box2(
+                        membership.MinX - margin, membership.MinY - margin,
+                        membership.MaxX + margin, membership.MaxY + margin);
 
                     // Scale: the dense tier's pick (generous ~11-glyph text width), applied only
                     // when it is coarser-to-fit than what the user already set — a callout the
@@ -681,9 +670,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     }
                     double ratio = DemandRatio(info, thModel * 6.0, thModel);
                     double bound = scale / Math.Max(ratio, 1e-9);
-                    int chosen = 12;
+                    int floorScale = Math.Max(1, cfg.MaxCalloutScale);   // finest scale the pick may reach
+                    int chosen = floorScale;
                     foreach (var s in CalloutScales)
-                        if (s <= bound && s <= scale / 2.0) { chosen = s; break; }
+                        if (s >= floorScale && s <= bound && s <= scale / 2.0) { chosen = s; break; }
                     int current = callout.Scale <= 0 ? (int)scale : callout.Scale;
                     int finalScale = Math.Min(current, chosen);
 
@@ -701,11 +691,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     req.SourceKeys.AddRange(members.Select(m => m.SourceKey));
                     requests.Add(req);
 
-                    string roomsTxt = roomLabels.Count > 0
-                        ? $"crop grown to {string.Join(", ", roomLabels)} plus a margin"
-                        : "no room found at its clashes — crop kept at the drawn boundary plus a margin";
                     log?.Invoke($"User callout '{callout.Name}': pre-defined group of {members.Count} "
-                              + $"clash(es) at 1:{finalScale} — {roomsTxt}.", "info");
+                              + $"clash(es) at 1:{finalScale} — crop kept at the boundary you drew plus a margin.", "info");
                 }
             }
             catch (Exception ex)

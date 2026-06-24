@@ -22,8 +22,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// ASME Y14.5 spacing defaults (first offset 3/8", row spacing 1/4"); v7 replaces the
         /// model-feet grouping tolerances with paper-space (sheet inch) values so grouping reads
         /// identically at every view scale — including enlarged callouts — and adds the callout
-        /// minimum-clash threshold. Load() migrates older files.</summary>
-        public int SchemaVersion { get; set; } = 7;
+        /// minimum-clash threshold; v8 adds the finest-callout-scale cap (<see cref="MaxCalloutScale"/>).
+        /// Load() migrates older files.</summary>
+        public int SchemaVersion { get; set; } = 8;
 
         /// <summary>Destination type for this run: "Grid", "SlabEdge", or "ManualDatum".</summary>
         public string TargetType { get; set; } = "Grid";
@@ -65,6 +66,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         /// <summary>A dense area only becomes an enlarged callout when at least this many clash
         /// markers fall inside it — smaller pockets stay on the chain tier in the parent view.</summary>
         public int CalloutMinClashes { get; set; } = 8;
+
+        /// <summary>Finest (smallest-denominator) scale the callout auto-pick may reach. The pick can
+        /// still choose a COARSER callout when the text demand allows; it just never zooms in past
+        /// 1:<see cref="MaxCalloutScale"/>. Default 12 preserves the prior behaviour (callouts could go
+        /// to 1:12); raise it (e.g. 24) to keep callouts smaller. Set per run from the Clash Finder's
+        /// Dimensioning step.</summary>
+        public int MaxCalloutScale { get; set; } = 12;
 
         /// <summary>Model-feet cluster link distance at a view scale (1:<paramref name="scale"/>).</summary>
         public double ClusterLinkFt(double scale) => ClusterLinkPaperIn / 12.0 * System.Math.Max(scale, 1.0);
@@ -153,6 +161,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         if (c.SchemaVersion < 5) MigrateToV5(c);
                         if (c.SchemaVersion < 6) MigrateToV6(c);
                         if (c.SchemaVersion < 7) MigrateToV7(c);
+                        if (c.SchemaVersion < 8) MigrateToV8(c);
                         return c;
                     }
                 }
@@ -232,6 +241,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             c.RunCrossPaperIn    = def.RunCrossPaperIn;
             c.CalloutMinClashes  = def.CalloutMinClashes;
             c.SchemaVersion = 7;
+        }
+
+        /// <summary>v7 → v8: adds <see cref="MaxCalloutScale"/> (finest callout scale). Absent in
+        /// older XML, so it takes the ctor default (12 = prior behaviour). Version bump only.</summary>
+        private static void MigrateToV8(AutoDimensionConfig c)
+        {
+            c.SchemaVersion = 8;
         }
     }
 }

@@ -85,6 +85,44 @@ namespace LemoineTools.Tools.Clash
         private bool _adoptUserCallouts = true;   // user-drawn callouts become pre-defined clash groups
         private double _roundSizeMm     = 0.0;    // round marker oversize; 0 = exact element size
 
+        // Finest scale a callout may auto-enlarge to — run override of the saved default. The full
+        // set of standard Revit scales (architectural + engineering), written the way the industry
+        // writes them, ordered coarsest→finest (smallest callout first). The int is the Revit scale
+        // denominator; the cap is a floor on the auto-pick, so ANY of these is reachable.
+        private static readonly (int Denom, string Label)[] RevitScales =
+        {
+            (2400, "1\" = 200'-0\""),
+            (1200, "1\" = 100'-0\""),
+            (720,  "1\" = 60'-0\""),
+            (600,  "1\" = 50'-0\""),
+            (480,  "1\" = 40'-0\""),
+            (384,  "1/32\" = 1'-0\""),
+            (360,  "1\" = 30'-0\""),
+            (240,  "1\" = 20'-0\""),
+            (192,  "1/16\" = 1'-0\""),
+            (128,  "3/32\" = 1'-0\""),
+            (120,  "1\" = 10'-0\""),
+            (96,   "1/8\" = 1'-0\""),
+            (64,   "3/16\" = 1'-0\""),
+            (48,   "1/4\" = 1'-0\""),
+            (32,   "3/8\" = 1'-0\""),
+            (24,   "1/2\" = 1'-0\""),
+            (16,   "3/4\" = 1'-0\""),
+            (12,   "1\" = 1'-0\""),
+            (8,    "1 1/2\" = 1'-0\""),
+            (4,    "3\" = 1'-0\""),
+            (2,    "6\" = 1'-0\""),
+            (1,    "12\" = 1'-0\""),
+        };
+        private int _maxCalloutScale = AutoDimension.AutoDimensionConfig.Instance.MaxCalloutScale;
+
+        /// <summary>Revit scale label for a denominator (e.g. 48 → 1/4" = 1'-0"), or "1:N" if custom.</summary>
+        private static string ArchScaleLabel(int denom)
+        {
+            foreach (var s in RevitScales) if (s.Denom == denom) return s.Label;
+            return $"1:{denom}";
+        }
+
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
         // Dimensions) — the run always uses the saved values.
@@ -261,6 +299,21 @@ namespace LemoineTools.Tools.Clash
             outer.Children.Add(toggles);
 
             AddDivider(outer);
+            AddLabel(outer, "Finest callout scale — a dense area won't enlarge past this. A smaller "
+                          + "scale (e.g. 1/4\" = 1'-0\") keeps callouts smaller; a larger one (e.g. "
+                          + "1\" = 1'-0\") lets them zoom in further.");
+            var calloutScalePicker = new LemoineSingleSelect { Label = "Finest callout scale" };
+            calloutScalePicker.Items        = RevitScales.Select(s => s.Label).ToList();
+            calloutScalePicker.SelectedItem = ArchScaleLabel(_maxCalloutScale);
+            calloutScalePicker.SelectionChanged += sel =>
+            {
+                foreach (var s in RevitScales)
+                    if (s.Label == sel) { _maxCalloutScale = s.Denom; break; }
+                Fire();
+            };
+            outer.Children.Add(calloutScalePicker);
+
+            AddDivider(outer);
             AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
             var destPicker = new LemoineSingleSelect { Label = "Destination" };
             destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
@@ -387,6 +440,7 @@ namespace LemoineTools.Tools.Clash
                 if (_runDimensionPass && _adoptUserCallouts) chips.Add("my callouts = groups");
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
                     chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
+                if (_runDimensionPass) chips.Add($"callouts ≤ {ArchScaleLabel(_maxCalloutScale)}");
                 return chips.Count > 0 ? chips : null;
             }
         }
@@ -420,6 +474,7 @@ namespace LemoineTools.Tools.Clash
             _handler.RunDimensionPass  = _runDimensionPass;
             _handler.AdoptUserCallouts = _adoptUserCallouts;
             _handler.DimTargetType     = _dimTargetType;
+            _handler.MaxCalloutScale   = _maxCalloutScale;
             _handler.RoundSizeMm      = _roundSizeMm;
             _handler.SlabScopes = _pickedSlab != null
                 ? new List<AutoDimension.Resolvers.SlabScope> { _pickedSlab }

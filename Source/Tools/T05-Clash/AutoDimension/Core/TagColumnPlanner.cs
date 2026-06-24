@@ -72,7 +72,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Core
                 ? run.OrderByDescending(t => t.centreA).ToList()
                 : run.OrderBy(t => t.centreA).ToList();
 
+            // Below-line tags (sign < 0) get an extra downward push: Revit anchors dimension value
+            // text near its baseline, so a below tag at the same magnitude as an above tag renders
+            // hard against the line (appears to move only sideways). Mirror the commit's compensation
+            // so the scorer predicts the realized position. ⚠ tunable — verify on a Windows plot.
             double level = cfg.TagColumnBaseHeights * th;
+            if (sign < 0) level += th;
             double step  = cfg.TagColumnStepHeights * th;
             foreach (var t in ordered)
             {
