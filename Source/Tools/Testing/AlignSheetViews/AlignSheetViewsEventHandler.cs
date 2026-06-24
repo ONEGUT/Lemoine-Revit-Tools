@@ -31,6 +31,11 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
         /// <summary>When true: match and report only; no viewport is moved and nothing is committed.</summary>
         public bool PreviewOnly { get; set; } = false;
 
+        /// <summary>When true: after the viewports are aligned, move each view title (label) so it overlays
+        /// the source title and match the source's title line length. Titles are done last because moving a
+        /// viewport drags its title with it.</summary>
+        public bool AlignTitles { get; set; } = true;
+
         // ── Callbacks ─────────────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
@@ -96,7 +101,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 if (PreviewOnly)
                 {
                     Log("Preview only — reporting matches; no viewports will be moved.", "info");
-                    (pass, fail, skip) = DriveTargets(doc, source, sourceEntries, targets, applyMoves: false, onProgress);
+                    (pass, fail, skip, _) = DriveTargets(doc, source, sourceEntries, targets, applyMoves: false, onProgress);
                 }
                 else
                 {
@@ -104,7 +109,16 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                     {
                         ConfigureFailures(tx);
                         tx.Start();
-                        (pass, fail, skip) = DriveTargets(doc, source, sourceEntries, targets, applyMoves: true, onProgress);
+
+                        List<MatchedPair> pairs;
+                        (pass, fail, skip, pairs) = DriveTargets(doc, source, sourceEntries, targets, applyMoves: true, onProgress);
+
+                        // Titles last: moving a viewport drags its title, so the title can only be
+                        // placed once every box is in its final spot. Align label line length, regen
+                        // so the moved titles report their real outlines, then match each to its source.
+                        if (AlignTitles && pairs.Count > 0 && !LemoineRun.CancelRequested)
+                            AlignAllTitles(doc, pairs);
+
                         tx.Commit();
                     }
                 }
@@ -133,12 +147,13 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
         }
 
         // ── Per-target-sheet driver ───────────────────────────────────────────
-        private (int pass, int fail, int skip) DriveTargets(
+        private (int pass, int fail, int skip, List<MatchedPair> pairs) DriveTargets(
             Document doc, ViewSheet source, List<VpEntry> sourceEntries, List<ViewSheet> targets,
             bool applyMoves, Action<int, int, int, int> onProgress)
         {
             int p = 0, f = 0, s = 0;
             int total = targets.Count;
+            var pairs = new List<MatchedPair>();
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -193,6 +208,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                         if (TryAlign(doc, src, best, out _))
                         {
                             Log($"[{label}] Aligned '{best.ViewName}' → source '{src.ViewName}'.", "info");
+                            pairs.Add(new MatchedPair(src.ViewportId, best.ViewportId, label, src.ViewName, best.ViewName));
                             p++;
                         }
                         else
@@ -203,7 +219,8 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                     }
                     else
                     {
-                        Log($"[{label}] Would align '{best.ViewName}' → source '{src.ViewName}'.", "info");
+                        Log($"[{label}] Would align '{best.ViewName}' → source '{src.ViewName}'" +
+                            (AlignTitles ? " (and its view title)." : "."), "info");
                         s++;
                     }
                 }
@@ -218,7 +235,65 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 onProgress(Pct(i + 1, total), p, f, s);
             }
 
-            return (p, f, s);
+            return (p, f, s, pairs);
+        }
+
+        // ── View-title (label) alignment ──────────────────────────────────────
+        /// <summary>
+        /// Runs after every viewport box is in its final position. Sets each target title's line
+        /// length to its source's, regenerates once so the moved/resized titles report their real
+        /// on-sheet outlines, then shifts each target's LabelOffset so its title outline overlays
+        /// the source title's. A title that can't be read or set is reported and skipped.
+        /// </summary>
+        private void AlignAllTitles(Document doc, List<MatchedPair> pairs)
+        {
+            // Pass 1 — match line length (independent of position) before the regen.
+            foreach (var pr in pairs)
+            {
+                try
+                {
+                    if (!(doc.GetElement(pr.SourceViewportId) is Viewport sVp)) continue;
+                    if (!(doc.GetElement(pr.TargetViewportId) is Viewport tVp)) continue;
+                    tVp.LabelLineLength = sVp.LabelLineLength;
+                }
+                catch (Exception ex)
+                {
+                    Log($"[{pr.Label}] Could not match title line length for '{pr.TargetViewName}'.", "warn");
+                    LemoineLog.Swallowed($"AlignSheetViews: LabelLineLength on viewport {pr.TargetViewportId.Value}", ex);
+                }
+            }
+
+            // Regen so GetLabelOutline reflects both the moved box and the new line length.
+            doc.Regenerate();
+
+            // Pass 2 — shift each target label so its outline overlays the source label's.
+            int titled = 0, titleFail = 0;
+            foreach (var pr in pairs)
+            {
+                try
+                {
+                    if (!(doc.GetElement(pr.SourceViewportId) is Viewport sVp)) continue;
+                    if (!(doc.GetElement(pr.TargetViewportId) is Viewport tVp)) continue;
+
+                    Outline srcOut = sVp.GetLabelOutline();
+                    Outline tgtOut = tVp.GetLabelOutline();
+                    if (srcOut == null || tgtOut == null) { titleFail++; continue; }
+
+                    // Translate the target label by the gap between the two outline anchors (min corner).
+                    XYZ delta = srcOut.MinimumPoint - tgtOut.MinimumPoint;
+                    tVp.LabelOffset = tVp.LabelOffset + delta;
+                    titled++;
+                }
+                catch (Exception ex)
+                {
+                    titleFail++;
+                    Log($"[{pr.Label}] Could not align title for '{pr.TargetViewName}'.", "warn");
+                    LemoineLog.Swallowed($"AlignSheetViews: align title on viewport {pr.TargetViewportId.Value}", ex);
+                }
+            }
+
+            string tone = titleFail > 0 ? "warn" : "info";
+            Log($"View titles: {titled} aligned" + (titleFail > 0 ? $", {titleFail} could not be adjusted." : "."), tone);
         }
 
         // ── Capture ───────────────────────────────────────────────────────────
@@ -419,6 +494,26 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 tx.SetFailureHandlingOptions(opts);
             }
             catch (Exception ex) { LemoineLog.Swallowed("AlignSheetViews: configure failure handling", ex); }
+        }
+
+        // ── A matched source→target viewport pair, recorded for the title pass ─
+        private sealed class MatchedPair
+        {
+            public MatchedPair(ElementId sourceViewportId, ElementId targetViewportId,
+                               string label, string sourceViewName, string targetViewName)
+            {
+                SourceViewportId = sourceViewportId;
+                TargetViewportId = targetViewportId;
+                Label            = label;
+                SourceViewName   = sourceViewName;
+                TargetViewName   = targetViewName;
+            }
+
+            public ElementId SourceViewportId { get; }
+            public ElementId TargetViewportId { get; }
+            public string    Label            { get; }
+            public string    SourceViewName   { get; }
+            public string    TargetViewName   { get; }
         }
 
         // ── Captured per-viewport state ───────────────────────────────────────
