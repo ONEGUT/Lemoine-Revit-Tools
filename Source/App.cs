@@ -110,6 +110,12 @@ namespace LemoineTools
         internal static LemoineTools.Tools.CopyLinear.CopyGridsRunHandler? CopyGridsRunHandler { get; private set; }
         internal static ExternalEvent?             CopyGridsRunEvent    { get; private set; }
 
+        // ── Testing — Copy Elements from Link ───────────────────────────────────────
+        internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler? CopyFromLinkScanHandler { get; private set; }
+        internal static ExternalEvent?             CopyFromLinkScanEvent { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler?  CopyFromLinkRunHandler  { get; private set; }
+        internal static ExternalEvent?             CopyFromLinkRunEvent  { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -213,6 +219,10 @@ namespace LemoineTools
             CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
             CopyGridsRunHandler   = new LemoineTools.Tools.CopyLinear.CopyGridsRunHandler();
             CopyGridsRunEvent     = ExternalEvent.Create(CopyGridsRunHandler);
+            CopyFromLinkScanHandler = new LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler();
+            CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
+            CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
+            CopyFromLinkRunEvent    = ExternalEvent.Create(CopyFromLinkRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -479,6 +489,11 @@ namespace LemoineTools
                 "LT_CopyGrids", "Copy\nGrids", "CopyGridsCommand",
                 "Copy grids from a linked model into the host. Grids whose name already exists in the host are skipped.",
                 char.ConvertFromUtf32(0xE80A)));  // Segoe MDL2: GridView
+
+            testingPanel.AddItem(Btn(
+                "LT_CopyFromLink", "Copy\nElements", "CopyFromLinkCommand",
+                "Copy elements from a linked model into the host: pick categories, then tick which family types within them to copy. Re-runs can process only changed elements.",
+                char.ConvertFromUtf32(0xE8C8)));  // Segoe MDL2: Copy
 
             // ── Settings / Developer — two large buttons ──────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", "Settings");
