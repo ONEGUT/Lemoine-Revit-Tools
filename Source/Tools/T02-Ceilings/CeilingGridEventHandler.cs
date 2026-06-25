@@ -207,6 +207,7 @@ namespace LemoineTools.Tools.Ceilings
                 int noMatch = 0;
                 int total   = cadCurves.Count;
                 int done    = 0;
+                var prog    = new RunProgressReporter(Log, total, "curves");
 
                 foreach (var cad in cadCurves)
                 {
@@ -236,6 +237,7 @@ namespace LemoineTools.Tools.Ceilings
                     }
                     done++;
                     Progress((int)(done * 90.0 / total), pass, fail, skip);
+                    prog.Tick();
                 }
 
                 skip += noMatch;
@@ -299,6 +301,7 @@ namespace LemoineTools.Tools.Ceilings
                 int noMatch   = 0;
                 int total     = sourceGeom.Count;
                 int done      = 0;
+                var projProg  = new RunProgressReporter(Log, total, "source curves");
 
                 foreach (var (id, src) in sourceGeom)
                 {
@@ -323,6 +326,7 @@ namespace LemoineTools.Tools.Ceilings
                     }
                     done++;
                     Progress((int)(done * 60.0 / total), pass, fail, noMatch);
+                    projProg.Tick();
                 }
 
                 if (toDelete.Count > 0)
@@ -331,6 +335,7 @@ namespace LemoineTools.Tools.Ceilings
                 var cache = new Dictionary<double, SketchPlane>();
                 total = projected.Count;
                 done  = 0;
+                var createProg = new RunProgressReporter(Log, total, "new curves");
 
                 foreach (var proj in projected)
                 {
@@ -352,6 +357,7 @@ namespace LemoineTools.Tools.Ceilings
                     }
                     done++;
                     Progress(60 + (int)(done * 30.0 / Math.Max(total, 1)), pass, fail, noMatch);
+                    createProg.Tick();
                 }
 
                 skip += noMatch;
