@@ -58,15 +58,17 @@ truth; no per-handler divergence.
 
 ## B. Logic consistency
 
-### B1 🟡 `LemoineRun.Checkpoint` is dead code — zero call sites
-CLAUDE.md and the `LemoineRun.Checkpoint` XML doc call it "the canonical break
-point" that bundles *log line + cancel test* in one call, specifically to keep the
-5%-log and the cancel boundary on the same line. **No handler uses it** — all 24
-check `LemoineRun.CancelRequested` directly and log separately. Behaviour is correct
-(A3), but the helper that was meant to *enforce* A1's "log at the cancel checkpoint"
-is bypassed everywhere. Decision needed: either adopt `Checkpoint` at the
-progress/cancel sites, or delete it and update the docs to describe the actual
-`CancelRequested` + `RunProgressReporter` idiom.
+### B1 🟡→✅ `LemoineRun.Checkpoint` was dead code — removed
+`Checkpoint` bundled *log line + cancel test* in one call and logged **every**
+iteration. It had **zero call sites** — all handlers test `LemoineRun.CancelRequested`
+directly and get their log cadence from `RunProgressReporter` (5% buckets). The
+per-iteration logging in `Checkpoint` directly conflicts with that 5%-cadence design,
+so it could never be adopted without re-introducing the log flooding `RunProgressReporter`
+exists to prevent. **Deleted** the method from `LemoineRun.cs` and updated the docs to
+describe the real idiom (`CancelRequested` break + `RunProgressReporter` cadence):
+- `Source/Lemoine/LemoineRun.cs` — method removed; `CancelRequested` doc expanded.
+- `CLAUDE.md` — *Run Lifecycle* cancellation bullet + Key Files row corrected.
+- `Source/Lemoine/StepFlowWindow.xaml.cs:1312` — comment now points at `CancelRequested`.
 
 ### B2 🟡 Three divergent progress idioms for the same job
 1. `RunProgressReporter` (canonical) — 10 sites (all `T04` split tools,
@@ -123,14 +125,15 @@ followed. (Copy-from-link batching not re-verified this pass — see Open items.
 
 ---
 
-## Recommended fix order (after triage)
+## Status
 
-1. **A1 + B2** together: introduce `RunProgressReporter` into the three bar-only bulk
-   loops (`CeilingGrid` per-curve, `BulkExport`, `PlaceDependentViews`). One pattern,
-   restores the 5% log cadence. *(highest user value)*
-2. **B1**: decide adopt-or-delete `Checkpoint`; align docs to reality.
-3. **B3**: per-handler `finally` cleanup pass on the six handlers, respecting the
-   output-read exception.
+1. **A1** ✅ — `RunProgressReporter` threaded into CeilingGrid's three curve loops
+   (the only genuinely silent case; BulkExport/PlaceDependentViews already log per unit).
+2. **B1** ✅ — `Checkpoint` deleted; docs aligned to `CancelRequested` + `RunProgressReporter`.
+3. **B3** ✅ — guarded `finally` payload-clear added to ClashElevationFinder, Discover,
+   ExplodeViewByTrade; ClashPick/SlabPick/AutoFiltersLegend confirmed to hold no payload.
+4. **B2** — partially addressed via A1 (log cadence now converges on `RunProgressReporter`);
+   the three bar-driving idioms remain by design (the bar still needs `onProgress`).
 
 ## Open items (not fully audited this pass — 74k LOC, sampled)
 - Exhaustive empty-collector scan across every `FilteredElementCollector` site.
