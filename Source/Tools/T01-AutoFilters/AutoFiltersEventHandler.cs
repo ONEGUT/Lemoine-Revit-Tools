@@ -756,13 +756,15 @@ namespace LemoineTools.Tools.AutoFilters
         {
             var ogs = new OverrideGraphicSettings();
 
-            RevitColor cutColor  = HexToRevitColor(rule.CutColor)  ?? new RevitColor(128, 128, 128);
-            RevitColor surfColor = HexToRevitColor(rule.SurfColor) ?? cutColor;
-            RevitColor lineColor = HexToRevitColor(rule.LineColor) ?? cutColor;
+            RevitColor cutColor    = HexToRevitColor(rule.CutColor)    ?? new RevitColor(128, 128, 128);
+            RevitColor surfColor   = HexToRevitColor(rule.SurfColor)   ?? cutColor;
+            RevitColor lineColor   = HexToRevitColor(rule.LineColor)   ?? cutColor;
+            RevitColor surfBgColor = HexToRevitColor(rule.SurfBgColor) ?? surfColor;
+            RevitColor cutBgColor  = HexToRevitColor(rule.CutBgColor)  ?? cutColor;
 
             if (rule.OverrideSurf)
             {
-                // Resolve the surface fill pattern by name; fall back to solid fill.
+                // Resolve the surface FOREGROUND fill pattern by name; fall back to solid fill.
                 ElementId surfFillId = ResolvePatternId(rule.SurfPattern, fillPatternMap, solidFillId);
                 if (surfFillId != ElementId.InvalidElementId)
                 {
@@ -772,15 +774,40 @@ namespace LemoineTools.Tools.AutoFilters
                 }
             }
 
+            if (rule.OverrideSurfBg)
+            {
+                // Surface BACKGROUND is an independent layer (see CLAUDE.md foreground/background
+                // note): set its own pattern id + colour + visibility.
+                ElementId surfBgFillId = ResolvePatternId(rule.SurfBgPattern, fillPatternMap, solidFillId);
+                if (surfBgFillId != ElementId.InvalidElementId)
+                {
+                    ogs.SetSurfaceBackgroundPatternId(surfBgFillId);
+                    ogs.SetSurfaceBackgroundPatternColor(surfBgColor);
+                    ogs.SetSurfaceBackgroundPatternVisible(true);
+                }
+            }
+
             if (rule.OverrideCut)
             {
-                // Resolve the cut fill pattern by name; fall back to solid fill.
+                // Resolve the cut FOREGROUND fill pattern by name; fall back to solid fill.
                 ElementId cutFillId = ResolvePatternId(rule.CutPattern, fillPatternMap, solidFillId);
                 if (cutFillId != ElementId.InvalidElementId)
                 {
                     ogs.SetCutForegroundPatternId(cutFillId);
                     ogs.SetCutForegroundPatternColor(cutColor);
                     ogs.SetCutForegroundPatternVisible(true);
+                }
+            }
+
+            if (rule.OverrideCutBg)
+            {
+                // Cut BACKGROUND is an independent layer; set its own pattern id + colour + visibility.
+                ElementId cutBgFillId = ResolvePatternId(rule.CutBgPattern, fillPatternMap, solidFillId);
+                if (cutBgFillId != ElementId.InvalidElementId)
+                {
+                    ogs.SetCutBackgroundPatternId(cutBgFillId);
+                    ogs.SetCutBackgroundPatternColor(cutBgColor);
+                    ogs.SetCutBackgroundPatternVisible(true);
                 }
             }
 

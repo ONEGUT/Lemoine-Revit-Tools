@@ -43,6 +43,7 @@ namespace LemoineTools.Lemoine
         private string       _filtersSnapshot = ""; // serialized buffer at load (dirty check)
         private Border?     _fActiveRowBorder;
         private TextBlock?  _fActiveNameTb;
+        private Border?     _fActiveColorDot;  // active rule-row swatch — repainted live on FG colour change
         private readonly HashSet<string>            _fSelectedRuleIds    = new HashSet<string>();
         private          string?                    _fShiftAnchorRuleId;
         private readonly Dictionary<string, Border> _fMultiSelectBorders = new Dictionary<string, Border>();
@@ -181,6 +182,53 @@ namespace LemoineTools.Lemoine
             evt.Raise();
         }
 
+        // Creates and applies ONLY the active trade's filters to Revit's current view.
+        // Persists the working buffer first so the handler reads the latest (possibly
+        // just-merged) rules, then refreshes the dirty snapshot so OnClosed doesn't run a
+        // second redundant pass. OverwriteFilterDefinition is forced true so an existing
+        // filter created before a rule was merged is rebuilt with ALL its keywords — fixing
+        // the "only one of the merged text values applied" symptom on re-apply.
+        private void ApplyActiveTradeToView()
+        {
+            if (_filterTrades == null) return;
+            var trade = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
+            if (trade == null) { FlashStatus("No trade selected."); return; }
+            if (trade.ExternallyManaged)
+            {
+                FlashStatus($"“{trade.Label}” is managed by another tool — apply it from there.");
+                return;
+            }
+
+            var handler = App.AutoFiltersHandler;
+            var evt     = App.AutoFiltersEvent;
+            if (handler == null || evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Apply to view skipped: event handler unavailable.");
+                FlashStatus("Apply unavailable.");
+                return;
+            }
+
+            // Persist current edits so the handler (which reads AutoFiltersSettings.Instance)
+            // sees them, and keep the snapshot in sync so closing won't re-run needlessly.
+            AutoFiltersSettings.Instance.Trades = _filterTrades;
+            AutoFiltersSettings.Instance.Save();
+            _filtersSnapshot = SerializeTrades(_filterTrades);
+
+            handler.CreateOnly                = false;
+            handler.OverwriteFilterDefinition = true;
+            handler.KeepExistingOverrides     = false;
+            handler.ShowFailureDialog         = true;
+            handler.ChangedFilterNames        = null;
+            handler.SelectedDisciplines       = new List<string> { trade.Label };
+            handler.SelectedLinkTitles        = new List<string>();
+            handler.PushLog                   = null;
+            handler.OnProgress                = null;
+            handler.OnComplete                = null;
+
+            evt.Raise();
+            FlashStatus($"Applying “{trade.Label}” to the active view…");
+        }
+
         // ── Floating bottom-right status chip ───────────────────────────────────
         // The Create pill was removed (filters auto-create on close); the chip remains
         // to surface transient template messages (load / save / import / export).
@@ -275,6 +323,12 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
+            var applyBtn = FlatSmBtn("Apply to view");
+            applyBtn.VerticalAlignment = VerticalAlignment.Center;
+            applyBtn.Margin            = new Thickness(0, 0, 8, 0);
+            applyBtn.ToolTip           = "Create and apply the active trade's filters to the current view.";
+            applyBtn.Click += (s, e) => ApplyActiveTradeToView();
+
             var closeBtn = BuildFlatButton("×");
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
@@ -284,6 +338,7 @@ namespace LemoineTools.Lemoine
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            rightPanel.Children.Add(applyBtn);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
