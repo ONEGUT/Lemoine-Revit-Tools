@@ -207,6 +207,7 @@ namespace LemoineTools.Tools.CopyLinear
                     }
 
                     bool described = false;
+                    var prog = new RunProgressReporter(Log, total, "source runs");
                     foreach (var run in toBuild)
                     {
                         if (LemoineRun.CancelRequested)
@@ -232,6 +233,7 @@ namespace LemoineTools.Tools.CopyLinear
                         }
                         done++;
                         if (total > 0) OnProgress?.Invoke((int)(done * 95.0 / total), pass, fail, skip);
+                        prog.Tick();
                     }
 
                     doc.Regenerate();

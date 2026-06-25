@@ -135,7 +135,36 @@ followed. (Copy-from-link batching not re-verified this pass — see Open items.
 4. **B2** — partially addressed via A1 (log cadence now converges on `RunProgressReporter`);
    the three bar-driving idioms remain by design (the bar still needs `onProgress`).
 
-## Open items (not fully audited this pass — 74k LOC, sampled)
-- Exhaustive empty-collector scan across every `FilteredElementCollector` site.
-- Copy-from-link / copy-linear batch-size + idempotent-stamp re-verification.
-- Per-handler confirmation of B3 cleanup needs.
+## Deep-dive results (follow-up pass)
+
+### D1 — Empty-collector scan (all 216 `FilteredElementCollector` sites) ✅ clean
+Triaged every collector site; verified the run-facing "gather work" collectors report
+zero results. The empty-result discipline is solid — every run/event handler logs a
+distinct "Nothing to do / No X found / 0 …" line before doing nothing:
+- LinkViews family (`ReplicateDependentViews`, `ViewsBulkDuplicate`, `ViewsByTemplate`,
+  `LinkViewsDiscipline`), the Split tools, `CeilingGrid`, `AutoFiltersLegend`,
+  `ClashElevationFinder`, `CreateSheets`, `RefineDimensions`, all copy tools — confirmed.
+- Only borderline: `MakeCeilingGridsPhase1Handler` is a **picker-populating scan** (hands
+  results to `OnTypesLoaded`, no run log); an empty result shows as an empty picker, which
+  is visible, so it's not a run-log silent failure. Left as-is.
+- The stamp-schema collectors (`Copy*StampSchema`) are internal `ExtensibleStorageFilter`
+  reads, not user-facing surveys — correctly silent.
+
+### D2 — Copy tools batch + idempotency re-verification
+- `CopyFromLinkRunHandler` ✅ exemplary: chunked batch (`ceil(total/20)`) with per-element
+  fallback, `UseDestinationTypes`, single end-regen, world-position **hash attribution**
+  for stamping with an "unattributed" warning, empty-result warn + early return, cancel→commit,
+  **5% log cadence** (`{pct}% — {done} of {total}`), `finally` cleanup.
+- `CopyGridsRunHandler` ✅ clean: pre-checks host grid names + skip-and-log per the grid
+  uniqueness rule, empty-result warn, batch + per-grid fallback, single regen, cleanup.
+- `Copy*StampSchema` ✅ both use a constant `SchemaGuid` + `Schema.Lookup` guard +
+  `ExtensibleStorageFilter` reads — matches the idempotency discipline exactly.
+- `CopyLinearRunHandler` 🔴→✅ **FIXED**: correct on batching (same-doc `CopyElement` vs
+  cross-doc `CopyElements` via `ReferenceEquals`), single end-regen + one align-calibration
+  regen, stamping, cancel→commit, `finally`. **But** its main per-source loop drove only the
+  bar (`OnProgress`) and logged just the first source — a large clean run went silent in the
+  log (same A1 class as CeilingGrid, and inconsistent with CopyFromLink's per-chunk cadence).
+  Threaded a `RunProgressReporter` (noun "source runs") so the log now reports 5% cadence.
+
+## Open items (still not exhaustively audited)
+- Per-handler confirmation of B3 cleanup needs beyond the six already reviewed.
