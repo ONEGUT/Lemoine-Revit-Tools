@@ -191,18 +191,30 @@ namespace LemoineTools.Tools.AutoFilters
         [XmlArray("RuleCategories")]
         [XmlArrayItem("Category")]
         public List<string> BuiltInCategories { get; set; } = new List<string>();
-        /// <summary>Hex color applied to cut-plane graphic overrides (e.g. "#005EBD").</summary>
+        /// <summary>Hex color applied to the cut-plane FOREGROUND pattern (e.g. "#005EBD").</summary>
         [XmlAttribute] public string CutColor     { get; set; } = "#888888";
-        /// <summary>Fill pattern name applied to cut-plane overrides (empty = solid fill).</summary>
+        /// <summary>Foreground fill pattern name applied to cut-plane overrides (empty = solid fill).</summary>
         [XmlAttribute] public string CutPattern   { get; set; } = "";
-        /// <summary>When <see langword="true"/> the cut color override is applied to matching elements.</summary>
+        /// <summary>When <see langword="true"/> the cut foreground override is applied to matching elements.</summary>
         [XmlAttribute] public bool   OverrideCut  { get; set; } = true;
-        /// <summary>Hex color applied to surface/projection graphic overrides.</summary>
+        /// <summary>Hex color applied to the cut-plane BACKGROUND pattern.</summary>
+        [XmlAttribute] public string CutBgColor   { get; set; } = "#888888";
+        /// <summary>Background fill pattern name applied to cut-plane overrides (empty = solid fill).</summary>
+        [XmlAttribute] public string CutBgPattern { get; set; } = "";
+        /// <summary>When <see langword="true"/> the cut background override is applied to matching elements.</summary>
+        [XmlAttribute] public bool   OverrideCutBg { get; set; } = false;
+        /// <summary>Hex color applied to the surface/projection FOREGROUND pattern.</summary>
         [XmlAttribute] public string SurfColor    { get; set; } = "#aaaaaa";
-        /// <summary>Fill pattern name applied to surface/projection overrides (empty = solid fill).</summary>
+        /// <summary>Foreground fill pattern name applied to surface/projection overrides (empty = solid fill).</summary>
         [XmlAttribute] public string SurfPattern  { get; set; } = "";
-        /// <summary>When <see langword="true"/> the surface color override is applied to matching elements.</summary>
+        /// <summary>When <see langword="true"/> the surface foreground override is applied to matching elements.</summary>
         [XmlAttribute] public bool   OverrideSurf { get; set; } = true;
+        /// <summary>Hex color applied to the surface/projection BACKGROUND pattern.</summary>
+        [XmlAttribute] public string SurfBgColor  { get; set; } = "#aaaaaa";
+        /// <summary>Background fill pattern name applied to surface/projection overrides (empty = solid fill).</summary>
+        [XmlAttribute] public string SurfBgPattern { get; set; } = "";
+        /// <summary>When <see langword="true"/> the surface background override is applied to matching elements.</summary>
+        [XmlAttribute] public bool   OverrideSurfBg { get; set; } = false;
         /// <summary>Hex color applied to projection and cut line overrides.</summary>
         [XmlAttribute] public string LineColor    { get; set; } = "#888888";
         /// <summary>When <see langword="true"/> the line color/weight override is applied to matching elements.</summary>

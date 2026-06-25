@@ -416,7 +416,7 @@ namespace LemoineTools.Lemoine
         // find the source border via Children.IndexOf, and the border's ActualWidth
         // is always valid when the drag ghost snapshots it.
         private void SelectRuleInPlace(Border newRowBorder, string ruleId,
-                                       TextBlock? newNameTb = null)
+                                       TextBlock? newNameTb = null, Border? newColorDot = null)
         {
             // Remove highlight from the previously-active row
             if (_fActiveRowBorder != null && _fActiveRowBorder != newRowBorder)
@@ -430,7 +430,8 @@ namespace LemoineTools.Lemoine
             newRowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
             _fActiveRowBorder = newRowBorder;
             _fActiveRuleId    = ruleId;
-            if (newNameTb != null) _fActiveNameTb = newNameTb;
+            if (newNameTb != null)   _fActiveNameTb   = newNameTb;
+            if (newColorDot != null) _fActiveColorDot = newColorDot;
             FRefreshRuleEditor();
         }
 
@@ -450,6 +451,7 @@ namespace LemoineTools.Lemoine
             if (_isRefreshingEditor) return;
             _fActiveRowBorder = null;
             _fActiveNameTb    = null;
+            _fActiveColorDot  = null;
             _fMultiSelectBorders.Clear(); // rows are being replaced; re-registered in BuildRuleListRow
             _fRuleListPanel.Children.Clear();
 
@@ -653,6 +655,7 @@ namespace LemoineTools.Lemoine
                 double h = e.NewSize.Height;
                 if (h > 0 && colorDot.Width != h) colorDot.Width = h;
             };
+            if (isActive) _fActiveColorDot = colorDot; // editor swatch live-updates this
             Grid.SetColumn(colorDot, 0);
             outerRow.Children.Add(colorDot);
 
@@ -905,7 +908,7 @@ namespace LemoineTools.Lemoine
                     bool wasAlreadyActive = rule.Id == _fActiveRuleId || _fSelectedRuleIds.Contains(rule.Id);
                     if (_fSelectedRuleIds.Count > 0) ClearMultiSelection();
                     if (rule.Id != _fActiveRuleId)
-                        SelectRuleInPlace(rowBorder, rule.Id, nameTb);
+                        SelectRuleInPlace(rowBorder, rule.Id, nameTb, colorDot);
                     // Only arm drag if the rule was already selected before this click;
                     // the first click selects, a subsequent press can drag.
                     if (wasAlreadyActive)
@@ -1439,11 +1442,13 @@ namespace LemoineTools.Lemoine
 
             // ── Single shared Grid — columns align across all three rows ──────
             // Col 0: toggle btn (fixed min-width)
-            // Col 1: color swatch (auto)
-            // Col 2: pattern dropdown (star — fills remaining space)
-            // Col 3: weight (auto — only Lines row populates this)
+            // Col 1: FG|BG layer switch (Surface/Cut rows only; empty for Lines)
+            // Col 2: color swatch (auto)
+            // Col 3: pattern dropdown (star — fills remaining space)
+            // Col 4: weight (auto — only Lines row populates this)
             var colorGrid = new Grid();
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 66 });
+            colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             colorGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1453,6 +1458,10 @@ namespace LemoineTools.Lemoine
 
             // Adds a single color-override row directly into the shared Grid.
             // All interactive elements share LemoineH_Input height for consistent alignment.
+            // When background accessors (getBgEnabled…) are supplied, an FG|BG segmented
+            // switch is shown that swaps which layer the toggle/swatch/pattern edit.
+            // onFgColorChanged fires only for foreground colour edits (used to live-update
+            // the rule-list swatch).
             void AddColorRow(int rowIdx, string label, string fieldPrefix,
                 Func<bool>   getEnabled, Action<bool>   setEnabled,
                 Func<string> getColor,   Action<string> setColor,
@@ -1460,10 +1469,22 @@ namespace LemoineTools.Lemoine
                 Func<string> getPattern, Action<string> setPattern,
                 bool         showWeight = false,
                 Func<int>?   getWeight  = null,
-                Action<int>? setWeight  = null)
+                Action<int>? setWeight  = null,
+                Func<bool>?   getBgEnabled = null, Action<bool>?   setBgEnabled = null,
+                Func<string>? getBgColor   = null, Action<string>? setBgColor   = null,
+                Func<string>? getBgPattern = null, Action<string>? setBgPattern = null,
+                Action<string>? onFgColorChanged = null)
             {
-                bool enabled  = getEnabled();
-                var  rowGap   = new Thickness(0, 0, 0, rowIdx < 2 ? 6 : 0);
+                bool hasBg     = getBgEnabled != null;
+                bool editingBg = false;
+
+                // ── Active-layer accessors (foreground unless the BG layer is selected) ──
+                bool   CurEnabled()            => editingBg ? getBgEnabled!()  : getEnabled();
+                void   CurSetEnabled(bool v)   { if (editingBg) setBgEnabled!(v); else setEnabled(v); }
+                string CurColor()              => editingBg ? getBgColor!()    : getColor();
+                void   CurSetColor(string h)   { if (editingBg) setBgColor!(h); else setColor(h); }
+                string CurPattern()            => editingBg ? getBgPattern!()  : getPattern();
+                void   CurSetPattern(string p) { if (editingBg) setBgPattern!(p); else setPattern(p); }
 
                 // ── Toggle button (height pinned to LemoineH_Input) ───────────
                 var toggleBtn = new Border
@@ -1498,39 +1519,40 @@ namespace LemoineTools.Lemoine
                     CornerRadius      = new CornerRadius(3),
                     Cursor            = Cursors.Hand,
                     Margin            = new Thickness(0, 0, 6, rowIdx < 2 ? 6 : 0),
-                    Background        = BrushFromHex(getColor()),
+                    Background        = BrushFromHex(CurColor()),
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 swatchBorder.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
                 swatchBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 swatchBorder.MouseLeftButtonUp += (s, e) =>
                 {
-                    if (!getEnabled()) return;
+                    if (!CurEnabled()) return;
                     var win     = Window.GetWindow(swatchBorder);
-                    var initial = HexToMediaColor(getColor());
+                    var initial = HexToMediaColor(CurColor());
                     var picked  = LemoineColorPickerWindow.PickColor(win, initial);
                     if (picked.HasValue)
                     {
                         string hex = $"#{picked.Value.R:X2}{picked.Value.G:X2}{picked.Value.B:X2}";
                         markDirty?.Invoke($"{fieldPrefix}.color");
-                        setColor(hex);
+                        CurSetColor(hex);
                         swatchBorder.Background = BrushFromHex(hex);
+                        if (!editingBg) onFgColorChanged?.Invoke(hex);
                     }
                 };
                 Grid.SetRow(swatchBorder, rowIdx);
-                Grid.SetColumn(swatchBorder, 1);
+                Grid.SetColumn(swatchBorder, 2);
                 colorGrid.Children.Add(swatchBorder);
 
                 // ── Pattern dropdown ──────────────────────────────────────────
-                // Surface/Cut: span cols 2+3 so right edge aligns with Lines stepper
-                Action<string> setPatternWithDirty = p => { setPattern(p); markDirty?.Invoke($"{fieldPrefix}.pattern"); };
-                var patternDd = BuildAutoCompleteBox(patterns, getPattern(), setPatternWithDirty, double.NaN);
-                ((FrameworkElement)patternDd).Margin            = new Thickness(0, 0, showWeight ? 4 : 0, rowIdx < 2 ? 6 : 0);
-                ((FrameworkElement)patternDd).VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetRow((UIElement)patternDd, rowIdx);
-                Grid.SetColumn((UIElement)patternDd, 2);
-                if (!showWeight) Grid.SetColumnSpan((UIElement)patternDd, 2);
-                colorGrid.Children.Add((UIElement)patternDd);
+                // Surface/Cut: span cols 3+4 so right edge aligns with Lines stepper
+                Action<string> setPatternWithDirty = p => { CurSetPattern(p); markDirty?.Invoke($"{fieldPrefix}.pattern"); };
+                var patternDd = BuildAutoCompleteBox(patterns, CurPattern(), setPatternWithDirty, double.NaN);
+                patternDd.Margin            = new Thickness(0, 0, showWeight ? 4 : 0, rowIdx < 2 ? 6 : 0);
+                patternDd.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetRow(patternDd, rowIdx);
+                Grid.SetColumn(patternDd, 3);
+                if (!showWeight) Grid.SetColumnSpan(patternDd, 2);
+                colorGrid.Children.Add(patternDd);
 
                 // ── Integrated stepper for weight (Lines row only, 1–14) ──────
                 FrameworkElement? weightContainer = null;
@@ -1548,7 +1570,7 @@ namespace LemoineTools.Lemoine
                     };
                     stepper.ValueChanged += (s2, v) => setWeight((int)v);
                     Grid.SetRow(stepper, rowIdx);
-                    Grid.SetColumn(stepper, 3);
+                    Grid.SetColumn(stepper, 4);
                     colorGrid.Children.Add(stepper);
                     weightContainer = stepper;
                 }
@@ -1570,34 +1592,119 @@ namespace LemoineTools.Lemoine
                     }
                     swatchBorder.Opacity          = on ? 1.0 : 0.35;
                     swatchBorder.IsHitTestVisible = on;
-                    ((FrameworkElement)patternDd).Opacity   = on ? 1.0 : 0.35;
-                    ((FrameworkElement)patternDd).IsEnabled = on;
+                    patternDd.Opacity   = on ? 1.0 : 0.35;
+                    patternDd.IsEnabled = on;
                     if (weightContainer != null)
                     {
                         weightContainer.Opacity   = on ? 1.0 : 0.35;
                         weightContainer.IsEnabled = on;
                     }
                 }
-                ApplyState(enabled);
+                ApplyState(CurEnabled());
 
                 toggleBtn.MouseLeftButtonUp += (s, e) =>
                 {
-                    bool next = !getEnabled();
+                    bool next = !CurEnabled();
                     markDirty?.Invoke($"{fieldPrefix}.enabled");
-                    setEnabled(next);
+                    CurSetEnabled(next);
                     ApplyState(next);
                     e.Handled = true;
                 };
+
+                // ── FG|BG layer switch (Surface & Cut only) ───────────────────
+                if (hasBg)
+                {
+                    Border fgSeg = null!, bgSeg = null!;
+
+                    void StyleSeg(Border seg, bool active)
+                    {
+                        var tb = (TextBlock)seg.Child;
+                        if (active)
+                        {
+                            seg.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+                            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+                        }
+                        else
+                        {
+                            seg.Background = Brushes.Transparent;
+                            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                        }
+                    }
+
+                    Border MakeSeg(string text, bool isBg, CornerRadius radius)
+                    {
+                        var tb = new TextBlock
+                        {
+                            Text                = text,
+                            VerticalAlignment   = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            IsHitTestVisible    = false,
+                        };
+                        tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+                        tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                        var seg = new Border
+                        {
+                            CornerRadius = radius,
+                            Padding      = new Thickness(7, 0, 7, 0),
+                            Cursor       = Cursors.Hand,
+                            Background   = Brushes.Transparent,
+                            Child        = tb,
+                        };
+                        seg.MouseLeftButtonUp += (s, e) =>
+                        {
+                            e.Handled = true;
+                            if (editingBg == isBg) return;
+                            editingBg = isBg;
+                            StyleSeg(fgSeg, !editingBg);
+                            StyleSeg(bgSeg, editingBg);
+                            // Re-bind swatch / pattern / toggle to the now-active layer.
+                            swatchBorder.Background = BrushFromHex(CurColor());
+                            patternDd.Text          = CurPattern();
+                            ApplyState(CurEnabled());
+                        };
+                        return seg;
+                    }
+
+                    fgSeg = MakeSeg("FG", false, new CornerRadius(4, 0, 0, 4));
+                    bgSeg = MakeSeg("BG", true,  new CornerRadius(0, 4, 4, 0));
+                    StyleSeg(fgSeg, true);
+                    StyleSeg(bgSeg, false);
+
+                    var segStack = new StackPanel { Orientation = Orientation.Horizontal };
+                    segStack.Children.Add(fgSeg);
+                    segStack.Children.Add(bgSeg);
+
+                    var segWrap = new Border
+                    {
+                        BorderThickness   = new Thickness(1),
+                        CornerRadius      = new CornerRadius(4),
+                        Margin            = new Thickness(0, 0, 8, rowIdx < 2 ? 6 : 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child             = segStack,
+                    };
+                    segWrap.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+                    segWrap.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    Grid.SetRow(segWrap, rowIdx);
+                    Grid.SetColumn(segWrap, 1);
+                    colorGrid.Children.Add(segWrap);
+                }
             }
 
             AddColorRow(0, "Surface", "style.surf",
                 () => rule.OverrideSurf, v => rule.OverrideSurf = v,
                 () => rule.SurfColor,    h => rule.SurfColor    = h,
-                fillList, () => rule.SurfPattern ?? "", p => rule.SurfPattern = p);
+                fillList, () => rule.SurfPattern ?? "", p => rule.SurfPattern = p,
+                getBgEnabled: () => rule.OverrideSurfBg, setBgEnabled: v => rule.OverrideSurfBg = v,
+                getBgColor:   () => rule.SurfBgColor,    setBgColor:   h => rule.SurfBgColor    = h,
+                getBgPattern: () => rule.SurfBgPattern ?? "", setBgPattern: p => rule.SurfBgPattern = p,
+                onFgColorChanged: hex => { if (_fActiveColorDot != null) _fActiveColorDot.Background = BrushFromHex(hex); });
             AddColorRow(1, "Cut", "style.cut",
                 () => rule.OverrideCut,  v => rule.OverrideCut  = v,
                 () => rule.CutColor,     h => rule.CutColor     = h,
-                fillList, () => rule.CutPattern ?? "", p => rule.CutPattern = p);
+                fillList, () => rule.CutPattern ?? "", p => rule.CutPattern = p,
+                getBgEnabled: () => rule.OverrideCutBg, setBgEnabled: v => rule.OverrideCutBg = v,
+                getBgColor:   () => rule.CutBgColor,    setBgColor:   h => rule.CutBgColor    = h,
+                getBgPattern: () => rule.CutBgPattern ?? "", setBgPattern: p => rule.CutBgPattern = p);
             AddColorRow(2, "Lines", "style.line",
                 () => rule.OverrideLine, v => rule.OverrideLine = v,
                 () => rule.LineColor,    h => rule.LineColor    = h,

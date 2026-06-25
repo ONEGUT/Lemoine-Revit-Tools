@@ -193,22 +193,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             // BIP map — parameter display name → BuiltInParameter for fast resolution
             // Works even when no elements of that category exist in the model.
-            var bipMap = new Dictionary<string, BuiltInParameter>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["System Classification"] = BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM,
-                ["System Name"]           = BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
-                ["Fabrication Service"]   = BuiltInParameter.FABRICATION_SERVICE_NAME,
-                ["Type Name"]             = BuiltInParameter.ALL_MODEL_TYPE_NAME,
-                // ALL_MODEL_FAMILY_NAME (String storage), NOT ELEM_FAMILY_PARAM (ElementId
-                // storage): a String contains/equals filter rule cannot be built against an
-                // ElementId parameter — the factory throws, the keyword is dropped, and the
-                // filter is silently never created. The discover scan reads the family name as
-                // a string (FamilySymbol.FamilyName), so the filter must bind the string param.
-                ["Family Name"]           = BuiltInParameter.ALL_MODEL_FAMILY_NAME,
-                ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
-                ["Mark"]                  = BuiltInParameter.ALL_MODEL_MARK,
-                ["Comments"]              = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,
-            };
+            var bipMap = BuildBipMap();
 
             Progress(5, pass, fail, skip);
 
@@ -599,18 +584,33 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ParameterFilterElement> existingFilters,
             HashSet<long> existingViewFilterIds)
         {
-            ElementId oldId = old.Id;
-            bool activeHadFilter = existingViewFilterIds.Remove(oldId.Value);
+            bool activeHadFilter = existingViewFilterIds.Remove(old.Id.Value);
+            var pfe = RebuildFilterStatic(doc, filterName, catIds, elementFilter, old,
+                                          existingFilters, AllViews(doc));
+            // Keep the active-view bookkeeping in sync so ProcessRule does not double-add.
+            if (activeHadFilter) existingViewFilterIds.Add(pfe.Id.Value);
+            return pfe;
+        }
 
-            // Snapshot every view/template that references the old filter.
+        // Assignment-preserving delete+recreate, shared by the create pass and the
+        // apply-to-views refresh. Captures every view/template assignment (enabled state +
+        // graphic overrides) before deleting, then restores them onto the new ElementId so the
+        // churn is transparent.
+        private static ParameterFilterElement RebuildFilterStatic(
+            Document doc, string filterName, ICollection<ElementId> catIds,
+            ElementFilter? elementFilter, ParameterFilterElement old,
+            Dictionary<string, ParameterFilterElement> existingFilters,
+            IReadOnlyList<View> allViews)
+        {
+            ElementId oldId = old.Id;
+
             var assignments = new List<(View View, bool Enabled, OverrideGraphicSettings Ogs)>();
-            foreach (var v in AllViews(doc))
+            foreach (var v in allViews)
             {
                 ICollection<ElementId> vFilters;
                 try { vFilters = v.GetFilters(); }
                 catch (Exception ex)
                 {
-                    // Views that don't support filters throw — they can't carry this filter.
                     LemoineLog.Swallowed($"AutoFilters: read filters on view {v.Id.Value}", ex);
                     continue;
                 }
@@ -639,7 +639,6 @@ namespace LemoineTools.Tools.AutoFilters
                 : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
             existingFilters[filterName] = pfe;
 
-            // Re-apply the captured assignments onto the new ElementId.
             foreach (var a in assignments)
             {
                 try
@@ -654,9 +653,180 @@ namespace LemoineTools.Tools.AutoFilters
                         $"AutoFilters: restore filter '{filterName}' onto view {a.View.Id.Value}", ex);
                 }
             }
+            return pfe;
+        }
 
-            // Keep the active-view bookkeeping in sync so ProcessRule does not double-add.
-            if (activeHadFilter) existingViewFilterIds.Add(pfe.Id.Value);
+        // ── Shared definition-refresh API (used by Apply Filters to Views) ─────
+        //
+        // Lets the standalone "Apply Filters to Views" tool rebuild a filter's DEFINITION
+        // from its current owning rule before attaching it — so a filter created before a rule
+        // was merged picks up ALL the merged keywords (not just the first). The definition is
+        // updated in place (SetCategories / SetElementFilter) to preserve the ElementId; only an
+        // incompatible change falls back to the assignment-preserving rebuild.
+
+        /// <summary>Builds the parameter-display-name → BuiltInParameter map. Resolvable even
+        /// when no element of the category exists in the model.</summary>
+        internal static Dictionary<string, BuiltInParameter> BuildBipMap() =>
+            new Dictionary<string, BuiltInParameter>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["System Classification"] = BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM,
+                ["System Name"]           = BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
+                ["Fabrication Service"]   = BuiltInParameter.FABRICATION_SERVICE_NAME,
+                ["Type Name"]             = BuiltInParameter.ALL_MODEL_TYPE_NAME,
+                // ALL_MODEL_FAMILY_NAME (String storage), NOT ELEM_FAMILY_PARAM (ElementId
+                // storage): a String contains/equals filter rule cannot be built against an
+                // ElementId parameter — the factory throws, the keyword is dropped, and the
+                // filter is silently never created.
+                ["Family Name"]           = BuiltInParameter.ALL_MODEL_FAMILY_NAME,
+                ["Structural Material"]   = BuiltInParameter.STRUCTURAL_MATERIAL_PARAM,
+                ["Mark"]                  = BuiltInParameter.ALL_MODEL_MARK,
+                ["Comments"]              = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,
+            };
+
+        /// <summary>
+        /// Opaque, reusable context for a batch of <see cref="EnsureRuleFilterDefinition"/> calls.
+        /// Holds the parameter cache, lookup maps, the existing-filter index and the view list so
+        /// repeated refreshes in one transaction don't re-scan the document.
+        /// </summary>
+        internal sealed class FilterRefreshContext
+        {
+            internal readonly Document        Host;
+            internal readonly IList<Document>  SourceDocs;
+            internal readonly Dictionary<string, BuiltInParameter>          BipMap;
+            internal readonly Dictionary<string, ElementId>                 MatMap;
+            internal readonly Dictionary<string, ParameterFilterElement>    ExistingFilters;
+            // Private because its element type ParamResolve is a private nested type; the
+            // enclosing AutoFiltersEventHandler can still read it via ctx.ParamCache.
+            private  readonly Dictionary<string, ParamResolve>             ParamCache =
+                new Dictionary<string, ParamResolve>(StringComparer.Ordinal);
+            internal readonly List<View> AllViews;
+
+            internal FilterRefreshContext(
+                Document host, IList<Document> sourceDocs,
+                Dictionary<string, ElementId> matMap,
+                Dictionary<string, ParameterFilterElement> existingFilters,
+                List<View> allViews)
+            {
+                Host = host; SourceDocs = sourceDocs; MatMap = matMap;
+                ExistingFilters = existingFilters; AllViews = allViews;
+                BipMap = BuildBipMap();
+            }
+        }
+
+        /// <summary>
+        /// Builds a <see cref="FilterRefreshContext"/> for <paramref name="doc"/>, scanning the
+        /// host plus the supplied <paramref name="sourceDocs"/> (loaded links) for parameter
+        /// resolution. Must be called inside a transaction when its results feed
+        /// <see cref="EnsureRuleFilterDefinition"/>.
+        /// </summary>
+        internal static FilterRefreshContext CreateRefreshContext(
+            Document doc, IList<Document> sourceDocs)
+        {
+            var matMap = new FilteredElementCollector(doc)
+                .OfClass(typeof(Material)).Cast<Material>()
+                .GroupBy(m => m.Name)
+                .ToDictionary(g => g.Key, g => g.First().Id);
+            var existingFilters = new FilteredElementCollector(doc)
+                .OfClass(typeof(ParameterFilterElement))
+                .Cast<ParameterFilterElement>()
+                .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var allViews = new FilteredElementCollector(doc)
+                .OfClass(typeof(View)).Cast<View>().ToList();
+            return new FilterRefreshContext(doc, sourceDocs, matMap, existingFilters, allViews);
+        }
+
+        /// <summary>
+        /// Ensures the ParameterFilterElement for <paramref name="rule"/> exists and carries the
+        /// rule's CURRENT definition (categories + parameter + keywords). Updates in place to keep
+        /// the ElementId; rebuilds (assignment-preserving) only when an in-place edit can't yield
+        /// the correct definition. Returns the element (existing, refreshed, or created), or
+        /// <see langword="null"/> when the rule produces no filter or its parameter can't resolve.
+        /// <paramref name="warn"/> carries a non-fatal advisory (e.g. link-safety) when present.
+        /// </summary>
+        internal static ParameterFilterElement? EnsureRuleFilterDefinition(
+            FilterRefreshContext ctx, FilterTradeConfig trade, FilterRuleConfig rule, out string? warn)
+        {
+            warn = null;
+            Document doc = ctx.Host;
+
+            string matchType      = (rule.MatchType ?? "contains").ToLowerInvariant();
+            bool   wholeCat       = matchType == "all";
+            bool   valuePredicate = matchType == "has a value" || matchType == "has no value";
+            bool   hasKeywords    = rule.Match.Count > 0;
+            if (!rule.Enabled || (!wholeCat && !valuePredicate && !hasKeywords)) return null;
+
+            var catIds = new List<ElementId>();
+            foreach (var bicStr in rule.BuiltInCategories ?? new List<string>())
+                if (Enum.TryParse<BuiltInCategory>(bicStr, false, out var bic))
+                    catIds.Add(new ElementId((long)(int)bic));
+            if (catIds.Count == 0) return null;
+
+            ElementId? paramId = null;
+            if (!wholeCat)
+            {
+                var pr = ResolveParamId(doc, ctx.SourceDocs, rule.Parameter, catIds, ctx.BipMap, ctx.ParamCache);
+                if (pr.Id == null) { warn = $"Could not resolve parameter '{rule.Parameter}'."; return null; }
+                paramId = pr.Id;
+                warn = pr.Warn;
+                var filterable = NarrowToFilterable(doc, paramId!, catIds);
+                if (filterable.Count > 0 && filterable.Count < catIds.Count) catIds = filterable;
+            }
+
+            bool   isFab       = rule.Parameter == "Fabrication Service";
+            bool   isStructMat = rule.Parameter == "Structural Material";
+            string filterName  = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
+
+            ElementFilter? elementFilter = wholeCat
+                ? null
+                : BuildElementFilter(paramId, rule, isFab, isStructMat, ctx.MatMap, doc, matchType);
+            bool buildFailed = !wholeCat && elementFilter == null;
+
+            ctx.ExistingFilters.TryGetValue(filterName, out var pfe);
+
+            if (buildFailed)
+            {
+                // Don't break a working filter — leave the existing definition (if any) untouched.
+                warn ??= "Could not build filter rule; left unchanged.";
+                return pfe;
+            }
+
+            if (pfe != null)
+            {
+                if (wholeCat)
+                {
+                    bool hasRules;
+                    try { hasRules = pfe.GetElementFilter() != null; }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("AutoFilters: read element filter (refresh)", ex);
+                        hasRules = false;
+                    }
+                    if (hasRules)
+                        pfe = RebuildFilterStatic(doc, filterName, catIds, null, pfe, ctx.ExistingFilters, ctx.AllViews);
+                    else
+                        pfe.SetCategories(catIds);
+                }
+                else
+                {
+                    try
+                    {
+                        pfe.SetCategories(catIds);
+                        pfe.SetElementFilter(elementFilter!);
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Swallowed("AutoFilters: in-place refresh incompatible, rebuilding", ex);
+                        pfe = RebuildFilterStatic(doc, filterName, catIds, elementFilter, pfe, ctx.ExistingFilters, ctx.AllViews);
+                    }
+                }
+                return pfe;
+            }
+
+            pfe = elementFilter == null
+                ? ParameterFilterElement.Create(doc, filterName, catIds)
+                : ParameterFilterElement.Create(doc, filterName, catIds, elementFilter);
+            ctx.ExistingFilters[filterName] = pfe;
             return pfe;
         }
 
@@ -756,13 +926,15 @@ namespace LemoineTools.Tools.AutoFilters
         {
             var ogs = new OverrideGraphicSettings();
 
-            RevitColor cutColor  = HexToRevitColor(rule.CutColor)  ?? new RevitColor(128, 128, 128);
-            RevitColor surfColor = HexToRevitColor(rule.SurfColor) ?? cutColor;
-            RevitColor lineColor = HexToRevitColor(rule.LineColor) ?? cutColor;
+            RevitColor cutColor    = HexToRevitColor(rule.CutColor)    ?? new RevitColor(128, 128, 128);
+            RevitColor surfColor   = HexToRevitColor(rule.SurfColor)   ?? cutColor;
+            RevitColor lineColor   = HexToRevitColor(rule.LineColor)   ?? cutColor;
+            RevitColor surfBgColor = HexToRevitColor(rule.SurfBgColor) ?? surfColor;
+            RevitColor cutBgColor  = HexToRevitColor(rule.CutBgColor)  ?? cutColor;
 
             if (rule.OverrideSurf)
             {
-                // Resolve the surface fill pattern by name; fall back to solid fill.
+                // Resolve the surface FOREGROUND fill pattern by name; fall back to solid fill.
                 ElementId surfFillId = ResolvePatternId(rule.SurfPattern, fillPatternMap, solidFillId);
                 if (surfFillId != ElementId.InvalidElementId)
                 {
@@ -772,15 +944,40 @@ namespace LemoineTools.Tools.AutoFilters
                 }
             }
 
+            if (rule.OverrideSurfBg)
+            {
+                // Surface BACKGROUND is an independent layer (see CLAUDE.md foreground/background
+                // note): set its own pattern id + colour + visibility.
+                ElementId surfBgFillId = ResolvePatternId(rule.SurfBgPattern, fillPatternMap, solidFillId);
+                if (surfBgFillId != ElementId.InvalidElementId)
+                {
+                    ogs.SetSurfaceBackgroundPatternId(surfBgFillId);
+                    ogs.SetSurfaceBackgroundPatternColor(surfBgColor);
+                    ogs.SetSurfaceBackgroundPatternVisible(true);
+                }
+            }
+
             if (rule.OverrideCut)
             {
-                // Resolve the cut fill pattern by name; fall back to solid fill.
+                // Resolve the cut FOREGROUND fill pattern by name; fall back to solid fill.
                 ElementId cutFillId = ResolvePatternId(rule.CutPattern, fillPatternMap, solidFillId);
                 if (cutFillId != ElementId.InvalidElementId)
                 {
                     ogs.SetCutForegroundPatternId(cutFillId);
                     ogs.SetCutForegroundPatternColor(cutColor);
                     ogs.SetCutForegroundPatternVisible(true);
+                }
+            }
+
+            if (rule.OverrideCutBg)
+            {
+                // Cut BACKGROUND is an independent layer; set its own pattern id + colour + visibility.
+                ElementId cutBgFillId = ResolvePatternId(rule.CutBgPattern, fillPatternMap, solidFillId);
+                if (cutBgFillId != ElementId.InvalidElementId)
+                {
+                    ogs.SetCutBackgroundPatternId(cutBgFillId);
+                    ogs.SetCutBackgroundPatternColor(cutBgColor);
+                    ogs.SetCutBackgroundPatternVisible(true);
                 }
             }
 
