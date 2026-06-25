@@ -348,6 +348,20 @@ namespace LemoineTools.Lemoine.Controls
                 if (n.Eligible && cb != null) cb.IsChecked = !(cb.IsChecked == true);
                 else if (hasChildren)        ToggleExpand(n);
             };
+
+            // Right-click selects all dependents (descendant leaves) under this node,
+            // excluding the node itself. Only offered when there is something to select
+            // and we're in multi-select mode.
+            int dependentCount = n.LeafIds.Count - (n.Eligible ? 1 : 0);
+            if (!SingleSelect && dependentCount > 0)
+            {
+                row.ToolTip = "Right-click to select all dependent views";
+                row.MouseRightButtonDown += (s, e) =>
+                {
+                    e.Handled = true;
+                    SelectDependents(n);
+                };
+            }
             return row;
         }
 
@@ -379,6 +393,22 @@ namespace LemoineTools.Lemoine.Controls
                 else    _selected.Remove(id);
             }
             AfterSelectionChange();
+        }
+
+        // Right-click gesture: select every dependent (descendant leaf) under a node
+        // while leaving the node itself untouched — a quick way to grab a parent
+        // view's dependents without expanding and checking each one. Additive to the
+        // current selection; no-op in single-select mode or when nothing changes.
+        private void SelectDependents(Node n)
+        {
+            if (SingleSelect) return;
+            bool any = false;
+            foreach (var id in n.LeafIds)
+            {
+                if (n.Eligible && id == n.Src.Id!.Value) continue; // skip the node itself
+                if (_selected.Add(id)) any = true;
+            }
+            if (any) AfterSelectionChange();
         }
 
         private void AfterSelectionChange()
