@@ -71,19 +71,27 @@ namespace LemoineTools.Tools.ExplodeViews
                 Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
-
-            Progress(100, pass, fail, skip);
-            OnResultChips?.Invoke(new List<ResultChip>
+            finally
             {
-                new ResultChip("views",   _viewsCreated,  "LemoineGreen"),
-                new ResultChip("skipped", _tradesSkipped, "LemoineTextDim"),
-                new ResultChip("failed",  fail,           "LemoineRed"),
-            });
-            Complete(pass, fail, skip);
+                // Report results, then drop the run's payload. The reporting is wrapped so a
+                // throwing callback can never skip the payload clear (memory discipline).
+                try
+                {
+                    Progress(100, pass, fail, skip);
+                    OnResultChips?.Invoke(new List<ResultChip>
+                    {
+                        new ResultChip("views",   _viewsCreated,  "LemoineGreen"),
+                        new ResultChip("skipped", _tradesSkipped, "LemoineTextDim"),
+                        new ResultChip("failed",  fail,           "LemoineRed"),
+                    });
+                    Complete(pass, fail, skip);
+                }
+                catch (Exception cbEx) { LemoineLog.Swallowed("ExplodeViewByTrade: completion callback", cbEx); }
 
-            // Session-long static handler — drop the run's payload (memory discipline).
-            SourceViewId     = ElementId.InvalidElementId;
-            SelectedTradeIds = new List<string>();
+                // Session-long static handler — drop the run's payload (memory discipline).
+                SourceViewId     = ElementId.InvalidElementId;
+                SelectedTradeIds = new List<string>();
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────────

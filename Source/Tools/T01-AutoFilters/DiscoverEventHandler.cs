@@ -120,15 +120,23 @@ namespace LemoineTools.Tools.AutoFilters
                 LemoineLog.Error("AutoFilters: discover aborted", ex); Log($"Error: {ex.Message}", "fail");
                 fail++;
             }
-            Progress(100, pass, fail, skip);
-            Complete(pass, fail, skip);
+            finally
+            {
+                // Report, then drop the run's payload. Complete() lets the ViewModel grab the
+                // ScanResults reference synchronously BEFORE we swap in a fresh list, so it must
+                // run inside this finally ahead of the clear. Wrapped so a throwing callback can
+                // never skip the clear (memory discipline).
+                try
+                {
+                    Progress(100, pass, fail, skip);
+                    Complete(pass, fail, skip);
+                }
+                catch (Exception cbEx) { LemoineLog.Swallowed("AutoFilters: discover completion callback", cbEx); }
 
-            // Session-long static handler — drop the run's payload. OnComplete grabs the
-            // ScanResults reference synchronously (inside Complete above), so swapping in a
-            // fresh list here never races the ViewModel's read.
-            ScanSpecs   = new List<ScanSpec>();
-            CommitSpecs = new List<CommitRuleSpec>();
-            ScanResults = new List<ScanResult>();
+                ScanSpecs   = new List<ScanSpec>();
+                CommitSpecs = new List<CommitRuleSpec>();
+                ScanResults = new List<ScanResult>();
+            }
         }
 
         // ── MainScan ─────────────────────────────────────────────────────────

@@ -136,21 +136,29 @@ namespace LemoineTools.Tools.Testing
                 Log($"Fatal: {ex.Message}", "fail");
                 fail++;
             }
-
-            Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
-                pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
-            Progress(100, pass, fail, skip);
-            OnResultChips?.Invoke(new List<ResultChip>
+            finally
             {
-                new ResultChip("markers", pass,       "LemoineGreen"),
-                new ResultChip("tags",    tagsPlaced, "LemoineGreen"),
-                new ResultChip("failed",  fail,       "LemoineRed"),
-            });
-            Complete(pass, fail, skip);
+                // Report results, then drop the run's payload. The reporting is wrapped so a
+                // throwing callback can never skip the payload clear (memory discipline).
+                try
+                {
+                    Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
+                        pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
+                    Progress(100, pass, fail, skip);
+                    OnResultChips?.Invoke(new List<ResultChip>
+                    {
+                        new ResultChip("markers", pass,       "LemoineGreen"),
+                        new ResultChip("tags",    tagsPlaced, "LemoineGreen"),
+                        new ResultChip("failed",  fail,       "LemoineRed"),
+                    });
+                    Complete(pass, fail, skip);
+                }
+                catch (Exception cbEx) { LemoineLog.Swallowed("ClashElevationFinder: completion callback", cbEx); }
 
-            // Session-long static handler (App.ClashElevationFinderHandler) — drop the run's payload.
-            ViewIds     = new List<ElementId>();
-            Definitions = new List<ClashDefinition>();
+                // Session-long static handler (App.ClashElevationFinderHandler) — drop the run's payload.
+                ViewIds     = new List<ElementId>();
+                Definitions = new List<ClashDefinition>();
+            }
         }
 
         private int ClearPreviousMarkers(Document doc)

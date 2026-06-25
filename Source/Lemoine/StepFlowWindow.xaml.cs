@@ -1309,7 +1309,7 @@ namespace LemoineTools.Lemoine
         // BuildButton is the primary factory used by steps
         // ═══════════════════════════════════════ CANCEL ══════════════════════
         // User clicked the footer button while a run is in flight. Request the stop;
-        // the running handler halts at its next log checkpoint (LemoineRun.Checkpoint),
+        // the running handler halts at its next cancel check (LemoineRun.CancelRequested),
         // commits the work done so far, and calls onComplete → CompleteRun finalises.
         private void RequestCancelRun()
         {

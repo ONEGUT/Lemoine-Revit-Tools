@@ -32,25 +32,14 @@ namespace LemoineTools.Lemoine
         /// <summary>Called by StepFlowWindow when the run finishes or the window is reset.</summary>
         public static void End() => _cancelRequested = false;
 
-        /// <summary>True once the user has clicked Cancel for the current run.</summary>
-        public static bool CancelRequested => _cancelRequested;
-
         /// <summary>
-        /// Log a line AND test for cancellation in one call. Returns true when the caller
-        /// should stop now (preserving the work done so far). This is the canonical break
-        /// point: wherever a handler reports per-item progress to the log inside a processing
-        /// loop, route it through here, e.g.
-        ///
-        ///   if (LemoineRun.Checkpoint(pushLog, $"✓ {name}", "pass"))
-        ///   {
-        ///       pushLog($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
-        ///       break;   // falls through to the existing Commit() so done work is kept
-        ///   }
+        /// True once the user has clicked Cancel for the current run. A looping handler
+        /// tests this at its per-progress log point, logs a "Stopped by user — N of M
+        /// processed; work so far preserved" line, then <c>break</c>s and falls through
+        /// to its existing <c>Transaction.Commit()</c> so committed work is kept. Use
+        /// <see cref="RunProgressReporter"/> for the steady 5% log cadence; this flag is
+        /// only the stop signal.
         /// </summary>
-        public static bool Checkpoint(Action<string, string> pushLog, string msg, string status = "info")
-        {
-            pushLog?.Invoke(msg, status);
-            return _cancelRequested;
-        }
+        public static bool CancelRequested => _cancelRequested;
     }
 }
