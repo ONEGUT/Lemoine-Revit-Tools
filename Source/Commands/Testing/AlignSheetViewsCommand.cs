@@ -37,27 +37,33 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            AlignSheetViewsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // All real (non-placeholder) sheets, labelled "number - name".
-            var sheets = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewSheet))
-                .Cast<ViewSheet>()
-                .Where(s => !s.IsTemplate && !s.IsPlaceholder)
-                .OrderBy(s => s.SheetNumber)
-                .Select(s => (Id: s.Id, Label: $"{s.SheetNumber} - {s.Name}"))
-                .ToList();
+                // All real (non-placeholder) sheets, labelled "number - name".
+                var sheets = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewSheet))
+                    .Cast<ViewSheet>()
+                    .Where(s => !s.IsTemplate && !s.IsPlaceholder)
+                    .OrderBy(s => s.SheetNumber)
+                    .Select(s => (Id: s.Id, Label: $"{s.SheetNumber} - {s.Name}"))
+                    .ToList();
 
-            var vm = new AlignSheetViewsViewModel(
-                App.AlignSheetViewsHandler!, App.AlignSheetViewsEvent!,
-                sheets, BrowserTreeCapture.Capture(doc));
+                var vm = new AlignSheetViewsViewModel(
+                    App.AlignSheetViewsHandler!, App.AlignSheetViewsEvent!,
+                    sheets, BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

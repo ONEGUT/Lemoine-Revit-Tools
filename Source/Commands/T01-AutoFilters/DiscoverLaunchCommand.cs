@@ -42,44 +42,50 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // Capture the exact filterable-category list so the category pickers mirror
-            // Revit's own "Edit Filters → Categories" list (read on the main thread).
-            AutoFiltersSettings.CaptureFilterableCategories(doc);
-
-            // Collect loaded link instances on the Revit main thread.
-            // The host document is offered first (DiscoverEventHandler maps LinkId -1 to it),
-            // so users can discover rules from the current model, not only from links.
-            var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>
+            var uiApp = commandData.Application;
+            DiscoverViewModel BuildTool()
             {
-                new DiscoverViewModel.LinkEntry(ElementId.InvalidElementId, "Host Model"),
-            };
-            foreach (RevitLinkInstance li in
-                new FilteredElementCollector(doc)
-                    .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
-            {
-                var ld = li.GetLinkDocument();
-                if (ld == null) continue;
-                string label = ld.Title ?? li.Name;
-                if (!links.Any(x => x.Label == label))
-                    links.Add(new DiscoverViewModel.LinkEntry(li.Id, label));
+                var doc = uiApp.ActiveUIDocument.Document;
+
+                // Capture the exact filterable-category list so the category pickers mirror
+                // Revit's own "Edit Filters → Categories" list (read on the main thread).
+                AutoFiltersSettings.CaptureFilterableCategories(doc);
+
+                // Collect loaded link instances on the Revit main thread.
+                // The host document is offered first (DiscoverEventHandler maps LinkId -1 to it),
+                // so users can discover rules from the current model, not only from links.
+                var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>
+                {
+                    new DiscoverViewModel.LinkEntry(ElementId.InvalidElementId, "Host Model"),
+                };
+                foreach (RevitLinkInstance li in
+                    new FilteredElementCollector(doc)
+                        .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+                {
+                    var ld = li.GetLinkDocument();
+                    if (ld == null) continue;
+                    string label = ld.Title ?? li.Name;
+                    if (!links.Any(x => x.Label == label))
+                        links.Add(new DiscoverViewModel.LinkEntry(li.Id, label));
+                }
+
+                var vm = new DiscoverViewModel(
+                    App.DiscoverHandler!,
+                    App.DiscoverEvent!,
+                    links,
+                    App.AutoFiltersHandler,
+                    App.AutoFiltersEvent);
+
+                // Open the window on a dedicated STA thread so Dispatcher.Run() pumps messages
+                return vm;
             }
-
-            var vm = new DiscoverViewModel(
-                App.DiscoverHandler!,
-                App.DiscoverEvent!,
-                links,
-                App.AutoFiltersHandler,
-                App.AutoFiltersEvent);
-
-            // Open the window on a dedicated STA thread so Dispatcher.Run() pumps messages
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

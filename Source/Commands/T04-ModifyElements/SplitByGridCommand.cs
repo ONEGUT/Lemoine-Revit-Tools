@@ -35,50 +35,56 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc        = commandData.Application.ActiveUIDocument;
-            var doc          = uidoc.Document;
-            var activeViewId = uidoc.ActiveView?.Id;
+            var uiApp = commandData.Application;
+            SplitByGridViewModel BuildTool()
+            {
+                var uidoc        = uiApp.ActiveUIDocument;
+                var doc          = uidoc.Document;
+                var activeViewId = uidoc.ActiveView?.Id;
 
-            // All categorised elements → discipline-grouped category picker.
-            var allElements = new FilteredElementCollector(doc)
-                .WhereElementIsNotElementType()
-                .Where(e => e.Category?.Name != null &&
-                           (e.Category.CategoryType == CategoryType.Model ||
-                            e.Category.CategoryType == CategoryType.Annotation))
-                .ToList();
-            var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
-            int totalElements  = allElements.Count;
+                // All categorised elements → discipline-grouped category picker.
+                var allElements = new FilteredElementCollector(doc)
+                    .WhereElementIsNotElementType()
+                    .Where(e => e.Category?.Name != null &&
+                               (e.Category.CategoryType == CategoryType.Model ||
+                                e.Category.CategoryType == CategoryType.Annotation))
+                    .ToList();
+                var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
+                int totalElements  = allElements.Count;
 
-            // Pre-selection: any selected element with a recognisable category.
-            var rawSelection = uidoc.Selection.GetElementIds()
-                .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Name != null &&
-                           (e.Category.CategoryType == CategoryType.Model ||
-                            e.Category.CategoryType == CategoryType.Annotation))
-                .ToList();
-            var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
-            var preSelectedCats = rawSelection
-                .Select(e => e.Category!.Name)
-                .Distinct().ToList();
+                // Pre-selection: any selected element with a recognisable category.
+                var rawSelection = uidoc.Selection.GetElementIds()
+                    .Select(id => doc.GetElement(id))
+                    .Where(e => e?.Category?.Name != null &&
+                               (e.Category.CategoryType == CategoryType.Model ||
+                                e.Category.CategoryType == CategoryType.Annotation))
+                    .ToList();
+                var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
+                var preSelectedCats = rawSelection
+                    .Select(e => e.Category!.Name)
+                    .Distinct().ToList();
 
-            var allGrids = new FilteredElementCollector(doc)
-                .OfClass(typeof(Grid))
-                .Cast<Grid>()
-                .Where(g => g.Curve is Line)
-                .OrderBy(g => g.Name)
-                .ToList();
+                var allGrids = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Grid))
+                    .Cast<Grid>()
+                    .Where(g => g.Curve is Line)
+                    .OrderBy(g => g.Name)
+                    .ToList();
 
-            var vm = new SplitByGridViewModel(
-                App.SplitByGridHandler!, App.SplitByGridEvent!,
-                allGrids, categoryGroups, totalElements, activeViewId,
-                preSelectedIds, preSelectedCats);
+                var vm = new SplitByGridViewModel(
+                    App.SplitByGridHandler!, App.SplitByGridEvent!,
+                    allGrids, categoryGroups, totalElements, activeViewId,
+                    preSelectedIds, preSelectedCats);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

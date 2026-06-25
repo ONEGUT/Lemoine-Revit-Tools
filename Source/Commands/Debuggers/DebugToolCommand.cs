@@ -26,8 +26,9 @@ namespace LemoineTools.Commands
             // Revit-free — no snapshot needed. Swap to `new MotionTestViewModel()` /
             // `new CrashProbeViewModel()` / `new SourceIngestProbeViewModel(SourceIngestProbe.Collect(commandData.Application))`
             // to re-run an earlier harness.
-            var vm = new ScrollProbeViewModel();
-            _window = new StepFlowWindow(vm);
+            ScrollProbeViewModel BuildTool() => new ScrollProbeViewModel();
+            var vm = BuildTool();
+            _window = new StepFlowWindow(vm, BuildTool);
             _window.Closed += (s, e) => _window = null;
             _window.Show();
             return Result.Succeeded;

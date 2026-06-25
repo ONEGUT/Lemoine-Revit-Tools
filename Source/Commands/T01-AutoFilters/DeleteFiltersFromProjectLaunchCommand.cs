@@ -39,27 +39,33 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            DeleteFiltersFromProjectViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            var filterNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(ParameterFilterElement))
-                .Cast<ParameterFilterElement>()
-                .OrderBy(f => f.Name)
-                .Select(f => f.Name)
-                .ToList();
+                var filterNames = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ParameterFilterElement))
+                    .Cast<ParameterFilterElement>()
+                    .OrderBy(f => f.Name)
+                    .Select(f => f.Name)
+                    .ToList();
 
-            var vm = new DeleteFiltersFromProjectViewModel(
-                App.DeleteFiltersFromProjectHandler!,
-                App.DeleteFiltersFromProjectEvent!,
-                filterNames);
+                var vm = new DeleteFiltersFromProjectViewModel(
+                    App.DeleteFiltersFromProjectHandler!,
+                    App.DeleteFiltersFromProjectEvent!,
+                    filterNames);
 
-            // FIX: open window on dedicated STA thread so real-time progress works
+                // FIX: open window on dedicated STA thread so real-time progress works
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

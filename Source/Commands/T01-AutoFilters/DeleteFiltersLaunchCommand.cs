@@ -38,32 +38,38 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uiDoc = commandData.Application.ActiveUIDocument;
-            var doc   = uiDoc.Document;
-            var view  = uiDoc.ActiveView;
+            var uiApp = commandData.Application;
+            DeleteFiltersViewModel BuildTool()
+            {
+                var uiDoc = uiApp.ActiveUIDocument;
+                var doc   = uiDoc.Document;
+                var view  = uiDoc.ActiveView;
 
-            // Capture current view's filter names on the main thread
-            var filterNames = view.GetFilters()
-                .Select(id => doc.GetElement(id) as ParameterFilterElement)
-                .Where(f => f != null)
-                .Select(f => f!)
-                .OrderBy(f => f.Name)
-                .Select(f => f.Name)
-                .ToList();
+                // Capture current view's filter names on the main thread
+                var filterNames = view.GetFilters()
+                    .Select(id => doc.GetElement(id) as ParameterFilterElement)
+                    .Where(f => f != null)
+                    .Select(f => f!)
+                    .OrderBy(f => f.Name)
+                    .Select(f => f.Name)
+                    .ToList();
 
-            var vm = new DeleteFiltersViewModel(
-                App.DeleteFiltersHandler!,
-                App.DeleteFiltersEvent!,
-                filterNames,
-                view.Name);
+                var vm = new DeleteFiltersViewModel(
+                    App.DeleteFiltersHandler!,
+                    App.DeleteFiltersEvent!,
+                    filterNames,
+                    view.Name);
 
-            // FIX: open window on dedicated STA thread so real-time progress works
+                // FIX: open window on dedicated STA thread so real-time progress works
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

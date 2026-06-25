@@ -15,7 +15,13 @@ namespace LemoineTools.Lemoine
 {
     public partial class StepFlowWindow : Window
     {
-        private readonly ILemoineTool _tool;
+        // Reassigned by the "Reload" action, which rebuilds the window with a freshly-captured tool.
+        private ILemoineTool _tool;
+
+        // Re-capture factory supplied by the launch command. When set, the footer button on the
+        // first step becomes "Reload" and rebuilds the whole window from a fresh tool instance
+        // (re-querying the Revit model on the main thread). Null → the button stays "Reset".
+        private readonly Func<ILemoineTool>? _reloadFactory;
 
         // Callbacks the window hands to the static ExternalEvent handlers / tool ViewModels
         // (which outlive the window) capture this sink instead of `this`. Severing it on close
@@ -67,7 +73,6 @@ namespace LemoineTools.Lemoine
         private StackPanel   _logStack  = null!;
         private ScrollViewer _logScroll = null!;
         private Button       _resetBtn  = null!;
-        private Button       _closeBtn  = null!;
 
         // Log resize drag state
         private bool   _isResizingLog   = false;
@@ -76,10 +81,13 @@ namespace LemoineTools.Lemoine
         private const double _logMinH   = 60;
         private const double _logMaxH   = 600;
 
-        public StepFlowWindow(ILemoineTool tool)
+        public StepFlowWindow(ILemoineTool tool) : this(tool, null) { }
+
+        public StepFlowWindow(ILemoineTool tool, Func<ILemoineTool>? reloadFactory)
         {
             InitializeComponent();
             _tool  = tool ?? throw new ArgumentNullException(nameof(tool));
+            _reloadFactory = reloadFactory;
             _sink.Win = this;
             Title = tool.Title;
 
@@ -100,10 +108,9 @@ namespace LemoineTools.Lemoine
                 LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
                 // The tool (VM) is retained by its static ExternalEvent handler and outlives
-                // this window — detach so a late ValidationChanged can't touch a dead window.
-                _tool.ValidationChanged -= OnToolValidationChanged;
-                // Let the tool detach any callbacks it parked on its static ExternalEvent handler.
-                (_tool as ILemoineToolCleanup)?.OnWindowClosed();
+                // this window — detach its events (ValidationChanged + NavigateRequested) and let
+                // it null any callbacks it parked on that handler so neither can touch a dead window.
+                UnwireTool();
                 // Sever the sink so the static handler's retained run/refresh/activate/navigate
                 // callbacks no longer root this window — it (and its visual tree) can now be GC'd.
                 _sink.Win = null;
@@ -114,9 +121,32 @@ namespace LemoineTools.Lemoine
             };
 
             BuildChrome();
+            WireTool();
+        }
+
+        // Subscribes the window to the current tool's events. Paired with UnwireTool so the
+        // "Reload" action can swap the tool cleanly. Named handlers (never lambdas) so they
+        // can be detached — a leaked subscription on a discarded tool would root this window.
+        private void WireTool()
+        {
             _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
-                nav.NavigateRequested += (s, idx) => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx)); };
+                nav.NavigateRequested += OnToolNavigateRequested;
+        }
+
+        private void UnwireTool()
+        {
+            _tool.ValidationChanged -= OnToolValidationChanged;
+            if (_tool is ILemoineNavigable nav)
+                nav.NavigateRequested -= OnToolNavigateRequested;
+            // Let the outgoing tool null any callbacks it parked on its static ExternalEvent
+            // handler so the discarded ViewModel (and its step content) can be GC'd.
+            (_tool as ILemoineToolCleanup)?.OnWindowClosed();
+        }
+
+        private void OnToolNavigateRequested(object? sender, int idx)
+        {
+            var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ActivateStep(idx));
         }
 
         // ValidationChanged can be raised from a tool's refresh callback on Revit's main
@@ -210,7 +240,7 @@ namespace LemoineTools.Lemoine
         }
 
         // ═══════════════════════════════════════ CHROME ═══════════════════════
-        private void BuildChrome()
+        private void BuildChrome(bool initial = true)
         {
             BuildToolbar();
             BuildProgressStrip();
@@ -243,8 +273,11 @@ namespace LemoineTools.Lemoine
                 });
             }
 
-            // Defer tab-bar rendering until after callers can RegisterLogTab()
-            Loaded += (s, e) => BuildTabBar();
+            // Defer tab-bar rendering until after callers can RegisterLogTab(). On a reload the
+            // window is already loaded, so build the tab bar immediately instead of waiting for
+            // a Loaded event that won't fire again.
+            if (initial) Loaded += (s, e) => BuildTabBar();
+            else         BuildTabBar();
             ActivateStep(0);
         }
 
@@ -867,24 +900,39 @@ namespace LemoineTools.Lemoine
             _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _footerBorder.SetResourceReference(Border.PaddingProperty, "LemoineTh_FooterPad");
 
-            var dp = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
-
+            // Single centred footer button. Its role depends on state: a "Reload" on the first
+            // step (when a reload factory is wired), a red "Cancel" mid-run, otherwise "Reset".
+            // The window is still closed via the toolbar's × — there is no footer close button.
             _resetBtn = BuildButton("Reset", false);
-            _resetBtn.Width = 90;
-            // While a run is in flight the button is a Cancel control; otherwise it resets.
-            _resetBtn.Click += (s, e) => { if (_isRunning) RequestCancelRun(); else ResetAll(); };
-            DockPanel.SetDock(_resetBtn, Dock.Left);
-            dp.Children.Add(_resetBtn);
+            _resetBtn.Width = 120;
+            _resetBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            _resetBtn.VerticalAlignment   = VerticalAlignment.Center;
+            _resetBtn.Click += (s, e) => OnResetButtonClick();
 
-            _closeBtn = BuildButton("Close", true);
-            _closeBtn.Width = 100;
-            _closeBtn.IsEnabled = false;
-            _closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
-            _closeBtn.Click += (s, e) => Close();
-            DockPanel.SetDock(_closeBtn, Dock.Right);
-            dp.Children.Add(_closeBtn);
+            var host = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            host.Children.Add(_resetBtn);
+            _footerBorder.Child = host;
 
-            _footerBorder.Child = dp;
+            UpdateResetButton();
+        }
+
+        // Footer button dispatch: cancel a live run, reload on the first step, else reset.
+        private void OnResetButtonClick()
+        {
+            if (_isRunning) { RequestCancelRun(); return; }
+            if (CanReload())  { ReloadWindow(); return; }
+            ResetAll();
+        }
+
+        private bool CanReload() => _reloadFactory != null && _activeStep == 0 && !_isDone && !_isRunning;
+
+        // Sets the footer button label for the current state (no-op mid-run — the Cancel
+        // affordance owns the button then).
+        private void UpdateResetButton()
+        {
+            if (_resetBtn == null || _isRunning) return;
+            if (CanReload()) _resetBtn.Content = char.ConvertFromUtf32(0x21BB) + " Reload"; // ↻
+            else             _resetBtn.Content = "Reset";
         }
 
         // ═══════════════════════════════════════ NAVIGATION ═══════════════════
@@ -925,6 +973,7 @@ namespace LemoineTools.Lemoine
             }
             RefreshStepState(index);
             UpdateStepCounter();
+            UpdateResetButton();   // first step shows "Reload", others "Reset"
             // Refresh the framework review when the (last) review step opens so it reflects
             // the latest input values.
             if (index == _tool.Steps.Length - 1) PopulateReview();
@@ -1085,10 +1134,6 @@ namespace LemoineTools.Lemoine
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, finishKey);
             foreach (var p in _pipRects) p.SetResourceReference(Rectangle.FillProperty, finishKey);
             _progressFill.SetResourceReference(Rectangle.FillProperty, finishKey);
-            _closeBtn.Content = wasCancelled ? "Close" : "Close ✓"; _closeBtn.IsEnabled = true;
-            _closeBtn.SetResourceReference(Button.BackgroundProperty,  wasCancelled ? "LemoineWarnBg"     : "LemoineGreenDim");
-            _closeBtn.SetResourceReference(Button.BorderBrushProperty, wasCancelled ? "LemoineWarnBorder" : "LemoineGreen");
-            _closeBtn.SetResourceReference(Button.ForegroundProperty,  finishKey);
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Collapsed;
             // Prominent, self-describing summary in the output log (the top bar keeps the
             // generic pass/fail/skip): "42 segments" plus any per-output chip breakdown.
@@ -1154,10 +1199,6 @@ namespace LemoineTools.Lemoine
             LemoineRun.End();
             LemoineRunLog.Clear();
             SetResetButtonToReset();
-            _closeBtn.Content = "Close"; _closeBtn.IsEnabled = false;
-            _closeBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineAccentDim");
-            _closeBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineAccent");
-            _closeBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineAccent");
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = true;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = true;
             // Restore the step rows hidden for the run and return the log to its default
@@ -1169,6 +1210,68 @@ namespace LemoineTools.Lemoine
             _progressFill.SetResourceReference(Rectangle.FillProperty, "LemoineAccent");
             _statusText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             ActivateStep(0);
+        }
+
+        // ═══════════════════════════════════════ RELOAD ═══════════════════════
+        // Rebuilds the entire window from a fresh tool instance — equivalent to closing and
+        // reopening the tool, clearing every selection and re-reading the model's options — but
+        // keeps this window open with no flash. The re-capture must run on Revit's main thread
+        // (the tool reads the document), so the work is marshalled through App.ReloadEvent; the
+        // resulting tool is handed back here on this window's dispatcher via ApplyReloadedTool.
+        private void ReloadWindow()
+        {
+            if (_reloadFactory == null || _isRunning) return;
+            if (App.ReloadHandler == null || App.ReloadEvent == null)
+            {
+                // Reload infrastructure isn't registered — degrade to a soft reset rather than
+                // silently doing nothing.
+                LemoineLog.Warn("StepFlowWindow reload", "App.ReloadEvent is not registered; falling back to Reset.");
+                ResetAll();
+                return;
+            }
+
+            _resetBtn.IsEnabled = false;
+            _resetBtn.Content   = "Reloading…";
+            App.ReloadHandler!.Enqueue(
+                _reloadFactory!,
+                tool => { var w = _sink.Win; if (w != null) w.SafeBeginInvoke(() => w.ApplyReloadedTool(tool)); });
+            App.ReloadEvent!.Raise();
+        }
+
+        // Swaps in the freshly-built tool and rebuilds the chrome in place. Runs on the UI thread.
+        private void ApplyReloadedTool(ILemoineTool? tool)
+        {
+            if (tool == null)
+            {
+                // Main-thread re-capture failed (logged there) — keep the current tool usable.
+                SetResetButtonToReset();
+                PushLog("Reload failed — could not re-read the model. See diagnostics.log.", "fail");
+                return;
+            }
+
+            // Tear down the outgoing tool: stop routing its run, detach its events, release any
+            // callbacks it parked on static handlers, and clear run/clock state.
+            UnwireTool();
+            LemoineRunLog.Clear();
+            LemoineRun.End();
+            StopRunClock(); _runClock.Reset();
+
+            _tool  = tool;
+            Title  = _tool.Title;
+
+            _activeStep = 0; _isRunning = false; _isDone = false;
+            _reviewSummary = null;
+
+            // Drop the old visual tree from every chrome container and reset the log-tab list so
+            // the builders below repopulate from scratch — the "freshly reopened" state.
+            _toolbarBorder.Child = null;
+            _progressStrip.Children.Clear();
+            _stepStack.Children.Clear();
+            _logTabs.Clear();
+            _activeLogTab = "log";
+
+            BuildChrome(initial: false);
+            WireTool();
         }
 
         // During a run, true-hide every step row except the last (which hosts the run
@@ -1375,9 +1478,9 @@ namespace LemoineTools.Lemoine
         private void SetResetButtonToReset()
         {
             _resetBtn.IsEnabled = true;
-            _resetBtn.Content   = "Reset";
             _resetBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
             _resetBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+            UpdateResetButton();   // label is "Reload" on the first step, "Reset" elsewhere
         }
 
         private Button BuildButton(string label, bool accent)

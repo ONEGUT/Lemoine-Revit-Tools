@@ -39,51 +39,57 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            BulkRenameViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // ── Sheets (main thread) ──────────────────────────────────────
-            var sheets = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewSheet))
-                .Cast<ViewSheet>()
-                .Where(s => !s.IsTemplate)
-                .OrderBy(s => s.SheetNumber)
-                .Select(s => new BulkRenameViewModel.SheetEntry
-                {
-                    Id     = s.Id,
-                    Number = s.SheetNumber ?? "",
-                    Name   = s.Name ?? "",
-                })
-                .ToList();
+                // ── Sheets (main thread) ──────────────────────────────────────
+                var sheets = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewSheet))
+                    .Cast<ViewSheet>()
+                    .Where(s => !s.IsTemplate)
+                    .OrderBy(s => s.SheetNumber)
+                    .Select(s => new BulkRenameViewModel.SheetEntry
+                    {
+                        Id     = s.Id,
+                        Number = s.SheetNumber ?? "",
+                        Name   = s.Name ?? "",
+                    })
+                    .ToList();
 
-            // ── Views (main thread) — graphical/schedule/legend, never sheets ─
-            var views = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && !(v is ViewSheet)
-                         && v.ViewType != ViewType.ProjectBrowser
-                         && v.ViewType != ViewType.SystemBrowser
-                         && v.ViewType != ViewType.Internal
-                         && v.ViewType != ViewType.Undefined)
-                .Select(v => new BulkRenameViewModel.ViewEntry
-                {
-                    Id        = v.Id,
-                    Name      = v.Name,
-                    TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
-                })
-                .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
-                .ToList();
+                // ── Views (main thread) — graphical/schedule/legend, never sheets ─
+                var views = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && !(v is ViewSheet)
+                             && v.ViewType != ViewType.ProjectBrowser
+                             && v.ViewType != ViewType.SystemBrowser
+                             && v.ViewType != ViewType.Internal
+                             && v.ViewType != ViewType.Undefined)
+                    .Select(v => new BulkRenameViewModel.ViewEntry
+                    {
+                        Id        = v.Id,
+                        Name      = v.Name,
+                        TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                    })
+                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                    .ToList();
 
-            var vm = new BulkRenameViewModel(
-                App.BulkRenameRunHandler!, App.BulkRenameRunEvent!, sheets, views,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new BulkRenameViewModel(
+                    App.BulkRenameRunHandler!, App.BulkRenameRunEvent!, sheets, views,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

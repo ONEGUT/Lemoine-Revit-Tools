@@ -36,49 +36,55 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            CreateSheetsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // ── Collect title blocks ──────────────────────────────────────────
-            var titleblocks = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_TitleBlocks)
-                .WhereElementIsElementType()
-                .Cast<FamilySymbol>()
-                .OrderBy(tb => tb.FamilyName)
-                .ThenBy(tb => tb.Name)
-                .ToList();
+                // ── Collect title blocks ──────────────────────────────────────────
+                var titleblocks = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                    .WhereElementIsElementType()
+                    .Cast<FamilySymbol>()
+                    .OrderBy(tb => tb.FamilyName)
+                    .ThenBy(tb => tb.Name)
+                    .ToList();
 
-            // ── Collect levels ────────────────────────────────────────────────
-            var levels = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .OrderBy(l => l.Elevation)
-                .ToList();
+                // ── Collect levels ────────────────────────────────────────────────
+                var levels = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .OrderBy(l => l.Elevation)
+                    .ToList();
 
-            // ── Collect rooms ─────────────────────────────────────────────────
-            var rooms = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_Rooms)
-                .Cast<SpatialElement>()
-                .Where(r => r.Area > 0) // exclude unplaced rooms
-                .OrderBy(r => r.get_Parameter(BuiltInParameter.ROOM_NUMBER)?.AsString() ?? "")
-                .ToList();
+                // ── Collect rooms ─────────────────────────────────────────────────
+                var rooms = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Rooms)
+                    .Cast<SpatialElement>()
+                    .Where(r => r.Area > 0) // exclude unplaced rooms
+                    .OrderBy(r => r.get_Parameter(BuiltInParameter.ROOM_NUMBER)?.AsString() ?? "")
+                    .ToList();
 
-            // ── Collect scope boxes ───────────────────────────────────────────
-            var scopeBoxes = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
-                .WhereElementIsNotElementType()
-                .OrderBy(sb => sb.Name)
-                .ToList();
+                // ── Collect scope boxes ───────────────────────────────────────────
+                var scopeBoxes = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                    .WhereElementIsNotElementType()
+                    .OrderBy(sb => sb.Name)
+                    .ToList();
 
-            var vm = new CreateSheetsViewModel(
-                App.CreateSheetsHandler!, App.CreateSheetsEvent!,
-                titleblocks, levels, rooms, scopeBoxes);
+                var vm = new CreateSheetsViewModel(
+                    App.CreateSheetsHandler!, App.CreateSheetsEvent!,
+                    titleblocks, levels, rooms, scopeBoxes);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

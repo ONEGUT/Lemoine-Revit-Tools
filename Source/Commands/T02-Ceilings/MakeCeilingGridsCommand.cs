@@ -32,50 +32,56 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // Collect available documents on the Revit main thread
-            var availableDocs = new List<MakeCeilingGridsViewModel.DocEntry>
+            var uiApp = commandData.Application;
+            MakeCeilingGridsViewModel BuildTool()
             {
-                new MakeCeilingGridsViewModel.DocEntry
+                var doc = uiApp.ActiveUIDocument.Document;
+
+                // Collect available documents on the Revit main thread
+                var availableDocs = new List<MakeCeilingGridsViewModel.DocEntry>
                 {
-                    Label      = "(Host document)",
-                    IsHost     = true,
-                    LinkInstId = ElementId.InvalidElementId,
+                    new MakeCeilingGridsViewModel.DocEntry
+                    {
+                        Label      = "(Host document)",
+                        IsHost     = true,
+                        LinkInstId = ElementId.InvalidElementId,
+                    }
+                };
+
+                var seenDocIds = new System.Collections.Generic.HashSet<string>
+                    { doc.PathName ?? doc.Title };
+
+                foreach (var li in new FilteredElementCollector(doc)
+                    .OfClass(typeof(RevitLinkInstance))
+                    .Cast<RevitLinkInstance>()
+                    .Where(l => l.GetLinkDocument() != null))
+                {
+                    var ld = li.GetLinkDocument();
+                    string key = ld.PathName ?? ld.Title;
+                    if (!seenDocIds.Add(key)) continue;
+
+                    availableDocs.Add(new MakeCeilingGridsViewModel.DocEntry
+                    {
+                        Label      = ld.Title ?? li.Name,
+                        IsHost     = false,
+                        LinkInstId = li.Id,
+                    });
                 }
-            };
 
-            var seenDocIds = new System.Collections.Generic.HashSet<string>
-                { doc.PathName ?? doc.Title };
+                var vm = new MakeCeilingGridsViewModel(
+                    App.MakeCeilingGridsPhase1Handler!, App.MakeCeilingGridsPhase1Event!,
+                    App.MakeCeilingGridsRunHandler!,    App.MakeCeilingGridsRunEvent!,
+                    availableDocs);
 
-            foreach (var li in new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>()
-                .Where(l => l.GetLinkDocument() != null))
-            {
-                var ld = li.GetLinkDocument();
-                string key = ld.PathName ?? ld.Title;
-                if (!seenDocIds.Add(key)) continue;
-
-                availableDocs.Add(new MakeCeilingGridsViewModel.DocEntry
-                {
-                    Label      = ld.Title ?? li.Name,
-                    IsHost     = false,
-                    LinkInstId = li.Id,
-                });
+                return vm;
             }
-
-            var vm = new MakeCeilingGridsViewModel(
-                App.MakeCeilingGridsPhase1Handler!, App.MakeCeilingGridsPhase1Event!,
-                App.MakeCeilingGridsRunHandler!,    App.MakeCeilingGridsRunEvent!,
-                availableDocs);
-
+            var vm = BuildTool();
             var ready          = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

@@ -38,31 +38,37 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ClashFinderViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // Plan views only (floor + reflected ceiling).
-            var allViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && (v.ViewType == ViewType.FloorPlan
-                          || v.ViewType == ViewType.CeilingPlan))
-                .OrderBy(v => v.Name)
-                .ToList();
+                // Plan views only (floor + reflected ceiling).
+                var allViews = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View)).Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && (v.ViewType == ViewType.FloorPlan
+                              || v.ViewType == ViewType.CeilingPlan))
+                    .OrderBy(v => v.Name)
+                    .ToList();
 
-            var definitions = ClashDefinitionsSettings.Instance.Definitions
-                ?? new List<ClashDefinition>();
+                var definitions = ClashDefinitionsSettings.Instance.Definitions
+                    ?? new List<ClashDefinition>();
 
-            var vm = new ClashFinderViewModel(
-                App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions,
-                App.SlabPickHandler, App.SlabPickEvent,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new ClashFinderViewModel(
+                    App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions,
+                    App.SlabPickHandler, App.SlabPickEvent,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

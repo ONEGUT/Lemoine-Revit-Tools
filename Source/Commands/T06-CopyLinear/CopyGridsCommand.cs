@@ -34,17 +34,23 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-            var links = CollectGridLinks(doc);
+            var uiApp = commandData.Application;
+            CopyGridsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
+                var links = CollectGridLinks(doc);
 
-            var vm = new CopyGridsViewModel(App.CopyGridsRunHandler, App.CopyGridsRunEvent, links);
+                var vm = new CopyGridsViewModel(App.CopyGridsRunHandler, App.CopyGridsRunEvent, links);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) => { _window = null; Dispatcher.CurrentDispatcher.InvokeShutdown(); };
                 win.Show();
                 ready.Set();

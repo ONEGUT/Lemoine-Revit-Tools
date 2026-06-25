@@ -36,42 +36,54 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc      = commandData.Application.ActiveUIDocument;
-            var activeView = uidoc?.ActiveView;
+            var uiApp = commandData.Application;
 
-            if (activeView == null || activeView.IsTemplate)
+            // Initial guard with a proper Revit message. On reload, BuildTool re-validates and
+            // throws if the active view is no longer printable; the reload handler logs that and
+            // the window keeps its current tool.
+            var activeView0 = uiApp.ActiveUIDocument?.ActiveView;
+            if (activeView0 == null || activeView0.IsTemplate)
             {
                 message = "No printable active view. Open a floor plan, section, 3D view, or sheet first.";
                 return Result.Failed;
             }
 
-            // Build a human-readable display name for the view
-            string displayName = activeView is ViewSheet sheet
-                ? $"{sheet.SheetNumber} — {sheet.Name}"
-                : activeView.Name;
+            PrintViewViewModel BuildTool()
+            {
+                var uidoc      = uiApp.ActiveUIDocument;
+                var activeView = uidoc?.ActiveView;
+                if (activeView == null || activeView.IsTemplate)
+                    throw new System.InvalidOperationException("No printable active view to reload.");
 
-            // NWC/IFC export 3D views only — used to decide which formats the tool offers.
-            bool isThreeD = activeView is View3D;
+                // Build a human-readable display name for the view
+                string displayName = activeView is ViewSheet sheet
+                    ? $"{sheet.SheetNumber} — {sheet.Name}"
+                    : activeView.Name;
 
-            // DWG export setup names (same source as Bulk Export).
-            var doc = uidoc!.Document;
-            var dwgSetupNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(ExportDWGSettings))
-                .Cast<ExportDWGSettings>()
-                .Select(setting => setting.Name)
-                .OrderBy(n => n)
-                .ToList();
+                // NWC/IFC export 3D views only — used to decide which formats the tool offers.
+                bool isThreeD = activeView is View3D;
 
-            var vm = new PrintViewViewModel(
-                App.PrintViewHandler!, App.PrintViewEvent!,
-                activeView.Id, displayName, isThreeD, dwgSetupNames);
+                // DWG export setup names (same source as Bulk Export).
+                var doc = uidoc!.Document;
+                var dwgSetupNames = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ExportDWGSettings))
+                    .Cast<ExportDWGSettings>()
+                    .Select(setting => setting.Name)
+                    .OrderBy(n => n)
+                    .ToList();
+
+                return new PrintViewViewModel(
+                    App.PrintViewHandler!, App.PrintViewEvent!,
+                    activeView.Id, displayName, isThreeD, dwgSetupNames);
+            }
+            var vm = BuildTool();
 
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

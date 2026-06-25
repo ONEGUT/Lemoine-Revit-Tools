@@ -37,47 +37,53 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            BulkExportViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // Collect all sheets
-            var allSheets = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewSheet))
-                .Cast<ViewSheet>()
-                .Where(s => !s.IsTemplate)
-                .OrderBy(s => s.SheetNumber)
-                .ToList();
+                // Collect all sheets
+                var allSheets = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewSheet))
+                    .Cast<ViewSheet>()
+                    .Where(s => !s.IsTemplate)
+                    .OrderBy(s => s.SheetNumber)
+                    .ToList();
 
-            // Collect non-template views including 3D views (required for NWC/IFC export)
-            var allViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && v.ViewType != ViewType.Schedule
-                         && v.ViewType != ViewType.Legend)
-                .OrderBy(v => v.Name)
-                .ToList();
+                // Collect non-template views including 3D views (required for NWC/IFC export)
+                var allViews = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && v.ViewType != ViewType.Schedule
+                             && v.ViewType != ViewType.Legend)
+                    .OrderBy(v => v.Name)
+                    .ToList();
 
-            // Collect DWG export setup names
-            var dwgSetupNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(ExportDWGSettings))
-                .Cast<ExportDWGSettings>()
-                .Select(s => s.Name)
-                .OrderBy(n => n)
-                .ToList();
+                // Collect DWG export setup names
+                var dwgSetupNames = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ExportDWGSettings))
+                    .Cast<ExportDWGSettings>()
+                    .Select(s => s.Name)
+                    .OrderBy(n => n)
+                    .ToList();
 
-            // Snapshot of the Project Browser organization so the picker mirrors it exactly.
-            var browserTree = BrowserTreeCapture.Capture(doc);
+                // Snapshot of the Project Browser organization so the picker mirrors it exactly.
+                var browserTree = BrowserTreeCapture.Capture(doc);
 
-            var vm    = new BulkExportViewModel(
-                App.BulkExportHandler!, App.BulkExportEvent!,
-                dwgSetupNames, allSheets, allViews, browserTree);
+                var vm    = new BulkExportViewModel(
+                    App.BulkExportHandler!, App.BulkExportEvent!,
+                    dwgSetupNames, allSheets, allViews, browserTree);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;
