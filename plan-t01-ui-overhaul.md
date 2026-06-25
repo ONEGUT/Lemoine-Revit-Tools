@@ -67,12 +67,14 @@ it's Revit's undo. Confirm that scope is acceptable.
 - **Trade edit popup:** Save button removed — name/ID auto-commit on change; sidebar refresh deferred
   to popup close so renaming doesn't detach the anchor.
 
-## Stage 3 — Discover as a split button next to "Add Trade"  *(UI — mockup first)*
-- Replace the sidebar "＋ Add Trade" pill with a **double button**: left = **Discover**, right =
-  **Add Trade**. Left opens the Discover flow; right is the current direct add.
-- Simplest viable: left button launches the existing `DiscoverLaunchCommand` StepFlow window (it already
-  captures categories on the Revit main thread). Fully-inline Discover is a much larger rework — propose
-  the launch-existing-window approach unless you want inline.
+## Stage 3 — Discover as a split button next to "Add Trade"  *(DONE)*
+- Sidebar "＋ Add Trade" pill replaced with a **double button**: left **Discover**, right **＋ Add Trade**.
+- Discover launches the **existing** window: `DiscoverLaunchCommand.Open(uiApp)` (factored out, shared)
+  is raised via a new `OpenDiscoverEventHandler` ExternalEvent so main-thread setup runs correctly.
+- The Auto Filters window persists a **deep copy** before opening Discover and reloads on
+  `Activated` (`OnWindowActivated`) when the shared settings changed and the window has no unsaved edits.
+- **Transparency slider moved** out of Appearance & Visibility to the bottom of the Override Style
+  (colour overrides) card (`BuildTransparencyControl`).
 
 ## Stage 4 — Embed "Remove from view" + "Delete from project"  *(UI — mockup first)*
 - **Remove from view:** one instant button (toolbar or sidebar footer). No selection — removes **all

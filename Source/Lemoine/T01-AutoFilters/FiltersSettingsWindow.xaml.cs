@@ -81,6 +81,9 @@ namespace LemoineTools.Lemoine
             // Revit on the next theme change.
             LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+
+            // Reload discovered rules when focus returns from the Discover window.
+            Activated += OnWindowActivated;
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -130,6 +133,7 @@ namespace LemoineTools.Lemoine
         {
             LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            Activated -= OnWindowActivated;
 
             if (_filterTrades != null)
             {
@@ -184,6 +188,62 @@ namespace LemoineTools.Lemoine
             handler.OnComplete          = null;
 
             evt.Raise();
+        }
+
+        // Opens the Discover Rules window from the sidebar's Discover button. Persists the working
+        // buffer first so Discover reads the latest rules, then raises an ExternalEvent (the window
+        // setup needs Revit's main thread for category capture and link enumeration). Newly
+        // discovered trades/rules are reloaded when this window regains focus (OnWindowActivated).
+        private void LaunchDiscover()
+        {
+            if (_filterTrades != null)
+            {
+                // Persist a DEEP COPY (not the live buffer) so Discover mutates a separate list.
+                // That keeps _filterTrades == _filtersSnapshot here, so OnWindowActivated can detect
+                // Discover's additions as a real external change and reload + refresh the UI.
+                AutoFiltersSettings.Instance.Trades = AutoFiltersSettings.DeepCopy(_filterTrades);
+                AutoFiltersSettings.Instance.Save();
+                _filtersSnapshot = SerializeTrades(_filterTrades);
+            }
+
+            var evt = App.OpenDiscoverEvent;
+            if (evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Discover unavailable: event handler not registered.");
+                FlashStatus("Discover unavailable.");
+                return;
+            }
+
+            evt.Raise();
+            FlashStatus("Opening Discover…");
+        }
+
+        // When focus returns (e.g. after Discover wrote new rules into the shared AutoFiltersSettings
+        // singleton), reload the working buffer — but ONLY when this window has no unsaved edits, so
+        // in-progress work is never clobbered. The buffer is persisted before Discover opens, so on
+        // return with no further edits the buffer still equals its snapshot and a real external
+        // change is detected by a serialized comparison against the settings singleton.
+        private void OnWindowActivated(object sender, EventArgs e)
+        {
+            if (_filterTrades == null) return;
+
+            string current = SerializeTrades(_filterTrades);
+            if (current != _filtersSnapshot) return;                       // unsaved edits — leave alone
+            string latest = SerializeTrades(AutoFiltersSettings.Instance.Trades);
+            if (latest == current) return;                                 // nothing changed externally
+
+            _filterTrades    = AutoFiltersSettings.DeepCopy(AutoFiltersSettings.Instance.Trades);
+            _filtersSnapshot = SerializeTrades(_filterTrades);
+
+            if (_fActiveTradeId == null || !_filterTrades.Any(t => t.Id == _fActiveTradeId))
+                _fActiveTradeId = _filterTrades.FirstOrDefault()?.Id;
+            var at = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
+            if (_fActiveRuleId == null || at?.Rules.All(r => r.Id != _fActiveRuleId) == true)
+                _fActiveRuleId = at?.Rules.FirstOrDefault()?.Id;
+
+            FRefreshTradesSidebar();
+            FRefreshRuleList();
+            FRefreshRuleEditor();
         }
 
         // Rule-list footer: applies ONLY the active trade's filters to Revit's current view.

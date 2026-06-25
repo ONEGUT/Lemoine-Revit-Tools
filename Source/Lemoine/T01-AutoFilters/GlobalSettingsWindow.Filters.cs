@@ -287,13 +287,84 @@ namespace LemoineTools.Lemoine
 
         // "＋ Add Trade" affordance that floats as the last item in the trade list.
         // The pill doubles as the anchor for the add-trade popup form.
+        // Split [Discover | ＋ Add Trade] double button (floats as the last item in the trade list).
+        // Left half opens the existing Discover Rules window; right half is the inline add-trade form
+        // and doubles as the popup anchor.
         private void AppendAddTradePill()
         {
             if (_fTradeListPanel == null) return;
-            Border pill = null!;
-            pill = LemoineControlStyles.BuildAddPill("＋  Add Trade", () => ShowAddTradeForm(pill));
-            _fAddTradeAnchor = pill;
-            _fTradeListPanel.Children.Add(pill);
+
+            var outer = new Border
+            {
+                Margin          = new Thickness(4, 6, 4, 6),
+                BorderThickness = new Thickness(1),
+                Background      = Brushes.Transparent,
+            };
+            outer.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            outer.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // CornerRadius 10 matches LemoineRadius_Card (the outer pill radius); partial corners
+            // can't be set via SetResourceReference, so the per-half rounding is a literal here.
+            Border MakeHalf(string text, int col, CornerRadius corner, bool accent, Action onClick)
+            {
+                var lbl = new TextBlock
+                {
+                    Text                = text,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center,
+                    IsHitTestVisible    = false,
+                };
+                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                lbl.SetResourceReference(TextBlock.ForegroundProperty, accent ? "LemoineAccent" : "LemoineTextDim");
+
+                var half = new Border
+                {
+                    Padding      = new Thickness(6, 7, 6, 7),
+                    CornerRadius = corner,
+                    Cursor       = Cursors.Hand,
+                    Background   = Brushes.Transparent,
+                    Child        = lbl,
+                };
+                half.MouseEnter += (s, e) =>
+                {
+                    half.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, accent ? "LemoineAccent" : "LemoineText");
+                };
+                half.MouseLeave += (s, e) =>
+                {
+                    half.Background = Brushes.Transparent;
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, accent ? "LemoineAccent" : "LemoineTextDim");
+                };
+                half.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+                Grid.SetColumn(half, col);
+                return half;
+            }
+
+            var discoverHalf = MakeHalf("Discover", 0, new CornerRadius(10, 0, 0, 10), accent: true, LaunchDiscover);
+            discoverHalf.ToolTip = "Scan links/host for parameter values and propose colour-coded rules.";
+
+            var divider = new Border { Width = 1 };
+            divider.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            Grid.SetColumn(divider, 1);
+
+            Border addHalf = null!;
+            addHalf = MakeHalf("＋ Add Trade", 2, new CornerRadius(0, 10, 10, 0), accent: false,
+                () => ShowAddTradeForm(addHalf));
+            addHalf.ToolTip = "Add a new trade.";
+
+            grid.Children.Add(discoverHalf);
+            grid.Children.Add(divider);
+            grid.Children.Add(addHalf);
+
+            outer.Child = grid;
+            _fAddTradeAnchor = addHalf; // the add-trade popup anchors to its half
+            _fTradeListPanel.Children.Add(outer);
         }
 
         private UIElement BuildTradeRow(FilterTradeConfig trade)
@@ -1669,9 +1740,64 @@ namespace LemoineTools.Lemoine
                 setWeight: w => { markDirty?.Invoke("style.line.weight"); rule.LineWeight = w; });
 
             cardStack.Children.Add(colorGrid);
+
+            // Transparency lives at the bottom of the colour-override card (moved out of
+            // Appearance & Visibility).
+            cardStack.Children.Add(BuildTransparencyControl(rule, markDirty));
+
             card.Child = cardStack;
             outer.Children.Add(card);
             return outer;
+        }
+
+        // Transparency slider + live % badge. Bound to rule.Transparency; the
+        // "appearance.transparency" dirty key keeps batch-edit propagation working.
+        private UIElement BuildTransparencyControl(FilterRuleConfig rule, Action<string>? markDirty)
+        {
+            var container = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+
+            var transpLbl = MiniLabel("Transparency");
+            transpLbl.Margin = new Thickness(0, 2, 0, 4);
+            container.Children.Add(transpLbl);
+
+            var transpRow = new Grid();
+            transpRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            transpRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var transpSlider = new Slider
+            {
+                Minimum = 0, Maximum = 100, Value = rule.Transparency,
+                SmallChange = 5, LargeChange = 10,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            transpSlider.SetResourceReference(Slider.ForegroundProperty, "LemoineAccent");
+            Grid.SetColumn(transpSlider, 0);
+            transpRow.Children.Add(transpSlider);
+
+            var transpBadge = new Border
+            {
+                CornerRadius      = new CornerRadius(10),
+                Padding           = new Thickness(6, 2, 6, 2),
+                Margin            = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            transpBadge.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            var transpVal = new TextBlock { Text = rule.Transparency + "%" };
+            transpVal.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            transpVal.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+            transpVal.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            transpBadge.Child = transpVal;
+            Grid.SetColumn(transpBadge, 1);
+            transpRow.Children.Add(transpBadge);
+
+            transpSlider.ValueChanged += (s, e) =>
+            {
+                markDirty?.Invoke("appearance.transparency");
+                rule.Transparency = (int)transpSlider.Value;
+                transpVal.Text    = rule.Transparency + "%";
+            };
+            container.Children.Add(transpRow);
+            return container;
         }
 
         // ── Appearance & Visibility section ───────────────────────────────────
@@ -1778,48 +1904,7 @@ namespace LemoineTools.Lemoine
             cardStack.Children.Add(MakeAppToggle("Halftone", "Halftone", rule.Halftone,
                 v => { markDirty?.Invoke("appearance.halftone"); rule.Halftone = v; }));
 
-            // Transparency slider
-            var transpLbl = MiniLabel("Transparency");
-            transpLbl.Margin = new Thickness(0, 2, 0, 4);
-            cardStack.Children.Add(transpLbl);
-
-            var transpRow = new Grid { Margin = new Thickness(0, 0, 0, 10) };
-            transpRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            transpRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var transpSlider = new Slider
-            {
-                Minimum = 0, Maximum = 100, Value = rule.Transparency,
-                SmallChange = 5, LargeChange = 10,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            transpSlider.SetResourceReference(Slider.ForegroundProperty, "LemoineAccent");
-            Grid.SetColumn(transpSlider, 0);
-            transpRow.Children.Add(transpSlider);
-
-            var transpBadge = new Border
-            {
-                CornerRadius      = new CornerRadius(10),
-                Padding           = new Thickness(6, 2, 6, 2),
-                Margin            = new Thickness(6, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            transpBadge.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
-            var transpVal = new TextBlock { Text = rule.Transparency + "%" };
-            transpVal.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
-            transpVal.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
-            transpVal.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            transpBadge.Child = transpVal;
-            Grid.SetColumn(transpBadge, 1);
-            transpRow.Children.Add(transpBadge);
-
-            transpSlider.ValueChanged += (s, e) =>
-            {
-                markDirty?.Invoke("appearance.transparency");
-                rule.Transparency = (int)transpSlider.Value;
-                transpVal.Text    = rule.Transparency + "%";
-            };
-            cardStack.Children.Add(transpRow);
+            // (Transparency moved to the bottom of the Override Style card.)
 
             // Elements visible toggle
             cardStack.Children.Add(MakeAppToggle("Visible",

@@ -37,8 +37,11 @@ namespace LemoineTools
         internal static ExternalEvent?                 MakeCeilingGridsRunEvent      { get; private set; }
 
         // ── Discover Rules ──────────────────────────────────────────────────────────
-        internal static DiscoverEventHandler? DiscoverHandler { get; private set; }
-        internal static ExternalEvent?        DiscoverEvent   { get; private set; }
+        internal static DiscoverEventHandler?     DiscoverHandler     { get; private set; }
+        internal static ExternalEvent?            DiscoverEvent       { get; private set; }
+        // Opens the Discover window from inside the Auto Filters window (main-thread setup).
+        internal static OpenDiscoverEventHandler? OpenDiscoverHandler { get; private set; }
+        internal static ExternalEvent?            OpenDiscoverEvent   { get; private set; }
 
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
@@ -176,6 +179,8 @@ namespace LemoineTools
             // ── Discover Rules ────────────────────────────────────────────────
             DiscoverHandler = new DiscoverEventHandler();
             DiscoverEvent   = ExternalEvent.Create(DiscoverHandler);
+            OpenDiscoverHandler = new OpenDiscoverEventHandler();
+            OpenDiscoverEvent   = ExternalEvent.Create(OpenDiscoverHandler);
 
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
