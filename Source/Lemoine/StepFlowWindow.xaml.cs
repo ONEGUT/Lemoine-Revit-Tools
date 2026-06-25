@@ -31,6 +31,12 @@ namespace LemoineTools.Lemoine
         private bool _isRunning  = false;
         private bool _isDone     = false;
 
+        // Run clock — while the final run is in flight (and frozen on the result afterwards) the
+        // top-bar step-counter chip shows elapsed time instead of "Step X / Y". The timer ticks on
+        // this window's own dispatcher; it is stopped in CompleteRun/ResetAll and on Closed.
+        private readonly Stopwatch _runClock = new Stopwatch();
+        private DispatcherTimer?   _runClockTimer;
+
         private LemoineReviewSummary? _reviewSummary; // framework-built review for ILemoineReviewable tools
 
         // Named XAML elements — _outerBorder is declared by x:Name in XAML
@@ -103,6 +109,8 @@ namespace LemoineTools.Lemoine
                 _sink.Win = null;
                 // Defensive: if the window is closed mid-run, stop routing Revit failures here.
                 LemoineRunLog.Clear();
+                // Stop the run-clock timer so its Tick can't fire into a closing dispatcher.
+                StopRunClock();
             };
 
             BuildChrome();
@@ -1037,6 +1045,7 @@ namespace LemoineTools.Lemoine
         private void StartRun()
         {
             _isRunning = true; SetStatus("● Running…"); SetCounts(0, 0, 0);
+            StartRunClock();   // top-bar chip becomes an elapsed-time clock for the duration
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Visible;
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
             foreach (var b in _backBtns)    if (b != null) b.IsEnabled = false;
@@ -1066,6 +1075,7 @@ namespace LemoineTools.Lemoine
         private void CompleteRun(int pass, int fail, int skip)
         {
             _isRunning = false; _isDone = true;
+            StopRunClock();   // freeze the chip on the final elapsed time
             bool wasCancelled = LemoineRun.CancelRequested;
             LemoineRun.End();
             LemoineRunLog.Clear();
@@ -1140,6 +1150,7 @@ namespace LemoineTools.Lemoine
         private void ResetAll()
         {
             _isRunning = false; _isDone = false;
+            StopRunClock(); _runClock.Reset();   // clear the clock; chip returns to "Step X / Y"
             LemoineRun.End();
             LemoineRunLog.Clear();
             SetResetButtonToReset();
@@ -1228,8 +1239,9 @@ namespace LemoineTools.Lemoine
         private void UpdateStepCounter()
         {
             if (_stepCounter == null) return;
-            if (_isDone)    { _stepCounter.Text = "Complete"; return; }
-            if (_isRunning) { _stepCounter.Text = "Running…"; return; }
+            // While the run is in flight — and frozen on the total afterwards — the chip is a
+            // run clock showing elapsed time rather than the step position.
+            if (_isRunning || _isDone) { _stepCounter.Text = FormatElapsed(_runClock.Elapsed); return; }
             int total = 0, pos = 0;
             for (int i = 0; i < _tool.Steps.Length; i++)
             {
@@ -1239,6 +1251,36 @@ namespace LemoineTools.Lemoine
             }
             _stepCounter.Text = $"Step {pos} / {total}";
         }
+
+        // ── Run clock ──────────────────────────────────────────────────────────
+        // Starts the elapsed-time clock and a 1 s dispatcher tick that refreshes the chip.
+        private void StartRunClock()
+        {
+            _runClock.Restart();
+            if (_runClockTimer == null)
+            {
+                _runClockTimer = new DispatcherTimer(DispatcherPriority.Normal, Dispatcher)
+                { Interval = TimeSpan.FromSeconds(1) };
+                _runClockTimer.Tick += OnRunClockTick;
+            }
+            _runClockTimer.Start();
+            UpdateStepCounter();   // show 0:00 immediately rather than waiting a full second
+        }
+
+        // Stops the tick and pins the stopwatch so a later UpdateStepCounter reads the final time.
+        private void StopRunClock()
+        {
+            _runClockTimer?.Stop();
+            _runClock.Stop();
+        }
+
+        private void OnRunClockTick(object? sender, EventArgs e) => UpdateStepCounter();
+
+        // m:ss for runs under an hour, h:mm:ss beyond — matches the monospace chip font.
+        private static string FormatElapsed(TimeSpan t)
+            => t.TotalHours >= 1
+                ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}"
+                : $"{t.Minutes}:{t.Seconds:00}";
 
         private TextBlock SectionLabel(string t)
         {
