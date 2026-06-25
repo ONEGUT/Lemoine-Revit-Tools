@@ -81,22 +81,28 @@ All three "work", but a reader can't assume one pattern, and only idiom (1) gets
 5% log for free (root of A1). Recommend converging bulk loops on `RunProgressReporter`
 for the log + `onProgress` for the bar.
 
-### B3 🟡 Per-run payload not cleared in `finally` (memory/lifetime)
+### B3 🟡→✅ Per-run payload not cleared in `finally` (memory/lifetime)
 CLAUDE.md (*Memory & Lifetime Discipline*): every handler must clear per-run payload
-in a `finally`. Handlers with **no `finally`**:
-`AutoFiltersLegend`, `Discover`, `SlabPick`, `ClashElevationFinder`, `ClashPick`,
-`ExplodeViewByTrade`.
-Nuance — not all are leaks:
-- `Discover` and `ClashElevationFinder` reset inputs at the **start** of `Execute`
-  (`Discover:130-131`, `ClashElevationFinder:152-153`) and expose `ScanResults` /
-  results the ViewModel reads **after** `Execute`, so a finally-clear would wipe the
-  output. Legit exception — but they still hold the prior run's `View`/`Element`
-  refs through the idle period.
-- `SlabPick`, `ClashPick` are read-only single-shot pickers with local-only state —
-  likely nothing to clear (confirm).
-- `AutoFiltersLegend`, `ExplodeViewByTrade` — confirm whether they hold cached
-  `View`/`Element`/filter refs that should be dropped in `finally`.
-Action: per-handler decision (clear-in-finally vs documented output-read exception).
+in a `finally`. Six handlers had **no `finally`**. On close reading they split two ways:
+
+**Already clean — no payload to clear (no change):**
+- `ClashPickEventHandler` — only `InLinks` (bool) + callbacks; result is a **local**
+  handed off via `OnPicked`.
+- `SlabPickEventHandler` — same shape (`InLinks` + callbacks; local `scope`/`name`).
+- `AutoFiltersLegendEventHandler` — only layout constants + callbacks; all inputs come
+  from `doc.ActiveView` / the `AutoFiltersSettings` singleton, work is in locals.
+
+**✅ FIXED — cleared payload but outside a `finally`** (a throwing completion callback
+could skip the clear; these are session-long App statics):
+- `ClashElevationFinderEventHandler` — `ViewIds` / `Definitions`.
+- `DiscoverEventHandler` — `ScanSpecs` / `CommitSpecs` / `ScanResults`. Special case:
+  `Complete()` lets the ViewModel read `ScanResults` **synchronously before** the clear,
+  so `Complete()` now runs *inside* the `finally`, ahead of the clear (ordering preserved).
+- `ExplodeViewByTradeEventHandler` — `SourceViewId` / `SelectedTradeIds`.
+
+Fix shape (all three): wrap the result-reporting + payload clear in `finally`; the
+reporting/callbacks sit in a nested `try` routed to `LemoineLog.Swallowed`, so a
+throwing callback can never skip the clear.
 
 ---
 
