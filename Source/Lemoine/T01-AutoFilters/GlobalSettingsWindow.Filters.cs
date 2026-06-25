@@ -131,6 +131,14 @@ namespace LemoineTools.Lemoine
                 Content                       = _fRuleListPanel,
             };
             _fRuleScroll = ruleScroll;
+
+            // Docked footer: applies the active trade's filters to the current view.
+            var applyTradeFooter = BuildApplyFooter("Apply trade to view",
+                "Create and apply the active trade's filters to the current view.",
+                ApplyActiveTradeToView);
+            DockPanel.SetDock(applyTradeFooter, Dock.Bottom);
+            leftDock.Children.Add(applyTradeFooter);
+
             leftDock.Children.Add(ruleScroll);
             FRefreshRuleList();
 
@@ -209,12 +217,19 @@ namespace LemoineTools.Lemoine
             // "＋ Add Trade" now floats as the last item inside the trade list
             // (AppendAddTradePill, called from FRefreshTradesSidebar) — no sticky bar.
 
+            // Docked footer: applies every checked trade's filters to the current view.
+            var applyAllFooter = BuildApplyFooter("Apply selected trades to view",
+                "Apply the checked trades' filters to the current view.",
+                ApplySelectedTradesToView);
+            DockPanel.SetDock(applyAllFooter, Dock.Bottom);
+
             var sidebarDock = new DockPanel { LastChildFill = true };
             sidebarDock.SetResourceReference(DockPanel.BackgroundProperty, "LemoineSurface");
             DockPanel.SetDock(templatesPill,   Dock.Top);
             DockPanel.SetDock(templSep,        Dock.Top);
             sidebarDock.Children.Add(templatesPill);
             sidebarDock.Children.Add(templSep);
+            sidebarDock.Children.Add(applyAllFooter);
             sidebarDock.Children.Add(tradeScroll);
 
             _fTradesSidebar = new Border { BorderThickness = new Thickness(0) };
@@ -323,11 +338,17 @@ namespace LemoineTools.Lemoine
                 };
             }
 
-            // Row: [Auto swatch | * label | Auto edit]
+            // Row: [Auto checkbox | Auto swatch | * label | Auto edit]
             var rowGrid = new Grid();
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // Quick apply-selection checkbox (drives "Apply selected trades to view").
+            var applyCb = BuildTradeApplyCheckbox(trade);
+            Grid.SetColumn(applyCb, 0);
+            rowGrid.Children.Add(applyCb);
 
             var swatch = new Border
             {
@@ -339,7 +360,7 @@ namespace LemoineTools.Lemoine
                 VerticalAlignment = VerticalAlignment.Center,
             };
             swatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            Grid.SetColumn(swatch, 0);
+            Grid.SetColumn(swatch, 1);
             rowGrid.Children.Add(swatch);
 
             var labelTb = new TextBlock
@@ -352,7 +373,7 @@ namespace LemoineTools.Lemoine
             labelTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             labelTb.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "LemoineAccent" : "LemoineText");
             labelTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            Grid.SetColumn(labelTb, 1);
+            Grid.SetColumn(labelTb, 2);
             rowGrid.Children.Add(labelTb);
 
             string editId = trade.Id;
@@ -365,11 +386,90 @@ namespace LemoineTools.Lemoine
                 var t = _filterTrades?.FirstOrDefault(x => x.Id == editId);
                 if (t != null) ShowTradeEditPopup(t, editBtn);
             };
-            Grid.SetColumn(editBtn, 2);
+            Grid.SetColumn(editBtn, 3);
             rowGrid.Children.Add(editBtn);
 
             rowBorder.Child = rowGrid;
             return rowBorder;
+        }
+
+        // Docked footer bar carrying a full-width primary "apply to view" button.
+        private static Border BuildApplyFooter(string label, string tooltip, Action onClick)
+        {
+            var bar = new Border
+            {
+                Padding         = new Thickness(8),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+            };
+            bar.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var btn = LemoineControlStyles.BuildButton(
+                label, LemoineControlStyles.LemoineButtonVariant.Primary);
+            btn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            btn.ToolTip             = tooltip;
+            btn.Click += (s, e) => onClick();
+
+            bar.Child = btn;
+            return bar;
+        }
+
+        // Per-trade checkbox driving the "Apply selected trades to view" footer. Selection is
+        // tracked as an EXCLUSION set (_fApplyExcludedTradeIds), so a trade is checked by default.
+        // The checkbox consumes its own click so it never also selects the trade for editing.
+        private UIElement BuildTradeApplyCheckbox(FilterTradeConfig trade)
+        {
+            string tid = trade.Id;
+
+            var box = new Border
+            {
+                Width             = 15,
+                Height            = 15,
+                CornerRadius      = new CornerRadius(3),
+                BorderThickness   = new Thickness(1.5),
+                Margin            = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor            = Cursors.Hand,
+                ToolTip           = "Include this trade when applying selected trades to the view",
+            };
+
+            var check = new TextBlock
+            {
+                Text                = char.ConvertFromUtf32(0x2713), // ✓
+                FontWeight          = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+            check.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+            check.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+            box.Child = check;
+
+            void Paint()
+            {
+                if (!_fApplyExcludedTradeIds.Contains(tid))
+                {
+                    box.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
+                    box.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                    check.Opacity = 1.0;
+                }
+                else
+                {
+                    box.Background = Brushes.Transparent;
+                    box.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                    check.Opacity = 0.0;
+                }
+            }
+            Paint();
+
+            box.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true; // never trigger row selection
+                if (_fApplyExcludedTradeIds.Contains(tid)) _fApplyExcludedTradeIds.Remove(tid);
+                else                                        _fApplyExcludedTradeIds.Add(tid);
+                Paint();
+            };
+
+            return box;
         }
 
         private static Border BuildSidebarActionBtn(string glyph, string fontResourceKey)

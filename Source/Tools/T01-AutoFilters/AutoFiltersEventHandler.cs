@@ -52,6 +52,17 @@ namespace LemoineTools.Tools.AutoFilters
         public HashSet<string>? ChangedFilterNames { get; set; } = null;
 
         /// <summary>
+        /// When true (apply-to-view only, i.e. <see cref="CreateOnly"/> == false), trades flagged
+        /// <c>ExternallyManaged</c> that appear in <see cref="SelectedDisciplines"/> are still applied
+        /// to the active view — their existing filters (created by their owning tool, e.g. Ceiling
+        /// Heatmap) are attached and the rule's stored graphic overrides re-applied. Their filter
+        /// DEFINITIONS are never regenerated here, since they use non-keyword matching maintained
+        /// elsewhere. When false (default) externally-managed trades are skipped, preserving the
+        /// historical behaviour for callers that don't opt in.
+        /// </summary>
+        public bool IncludeSelectedExternallyManaged { get; set; } = false;
+
+        /// <summary>
         /// When true, a Revit TaskDialog summarising any filter-creation failures is shown
         /// at the end of <see cref="Execute"/>. Used by the auto-create-on-close path, where
         /// the originating window has already closed and cannot surface failures itself.
@@ -107,6 +118,7 @@ namespace LemoineTools.Tools.AutoFilters
                 _allViewsCache      = null;
                 SelectedLinkTitles  = new List<string>();
                 SelectedDisciplines = new List<string>();
+                IncludeSelectedExternallyManaged = false;
             }
 
             Progress(100, pass, fail, skip);
@@ -198,11 +210,17 @@ namespace LemoineTools.Tools.AutoFilters
             Progress(5, pass, fail, skip);
 
             // ── Count total enabled rules to size progress bar ────────────────
+            // Externally-managed trades only contribute rules when the caller explicitly opts in
+            // to applying them to the view (attach-only — their definitions are never rebuilt here).
+            bool applyManaged = !createOnly && IncludeSelectedExternallyManaged;
             int totalRules = trades.Sum(t =>
-                (!t.ExternallyManaged
-                 && (selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label)))
-                    ? t.Rules.Count(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r))
-                    : 0);
+            {
+                bool selectedT = selectedTradeSet.Count == 0 || selectedTradeSet.Contains(t.Label);
+                if (!selectedT) return 0;
+                if (t.ExternallyManaged)
+                    return applyManaged ? t.Rules.Count(r => r.Enabled) : 0;
+                return t.Rules.Count(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r));
+            });
             if (totalRules == 0)
             {
                 Log("No enabled rules with match keywords found for selected trades.", "fail");
@@ -295,11 +313,34 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     if (cancelled) break;
 
-                    // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword
-                    // matching and are maintained by their own tool — never regenerate here.
-                    if (trade.ExternallyManaged) continue;
+                    bool selectedT = selectedTradeSet.Count == 0 || selectedTradeSet.Contains(trade.Label);
 
-                    if (selectedTradeSet.Count > 0 && !selectedTradeSet.Contains(trade.Label))
+                    // Externally-managed trades (e.g. Ceiling Heatmap) use non-keyword matching and
+                    // are maintained by their own tool — never regenerate their definitions here.
+                    // When the caller opts in (applyManaged), a SELECTED managed trade is still
+                    // applied to the view by attaching its existing filters and re-applying overrides.
+                    if (trade.ExternallyManaged)
+                    {
+                        if (!applyManaged || !selectedT) continue;
+
+                        foreach (var rule in trade.Rules)
+                        {
+                            if (LemoineRun.CancelRequested)
+                            {
+                                Log($"Stopped by user — {rulesDone} of {totalRules} rule(s) processed; work so far preserved.", "warn");
+                                cancelled = true;
+                                break;
+                            }
+
+                            ApplyExistingFilterToView(view, trade, rule,
+                                solidFillId, solidLineId, fillPatternMap, linePatternMap,
+                                existingFilters, existingViewFilterIds,
+                                ref pass, ref fail, ref skip, ref rulesDone, totalRules);
+                        }
+                        continue;
+                    }
+
+                    if (!selectedT)
                     {
                         skip++;
                         continue;
@@ -558,6 +599,52 @@ namespace LemoineTools.Tools.AutoFilters
                         ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error '{filterName}': {ex.Message}", "fail");
+                fail++;
+            }
+
+            rulesDone++;
+            Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
+        }
+
+        // Attaches an externally-managed trade's EXISTING filter to the active view and re-applies
+        // the rule's stored graphic overrides — without ever rebuilding the filter definition (the
+        // owning tool maintains that). The filter name follows the shared MakeFilterName convention,
+        // so it is found in the existing-filter index built for this run. A missing filter is a
+        // skip-and-log (the owning tool hasn't created it yet), never a failure.
+        private void ApplyExistingFilterToView(
+            View view, FilterTradeConfig trade, FilterRuleConfig rule,
+            ElementId solidFillId, ElementId solidLineId,
+            Dictionary<string, ElementId> fillPatternMap,
+            Dictionary<string, ElementId> linePatternMap,
+            Dictionary<string, ParameterFilterElement> existingFilters,
+            HashSet<long> existingViewFilterIds,
+            ref int pass, ref int fail, ref int skip, ref int rulesDone, int totalRules)
+        {
+            if (!rule.Enabled) { skip++; rulesDone++; return; }
+
+            string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
+            if (!existingFilters.TryGetValue(filterName, out var pfe))
+            {
+                Log($"[{trade.Id}/{rule.Name}] '{filterName}' not found — run {trade.Label}'s own tool first.", "info");
+                skip++; rulesDone++;
+                return;
+            }
+
+            try
+            {
+                bool wasOnView = existingViewFilterIds.Contains(pfe.Id.Value);
+                if (!wasOnView)
+                {
+                    view.AddFilter(pfe.Id);
+                    existingViewFilterIds.Add(pfe.Id.Value);
+                }
+                view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
+                ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                pass++;
             }
             catch (Exception ex)
             {

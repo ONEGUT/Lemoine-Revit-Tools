@@ -48,6 +48,10 @@ namespace LemoineTools.Lemoine
         private          string?                    _fShiftAnchorRuleId;
         private readonly Dictionary<string, Border> _fMultiSelectBorders = new Dictionary<string, Border>();
 
+        // Trades EXCLUDED from "Apply selected trades to view" (per-trade sidebar checkbox).
+        // Tracked as exclusions so trades added mid-session are applied by default.
+        private readonly HashSet<string>            _fApplyExcludedTradeIds = new HashSet<string>();
+
         // ── Active drag state (rule reorder) ─────────────────────────────────
         private string?  _dragRuleId;
         private Border?  _dragSourceBorder;
@@ -182,22 +186,35 @@ namespace LemoineTools.Lemoine
             evt.Raise();
         }
 
-        // Creates and applies ONLY the active trade's filters to Revit's current view.
-        // Persists the working buffer first so the handler reads the latest (possibly
-        // just-merged) rules, then refreshes the dirty snapshot so OnClosed doesn't run a
-        // second redundant pass. OverwriteFilterDefinition is forced true so an existing
-        // filter created before a rule was merged is rebuilt with ALL its keywords — fixing
-        // the "only one of the merged text values applied" symptom on re-apply.
+        // Rule-list footer: applies ONLY the active trade's filters to Revit's current view.
         private void ApplyActiveTradeToView()
         {
             if (_filterTrades == null) return;
             var trade = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
             if (trade == null) { FlashStatus("No trade selected."); return; }
-            if (trade.ExternallyManaged)
-            {
-                FlashStatus($"“{trade.Label}” is managed by another tool — apply it from there.");
-                return;
-            }
+            ApplyTradesToView(new List<FilterTradeConfig> { trade });
+        }
+
+        // Trades-sidebar footer: applies every checked trade's filters to Revit's current view.
+        // Selection is tracked as an EXCLUSION set, so trades added during the session are
+        // applied by default and a checkbox toggle removes/restores them.
+        private void ApplySelectedTradesToView()
+        {
+            if (_filterTrades == null) return;
+            var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
+            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+            ApplyTradesToView(selected);
+        }
+
+        // Creates and applies the given trades' filters to Revit's current view.
+        // Persists the working buffer first so the handler reads the latest (possibly just-merged)
+        // rules, then refreshes the dirty snapshot so OnClosed doesn't run a second redundant pass.
+        // OverwriteFilterDefinition is forced true so an existing filter created before a rule was
+        // merged is rebuilt with ALL its keywords. Externally-managed trades are NOT skipped — the
+        // handler attaches their existing filters and re-applies overrides (IncludeSelectedExternallyManaged).
+        private void ApplyTradesToView(List<FilterTradeConfig> trades)
+        {
+            if (_filterTrades == null || trades == null || trades.Count == 0) return;
 
             var handler = App.AutoFiltersHandler;
             var evt     = App.AutoFiltersEvent;
@@ -214,19 +231,22 @@ namespace LemoineTools.Lemoine
             AutoFiltersSettings.Instance.Save();
             _filtersSnapshot = SerializeTrades(_filterTrades);
 
-            handler.CreateOnly                = false;
-            handler.OverwriteFilterDefinition = true;
-            handler.KeepExistingOverrides     = false;
-            handler.ShowFailureDialog         = true;
-            handler.ChangedFilterNames        = null;
-            handler.SelectedDisciplines       = new List<string> { trade.Label };
-            handler.SelectedLinkTitles        = new List<string>();
-            handler.PushLog                   = null;
-            handler.OnProgress                = null;
-            handler.OnComplete                = null;
+            handler.CreateOnly                       = false;
+            handler.OverwriteFilterDefinition        = true;
+            handler.KeepExistingOverrides            = false;
+            handler.IncludeSelectedExternallyManaged = true;
+            handler.ShowFailureDialog                = true;
+            handler.ChangedFilterNames               = null;
+            handler.SelectedDisciplines              = trades.Select(t => t.Label).ToList();
+            handler.SelectedLinkTitles               = new List<string>();
+            handler.PushLog                          = null;
+            handler.OnProgress                       = null;
+            handler.OnComplete                       = null;
 
             evt.Raise();
-            FlashStatus($"Applying “{trade.Label}” to the active view…");
+            FlashStatus(trades.Count == 1
+                ? $"Applying “{trades[0].Label}” to the active view…"
+                : $"Applying {trades.Count} trades to the active view…");
         }
 
         // ── Floating bottom-right status chip ───────────────────────────────────
@@ -323,12 +343,8 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            var applyBtn = FlatSmBtn("Apply to view");
-            applyBtn.VerticalAlignment = VerticalAlignment.Center;
-            applyBtn.Margin            = new Thickness(0, 0, 8, 0);
-            applyBtn.ToolTip           = "Create and apply the active trade's filters to the current view.";
-            applyBtn.Click += (s, e) => ApplyActiveTradeToView();
-
+            // The "Apply to view" actions now live as docked footer bars on the rule list
+            // ("Apply trade to view") and the trades sidebar ("Apply selected trades to view").
             var closeBtn = BuildFlatButton("×");
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
@@ -338,7 +354,6 @@ namespace LemoineTools.Lemoine
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            rightPanel.Children.Add(applyBtn);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar

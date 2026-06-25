@@ -46,13 +46,15 @@ it's Revit's undo. Confirm that scope is acceptable.
 
 ---
 
-## Stage 1 — Relocate & rename the "Apply to view" actions  *(UI — mockup first)*
-- Remove the toolbar "Apply to view" button (top-right).
-- Add **"Apply trade to view"** docked at the bottom of the center rule-list column (applies the
-  active trade — reuses existing `ApplyActiveTradeToView`).
-- Add **"Apply all trades to view"** docked at the bottom of the Trades sidebar (new: iterate all
-  non-externally-managed trades, one apply pass).
-- Both as sticky footer bars inside their respective columns.
+## Stage 1 — Relocate & rename the "Apply to view" actions  *(DONE)*
+- Removed the toolbar "Apply to view" button (top-right).
+- **"Apply trade to view"** docked at the bottom of the center rule-list column (applies the active trade).
+- **"Apply selected trades to view"** docked at the bottom of the Trades sidebar.
+- **Per-trade quick selection:** each sidebar trade row has a checkbox (tracked as an exclusion set, so
+  trades default to checked). The footer applies the checked subset, not always all.
+- **Externally-managed trades are NOT skipped** — when selected, the handler attaches their existing
+  filters and re-applies the rule's stored overrides without regenerating their definitions
+  (`AutoFiltersEventHandler.IncludeSelectedExternallyManaged` + `ApplyExistingFilterToView`).
 
 ## Stage 2 — Rule row & right-editor cleanup  *(UI — mockup first)*
 - **Remove the eye toggle** from each rule row (`BuildRuleToggle` / `LemoineEyeGlyph`). *(Needs a
