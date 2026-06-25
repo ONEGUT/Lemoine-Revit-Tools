@@ -49,6 +49,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
         private ElementId       _sourceSheetId = ElementId.InvalidElementId;
         private List<ElementId> _targetSheetIds = new List<ElementId>();
         private int             _overlapPercent = 50;
+        private bool            _alignTitles    = true;
         private bool            _previewOnly    = false;
 
         // ── Revit wiring ──────────────────────────────────────────────────────
@@ -176,6 +177,21 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                                     "source view's own plane) for the two to be treated as counterparts. Lower this " +
                                     "if counterparts are cropped to different sizes; raise it if unrelated views match."));
 
+            var titles = new CheckBox
+            {
+                Content   = "Also align view titles (location + line length)",
+                IsChecked = _alignTitles,
+                Margin    = new Thickness(0, 16, 0, 0),
+            };
+            titles.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
+            titles.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
+            titles.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_MD");
+            titles.Checked   += (s, e) => { _alignTitles = true;  OnValidationChanged(); };
+            titles.Unchecked += (s, e) => { _alignTitles = false; OnValidationChanged(); };
+            outer.Children.Add(titles);
+            outer.Children.Add(Note("After the viewports are aligned, each view title is moved to overlay its source " +
+                                    "title and its title line length is matched. Done last, since moving a viewport moves its title."));
+
             var preview = new CheckBox
             {
                 Content   = "Preview only — report matches and errors without moving any viewport",
@@ -199,6 +215,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             ("source",  "Reference Sheet"),
             ("targets", "Target Sheets"),
             ("overlap", "Match Overlap"),
+            ("titles",  "View Titles"),
             ("mode",    "Mode"),
         };
 
@@ -211,6 +228,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 ? "— (none selected)"
                 : $"{EffectiveTargetCount} sheet(s)",
             ["overlap"] = $"{_overlapPercent}% minimum",
+            ["titles"]  = _alignTitles ? "Aligned (location + line length)" : "Left unchanged",
             ["mode"]    = _previewOnly ? "Preview only (no moves)" : "Align viewports",
         };
 
@@ -220,7 +238,8 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             "viewport so the two register. Missing or ambiguous counterparts are reported, never moved.";
         public string?        ReviewWarning => _previewOnly
             ? null
-            : "Target viewports will be repositioned on every selected sheet.";
+            : "Target viewports" + (_alignTitles ? " and their view titles" : "") +
+              " will be repositioned on every selected sheet.";
 
         // ── Validation / summary ──────────────────────────────────────────────
         private int EffectiveTargetCount =>
@@ -244,7 +263,9 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                     ? "—"
                     : (_sheetLabels.TryGetValue(_sourceSheetId.Value, out var lbl) ? lbl : "1 selected");
                 case "S2": return EffectiveTargetCount == 0 ? "—" : $"{EffectiveTargetCount} sheet(s)";
-                case "S3": return $"overlap {_overlapPercent}%" + (_previewOnly ? "  |  preview" : "");
+                case "S3": return $"overlap {_overlapPercent}%" +
+                                  (_alignTitles ? "  |  titles" : "") +
+                                  (_previewOnly ? "  |  preview" : "");
                 case "S4": return "Ready to run";
                 default:   return "—";
             }
@@ -261,6 +282,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             _handler.SourceSheetId    = _sourceSheetId;
             _handler.TargetSheetIds   = _targetSheetIds.Where(id => id != _sourceSheetId).ToList();
             _handler.OverlapThreshold = _overlapPercent / 100.0;
+            _handler.AlignTitles      = _alignTitles;
             _handler.PreviewOnly      = _previewOnly;
             _handler.PushLog          = pushLog;
             _handler.OnProgress       = onProgress;
