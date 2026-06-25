@@ -397,9 +397,11 @@ namespace LemoineTools.Tools.AutoFilters
                         settings.Trades.Add(trade);
                     }
 
-                    // A rule with this name already exists (same value re-discovered, or a
-                    // re-run): merge this spec's categories into it rather than dropping them
-                    // (a silent drop is how multi-category values lost all but one category).
+                    // A rule with this name already exists (same value re-discovered, a
+                    // re-run, or two different values manually renamed to the same rule name):
+                    // merge this spec's categories AND its keyword into it rather than dropping
+                    // them (a silent drop is how multi-category values lost all but one category,
+                    // and how a renamed-to-same rule lost all but its first keyword value).
                     var dupe = trade.Rules.FirstOrDefault(r =>
                         string.Equals(r.Name, spec.RuleName, StringComparison.OrdinalIgnoreCase));
                     if (dupe != null)
@@ -411,9 +413,22 @@ namespace LemoineTools.Tools.AutoFilters
                                 dupe.BuiltInCategories.Add(ost);
                                 added++;
                             }
+
+                        // Union the keyword too — only for keyword (non-whole-category) rules,
+                        // and only when the existing rule is itself keyword-based, so we never
+                        // bolt a keyword onto a "whole category" rule.
+                        if (!spec.IsWholeCategory
+                            && !string.Equals(dupe.MatchType, "all", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrEmpty(spec.ParameterValue)
+                            && !dupe.Match.Any(m => string.Equals(m, spec.ParameterValue, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            dupe.Match.Add(spec.ParameterValue);
+                            added++;
+                        }
+
                         if (added > 0)
                         {
-                            Log($"Merged {added} categor{(added == 1 ? "y" : "ies")} into existing '{spec.RuleName}'.", "pass");
+                            Log($"Merged into existing '{spec.RuleName}' ({added} categor{(added == 1 ? "y" : "ies")}/keyword(s)).", "pass");
                             pass++;
                         }
                         else

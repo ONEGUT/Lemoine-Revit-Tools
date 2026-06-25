@@ -65,23 +65,11 @@ namespace LemoineTools.Tools.AutoFilters
                 fail++; return;
             }
 
-            // Build filter name → ElementId map. Case-insensitive to match the OrdinalIgnoreCase
-            // rule-name comparison used elsewhere, so a filter with differing stored casing is found.
+            // Case-insensitive to match the OrdinalIgnoreCase rule-name comparison used elsewhere,
+            // so a filter with differing stored casing is found. filterMap (name → id) is built
+            // inside the transaction AFTER definitions are refreshed, because a refresh that has to
+            // rebuild a filter mints a new ElementId.
             var selectedSet = new HashSet<string>(SelectedFilterNames, StringComparer.OrdinalIgnoreCase);
-            var filterMap = new FilteredElementCollector(doc)
-                .OfClass(typeof(ParameterFilterElement))
-                .Cast<ParameterFilterElement>()
-                .Where(f => selectedSet.Contains(f.Name))
-                .ToDictionary(f => f.Name, f => f.Id, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var m in SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)))
-                Log($"Filter not found in project: '{m}'", "info");
-
-            if (filterMap.Count == 0)
-            {
-                Log("None of the selected filters exist in this project.", "fail");
-                fail++; return;
-            }
 
             // Resolve the selected view ElementIds directly — each id is one specific
             // view, so same-named views (Floor Plan vs RCP, duplicate 3D views) are
@@ -103,8 +91,6 @@ namespace LemoineTools.Tools.AutoFilters
                 fail++; return;
             }
 
-            Log($"{filterMap.Count} filter(s), {viewList.Count} view(s) — beginning apply…", "info");
-
             // View filters only override linked elements when the link is displayed
             // "By Host View". Warn once per link shown "By Linked View" so the user knows
             // why a filter appears to do nothing on a linked model.
@@ -124,18 +110,28 @@ namespace LemoineTools.Tools.AutoFilters
                 .GroupBy(lp => lp.Name, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
-            // Build filterName → owning rule ONCE, instead of re-scanning every trade and
-            // rule for each filter×view op (that was MakeFilterName run millions of times on
-            // a large project). First rule to claim a name wins (config order).
-            var ruleByName = new Dictionary<string, FilterRuleConfig>(StringComparer.OrdinalIgnoreCase);
+            // Build filterName → owning (trade, rule) ONCE, instead of re-scanning every trade and
+            // rule for each filter×view op. First rule to claim a name wins (config order). The
+            // trade is kept so the definition refresh can rebuild the filter from its rule.
+            var ruleByName = new Dictionary<string, (FilterTradeConfig Trade, FilterRuleConfig Rule)>(
+                StringComparer.OrdinalIgnoreCase);
             foreach (var trade in AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>())
                 foreach (var rule in trade.Rules ?? new List<FilterRuleConfig>())
                 {
                     string n = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
-                    if (!ruleByName.ContainsKey(n)) ruleByName[n] = rule;
+                    if (!ruleByName.ContainsKey(n)) ruleByName[n] = (trade, rule);
                 }
 
-            int totalOps = filterMap.Count * viewList.Count;
+            // Source docs for parameter resolution during the definition refresh: host plus every
+            // loaded link (a link-only parameter still resolves to a host-valid id this way).
+            var sourceDocs = new List<Document> { doc };
+            foreach (RevitLinkInstance li in new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+            {
+                Document ld = li.GetLinkDocument();
+                if (ld != null && !sourceDocs.Any(d => d.Equals(ld))) sourceDocs.Add(ld);
+            }
+
             int done     = 0;
             int lastPct  = -1;
 
@@ -143,6 +139,44 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 ConfigureFailures(tx);
                 tx.Start();
+
+                // Refresh each selected filter's DEFINITION from its current owning rule before
+                // attaching it, so a filter created before its rule was merged picks up ALL the
+                // merged keywords (not just the first). Done in place to preserve the ElementId
+                // and existing view assignments; a filter with no owning rule is left untouched.
+                var ctx = AutoFiltersEventHandler.CreateRefreshContext(doc, sourceDocs);
+                int refreshed = 0;
+                foreach (var name in selectedSet)
+                {
+                    if (!ruleByName.TryGetValue(name, out var owner)) continue;
+                    var pfe = AutoFiltersEventHandler.EnsureRuleFilterDefinition(
+                        ctx, owner.Trade, owner.Rule, out var warn);
+                    if (warn != null) Log($"'{name}': {warn}", "info");
+                    if (pfe != null) refreshed++;
+                }
+                if (refreshed > 0)
+                    Log($"Synced {refreshed} filter definition(s) from current rules.", "info");
+
+                // Build name → id from the refreshed index (ids may have changed on rebuild).
+                var filterMap = new Dictionary<string, ElementId>(StringComparer.OrdinalIgnoreCase);
+                foreach (var name in selectedSet)
+                    if (ctx.ExistingFilters.TryGetValue(name, out var pfe))
+                        filterMap[name] = pfe.Id;
+
+                foreach (var m in SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)))
+                    Log($"Filter not found in project: '{m}'", "info");
+
+                if (filterMap.Count == 0)
+                {
+                    Log("None of the selected filters exist in this project.", "fail");
+                    fail++;
+                    tx.RollBack();
+                    return;
+                }
+
+                Log($"{filterMap.Count} filter(s), {viewList.Count} view(s) — beginning apply…", "info");
+
+                int totalOps = filterMap.Count * viewList.Count;
 
                 bool cancelled = false;
                 foreach (var view in viewList)
@@ -184,12 +218,12 @@ namespace LemoineTools.Tools.AutoFilters
                             // rule via the shared engine. A filter with no matching rule (or one
                             // whose override flags are all off) is left as "no override" —
                             // nothing is fabricated here.
-                            if (ruleByName.TryGetValue(filterName, out var rule))
+                            if (ruleByName.TryGetValue(filterName, out var owner))
                             {
-                                view.SetIsFilterEnabled(filterId, rule.FilterOn);
+                                view.SetIsFilterEnabled(filterId, owner.Rule.FilterOn);
                                 if (ApplyColorOverrides)
                                     AutoFiltersEventHandler.ApplyRuleOverride(
-                                        view, filterId, rule,
+                                        view, filterId, owner.Rule,
                                         solidFillId, solidLineId, fillPatternMap, linePatternMap);
                             }
                             else
