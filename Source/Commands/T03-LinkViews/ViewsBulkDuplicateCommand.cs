@@ -37,44 +37,50 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ViewsBulkDuplicateViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // ── Collect duplicatable graphical views (main thread) ────────
-            // Include any view that supports at least one duplicate option; the run handler
-            // re-checks the specific chosen mode per view and skips unsupported ones.
-            var views = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && v.ViewType != ViewType.Schedule
-                         && v.ViewType != ViewType.Legend
-                         && v.ViewType != ViewType.DrawingSheet
-                         && v.ViewType != ViewType.ProjectBrowser
-                         && v.ViewType != ViewType.SystemBrowser
-                         && v.ViewType != ViewType.Internal
-                         && v.ViewType != ViewType.Undefined
-                         && (v.CanViewBeDuplicated(ViewDuplicateOption.Duplicate)
-                          || v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing)
-                          || v.CanViewBeDuplicated(ViewDuplicateOption.AsDependent)))
-                .Select(v => new ViewsBulkDuplicateViewModel.ViewEntry
-                {
-                    Id        = v.Id,
-                    Name      = v.Name,
-                    TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
-                })
-                .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
-                .ToList();
+                // ── Collect duplicatable graphical views (main thread) ────────
+                // Include any view that supports at least one duplicate option; the run handler
+                // re-checks the specific chosen mode per view and skips unsupported ones.
+                var views = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && v.ViewType != ViewType.Schedule
+                             && v.ViewType != ViewType.Legend
+                             && v.ViewType != ViewType.DrawingSheet
+                             && v.ViewType != ViewType.ProjectBrowser
+                             && v.ViewType != ViewType.SystemBrowser
+                             && v.ViewType != ViewType.Internal
+                             && v.ViewType != ViewType.Undefined
+                             && (v.CanViewBeDuplicated(ViewDuplicateOption.Duplicate)
+                              || v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing)
+                              || v.CanViewBeDuplicated(ViewDuplicateOption.AsDependent)))
+                    .Select(v => new ViewsBulkDuplicateViewModel.ViewEntry
+                    {
+                        Id        = v.Id,
+                        Name      = v.Name,
+                        TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                    })
+                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                    .ToList();
 
-            var vm = new ViewsBulkDuplicateViewModel(
-                App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!, views,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new ViewsBulkDuplicateViewModel(
+                    App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!, views,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

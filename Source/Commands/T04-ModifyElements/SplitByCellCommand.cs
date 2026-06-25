@@ -35,48 +35,54 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc      = commandData.Application.ActiveUIDocument;
-            var doc        = uidoc.Document;
-            var activeViewId = uidoc.ActiveView?.Id;
-
-            // ── Element counts (A) — active view scope matches Cell's runtime scope ──
-            var counts = new Dictionary<string, int>();
-            if (activeViewId != null)
+            var uiApp = commandData.Application;
+            SplitByCellViewModel BuildTool()
             {
-                foreach (var bic in SplitByCellHelpers.SupportedCategories)
+                var uidoc      = uiApp.ActiveUIDocument;
+                var doc        = uidoc.Document;
+                var activeViewId = uidoc.ActiveView?.Id;
+
+                // ── Element counts (A) — active view scope matches Cell's runtime scope ──
+                var counts = new Dictionary<string, int>();
+                if (activeViewId != null)
                 {
-                    if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
-                    counts[label] = new FilteredElementCollector(doc, activeViewId)
-                        .OfCategoryId(new ElementId(bic))
-                        .WhereElementIsNotElementType()
-                        .ToList().Count;
+                    foreach (var bic in SplitByCellHelpers.SupportedCategories)
+                    {
+                        if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
+                        counts[label] = new FilteredElementCollector(doc, activeViewId)
+                            .OfCategoryId(new ElementId(bic))
+                            .WhereElementIsNotElementType()
+                            .ToList().Count;
+                    }
                 }
+
+                // ── Pre-selection (E) ──────────────────────────────────────────────
+                var supportedBics = new HashSet<BuiltInCategory>(SplitByCellHelpers.SupportedCategories);
+                var rawSelection  = uidoc.Selection.GetElementIds()
+                    .Select(id => doc.GetElement(id))
+                    .Where(e => e?.Category?.Id != null &&
+                                supportedBics.Contains((BuiltInCategory)(int)e.Category.Id.Value))
+                    .ToList();
+                var preSelectedIds = rawSelection.Select(e => e.Id).ToList();
+                var preSelectedCats = rawSelection
+                    .Select(e => (BuiltInCategory)(int)e.Category.Id.Value)
+                    .Where(bic => SplitByCellViewModel.CatLabels.ContainsKey(bic))
+                    .Select(bic => SplitByCellViewModel.CatLabels[bic])
+                    .Distinct().ToList();
+
+                var vm    = new SplitByCellViewModel(
+                    App.SplitByCellHandler!, App.SplitByCellEvent!,
+                    counts, preSelectedIds, preSelectedCats);
+
+                return vm;
             }
-
-            // ── Pre-selection (E) ──────────────────────────────────────────────
-            var supportedBics = new HashSet<BuiltInCategory>(SplitByCellHelpers.SupportedCategories);
-            var rawSelection  = uidoc.Selection.GetElementIds()
-                .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Id != null &&
-                            supportedBics.Contains((BuiltInCategory)(int)e.Category.Id.Value))
-                .ToList();
-            var preSelectedIds = rawSelection.Select(e => e.Id).ToList();
-            var preSelectedCats = rawSelection
-                .Select(e => (BuiltInCategory)(int)e.Category.Id.Value)
-                .Where(bic => SplitByCellViewModel.CatLabels.ContainsKey(bic))
-                .Select(bic => SplitByCellViewModel.CatLabels[bic])
-                .Distinct().ToList();
-
-            var vm    = new SplitByCellViewModel(
-                App.SplitByCellHandler!, App.SplitByCellEvent!,
-                counts, preSelectedIds, preSelectedCats);
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

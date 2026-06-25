@@ -34,57 +34,63 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uiDoc = commandData.Application.ActiveUIDocument;
-            var doc   = uiDoc.Document;
-
-            // ── Capture available documents on the main thread ─────────
-            var availableDocs = new List<LinkViewsLevelViewModel.DocEntry>
+            var uiApp = commandData.Application;
+            LinkViewsLevelViewModel BuildTool()
             {
-                new LinkViewsLevelViewModel.DocEntry
+                var uiDoc = uiApp.ActiveUIDocument;
+                var doc   = uiDoc.Document;
+
+                // ── Capture available documents on the main thread ─────────
+                var availableDocs = new List<LinkViewsLevelViewModel.DocEntry>
                 {
-                    Label     = "(Host document)",
-                    IsHost    = true,
-                    LinkInstId = ElementId.InvalidElementId,
+                    new LinkViewsLevelViewModel.DocEntry
+                    {
+                        Label     = "(Host document)",
+                        IsHost    = true,
+                        LinkInstId = ElementId.InvalidElementId,
+                    }
+                };
+
+                var seenDocIds = new System.Collections.Generic.HashSet<string>
+                    { doc.PathName ?? doc.Title };
+
+                foreach (var li in new FilteredElementCollector(doc)
+                    .OfClass(typeof(RevitLinkInstance))
+                    .Cast<RevitLinkInstance>()
+                    .Where(l => l.GetLinkDocument() != null))
+                {
+                    var ld = li.GetLinkDocument();
+                    string key = ld.PathName ?? ld.Title;
+                    if (!seenDocIds.Add(key)) continue;
+
+                    availableDocs.Add(new LinkViewsLevelViewModel.DocEntry
+                    {
+                        Label      = ld.Title ?? li.Name,
+                        IsHost     = false,
+                        LinkInstId = li.Id,
+                    });
                 }
-            };
 
-            var seenDocIds = new System.Collections.Generic.HashSet<string>
-                { doc.PathName ?? doc.Title };
+                // ── Collect view templates on main thread ─────────────────
+                var templates3D  = CollectViewTemplates(doc, ViewType.ThreeD);
+                var templatesFP  = CollectViewTemplates(doc, ViewType.FloorPlan);
+                var templatesRCP = CollectViewTemplates(doc, ViewType.CeilingPlan);
 
-            foreach (var li in new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>()
-                .Where(l => l.GetLinkDocument() != null))
-            {
-                var ld = li.GetLinkDocument();
-                string key = ld.PathName ?? ld.Title;
-                if (!seenDocIds.Add(key)) continue;
+                // ── Create ViewModel and open window on STA thread ────────
+                var vm    = new LinkViewsLevelViewModel(
+                    App.LinkViewsLevelPhase1Handler!, App.LinkViewsLevelPhase1Event!,
+                    App.LinkViewsLevelRunHandler!,    App.LinkViewsLevelRunEvent!,
+                    availableDocs, templates3D, templatesFP, templatesRCP);
 
-                availableDocs.Add(new LinkViewsLevelViewModel.DocEntry
-                {
-                    Label      = ld.Title ?? li.Name,
-                    IsHost     = false,
-                    LinkInstId = li.Id,
-                });
+                return vm;
             }
-
-            // ── Collect view templates on main thread ─────────────────
-            var templates3D  = CollectViewTemplates(doc, ViewType.ThreeD);
-            var templatesFP  = CollectViewTemplates(doc, ViewType.FloorPlan);
-            var templatesRCP = CollectViewTemplates(doc, ViewType.CeilingPlan);
-
-            // ── Create ViewModel and open window on STA thread ────────
-            var vm    = new LinkViewsLevelViewModel(
-                App.LinkViewsLevelPhase1Handler!, App.LinkViewsLevelPhase1Event!,
-                App.LinkViewsLevelRunHandler!,    App.LinkViewsLevelRunEvent!,
-                availableDocs, templates3D, templatesFP, templatesRCP);
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

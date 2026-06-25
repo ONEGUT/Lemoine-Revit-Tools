@@ -39,51 +39,57 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // Section + elevation views only.
-            var allViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && (v.ViewType == ViewType.Section
-                          || v.ViewType == ViewType.Elevation))
-                .OrderBy(v => v.Name)
-                .ToList();
-
-            // Spot elevation types available to tag with. Filter via the collector's category
-            // filter (reading SpotDimensionType.Category directly can return null for annotation
-            // types, which silently dropped every type); fall back to every spot dimension type so
-            // the picker is never empty when the project does have types.
-            var spotTypes = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_SpotElevations)
-                .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
-                .OrderBy(t => t.Name)
-                .Select(t => (Name: t.Name, Id: t.Id))
-                .ToList();
-
-            if (spotTypes.Count == 0)
+            var uiApp = commandData.Application;
+            ClashElevationFinderViewModel BuildTool()
             {
-                spotTypes = new FilteredElementCollector(doc)
+                var doc = uiApp.ActiveUIDocument.Document;
+
+                // Section + elevation views only.
+                var allViews = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View)).Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && (v.ViewType == ViewType.Section
+                              || v.ViewType == ViewType.Elevation))
+                    .OrderBy(v => v.Name)
+                    .ToList();
+
+                // Spot elevation types available to tag with. Filter via the collector's category
+                // filter (reading SpotDimensionType.Category directly can return null for annotation
+                // types, which silently dropped every type); fall back to every spot dimension type so
+                // the picker is never empty when the project does have types.
+                var spotTypes = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_SpotElevations)
                     .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
                     .OrderBy(t => t.Name)
                     .Select(t => (Name: t.Name, Id: t.Id))
                     .ToList();
+
+                if (spotTypes.Count == 0)
+                {
+                    spotTypes = new FilteredElementCollector(doc)
+                        .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
+                        .OrderBy(t => t.Name)
+                        .Select(t => (Name: t.Name, Id: t.Id))
+                        .ToList();
+                }
+
+                var definitions = ClashDefinitionsSettings.Instance.Definitions
+                    ?? new List<ClashDefinition>();
+
+                var vm = new ClashElevationFinderViewModel(
+                    App.ClashElevationFinderHandler, App.ClashElevationFinderEvent,
+                    allViews, definitions, spotTypes,
+                    BrowserTreeCapture.Capture(doc));
+
+                return vm;
             }
-
-            var definitions = ClashDefinitionsSettings.Instance.Definitions
-                ?? new List<ClashDefinition>();
-
-            var vm = new ClashElevationFinderViewModel(
-                App.ClashElevationFinderHandler, App.ClashElevationFinderEvent,
-                allViews, definitions, spotTypes,
-                BrowserTreeCapture.Capture(doc));
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

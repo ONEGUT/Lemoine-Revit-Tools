@@ -35,48 +35,54 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var uidoc        = commandData.Application.ActiveUIDocument;
-            var doc          = uidoc.Document;
-            var activeViewId = uidoc.ActiveView?.Id;
+            var uiApp = commandData.Application;
+            SplitByReferencePlaneViewModel BuildTool()
+            {
+                var uidoc        = uiApp.ActiveUIDocument;
+                var doc          = uidoc.Document;
+                var activeViewId = uidoc.ActiveView?.Id;
 
-            // All categorised elements → discipline-grouped category picker.
-            var allElements = new FilteredElementCollector(doc)
-                .WhereElementIsNotElementType()
-                .Where(e => e.Category?.Name != null &&
-                           (e.Category.CategoryType == CategoryType.Model ||
-                            e.Category.CategoryType == CategoryType.Annotation))
-                .ToList();
-            var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
-            int totalElements  = allElements.Count;
+                // All categorised elements → discipline-grouped category picker.
+                var allElements = new FilteredElementCollector(doc)
+                    .WhereElementIsNotElementType()
+                    .Where(e => e.Category?.Name != null &&
+                               (e.Category.CategoryType == CategoryType.Model ||
+                                e.Category.CategoryType == CategoryType.Annotation))
+                    .ToList();
+                var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
+                int totalElements  = allElements.Count;
 
-            // Pre-selection: any selected element with a recognisable category.
-            var rawSelection = uidoc.Selection.GetElementIds()
-                .Select(id => doc.GetElement(id))
-                .Where(e => e?.Category?.Name != null &&
-                           (e.Category.CategoryType == CategoryType.Model ||
-                            e.Category.CategoryType == CategoryType.Annotation))
-                .ToList();
-            var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
-            var preSelectedCats = rawSelection
-                .Select(e => e.Category!.Name)
-                .Distinct().ToList();
+                // Pre-selection: any selected element with a recognisable category.
+                var rawSelection = uidoc.Selection.GetElementIds()
+                    .Select(id => doc.GetElement(id))
+                    .Where(e => e?.Category?.Name != null &&
+                               (e.Category.CategoryType == CategoryType.Model ||
+                                e.Category.CategoryType == CategoryType.Annotation))
+                    .ToList();
+                var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
+                var preSelectedCats = rawSelection
+                    .Select(e => e.Category!.Name)
+                    .Distinct().ToList();
 
-            var allRefPlanes = new FilteredElementCollector(doc)
-                .OfClass(typeof(ReferencePlane))
-                .Cast<ReferencePlane>()
-                .ToList();
+                var allRefPlanes = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ReferencePlane))
+                    .Cast<ReferencePlane>()
+                    .ToList();
 
-            var vm = new SplitByReferencePlaneViewModel(
-                App.SplitByReferencePlaneHandler!, App.SplitByReferencePlaneEvent!,
-                allRefPlanes, categoryGroups, totalElements, activeViewId,
-                preSelectedIds, preSelectedCats);
+                var vm = new SplitByReferencePlaneViewModel(
+                    App.SplitByReferencePlaneHandler!, App.SplitByReferencePlaneEvent!,
+                    allRefPlanes, categoryGroups, totalElements, activeViewId,
+                    preSelectedIds, preSelectedCats);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

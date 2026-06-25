@@ -38,47 +38,53 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            Document doc = commandData.Application.ActiveUIDocument.Document;
-
-            // ── Eligible 3D views + id→name map (main thread — safe) ──────────────
-            var eligibleViewIds = new List<long>();
-            var viewNames       = new Dictionary<long, string>();
-            foreach (View3D v in new FilteredElementCollector(doc)
-                .OfClass(typeof(View3D)).Cast<View3D>()
-                .Where(v => !v.IsTemplate))
+            var uiApp = commandData.Application;
+            ExplodeViewByTradeViewModel BuildTool()
             {
-                eligibleViewIds.Add(v.Id.Value);
-                viewNames[v.Id.Value] = v.Name;
+                Document doc = uiApp.ActiveUIDocument.Document;
+
+                // ── Eligible 3D views + id→name map (main thread — safe) ──────────────
+                var eligibleViewIds = new List<long>();
+                var viewNames       = new Dictionary<long, string>();
+                foreach (View3D v in new FilteredElementCollector(doc)
+                    .OfClass(typeof(View3D)).Cast<View3D>()
+                    .Where(v => !v.IsTemplate))
+                {
+                    eligibleViewIds.Add(v.Id.Value);
+                    viewNames[v.Id.Value] = v.Name;
+                }
+
+                // ── Trades + which already have created filters in this project ───────
+                var existingFilterNames = new HashSet<string>(
+                    new FilteredElementCollector(doc)
+                        .OfClass(typeof(ParameterFilterElement)).Cast<ParameterFilterElement>()
+                        .Select(f => f.Name),
+                    System.StringComparer.OrdinalIgnoreCase);
+
+                var trades = new List<(string Id, string Label, bool HasFilters)>();
+                foreach (var trade in AutoFiltersSettings.Instance.Trades)
+                {
+                    bool hasFilters = trade.Rules
+                        .Where(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r))
+                        .Any(r => existingFilterNames.Contains(
+                            AutoFiltersSettings.MakeFilterName(trade.Id, r.Name)));
+                    trades.Add((trade.Id, string.IsNullOrWhiteSpace(trade.Label) ? trade.Id : trade.Label, hasFilters));
+                }
+
+                // ── Spin up dedicated STA thread for the WPF window ───────────────────
+                var vm = new ExplodeViewByTradeViewModel(
+                    App.ExplodeViewByTradeHandler!, App.ExplodeViewByTradeEvent!,
+                    eligibleViewIds, BrowserTreeCapture.Capture(doc), trades, viewNames);
+
+                return vm;
             }
-
-            // ── Trades + which already have created filters in this project ───────
-            var existingFilterNames = new HashSet<string>(
-                new FilteredElementCollector(doc)
-                    .OfClass(typeof(ParameterFilterElement)).Cast<ParameterFilterElement>()
-                    .Select(f => f.Name),
-                System.StringComparer.OrdinalIgnoreCase);
-
-            var trades = new List<(string Id, string Label, bool HasFilters)>();
-            foreach (var trade in AutoFiltersSettings.Instance.Trades)
-            {
-                bool hasFilters = trade.Rules
-                    .Where(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r))
-                    .Any(r => existingFilterNames.Contains(
-                        AutoFiltersSettings.MakeFilterName(trade.Id, r.Name)));
-                trades.Add((trade.Id, string.IsNullOrWhiteSpace(trade.Label) ? trade.Id : trade.Label, hasFilters));
-            }
-
-            // ── Spin up dedicated STA thread for the WPF window ───────────────────
-            var vm = new ExplodeViewByTradeViewModel(
-                App.ExplodeViewByTradeHandler!, App.ExplodeViewByTradeEvent!,
-                eligibleViewIds, BrowserTreeCapture.Capture(doc), trades, viewNames);
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

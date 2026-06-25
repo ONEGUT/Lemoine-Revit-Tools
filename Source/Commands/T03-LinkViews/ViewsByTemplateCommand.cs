@@ -39,55 +39,61 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ViewsByTemplateViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // ── Collect duplicatable graphical views (main thread) ────────
-            var views = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && v.ViewType != ViewType.Schedule
-                         && v.ViewType != ViewType.Legend
-                         && v.ViewType != ViewType.DrawingSheet
-                         && v.ViewType != ViewType.ProjectBrowser
-                         && v.ViewType != ViewType.SystemBrowser
-                         && v.ViewType != ViewType.Internal
-                         && v.ViewType != ViewType.Undefined
-                         && v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing))
-                .Select(v => new ViewsByTemplateViewModel.ViewEntry
-                {
-                    Id        = v.Id,
-                    Name      = v.Name,
-                    TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
-                })
-                .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
-                .ToList();
+                // ── Collect duplicatable graphical views (main thread) ────────
+                var views = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && v.ViewType != ViewType.Schedule
+                             && v.ViewType != ViewType.Legend
+                             && v.ViewType != ViewType.DrawingSheet
+                             && v.ViewType != ViewType.ProjectBrowser
+                             && v.ViewType != ViewType.SystemBrowser
+                             && v.ViewType != ViewType.Internal
+                             && v.ViewType != ViewType.Undefined
+                             && v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing))
+                    .Select(v => new ViewsByTemplateViewModel.ViewEntry
+                    {
+                        Id        = v.Id,
+                        Name      = v.Name,
+                        TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                    })
+                    .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                    .ToList();
 
-            // ── Collect view templates (main thread) ──────────────────────
-            var templates = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => v.IsTemplate)
-                .Select(v => new ViewsByTemplateViewModel.TemplateEntry
-                {
-                    Id        = v.Id,
-                    Name      = v.Name,
-                    TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
-                })
-                .OrderBy(t => t.TypeLabel).ThenBy(t => t.Name)
-                .ToList();
+                // ── Collect view templates (main thread) ──────────────────────
+                var templates = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => v.IsTemplate)
+                    .Select(v => new ViewsByTemplateViewModel.TemplateEntry
+                    {
+                        Id        = v.Id,
+                        Name      = v.Name,
+                        TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                    })
+                    .OrderBy(t => t.TypeLabel).ThenBy(t => t.Name)
+                    .ToList();
 
-            var vm = new ViewsByTemplateViewModel(
-                App.ViewsByTemplateRunHandler!, App.ViewsByTemplateRunEvent!,
-                views, templates,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new ViewsByTemplateViewModel(
+                    App.ViewsByTemplateRunHandler!, App.ViewsByTemplateRunEvent!,
+                    views, templates,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

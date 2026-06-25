@@ -40,43 +40,49 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ApplyFiltersToViewsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // All ParameterFilterElements in the project
-            var filterNames = new FilteredElementCollector(doc)
-                .OfClass(typeof(ParameterFilterElement))
-                .Cast<ParameterFilterElement>()
-                .OrderBy(f => f.Name)
-                .Select(f => f.Name)
-                .ToList();
+                // All ParameterFilterElements in the project
+                var filterNames = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ParameterFilterElement))
+                    .Cast<ParameterFilterElement>()
+                    .OrderBy(f => f.Name)
+                    .Select(f => f.Name)
+                    .ToList();
 
-            // All views that support graphic overrides and are not templates.
-            // Carry each view's ElementId: view names are NOT unique in Revit (a Floor
-            // Plan and its RCP, or two 3D views, can share a name), so the ElementId is
-            // the only reliable per-view key for targeting.
-            var views = new FilteredElementCollector(doc)
-                .OfClass(typeof(View))
-                .Cast<View>()
-                .Where(v => !v.IsTemplate && v.AreGraphicsOverridesAllowed())
-                .OrderBy(v => v.ViewType.ToString())
-                .ThenBy(v => v.Name)
-                .Select(v => (v.Id.Value, v.Name, v.ViewType.ToString()))
-                .ToList();
+                // All views that support graphic overrides and are not templates.
+                // Carry each view's ElementId: view names are NOT unique in Revit (a Floor
+                // Plan and its RCP, or two 3D views, can share a name), so the ElementId is
+                // the only reliable per-view key for targeting.
+                var views = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View))
+                    .Cast<View>()
+                    .Where(v => !v.IsTemplate && v.AreGraphicsOverridesAllowed())
+                    .OrderBy(v => v.ViewType.ToString())
+                    .ThenBy(v => v.Name)
+                    .Select(v => (v.Id.Value, v.Name, v.ViewType.ToString()))
+                    .ToList();
 
-            var vm = new ApplyFiltersToViewsViewModel(
-                App.ApplyFiltersToViewsHandler!,
-                App.ApplyFiltersToViewsEvent!,
-                filterNames,
-                views,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new ApplyFiltersToViewsViewModel(
+                    App.ApplyFiltersToViewsHandler!,
+                    App.ApplyFiltersToViewsEvent!,
+                    filterNames,
+                    views,
+                    BrowserTreeCapture.Capture(doc));
 
-            // FIX: open window on dedicated STA thread so real-time progress works
+                // FIX: open window on dedicated STA thread so real-time progress works
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

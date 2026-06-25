@@ -33,40 +33,46 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ReprojectCeilingGridsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // Collect all ceiling plan views with their associated level names — must happen on main thread
-            var levelMap = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .ToDictionary(l => l.Id, l => l.Name);
+                // Collect all ceiling plan views with their associated level names — must happen on main thread
+                var levelMap = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .ToDictionary(l => l.Id, l => l.Name);
 
-            var viewEntries = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewPlan))
-                .Cast<ViewPlan>()
-                .Where(v => v.ViewType == ViewType.CeilingPlan && !v.IsTemplate)
-                .OrderBy(v => v.Name)
-                .Select(v =>
-                {
-                    string levelName = "";
-                    if (v.GenLevel != null && levelMap.TryGetValue(v.GenLevel.Id, out string? ln))
-                        levelName = ln;
-                    return new ReprojectCeilingGridsViewModel.CeilingPlanViewEntry(v.Id, v.Name, levelName);
-                })
-                .ToList();
+                var viewEntries = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewPlan))
+                    .Cast<ViewPlan>()
+                    .Where(v => v.ViewType == ViewType.CeilingPlan && !v.IsTemplate)
+                    .OrderBy(v => v.Name)
+                    .Select(v =>
+                    {
+                        string levelName = "";
+                        if (v.GenLevel != null && levelMap.TryGetValue(v.GenLevel.Id, out string? ln))
+                            levelName = ln;
+                        return new ReprojectCeilingGridsViewModel.CeilingPlanViewEntry(v.Id, v.Name, levelName);
+                    })
+                    .ToList();
 
-            var vm = new ReprojectCeilingGridsViewModel(
-                App.ReprojectHandler!,
-                App.ReprojectEvent!,
-                viewEntries,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new ReprojectCeilingGridsViewModel(
+                    App.ReprojectHandler!,
+                    App.ReprojectEvent!,
+                    viewEntries,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready          = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

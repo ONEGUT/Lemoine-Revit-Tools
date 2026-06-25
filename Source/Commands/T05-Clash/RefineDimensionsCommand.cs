@@ -38,27 +38,33 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            RefineDimensionsViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // Plan views only (floor + reflected ceiling).
-            var allViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate
-                         && (v.ViewType == ViewType.FloorPlan
-                          || v.ViewType == ViewType.CeilingPlan))
-                .OrderBy(v => v.Name)
-                .ToList();
+                // Plan views only (floor + reflected ceiling).
+                var allViews = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View)).Cast<View>()
+                    .Where(v => !v.IsTemplate
+                             && (v.ViewType == ViewType.FloorPlan
+                              || v.ViewType == ViewType.CeilingPlan))
+                    .OrderBy(v => v.Name)
+                    .ToList();
 
-            var vm = new RefineDimensionsViewModel(
-                App.RefineDimensionsHandler, App.RefineDimensionsEvent, allViews,
-                BrowserTreeCapture.Capture(doc));
+                var vm = new RefineDimensionsViewModel(
+                    App.RefineDimensionsHandler, App.RefineDimensionsEvent, allViews,
+                    BrowserTreeCapture.Capture(doc));
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

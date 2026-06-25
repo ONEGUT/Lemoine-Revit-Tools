@@ -16,6 +16,11 @@ namespace LemoineTools
 {
     public class App : IExternalApplication
     {
+        // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
+        // tool's document-derived options). Tool-agnostic, so one instance serves every window.
+        internal static Lemoine.LemoineReloadHandler? ReloadHandler { get; private set; }
+        internal static ExternalEvent?                ReloadEvent   { get; private set; }
+
         internal static CeilingGridEventHandler? ProjectHandler   { get; private set; }
         internal static ExternalEvent?           ProjectEvent     { get; private set; }
         internal static CeilingGridEventHandler? ReprojectHandler { get; private set; }
@@ -148,6 +153,9 @@ namespace LemoineTools
             // run is active, so non-Lemoine work is never affected.
             application.ControlledApplication.FailuresProcessing += LemoineFailureCapture.OnFailuresProcessing;
             application.DialogBoxShowing                         += LemoineFailureCapture.OnDialogBoxShowing;
+
+            ReloadHandler = new Lemoine.LemoineReloadHandler();
+            ReloadEvent   = ExternalEvent.Create(ReloadHandler);
 
             ProjectHandler   = new CeilingGridEventHandler();
             ProjectEvent     = ExternalEvent.Create(ProjectHandler);

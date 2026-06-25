@@ -50,56 +50,62 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // ── Title blocks ──────────────────────────────────────────────────
-            var titleblocks = new FilteredElementCollector(doc)
-                .OfCategory(BuiltInCategory.OST_TitleBlocks)
-                .WhereElementIsElementType()
-                .Cast<FamilySymbol>()
-                .OrderBy(tb => tb.FamilyName)
-                .ThenBy(tb => tb.Name)
-                .ToList();
-
-            // ── Candidate views, one collector pass ───────────────────────────
-            // parents: primary views that own dependents (dependents mode).
-            // composites: view types that can host callout/section/elevation markers
-            // (composite mode) — including dependent views, since a dependent shows its
-            // own crop of the markers and is a valid composite source. Sub views are
-            // discovered at run time, so no per-view marker scan happens here.
-            var parents    = new List<ParentViewEntry>();
-            var composites = new List<ParentViewEntry>();
-            foreach (var v in new FilteredElementCollector(doc)
-                         .OfClass(typeof(View)).Cast<View>()
-                         .Where(v => !v.IsTemplate))
+            var uiApp = commandData.Application;
+            PlaceDependentViewsViewModel BuildTool()
             {
-                string level = "";
-                try { level = v.GenLevel?.Name ?? ""; }
-                catch (System.Exception ex) { LemoineLog.Swallowed($"PlaceDependentViews: read GenLevel on view {v.Id.Value}", ex); }
+                var doc = uiApp.ActiveUIDocument.Document;
 
-                // Only primaries can be a dependents-mode parent.
-                if (v.GetPrimaryViewId() == ElementId.InvalidElementId)
+                // ── Title blocks ──────────────────────────────────────────────────
+                var titleblocks = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                    .WhereElementIsElementType()
+                    .Cast<FamilySymbol>()
+                    .OrderBy(tb => tb.FamilyName)
+                    .ThenBy(tb => tb.Name)
+                    .ToList();
+
+                // ── Candidate views, one collector pass ───────────────────────────
+                // parents: primary views that own dependents (dependents mode).
+                // composites: view types that can host callout/section/elevation markers
+                // (composite mode) — including dependent views, since a dependent shows its
+                // own crop of the markers and is a valid composite source. Sub views are
+                // discovered at run time, so no per-view marker scan happens here.
+                var parents    = new List<ParentViewEntry>();
+                var composites = new List<ParentViewEntry>();
+                foreach (var v in new FilteredElementCollector(doc)
+                             .OfClass(typeof(View)).Cast<View>()
+                             .Where(v => !v.IsTemplate))
                 {
-                    var deps = v.GetDependentViewIds();
-                    if (deps != null && deps.Count > 0)
-                        parents.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, deps.Count));
+                    string level = "";
+                    try { level = v.GenLevel?.Name ?? ""; }
+                    catch (System.Exception ex) { LemoineLog.Swallowed($"PlaceDependentViews: read GenLevel on view {v.Id.Value}", ex); }
+
+                    // Only primaries can be a dependents-mode parent.
+                    if (v.GetPrimaryViewId() == ElementId.InvalidElementId)
+                    {
+                        var deps = v.GetDependentViewIds();
+                        if (deps != null && deps.Count > 0)
+                            parents.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, deps.Count));
+                    }
+
+                    if (CompositeSourceTypes.Contains(v.ViewType))
+                        composites.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
                 }
 
-                if (CompositeSourceTypes.Contains(v.ViewType))
-                    composites.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
+                var vm = new PlaceDependentViewsViewModel(
+                    App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
+                    parents, composites, titleblocks,
+                    BrowserTreeCapture.Capture(doc));
+
+                return vm;
             }
-
-            var vm = new PlaceDependentViewsViewModel(
-                App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
-                parents, composites, titleblocks,
-                BrowserTreeCapture.Capture(doc));
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

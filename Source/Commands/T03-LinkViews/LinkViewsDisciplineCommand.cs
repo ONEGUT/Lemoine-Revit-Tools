@@ -33,44 +33,50 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
-
-            // ── Capture link instances on the main thread ──────────────
-            var links = new List<LinkViewsDisciplineViewModel.LinkEntry>();
-            var seen  = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-
-            foreach (var li in new FilteredElementCollector(doc)
-                .OfClass(typeof(RevitLinkInstance))
-                .Cast<RevitLinkInstance>()
-                .Where(l => l.GetLinkDocument() != null)
-                .OrderBy(l => l.Name))
+            var uiApp = commandData.Application;
+            LinkViewsDisciplineViewModel BuildTool()
             {
-                var ld  = li.GetLinkDocument();
-                string key = ld.PathName ?? ld.Title;
-                if (!seen.Add(key)) continue;  // skip duplicate instances of same link
+                var doc = uiApp.ActiveUIDocument.Document;
 
-                links.Add(new LinkViewsDisciplineViewModel.LinkEntry
+                // ── Capture link instances on the main thread ──────────────
+                var links = new List<LinkViewsDisciplineViewModel.LinkEntry>();
+                var seen  = new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+
+                foreach (var li in new FilteredElementCollector(doc)
+                    .OfClass(typeof(RevitLinkInstance))
+                    .Cast<RevitLinkInstance>()
+                    .Where(l => l.GetLinkDocument() != null)
+                    .OrderBy(l => l.Name))
                 {
-                    LinkInstId = li.Id,
-                    Name       = ld.Title ?? li.Name,
-                });
+                    var ld  = li.GetLinkDocument();
+                    string key = ld.PathName ?? ld.Title;
+                    if (!seen.Add(key)) continue;  // skip duplicate instances of same link
+
+                    links.Add(new LinkViewsDisciplineViewModel.LinkEntry
+                    {
+                        LinkInstId = li.Id,
+                        Name       = ld.Title ?? li.Name,
+                    });
+                }
+
+                // ── Collect 3D view templates on the main thread ────────────
+                var templates3D = CollectViewTemplates(doc);
+
+                var vm = new LinkViewsDisciplineViewModel(
+                    App.LinkViewsDisciplineRunHandler!,
+                    App.LinkViewsDisciplineRunEvent!,
+                    links,
+                    templates3D);
+
+                return vm;
             }
-
-            // ── Collect 3D view templates on the main thread ────────────
-            var templates3D = CollectViewTemplates(doc);
-
-            var vm = new LinkViewsDisciplineViewModel(
-                App.LinkViewsDisciplineRunHandler!,
-                App.LinkViewsDisciplineRunEvent!,
-                links,
-                templates3D);
-
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

@@ -37,45 +37,51 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            Document doc = commandData.Application.ActiveUIDocument.Document;
-
-            // ── Collect ceiling plan views, grouped by level (main thread — safe) ──
-            var viewsByLevel = new Dictionary<string, List<(string Name, ElementId Id)>>();
-
-            var rcpViews = new FilteredElementCollector(doc)
-                .OfClass(typeof(ViewPlan))
-                .Cast<ViewPlan>()
-                .Where(v =>
-                {
-                    if (v.IsTemplate) return false;
-                    var vft = doc.GetElement(v.GetTypeId()) as ViewFamilyType;
-                    return vft?.ViewFamily == ViewFamily.CeilingPlan;
-                })
-                .OrderBy(v => v.Name)
-                .ToList();
-
-            foreach (ViewPlan vp in rcpViews)
+            var uiApp = commandData.Application;
+            CeilingHeatmapViewModel BuildTool()
             {
-                string levelName = vp.GenLevel?.Name ?? "No Level";
-                if (!viewsByLevel.ContainsKey(levelName))
-                    viewsByLevel[levelName] = new List<(string, ElementId)>();
-                viewsByLevel[levelName].Add((vp.Name, vp.Id));
+                Document doc = uiApp.ActiveUIDocument.Document;
+
+                // ── Collect ceiling plan views, grouped by level (main thread — safe) ──
+                var viewsByLevel = new Dictionary<string, List<(string Name, ElementId Id)>>();
+
+                var rcpViews = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ViewPlan))
+                    .Cast<ViewPlan>()
+                    .Where(v =>
+                    {
+                        if (v.IsTemplate) return false;
+                        var vft = doc.GetElement(v.GetTypeId()) as ViewFamilyType;
+                        return vft?.ViewFamily == ViewFamily.CeilingPlan;
+                    })
+                    .OrderBy(v => v.Name)
+                    .ToList();
+
+                foreach (ViewPlan vp in rcpViews)
+                {
+                    string levelName = vp.GenLevel?.Name ?? "No Level";
+                    if (!viewsByLevel.ContainsKey(levelName))
+                        viewsByLevel[levelName] = new List<(string, ElementId)>();
+                    viewsByLevel[levelName].Add((vp.Name, vp.Id));
+                }
+
+                // Sort level keys naturally so tabs appear floor-by-floor
+                var sortedByLevel = viewsByLevel
+                    .OrderBy(kvp => kvp.Key)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                // ── Spin up dedicated STA thread for the WPF window ──────────────────
+                var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
+                                                        BrowserTreeCapture.Capture(doc));
+                return vm;
             }
-
-            // Sort level keys naturally so tabs appear floor-by-floor
-            var sortedByLevel = viewsByLevel
-                .OrderBy(kvp => kvp.Key)
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-
-            // ── Spin up dedicated STA thread for the WPF window ──────────────────
-            var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
-                                                    BrowserTreeCapture.Capture(doc));
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
 
                 win.Closed += (s, e) =>
                 {

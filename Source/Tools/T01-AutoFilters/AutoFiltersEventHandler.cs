@@ -695,9 +695,9 @@ namespace LemoineTools.Tools.AutoFilters
             internal readonly Dictionary<string, BuiltInParameter>          BipMap;
             internal readonly Dictionary<string, ElementId>                 MatMap;
             internal readonly Dictionary<string, ParameterFilterElement>    ExistingFilters;
-            // Private because its element type ParamResolve is a private nested type; the
-            // enclosing AutoFiltersEventHandler can still read it via ctx.ParamCache.
-            private  readonly Dictionary<string, ParamResolve>             ParamCache =
+            // Internal so the enclosing AutoFiltersEventHandler can read it via ctx.ParamCache
+            // (a nested type's private members are not accessible to the enclosing type).
+            internal readonly Dictionary<string, ParamResolve>             ParamCache =
                 new Dictionary<string, ParamResolve>(StringComparer.Ordinal);
             internal readonly List<View> AllViews;
 
@@ -1056,7 +1056,7 @@ namespace LemoineTools.Tools.AutoFilters
         /// Result of resolving a rule's parameter to a filterable id, plus whether that
         /// parameter reliably matches elements inside linked models.
         /// </summary>
-        private readonly struct ParamResolve
+        internal readonly struct ParamResolve
         {
             public readonly ElementId? Id;
             public readonly bool       LinkSafe;

@@ -35,26 +35,32 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            Document doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            ExtendWallsViewModel BuildTool()
+            {
+                Document doc = uiApp.ActiveUIDocument.Document;
 
-            // Collect levels that have another level above them (processable)
-            var allLevels = new FilteredElementCollector(doc)
-                .OfClass(typeof(Level))
-                .Cast<Level>()
-                .OrderBy(l => l.Elevation)
-                .ToList();
+                // Collect levels that have another level above them (processable)
+                var allLevels = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Level))
+                    .Cast<Level>()
+                    .OrderBy(l => l.Elevation)
+                    .ToList();
 
-            var processableLevels = allLevels
-                .Where(l => allLevels.Any(other => other.Elevation > l.Elevation + 0.001))
-                .ToList();
+                var processableLevels = allLevels
+                    .Where(l => allLevels.Any(other => other.Elevation > l.Elevation + 0.001))
+                    .ToList();
 
-            var vm    = new ExtendWallsViewModel(App.ExtendWallsHandler!, App.ExtendWallsEvent!, processableLevels);
+                var vm    = new ExtendWallsViewModel(App.ExtendWallsHandler!, App.ExtendWallsEvent!, processableLevels);
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new System.Threading.Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;

@@ -35,25 +35,31 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var doc = commandData.Application.ActiveUIDocument.Document;
+            var uiApp = commandData.Application;
+            CopyLinearViewModel BuildTool()
+            {
+                var doc = uiApp.ActiveUIDocument.Document;
 
-            // Capture the full filterable-category list on the Revit main thread (same as DiscoverLaunchCommand).
-            AutoFiltersSettings.CaptureFilterableCategories(doc);
+                // Capture the full filterable-category list on the Revit main thread (same as DiscoverLaunchCommand).
+                AutoFiltersSettings.CaptureFilterableCategories(doc);
 
-            var docs     = CollectDocs(doc);
-            var families = CollectFamilies(doc);
+                var docs     = CollectDocs(doc);
+                var families = CollectFamilies(doc);
 
-            var vm = new CopyLinearViewModel(
-                App.CopyLinearScanHandler, App.CopyLinearScanEvent,
-                App.CopyLinearRunHandler,  App.CopyLinearRunEvent,
-                docs, families);
+                var vm = new CopyLinearViewModel(
+                    App.CopyLinearScanHandler, App.CopyLinearScanEvent,
+                    App.CopyLinearRunHandler,  App.CopyLinearRunEvent,
+                    docs, families);
 
+                return vm;
+            }
+            var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) => { _window = null; Dispatcher.CurrentDispatcher.InvokeShutdown(); };
                 win.Show();
                 ready.Set();

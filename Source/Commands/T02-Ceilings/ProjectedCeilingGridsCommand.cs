@@ -39,7 +39,9 @@ namespace LemoineTools.Commands
                 catch { _window = null; }
             }
 
-            var vm = new ProjectedCeilingGridsViewModel(App.ProjectHandler!, App.ProjectEvent!);
+            ProjectedCeilingGridsViewModel BuildTool()
+                => new ProjectedCeilingGridsViewModel(App.ProjectHandler!, App.ProjectEvent!);
+            var vm = BuildTool();
 
             // ManualResetEvent lets the main thread wait until the STA thread
             // has created and shown the window before continuing.
@@ -48,7 +50,7 @@ namespace LemoineTools.Commands
 
             var thread = new Thread(() =>
             {
-                win = new StepFlowWindow(vm);
+                win = new StepFlowWindow(vm, BuildTool);
                 win.Closed += (s, e) =>
                 {
                     _window = null;
