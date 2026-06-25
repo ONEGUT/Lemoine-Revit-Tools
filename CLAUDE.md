@@ -153,6 +153,7 @@ Before implementing any workflow, check whether it is practical:
 - In a drag-able row, a name/label hit box must shrink to its text (`HorizontalAlignment.Left`), not fill the row — otherwise it covers the bar and blocks grabbing the row to drag it. The leftover space stays row background and remains drag-able; long names ellipsize at the column width.
 - Rounding tokens: tabs and pills use `LemoineRadius_Card` (10) to match the add-trade button; small chips/inputs stay on `SM` (3) / `MD` (4). Don't introduce ad-hoc radius literals.
 - When child items belong to listed parents (e.g. worksets under documents), nest the children under a per-parent **expand caret** in the parent list — not a separate, parallel picker. Deselecting a parent must auto-clear/disable its children so a selected child can never sit under an unselected parent. This was the explicit correction that replaced the clash source-document/workset "separate tabs" layout with an inline document tree.
+- When a tool offers export formats/options that are only valid for certain input types (e.g. NWC/IFC require a 3D view), **hide** the invalid ones rather than showing them disabled or showing-all-then-skip-and-logging. The picker should only ever present choices that work for the current input. (This was the explicit choice for Print View's format toggles: PDF/DWG for any view or sheet, NWC/IFC only when the active view is 3D.)
 
 ---
 
