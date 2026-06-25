@@ -591,9 +591,10 @@ namespace LemoineTools.Tools.AutoFilters
                     // a newly-attached one has nothing to preserve, so it is styled normally.
                     if (!(keepExistingForThis && wasOnView))
                     {
-                        // Honor the rule's "filter active in view" flag (FilterOn). A disabled
-                        // filter stays attached to the view but has no effect.
-                        view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
+                        // A reached rule is always Enabled (disabled rules are gated out above),
+                        // so the filter is active in the view. Enabled is the single "Apply" switch
+                        // after the Stage 2 merge; FilterOn is kept in sync by the editor.
+                        view.SetIsFilterEnabled(pfe.Id, rule.Enabled);
 
                         // Apply graphic overrides (colors, line style, halftone, transparency)
                         ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
@@ -642,7 +643,7 @@ namespace LemoineTools.Tools.AutoFilters
                     view.AddFilter(pfe.Id);
                     existingViewFilterIds.Add(pfe.Id.Value);
                 }
-                view.SetIsFilterEnabled(pfe.Id, rule.FilterOn);
+                view.SetIsFilterEnabled(pfe.Id, rule.Enabled);
                 ApplyRuleOverride(view, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
                 pass++;
             }

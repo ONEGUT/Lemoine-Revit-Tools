@@ -56,14 +56,16 @@ it's Revit's undo. Confirm that scope is acceptable.
   filters and re-applies the rule's stored overrides without regenerating their definitions
   (`AutoFiltersEventHandler.IncludeSelectedExternallyManaged` + `ApplyExistingFilterToView`).
 
-## Stage 2 — Rule row & right-editor cleanup  *(UI — mockup first)*
-- **Remove the eye toggle** from each rule row (`BuildRuleToggle` / `LemoineEyeGlyph`). *(Needs a
-  decision — see Consequence #1: the eye = `rule.Enabled`, distinct from "Visible".)*
-- **Right editor:** remove the **NAME textbox** (`BuildRuleIdentitySection`) and the delete affordance.
-- **Rule edit button → popup** styled like the existing **trade** edit popup: a NAME field, **no Save
-  button** (commits live / on close), and where the trade popup shows **Duplicate**, the rule popup
-  shows the **Move/Copy double button** (the existing `BuildTradeDestPopup` dropdown).
-- **Trade edit popup:** remove its **Save** button — name/ID commit on change/close.
+## Stage 2 — Rule row & right-editor cleanup  *(DONE)*
+- Removed the eye toggle AND the inline trash from each rule row — rows now carry only the **✎ edit**
+  action (`BuildRuleToggle`/`BuildMoveCopyButton`/`BuildRuleIdentitySection` deleted).
+- **Enabled merged into "Apply":** the single Appearance "Apply" toggle drives `rule.Enabled`
+  (key `appearance.apply`); the handler's `SetIsFilterEnabled` now uses `Enabled`. Disabled rows dim.
+- **Right editor:** NAME card removed — the editor starts at FILTER LOGIC.
+- **Rule edit popup** (`ShowRuleEditPopup`, opens from ✎): Rule Name + **[Move | Copy] double-button**
+  (`BuildRuleMoveCopyDouble` → `BuildTradeDestPopup` with `initialCopy`/`onDone`) + Delete. No Save.
+- **Trade edit popup:** Save button removed — name/ID auto-commit on change; sidebar refresh deferred
+  to popup close so renaming doesn't detach the anchor.
 
 ## Stage 3 — Discover as a split button next to "Add Trade"  *(UI — mockup first)*
 - Replace the sidebar "＋ Add Trade" pill with a **double button**: left = **Discover**, right =
