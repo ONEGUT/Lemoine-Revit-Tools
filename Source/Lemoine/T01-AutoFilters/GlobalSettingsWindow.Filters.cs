@@ -2122,8 +2122,8 @@ namespace LemoineTools.Lemoine
         }
 
         // Segmented [Move | Copy] double button. Either half pops the destination-trade list
-        // (BuildTradeDestPopup) opened on the matching tab; picking a destination closes both
-        // this popup and the parent rule edit popup via onPicked.
+        // (BuildTradeDestPopup) in the matching mode (no in-dropdown tabs), sized to the button;
+        // picking a destination closes both this popup and the parent rule edit popup via onPicked.
         private UIElement BuildRuleMoveCopyDouble(FilterTradeConfig trade, FilterRuleConfig rule, Action onPicked)
         {
             List<FilterRuleConfig> RulesToMove() =>
@@ -2173,7 +2173,9 @@ namespace LemoineTools.Lemoine
                 seg.MouseLeftButtonUp += (s, e) =>
                 {
                     e.Handled = true;
-                    var destPopup = BuildTradeDestPopup(trade, RulesToMove(), seg,
+                    // Drop from the whole double button so the list aligns under it and shares its width.
+                    double w = bar.ActualWidth > 0 ? bar.ActualWidth : 174;
+                    var destPopup = BuildTradeDestPopup(trade, RulesToMove(), bar, w,
                         initialCopy: copyMode, onDone: onPicked);
                     destPopup.IsOpen = true;
                 };
@@ -2194,7 +2196,7 @@ namespace LemoineTools.Lemoine
         }
 
         private Popup BuildTradeDestPopup(FilterTradeConfig srcTrade, List<FilterRuleConfig> rules,
-                                          UIElement anchor, bool initialCopy = false, Action? onDone = null)
+                                          UIElement anchor, double width, bool initialCopy = false, Action? onDone = null)
         {
             var popup = new Popup
             {
@@ -2204,61 +2206,18 @@ namespace LemoineTools.Lemoine
                 AllowsTransparency = true,
             };
 
+            // Width matches the Move/Copy button it drops from. The mode (Move vs Copy) is chosen by
+            // which half was clicked, so the old in-dropdown Move/Copy tabs are gone.
             var outer = new Border
             {
-                Width           = 210, Padding = new Thickness(0),
+                Width           = width, Padding = new Thickness(0),
                 BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
                 Margin          = new Thickness(0, 2, 0, 0),
             };
             outer.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
             outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            bool isCopyMode = false;
-
-            // ── Tab bar ───────────────────────────────────────────────────────
-            var tabBar = new Grid { Margin = new Thickness(0) };
-            tabBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            tabBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });   // divider
-            tabBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // Vertical divider between Move and Copy tabs
-            var tabDivider = new Border
-            {
-                Width           = 1,
-                Margin          = new Thickness(0, 6, 0, 6),
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
-            tabDivider.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-            Grid.SetColumn(tabDivider, 1);
-            tabBar.Children.Add(tabDivider);
-
-            Border MakeTab(string label, int col)
-            {
-                var tab = new Border
-                {
-                    Padding         = new Thickness(0, 8, 0, 8),
-                    BorderThickness = new Thickness(0, 0, 0, 2),
-                    Cursor          = Cursors.Hand,
-                    Background      = Brushes.Transparent,  // full tab area is hit-testable
-                };
-                var lbl = new TextBlock
-                {
-                    Text                = label,
-                    FontWeight          = FontWeights.SemiBold,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment   = VerticalAlignment.Center,
-                    IsHitTestVisible    = false,
-                };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                tab.Child = lbl;
-                Grid.SetColumn(tab, col);
-                tabBar.Children.Add(tab);
-                return tab;
-            }
-
-            var moveTab = MakeTab("Move", 0);
-            var copyTab = MakeTab("Copy", 2);
+            bool isCopyMode = initialCopy;
 
             // ── Trade list ─────────────────────────────────────────────────────
             var tradeListPanel = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
@@ -2336,43 +2295,12 @@ namespace LemoineTools.Lemoine
                 }
             }
 
-            void SetActiveTab(bool copyMode)
-            {
-                isCopyMode = copyMode;
+            // Mode is fixed by which half opened the dropdown — build the list once, no tabs.
+            tradeListPanel.Margin = new Thickness(0, 4, 0, 4);
+            RebuildTradeList();
 
-                // Move tab styling
-                moveTab.SetResourceReference(Border.BorderBrushProperty,
-                    !copyMode ? "LemoineAccent" : "LemoineBorder");
-                ((TextBlock)moveTab.Child).SetResourceReference(TextBlock.ForegroundProperty,
-                    !copyMode ? "LemoineAccent" : "LemoineTextDim");
-
-                // Copy tab styling
-                copyTab.SetResourceReference(Border.BorderBrushProperty,
-                    copyMode ? "LemoineAccent" : "LemoineBorder");
-                ((TextBlock)copyTab.Child).SetResourceReference(TextBlock.ForegroundProperty,
-                    copyMode ? "LemoineAccent" : "LemoineTextDim");
-
-                RebuildTradeList();
-            }
-
-            moveTab.MouseLeftButtonUp += (s, e) => { SetActiveTab(false); e.Handled = true; };
-            copyTab.MouseLeftButtonUp += (s, e) => { SetActiveTab(true);  e.Handled = true; };
-
-            // Separator between tab bar and list
-            var tabSep = new Border { Height = 1, Margin = new Thickness(0, 0, 0, 2) };
-            tabSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
-
-            var container = new StackPanel();
-            container.Children.Add(tabBar);
-            container.Children.Add(tabSep);
-            container.Children.Add(tradeListPanel);
-
-            outer.Child  = container;
+            outer.Child  = tradeListPanel;
             popup.Child  = outer;
-
-            // Initialise to the requested tab (Move by default, Copy when opened from the Copy half).
-            SetActiveTab(initialCopy);
-
             return popup;
         }
 
