@@ -20,9 +20,13 @@ namespace LemoineTools.Lemoine.Controls
 
         public event EventHandler? Changed;
         public event EventHandler<BlockDropArgs>?  BlockDropRequested;
-        public event EventHandler<GroupDropArgs>?  GroupDropInRowRequested;
         public event EventHandler<string>?         GroupDeleteRequested;
         public event Action<string, bool, bool>?   BlockClickedOnCanvas; // blockId, ctrl, shift
+
+        // Group cards in left-to-right order. The builder's placement overlay reads
+        // their bounds to position the single insertion marker.
+        private readonly List<LemoineLegendGroupCard> _cardList = new List<LemoineLegendGroupCard>();
+        internal IReadOnlyList<LemoineLegendGroupCard> GroupCards => _cardList;
 
         // ── Selection context ────────────────────────────────────────────────
         private HashSet<string> _selectionContext = new HashSet<string>();
@@ -69,30 +73,20 @@ namespace LemoineTools.Lemoine.Controls
 
             int n = Row.Groups?.Count ?? 0;
 
-            // Build a proportional Grid: [slot | group★ | slot | group★ | slot …]
-            // Each group gets an equal Star share so they fill the full row width.
+            // Proportional Grid — each group gets an equal Star share so cards fill the
+            // row. Gutters are fixed card margins (not interactive slivers): group
+            // placement is owned entirely by the builder's single-marker overlay.
             var rowGrid = new Grid();
-
-            // Column 0 — leading slot
-            var leadingCol = new ColumnDefinition { Width = new GridLength(4) };
-            rowGrid.ColumnDefinitions.Add(leadingCol);
-
+            _cardList.Clear();
             for (int i = 0; i < n; i++)
-            {
-                // Group column (indices 1, 3, 5 …)
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                // Trailing slot column (indices 2, 4, 6 …)
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
-            }
-
-            // Leading drop slot (col 0)
-            var slot0 = MakeGroupSlot(0, leadingCol);
-            Grid.SetColumn(slot0, 0);
-            rowGrid.Children.Add(slot0);
 
             for (int i = 0; i < n; i++)
             {
-                var card = new LemoineLegendGroupCard();
+                var card = new LemoineLegendGroupCard
+                {
+                    Margin = new Thickness(i == 0 ? 0 : 4, 0, i == n - 1 ? 0 : 4, 0),
+                };
                 card.SetSelectionContext(_selectionContext, _activeContext);
                 card.Bind(Row.Groups![i]);
                 int idx = i;
@@ -133,83 +127,12 @@ namespace LemoineTools.Lemoine.Controls
                     }
                 };
 
-                Grid.SetColumn(card, 1 + i * 2);
+                Grid.SetColumn(card, i);
                 rowGrid.Children.Add(card);
-
-                // Trailing slot — column definition at index (2 + i*2)
-                var trailingCol = rowGrid.ColumnDefinitions[2 + i * 2];
-                var slot        = MakeGroupSlot(i + 1, trailingCol);
-                Grid.SetColumn(slot, 2 + i * 2);
-                rowGrid.Children.Add(slot);
+                _cardList.Add(card);
             }
 
             _rowBorder.Child = rowGrid;
         }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // Slot between groups — width is driven by the owning ColumnDefinition
-        // so the group cards can fill the remaining row space with Star sizing.
-        // ─────────────────────────────────────────────────────────────────────
-        private Border MakeGroupSlot(int targetIndex, ColumnDefinition colDef)
-        {
-            var slot = new Border
-            {
-                MinHeight = 40,
-                CornerRadius = new CornerRadius(2),
-                Background = Brushes.Transparent,
-                AllowDrop = true,
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
-            slot.DragEnter += (s, e) =>
-            {
-                if (IsGroupAccepting(e))
-                {
-                    colDef.Width = new GridLength(14);
-                    slot.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
-                    e.Effects = DragDropEffects.Move;
-                    e.Handled = true;
-                }
-                else e.Effects = DragDropEffects.None;
-            };
-            slot.DragOver  += (s, e) =>
-            {
-                e.Effects = IsGroupAccepting(e) ? DragDropEffects.Move : DragDropEffects.None;
-                e.Handled = true;
-            };
-            slot.DragLeave += (s, e) =>
-            {
-                colDef.Width = new GridLength(4);
-                slot.Background = Brushes.Transparent;
-            };
-            slot.Drop      += (s, e) =>
-            {
-                colDef.Width = new GridLength(4);
-                slot.Background = Brushes.Transparent;
-                var payload = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
-                if (payload == null) return;
-                if (payload.What != LegendDragPayload.Kind.Group &&
-                    payload.What != LegendDragPayload.Kind.PaletteCategory) return;
-                GroupDropInRowRequested?.Invoke(this, new GroupDropArgs(payload, Row.Id, targetIndex));
-                e.Handled = true;
-            };
-            return slot;
-        }
-
-        private static bool IsGroupAccepting(DragEventArgs e)
-        {
-            var p = e.Data.GetData(LemoineLegendPalette.DragFormat) as LegendDragPayload;
-            if (p == null) return false;
-            return p.What == LegendDragPayload.Kind.Group ||
-                   p.What == LegendDragPayload.Kind.PaletteCategory;
-        }
-    }
-
-    public sealed class GroupDropArgs : EventArgs
-    {
-        public LegendDragPayload Payload { get; }
-        public string TargetRowId        { get; }
-        public int    TargetIndex        { get; }
-        public GroupDropArgs(LegendDragPayload p, string rid, int i)
-        { Payload = p; TargetRowId = rid; TargetIndex = i; }
     }
 }
