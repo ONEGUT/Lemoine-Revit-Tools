@@ -295,10 +295,6 @@ namespace LemoineTools
             };
             var split = (SplitButton)filtersPanel.AddItem(splitData);
             split.AddPushButton(Btn(
-                "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
-                "Apply existing project filters to multiple views at once, with optional color overrides.",
-                "\uE710"));  // Segoe MDL2: Add/Plus
-            split.AddPushButton(Btn(
                 "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
                 "Remove selected filters from the active view (filters are kept in the project).",
                 "\uE738"));  // Segoe MDL2: Remove
