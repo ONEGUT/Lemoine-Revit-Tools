@@ -48,6 +48,18 @@ namespace LemoineTools.Lemoine
         private          string?                    _fShiftAnchorRuleId;
         private readonly Dictionary<string, Border> _fMultiSelectBorders = new Dictionary<string, Border>();
 
+        // Trades EXCLUDED from "Apply selected trades to view" (per-trade sidebar checkbox).
+        // Tracked as exclusions so trades added mid-session are applied by default.
+        private readonly HashSet<string>            _fApplyExcludedTradeIds = new HashSet<string>();
+
+        // ── Undo/redo history — snapshot stack over the in-window trade buffer ──
+        // Captured by a low-frequency poll (coalesces rapid edits), so no per-control wiring.
+        private readonly List<(string Label, string Snapshot)> _history = new List<(string, string)>();
+        private int _historyIndex = -1;
+        private System.Windows.Threading.DispatcherTimer? _historyTimer;
+        private Button? _undoBtn;
+        private Button? _redoBtn;
+
         // ── Active drag state (rule reorder) ─────────────────────────────────
         private string?  _dragRuleId;
         private Border?  _dragSourceBorder;
@@ -77,6 +89,9 @@ namespace LemoineTools.Lemoine
             // Revit on the next theme change.
             LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+
+            // Reload discovered rules when focus returns from the Discover window.
+            Activated += OnWindowActivated;
         }
 
         private void OnThemeChanged(LemoineTheme t)
@@ -114,6 +129,245 @@ namespace LemoineTools.Lemoine
             BuildToolbar();
             _contentBorder.Child = BuildFiltersContent();
             BuildFloatingStatus();
+            SetupHistory();
+        }
+
+        // ── Undo/redo history ─────────────────────────────────────────────────
+        // Seeds the baseline snapshot and starts a coalescing poll. Capturing on a timer (rather
+        // than wiring every add/delete/rename/recolor/move/toggle) keeps it robust and lets rapid
+        // edits collapse into one entry. Undo/redo/jump restore a snapshot; because the poll
+        // compares against the CURRENT index's snapshot, a restore never re-captures itself.
+        private void SetupHistory()
+        {
+            _history.Clear();
+            _history.Add(("Opened", SerializeTrades(_filterTrades)));
+            _historyIndex = 0;
+            UpdateUndoRedoEnabled();
+
+            _historyTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(450),
+            };
+            // Guard the unattended tick so a transient serialize error can never bubble to the
+            // window's dispatcher (this window has no last-resort unhandled-exception net).
+            _historyTimer.Tick += (s, e) =>
+            {
+                try { CaptureHistoryIfChanged(); }
+                catch (Exception ex) { LemoineLog.Swallowed("AutoFilters: history capture", ex); }
+            };
+            _historyTimer.Start();
+        }
+
+        private void CaptureHistoryIfChanged()
+        {
+            if (_filterTrades == null || _historyIndex < 0) return;
+            string cur = SerializeTrades(_filterTrades);
+            if (cur == _history[_historyIndex].Snapshot) return;
+
+            string label = DeriveHistoryLabel(_history[_historyIndex].Snapshot, cur);
+
+            // Drop any redo tail before recording the new branch.
+            if (_historyIndex < _history.Count - 1)
+                _history.RemoveRange(_historyIndex + 1, _history.Count - _historyIndex - 1);
+
+            // Cap history so a long session can't grow unbounded.
+            const int MaxHistory = 100;
+            if (_history.Count >= MaxHistory)
+            {
+                _history.RemoveAt(0);
+                _historyIndex--;
+            }
+
+            _history.Add((label, cur));
+            _historyIndex = _history.Count - 1;
+            UpdateUndoRedoEnabled();
+        }
+
+        private void HistoryUndo()
+        {
+            CaptureHistoryIfChanged();                 // fold any pending edit in first
+            if (_historyIndex > 0) { _historyIndex--; RestoreHistory(); }
+        }
+
+        private void HistoryRedo()
+        {
+            if (_historyIndex >= 0 && _historyIndex < _history.Count - 1) { _historyIndex++; RestoreHistory(); }
+        }
+
+        private void HistoryJumpTo(int index)
+        {
+            CaptureHistoryIfChanged();
+            if (index >= 0 && index < _history.Count && index != _historyIndex)
+            {
+                _historyIndex = index;
+                RestoreHistory();
+            }
+        }
+
+        private void RestoreHistory()
+        {
+            _filterTrades = DeserializeTrades(_history[_historyIndex].Snapshot) ?? new List<FilterTradeConfig>();
+
+            if (_fActiveTradeId == null || !_filterTrades.Any(t => t.Id == _fActiveTradeId))
+                _fActiveTradeId = _filterTrades.FirstOrDefault()?.Id;
+            var at = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
+            if (_fActiveRuleId == null || at?.Rules.All(r => r.Id != _fActiveRuleId) == true)
+                _fActiveRuleId = at?.Rules.FirstOrDefault()?.Id;
+
+            ClearMultiSelection();
+            FRefreshTradesSidebar();
+            FRefreshRuleList();
+            FRefreshRuleEditor();
+            UpdateUndoRedoEnabled();
+        }
+
+        private void UpdateUndoRedoEnabled()
+        {
+            if (_undoBtn != null) _undoBtn.IsEnabled = _historyIndex > 0;
+            if (_redoBtn != null) _redoBtn.IsEnabled = _historyIndex >= 0 && _historyIndex < _history.Count - 1;
+        }
+
+        // Derives a short, human label by diffing the previous and current snapshots. Trade/rule
+        // count changes give add/delete; otherwise a rename, a move (rule changed trade), else a
+        // generic edit of the active rule. Rule ids can repeat after a trade duplicate, so dictionary
+        // writes use the indexer (last-wins), never ToDictionary (which would throw on a duplicate).
+        private string DeriveHistoryLabel(string prevSnap, string curSnap)
+        {
+            var prev = DeserializeTrades(prevSnap) ?? new List<FilterTradeConfig>();
+            var cur  = DeserializeTrades(curSnap)  ?? new List<FilterTradeConfig>();
+
+            int pt = prev.Count, ct = cur.Count;
+            if (ct > pt) return ct - pt == 1 ? "Add trade"    : $"Add {ct - pt} trades";
+            if (ct < pt) return pt - ct == 1 ? "Delete trade" : $"Delete {pt - ct} trades";
+
+            int pr = prev.Sum(t => t.Rules?.Count ?? 0);
+            int cr = cur.Sum(t => t.Rules?.Count ?? 0);
+            if (cr > pr) return cr - pr == 1 ? "Add rule"    : $"Add {cr - pr} rules";
+            if (cr < pr) return pr - cr == 1 ? "Delete rule" : $"Delete {pr - cr} rules";
+
+            var prevName   = new Dictionary<string, string>();
+            var prevTrade  = new Dictionary<string, string>();
+            foreach (var t in prev)
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                { prevName[r.Id] = r.Name ?? ""; prevTrade[r.Id] = t.Id; }
+
+            foreach (var t in cur)
+                foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
+                {
+                    if (prevTrade.TryGetValue(r.Id, out var pid) && pid != t.Id)
+                        return "Move rule(s)";
+                    if (prevName.TryGetValue(r.Id, out var pn) && pn != (r.Name ?? ""))
+                        return $"Rename “{pn}” → “{r.Name}”";
+                }
+
+            var active = cur.FirstOrDefault(t => t.Id == _fActiveTradeId)?
+                .Rules?.FirstOrDefault(r => r.Id == _fActiveRuleId);
+            return active != null ? $"Edit “{active.Name}”" : "Edit";
+        }
+
+        // History dropdown — entries newest-first. The current position is highlighted ("now");
+        // entries after it are redoable ("redo", italic). Clicking any entry jumps to that state.
+        private void ShowHistoryPopup(UIElement anchor)
+        {
+            CaptureHistoryIfChanged(); // make sure a pending edit shows up in the list
+
+            var popup = new System.Windows.Controls.Primitives.Popup
+            {
+                PlacementTarget    = anchor,
+                Placement          = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                StaysOpen          = false,
+                AllowsTransparency = true,
+            };
+
+            var outer = new Border
+            {
+                Width           = 268, BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(6), Margin = new Thickness(0, 2, 0, 0),
+            };
+            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
+
+            var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 6) };
+            var hdr = MiniLabel("History — click an entry to jump");
+            hdr.Margin = new Thickness(12, 0, 12, 6);
+            panel.Children.Add(hdr);
+            var sep = new Border { Height = 1 };
+            sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            panel.Children.Add(sep);
+
+            var list = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            for (int i = _history.Count - 1; i >= 0; i--)
+            {
+                int idx     = i;
+                bool isCur  = idx == _historyIndex;
+                bool isRedo = idx > _historyIndex;
+
+                var row = new Border { Padding = new Thickness(12, 7, 10, 7), Cursor = Cursors.Hand };
+                if (isCur) row.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                else       row.Background = Brushes.Transparent;
+
+                var rowGrid = new Grid();
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var lbl = new TextBlock
+                {
+                    Text              = _history[idx].Label,
+                    TextTrimming      = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontStyle         = isRedo ? FontStyles.Italic : FontStyles.Normal,
+                    FontWeight        = isCur ? FontWeights.SemiBold : FontWeights.Normal,
+                };
+                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                lbl.SetResourceReference(TextBlock.ForegroundProperty,
+                    isCur ? "LemoineAccent" : (isRedo ? "LemoineTextDim" : "LemoineText"));
+                Grid.SetColumn(lbl, 0);
+                rowGrid.Children.Add(lbl);
+
+                string tagText = isCur ? "now" : (isRedo ? "redo" : "");
+                if (tagText.Length > 0)
+                {
+                    var tag = new Border
+                    {
+                        CornerRadius      = new CornerRadius(8),
+                        Padding           = new Thickness(6, 1, 6, 1),
+                        Margin            = new Thickness(6, 0, 0, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+                    tag.SetResourceReference(Border.BackgroundProperty, isCur ? "LemoineAccent" : "LemoineBorder");
+                    var tagTb = new TextBlock { Text = tagText };
+                    tagTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
+                    tagTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineKnobOn");
+                    tagTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                    tag.Child = tagTb;
+                    Grid.SetColumn(tag, 1);
+                    rowGrid.Children.Add(tag);
+                }
+
+                row.Child = rowGrid;
+                if (!isCur)
+                {
+                    row.MouseEnter += (s, e) => row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    row.MouseLeave += (s, e) => row.Background = Brushes.Transparent;
+                }
+                row.MouseLeftButtonUp += (s, e) => { e.Handled = true; popup.IsOpen = false; HistoryJumpTo(idx); };
+                list.Children.Add(row);
+            }
+
+            var listScroll = new ScrollViewer
+            {
+                MaxHeight                     = 340,
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content                       = list,
+            };
+            LemoineControlStyles.SetSelfContainedScroll(listScroll, true);
+            panel.Children.Add(listScroll);
+
+            outer.Child  = panel;
+            popup.Child  = outer;
+            popup.IsOpen = true;
         }
 
         // Persist buffered edits and auto-create the project's filters when the window closes.
@@ -126,6 +380,9 @@ namespace LemoineTools.Lemoine
         {
             LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
             LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            Activated -= OnWindowActivated;
+            _historyTimer?.Stop();
+            _historyTimer = null;
 
             if (_filterTrades != null)
             {
@@ -149,7 +406,11 @@ namespace LemoineTools.Lemoine
                     var snapshotTrades = DeserializeTrades(_filtersSnapshot);
                     var changed = AutoFiltersSettings.ComputeChangedFilterNames(
                         snapshotTrades, _filterTrades);
-                    RaiseAutoCreate(changed);
+                    // Colour/override edits (which the definition-change set ignores) are propagated
+                    // across every view & template already carrying the filter on close.
+                    var changedOverride = AutoFiltersSettings.ComputeChangedOverrideFilterNames(
+                        snapshotTrades, _filterTrades);
+                    RaiseAutoCreate(changed, changedOverride);
                 }
             }
 
@@ -160,7 +421,7 @@ namespace LemoineTools.Lemoine
         // Revit runs the handler at its next idle moment, after this window has closed — which
         // is why failures are surfaced by the handler's own TaskDialog (ShowFailureDialog),
         // never marshalled back to this dispatcher.
-        private void RaiseAutoCreate(HashSet<string>? changedFilterNames)
+        private void RaiseAutoCreate(HashSet<string>? changedFilterNames, HashSet<string>? changedOverrideNames)
         {
             var handler = App.AutoFiltersHandler;
             var evt     = App.AutoFiltersEvent;
@@ -170,34 +431,161 @@ namespace LemoineTools.Lemoine
                 return;
             }
 
-            handler.CreateOnly          = true;
-            handler.ShowFailureDialog   = true;
-            handler.ChangedFilterNames  = changedFilterNames;
-            handler.SelectedDisciplines = new List<string>();
-            handler.SelectedLinkTitles  = new List<string>();
-            handler.PushLog             = null;
-            handler.OnProgress          = null;
-            handler.OnComplete          = null;
+            handler.CreateOnly                = true;
+            handler.ShowFailureDialog         = true;
+            handler.ChangedFilterNames        = changedFilterNames;
+            // Re-apply colour/override edits across every view & template already carrying the filter.
+            handler.ApplyOverrideFilterNames  = changedOverrideNames;
+            handler.SelectedDisciplines       = new List<string>();
+            handler.SelectedLinkTitles        = new List<string>();
+            handler.PushLog                   = null;
+            handler.OnProgress                = null;
+            handler.OnComplete                = null;
 
             evt.Raise();
         }
 
-        // Creates and applies ONLY the active trade's filters to Revit's current view.
-        // Persists the working buffer first so the handler reads the latest (possibly
-        // just-merged) rules, then refreshes the dirty snapshot so OnClosed doesn't run a
-        // second redundant pass. OverwriteFilterDefinition is forced true so an existing
-        // filter created before a rule was merged is rebuilt with ALL its keywords — fixing
-        // the "only one of the merged text values applied" symptom on re-apply.
+        // Opens the Discover Rules window from the sidebar's Discover button. Persists the working
+        // buffer first so Discover reads the latest rules, then raises an ExternalEvent (the window
+        // setup needs Revit's main thread for category capture and link enumeration). Newly
+        // discovered trades/rules are reloaded when this window regains focus (OnWindowActivated).
+        private void LaunchDiscover()
+        {
+            if (_filterTrades != null)
+            {
+                // Persist a DEEP COPY (not the live buffer) so Discover mutates a separate list.
+                // That keeps _filterTrades == _filtersSnapshot here, so OnWindowActivated can detect
+                // Discover's additions as a real external change and reload + refresh the UI.
+                AutoFiltersSettings.Instance.Trades = AutoFiltersSettings.DeepCopy(_filterTrades);
+                AutoFiltersSettings.Instance.Save();
+                _filtersSnapshot = SerializeTrades(_filterTrades);
+            }
+
+            var evt = App.OpenDiscoverEvent;
+            if (evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Discover unavailable: event handler not registered.");
+                FlashStatus("Discover unavailable.");
+                return;
+            }
+
+            evt.Raise();
+            FlashStatus("Opening Discover…");
+        }
+
+        // When focus returns (e.g. after Discover wrote new rules into the shared AutoFiltersSettings
+        // singleton), reload the working buffer — but ONLY when this window has no unsaved edits, so
+        // in-progress work is never clobbered. The buffer is persisted before Discover opens, so on
+        // return with no further edits the buffer still equals its snapshot and a real external
+        // change is detected by a serialized comparison against the settings singleton.
+        private void OnWindowActivated(object sender, EventArgs e)
+        {
+            if (_filterTrades == null) return;
+
+            string current = SerializeTrades(_filterTrades);
+            if (current != _filtersSnapshot) return;                       // unsaved edits — leave alone
+            string latest = SerializeTrades(AutoFiltersSettings.Instance.Trades);
+            if (latest == current) return;                                 // nothing changed externally
+
+            _filterTrades    = AutoFiltersSettings.DeepCopy(AutoFiltersSettings.Instance.Trades);
+            _filtersSnapshot = SerializeTrades(_filterTrades);
+
+            if (_fActiveTradeId == null || !_filterTrades.Any(t => t.Id == _fActiveTradeId))
+                _fActiveTradeId = _filterTrades.FirstOrDefault()?.Id;
+            var at = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
+            if (_fActiveRuleId == null || at?.Rules.All(r => r.Id != _fActiveRuleId) == true)
+                _fActiveRuleId = at?.Rules.FirstOrDefault()?.Id;
+
+            FRefreshTradesSidebar();
+            FRefreshRuleList();
+            FRefreshRuleEditor();
+        }
+
+        // Rule-list footer: applies ONLY the active trade's filters to Revit's current view.
         private void ApplyActiveTradeToView()
         {
             if (_filterTrades == null) return;
             var trade = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
             if (trade == null) { FlashStatus("No trade selected."); return; }
-            if (trade.ExternallyManaged)
+            ApplyTradesToView(new List<FilterTradeConfig> { trade });
+        }
+
+        // Trades-sidebar footer: applies every checked trade's filters to Revit's current view.
+        // Selection is tracked as an EXCLUSION set, so trades added during the session are
+        // applied by default and a checkbox toggle removes/restores them.
+        private void ApplySelectedTradesToView()
+        {
+            if (_filterTrades == null) return;
+            var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
+            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+            ApplyTradesToView(selected);
+        }
+
+        // Trades-sidebar footer (Remove half): detaches the checked trades' filters from Revit's
+        // current view. Non-destructive — the filters stay in the project. Uses the same per-trade
+        // checkbox selection as "Apply to view". Externally-managed trades carry filters even when
+        // their rule has no keyword definition, so their names are always included.
+        private void RemoveSelectedTradesFromView()
+        {
+            if (_filterTrades == null) return;
+            var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
+            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+
+            var handler = App.DeleteFiltersHandler;
+            var evt     = App.DeleteFiltersEvent;
+            if (handler == null || evt == null)
             {
-                FlashStatus($"“{trade.Label}” is managed by another tool — apply it from there.");
+                LemoineLog.Warn("FiltersSettingsWindow", "Remove from view unavailable: handler not registered.");
+                FlashStatus("Remove unavailable.");
                 return;
             }
+
+            var names = new List<string>();
+            foreach (var t in selected)
+                foreach (var r in t.Rules)
+                {
+                    if (!r.Enabled) continue;
+                    if (!t.ExternallyManaged && !AutoFiltersSettings.RuleProducesFilter(r)) continue;
+                    names.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
+                }
+
+            if (names.Count == 0) { FlashStatus("No filters to remove for the selected trades."); return; }
+
+            handler.SelectedFilterNames = names;
+            handler.PushLog    = null;
+            handler.OnProgress = null;
+            handler.OnComplete = null;
+            evt.Raise();
+            FlashStatus(selected.Count == 1
+                ? $"Removing “{selected[0].Label}” from the active view…"
+                : $"Removing {selected.Count} trades from the active view…");
+        }
+
+        // Toolbar "Delete from Project" — opens the existing Delete-from-Project picker window
+        // (main-thread setup via ExternalEvent). Operates on the project's actual filters,
+        // independent of this window's working buffer.
+        private void OpenDeleteFromProject()
+        {
+            var evt = App.OpenDeleteFromProjectEvent;
+            if (evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Delete from Project unavailable: handler not registered.");
+                FlashStatus("Delete from Project unavailable.");
+                return;
+            }
+            evt.Raise();
+            FlashStatus("Opening Delete from Project…");
+        }
+
+        // Creates and applies the given trades' filters to Revit's current view.
+        // Persists the working buffer first so the handler reads the latest (possibly just-merged)
+        // rules, then refreshes the dirty snapshot so OnClosed doesn't run a second redundant pass.
+        // OverwriteFilterDefinition is forced true so an existing filter created before a rule was
+        // merged is rebuilt with ALL its keywords. Externally-managed trades are NOT skipped — the
+        // handler attaches their existing filters and re-applies overrides (IncludeSelectedExternallyManaged).
+        private void ApplyTradesToView(List<FilterTradeConfig> trades)
+        {
+            if (_filterTrades == null || trades == null || trades.Count == 0) return;
 
             var handler = App.AutoFiltersHandler;
             var evt     = App.AutoFiltersEvent;
@@ -214,19 +602,22 @@ namespace LemoineTools.Lemoine
             AutoFiltersSettings.Instance.Save();
             _filtersSnapshot = SerializeTrades(_filterTrades);
 
-            handler.CreateOnly                = false;
-            handler.OverwriteFilterDefinition = true;
-            handler.KeepExistingOverrides     = false;
-            handler.ShowFailureDialog         = true;
-            handler.ChangedFilterNames        = null;
-            handler.SelectedDisciplines       = new List<string> { trade.Label };
-            handler.SelectedLinkTitles        = new List<string>();
-            handler.PushLog                   = null;
-            handler.OnProgress                = null;
-            handler.OnComplete                = null;
+            handler.CreateOnly                       = false;
+            handler.OverwriteFilterDefinition        = true;
+            handler.KeepExistingOverrides            = false;
+            handler.IncludeSelectedExternallyManaged = true;
+            handler.ShowFailureDialog                = true;
+            handler.ChangedFilterNames               = null;
+            handler.SelectedDisciplines              = trades.Select(t => t.Label).ToList();
+            handler.SelectedLinkTitles               = new List<string>();
+            handler.PushLog                          = null;
+            handler.OnProgress                       = null;
+            handler.OnComplete                       = null;
 
             evt.Raise();
-            FlashStatus($"Applying “{trade.Label}” to the active view…");
+            FlashStatus(trades.Count == 1
+                ? $"Applying “{trades[0].Label}” to the active view…"
+                : $"Applying {trades.Count} trades to the active view…");
         }
 
         // ── Floating bottom-right status chip ───────────────────────────────────
@@ -323,11 +714,35 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            var applyBtn = FlatSmBtn("Apply to view");
-            applyBtn.VerticalAlignment = VerticalAlignment.Center;
-            applyBtn.Margin            = new Thickness(0, 0, 8, 0);
-            applyBtn.ToolTip           = "Create and apply the active trade's filters to the current view.";
-            applyBtn.Click += (s, e) => ApplyActiveTradeToView();
+            // The "Apply to view" / "Remove from view" actions live as docked footer bars on the
+            // rule list and trades sidebar. The toolbar carries the destructive "Delete from
+            // Project" action (opens the existing window) plus the window close button.
+            var deleteProjBtn = LemoineControlStyles.BuildSmallButton(
+                "Delete from Project", LemoineControlStyles.LemoineButtonVariant.Danger);
+            deleteProjBtn.VerticalAlignment = VerticalAlignment.Center;
+            deleteProjBtn.Margin            = new Thickness(0, 0, 8, 0);
+            deleteProjBtn.ToolTip           = "Permanently delete ParameterFilterElements from the project (opens a picker).";
+            deleteProjBtn.Click += (s, e) => OpenDeleteFromProject();
+
+            // Undo / Redo / History for in-window menu edits.
+            Button IconBtn(int codepoint, string tip, Action onClick)
+            {
+                var b = LemoineControlStyles.BuildSmallButton(char.ConvertFromUtf32(codepoint));
+                b.FontFamily        = new System.Windows.Media.FontFamily("Segoe MDL2 Assets");
+                b.VerticalAlignment = VerticalAlignment.Center;
+                b.Margin            = new Thickness(0, 0, 4, 0);
+                b.ToolTip           = tip;
+                b.Click += (s, e) => onClick();
+                return b;
+            }
+            _undoBtn = IconBtn(0xE7A7, "Undo (in-window edits)", HistoryUndo);  // Segoe MDL2: Undo
+            _redoBtn = IconBtn(0xE7A6, "Redo (in-window edits)", HistoryRedo);  // Segoe MDL2: Redo
+
+            var historyBtn = LemoineControlStyles.BuildSmallButton("History ▾");
+            historyBtn.VerticalAlignment = VerticalAlignment.Center;
+            historyBtn.Margin            = new Thickness(0, 0, 12, 0);
+            historyBtn.ToolTip           = "Change history — click an entry to jump to that state.";
+            historyBtn.Click += (s, e) => ShowHistoryPopup(historyBtn);
 
             var closeBtn = BuildFlatButton("×");
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
@@ -338,7 +753,10 @@ namespace LemoineTools.Lemoine
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            rightPanel.Children.Add(applyBtn);
+            rightPanel.Children.Add(_undoBtn);
+            rightPanel.Children.Add(_redoBtn);
+            rightPanel.Children.Add(historyBtn);
+            rightPanel.Children.Add(deleteProjBtn);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar

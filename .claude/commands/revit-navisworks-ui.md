@@ -18,6 +18,12 @@ Produces structurally correct WPF UIs for Revit and Navisworks plugins.
 Focus: **layout correctness, rendering bug prevention, hosting-context safety**.
 Style is NEVER copied from provided reference files — structure only.
 
+> **Mockup-first (mandatory for any UI tweak/build/layout change):** before writing WPF, render a
+> faithful image of the proposed UI (real `LemoineTheme` palette) with the pre-installed headless
+> Chromium and get the user's approval. See **Step 7** for the full workflow and the hard-won
+> Chromium gotchas — especially the **bottom-anchored-content culling bug** and its normal-flow
+> + spacer workaround. Iterate on the image, not on compiled code.
+
 > **Reference files** (read when relevant):
 > - `references/layout-engine.md` — WPF Measure/Arrange rules, panel behaviour
 > - `references/bug-catalog.md`   — Full graphical bug catalog with fixes
@@ -350,3 +356,76 @@ Deliver in this order:
 3. **Code** — full files with `// ⚠` inline on risky constructs
 4. **Integration notes** — manual steps: using aliases, App.cs changes,
    resource dictionary additions, ribbon button registration
+
+---
+
+## Step 7 — Render a faithful UI mockup for approval (BEFORE writing any UI code)
+
+For **any** UI tweak/build/layout change, produce a rendered image of the proposed UI and get
+the user's approval **before** writing WPF. Iterate on the image, not on compiled code.
+
+### Workflow
+1. **Pull the real palette** from `Source/Lemoine/LemoineTheme.cs` so the mockup matches the app.
+   `DarkMono` is the default theme — copy its hex values (`Bg #1a1a1a`, `Surface #222`, `Raised #2a2a2a`,
+   `Border #686868`, `Text #d4d4d4`, `Dim #919191`, `Accent #4f8fc4`, `AccentDim #1b2d3e`, `Red #f47067`,
+   `KnobOn #fff`, mono = Consolas, ui = Segoe UI). Don't invent colors.
+2. **Build a static HTML mockup** of the window (toolbar, columns, controls) using those values.
+3. **Screenshot it** with the pre-installed headless Chromium (recipe below).
+4. **Deliver via `SendUserFile`** — the image is the deliverable.
+5. After approval, write the WPF. The mockup's exact pixel layout is a guide; the WPF uses the real
+   controls/resource keys.
+
+### Chromium screenshot recipe (the working invocation)
+- The Playwright **node module is NOT installed**, and `chromium` is **NOT on the Bash tool's PATH**
+  (even if `which chromium` once printed a path). Call the binary directly:
+  `/opt/pw-browsers/chromium-*/chrome-linux/chrome` (the `chromium-XXXX` version dir varies — list
+  `/opt/pw-browsers/` to find it).
+- ```bash
+  CHR=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | head -1)
+  "$CHR" --headless --no-sandbox --user-data-dir=/tmp/cprof-$RANDOM \
+    --force-device-scale-factor=4 --hide-scrollbars \
+    --window-size=1036,592 --screenshot="$PWD/out.png" "file://$PWD/mock.html"
+  ```
+- **Always add `<meta name="viewport" content="width=device-width,initial-scale=1">`** to the HTML.
+  Without it Chromium uses "overview" mode (980 px virtual width) and scales the page down — the
+  window renders short/garbled.
+- `--force-device-scale-factor=4` is the resolution lever (crisp, ~2× the default 2). If the user
+  says the image is too small, raise this. `--window-size` is CSS px; PNG = size × scale.
+- Use a **fresh `--user-data-dir`** each run.
+- **Ignore** the dbus / GPU stderr noise (`Failed to call method ... org.freedesktop.DBus`,
+  `SharedImageManager ... non-existent mailbox`) — the PNG still writes.
+- Read PNG dimensions without PIL:
+  `python3 -c "import struct;d=open('x.png','rb').read();print(struct.unpack('>I',d[16:20])[0],'x',struct.unpack('>I',d[20:24])[0])"`.
+
+### ⚠ THE CRITICAL BUG: this Chromium build culls BOTTOM-ANCHORED content
+This headless build silently renders **zero pixels** for content pinned to the bottom of a container.
+**All of these failed** to paint a docked footer bar (verified, byte-identical PNGs):
+- a flex column (`display:flex;flex-direction:column`) with a `flex:1` scroll child + a sibling footer;
+- CSS Grid `grid-template-rows: auto … 1fr auto` with the footer in the trailing `auto` track;
+- absolute positioning with `bottom:0`;
+- absolute positioning with a large `top:` (anything past ~500 px from the column top gets clipped);
+- a sibling placed **after** an `overflow:auto` element (the overflow box culls what follows).
+
+**Reliable layout — use pure NORMAL FLOW:**
+- Lay the columns out with `display:flex; align-items:stretch` at the row level (so columns share height).
+- Inside a column, put the content then the footer as the **last normal-flow child**, with a
+  **fixed-height spacer `<div>`** before it; tune the spacer height so the footer sits at the bottom.
+- To bottom-align two footers in different columns, make their `(content + spacer + footer)` totals equal.
+- Do **not** use flex/grid vertical distribution, `bottom:`/large-`top:` absolute, or an `overflow:auto`
+  box between content and a trailing element.
+
+This is a **mockup-tooling artifact only**. The real WPF docks fine with `DockPanel.Dock=Bottom`.
+Say so when presenting the image, and never distort the WPF to satisfy the renderer.
+
+### Diagnostics that save time
+- **Byte-identical PNG after an HTML edit** = your change had no visual effect. First confirm Chromium
+  is reading the file at all (`sed 's/--page:#111111/--page:#ff0000/'` → render → the PNG must change).
+  If the file is read but the PNG is unchanged, the element isn't rendering — suspect the bottom-anchor bug.
+- **Prove an element renders**: force `background:#ff00ff !important; min-height:48px` on it and move it
+  to `top:100px` (well inside the viewport). If magenta shows there, the element is fine and the problem
+  is purely position/culling — switch to the normal-flow + spacer layout above.
+
+### Presenting
+- Add small `NEW` / `BEFORE`/`AFTER` callout tags in the mockup to flag exactly what changed; state in
+  the caption that they're annotations, not real UI.
+- Deliver high-res (scale factor 4) so the user can read it.

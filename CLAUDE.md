@@ -168,6 +168,8 @@ Always read the relevant source files before recommending or writing code. Never
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
 
+For any UI tweak/build/layout change, **render a faithful mockup image for approval before writing code** — pull the real `LemoineTheme` palette, build an HTML mockup, screenshot it with the pre-installed headless Chromium, and deliver it. The full workflow (and the headless-Chromium gotchas, incl. the bottom-anchored-content culling bug + normal-flow/spacer workaround) lives in the skill's Step 7. Iterate on the image, not on compiled code.
+
 ---
 
 ## Edit Tool — C# Unicode Escape Sequences
@@ -277,6 +279,7 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 ## Unhandled UI Exceptions Crash Revit — STA Dispatcher Safety Net
 
 - **Every tool window runs on its own dedicated STA thread, and an unhandled exception on that dispatcher terminates Revit with NO `diagnostics.log` entry** (it is never routed through `LemoineLog`). `StepFlowWindow` installs a named `Dispatcher.UnhandledException` handler in its constructor (detached on `Closed`) that routes the exception through `LemoineLog.Error` and sets `e.Handled = true`, keeping the window alive. Keep this last-resort net; never assume a stray throw in an event handler is "just a managed exception that gets logged" — without this handler it is a silent hard crash.
+- **A window that is NOT `StepFlowWindow` (e.g. `FiltersSettingsWindow`) has no such net, so any *auto-firing* callback on it must guard its own body.** A `DispatcherTimer.Tick` (or other timer/async continuation that fires without user action) that throws goes straight to the dispatcher and hard-crashes Revit — wrap the tick body in `try/catch → LemoineLog.Swallowed(context, ex)`. User-initiated click handlers are lower risk but still safer guarded when they do I/O or (de)serialization.
 
 ---
 
@@ -442,6 +445,8 @@ Discovered while making **Make Ceiling Grids** hide linked ceilings.
 - **Host view filters only affect linked elements when the link is displayed "By Host View"** in that view. To hide or override linked elements, apply a `ParameterFilterElement` on the host view — do **not** rely on per-instance `view.HideElements`, because `FilteredElementCollector(doc, viewId)` (the host-view collector) never returns elements that live inside links, so it silently misses every linked ceiling. Warn the user about any link not set to "By Host View" (see `ReportLinkDisplayModes`) rather than changing the link's display.
 - **A `ParameterFilterElement` rule matches a single parameter** — family AND type cannot be AND-combined in one rule. Match ceiling types by the link-safe built-in `ALL_MODEL_TYPE_NAME` ("Type Name"); link-safe built-in parameters are listed in `AutoFiltersSettings.LinkSafeParameters`.
 - **Prefer the Ceiling Heatmap filter mechanism for any filter-driven tool.** Register an `ExternallyManaged` trade (`FilterTradeConfig`) with one rule per item, create one matching `ParameterFilterElement` per rule (reuse-by-name via `AutoFiltersSettings.MakeFilterName`), apply per-view inside a single transaction, and call `ReportLinkDisplayModes` — rather than hand-rolling a combined filter. `CeilingHeatmapEventHandler.RegisterCeilingHeatmapTrade` is the reference.
+- **To recolor/override a filter whose graphics are governed by a view template, write to the TEMPLATE, not the view.** A view template is itself a `View` that carries the filter; `SetFilterOverrides` / `SetFilterVisibility` / `SetIsFilterEnabled` on a template-controlled *view* throws (the template owns it) — so when re-applying overrides across the project, iterate **all** views *and* templates, apply only where the filter is already present, and **catch-and-skip** the throwers. The template in the list receives the authoritative override and propagates it to its dependent views. (Reference: `AutoFiltersEventHandler.ApplyChangedOverridesAcrossViews`, the close-time colour-propagation pass — scoped to filters already placed on a view/template, never blanket-attaching.)
+- **Externally-managed trades** (Ceiling Heatmap / Ceiling Grids) name their filters with the same `AutoFiltersSettings.MakeFilterName(tradeId, ruleName)` convention, so a tool can **attach them to a view and re-apply the rule's stored overrides by name** without regenerating their (non-keyword) definitions — never rebuild a managed trade's filter definition. `AutoFiltersEventHandler.ApplyExistingFilterToView` (gated by `IncludeSelectedExternallyManaged`) is the reference; `ChangedOverrideFilterNames` excludes managed trades from definition churn.
 
 ---
 

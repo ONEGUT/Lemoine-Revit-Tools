@@ -24,7 +24,19 @@ namespace LemoineTools.Commands
             ref string          message,
             ElementSet          elements)
         {
-            // FIX: bring existing window to front via Dispatcher (STA-safe)
+            Open(commandData.Application);
+            return Result.Succeeded;
+        }
+
+        /// <summary>
+        /// Opens (or brings to front) the Delete Filters from Project window. Must run on Revit's
+        /// main thread — it enumerates the project's ParameterFilterElements before spawning the
+        /// window on its own STA thread. Shared by the ribbon command and the Auto Filters window's
+        /// "Delete from Project" button (via an ExternalEvent).
+        /// </summary>
+        public static void Open(UIApplication uiApp)
+        {
+            // Bring existing window to front via Dispatcher (STA-safe)
             if (_window != null)
             {
                 try
@@ -34,12 +46,15 @@ namespace LemoineTools.Commands
                         if (_window.IsVisible) _window.Activate();
                         else _window = null;
                     });
-                    if (_window != null) return Result.Succeeded;
+                    if (_window != null) return;
                 }
-                catch { _window = null; }
+                catch (System.Exception ex)
+                {
+                    LemoineLog.Swallowed("DeleteFromProject: bring-to-front", ex);
+                    _window = null;
+                }
             }
 
-            var uiApp = commandData.Application;
             DeleteFiltersFromProjectViewModel BuildTool()
             {
                 var doc = uiApp.ActiveUIDocument.Document;
@@ -81,7 +96,6 @@ namespace LemoineTools.Commands
 
             ready.Wait();
             _window = win;
-            return Result.Succeeded;
         }
     }
 }

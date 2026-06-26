@@ -20,12 +20,25 @@ namespace LemoineTools.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class DiscoverLaunchCommand : IExternalCommand
     {
-        private static StepFlowWindow? _window;
-
         public Result Execute(
             ExternalCommandData commandData,
             ref string          message,
             ElementSet          elements)
+        {
+            Open(commandData.Application);
+            return Result.Succeeded;
+        }
+
+        // Window handle is shared so any caller (ribbon command or the Auto Filters window's
+        // Discover button via an ExternalEvent) reuses/brings-to-front a single Discover window.
+        private static StepFlowWindow? _window;
+
+        /// <summary>
+        /// Opens (or brings to front) the Discover Rules window. Must run on Revit's main thread
+        /// — it reads the active document for category capture and link enumeration before
+        /// spawning the window on its own STA thread.
+        /// </summary>
+        public static void Open(UIApplication uiApp)
         {
             // Bring existing window to front (STA-safe via Dispatcher)
             if (_window != null)
@@ -37,12 +50,15 @@ namespace LemoineTools.Commands
                         if (_window.IsVisible) _window.Activate();
                         else _window = null;
                     });
-                    if (_window != null) return Result.Succeeded;
+                    if (_window != null) return;
                 }
-                catch { _window = null; }
+                catch (System.Exception ex)
+                {
+                    LemoineLog.Swallowed("DiscoverLaunch: bring-to-front", ex);
+                    _window = null;
+                }
             }
 
-            var uiApp = commandData.Application;
             DiscoverViewModel BuildTool()
             {
                 var doc = uiApp.ActiveUIDocument.Document;
@@ -69,16 +85,14 @@ namespace LemoineTools.Commands
                         links.Add(new DiscoverViewModel.LinkEntry(li.Id, label));
                 }
 
-                var vm = new DiscoverViewModel(
+                return new DiscoverViewModel(
                     App.DiscoverHandler!,
                     App.DiscoverEvent!,
                     links,
                     App.AutoFiltersHandler,
                     App.AutoFiltersEvent);
-
-                // Open the window on a dedicated STA thread so Dispatcher.Run() pumps messages
-                return vm;
             }
+
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
@@ -101,7 +115,6 @@ namespace LemoineTools.Commands
 
             ready.Wait();
             _window = win;
-            return Result.Succeeded;
         }
     }
 }

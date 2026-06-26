@@ -37,8 +37,11 @@ namespace LemoineTools
         internal static ExternalEvent?                 MakeCeilingGridsRunEvent      { get; private set; }
 
         // ── Discover Rules ──────────────────────────────────────────────────────────
-        internal static DiscoverEventHandler? DiscoverHandler { get; private set; }
-        internal static ExternalEvent?        DiscoverEvent   { get; private set; }
+        internal static DiscoverEventHandler?     DiscoverHandler     { get; private set; }
+        internal static ExternalEvent?            DiscoverEvent       { get; private set; }
+        // Opens the Discover window from inside the Auto Filters window (main-thread setup).
+        internal static OpenDiscoverEventHandler? OpenDiscoverHandler { get; private set; }
+        internal static ExternalEvent?            OpenDiscoverEvent   { get; private set; }
 
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
@@ -53,6 +56,9 @@ namespace LemoineTools
         internal static ExternalEvent?                        ApplyFiltersToViewsEvent        { get; private set; }
         internal static DeleteFiltersFromProjectEventHandler? DeleteFiltersFromProjectHandler { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersFromProjectEvent   { get; private set; }
+        // Opens the Delete-from-Project window from inside the Auto Filters window (main-thread setup).
+        internal static OpenDeleteFromProjectEventHandler?    OpenDeleteFromProjectHandler    { get; private set; }
+        internal static ExternalEvent?                        OpenDeleteFromProjectEvent      { get; private set; }
 
         // ── Link Views — Level ──────────────────────────────────────────────────────
         internal static LinkViewsLevelPhase1Handler? LinkViewsLevelPhase1Handler { get; private set; }
@@ -176,6 +182,8 @@ namespace LemoineTools
             // ── Discover Rules ────────────────────────────────────────────────
             DiscoverHandler = new DiscoverEventHandler();
             DiscoverEvent   = ExternalEvent.Create(DiscoverHandler);
+            OpenDiscoverHandler = new OpenDiscoverEventHandler();
+            OpenDiscoverEvent   = ExternalEvent.Create(OpenDiscoverHandler);
 
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
@@ -190,6 +198,8 @@ namespace LemoineTools
             ApplyFiltersToViewsEvent        = ExternalEvent.Create(ApplyFiltersToViewsHandler);
             DeleteFiltersFromProjectHandler = new DeleteFiltersFromProjectEventHandler();
             DeleteFiltersFromProjectEvent   = ExternalEvent.Create(DeleteFiltersFromProjectHandler);
+            OpenDeleteFromProjectHandler    = new OpenDeleteFromProjectEventHandler();
+            OpenDeleteFromProjectEvent      = ExternalEvent.Create(OpenDeleteFromProjectHandler);
 
             // ── Link Views — Level ────────────────────────────────────────────
             LinkViewsLevelPhase1Handler = new LinkViewsLevelPhase1Handler();
@@ -273,35 +283,14 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Large:    Discover Rules
-            // Large:    Auto Filters
-            // SplitButton: Apply to Views | Remove from View | Delete from Project
+            // Large: Auto Filters. Discover, Remove-from-View and Delete-from-Project now live
+            // inside the Auto Filters window; the bulk "Apply to Views" ribbon button was removed (#88).
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
-
-            filtersPanel.AddItem(Btn(
-                "LT_DiscoverRules", "Discover\nRules", "DiscoverLaunchCommand",
-                "Scan loaded Revit links for unique parameter values and propose colour-coded filter rules.",
-                "\uE773"));  // Segoe MDL2: Search
 
             filtersPanel.AddItem(Btn(
                 "LT_AutoFilters", "Auto\nFilters", "OpenFiltersSettingsCommand",
                 "Open the Auto Filters window to configure and create view filters.",
                 "\uE713"));  // Segoe MDL2: Settings gear
-
-            var splitData = new SplitButtonData("LT_FilterActions", "Filter\nActions")
-            {
-                LargeImage = CreateGlyphBitmap(32, "\uE700"),
-                Image      = CreateGlyphBitmap(16, "\uE700"),
-            };
-            var split = (SplitButton)filtersPanel.AddItem(splitData);
-            split.AddPushButton(Btn(
-                "LT_DeleteFiltersFromView", "Remove\nfrom View", "DeleteFiltersLaunchCommand",
-                "Remove selected filters from the active view (filters are kept in the project).",
-                "\uE738"));  // Segoe MDL2: Remove
-            split.AddPushButton(Btn(
-                "LT_DeleteFiltersFromProject", "Delete from\nProject", "DeleteFiltersFromProjectLaunchCommand",
-                "Permanently delete selected ParameterFilterElements from the project.",
-                "\uE74d"));  // Segoe MDL2: Delete
 
             // Legend Creation — lives in T01, furthest right (opens the window
             // where legends are built, created, and updated).
