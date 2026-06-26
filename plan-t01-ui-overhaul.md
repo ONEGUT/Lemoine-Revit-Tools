@@ -97,9 +97,19 @@ it's Revit's undo. Confirm that scope is acceptable.
   and carries the authoritative override — this is how view-template filter colours get updated).
 - Runs inside the existing close-time transaction (no extra regen). Externally-managed trades excluded.
 
-## Stage 6 — Undo/redo for in-window edits  *(UI — mockup first)*
-- Snapshot stack over `_filterTrades`; Undo/Redo buttons in the toolbar with a caret dropdown listing
-  labelled changes. Scope = menu edits only (Question 2).
+## Stage 6 — Undo/redo for in-window edits  *(DONE)*
+- Snapshot stack over `_filterTrades`. A coalescing 450 ms poll (`CaptureHistoryIfChanged`) records a
+  labelled entry when the buffer changes — no per-control wiring; rapid edits collapse into one entry.
+- **Undo / Redo** toolbar buttons (Segoe MDL2 glyphs) + a **History** dropdown (`ShowHistoryPopup`)
+  listing entries newest-first; current = "now", redoable = "redo" (italic); click any entry to jump.
+- Labels derived by diffing snapshots (`DeriveHistoryLabel`): Add/Delete trade(s)/rule(s), Rename,
+  Move, else "Edit '<rule>'". Restore is self-quieting (poll compares to the current index). History
+  capped at 100; timer stopped on close. Scope = in-window menu edits only (Question 2 caveat).
+- Toolbar placement note: the title bar exposes only `RightContent`, so Undo/Redo/History sit in the
+  right cluster (left of Delete from Project), not immediately after the title as in the mockup.
+
+---
+## All six stages complete. Move/copy dropdown also slimmed (tabs removed, width-matched).
 
 ---
 
