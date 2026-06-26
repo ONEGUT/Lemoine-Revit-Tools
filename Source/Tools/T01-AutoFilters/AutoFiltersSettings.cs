@@ -919,6 +919,33 @@ namespace LemoineTools.Tools.AutoFilters
         public static IReadOnlyDictionary<string, string> KnownCategoryMap =>
             _runtimeCategoryMap ?? (IReadOnlyDictionary<string, string>)DefaultKnownCategoryMap;
 
+        /// <summary>
+        /// Resolves a category display name to its OST_* BuiltInCategory string, trying the
+        /// document-captured runtime map first and falling back to the hardcoded default map.
+        /// Curated category groupings (e.g. the Discover tool's) use the default display names
+        /// such as "Fabrication Ductwork", but a live document reports those categories under
+        /// Revit's real names — "MEP Fabrication Ductwork", "MEP Fabrication Pipework", etc. —
+        /// so a runtime-map-only lookup silently misses them and the picker drops the row.
+        /// Checking both keeps every curated label resolvable regardless of the live document's
+        /// naming. Returns <see langword="true"/> and sets <paramref name="ost"/> on a match.
+        /// </summary>
+        public static bool TryResolveCategoryOst(string displayName, out string ost)
+        {
+            ost = "";
+            if (string.IsNullOrEmpty(displayName)) return false;
+            if (KnownCategoryMap.TryGetValue(displayName, out var found) && !string.IsNullOrEmpty(found))
+            {
+                ost = found;
+                return true;
+            }
+            if (DefaultKnownCategoryMap.TryGetValue(displayName, out found) && !string.IsNullOrEmpty(found))
+            {
+                ost = found;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Sorted display names for the category checklist (document-captured when available).</summary>
         public static IReadOnlyList<string> KnownCategoryDisplayNames =>
             _runtimeDisplayNames ?? (IReadOnlyList<string>)DefaultKnownCategoryDisplayNames;

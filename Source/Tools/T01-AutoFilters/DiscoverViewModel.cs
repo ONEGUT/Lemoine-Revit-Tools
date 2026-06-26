@@ -552,7 +552,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 if (existingByLabel.TryGetValue(catLabel, out var existing))
                     link.ConfigRows.Add(existing);
-                else if (AutoFiltersSettings.KnownCategoryMap.TryGetValue(catLabel, out var ost))
+                else if (AutoFiltersSettings.TryResolveCategoryOst(catLabel, out var ost))
                     link.ConfigRows.Add(new ScanConfigRow(catLabel, ost));
                 else
                     // A curated S2 group label that the live document's category map doesn't
