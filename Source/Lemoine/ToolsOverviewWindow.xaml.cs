@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace LemoineTools.Lemoine
 {
@@ -32,6 +35,30 @@ namespace LemoineTools.Lemoine
             new Dictionary<string, (TextBlock, TextBlock)>();
         private readonly Dictionary<string, Border> _stageChips = new Dictionary<string, Border>();
         private Border? _cardsHost;
+
+        // Navigation: tool name → its card (for the current category), the cards scroll
+        // viewer, and lookup maps so a "feeds/fed by" chip can jump to its target.
+        private readonly Dictionary<string, Border> _toolCards = new Dictionary<string, Border>();
+        private ScrollViewer? _cardsScroll;
+        private static readonly Dictionary<string, (string CatId, string ToolName)> _toolIndex = BuildToolIndex();
+        private static readonly Dictionary<string, string> _catByName = BuildCatIndex();
+
+        private static Dictionary<string, (string, string)> BuildToolIndex()
+        {
+            var d = new Dictionary<string, (string, string)>();
+            foreach (var c in ToolsOverviewCatalog.Categories)
+                foreach (var t in c.Tools)
+                    d[t.Name] = (c.Id, t.Name);
+            return d;
+        }
+
+        private static Dictionary<string, string> BuildCatIndex()
+        {
+            var d = new Dictionary<string, string>();
+            foreach (var c in ToolsOverviewCatalog.Categories)
+                d[c.Name] = c.Id;
+            return d;
+        }
 
         public ToolsOverviewWindow()
         {
@@ -434,8 +461,13 @@ namespace LemoineTools.Lemoine
             intro.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             stack.Children.Add(intro);
 
+            _toolCards.Clear();
             foreach (var tool in cat.Tools)
-                stack.Children.Add(BuildCard(tool));
+            {
+                var card = BuildCard(tool);
+                _toolCards[tool.Name] = card;
+                stack.Children.Add(card);
+            }
 
             var scroll = new ScrollViewer
             {
@@ -443,6 +475,7 @@ namespace LemoineTools.Lemoine
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = stack,
             };
+            _cardsScroll = scroll;
             _cardsHost.Child = scroll;
         }
 
@@ -460,8 +493,21 @@ namespace LemoineTools.Lemoine
 
             var stack = new StackPanel();
 
-            // Top: icon + name
-            var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+            // Top: icon + name (left), "Dummy run ▶" (right)
+            var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 5) };
+
+            if (ToolsOverviewDemos.For(tool.Name) != null)
+            {
+                var runBtn = LemoineControlStyles.BuildSmallButton("Dummy run ▶",
+                    LemoineControlStyles.LemoineButtonVariant.Primary);
+                runBtn.VerticalAlignment = VerticalAlignment.Center;
+                runBtn.ToolTip = $"Open {tool.Name} in a tool window and step through it — simulated, no Revit changes.";
+                runBtn.Click += (s, e) => LaunchDemo(tool.Name);
+                DockPanel.SetDock(runBtn, Dock.Right);
+                top.Children.Add(runBtn);
+            }
+
+            var left = new StackPanel { Orientation = Orientation.Horizontal };
 
             var iconBox = new Border
             {
@@ -481,13 +527,14 @@ namespace LemoineTools.Lemoine
             icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
             iconBox.Child = icon;
-            top.Children.Add(iconBox);
+            left.Children.Add(iconBox);
 
             var name = new TextBlock { Text = tool.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
             name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            top.Children.Add(name);
+            left.Children.Add(name);
+            top.Children.Add(left);  // fills remaining width (LastChildFill)
             stack.Children.Add(top);
 
             // Blurb
@@ -534,6 +581,7 @@ namespace LemoineTools.Lemoine
 
             foreach (var item in items)
             {
+                bool linkable = TryResolveTarget(item, out var catId, out var toolName);
                 var prefix = accent ? item + " →" : "← " + item;
                 var chip = new Border
                 {
@@ -541,6 +589,7 @@ namespace LemoineTools.Lemoine
                     BorderThickness = new Thickness(1),
                     Padding         = new Thickness(7, 2, 7, 2),
                     Margin          = new Thickness(0, 0, 5, 4),
+                    Cursor          = linkable ? Cursors.Hand : Cursors.Arrow,
                 };
                 chip.SetResourceReference(Border.BackgroundProperty,  accent ? "LemoineAccentDim" : "LemoineGreenDim");
                 chip.SetResourceReference(Border.BorderBrushProperty, accent ? "LemoineAccent"    : "LemoineGreen");
@@ -548,10 +597,97 @@ namespace LemoineTools.Lemoine
                 tb.SetResourceReference(TextBlock.ForegroundProperty, accent ? "LemoineAccent" : "LemoineGreen");
                 tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                if (linkable)
+                {
+                    tb.TextDecorations = TextDecorations.Underline;
+                    chip.ToolTip = $"Go to {toolName ?? catId}";
+                    chip.MouseLeftButtonDown += (s, e) => { NavigateToTool(catId, toolName); e.Handled = true; };
+                }
                 chip.Child = tb;
                 wrap.Children.Add(chip);
             }
             return wrap;
+        }
+
+        // ── Chip → tool/category navigation ───────────────────────────────────
+        // Strips the "(…)" qualifier and matches a tool name first, then a category
+        // name. Items that resolve to neither (e.g. "Discover (auto-detect rules)")
+        // render as plain, non-clickable chips.
+        private static bool TryResolveTarget(string raw, out string catId, out string? toolName)
+        {
+            catId = ""; toolName = null;
+            var clean = raw;
+            int paren = clean.IndexOf(" (", StringComparison.Ordinal);
+            if (paren > 0) clean = clean.Substring(0, paren);
+            clean = clean.Trim();
+
+            if (_toolIndex.TryGetValue(clean, out var hit)) { catId = hit.CatId; toolName = hit.ToolName; return true; }
+            if (_catByName.TryGetValue(clean, out var cid))  { catId = cid; toolName = null; return true; }
+            return false;
+        }
+
+        private void NavigateToTool(string catId, string? toolName)
+        {
+            SelectCategory(catId);   // rebuilds the cards pane + repopulates _toolCards
+            if (string.IsNullOrEmpty(toolName)) return;
+
+            // Defer until layout settles, then scroll the target card into view and flash it.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (toolName != null && _toolCards.TryGetValue(toolName, out var card))
+                {
+                    card.BringIntoView();
+                    FlashCard(card);
+                }
+            }), DispatcherPriority.Loaded);
+        }
+
+        private void FlashCard(Border card)
+        {
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1100) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            };
+            timer.Start();
+        }
+
+        // ── Dummy run — open the tool's demo in a real StepFlowWindow ─────────
+        // Mirrors the tool commands: the StepFlowWindow runs on its own dedicated STA
+        // thread with a message pump, so the overview stays responsive. The demo tool
+        // is Revit-free, so no UIApplication/document is needed.
+        private void LaunchDemo(string toolName)
+        {
+            var spec = ToolsOverviewDemos.For(toolName);
+            if (spec == null) return;
+
+            var ready = new ManualResetEventSlim(false);
+            var thread = new Thread(() =>
+            {
+                // Fully qualified: a bare `Dispatcher` inside this Window subclass would bind
+                // to the inherited instance property, not the static class.
+                try
+                {
+                    var win = new StepFlowWindow(new OverviewDemoTool(spec));
+                    win.Closed += (s, e) => System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+                    win.Show();
+                    ready.Set();                       // released only after the window is up
+                    System.Windows.Threading.Dispatcher.Run();
+                }
+                catch (Exception ex)
+                {
+                    // Without this, a throw during construction would leave ready.Wait() (below)
+                    // blocking Revit's main thread forever.
+                    LemoineLog.Error("ToolsOverview: launch demo run", ex);
+                    ready.Set();
+                }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+            ready.Wait();
         }
 
         // ═════════════════════════════════════════════════════════════════════

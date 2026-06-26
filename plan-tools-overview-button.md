@@ -45,9 +45,22 @@ tooltips in `App.cs` plus the cross-tool ties already verified during research:
 - Read-only window: no Revit API calls, no transactions, no ExternalEvent.
 - `ToolsOverviewWindow` excluded from sibling-project globs is N/A (it lives under `Source/`, already swept).
 
+## Extension — Dummy run + clickable links (approved follow-up)
+- Each tool card gets a **"Dummy run ▶"** button that opens the real `StepFlowWindow` (on its own
+  dedicated STA thread, like the tool commands) with a catalog-driven, **Revit-free** demo tool:
+  real Lemoine controls, the tool's actual steps, validation, and a simulated run (progress + log).
+- **feeds/fed-by chips are clickable** — resolving the chip text to a tool (jump to its card + flash)
+  or a category (jump to it). Unresolvable chips (e.g. "Discover") stay plain.
+- New files: `OverviewDemoTool.cs` (Revit-free `ILemoineTool` engine + spec types) and
+  `ToolsOverviewDemos.cs` (per-tool specs for all ~28 tools, step titles mirrored from the real
+  ViewModels). The STA launch is wrapped in `try/catch → LemoineLog.Error` + latch release so a
+  construction throw is logged, never hangs Revit.
+
 ## Out of scope
 - Option B node-map / Map toggle (can be a later second view).
 - Per-tool screenshots (mini-docs are text + relationship chips only).
+- Pixel-faithful demo controls — the demos mirror each tool's real *step structure* with
+  representative sample data, not its exact every-control layout.
 
 ## Verification
 - Project builds on Windows only (can't compile on Linux — per CLAUDE.md). I'll do the post-change
