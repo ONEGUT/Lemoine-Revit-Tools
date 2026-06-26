@@ -526,7 +526,7 @@ namespace LemoineTools
 
             testingPanel.AddItem(Btn(
                 "LT_AlignSheetViews", "Align\nSheet Views", "AlignSheetViewsCommand",
-                "Align the viewports on selected sheets to a reference sheet so matching views overlay exactly. Matches views by model-region overlap; missing or ambiguous counterparts are reported.",
+                "Align the viewports on target sheets to the best-matching reference sheet so matching views overlay exactly. Pairs views by shared scope box (crop overlap otherwise) and can inherit the scope box, grid extents, crop size and crop visibility. Missing or ambiguous counterparts are reported.",
                 char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── Settings / Developer — two large buttons ──────────────
