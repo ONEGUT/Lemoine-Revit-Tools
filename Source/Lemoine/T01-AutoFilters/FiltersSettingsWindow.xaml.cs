@@ -266,6 +266,62 @@ namespace LemoineTools.Lemoine
             ApplyTradesToView(selected);
         }
 
+        // Trades-sidebar footer (Remove half): detaches the checked trades' filters from Revit's
+        // current view. Non-destructive — the filters stay in the project. Uses the same per-trade
+        // checkbox selection as "Apply to view". Externally-managed trades carry filters even when
+        // their rule has no keyword definition, so their names are always included.
+        private void RemoveSelectedTradesFromView()
+        {
+            if (_filterTrades == null) return;
+            var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
+            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+
+            var handler = App.DeleteFiltersHandler;
+            var evt     = App.DeleteFiltersEvent;
+            if (handler == null || evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Remove from view unavailable: handler not registered.");
+                FlashStatus("Remove unavailable.");
+                return;
+            }
+
+            var names = new List<string>();
+            foreach (var t in selected)
+                foreach (var r in t.Rules)
+                {
+                    if (!r.Enabled) continue;
+                    if (!t.ExternallyManaged && !AutoFiltersSettings.RuleProducesFilter(r)) continue;
+                    names.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
+                }
+
+            if (names.Count == 0) { FlashStatus("No filters to remove for the selected trades."); return; }
+
+            handler.SelectedFilterNames = names;
+            handler.PushLog    = null;
+            handler.OnProgress = null;
+            handler.OnComplete = null;
+            evt.Raise();
+            FlashStatus(selected.Count == 1
+                ? $"Removing “{selected[0].Label}” from the active view…"
+                : $"Removing {selected.Count} trades from the active view…");
+        }
+
+        // Toolbar "Delete from Project" — opens the existing Delete-from-Project picker window
+        // (main-thread setup via ExternalEvent). Operates on the project's actual filters,
+        // independent of this window's working buffer.
+        private void OpenDeleteFromProject()
+        {
+            var evt = App.OpenDeleteFromProjectEvent;
+            if (evt == null)
+            {
+                LemoineLog.Warn("FiltersSettingsWindow", "Delete from Project unavailable: handler not registered.");
+                FlashStatus("Delete from Project unavailable.");
+                return;
+            }
+            evt.Raise();
+            FlashStatus("Opening Delete from Project…");
+        }
+
         // Creates and applies the given trades' filters to Revit's current view.
         // Persists the working buffer first so the handler reads the latest (possibly just-merged)
         // rules, then refreshes the dirty snapshot so OnClosed doesn't run a second redundant pass.
@@ -403,8 +459,16 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            // The "Apply to view" actions now live as docked footer bars on the rule list
-            // ("Apply trade to view") and the trades sidebar ("Apply selected trades to view").
+            // The "Apply to view" / "Remove from view" actions live as docked footer bars on the
+            // rule list and trades sidebar. The toolbar carries the destructive "Delete from
+            // Project" action (opens the existing window) plus the window close button.
+            var deleteProjBtn = LemoineControlStyles.BuildSmallButton(
+                "Delete from Project", LemoineControlStyles.LemoineButtonVariant.Danger);
+            deleteProjBtn.VerticalAlignment = VerticalAlignment.Center;
+            deleteProjBtn.Margin            = new Thickness(0, 0, 8, 0);
+            deleteProjBtn.ToolTip           = "Permanently delete ParameterFilterElements from the project (opens a picker).";
+            deleteProjBtn.Click += (s, e) => OpenDeleteFromProject();
+
             var closeBtn = BuildFlatButton("×");
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
@@ -414,6 +478,7 @@ namespace LemoineTools.Lemoine
                 Orientation       = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            rightPanel.Children.Add(deleteProjBtn);
             rightPanel.Children.Add(closeBtn);
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar

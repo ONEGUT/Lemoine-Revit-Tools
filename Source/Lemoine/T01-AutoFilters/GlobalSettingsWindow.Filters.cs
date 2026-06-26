@@ -217,10 +217,12 @@ namespace LemoineTools.Lemoine
             // "＋ Add Trade" now floats as the last item inside the trade list
             // (AppendAddTradePill, called from FRefreshTradesSidebar) — no sticky bar.
 
-            // Docked footer: applies every checked trade's filters to the current view.
-            var applyAllFooter = BuildApplyFooter("Apply selected trades to view",
-                "Apply the checked trades' filters to the current view.",
-                ApplySelectedTradesToView);
+            // Docked footer: [Apply | Remove] for the checked trades, on the current view.
+            var applyAllFooter = BuildApplyRemoveFooter(
+                "Apply to view",   "Apply the checked trades' filters to the current view.",
+                ApplySelectedTradesToView,
+                "Remove from view", "Remove the checked trades' filters from the current view (kept in the project).",
+                RemoveSelectedTradesFromView);
             DockPanel.SetDock(applyAllFooter, Dock.Bottom);
 
             var sidebarDock = new DockPanel { LastChildFill = true };
@@ -481,6 +483,81 @@ namespace LemoineTools.Lemoine
             btn.Click += (s, e) => onClick();
 
             bar.Child = btn;
+            return bar;
+        }
+
+        // Docked footer carrying a segmented [Apply | Remove] double button. Both halves act on the
+        // checked-trade selection. Apply is the accent-filled primary; Remove is the neutral
+        // secondary (non-destructive — filters stay in the project). CornerRadius 6 matches the
+        // single-button footer; partial corners can't be set via SetResourceReference.
+        private static Border BuildApplyRemoveFooter(
+            string applyLabel, string applyTip, Action applyAction,
+            string removeLabel, string removeTip, Action removeAction)
+        {
+            var bar = new Border { Padding = new Thickness(8), BorderThickness = new Thickness(0, 1, 0, 0) };
+            bar.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var outer = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
+            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            Border MakeSeg(string label, string tip, int col, CornerRadius corner, bool primary, Action onClick)
+            {
+                var lbl = new TextBlock
+                {
+                    Text                = label,
+                    TextAlignment       = TextAlignment.Center,
+                    TextWrapping        = TextWrapping.Wrap,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center,
+                    IsHitTestVisible    = false,
+                };
+                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                lbl.SetResourceReference(TextBlock.ForegroundProperty, primary ? "LemoineAccent" : "LemoineTextDim");
+
+                var seg = new Border
+                {
+                    Padding      = new Thickness(6, 7, 6, 7),
+                    CornerRadius = corner,
+                    Cursor       = Cursors.Hand,
+                    ToolTip      = tip,
+                    Child        = lbl,
+                };
+                if (primary) seg.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                else         seg.Background = Brushes.Transparent;
+
+                seg.MouseEnter += (s, e) =>
+                {
+                    if (!primary) seg.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, primary ? "LemoineAccent" : "LemoineText");
+                };
+                seg.MouseLeave += (s, e) =>
+                {
+                    if (primary) seg.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+                    else         seg.Background = Brushes.Transparent;
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, primary ? "LemoineAccent" : "LemoineTextDim");
+                };
+                seg.MouseLeftButtonUp += (s, e) => { e.Handled = true; onClick(); };
+                Grid.SetColumn(seg, col);
+                return seg;
+            }
+
+            grid.Children.Add(MakeSeg(applyLabel, applyTip, 0, new CornerRadius(6, 0, 0, 6), true, applyAction));
+
+            var dv = new Border { Width = 1 };
+            dv.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            Grid.SetColumn(dv, 1);
+            grid.Children.Add(dv);
+
+            grid.Children.Add(MakeSeg(removeLabel, removeTip, 2, new CornerRadius(0, 6, 6, 0), false, removeAction));
+
+            outer.Child = grid;
+            bar.Child   = outer;
             return bar;
         }
 

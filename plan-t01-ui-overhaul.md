@@ -76,14 +76,16 @@ it's Revit's undo. Confirm that scope is acceptable.
 - **Transparency slider moved** out of Appearance & Visibility to the bottom of the Override Style
   (colour overrides) card (`BuildTransparencyControl`).
 
-## Stage 4 — Embed "Remove from view" + "Delete from project"  *(UI — mockup first)*
-- **Remove from view:** one instant button (toolbar or sidebar footer). No selection — removes **all
-  Auto-Filters-managed filters** (`AutoFiltersSettings.Instance.CreatedFilterNames`) from the active
-  view via the existing `DeleteFiltersEventHandler`.
-- **Delete from project:** a button that opens the **existing** `DeleteFiltersFromProject` window
-  (no change to that window).
-- Remove the now-duplicated ribbon split-button entries in `App.cs` (Apply to Views / Remove / Delete),
-  or keep them — your call.
+## Stage 4 — Embed "Remove from view" + "Delete from project"  *(DONE)*
+- **Remove from view** moved to the trades-sidebar footer as the right half of a **[Apply | Remove]
+  double button** (`BuildApplyRemoveFooter`). Uses the **same trade checkboxes** — removes the checked
+  trades' filters from the active view via `DeleteFiltersEventHandler` (`RemoveSelectedTradesFromView`).
+  Non-destructive (filters stay in the project); externally-managed trades included.
+- **Delete from project:** red toolbar button → opens the **existing** window via a new
+  `OpenDeleteFromProjectEventHandler` ExternalEvent (shared `DeleteFiltersFromProjectLaunchCommand.Open`).
+- **Ribbon pruned** (`App.cs`): removed **Discover Rules**, **Remove from View**, and **Delete from
+  Project** buttons; the split button collapses to a plain **Apply to Views** button. Auto Filters and
+  Legend Creation unchanged. (Unused `DeleteFiltersLaunchCommand` class left in place, harmless.)
 
 ## Stage 5 — Close-time full apply of all changed rules + colors  *(backend — no mockup)*
 - On close, in addition to definition refresh, **re-apply graphic overrides (colors, line, halftone,
