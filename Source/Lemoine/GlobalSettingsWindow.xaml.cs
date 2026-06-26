@@ -139,10 +139,19 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         // Top pill navigation
         // ═════════════════════════════════════════════════════════════════════
+        // One tab per ribbon group (plus General). Labels are kept short so all nine
+        // pills fit the fixed-width nav; each maps to its ribbon panel.
         private static readonly (string Id, string Label)[] _navDefs =
         {
-            ("general",    "General"),
-            ("dimensions", "Dimensions"),
+            ("general",  "General"),
+            ("filters",  "Filters"),
+            ("ceilings", "Ceilings"),
+            ("views",    "Views"),
+            ("sheets",   "Sheets"),
+            ("export",   "Export"),
+            ("modify",   "Modify"),
+            ("clash",    "Clash"),
+            ("copy",     "Copy"),
         };
 
         private void BuildTabNav()
@@ -241,11 +250,17 @@ namespace LemoineTools.Lemoine
             UIElement content;
             switch (tabId)
             {
-                case "general":    content = BuildGeneralContent();    break;
-                case "dimensions": content = BuildDimensionsContent(); break;
-                case "t08":        content = LegendCreatorTabContent.BuildContent(this); break;
-                // (Create Sheets settings tab removed — values are now per-run in the tool.)
-                default:         content = BuildNoSettingsContent(); break;
+                case "general":  content = BuildGeneralContent();      break;
+                case "filters":  content = BuildFiltersGroupContent(); break;
+                case "ceilings": content = BuildCeilingsGroupContent(); break;
+                case "views":    content = BuildViewsGroupContent();   break;
+                case "sheets":   content = BuildSheetsGroupContent();  break;
+                case "export":   content = BuildExportGroupContent();  break;
+                case "modify":   content = BuildModifyGroupContent();  break;
+                // Clash → the auto-dimension defaults (Finder & Dimension section).
+                case "clash":    content = BuildDimensionsContent();   break;
+                case "copy":     content = BuildCopyGroupContent();    break;
+                default:         content = BuildNoSettingsContent();   break;
             }
 
             _contentBorder.Child = content;

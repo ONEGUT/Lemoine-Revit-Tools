@@ -80,7 +80,6 @@
     <Compile Include="..\Source\Tools\T02-Ceilings\CeilingHeatmapSettings.cs" />
     <Compile Include="..\Source\Tools\T03-LinkViews\LinkViewsLevelSettings.cs" />
     <Compile Include="..\Source\Tools\BulkExport\BulkExportSettings.cs" />
-    <Compile Include="..\Source\Tools\Testing\CreateSheets\CreateSheetsSettings.cs" />
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorSettings.cs" />
     <Compile Include="..\Source\Tools\Testing\LegendCreator\LegendCreatorTabContent.cs" />
     <Compile Include="..\Source\Tools\BulkExport\SheetPackLayout.cs" />
