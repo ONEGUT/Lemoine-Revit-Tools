@@ -157,7 +157,11 @@ namespace LemoineTools.Lemoine
                     var snapshotTrades = DeserializeTrades(_filtersSnapshot);
                     var changed = AutoFiltersSettings.ComputeChangedFilterNames(
                         snapshotTrades, _filterTrades);
-                    RaiseAutoCreate(changed);
+                    // Colour/override edits (which the definition-change set ignores) are propagated
+                    // across every view & template already carrying the filter on close.
+                    var changedOverride = AutoFiltersSettings.ComputeChangedOverrideFilterNames(
+                        snapshotTrades, _filterTrades);
+                    RaiseAutoCreate(changed, changedOverride);
                 }
             }
 
@@ -168,7 +172,7 @@ namespace LemoineTools.Lemoine
         // Revit runs the handler at its next idle moment, after this window has closed — which
         // is why failures are surfaced by the handler's own TaskDialog (ShowFailureDialog),
         // never marshalled back to this dispatcher.
-        private void RaiseAutoCreate(HashSet<string>? changedFilterNames)
+        private void RaiseAutoCreate(HashSet<string>? changedFilterNames, HashSet<string>? changedOverrideNames)
         {
             var handler = App.AutoFiltersHandler;
             var evt     = App.AutoFiltersEvent;
@@ -178,14 +182,16 @@ namespace LemoineTools.Lemoine
                 return;
             }
 
-            handler.CreateOnly          = true;
-            handler.ShowFailureDialog   = true;
-            handler.ChangedFilterNames  = changedFilterNames;
-            handler.SelectedDisciplines = new List<string>();
-            handler.SelectedLinkTitles  = new List<string>();
-            handler.PushLog             = null;
-            handler.OnProgress          = null;
-            handler.OnComplete          = null;
+            handler.CreateOnly                = true;
+            handler.ShowFailureDialog         = true;
+            handler.ChangedFilterNames        = changedFilterNames;
+            // Re-apply colour/override edits across every view & template already carrying the filter.
+            handler.ApplyOverrideFilterNames  = changedOverrideNames;
+            handler.SelectedDisciplines       = new List<string>();
+            handler.SelectedLinkTitles        = new List<string>();
+            handler.PushLog                   = null;
+            handler.OnProgress                = null;
+            handler.OnComplete                = null;
 
             evt.Raise();
         }

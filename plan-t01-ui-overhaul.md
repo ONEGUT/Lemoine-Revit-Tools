@@ -87,12 +87,15 @@ it's Revit's undo. Confirm that scope is acceptable.
   Project** buttons; the split button collapses to a plain **Apply to Views** button. Auto Filters and
   Legend Creation unchanged. (Unused `DeleteFiltersLaunchCommand` class left in place, harmless.)
 
-## Stage 5 — Close-time full apply of all changed rules + colors  *(backend — no mockup)*
-- On close, in addition to definition refresh, **re-apply graphic overrides (colors, line, halftone,
-  transparency, visibility) for changed rules** across the project.
-- **Scope to confirm:** (a) only views/templates that *already carry* the filter, or (b) all views?
-  Recommend (a) — re-color where the filter already lives, never blanket-attach. Includes
-  template-controlled filters by writing to the template (Question 1).
+## Stage 5 — Close-time full apply of all changed rules + colors  *(DONE)*
+- On close, in addition to definition refresh, the run now **re-applies graphic overrides** (colours,
+  patterns, line, halftone, transparency, visibility, enabled) for every rule whose definition **or**
+  colour/override changed (`ComputeChangedOverrideFilterNames` — a superset of the definition-only set).
+- **Scope = views/templates that already carry the filter** (locked decision). Never blanket-attaches.
+  `ApplyChangedOverridesAcrossViews` iterates all views+templates, applies only where the filter is
+  already present, and **catches/skips** template-governed views (the template itself is in the list
+  and carries the authoritative override — this is how view-template filter colours get updated).
+- Runs inside the existing close-time transaction (no extra regen). Externally-managed trades excluded.
 
 ## Stage 6 — Undo/redo for in-window edits  *(UI — mockup first)*
 - Snapshot stack over `_filterTrades`; Undo/Redo buttons in the toolbar with a caret dropdown listing

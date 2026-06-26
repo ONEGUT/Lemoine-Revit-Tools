@@ -63,6 +63,17 @@ namespace LemoineTools.Tools.AutoFilters
         public bool IncludeSelectedExternallyManaged { get; set; } = false;
 
         /// <summary>
+        /// Close-time (CreateOnly) only. When set, after refreshing definitions the run re-applies
+        /// each listed rule's graphic overrides (colours, patterns, line, halftone, transparency,
+        /// visibility, enabled) onto every view AND view-template that <em>already carries</em> the
+        /// filter — never attaching it to a view that doesn't. This is how colour edits made in the
+        /// menu propagate across the project on close. A view whose filters are governed by a
+        /// template is skipped (the template itself is in the list and carries the authoritative
+        /// override). <see langword="null"/> (default) skips the override pass entirely.
+        /// </summary>
+        public HashSet<string>? ApplyOverrideFilterNames { get; set; } = null;
+
+        /// <summary>
         /// When true, a Revit TaskDialog summarising any filter-creation failures is shown
         /// at the end of <see cref="Execute"/>. Used by the auto-create-on-close path, where
         /// the originating window has already closed and cannot surface failures itself.
@@ -119,6 +130,7 @@ namespace LemoineTools.Tools.AutoFilters
                 SelectedLinkTitles  = new List<string>();
                 SelectedDisciplines = new List<string>();
                 IncludeSelectedExternallyManaged = false;
+                ApplyOverrideFilterNames = null;
             }
 
             Progress(100, pass, fail, skip);
@@ -361,6 +373,18 @@ namespace LemoineTools.Tools.AutoFilters
                             createOnly, overwriteDef,
                             ref pass, ref fail, ref skip, ref reused, ref rulesDone, totalRules);
                     }
+                }
+
+                // Close-time colour propagation: re-apply changed rules' overrides onto every view
+                // and template that already carries the filter (same transaction, after definitions
+                // are refreshed so a just-rebuilt filter's new ElementId is used).
+                if (createOnly && ApplyOverrideFilterNames != null && ApplyOverrideFilterNames.Count > 0)
+                {
+                    int recolored = ApplyChangedOverridesAcrossViews(
+                        doc, trades, ApplyOverrideFilterNames,
+                        solidFillId, solidLineId, fillPatternMap, linePatternMap, existingFilters);
+                    if (recolored > 0)
+                        Log($"Re-applied overrides to {recolored} view/template placement(s).", "info");
                 }
 
                 tx.Commit();
@@ -609,6 +633,61 @@ namespace LemoineTools.Tools.AutoFilters
 
             rulesDone++;
             Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
+        }
+
+        // Re-applies the listed rules' graphic overrides onto every view AND template that already
+        // carries the rule's filter. Never attaches the filter to a view that doesn't have it.
+        // A view whose filters are template-governed throws on SetFilterOverrides — that is caught
+        // and skipped (the controlling template is itself in the view list and gets the authoritative
+        // override). Returns the number of view/template placements updated.
+        private int ApplyChangedOverridesAcrossViews(
+            Document doc, IEnumerable<FilterTradeConfig> trades, HashSet<string> applyNames,
+            ElementId solidFillId, ElementId solidLineId,
+            Dictionary<string, ElementId> fillPatternMap,
+            Dictionary<string, ElementId> linePatternMap,
+            Dictionary<string, ParameterFilterElement> existingFilters)
+        {
+            int updated = 0;
+            var allViews = AllViews(doc);
+
+            foreach (var trade in trades)
+            {
+                if (trade.ExternallyManaged) continue;
+                foreach (var rule in trade.Rules)
+                {
+                    if (!rule.Enabled) continue;
+                    string fname = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
+                    if (!applyNames.Contains(fname)) continue;
+                    if (!existingFilters.TryGetValue(fname, out var pfe)) continue;
+
+                    foreach (var v in allViews)
+                    {
+                        ICollection<ElementId> vFilters;
+                        try { vFilters = v.GetFilters(); }
+                        catch (Exception ex)
+                        {
+                            LemoineLog.Swallowed($"AutoFilters: read filters on view {v.Id.Value}", ex);
+                            continue;
+                        }
+                        if (!vFilters.Any(id => id.Value == pfe.Id.Value)) continue;
+
+                        try
+                        {
+                            ApplyRuleOverride(v, pfe.Id, rule, solidFillId, solidLineId, fillPatternMap, linePatternMap);
+                            v.SetIsFilterEnabled(pfe.Id, rule.Enabled);
+                            updated++;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Filters governed by a template on a non-template view reject overrides —
+                            // skip; the template carries the authoritative override.
+                            LemoineLog.Swallowed(
+                                $"AutoFilters: re-apply override '{fname}' on view {v.Id.Value}", ex);
+                        }
+                    }
+                }
+            }
+            return updated;
         }
 
         // Attaches an externally-managed trade's EXISTING filter to the active view and re-applies

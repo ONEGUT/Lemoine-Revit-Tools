@@ -445,6 +445,43 @@ namespace LemoineTools.Tools.AutoFilters
         /// </summary>
         public static HashSet<string> ComputeChangedFilterNames(
             IEnumerable<FilterTradeConfig> before, IEnumerable<FilterTradeConfig> after)
+            => ComputeChanged(before, after, RuleDefinitionSignature);
+
+        /// <summary>
+        /// Canonical signature of a rule's <em>graphic overrides</em> and view flags (colours,
+        /// patterns, line weight, halftone, transparency, visibility, enabled). Used to detect a
+        /// colour-only change that the definition signature deliberately ignores.
+        /// </summary>
+        private static string RuleOverrideSignature(FilterRuleConfig r)
+        {
+            if (r == null) return "";
+            return string.Join("|", new object[]
+            {
+                r.OverrideSurf,   r.SurfColor,   r.SurfPattern,
+                r.OverrideSurfBg, r.SurfBgColor, r.SurfBgPattern,
+                r.OverrideCut,    r.CutColor,    r.CutPattern,
+                r.OverrideCutBg,  r.CutBgColor,  r.CutBgPattern,
+                r.OverrideLine,   r.LineColor,   r.LinePattern, r.LineWeight,
+                r.Halftone,       r.Transparency, r.Visible, r.Enabled, r.FilterOn,
+            });
+        }
+
+        /// <summary>
+        /// Returns the filter names whose definition <em>or</em> graphic overrides changed between
+        /// the buffers. Used by the close-time pass to re-apply colour/override edits across every
+        /// view and template that already carries the filter — a superset of
+        /// <see cref="ComputeChangedFilterNames"/> (which is definition-only).
+        /// </summary>
+        public static HashSet<string> ComputeChangedOverrideFilterNames(
+            IEnumerable<FilterTradeConfig> before, IEnumerable<FilterTradeConfig> after)
+            => ComputeChanged(before, after,
+                   r => RuleDefinitionSignature(r) + "##" + RuleOverrideSignature(r));
+
+        // Shared change-detector: flags every enabled, filter-producing, non-externally-managed
+        // rule in `after` whose `sig` differs from the same-named rule in `before` (or is new).
+        private static HashSet<string> ComputeChanged(
+            IEnumerable<FilterTradeConfig> before, IEnumerable<FilterTradeConfig> after,
+            Func<FilterRuleConfig, string> sig)
         {
             var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -459,7 +496,7 @@ namespace LemoineTools.Tools.AutoFilters
                     if (r == null) continue;
                     string name = MakeFilterName(t.Id, r.Name);
                     if (!beforeSig.ContainsKey(name))
-                        beforeSig[name] = RuleDefinitionSignature(r);
+                        beforeSig[name] = sig(r);
                 }
             }
 
@@ -470,8 +507,7 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     if (r == null || !r.Enabled || !RuleProducesFilter(r)) continue;
                     string name = MakeFilterName(t.Id, r.Name);
-                    if (!beforeSig.TryGetValue(name, out var prevSig)
-                        || prevSig != RuleDefinitionSignature(r))
+                    if (!beforeSig.TryGetValue(name, out var prevSig) || prevSig != sig(r))
                         changed.Add(name);
                 }
             }
