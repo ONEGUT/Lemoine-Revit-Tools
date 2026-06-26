@@ -33,7 +33,8 @@ namespace LemoineTools.Lemoine
             };
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
 
-            panel.Children.Add(ContentHeader("Dimensions"));
+            panel.Children.Add(ContentHeader("Clash"));
+            panel.Children.Add(SubLabel("Finder & Dimension"));
             panel.Children.Add(DimIntro(
                 "Settings for the auto-dimension engine. Every Clash Finder & Dimension run uses these "
               + "values (only the destination can be overridden per run). Saved automatically."));
