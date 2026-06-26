@@ -57,12 +57,14 @@ namespace LemoineTools.Lemoine.Controls
         private StackPanel?             _rowsStack;
         private TextBlock?              _countsTb;
 
-        // Canvas-level drop bars
-        private Border? _topDropBar;
-        private Border? _bottomDropBar;
-        private Border? _leftDropBar;
-        private Border? _rightDropBar;
-        private List<Border> _betweenRowBars = new List<Border>();
+        // Single live-marker group placement (Option A).
+        // _markerLayer overlays the rows viewport; it is hit-testable ONLY while a
+        // group-compatible drag is in flight (toggled from LegendDragSession), so the
+        // block drag/drop system underneath is never intercepted. _marker is the one
+        // accent indicator (vertical bar = in-row gutter, horizontal lane = new row).
+        private Canvas?           _markerLayer;
+        private Border?           _marker;
+        private GroupDropTarget?  _pendingDrop;
 
         // Preview is hosted by the settings window; this only carries the
         // persisted "was visible" flag for LoadFrom / templates.
@@ -80,6 +82,9 @@ namespace LemoineTools.Lemoine.Controls
             InitializeComponent();
             Loaded   += (s, e) => BuildAll();
             Unloaded += OnUnloaded;
+            // Named handlers (detached in OnUnloaded) toggle the placement overlay.
+            LegendDragSession.Started += OnDragSessionStarted;
+            LegendDragSession.Ended   += OnDragSessionEnded;
         }
 
         public void LoadFrom(LegendEntry entry)
@@ -134,29 +139,14 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Canvas grid (drop bars wrapping the rows scroll)
+        // Canvas grid — rows scroll + a single-marker placement overlay on top.
+        // The overlay (Canvas) only becomes hit-testable while a group-compatible
+        // drag is in flight (see OnDragSessionStarted), so it never intercepts the
+        // block drag/drop happening inside the cards underneath it.
         // ─────────────────────────────────────────────────────────────────────
         private Grid BuildCanvasGrid()
         {
             var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-
-            _topDropBar = new Border { Height = 18, AllowDrop = true, Background = Brushes.Transparent };
-            WireExternalDropBar(_topDropBar, DropBarRole.Top);
-            Grid.SetRow(_topDropBar, 0);
-            grid.Children.Add(_topDropBar);
-
-            var innerGrid = new Grid();
-            innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-            innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            innerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-
-            _leftDropBar = new Border { Width = 18, AllowDrop = true, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Stretch };
-            WireExternalDropBar(_leftDropBar, DropBarRole.Left);
-            Grid.SetColumn(_leftDropBar, 0);
-            innerGrid.Children.Add(_leftDropBar);
 
             _rowsScroll = new ScrollViewer
             {
@@ -167,22 +157,35 @@ namespace LemoineTools.Lemoine.Controls
             _rowsStack = new StackPanel { Orientation = Orientation.Vertical };
             _rowsScroll.Content = _rowsStack;
             LemoineControlStyles.WireBubblingScroll(_rowsScroll); // bubble wheel to parent at scroll limits
-            Grid.SetColumn(_rowsScroll, 1);
-            innerGrid.Children.Add(_rowsScroll);
+            grid.Children.Add(_rowsScroll);
 
-            _rightDropBar = new Border { Width = 18, AllowDrop = true, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Stretch };
-            WireExternalDropBar(_rightDropBar, DropBarRole.Right);
-            Grid.SetColumn(_rightDropBar, 2);
-            innerGrid.Children.Add(_rightDropBar);
+            // Overlay: transparent so it is hit-testable when enabled, but inert
+            // (IsHitTestVisible = false) until a group drag begins.
+            _markerLayer = new Canvas
+            {
+                Background        = Brushes.Transparent,
+                AllowDrop         = true,
+                IsHitTestVisible  = false,
+            };
+            _markerLayer.DragOver  += OnOverlayDragOver;
+            _markerLayer.DragLeave += OnOverlayDragLeave;
+            _markerLayer.Drop      += OnOverlayDrop;
 
-            Grid.SetRow(innerGrid, 1);
-            grid.Children.Add(innerGrid);
+            _marker = new Border
+            {
+                CornerRadius     = new CornerRadius(2),
+                Visibility       = Visibility.Collapsed,
+                IsHitTestVisible = false,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 8, ShadowDepth = 0, Opacity = 0.9,
+                    Color = System.Windows.Media.Color.FromRgb(0x4f, 0x8f, 0xc4),
+                },
+            };
+            _marker.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
+            _markerLayer.Children.Add(_marker);
 
-            _bottomDropBar = new Border { Height = 18, AllowDrop = true, Background = Brushes.Transparent };
-            WireExternalDropBar(_bottomDropBar, DropBarRole.Bottom);
-            Grid.SetRow(_bottomDropBar, 2);
-            grid.Children.Add(_bottomDropBar);
-
+            grid.Children.Add(_markerLayer);
             return grid;
         }
 
@@ -210,125 +213,222 @@ namespace LemoineTools.Lemoine.Controls
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Drop bar roles
+        // Group placement overlay (single live marker)
         // ─────────────────────────────────────────────────────────────────────
-        private enum DropBarRole { Top, Bottom, Left, Right, Between }
 
-        private void WireExternalDropBar(Border bar, DropBarRole role, int betweenIndex = -1)
+        /// <summary>One resolved landing spot for a dragged group.</summary>
+        private sealed class GroupDropTarget
         {
-            void ApplyIdle()
+            public bool   NewRow;       // true = insert a brand-new row at RowIndex
+            public int    RowIndex;     // target row (existing row for in-row; insert pos for new row)
+            public int    GroupIndex;   // insert index within the row (in-row only)
+            // Marker geometry, in overlay (viewport) coordinates.
+            public bool   Vertical;     // true = in-row gutter bar; false = new-row lane
+            public double X, Y, W, H;
+        }
+
+        // Toggle the overlay's hit-testing with the drag session so it captures
+        // group/category drags but stays inert for block drags.
+        private void OnDragSessionStarted(LegendDragPayload p)
+        {
+            if (_markerLayer == null) return;
+            if (p.What == LegendDragPayload.Kind.Group ||
+                p.What == LegendDragPayload.Kind.PaletteCategory)
+                _markerLayer.IsHitTestVisible = true;
+        }
+
+        private void OnDragSessionEnded()
+        {
+            if (_markerLayer != null) _markerLayer.IsHitTestVisible = false;
+            HideMarker();
+            _pendingDrop = null;
+        }
+
+        private void OnOverlayDragOver(object sender, DragEventArgs e)
+        {
+            var p = GetGroupPayload(e);
+            if (p == null) { e.Effects = DragDropEffects.None; HideMarker(); _pendingDrop = null; e.Handled = true; return; }
+
+            _pendingDrop = ComputeGroupDropTarget(e.GetPosition(_markerLayer));
+            if (_pendingDrop != null) DrawMarker(_pendingDrop);
+            else HideMarker();
+
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+        }
+
+        private void OnOverlayDragLeave(object sender, DragEventArgs e)
+        {
+            HideMarker();
+            _pendingDrop = null;
+        }
+
+        private void OnOverlayDrop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            HideMarker();
+            var p = GetGroupPayload(e);
+            if (p == null) { _pendingDrop = null; return; }
+
+            var target = _pendingDrop ?? ComputeGroupDropTarget(e.GetPosition(_markerLayer));
+            _pendingDrop = null;
+            if (target == null) return;
+            ApplyGroupDrop(p, target);
+        }
+
+        // Decide the single landing spot for the cursor, in overlay coordinates.
+        private GroupDropTarget? ComputeGroupDropTarget(Point p)
+        {
+            if (_rowsStack == null || _markerLayer == null) return null;
+
+            var rows = _rowsStack.Children.OfType<LemoineLegendRow>().ToList();
+            double laneW = Math.Max(40, _markerLayer.ActualWidth - 20);
+
+            // Empty legend → one new-row target at the top.
+            if (rows.Count == 0)
+                return new GroupDropTarget { NewRow = true, RowIndex = 0, Vertical = false, X = 10, Y = 8, W = laneW, H = 4 };
+
+            // Row vertical spans in overlay space.
+            var tops    = new double[rows.Count];
+            var bottoms = new double[rows.Count];
+            for (int i = 0; i < rows.Count; i++)
             {
-                bar.Background      = Brushes.Transparent;
-                bar.BorderThickness = new Thickness(0);
-                bar.BorderBrush     = null;
+                var origin = rows[i].TranslatePoint(new Point(0, 0), _markerLayer);
+                tops[i]    = origin.Y;
+                bottoms[i] = origin.Y + rows[i].ActualHeight;
             }
 
-            void ApplyHint()
-            {
-                bar.BorderThickness = new Thickness(1);
-                bar.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                bar.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            }
+            // Above the first row → new row at 0.
+            if (p.Y < tops[0])
+                return NewRowTarget(0, tops[0] - 4, laneW);
 
-            void ApplyActive()
+            for (int i = 0; i < rows.Count; i++)
             {
-                bar.BorderThickness = new Thickness(1);
-                bar.SetResourceReference(Border.BackgroundProperty,  "LemoineAccent");
-                bar.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-            }
-
-            void OnSessionStart(LegendDragPayload p)
-            {
-                if (p.What == LegendDragPayload.Kind.PaletteCategory ||
-                    p.What == LegendDragPayload.Kind.Group)
-                    ApplyHint();
-            }
-
-            void OnSessionEnd() => ApplyIdle();
-
-            bar.Loaded += (s, e) =>
-            {
-                LegendDragSession.Started += OnSessionStart;
-                LegendDragSession.Ended   += OnSessionEnd;
-                if (LegendDragSession.Active && LegendDragSession.Current != null)
-                    OnSessionStart(LegendDragSession.Current);
-            };
-            bar.Unloaded += (s, e) =>
-            {
-                LegendDragSession.Started -= OnSessionStart;
-                LegendDragSession.Ended   -= OnSessionEnd;
-            };
-
-            bar.DragEnter += (s, e) =>
-            {
-                var p = GetGroupPayload(e);
-                if (p != null) { ApplyActive(); e.Effects = DragDropEffects.Move; e.Handled = true; }
-                else e.Effects = DragDropEffects.None;
-            };
-            bar.DragOver += (s, e) =>
-            {
-                e.Effects = GetGroupPayload(e) != null ? DragDropEffects.Move : DragDropEffects.None;
-                e.Handled = true;
-            };
-            bar.DragLeave += (s, e) =>
-            {
-                if (LegendDragSession.Active && LegendDragSession.Current != null &&
-                    (LegendDragSession.Current.What == LegendDragPayload.Kind.PaletteCategory ||
-                     LegendDragSession.Current.What == LegendDragPayload.Kind.Group))
-                    ApplyHint();
-                else
-                    ApplyIdle();
-            };
-            bar.Drop += (s, e) =>
-            {
-                ApplyIdle();
-                var p = GetGroupPayload(e);
-                if (p == null) return;
-
-                switch (role)
+                if (p.Y <= bottoms[i])
                 {
-                    case DropBarRole.Top:
-                    {
-                        var newRow = BuildNewRowFromPayload(p);
-                        if (newRow != null) { Rows.Insert(0, newRow); OnEdited(); }
-                        break;
-                    }
-                    case DropBarRole.Bottom:
-                    {
-                        var newRow = BuildNewRowFromPayload(p);
-                        if (newRow != null) { Rows.Add(newRow); OnEdited(); }
-                        break;
-                    }
-                    case DropBarRole.Left:
-                    {
-                        var row = FindNearestRow(e.GetPosition(_rowsScroll).Y);
-                        if (row != null)
-                        {
-                            var grp = BuildGroupFromPayload(p);
-                            if (grp != null) { row.Groups.Insert(0, grp); DropEmptyRows(); OnEdited(); }
-                        }
-                        break;
-                    }
-                    case DropBarRole.Right:
-                    {
-                        var row = FindNearestRow(e.GetPosition(_rowsScroll).Y);
-                        if (row != null)
-                        {
-                            var grp = BuildGroupFromPayload(p);
-                            if (grp != null) { row.Groups.Add(grp); DropEmptyRows(); OnEdited(); }
-                        }
-                        break;
-                    }
-                    case DropBarRole.Between:
-                    {
-                        var newRow = BuildNewRowFromPayload(p);
-                        int idx = Math.Max(0, Math.Min(betweenIndex + 1, Rows.Count));
-                        if (newRow != null) { Rows.Insert(idx, newRow); OnEdited(); }
-                        break;
-                    }
+                    if (p.Y >= tops[i])
+                        return InRowTarget(rows[i], i, p.X, tops[i], bottoms[i] - tops[i]);
+                    // In the gap above row i (between row i-1 and i) → new row at i.
+                    double midY = i > 0 ? (bottoms[i - 1] + tops[i]) / 2.0 : tops[i] - 4;
+                    return NewRowTarget(i, midY, laneW);
                 }
-                e.Handled = true;
+            }
+
+            // Below the last row → new row at the end.
+            return NewRowTarget(rows.Count, bottoms[rows.Count - 1] + 4, laneW);
+        }
+
+        private GroupDropTarget NewRowTarget(int rowIndex, double y, double laneW) =>
+            new GroupDropTarget { NewRow = true, RowIndex = rowIndex, Vertical = false, X = 10, Y = y - 2, W = laneW, H = 4 };
+
+        private GroupDropTarget InRowTarget(LemoineLegendRow row, int rowIndex, double xOverlay, double rowTop, double rowH)
+        {
+            var cards = row.GroupCards;
+            if (cards.Count == 0)
+                return new GroupDropTarget { NewRow = false, RowIndex = rowIndex, GroupIndex = 0, Vertical = true, X = 6, Y = rowTop, W = 4, H = rowH };
+
+            var lefts  = new double[cards.Count];
+            var rights = new double[cards.Count];
+            for (int j = 0; j < cards.Count; j++)
+            {
+                var o = cards[j].TranslatePoint(new Point(0, 0), _markerLayer!);
+                lefts[j]  = o.X;
+                rights[j] = o.X + cards[j].ActualWidth;
+            }
+
+            int insert = cards.Count;
+            double markerX = rights[cards.Count - 1] + 2;
+            for (int j = 0; j < cards.Count; j++)
+            {
+                double center = (lefts[j] + rights[j]) / 2.0;
+                if (xOverlay < center)
+                {
+                    insert = j;
+                    markerX = j == 0 ? lefts[0] - 2 : (rights[j - 1] + lefts[j]) / 2.0;
+                    break;
+                }
+            }
+            return new GroupDropTarget
+            {
+                NewRow = false, RowIndex = rowIndex, GroupIndex = insert,
+                Vertical = true, X = markerX - 2, Y = rowTop, W = 4, H = rowH,
             };
+        }
+
+        private void DrawMarker(GroupDropTarget t)
+        {
+            if (_marker == null || _markerLayer == null) return;
+            _marker.Width  = Math.Max(4, t.W);
+            _marker.Height = Math.Max(4, t.H);
+            // Clamp into the visible viewport so the marker never paints off-screen.
+            double x = Math.Max(0, Math.Min(t.X, Math.Max(0, _markerLayer.ActualWidth  - _marker.Width)));
+            double y = Math.Max(0, Math.Min(t.Y, Math.Max(0, _markerLayer.ActualHeight - _marker.Height)));
+            Canvas.SetLeft(_marker, x);
+            Canvas.SetTop(_marker, y);
+            _marker.Visibility = Visibility.Visible;
+        }
+
+        private void HideMarker()
+        {
+            if (_marker != null) _marker.Visibility = Visibility.Collapsed;
+        }
+
+        // Commit a group drop: move an existing group, or create one from a category.
+        private void ApplyGroupDrop(LegendDragPayload p, GroupDropTarget t)
+        {
+            if (p.What == LegendDragPayload.Kind.Group)
+            {
+                // Resolve source location BEFORE removal so we can correct same-row indices.
+                FindGroupLocation(p.GroupId, out var srcRow, out int srcIdx);
+                var grp = TakeGroup(p.GroupId);
+                if (grp == null) return;
+
+                if (t.NewRow)
+                {
+                    // The now-empty source row (if any) is collapsed by DropEmptyRows after
+                    // insertion, which keeps the new row's position correct.
+                    int idx = Math.Max(0, Math.Min(t.RowIndex, Rows.Count));
+                    Rows.Insert(idx, new LegendRowConfig { Id = LegendIdGen.New("r"), Groups = new List<LegendGroupConfig> { grp } });
+                }
+                else
+                {
+                    int ri = Math.Max(0, Math.Min(t.RowIndex, Rows.Count - 1));
+                    var row = Rows[ri];
+                    int gi = t.GroupIndex;
+                    if (ReferenceEquals(row, srcRow) && srcIdx >= 0 && srcIdx < gi) gi--; // removal shifted indices
+                    gi = Math.Max(0, Math.Min(gi, row.Groups.Count));
+                    row.Groups.Insert(gi, grp);
+                }
+            }
+            else if (p.What == LegendDragPayload.Kind.PaletteCategory)
+            {
+                var grp = BuildGroupFromTrade(p.SourceTradeId);
+                if (t.NewRow)
+                {
+                    int idx = Math.Max(0, Math.Min(t.RowIndex, Rows.Count));
+                    Rows.Insert(idx, new LegendRowConfig { Id = LegendIdGen.New("r"), Groups = new List<LegendGroupConfig> { grp } });
+                }
+                else
+                {
+                    int ri = Math.Max(0, Math.Min(t.RowIndex, Rows.Count - 1));
+                    int gi = Math.Max(0, Math.Min(t.GroupIndex, Rows[ri].Groups.Count));
+                    Rows[ri].Groups.Insert(gi, grp);
+                }
+            }
+            else return;
+
+            DropEmptyRows();
+            OnEdited();
+        }
+
+        private void FindGroupLocation(string groupId, out LegendRowConfig? row, out int index)
+        {
+            foreach (var r in Rows)
+            {
+                int i = r.Groups.FindIndex(g => g.Id == groupId);
+                if (i >= 0) { row = r; index = i; return; }
+            }
+            row = null; index = -1;
         }
 
         private static LegendDragPayload? GetGroupPayload(DragEventArgs e)
@@ -337,41 +437,6 @@ namespace LemoineTools.Lemoine.Controls
             if (p == null) return null;
             return (p.What == LegendDragPayload.Kind.PaletteCategory ||
                     p.What == LegendDragPayload.Kind.Group) ? p : null;
-        }
-
-        private LegendRowConfig? BuildNewRowFromPayload(LegendDragPayload p)
-        {
-            var grp = BuildGroupFromPayload(p);
-            if (grp == null) return null;
-            var row = new LegendRowConfig { Id = LegendIdGen.New("r") };
-            row.Groups.Add(grp);
-            return row;
-        }
-
-        private LegendGroupConfig? BuildGroupFromPayload(LegendDragPayload p)
-        {
-            if (p.What == LegendDragPayload.Kind.PaletteCategory)
-                return BuildGroupFromTrade(p.SourceTradeId);
-            if (p.What == LegendDragPayload.Kind.Group)
-                return TakeGroup(p.GroupId);
-            return null;
-        }
-
-        private LegendRowConfig? FindNearestRow(double dropY)
-        {
-            if (_rowsStack == null || Rows.Count == 0) return null;
-            LegendRowConfig? nearest = null;
-            double minDist = double.MaxValue;
-            foreach (var child in _rowsStack.Children)
-            {
-                if (child is LemoineLegendRow rowCtrl && _rowsScroll != null)
-                {
-                    var pt = rowCtrl.TranslatePoint(new Point(0, rowCtrl.ActualHeight / 2), _rowsScroll);
-                    double d = Math.Abs(pt.Y - dropY);
-                    if (d < minDist) { minDist = d; nearest = rowCtrl.Row; }
-                }
-            }
-            return nearest;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -384,29 +449,20 @@ namespace LemoineTools.Lemoine.Controls
             // (covers group deletion, cross-row moves, etc.).
             DropEmptyRows();
             _rowsStack.Children.Clear();
-            _betweenRowBars.Clear();
 
             for (int i = 0; i < Rows.Count; i++)
             {
-                if (i > 0)
-                {
-                    int capturedIdx = i - 1;
-                    var bar = new Border { Height = 8, AllowDrop = true, Background = Brushes.Transparent, Margin = new Thickness(0) };
-                    WireExternalDropBar(bar, DropBarRole.Between, capturedIdx);
-                    _betweenRowBars.Add(bar);
-                    _rowsStack.Children.Add(bar);
-                }
+                if (i > 0) _rowsStack.Children.Add(MakeRowDivider());
 
                 var row     = Rows[i];
                 var rowCtrl = new LemoineLegendRow();
                 rowCtrl.SetSelectionContext(_lSelectedBlockIds, _lActiveBlockId);
                 rowCtrl.Bind(row);
 
-                rowCtrl.Changed                 += (s, e) => OnEdited();
-                rowCtrl.BlockDropRequested      += (s, args) => HandleBlockDrop(args);
-                rowCtrl.GroupDropInRowRequested += (s, args) => HandleGroupDropInRow(args);
-                rowCtrl.GroupDeleteRequested    += (s, gid) => { DeleteGroup(gid); OnEdited(); };
-                rowCtrl.BlockClickedOnCanvas    += (bId, ctrl, shift) => OnCanvasBlockClicked(bId, ctrl, shift);
+                rowCtrl.Changed              += (s, e) => OnEdited();
+                rowCtrl.BlockDropRequested   += (s, args) => HandleBlockDrop(args);
+                rowCtrl.GroupDeleteRequested += (s, gid) => { DeleteGroup(gid); OnEdited(); };
+                rowCtrl.BlockClickedOnCanvas += (bId, ctrl, shift) => OnCanvasBlockClicked(bId, ctrl, shift);
 
                 _rowsStack.Children.Add(rowCtrl);
             }
@@ -459,6 +515,15 @@ namespace LemoineTools.Lemoine.Controls
             _rowsStack.Children.Add(addGrpBorder);
 
             RefreshSelectionVisuals();
+        }
+
+        // Visible, non-interactive lane boundary. The vertical gap it creates also
+        // serves as the "new row" band the placement overlay snaps its lane marker to.
+        private Border MakeRowDivider()
+        {
+            var d = new Border { Height = 1, Margin = new Thickness(12, 7, 12, 7), IsHitTestVisible = false };
+            d.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            return d;
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -753,34 +818,6 @@ namespace LemoineTools.Lemoine.Controls
                     int idx = args.TargetIndex;
                     if (idx > grp.Blocks.Count) idx = grp.Blocks.Count;
                     grp.Blocks.Insert(idx, block!);
-                    break;
-                }
-            }
-            DropEmptyRows();
-            OnEdited();
-        }
-
-        private void HandleGroupDropInRow(GroupDropArgs args)
-        {
-            var p   = args.Payload;
-            var row = Rows.FirstOrDefault(r => r.Id == args.TargetRowId);
-            if (row == null) return;
-
-            switch (p.What)
-            {
-                case LegendDragPayload.Kind.PaletteCategory:
-                {
-                    var grp = BuildGroupFromTrade(p.SourceTradeId);
-                    int idx = Math.Max(0, Math.Min(args.TargetIndex, row.Groups.Count));
-                    row.Groups.Insert(idx, grp);
-                    break;
-                }
-                case LegendDragPayload.Kind.Group:
-                {
-                    var grp = TakeGroup(p.GroupId);
-                    if (grp == null) return;
-                    int idx = Math.Max(0, Math.Min(args.TargetIndex, row.Groups.Count));
-                    row.Groups.Insert(idx, grp);
                     break;
                 }
             }
@@ -1280,6 +1317,8 @@ namespace LemoineTools.Lemoine.Controls
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
             AutoFiltersSettings.Saved -= OnFiltersSaved;
+            LegendDragSession.Started -= OnDragSessionStarted;
+            LegendDragSession.Ended   -= OnDragSessionEnded;
         }
 
         internal void OnFiltersSaved()

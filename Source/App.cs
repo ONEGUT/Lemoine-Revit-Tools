@@ -283,19 +283,14 @@ namespace LemoineTools
             }
 
             // ── T01 — Filters ─────────────────────────────────────────────────
-            // Large: Auto Filters  (Discover, Remove-from-View and Delete-from-Project now
-            // live inside the Auto Filters window). Large: Apply to Views (bulk multi-view apply).
+            // Large: Auto Filters. Discover, Remove-from-View and Delete-from-Project now live
+            // inside the Auto Filters window; the bulk "Apply to Views" ribbon button was removed (#88).
             var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", "T01  Filters");
 
             filtersPanel.AddItem(Btn(
                 "LT_AutoFilters", "Auto\nFilters", "OpenFiltersSettingsCommand",
                 "Open the Auto Filters window to configure and create view filters.",
                 "\uE713"));  // Segoe MDL2: Settings gear
-
-            filtersPanel.AddItem(Btn(
-                "LT_ApplyFiltersToViews", "Apply to\nViews", "ApplyFiltersToViewsLaunchCommand",
-                "Apply existing project filters to multiple views at once, with optional color overrides.",
-                "\uE710"));  // Segoe MDL2: Add/Plus
 
             // Legend Creation — lives in T01, furthest right (opens the window
             // where legends are built, created, and updated).
@@ -520,7 +515,7 @@ namespace LemoineTools
 
             testingPanel.AddItem(Btn(
                 "LT_AlignSheetViews", "Align\nSheet Views", "AlignSheetViewsCommand",
-                "Align the viewports on selected sheets to a reference sheet so matching views overlay exactly. Matches views by model-region overlap; missing or ambiguous counterparts are reported.",
+                "Align the viewports on target sheets to the best-matching reference sheet so matching views overlay exactly. Pairs views by shared scope box (crop overlap otherwise) and can inherit the scope box, grid extents, crop size and crop visibility. Missing or ambiguous counterparts are reported.",
                 char.ConvertFromUtf32(0xE8A9)));  // Segoe MDL2: ViewAll
 
             // ── Settings / Developer — two large buttons ──────────────
