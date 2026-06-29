@@ -19,13 +19,13 @@ namespace LemoineTools.Tools.Ceilings
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => "Project Ceiling Grids";
-        public string RunLabel => "Run in Revit →";
+        public string Title    => LemoineStrings.T("ceilings.projectGrids.title");
+        public string RunLabel => LemoineStrings.T("ceilings.projectGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "DWG Source",   required: true),
-            new StepDefinition("S2", "Review & Run", required: false),
+            new StepDefinition("S1", LemoineStrings.T("ceilings.projectGrids.steps.S1"),   required: true),
+            new StepDefinition("S2", LemoineStrings.T("ceilings.projectGrids.steps.S2"), required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -76,12 +76,12 @@ namespace LemoineTools.Tools.Ceilings
             var outer = new StackPanel();
 
             // Mode selector
-            var modeSelect = new LemoineSingleSelect { Label = "Import mode" };
-            modeSelect.Items = new List<string> { "Single file", "Batch from folder" };
-            modeSelect.SelectedItem = _batchMode ? "Batch from folder" : "Single file";
+            var modeSelect = new LemoineSingleSelect { Label = LemoineStrings.T("ceilings.projectGrids.labels.importMode") };
+            modeSelect.Items = new List<string> { LemoineStrings.T("ceilings.projectGrids.labels.optionSingleFile"), LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder") };
+            modeSelect.SelectedItem = _batchMode ? LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder") : LemoineStrings.T("ceilings.projectGrids.labels.optionSingleFile");
             modeSelect.SelectionChanged += val =>
             {
-                _batchMode = val == "Batch from folder";
+                _batchMode = val == LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder");
                 RefreshPickerHost();
                 OnValidationChanged();
             };
@@ -105,8 +105,7 @@ namespace LemoineTools.Tools.Ceilings
 
                 var desc = new TextBlock
                 {
-                    Text         = "Select the folder containing DWG ceiling plan exports from Make Ceiling Grids. " +
-                                   "Each DWG filename (without extension) must match a ceiling plan view name in the project.",
+                    Text         = LemoineStrings.T("ceilings.projectGrids.labels.batchHelp"),
                     TextWrapping = TextWrapping.Wrap,
                     Margin       = new Thickness(0, 0, 0, 8),
                     FontStyle    = FontStyles.Italic,
@@ -119,7 +118,7 @@ namespace LemoineTools.Tools.Ceilings
                 var folder = new LemoineFolderBrowser
                 {
                     Path        = _folderPath,
-                    DialogTitle = "Select DWG Export Folder",
+                    DialogTitle = LemoineStrings.T("ceilings.projectGrids.labels.folderDialogTitle"),
                 };
                 folder.PathChanged += p => { _folderPath = p; OnValidationChanged(); };
                 inner.Children.Add(folder);
@@ -130,9 +129,9 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var browser = new LemoineFileBrowser
                 {
-                    Label       = "Select the ceiling plan DWG to project onto ceiling soffit faces in the active view.",
-                    Filter      = "AutoCAD DWG|*.dwg|All files|*.*",
-                    DialogTitle = "Select Ceiling Plan DWG",
+                    Label       = LemoineStrings.T("ceilings.projectGrids.labels.fileLabel"),
+                    Filter      = LemoineStrings.T("ceilings.projectGrids.labels.fileFilter"),
+                    DialogTitle = LemoineStrings.T("ceilings.projectGrids.labels.fileDialogTitle"),
                     Path        = _dwgPath,
                 };
                 browser.PathChanged += path =>
@@ -153,12 +152,12 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var items = new List<(string, string)>
                 {
-                    ("source", "Source"),
-                    ("mode",   "Mode"),
-                    ("target", "Target View"),
-                    ("output", "Output"),
+                    ("source", LemoineStrings.T("ceilings.projectGrids.review.itemSource")),
+                    ("mode",   LemoineStrings.T("ceilings.projectGrids.review.itemMode")),
+                    ("target", LemoineStrings.T("ceilings.projectGrids.review.itemTarget")),
+                    ("output", LemoineStrings.T("ceilings.projectGrids.review.itemOutput")),
                 };
-                if (_batchMode) items.Add(("dwg", "DWG Files"));
+                if (_batchMode) items.Add(("dwg", LemoineStrings.T("ceilings.projectGrids.review.itemDwg")));
                 return items;
             }
         }
@@ -172,11 +171,11 @@ namespace LemoineTools.Tools.Ceilings
                     ["source"] = _batchMode
                         ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
                         : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)),
-                    ["mode"]   = _batchMode ? "Batch — folder"   : "Single file",
-                    ["target"] = _batchMode ? "Per DWG filename" : "Active view",
-                    ["output"] = "Model curves",
+                    ["mode"]   = _batchMode ? LemoineStrings.T("ceilings.projectGrids.review.modeBatch")   : LemoineStrings.T("ceilings.projectGrids.review.modeSingle"),
+                    ["target"] = _batchMode ? LemoineStrings.T("ceilings.projectGrids.review.targetBatch") : LemoineStrings.T("ceilings.projectGrids.review.targetSingle"),
+                    ["output"] = LemoineStrings.T("ceilings.projectGrids.review.output"),
                 };
-                if (_batchMode) d["dwg"] = $"{CountDwgs()} found";
+                if (_batchMode) d["dwg"] = LemoineStrings.T("ceilings.projectGrids.review.dwgFound", CountDwgs());
                 return d;
             }
         }
@@ -184,13 +183,10 @@ namespace LemoineTools.Tools.Ceilings
         public IList<string>? ReviewChips => null;
 
         public string? ReviewNote => _batchMode
-            ? "Each DWG in the selected folder will be matched to a ceiling plan view by filename (without " +
-              "extension). Matched pairs will be projected; unmatched DWGs will be logged and skipped."
-            : "The DWG will be imported into the active view at origin, all curves extracted, then the import " +
-              "deleted. Each curve is projected vertically onto matching ceiling soffit faces and recreated as a " +
-              "model curve at the correct elevation.";
+            ? LemoineStrings.T("ceilings.projectGrids.review.noteBatch")
+            : LemoineStrings.T("ceilings.projectGrids.review.noteSingle");
 
-        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? "No DWG files found in folder." : null;
+        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? LemoineStrings.T("ceilings.projectGrids.review.warnNoDwg") : null;
 
         private int CountDwgs()
             => Directory.Exists(_folderPath)
@@ -223,7 +219,7 @@ namespace LemoineTools.Tools.Ceilings
                 return string.IsNullOrEmpty(_dwgPath) ? "—"
                     : System.IO.Path.GetFileName(_dwgPath);
             }
-            if (stepId == "S2") return "Ready to run";
+            if (stepId == "S2") return LemoineStrings.T("ceilings.projectGrids.summaries.S2");
             return "—";
         }
 
@@ -252,7 +248,7 @@ namespace LemoineTools.Tools.Ceilings
                 _handler.BatchDwgFolder = "";
             }
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("ceilings.projectGrids.log.raising"), "info");
             _event.Raise();
         }
     }

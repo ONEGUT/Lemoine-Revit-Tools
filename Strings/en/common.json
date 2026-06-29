@@ -37,6 +37,6 @@
   // log — standard Output-log lines shared across tools
   "log": {
     "progress":      "{0}% — {1:N0} of {2:N0} {3} processed",  // {0}=percent {1}=done {2}=total {3}=item noun
-    "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved"  // cooperative cancel
+    "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved."  // cooperative cancel
   }
 }

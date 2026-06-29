@@ -1,0 +1,60 @@
+// ceilings.projectGrids.json — Project Ceiling Grids tool window.
+// Command: ProjectedCeilingGridsCommand. Imports a DWG ceiling plan and projects its
+// lines onto ceiling soffit faces. Shared run-log lines live in ceilings.grids.json.
+{
+  // title — toolbar title
+  "title": "Project Ceiling Grids",
+
+  // runLabel — final action button
+  "runLabel": "Run in Revit →",
+
+  // steps — accordion step titles
+  "steps": {
+    "S1": "DWG Source",
+    "S2": "Review & Run"
+  },
+
+  // summaries — collapsed one-line step summaries
+  "summaries": {
+    "S2": "Ready to run"  // S1 summary is the chosen file/folder name (runtime)
+  },
+
+  // labels — control labels, options, and helper text shown in the steps
+  "labels": {
+    "importMode":        "Import mode",
+    "optionSingleFile":  "Single file",
+    "optionBatchFolder": "Batch from folder",
+
+    "batchHelp":         "Select the folder containing DWG ceiling-plan exports from Make Ceiling Grids. Each DWG filename (without its extension) must match a ceiling-plan view name in the project.",
+    "folderDialogTitle": "Select DWG export folder",
+
+    "fileLabel":         "Select the ceiling-plan DWG to project onto ceiling soffit faces in the active view.",
+    "fileFilter":        "AutoCAD DWG|*.dwg|All files|*.*",
+    "fileDialogTitle":   "Select ceiling-plan DWG"
+  },
+
+  // review — the Review & Run summary (item labels, values, notes)
+  "review": {
+    "itemSource":  "Source",
+    "itemMode":    "Mode",
+    "itemTarget":  "Target view",
+    "itemOutput":  "Output",
+    "itemDwg":     "DWG files",
+
+    "modeBatch":   "Batch — folder",
+    "modeSingle":  "Single file",
+    "targetBatch": "Per DWG filename",
+    "targetSingle":"Active view",
+    "output":      "Model curves",
+    "dwgFound":    "{0} found",  // {0} = DWG file count
+
+    "noteBatch":   "Each DWG in the selected folder is matched to a ceiling-plan view by filename (without its extension). Matched pairs are projected; unmatched DWGs are logged and skipped.",
+    "noteSingle":  "The DWG is imported into the active view at the origin, all curves are extracted, then the import is deleted. Each curve is projected vertically onto matching ceiling soffit faces and recreated as a model curve at the correct elevation.",
+    "warnNoDwg":   "No DWG files found in folder."
+  },
+
+  // log — this tool's own run-log lines
+  "log": {
+    "raising": "Raising Revit external event…"
+  }
+}
