@@ -1,0 +1,76 @@
+// ceilings.makeGrids.json — Make Ceiling Grids tool window + run handler logs.
+// Command: MakeCeilingGridsCommand. Creates reflected ceiling plan views per level,
+// hides excluded ceiling types, and exports each view as a DWG.
+{
+  "title": "Make Ceiling Grids",
+  "runLabel": "Create in Revit →",
+
+  "steps": {
+    "docs":   "Select Documents",
+    "filter": "Filter Ceiling Types",
+    "export": "Export Location",
+    "run":    "Review & Run"
+  },
+
+  "summaries": {
+    "run":         "Ready to run",
+    "docsCount":   "{0} document(s)",       // {0} = selected document count
+    "scanPending": "Scan pending",
+    "allIncluded": "All {0} type(s) included",  // {0} = total types
+    "someIncluded":"{0}/{1} included"        // {0}=included {1}=total
+  },
+
+  "labels": {
+    "noDocs":        "No documents available. Open the host project in Revit.",
+    "noTypes":       "No ceiling types found in the selected documents.",
+    "scanning":      "Scanning ceiling types in selected documents…",
+    "scanError":     "Scan error: {0}",          // {0} = error detail
+    "typesByModel":  "Ceiling types by model",   // accessible name for the type list
+    "typeDisplay":   "{0}  —  {1}",              // {0}=family {1}=type, one row in the type list
+    "outputFolder":  "Output folder",
+    "browse":        "Browse…",
+    "browseDialog":  "Select export output folder",
+    "subfolderLabel":"Place in a 'Ceiling Grids' subfolder",
+    "subfolderDesc": "Creates a 'Ceiling Grids' folder inside the selected location. Off = files go directly into the selected folder."
+  },
+
+  "review": {
+    "itemTypes":     "Ceiling types",
+    "itemFolder":    "Output folder",
+    "itemSubfolder": "Subfolder mode",
+    "itemDwg":       "DWG version",
+    "itemDocs":      "Documents",
+
+    "typesPending":  "Scan pending",
+    "typesIncluded": "{0} / {1} included",   // {0}=included {1}=total
+    "subfolderOn":   "'Ceiling Grids' subfolder",
+    "subfolderOff":  "Direct to folder",
+    "dwg":           "DWG 2018",
+    "docsNone":      "None",
+    "docsMore":      " +{0}"                  // {0} = count of documents beyond the first two
+  },
+
+  "log": {
+    "raising":           "Raising Revit external event…",
+    "runHandlerMissing": "Run handler not registered.",
+
+    "error":             "Error: {0}",
+    "nonFatalIssues":    "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "foundLevels":       "Found {0} level(s).",
+    "noRcpType":         "No Ceiling Plan view family type found in this project.",
+    "rcpFailed":         "Could not create RCP for {0}.",          // {0} = level name
+    "levelFailed":       "Level {0} failed: {1}.",                 // {0}=level name {1}=error
+    "noViewsCreated":    "No ceiling plan views were created — nothing to do.",
+    "hidTypes":          "Hid {0} ceiling type(s) across {1} view(s).",
+    "noExclusions":      "No ceiling types excluded — all ceilings shown.",
+    "exported":          "Exported: {0}.dwg",                      // {0} = view/file name
+    "created":           "Created: {0}",                           // {0} = view name
+    "exportFailed":      "Export of {0} failed: {1}.",             // {0}=name {1}=error
+    "filterCreateError": "Error creating hide filter '{0}': {1}.", // {0}=filter name {1}=error
+    "filterApplyError":  "Error applying hide filter to view: {0}.",
+    "filterDeleteError": "Could not delete filter '{0}': {1}.",
+    "tradeRegistered":   "Registered '{0}' trade with {1} rule(s).",
+    "rulesUpdateFailed": "Filters applied, but could not update the rules list: {0}.",
+    "linkNotCascading":  "Link \"{0}\" in view \"{1}\" is displayed \"{2}\", not \"By Host View\" — its excluded ceilings will not be hidden. Set it to \"By Host View\" in Visibility/Graphics to include them."
+  }
+}

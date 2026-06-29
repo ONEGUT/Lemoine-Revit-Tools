@@ -33,13 +33,13 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => "Reproject Ceiling Grids";
-        public string RunLabel => "Run in Revit →";
+        public string Title    => LemoineStrings.T("ceilings.reprojectGrids.title");
+        public string RunLabel => LemoineStrings.T("ceilings.reprojectGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Ceiling Plans", required: true),
-            new StepDefinition("S2", "Review & Run",         required: false),
+            new StepDefinition("S1", LemoineStrings.T("ceilings.reprojectGrids.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("ceilings.reprojectGrids.steps.S2"),         required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var none = new TextBlock
                 {
-                    Text         = "No ceiling plan views found in this project.",
+                    Text         = LemoineStrings.T("ceilings.reprojectGrids.labels.noViews"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                 };
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.Ceilings
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Ceiling plan views",
+                AccessibleName = LemoineStrings.T("ceilings.reprojectGrids.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -123,7 +123,7 @@ namespace LemoineTools.Tools.Ceilings
 
             var warning = new TextBlock
             {
-                Text         = "⚠  Original curves will be deleted and replaced — this cannot be undone individually.",
+                Text         = LemoineStrings.T("ceilings.reprojectGrids.labels.warning"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 10, 0, 0),
             };
@@ -140,24 +140,22 @@ namespace LemoineTools.Tools.Ceilings
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views",  "Views Selected"),
-            ("target", "Target Ceilings"),
-            ("op",     "Operation"),
-            ("output", "Output"),
+            ("views",  LemoineStrings.T("ceilings.reprojectGrids.review.itemViews")),
+            ("target", LemoineStrings.T("ceilings.reprojectGrids.review.itemTarget")),
+            ("op",     LemoineStrings.T("ceilings.reprojectGrids.review.itemOp")),
+            ("output", LemoineStrings.T("ceilings.reprojectGrids.review.itemOutput")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]  = _selectedViewIds.Count == 0 ? "None" : $"{_selectedViewIds.Count} ceiling plan(s)",
-            ["target"] = "Visible per view",
-            ["op"]     = "Delete → Reproject",
-            ["output"] = "Model curves (updated Z)",
+            ["views"]  = _selectedViewIds.Count == 0 ? LemoineStrings.T("ceilings.reprojectGrids.review.viewsNone") : LemoineStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count),
+            ["target"] = LemoineStrings.T("ceilings.reprojectGrids.review.target"),
+            ["op"]     = LemoineStrings.T("ceilings.reprojectGrids.review.op"),
+            ["output"] = LemoineStrings.T("ceilings.reprojectGrids.review.output"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "For each selected ceiling plan, all ModelCurves visible in that " +
-            "view are projected onto the current soffit geometry, then recreated at the updated ceiling " +
-            "elevations. Curves with no ceiling overlap are skipped.";
+        public string?        ReviewNote    => LemoineStrings.T("ceilings.reprojectGrids.review.note");
         public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════
@@ -176,8 +174,8 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (stepId == "S1")
                 return _selectedViewIds.Count == 0 ? "—"
-                    : $"{_selectedViewIds.Count} ceiling plan(s)";
-            if (stepId == "S2") return "Ready to run";
+                    : LemoineStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count);
+            if (stepId == "S2") return LemoineStrings.T("ceilings.reprojectGrids.summaries.S2");
             return "—";
         }
 
@@ -196,7 +194,7 @@ namespace LemoineTools.Tools.Ceilings
             _handler.OnProgress     = onProgress;
             _handler.OnComplete     = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("ceilings.reprojectGrids.log.raising"), "info");
             _event.Raise();
         }
     }

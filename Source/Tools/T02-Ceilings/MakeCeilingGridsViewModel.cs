@@ -27,15 +27,15 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => "Make Ceiling Grids";
-        public string RunLabel => "Create in Revit →";
+        public string Title    => LemoineStrings.T("ceilings.makeGrids.title");
+        public string RunLabel => LemoineStrings.T("ceilings.makeGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("docs",    "Select Documents",    required: true),
-            new StepDefinition("filter",  "Filter Ceiling Types", required: false),
-            new StepDefinition("export",  "Export Location",      required: true),
-            new StepDefinition("run",     "Review & Run",         required: false),
+            new StepDefinition("docs",    LemoineStrings.T("ceilings.makeGrids.steps.docs"),    required: true),
+            new StepDefinition("filter",  LemoineStrings.T("ceilings.makeGrids.steps.filter"), required: false),
+            new StepDefinition("export",  LemoineStrings.T("ceilings.makeGrids.steps.export"),      required: true),
+            new StepDefinition("run",     LemoineStrings.T("ceilings.makeGrids.steps.run"),         required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var none = new TextBlock
                 {
-                    Text         = "No documents available. Open the host project in Revit.",
+                    Text         = LemoineStrings.T("ceilings.makeGrids.labels.noDocs"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                 };
@@ -194,14 +194,14 @@ namespace LemoineTools.Tools.Ceilings
             if (_scanDone && _ceilingTypes.Count > 0)
                 PopulateFilterPanel();
             else if (_scanDone && _ceilingTypes.Count == 0)
-                ShowFilterMessage("No ceiling types found in the selected documents.");
+                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.noTypes"));
             else if (!_scanning)
             {
-                ShowFilterMessage("Scanning ceiling types in selected documents…");
+                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanning"));
                 TriggerPhase1();
             }
             else
-                ShowFilterMessage("Scanning ceiling types in selected documents…");
+                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanning"));
 
             return _filterContainer;
         }
@@ -250,7 +250,7 @@ namespace LemoineTools.Tools.Ceilings
 
                     if (_ceilingTypes.Count == 0)
                     {
-                        ShowFilterMessage("No ceiling types found in the selected documents.");
+                        ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.noTypes"));
                         OnValidationChanged();
                         return;
                     }
@@ -265,7 +265,7 @@ namespace LemoineTools.Tools.Ceilings
                 _filterDispatcher?.BeginInvoke((Action)(() =>
                 {
                     _scanning = false;
-                    ShowFilterMessage($"Scan error: {err}");
+                    ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanError", err));
                 }));
             };
 
@@ -293,7 +293,7 @@ namespace LemoineTools.Tools.Ceilings
                 .OrderBy(t => t.FamilyName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(t => t.TypeName,   StringComparer.OrdinalIgnoreCase))
             {
-                string display = $"{t.FamilyName}  —  {t.TypeName}";
+                string display = LemoineStrings.T("ceilings.makeGrids.labels.typeDisplay", t.FamilyName, t.TypeName);
                 string key      = $"{t.FamilyName}|{t.TypeName}";
 
                 _displayToKey[display] = key;
@@ -321,7 +321,7 @@ namespace LemoineTools.Tools.Ceilings
                 .Select(kv => kv.Key)
                 .ToList();
 
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = "Ceiling types by model" };
+            var tabs = new LemoineMultiSelectTabs { AccessibleName = LemoineStrings.T("ceilings.makeGrids.labels.typesByModel") };
             // Subscribe BEFORE SetGroups — SetGroups fires SelectionChanged once at the
             // end of setup, which is what initialises our excluded-key mirror.
             tabs.SelectionChanged += selected =>
@@ -344,7 +344,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             var outer = new StackPanel();
 
-            var folderLabel = new TextBlock { Text = "Output folder", Margin = new Thickness(0, 0, 0, 4) };
+            var folderLabel = new TextBlock { Text = LemoineStrings.T("ceilings.makeGrids.labels.outputFolder"), Margin = new Thickness(0, 0, 0, 4) };
             folderLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             folderLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             folderLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -365,13 +365,13 @@ namespace LemoineTools.Tools.Ceilings
             pathBox.TextChanged += (s, e) => { _outputFolder = pathBox.Text; OnValidationChanged(); };
             outer.Children.Add(pathBox);
 
-            var browseBtn = LemoineControlStyles.BuildButton("Browse…");
+            var browseBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("ceilings.makeGrids.labels.browse"));
             browseBtn.Margin = new Thickness(0, 4, 0, 0);
             browseBtn.Click += (s, e) =>
             {
                 var dlg = new System.Windows.Forms.FolderBrowserDialog
                 {
-                    Description         = "Select export output folder",
+                    Description         = LemoineStrings.T("ceilings.makeGrids.labels.browseDialog"),
                     SelectedPath        = _outputFolder,
                     ShowNewFolderButton = true,
                 };
@@ -390,8 +390,8 @@ namespace LemoineTools.Tools.Ceilings
                 new ToggleItem
                 {
                     Id        = "subfolder",
-                    Label     = "Place in a 'Ceiling Grids' subfolder",
-                    Desc      = "Creates a 'Ceiling Grids' folder inside the selected location. Off = files go directly into the selected folder.",
+                    Label     = LemoineStrings.T("ceilings.makeGrids.labels.subfolderLabel"),
+                    Desc      = LemoineStrings.T("ceilings.makeGrids.labels.subfolderDesc"),
                     DefaultOn = _useCeilingGridsSubfolder,
                 },
             };
@@ -412,11 +412,11 @@ namespace LemoineTools.Tools.Ceilings
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("types",     "Ceiling Types"),
-            ("folder",    "Output Folder"),
-            ("subfolder", "Subfolder Mode"),
-            ("dwg",       "DWG Version"),
-            ("docs",      "Documents"),
+            ("types",     LemoineStrings.T("ceilings.makeGrids.review.itemTypes")),
+            ("folder",    LemoineStrings.T("ceilings.makeGrids.review.itemFolder")),
+            ("subfolder", LemoineStrings.T("ceilings.makeGrids.review.itemSubfolder")),
+            ("dwg",       LemoineStrings.T("ceilings.makeGrids.review.itemDwg")),
+            ("docs",      LemoineStrings.T("ceilings.makeGrids.review.itemDocs")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -427,13 +427,13 @@ namespace LemoineTools.Tools.Ceilings
                 int excluded = _excludedTypeKeys.Count;
                 return new Dictionary<string, string>
                 {
-                    ["types"]     = total == 0 ? "Scan pending" : $"{total - excluded} / {total} included",
+                    ["types"]     = total == 0 ? LemoineStrings.T("ceilings.makeGrids.review.typesPending") : LemoineStrings.T("ceilings.makeGrids.review.typesIncluded", total - excluded, total),
                     ["folder"]    = string.IsNullOrEmpty(_outputFolder) ? "—"
                         : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
-                    ["subfolder"] = _useCeilingGridsSubfolder ? "'Ceiling Grids' subfolder" : "Direct to folder",
-                    ["dwg"]       = "DWG 2018",
-                    ["docs"]      = _selectedDocLabels.Count == 0 ? "None"
-                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? $" +{_selectedDocLabels.Count - 2}" : ""),
+                    ["subfolder"] = _useCeilingGridsSubfolder ? LemoineStrings.T("ceilings.makeGrids.review.subfolderOn") : LemoineStrings.T("ceilings.makeGrids.review.subfolderOff"),
+                    ["dwg"]       = LemoineStrings.T("ceilings.makeGrids.review.dwg"),
+                    ["docs"]      = _selectedDocLabels.Count == 0 ? LemoineStrings.T("ceilings.makeGrids.review.docsNone")
+                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? LemoineStrings.T("ceilings.makeGrids.review.docsMore", _selectedDocLabels.Count - 2) : ""),
                 };
             }
         }
@@ -462,18 +462,18 @@ namespace LemoineTools.Tools.Ceilings
             {
                 case "docs":
                     return _selectedDocLabels.Count == 0 ? "—"
-                        : $"{_selectedDocLabels.Count} document(s)";
+                        : LemoineStrings.T("ceilings.makeGrids.summaries.docsCount", _selectedDocLabels.Count);
                 case "filter":
-                    if (!_scanDone) return "Scan pending";
+                    if (!_scanDone) return LemoineStrings.T("ceilings.makeGrids.summaries.scanPending");
                     int total    = DistinctTypeCount();
                     int excluded = _excludedTypeKeys.Count;
-                    return excluded == 0 ? $"All {total} type(s) included"
-                        : $"{total - excluded}/{total} included";
+                    return excluded == 0 ? LemoineStrings.T("ceilings.makeGrids.summaries.allIncluded", total)
+                        : LemoineStrings.T("ceilings.makeGrids.summaries.someIncluded", total - excluded, total);
                 case "export":
                     return string.IsNullOrEmpty(_outputFolder) ? "—"
                         : System.IO.Path.GetFileName(_outputFolder.TrimEnd('\\', '/'));
                 case "run":
-                    return "Ready to run";
+                    return LemoineStrings.T("ceilings.makeGrids.summaries.run");
                 default:
                     return "—";
             }
@@ -496,7 +496,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (_runHandler == null || _runEvent == null)
             {
-                pushLog("Run handler not registered.", "fail");
+                pushLog(LemoineStrings.T("ceilings.makeGrids.log.runHandlerMissing"), "fail");
                 onComplete(0, 1, 0);
                 return;
             }
@@ -531,7 +531,7 @@ namespace LemoineTools.Tools.Ceilings
             _runHandler.OnProgress    = onProgress;
             _runHandler.OnComplete    = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("ceilings.makeGrids.log.raising"), "info");
             _runEvent.Raise();
         }
     }
