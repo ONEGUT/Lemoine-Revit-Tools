@@ -144,6 +144,9 @@ namespace LemoineTools
         // Global settings window — singleton, stays open across tool windows
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
+        // Tools Overview window — read-only guide, singleton like GlobalSettings
+        internal static Lemoine.ToolsOverviewWindow? Overview { get; set; }
+
         public Result OnStartup(UIControlledApplication application)
         {
             // Surface Revit's transaction failures and modal dialogs into the running tool's
@@ -513,6 +516,11 @@ namespace LemoineTools
                     LargeImage = CreateGearBitmap(32),
                     Image      = CreateGearBitmap(16),
                 });
+
+            settingsPanel.AddItem(Btn(
+                "LT_Overview", "Overview", "OpenOverviewCommand",
+                "Open the Tools Overview — a visual guide to every tool in the plugin and how they tie together.",
+                char.ConvertFromUtf32(0xE946)));  // Info
 
             return Result.Succeeded;
         }
