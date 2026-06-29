@@ -1,0 +1,161 @@
+// ribbon.json — Revit ribbon text: panel names, button labels, and hover tooltips.
+// Built in App.cs. Keys are addressed as "ribbon.<section>.<key>".
+// "\n" in a label forces a line break on the two-line ribbon buttons. Keep it.
+{
+  // panels — the grey panel titles along the Lemoine Tools ribbon tab
+  "panels": {
+    "filtersLegends": "Filters & Legends",
+    "ceilings":       "Ceilings",
+    "views":          "Views",
+    "sheets":         "Sheets",
+    "export":         "Export",
+    "modify":         "Modify",
+    "clash":          "Clash",
+    "copyFromLink":   "Copy from Link",
+    "settings":       "Settings"
+  },
+
+  // buttons — each has a "label" (on the button) and a "tip" (hover tooltip)
+  "buttons": {
+    "autoFilters": {
+      "label": "Auto\nFilters",
+      "tip":   "Open the Auto Filters window to configure and create view filters."
+    },
+    "legendCreation": {
+      "label": "Legend\nCreation",
+      "tip":   "Open the Legend Creation window to build, create, and update legend views."
+    },
+
+    "ceilingHeatmap": {
+      "label": "Ceiling\nHeatmap",
+      "tip":   "Color-code ceiling elevations by height using view filter overrides."
+    },
+    "ceilingGrids": {
+      "label": "Ceiling\nGrids",
+      "tip":   "Create, project, and reproject ceiling grid DWG exports."
+    },
+    "makeCeilingGrids": {
+      "label": "Make Ceiling Grids",
+      "tip":   "Create reflected ceiling plan views for each level showing only ceilings, and export them as DWG files."
+    },
+    "projectCeilingGrids": {
+      "label": "Project Grids",
+      "tip":   "Import a DWG ceiling plan and project its lines onto ceiling soffit faces."
+    },
+    "reprojectCeilingGrids": {
+      "label": "Reproject Grids",
+      "tip":   "Reproject existing ceiling grid model curves to updated ceiling elevations."
+    },
+
+    "linkViewsLevel": {
+      "label": "Bulk Views\nby Level",
+      "tip":   "Create cropped 3D, floor plan, and ceiling plan views per level and building cluster."
+    },
+    "duplicateViews": {
+      "label": "Duplicate\nViews",
+      "tip":   "Bulk-duplicate views: plain duplicate, duplicate across view templates, or duplicate as dependent."
+    },
+    "viewsBulkDuplicate": {
+      "label": "Bulk Duplicate",
+      "tip":   "Duplicate selected views (Duplicate, With Detailing, or As Dependent) with token-based naming."
+    },
+    "viewsByTemplate": {
+      "label": "Bulk Views by Template",
+      "tip":   "Duplicate selected views across selected view templates, naming each from a token pattern."
+    },
+    "replicateDependentViews": {
+      "label": "Bulk Dependent Views",
+      "tip":   "Copy dependent views and their crop regions from a source view onto one or more target views."
+    },
+    "explodeViewByTrade": {
+      "label": "Explode View\nby Trade",
+      "tip":   "Duplicate a 3D view once per Auto Filters trade at the same camera angle and section box, isolating each trade by its view filters and stacking the views by element elevation."
+    },
+
+    "placeDependentViews": {
+      "label": "Place Dep.\nViews",
+      "tip":   "Create one sheet per view and place its dependents, trimmed and packed without overlap."
+    },
+    "alignSheetViews": {
+      "label": "Align\nSheet Views",
+      "tip":   "Align the viewports on target sheets to the best-matching reference sheet so matching views overlay exactly. Views are paired by shared scope box (crop overlap otherwise), and can inherit the scope box, grid extents, crop size, and crop visibility. Missing or ambiguous counterparts are reported."
+    },
+    "bulkRename": {
+      "label": "Bulk\nRename",
+      "tip":   "Bulk-rename sheets or views via find & replace, prefix/suffix, sequential numbering, or token pattern."
+    },
+
+    "bulkExport": {
+      "label": "Bulk\nExport",
+      "tip":   "Export sheets and views to PDF, DWG, NWC, or IFC in bulk with token-based filenames."
+    },
+    "printView": {
+      "label": "Print\nView",
+      "tip":   "Export the active view or sheet to PDF using the same PDF settings as Bulk Export."
+    },
+
+    "splitElements": {
+      "label": "Split\nElements",
+      "tip":   "Split elements at level elevations, grid planes, reference planes, or a regular cell grid."
+    },
+    "splitByLevel": {
+      "label": "Split by Levels",
+      "tip":   "Split walls, columns, and MEP curves at selected level elevations."
+    },
+    "splitByGrid": {
+      "label": "Split by Grid Lines",
+      "tip":   "Split walls and MEP curves at selected grid plane intersections."
+    },
+    "splitByReferencePlane": {
+      "label": "Split by\nRef Plane",
+      "tip":   "Split walls and MEP curves at selected reference plane intersections."
+    },
+    "splitByCell": {
+      "label": "Split by Cell",
+      "tip":   "Split floors, ceilings, and filled regions into a regular grid of cells."
+    },
+    "extendWalls": {
+      "label": "Extend\nWalls",
+      "tip":   "Set the top constraint of walls that extend above the ceiling to the next level up."
+    },
+
+    "clashDefinitions": {
+      "label": "Clash\nDefinitions",
+      "tip":   "Build and manage a library of named clash definitions (two element groups plus marking settings)."
+    },
+    "clashFinder": {
+      "label": "Clash Finder\n& Dimension",
+      "tip":   "Run saved clash definitions across selected views: detect clashes, place colored tagged markers, and dimension them out to grids or slab edges."
+    },
+    "clashElevationFinder": {
+      "label": "Clash Finder\n& Elevation",
+      "tip":   "Run saved clash definitions across selected sections and elevations: detect clashes, place colored round markers, and tag each with a spot elevation at the top, center, or bottom of the round."
+    },
+    "refineDimensions": {
+      "label": "Refine\nDimensions",
+      "tip":   "Re-dimension views that already have clash markers: dimension each marker to the nearest grid or slab edge visible in the view. Never detects clashes, creates callouts, or changes a view's scale."
+    },
+
+    "copyLinear": {
+      "label": "Copy\nLinear",
+      "tip":   "Copy linear linked runs into the host and split them into standard lengths, or replace them with a picked family at set intervals. Re-runs can process only changed elements."
+    },
+    "copyGrids": {
+      "label": "Copy\nGrids",
+      "tip":   "Copy grids from a linked model into the host. Grids whose name already exists in the host are skipped."
+    },
+    "copyFromLink": {
+      "label": "Copy\nElements",
+      "tip":   "Copy elements from a linked model into the host: pick categories, then choose which family types within them to copy. Re-runs can process only changed elements."
+    },
+
+    "openSettings": {
+      "label": "Settings",
+      "tip":   "Open Lemoine Tools global settings — themes, UI size, and per-tool default options."
+    },
+    "overview": {
+      "label": "Overview",
+      "tip":   "Open the Tools Overview — a visual guide to every tool in the plugin and how they tie together."
+    }
+  }
+}
