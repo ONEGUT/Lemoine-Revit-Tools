@@ -63,7 +63,7 @@ namespace LemoineTools.Lemoine.Controls
             _activeContext    = activeId;
             if (_rowBorder?.Child is Grid rowGrid)
                 foreach (var card in rowGrid.Children.OfType<LemoineLegendGroupCard>())
-                    card.RefreshBlockSelection(selectedIds, activeId);
+                    card.RefreshBlockSelection(_selectionContext, activeId);
         }
 
         private void BuildAll()

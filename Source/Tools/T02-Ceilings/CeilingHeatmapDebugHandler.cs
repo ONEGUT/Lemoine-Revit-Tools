@@ -38,7 +38,7 @@ namespace LemoineTools.Tools.Ceilings
             sb.AppendLine($"Document  : {doc.Title}");
             sb.AppendLine();
 
-            var view = uidoc.ActiveView as ViewPlan;
+            var view = uidoc!.ActiveView as ViewPlan;
             if (view == null)
             {
                 sb.AppendLine("Active view is NOT a ViewPlan.");

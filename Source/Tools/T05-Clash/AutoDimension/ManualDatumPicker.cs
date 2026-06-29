@@ -86,20 +86,20 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                         Transform tx = li!.GetTotalTransform();
                         dir = (tx.OfPoint(c.GetEndPoint(1)) - tx.OfPoint(c.GetEndPoint(0))).Normalize();
                     }
-                    key = $"datum:{r.ElementId.IntegerValue}:{r.LinkedElementId.IntegerValue}";
+                    key = $"datum:{r.ElementId.Value}:{r.LinkedElementId.Value}";
                 }
                 else
                 {
                     var e = doc.GetElement(r);
                     if (e?.GetGeometryObjectFromReference(r) is Edge edge && edge.AsCurve() is Curve c)
                         dir = (c.GetEndPoint(1) - c.GetEndPoint(0)).Normalize();
-                    key = $"datum:{(e?.Id.IntegerValue ?? 0)}";
+                    key = $"datum:{(e?.Id.Value ?? 0)}";
                 }
             }
             catch (Exception ex)
             {
                 LemoineLog.Swallowed("ManualDatumPicker: read datum edge geometry", ex);
-                key = $"datum:{r.ElementId.IntegerValue}";
+                key = $"datum:{r.ElementId.Value}";
             }
 
             return new ManualDatum { Ref = r, WorldPoint = pt, WorldDir = dir, Key = key };

@@ -67,9 +67,9 @@ namespace LemoineTools.Tools.Clash
                 if (!string.IsNullOrEmpty(g) || hasTarget) val += "|" + g;       // keep segment positions
                 if (hasTarget)
                 {
-                    int linkRaw = (targetLinkId != null && targetLinkId != ElementId.InvalidElementId)
-                        ? targetLinkId.IntegerValue : 0;
-                    val += "|" + linkRaw + ":" + targetElemId!.IntegerValue;
+                    long linkRaw = (targetLinkId != null && targetLinkId != ElementId.InvalidElementId)
+                        ? targetLinkId.Value : 0;
+                    val += "|" + linkRaw + ":" + targetElemId!.Value;
                 }
 
                 var entity = new Entity(schema);
@@ -146,8 +146,8 @@ namespace LemoineTools.Tools.Clash
                 if (parts.Length < 3) return null;                       // no target segment
                 int colon = parts[2].IndexOf(':');
                 if (colon < 0) return null;
-                if (!int.TryParse(parts[2].Substring(0, colon), out int linkRaw)) return null;
-                if (!int.TryParse(parts[2].Substring(colon + 1), out int elemRaw) || elemRaw <= 0) return null;
+                if (!long.TryParse(parts[2].Substring(0, colon), out long linkRaw)) return null;
+                if (!long.TryParse(parts[2].Substring(colon + 1), out long elemRaw) || elemRaw <= 0) return null;
                 ElementId linkId = linkRaw > 0 ? new ElementId(linkRaw) : ElementId.InvalidElementId;
                 return (linkId, new ElementId(elemRaw));
             }

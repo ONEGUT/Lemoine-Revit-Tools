@@ -84,7 +84,7 @@ namespace LemoineTools.Tools.LinkViews
                         break;   // falls through to the existing tx.Commit() below
                     }
 
-                    View targetView = doc.GetElement(target.ViewId) as View;
+                    View? targetView = doc.GetElement(target.ViewId) as View;
                     if (targetView == null)
                     {
                         Log($"[SKIP] Target view not found: {target.Name}", "info");
@@ -132,7 +132,7 @@ namespace LemoineTools.Tools.LinkViews
                         {
                             // Duplicate as dependent
                             ElementId newId  = targetView.Duplicate(ViewDuplicateOption.AsDependent);
-                            View      newDep = doc.GetElement(newId) as View;
+                            View?     newDep = doc.GetElement(newId) as View;
                             if (newDep == null) throw new InvalidOperationException("Duplicate returned null.");
 
                             // Name it

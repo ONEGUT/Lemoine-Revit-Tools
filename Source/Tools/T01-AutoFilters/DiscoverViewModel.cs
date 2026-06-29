@@ -917,11 +917,11 @@ namespace LemoineTools.Tools.AutoFilters
                         IsIncluded        = true,
                         RuleName          = AutoFiltersSettings.DisplayNameForOst(r.OstCategory),
                         HexColor          = r.HexColor,
-                        TradeName         = r.TradeName,
+                        TradeName         = r.TradeName ?? "",
                         ElementCount      = r.ElementCount,
                         IsWholeCategory   = true,
-                        ParameterValue    = r.ParameterValue,
-                        Parameter         = r.Parameter,
+                        ParameterValue    = r.ParameterValue ?? "",
+                        Parameter         = r.Parameter ?? "",
                         BuiltInCategories = new List<string> { r.OstCategory },
                     });
                     continue;
@@ -939,13 +939,13 @@ namespace LemoineTools.Tools.AutoFilters
                     var rowVm = new DiscoveredRuleRow
                     {
                         IsIncluded        = true,
-                        RuleName          = r.ParameterValue,
+                        RuleName          = r.ParameterValue ?? "",
                         HexColor          = r.HexColor,
-                        TradeName         = r.TradeName,
+                        TradeName         = r.TradeName ?? "",
                         ElementCount      = r.ElementCount,
                         IsWholeCategory   = false,
-                        ParameterValue    = r.ParameterValue,
-                        Parameter         = r.Parameter,
+                        ParameterValue    = r.ParameterValue ?? "",
+                        Parameter         = r.Parameter ?? "",
                         BuiltInCategories = new List<string> { r.OstCategory },
                     };
                     perValueByKey[key] = rowVm;

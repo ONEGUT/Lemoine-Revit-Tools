@@ -228,16 +228,16 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             foreach (var sd in ctx.Sources)
             {
                 if (sd.Link != null && !ctx.Config.IncludeLinks) continue;
-                string srcLabel = sd.Link != null ? $"link {sd.Link.Id.IntegerValue}" : "host";
+                string srcLabel = sd.Link != null ? $"link {sd.Link.Id.Value}" : "host";
 
                 // When the user picked floor(s), only scan those — and only in the doc they belong to.
-                HashSet<int>? allowedFloors = null;
+                HashSet<long>? allowedFloors = null;
                 if (ctx.SlabScopes.Count > 0)
                 {
                     ElementId sdLink = sd.Link?.Id ?? ElementId.InvalidElementId;
-                    allowedFloors = new HashSet<int>(ctx.SlabScopes
+                    allowedFloors = new HashSet<long>(ctx.SlabScopes
                         .Where(s => s.LinkInstanceId == sdLink)
-                        .Select(s => s.FloorId.IntegerValue));
+                        .Select(s => s.FloorId.Value));
                     if (allowedFloors.Count == 0) continue; // no picked floor lives in this source
                 }
 
@@ -246,8 +246,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 {
                     var q = new FilteredElementCollector(sd.Doc)
                         .OfClass(typeof(Floor)).Cast<Floor>();
-                    if (allowedFloors != null) q = q.Where(f => allowedFloors.Contains(f.Id.IntegerValue));
-                    floors = q.OrderBy(f => f.Id.IntegerValue).ToList();
+                    if (allowedFloors != null) q = q.Where(f => allowedFloors.Contains(f.Id.Value));
+                    floors = q.OrderBy(f => f.Id.Value).ToList();
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: collect floors", ex); continue; }
 
@@ -260,7 +260,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     try { ge = floor.get_Geometry(geomOpt); }
                     catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: floor geometry", ex); }
                     if (ge == null) continue;
-                    CollectVerticalFaces(ge, sd.Transform, sd.Link, ctx, floor.Id.IntegerValue, srcLabel, "slab:", list, stats);
+                    CollectVerticalFaces(ge, sd.Transform, sd.Link, ctx, floor.Id.Value, srcLabel, "slab:", list, stats);
                 }
 
                 if (sd.Link != null) linkKept += stats.Kept; else hostKept += stats.Kept;
@@ -283,7 +283,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
         /// </summary>
         private List<FaceCand>? EnsureElementCache(SourceLine source, ResolveContext ctx)
         {
-            string key = $"{source.TargetLinkInstanceId.IntegerValue}:{source.TargetElementId.IntegerValue}";
+            string key = $"{source.TargetLinkInstanceId.Value}:{source.TargetElementId.Value}";
             if (_elemCache.TryGetValue(key, out var cached)) return cached;
 
             var list = new List<FaceCand>();
@@ -299,7 +299,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 {
                     // Surfaced, not silent: the clashed element's link is unloaded since marking, so we
                     // can't target it — null lets the scan fallback run, and the user sees this report.
-                    ctx.ReportMissingLink($"clash target link {source.TargetLinkInstanceId.IntegerValue} "
+                    ctx.ReportMissingLink($"clash target link {source.TargetLinkInstanceId.Value} "
                         + $"not loaded for source {source.SourceKey} — fell back to nearest-edge scan.");
                     _elemCache[key] = null;
                     return null;
@@ -319,13 +319,13 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             if (elem == null)
             {
                 // Clashed element deleted since marking — surface the fallback rather than swap silently.
-                ctx.ReportMissingLink($"clash target element {source.TargetElementId.IntegerValue} not found "
+                ctx.ReportMissingLink($"clash target element {source.TargetElementId.Value} not found "
                     + $"for source {source.SourceKey} — fell back to nearest-edge scan.");
                 _elemCache[key] = null;
                 return null;
             }
 
-            string srcLabel = link != null ? $"target link {link.Id.IntegerValue}" : "target host";
+            string srcLabel = link != null ? $"target link {link.Id.Value}" : "target host";
             var geomOpt = new Options
             {
                 ComputeReferences        = true,
@@ -338,10 +338,10 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
 
             var stats = new FaceStats();
             if (ge != null)
-                CollectVerticalFaces(ge, xform, link, ctx, source.TargetElementId.IntegerValue, srcLabel, "el:", list, stats);
+                CollectVerticalFaces(ge, xform, link, ctx, source.TargetElementId.Value, srcLabel, "el:", list, stats);
 
             if (ctx.Config.DiagnoseSlabEdge)
-                ctx.Log($"  slab-diag [{srcLabel}]: element {source.TargetElementId.IntegerValue} → "
+                ctx.Log($"  slab-diag [{srcLabel}]: element {source.TargetElementId.Value} → "
                       + $"{stats.Planar} planar face(s), {stats.Vertical} vertical, kept {stats.Kept} "
                       + $"(dropped {stats.NullRef} null-ref, {stats.ConvFail} link-conv-fail).", "info");
 
@@ -362,7 +362,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
         /// </summary>
         private void CollectVerticalFaces(
             GeometryElement ge, Transform xform, RevitLinkInstance? link, ResolveContext ctx,
-            int elemIdInt, string srcLabel, string keyPrefix, List<FaceCand> list, FaceStats stats)
+            long elemIdInt, string srcLabel, string keyPrefix, List<FaceCand> list, FaceStats stats)
         {
             foreach (GeometryObject go in ge)
             {
@@ -407,7 +407,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                         SegB     = segB,
                         Area     = pf.Area,
                         Src      = srcLabel,
-                        Key      = $"{keyPrefix}{(link != null ? link.Id.IntegerValue + ":" : "")}{elemIdInt}:{list.Count}",
+                        Key      = $"{keyPrefix}{(link != null ? link.Id.Value + ":" : "")}{elemIdInt}:{list.Count}",
                     });
                     stats.Kept++;
                 }

@@ -260,7 +260,7 @@ namespace LemoineTools.Tools.LinkViews
             return null;
         }
 
-        private FrameworkElement LiveStep(Func<string> keyFunc, Func<FrameworkElement> builder)
+        private FrameworkElement LiveStep(Func<string?> keyFunc, Func<FrameworkElement> builder)
         {
             var host = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
             string lastKey = "\0";

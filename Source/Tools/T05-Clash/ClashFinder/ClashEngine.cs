@@ -1112,7 +1112,7 @@ namespace LemoineTools.Tools.Clash
             return AccumulateSolids(ge, tx, null);
         }
 
-        private static Solid? AccumulateSolids(GeometryElement ge, Transform tx, Solid? acc)
+        private static Solid? AccumulateSolids(GeometryElement ge, Transform? tx, Solid? acc)
         {
             foreach (GeometryObject obj in ge)
             {

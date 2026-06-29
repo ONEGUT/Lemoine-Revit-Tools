@@ -112,8 +112,8 @@ namespace LemoineTools.Tools.AutoFilters
             get => null; // never written
             set
             {
-                if (!string.IsNullOrEmpty(value) && !BuiltInCategories.Contains(value))
-                    BuiltInCategories.Add(value);
+                if (!string.IsNullOrEmpty(value) && !BuiltInCategories.Contains(value!))
+                    BuiltInCategories.Add(value!);
             }
         }
 

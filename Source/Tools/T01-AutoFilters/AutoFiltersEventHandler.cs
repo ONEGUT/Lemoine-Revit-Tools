@@ -1184,7 +1184,7 @@ namespace LemoineTools.Tools.AutoFilters
             string? name, Dictionary<string, ElementId> map, ElementId fallbackId)
         {
             if (!string.IsNullOrWhiteSpace(name) &&
-                map.TryGetValue(name, out ElementId id))
+                map.TryGetValue(name!, out ElementId id))
                 return id;
             return fallbackId;
         }
@@ -1199,7 +1199,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (string.IsNullOrWhiteSpace(name) ||
                 string.Equals(name, "Solid", System.StringComparison.OrdinalIgnoreCase))
                 return solidLineId;
-            if (map.TryGetValue(name, out ElementId id))
+            if (map.TryGetValue(name!, out ElementId id))
                 return id;
             return solidLineId;
         }

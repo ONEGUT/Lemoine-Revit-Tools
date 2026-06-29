@@ -58,9 +58,9 @@ namespace LemoineTools.Tools.LinkViews
         // ── Data type passed in from Command (main thread) ────────────
         public sealed class ViewEntry
         {
-            public ElementId Id        { get; set; }
-            public string    Name      { get; set; }
-            public string    TypeLabel { get; set; }
+            public ElementId Id        { get; set; } = ElementId.InvalidElementId;
+            public string    Name      { get; set; } = string.Empty;
+            public string    TypeLabel { get; set; } = string.Empty;
         }
 
         // ── State ──────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ namespace LemoineTools.Tools.LinkViews
             select.SelectionChanged += v =>
             {
                 if (string.IsNullOrEmpty(v)) return;
-                _mode = v;
+                _mode = v!;
                 UpdateHint();
                 OnValidationChanged();
             };

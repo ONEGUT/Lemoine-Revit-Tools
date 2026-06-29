@@ -68,15 +68,15 @@ namespace LemoineTools.Tools.Ceilings
                 GeometryElement geom = ceiling.get_Geometry(geomOptions);
                 if (geom == null) continue;
 
-                PlanarFace bestFace = null;
+                PlanarFace? bestFace = null;
                 double     lowestZ  = double.MaxValue;
 
                 foreach (GeometryObject obj in geom)
                 {
-                    Solid solid = obj as Solid;
+                    Solid? solid = obj as Solid;
                     if (solid == null || solid.Faces.IsEmpty) continue;
 
-                    PlanarFace singleCandidate = null;
+                    PlanarFace? singleCandidate = null;
                     int        downwardCount   = 0;
 
                     foreach (Face face in solid.Faces)
@@ -93,7 +93,7 @@ namespace LemoineTools.Tools.Ceilings
 
                     if (downwardCount == 1)
                     {
-                        double z = singleCandidate.Origin.Z;
+                        double z = singleCandidate!.Origin.Z;
                         if (z < lowestZ) { lowestZ = z; bestFace = singleCandidate; }
                     }
                     else

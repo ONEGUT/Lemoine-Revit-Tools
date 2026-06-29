@@ -710,7 +710,7 @@ namespace LemoineTools.Tools.BulkExport
             string label    = element?.Name ?? "";
             string fallback = SanitizeFilename(label);
             if (!fallback.Any(char.IsLetterOrDigit))
-                fallback = "export-" + (element?.Id.IntegerValue.ToString() ?? "0");
+                fallback = "export-" + (element?.Id.Value.ToString() ?? "0");
 
             pushLog($"{fmt}: filename pattern '{FilenamePattern}' produced no usable name for '{label}' " +
                     $"(its tokens were all empty for this {(element is ViewSheet ? "sheet" : "view")}). " +

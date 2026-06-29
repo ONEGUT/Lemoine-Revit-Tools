@@ -109,7 +109,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             {
                 foreach (var li in new FilteredElementCollector(doc)
                              .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>()
-                             .OrderBy(l => l.Id.IntegerValue))
+                             .OrderBy(l => l.Id.Value))
                 {
                     var ld = li.GetLinkDocument();
                     if (ld == null) continue;
@@ -865,7 +865,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             try
             {
                 var dt = doc.GetElement(dimTypeId) as DimensionType;
-                FormatOptions fo = dt?.GetUnitsFormatOptions();
+                FormatOptions? fo = dt?.GetUnitsFormatOptions();
                 if (fo != null && !fo.UseDefault)
                     units.SetFormatOptions(SpecTypeId.Length, fo);
             }
@@ -914,7 +914,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                 }
                 var defId = doc.GetDefaultElementTypeId(ElementTypeGroup.LinearDimensionType);
                 if (defId != null && defId != ElementId.InvalidElementId) return defId;
-                return types.OrderBy(t => t.Id.IntegerValue).First().Id;
+                return types.OrderBy(t => t.Id.Value).First().Id;
             }
             catch (Exception ex)
             {

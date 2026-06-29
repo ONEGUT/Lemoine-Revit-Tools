@@ -72,7 +72,7 @@ namespace LemoineTools.Tools.Ceilings
                     var li = doc.GetElement(id) as RevitLinkInstance;
                     var ld = li?.GetLinkDocument();
                     if (ld == null) continue;
-                    CollectFrom(ld, ld.Title ?? li.Name, true);
+                    CollectFrom(ld, ld.Title ?? li!.Name, true);
                 }
 
                 OnTypesLoaded?.Invoke(results);

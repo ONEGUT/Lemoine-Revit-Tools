@@ -484,7 +484,7 @@ namespace LemoineTools.Tools.ModifyElements
             // leaving overlapping duplicate geometry. Excluding endpoint-coincident
             // points guarantees every consecutive pair in `seq` is a valid segment.
             const double endTol = 0.01;
-            var pts = DeduplicatePoints(rawSplitPts, endTol)
+            var pts = DeduplicatePoints(rawSplitPts.Where(p => p != null).Cast<XYZ>(), endTol)
                 .Where(p => p.DistanceTo(A) > endTol && p.DistanceTo(B) > endTol)
                 .ToList();
             if (!pts.Any()) { stats.Skip($"{el.Id}: no interior split points after dedup"); return; }

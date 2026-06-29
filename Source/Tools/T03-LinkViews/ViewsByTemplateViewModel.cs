@@ -41,16 +41,16 @@ namespace LemoineTools.Tools.LinkViews
         // ── Data types passed in from Command (main thread) ───────────
         public sealed class ViewEntry
         {
-            public ElementId Id        { get; set; }
-            public string    Name      { get; set; }
-            public string    TypeLabel { get; set; }
+            public ElementId Id        { get; set; } = ElementId.InvalidElementId;
+            public string    Name      { get; set; } = string.Empty;
+            public string    TypeLabel { get; set; } = string.Empty;
         }
 
         public sealed class TemplateEntry
         {
-            public ElementId Id        { get; set; }
-            public string    Name      { get; set; }
-            public string    TypeLabel { get; set; }
+            public ElementId Id        { get; set; } = ElementId.InvalidElementId;
+            public string    Name      { get; set; } = string.Empty;
+            public string    TypeLabel { get; set; } = string.Empty;
         }
 
         // ── Naming tokens (same chip control as Bulk Export) ──────────
