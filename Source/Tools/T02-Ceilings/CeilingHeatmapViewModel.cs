@@ -39,15 +39,15 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── Identity ─────────────────────────────────────────────────────────────
-        public string Title    => "Ceiling Elevation Heatmap";
-        public string RunLabel => "Apply Heatmap →";
+        public string Title    => LemoineStrings.T("ceilings.heatmap.title");
+        public string RunLabel => LemoineStrings.T("ceilings.heatmap.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1",     "Select Ceiling Plan Views", required: true),
-            new StepDefinition("S_RAMP", "Color Ramp",                required: false),
-            new StepDefinition("S2",     "Run Options",               required: false),
-            new StepDefinition("S3",     "Review & Run",              required: false),
+            new StepDefinition("S1",     LemoineStrings.T("ceilings.heatmap.steps.S1"), required: true),
+            new StepDefinition("S_RAMP", LemoineStrings.T("ceilings.heatmap.steps.S_RAMP"),                required: false),
+            new StepDefinition("S2",     LemoineStrings.T("ceilings.heatmap.steps.S2"),               required: false),
+            new StepDefinition("S3",     LemoineStrings.T("ceilings.heatmap.steps.S3"),              required: false),
         };
 
         // ── Color ramp state ─────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var msg = new TextBlock
                 {
-                    Text         = "No reflected ceiling plan views found in this document.",
+                    Text         = LemoineStrings.T("ceilings.heatmap.labels.noViews"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                 };
@@ -145,7 +145,7 @@ namespace LemoineTools.Tools.Ceilings
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Ceiling plan views",
+                AccessibleName = LemoineStrings.T("ceilings.heatmap.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -163,7 +163,7 @@ namespace LemoineTools.Tools.Ceilings
             var outer = new StackPanel();
 
             // ── Section label: Saved Ramps ──────────────────────────────────────
-            var savedLabel = new TextBlock { Text = "SAVED RAMPS", Margin = new Thickness(0, 0, 0, 6) };
+            var savedLabel = new TextBlock { Text = LemoineStrings.T("ceilings.heatmap.labels.savedRamps"), Margin = new Thickness(0, 0, 0, 6) };
             savedLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             savedLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             savedLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -176,12 +176,12 @@ namespace LemoineTools.Tools.Ceilings
                 Margin        = new Thickness(0, 0, 0, 6),
             };
 
-            var deleteBtn = LemoineControlStyles.BuildSmallButton("Delete",
+            var deleteBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("ceilings.heatmap.labels.delete"),
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             deleteBtn.Margin = new Thickness(4, 0, 0, 0);
             DockPanel.SetDock(deleteBtn, Dock.Right);
 
-            var loadBtn = LemoineControlStyles.BuildSmallButton("Load",
+            var loadBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("ceilings.heatmap.labels.load"),
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             DockPanel.SetDock(loadBtn, Dock.Right);
 
@@ -200,12 +200,12 @@ namespace LemoineTools.Tools.Ceilings
                 Margin        = new Thickness(0, 0, 0, 14),
             };
 
-            var saveBtn = LemoineControlStyles.BuildSmallButton("Save",
+            var saveBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("ceilings.heatmap.labels.save"),
                 LemoineControlStyles.LemoineButtonVariant.Primary);
             saveBtn.Margin = new Thickness(4, 0, 0, 0);
             DockPanel.SetDock(saveBtn, Dock.Right);
 
-            var nameBox = new WpfTextBox { ToolTip = "Ramp name…" };
+            var nameBox = new WpfTextBox { ToolTip = LemoineStrings.T("ceilings.heatmap.labels.rampNameTip") };
             nameBox.SetResourceReference(FrameworkElement.MinHeightProperty,             "LemoineH_Input");
             nameBox.SetResourceReference(System.Windows.Controls.Control.PaddingProperty,"LemoineTh_InputPad");
             nameBox.SetResourceReference(WpfTextBox.BackgroundProperty,   "LemoineSelectBg");
@@ -260,7 +260,7 @@ namespace LemoineTools.Tools.Ceilings
             };
 
             // ── Color Stops section ──────────────────────────────────────────────
-            var stopsLabel = new TextBlock { Text = "COLOR STOPS", Margin = new Thickness(0, 0, 0, 8) };
+            var stopsLabel = new TextBlock { Text = LemoineStrings.T("ceilings.heatmap.labels.colorStops"), Margin = new Thickness(0, 0, 0, 8) };
             stopsLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             stopsLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             stopsLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -300,13 +300,13 @@ namespace LemoineTools.Tools.Ceilings
                 chipsGrid.Children.Add(chip);
             }
 
-            AddChip(0, "LOW",  () => _colorLow,  h => _colorLow  = h);
-            AddChip(2, "MID",  () => _colorMid,  h => _colorMid  = h);
-            AddChip(4, "HIGH", () => _colorHigh, h => _colorHigh = h);
+            AddChip(0, LemoineStrings.T("ceilings.heatmap.labels.chipLow"),  () => _colorLow,  h => _colorLow  = h);
+            AddChip(2, LemoineStrings.T("ceilings.heatmap.labels.chipMid"),  () => _colorMid,  h => _colorMid  = h);
+            AddChip(4, LemoineStrings.T("ceilings.heatmap.labels.chipHigh"), () => _colorHigh, h => _colorHigh = h);
             outer.Children.Add(chipsGrid);
 
             // ── Gradient preview ─────────────────────────────────────────────────
-            var previewLabel = new TextBlock { Text = "RAMP PREVIEW", Margin = new Thickness(0, 0, 0, 6) };
+            var previewLabel = new TextBlock { Text = LemoineStrings.T("ceilings.heatmap.labels.rampPreview"), Margin = new Thickness(0, 0, 0, 6) };
             previewLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             previewLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             previewLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -378,15 +378,15 @@ namespace LemoineTools.Tools.Ceilings
                 new ToggleItem
                 {
                     Id        = "delete",
-                    Label     = "Delete existing heatmap filters",
-                    Desc      = "Remove all \"Ceiling Heatmap\" view filters from the project before applying the new set.",
+                    Label     = LemoineStrings.T("ceilings.heatmap.labels.toggleDeleteLabel"),
+                    Desc      = LemoineStrings.T("ceilings.heatmap.labels.toggleDeleteDesc"),
                     DefaultOn = _deleteExisting,
                 },
                 new ToggleItem
                 {
                     Id        = "tags",
-                    Label     = "Place ceiling tags",
-                    Desc      = "Place a Ceiling Tag at the centroid of each ceiling after applying the heatmap. Ceilings that already carry a tag are skipped.",
+                    Label     = LemoineStrings.T("ceilings.heatmap.labels.toggleTagsLabel"),
+                    Desc      = LemoineStrings.T("ceilings.heatmap.labels.toggleTagsDesc"),
                     DefaultOn = _placeTags,
                 },
             });
@@ -401,7 +401,7 @@ namespace LemoineTools.Tools.Ceilings
             // ── Elevation tolerance ───────────────────────────────────────────────
             outer.Children.Add(new FrameworkElement { Height = 14 });
 
-            var tolLabel = new TextBlock { Text = "ELEVATION TOLERANCE", Margin = new Thickness(0, 0, 0, 6) };
+            var tolLabel = new TextBlock { Text = LemoineStrings.T("ceilings.heatmap.labels.elevTol"), Margin = new Thickness(0, 0, 0, 6) };
             tolLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             tolLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             tolLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -423,7 +423,7 @@ namespace LemoineTools.Tools.Ceilings
             tolStepper.ValueChanged += (s, v) => _elevTolerance = v / 12.0;
             tolRow.Children.Add(tolStepper);
 
-            var tolUnit = new TextBlock { Text = "  in", VerticalAlignment = VerticalAlignment.Center };
+            var tolUnit = new TextBlock { Text = LemoineStrings.T("ceilings.heatmap.labels.inUnit"), VerticalAlignment = VerticalAlignment.Center };
             tolUnit.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             tolUnit.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             tolUnit.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -433,7 +433,7 @@ namespace LemoineTools.Tools.Ceilings
 
             var tolHint = new TextBlock
             {
-                Text         = "Ceilings within this elevation range share one color filter bucket.",
+                Text         = LemoineStrings.T("ceilings.heatmap.labels.tolHint"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 4, 0, 0),
                 FontStyle    = FontStyles.Italic,
@@ -451,28 +451,25 @@ namespace LemoineTools.Tools.Ceilings
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views",  "Views Selected"),
-            ("ramp",   "Color Ramp"),
-            ("delete", "Delete Existing Filters"),
-            ("tags",   "Place Ceiling Tags"),
-            ("tol",    "Elevation Tolerance"),
+            ("views",  LemoineStrings.T("ceilings.heatmap.review.itemViews")),
+            ("ramp",   LemoineStrings.T("ceilings.heatmap.review.itemRamp")),
+            ("delete", LemoineStrings.T("ceilings.heatmap.review.itemDelete")),
+            ("tags",   LemoineStrings.T("ceilings.heatmap.review.itemTags")),
+            ("tol",    LemoineStrings.T("ceilings.heatmap.review.itemTol")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["views"]  = _selectedViewIds.Count == 0 ? "—"
-                : $"{_selectedViewIds.Count} view{(_selectedViewIds.Count == 1 ? "" : "s")}",
-            ["ramp"]   = $"{_colorLow} → {_colorMid} → {_colorHigh}",
-            ["delete"] = _deleteExisting ? "Yes" : "No",
-            ["tags"]   = _placeTags ? "Yes" : "No",
-            ["tol"]    = $"{Math.Round(_elevTolerance * 12.0, 4)} in",
+                : LemoineStrings.T("ceilings.heatmap.review.viewsValue", _selectedViewIds.Count),
+            ["ramp"]   = LemoineStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh),
+            ["delete"] = _deleteExisting ? LemoineStrings.T("ceilings.heatmap.review.yes") : LemoineStrings.T("ceilings.heatmap.review.no"),
+            ["tags"]   = _placeTags ? LemoineStrings.T("ceilings.heatmap.review.yes") : LemoineStrings.T("ceilings.heatmap.review.no"),
+            ["tol"]    = LemoineStrings.T("ceilings.heatmap.review.tolValue", Math.Round(_elevTolerance * 12.0, 4)),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Selected ceiling plan views will be scanned for \"Height Offset " +
-            "From Level\" data in both the host model and every visible link. One view filter is created per " +
-            "distinct height offset bucket and applied to every selected view as a solid surface color override. " +
-            "Linked ceilings are colored only where the link is displayed \"By Host View\".";
+        public string?        ReviewNote    => LemoineStrings.T("ceilings.heatmap.review.note");
         public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════════
@@ -488,18 +485,18 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (stepId == "S1")
                 return _selectedViewIds.Count == 0 ? "—"
-                    : $"{_selectedViewIds.Count} view{(_selectedViewIds.Count == 1 ? "" : "s")} selected";
+                    : LemoineStrings.T("ceilings.heatmap.summaries.viewsSelected", _selectedViewIds.Count);
             if (stepId == "S_RAMP")
-                return $"{_colorLow} → {_colorMid} → {_colorHigh}";
+                return LemoineStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh);
             if (stepId == "S2")
             {
                 var parts = new List<string>();
-                if (_deleteExisting) parts.Add("Delete existing");
-                if (_placeTags)      parts.Add("Place tags");
-                parts.Add($"Tol {Math.Round(_elevTolerance * 12.0, 4)} in");
+                if (_deleteExisting) parts.Add(LemoineStrings.T("ceilings.heatmap.summaries.s2Delete"));
+                if (_placeTags)      parts.Add(LemoineStrings.T("ceilings.heatmap.summaries.s2Tags"));
+                parts.Add(LemoineStrings.T("ceilings.heatmap.summaries.s2Tol", Math.Round(_elevTolerance * 12.0, 4)));
                 return string.Join(" · ", parts);
             }
-            if (stepId == "S3") return "Ready to run";
+            if (stepId == "S3") return LemoineStrings.T("ceilings.heatmap.summaries.S3");
             return "—";
         }
 
@@ -528,7 +525,7 @@ namespace LemoineTools.Tools.Ceilings
             _handler.OnProgress      = onProgress;
             _handler.OnComplete      = onComplete;
             _handler.OnResultChips   = chips => _resultChips = chips;
-            pushLog("Starting Ceiling Elevation Heatmap…", "info");
+            pushLog(LemoineStrings.T("ceilings.heatmap.log.starting"), "info");
             _event!.Raise();
         }
 
