@@ -89,7 +89,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                 {
                     grids = new FilteredElementCollector(sd.Doc)
                         .OfClass(typeof(Grid)).Cast<Grid>()
-                        .OrderBy(g => g.Id.IntegerValue)
+                        .OrderBy(g => g.Id.Value)
                         .ToList();
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("GridTargetResolver: collect grids", ex); continue; }
@@ -114,7 +114,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                         Ref   = gref!,
                         Dir2d = ctx.Projection.Dir2D(dir3d).Normalized(),
                         Mid2d = ctx.Projection.To2D(mid3d),
-                        Key   = "grid:" + (sd.Link != null ? sd.Link.Id.IntegerValue + ":" : "") + grid.Id.IntegerValue,
+                        Key   = "grid:" + (sd.Link != null ? sd.Link.Id.Value + ":" : "") + grid.Id.Value,
                     });
                 }
             }

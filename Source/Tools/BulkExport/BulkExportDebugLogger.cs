@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.BulkExport
                 _w.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [{category,-16}] {message}");
                 if (!string.IsNullOrEmpty(detail))
                 {
-                    foreach (string line in detail.Split('\n'))
+                    foreach (string line in detail!.Split('\n'))
                         _w.WriteLine($"                              |  {line.TrimEnd()}");
                 }
             }

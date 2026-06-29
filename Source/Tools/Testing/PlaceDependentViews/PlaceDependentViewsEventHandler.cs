@@ -273,7 +273,8 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             foreach (var depId in candidateIds)
                             {
                                 if (sourceView != null && depId == sourceView.Id) continue;
-                                TrimAnnotationCrop(doc.GetElement(depId) as View, trimPaperFt);
+                                if (doc.GetElement(depId) is View depView)
+                                    TrimAnnotationCrop(depView, trimPaperFt);
                             }
 
                         // ── Which views can actually be placed ───────────────

@@ -73,6 +73,7 @@ namespace LemoineTools.Tools.LinkViews
             var views = SelectedViewIds
                 .Select(id => doc.GetElement(id) as View)
                 .Where(v => v != null && !v.IsTemplate)
+                .Cast<View>()
                 .ToList();
 
             if (views.Count == 0)

@@ -82,7 +82,7 @@ namespace LemoineTools.Tools.LinkViews
                     XYZ bMax   = isLink ? tf.OfPoint(bb.Max) : bb.Max;
 
                     // Room level elevation in host coordinates (so link levels reconcile by height).
-                    Level roomLevel = r.Level;
+                    Level? roomLevel = r.Level;
                     double levelElevHost = roomLevel != null
                         ? (isLink ? tf.OfPoint(new XYZ(0, 0, roomLevel.Elevation)).Z : roomLevel.Elevation)
                         : center.Z;
@@ -128,7 +128,7 @@ namespace LemoineTools.Tools.LinkViews
                 if (!string.IsNullOrEmpty(r.LevelName) && hostNames.Contains(r.LevelName))
                     continue;   // already a host level by name — keep it
 
-                Level best = null;
+                Level? best = null;
                 double bestD = double.MaxValue;
                 foreach (var hl in hostLevels)
                 {

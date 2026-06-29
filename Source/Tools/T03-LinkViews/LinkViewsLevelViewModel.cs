@@ -38,15 +38,15 @@ namespace LemoineTools.Tools.LinkViews
         // ── Data types passed in from Command ─────────────────────────
         public sealed class DocEntry
         {
-            public string    Label;
+            public string    Label = string.Empty;
             public bool      IsHost;
-            public ElementId LinkInstId;
+            public ElementId LinkInstId = ElementId.InvalidElementId;
         }
 
         public sealed class ViewTemplateEntry
         {
-            public ElementId Id   { get; set; }
-            public string    Name { get; set; }
+            public ElementId Id   { get; set; } = ElementId.InvalidElementId;
+            public string    Name { get; set; } = string.Empty;
         }
 
         // ── State ──────────────────────────────────────────────────────
@@ -72,9 +72,9 @@ namespace LemoineTools.Tools.LinkViews
         private ElementId            _template3DId   = ElementId.InvalidElementId;
         private ElementId            _templateFPId   = ElementId.InvalidElementId;
         private ElementId            _templateRCPId  = ElementId.InvalidElementId;
-        private FrameworkElement     _subDiscRow3D;
-        private FrameworkElement     _subDiscRowFP;
-        private FrameworkElement     _subDiscRowRCP;
+        private FrameworkElement?    _subDiscRow3D;
+        private FrameworkElement?    _subDiscRowFP;
+        private FrameworkElement?    _subDiscRowRCP;
 
         // S3 naming state — Front/Center/End slots
         private string _namingFront        = "Host Level";
@@ -87,8 +87,8 @@ namespace LemoineTools.Tools.LinkViews
         private Dictionary<long, string> _levelModelNames = new Dictionary<long, string>();
 
         // S2 live-update handles
-        private StackPanel  _s2Container;
-        private Dispatcher  _s2Dispatcher;
+        private StackPanel  _s2Container = null!;
+        private Dispatcher  _s2Dispatcher = null!;
 
         // IStepAware: rebuilds a step's content widget (set by StepFlowWindow)
         private Action<string>? _rebuildContent;
@@ -541,9 +541,9 @@ namespace LemoineTools.Tools.LinkViews
             _s2Container.Children.Add(printSetToggles);
             _s2Container.Children.Add(subDiscHeader);
             _s2Container.Children.Add(colHeader);
-            _s2Container.Children.Add(_subDiscRow3D);
-            _s2Container.Children.Add(_subDiscRowFP);
-            _s2Container.Children.Add(_subDiscRowRCP);
+            _s2Container.Children.Add(_subDiscRow3D!);
+            _s2Container.Children.Add(_subDiscRowFP!);
+            _s2Container.Children.Add(_subDiscRowRCP!);
         }
 
         private FrameworkElement BuildViewTypeRow(
@@ -640,7 +640,7 @@ namespace LemoineTools.Tools.LinkViews
                         case "Model Name":  return modelEx;
                         case "View Type":   return typeEx;
                         case "Custom":      return string.IsNullOrWhiteSpace(custom) ? "(custom)" : custom.Trim();
-                        default:            return null;
+                        default:            return "";
                     }
                 }
 

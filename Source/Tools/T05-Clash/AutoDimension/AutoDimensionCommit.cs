@@ -40,7 +40,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     .OfClass(typeof(Dimension)).WhereElementIsNotElementType()
                     .Cast<Dimension>()
                     .Where(AutoDimOwnerSchema.IsOwned)
-                    .OrderBy(d => d.Id.IntegerValue)
+                    .OrderBy(d => d.Id.Value)
                     .ToList();
             }
             catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: collect prior owned dims", ex); prior = new List<Dimension>(); }
@@ -180,7 +180,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
         private static double TagWidthFt(string? valueString, double fallbackFt, double th)
         {
             if (string.IsNullOrEmpty(valueString)) return fallbackFt;
-            int chars = Math.Max(3, valueString.Length);
+            int chars = Math.Max(3, valueString!.Length);
             return chars * th * GlyphWidthFactor;
         }
 

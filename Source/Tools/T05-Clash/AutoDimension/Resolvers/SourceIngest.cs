@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
                     .WhereElementIsNotElementType()
                     .Where(ClashTagSchema.IsOurs)
                     .OfType<DetailCurve>()
-                    .OrderBy(dc => dc.Id.IntegerValue)
+                    .OrderBy(dc => dc.Id.Value)
                     .ToList();
             }
             catch (Exception ex)
@@ -64,7 +64,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
             // Legacy / un-grouped markers: one source per line at its endpoint (old behaviour).
             foreach (var dc in ungrouped)
             {
-                var src = BuildSingleLineSource(dc.Id.IntegerValue.ToString(), dc, projection, unresolved);
+                var src = BuildSingleLineSource(dc.Id.Value.ToString(), dc, projection, unresolved);
                 if (src != null) result.Add(src);
             }
 
@@ -79,7 +79,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Resolvers
         {
             // Read each line's geometry exactly once (Id-ordered for deterministic tie-breaks).
             var geos = new List<(Curve gc, XYZ p0, XYZ p1)>();
-            foreach (var dc in lines.OrderBy(d => d.Id.IntegerValue))
+            foreach (var dc in lines.OrderBy(d => d.Id.Value))
             {
                 Curve? gc = SafeGeometry(dc);
                 if (gc == null) continue;

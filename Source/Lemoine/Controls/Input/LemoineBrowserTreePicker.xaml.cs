@@ -67,7 +67,7 @@ namespace LemoineTools.Lemoine.Controls
             _filterBox.TextChanged += (s, e) =>
             {
                 _filter = (_filterBox.Text ?? "").Trim();
-                _filterHint.Visibility = _filter.Length == 0 && _filterBox.Text.Length == 0
+                _filterHint.Visibility = _filter.Length == 0 && _filterBox.Text!.Length == 0
                     ? Visibility.Visible : Visibility.Collapsed;
                 RebuildRows();
             };

@@ -69,13 +69,8 @@ namespace LemoineTools.Lemoine
         private Border?  _dragReadyBorder;
         private bool     _isRefreshingEditor;
 
-        // ── Drag state: trade reorder ────────────────────────────────────────
-        private string?  _dragTradeId;
-        private Point    _tradeDragStart;
-
         // ── Double-click rename timing ───────────────────────────────────────
         private DateTime _lastClickTime   = DateTime.MinValue;
-        private string?  _lastClickItemId;
 
 
         // ─────────────────────────────────────────────────────────────────────

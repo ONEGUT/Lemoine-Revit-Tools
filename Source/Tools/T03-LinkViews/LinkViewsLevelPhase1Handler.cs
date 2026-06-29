@@ -49,7 +49,7 @@ namespace LemoineTools.Tools.LinkViews
                     var ld = li?.GetLinkDocument();
                     if (ld == null) continue;
                     if (sourcePairs.Any(p => p.Doc.Equals(ld))) continue;
-                    sourcePairs.Add((ld, ld.Title ?? li.Name));
+                    sourcePairs.Add((ld, ld.Title ?? li!.Name));
                 }
 
                 var allLevels = new FilteredElementCollector(doc)

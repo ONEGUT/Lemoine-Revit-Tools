@@ -86,7 +86,7 @@ namespace LemoineTools.Lemoine.Controls
             foreach (var row in _blockStack.Children.OfType<LemoineLegendBlockRow>())
             {
                 bool isActive = row.Block.Id == activeId;
-                bool isMulti  = !isActive && selectedIds.Contains(row.Block.Id);
+                bool isMulti  = !isActive && _selectionContext.Contains(row.Block.Id);
                 row.SetSelectionState(isActive, isMulti);
             }
         }

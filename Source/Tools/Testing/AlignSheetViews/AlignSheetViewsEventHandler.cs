@@ -480,7 +480,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 {
                     try
                     {
-                        Curve c = g.GetCurvesInView(DatumExtentType.ViewSpecific, sv)?.FirstOrDefault();
+                        Curve? c = g.GetCurvesInView(DatumExtentType.ViewSpecific, sv)?.FirstOrDefault();
                         if (c == null) { skipped++; continue; }
                         if (!(doc.GetElement(g.Id) is Grid tg)) { skipped++; continue; }
                         tg.SetCurveInView(DatumExtentType.ViewSpecific, tv, c);

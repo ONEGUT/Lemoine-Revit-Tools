@@ -189,7 +189,7 @@ namespace LemoineTools.Tools.AutoFilters
             Progress(40, pass, fail, skip);
 
             // ── Build swatch type map ─────────────────────────────────────────
-            var needed = rows.Where(r => r.Rgb.HasValue).Select(r => r.Rgb.Value).ToHashSet();
+            var needed = rows.Where(r => r.Rgb.HasValue).Select(r => r.Rgb!.Value).ToHashSet();
 
             var frtByName = new FilteredElementCollector(doc)
                 .OfClass(typeof(FilledRegionType)).Cast<FilledRegionType>()

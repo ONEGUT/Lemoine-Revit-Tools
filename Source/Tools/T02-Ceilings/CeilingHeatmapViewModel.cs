@@ -76,8 +76,8 @@ namespace LemoineTools.Tools.Ceilings
         private readonly LemoineBrowserTree _browserTree;
 
         // ── Debug wiring ─────────────────────────────────────────────────────────
-        private static CeilingHeatmapDebugHandler _debugHandler;
-        private static ExternalEvent              _debugEvent;
+        private static CeilingHeatmapDebugHandler? _debugHandler;
+        private static ExternalEvent?              _debugEvent;
 
         public static void RegisterDebugEvent(
             CeilingHeatmapDebugHandler handler, ExternalEvent evt)

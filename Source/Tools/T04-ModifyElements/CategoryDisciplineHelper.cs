@@ -107,7 +107,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 string group = cat.CategoryType == CategoryType.Annotation
                     ? "Annotation"
-                    : GetModelDiscipline(cat.Id.IntegerValue);
+                    : GetModelDiscipline((int)cat.Id.Value);
 
                 if (!raw.ContainsKey(group))
                     raw[group] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);

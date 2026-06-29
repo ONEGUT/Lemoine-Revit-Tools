@@ -105,7 +105,7 @@ namespace LemoineTools.Tools.ModifyElements
 
         private static string RefPlaneName(ReferencePlane rp) =>
             string.IsNullOrWhiteSpace(rp.Name)
-                ? $"Ref Plane {rp.Id.IntegerValue}"
+                ? $"Ref Plane {rp.Id.Value}"
                 : rp.Name;
 
         private static Dictionary<string, ReferencePlane> BuildRefPlaneMap(

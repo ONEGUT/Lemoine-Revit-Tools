@@ -21,9 +21,9 @@ namespace LemoineTools.Tools.Ceilings
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
         {
-            public string    Label;
+            public string    Label = string.Empty;
             public bool      IsHost;
-            public ElementId LinkInstId;
+            public ElementId LinkInstId = ElementId.InvalidElementId;
         }
 
         // ── ILemoineTool identity ─────────────────────────────────────────────
