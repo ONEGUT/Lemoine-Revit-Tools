@@ -89,10 +89,10 @@ namespace LemoineTools.Lemoine
                         Tg("host", "Include host model", "Also scan the host document", false)),
                     Info("S3", "Scanning", "Discover scans the selected links and groups elements into candidate trades. (Simulated here.)"),
                     MultiFlat("S4", "Review Rules", true, "Tick the discovered trade rules to keep.", Trades),
-                    Info("S5", "Confirm & Commit", "Creates one view filter per kept trade and applies its colour override across the selected views."),
+                    Info("S5", "Confirm & Commit", "Creates one view filter per kept trade and applies its color override across the selected views."),
                 },
                 RunLog = RL(("Scanning 3 links…", "info"), ("Found 6 candidate trades", "pass"),
-                            ("Created 6 view filters", "pass"), ("Applied colour overrides to active view", "pass")),
+                            ("Created 6 view filters", "pass"), ("Applied color overrides to active view", "pass")),
             },
 
             ["Legend Creation"] = new OverviewDemoSpec
@@ -103,7 +103,7 @@ namespace LemoineTools.Lemoine
                     MultiFlat("S1", "Select Filters", true, "Pick the filters to include as legend rows.", Filters),
                     Single("S2", "Layout", true, "Legend layout.", "Single column", "Two columns", "By system group"),
                     Toggles("S3", "Options", "Legend row content.",
-                        Tg("swatch", "Colour swatch", "Show the filter's colour", true),
+                        Tg("swatch", "Color swatch", "Show the filter's color", true),
                         Tg("count", "Element count", "Show how many elements match", false),
                         Tg("desc", "Description", "Show the trade description", true)),
                     Info("S4", "Review & Run", "Builds or updates a Legend view from the selected filters."),
@@ -114,19 +114,19 @@ namespace LemoineTools.Lemoine
 
             ["Ceiling Heatmap"] = new OverviewDemoSpec
             {
-                Title = "Ceiling Heatmap", RunLabel = "Colour Ceilings →",
+                Title = "Ceiling Heatmap", RunLabel = "Color Ceilings →",
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Ceiling Plan Views", true, "Reflected ceiling plans to colour by height.", CeilingPlans),
-                    Single("S_RAMP", "Color Ramp", true, "Height → colour ramp.", "Blue → Red (low → high)", "Viridis", "Greyscale"),
+                    MultiFlat("S1", "Select Ceiling Plan Views", true, "Reflected ceiling plans to color by height.", CeilingPlans),
+                    Single("S_RAMP", "Color Ramp", true, "How height maps to color.", "Blue to Red (low to high)", "Viridis", "Grayscale"),
                     Toggles("S2", "Run Options", "Overrides applied with the heatmap.",
                         Tg("hidelinked", "Hide linked ceilings", "Suppress ceilings inside links", true),
                         Tg("legend", "Add legend", "Place a height legend", true),
                         Tg("halftone", "Halftone background", "Halftone everything else", false)),
-                    Info("S3", "Review & Run", "Applies per-height colour overrides via view filters."),
+                    Info("S3", "Review & Run", "Applies per-height color overrides through view filters."),
                 },
                 RunLog = RL(("Reading ceiling heights on 3 views…", "info"), ("8 height bands detected", "pass"),
-                            ("Colour overrides applied", "pass"), ("Legend placed", "pass")),
+                            ("Color overrides applied", "pass"), ("Legend placed", "pass")),
             },
 
             ["Make Ceiling Grids"] = new OverviewDemoSpec
@@ -199,11 +199,11 @@ namespace LemoineTools.Lemoine
                 Steps = new[]
                 {
                     MultiFlat("S1", "Source Views", true, "Views to duplicate across templates.", PlanViews),
-                    MultiFlat("S2", "View Templates", true, "Templates to apply — one copy per template.", Templates),
+                    MultiFlat("S2", "View Templates", true, "Templates to apply, one copy per template.", Templates),
                     Txt("S3", "View Naming", true, "Token pattern.", "{ViewName} - {Template}", "{ViewName} - {Template}"),
                     Info("S4", "Review & Run", "Duplicates each view once per selected template."),
                 },
-                RunLog = RL(("4 views x 3 templates…", "info"), ("12 views created", "pass")),
+                RunLog = RL(("4 views across 3 templates…", "info"), ("12 views created", "pass")),
             },
 
             ["Bulk Dependent Views"] = new OverviewDemoSpec
@@ -241,7 +241,7 @@ namespace LemoineTools.Lemoine
                 Title = "Place Dependent Views", RunLabel = "Place on Sheets →",
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Views to Place", true, "Parent views — one sheet each, dependents packed on it.", PlanViews),
+                    MultiFlat("S1", "Views to Place", true, "Parent views: one sheet each, with the dependents packed on it.", PlanViews),
                     Single("S2", "Title Block", true, "Title block for the new sheets.", TitleBlocks.ToArray()),
                     Txt("S3", "Sheet Naming", true, "Token pattern for sheet names.", "{ParentView}", "{ParentView}"),
                     Toggles("S4", "Layout", "Packing options.",
@@ -374,7 +374,7 @@ namespace LemoineTools.Lemoine
                 Steps = new[]
                 {
                     MultiFlat("S1", "Select Base Levels", true, "Walls based on these levels are considered.", Levels),
-                    Toggles("S2", "Options", "Extend behaviour.",
+                    Toggles("S2", "Options", "Extend behavior.",
                         Tg("aboveceil", "Only walls above ceiling", "Limit to walls that pass the ceiling", true),
                         Tg("levelup", "Snap to level above", "Set top constraint to the next level", true)),
                     Info("S3", "Review & Run", "Re-hosts qualifying walls' top constraint to the level above."),
@@ -391,7 +391,7 @@ namespace LemoineTools.Lemoine
                     Multi("groupA", "Group A", true, "First element group.", Categories()),
                     Multi("groupB", "Group B", true, "Second element group.", Categories()),
                     Toggles("marker", "Marker Settings", "How clashes are marked.",
-                        Tg("colour", "Coloured marker", "Place a coloured marker", true),
+                        Tg("color", "Colored marker", "Place a colored marker", true),
                         Tg("tag", "Tag clash", "Add a clash tag", true),
                         Tg("round", "Round marker", "Use a round marker", false)),
                     Info("save", "Save Definition", "Adds this definition to the reusable library used by the finders."),
@@ -406,8 +406,8 @@ namespace LemoineTools.Lemoine
                 {
                     MultiFlat("S1", "Select Definitions", true, "Saved clash definitions to run.", Definitions),
                     MultiFlat("S2", "Select Views", true, "Plan views to detect and mark in.", PlanViews),
-                    Toggles("S3", "Marker Settings", "Marker behaviour.",
-                        Tg("colour", "Coloured markers", "Colour by definition", true),
+                    Toggles("S3", "Marker Settings", "Marker behavior.",
+                        Tg("color", "Colored markers", "Color by definition", true),
                         Tg("tag", "Tag each clash", "Add a tag per clash", true),
                         Tg("dense", "Survey dense areas", "Add callouts where clashes cluster", true)),
                     Toggles("S4", "Dimensioning", "Dimension targets.",
@@ -427,7 +427,7 @@ namespace LemoineTools.Lemoine
                 {
                     MultiFlat("S1", "Select Definitions", true, "Saved clash definitions to run.", Definitions),
                     MultiFlat("S2", "Select Views", true, "Sections / elevations to mark in.", Sections),
-                    Single("S3", "Marker & Tag Settings", false, "Spot-elevation anchor on the round marker.", "Top of round", "Centre", "Bottom of round"),
+                    Single("S3", "Marker & Tag Settings", false, "Where the spot elevation sits on the round marker.", "Top of round", "Center", "Bottom of round"),
                     Info("S4", "Review & Run", "Detects clashes and tags each with a spot elevation."),
                 },
                 RunLog = RL(("Running 3 definitions over 3 views…", "info"), ("Section A-A: 5 clashes marked", "pass"),
@@ -441,7 +441,7 @@ namespace LemoineTools.Lemoine
                 {
                     MultiFlat("S1", "Select Views", true, "Views that already carry clash markers.", PlanViews),
                     Single("S2", "Destination", false, "Where to dimension each marker.", "Nearest grid", "Nearest slab edge", "Grid then slab edge"),
-                    Info("S3", "Review & Run", "Re-dimensions existing markers — no detection, no scale change."),
+                    Info("S3", "Review & Run", "Re-dimensions the existing markers. No detection, no scale change."),
                 },
                 RunLog = RL(("Re-dimensioning markers on 4 views…", "info"), ("17 markers re-dimensioned to nearest grid", "pass")),
             },
@@ -456,7 +456,7 @@ namespace LemoineTools.Lemoine
                     MultiFlat("filters", "Parameter Filters", false, "Limit by parameter values (optional).",
                         L("System: Chilled Water", "Size: 150 mm", "Reference Level: Level 2")),
                     Single("operation", "Operation", true, "What to do with the copied runs.", "Split into standard lengths", "Replace with family at intervals"),
-                    Toggles("changes", "Change Detection", "Idempotent re-run behaviour.",
+                    Toggles("changes", "Change Detection", "What a re-run does.",
                         Tg("changed", "Only changed elements", "Skip unchanged sources on re-run", true),
                         Tg("stamp", "Re-stamp outputs", "Refresh the provenance stamp", true)),
                     Info("run", "Review & Run", "Copies linked runs into the host and applies the chosen operation."),
@@ -486,7 +486,7 @@ namespace LemoineTools.Lemoine
                         Groups(("Linked Model", Documents), ("Categories", L("Mechanical Equipment", "Air Terminals", "Plumbing Fixtures")))),
                     MultiFlat("types", "Families to Copy", true, "Tick the family types within those categories.",
                         L("AHU-01", "VAV-Series", "Diffuser 600x600", "FCU-Series")),
-                    Toggles("changes", "Change Detection", "Idempotent re-run behaviour.",
+                    Toggles("changes", "Change Detection", "What a re-run does.",
                         Tg("changed", "Only changed elements", "Skip unchanged sources on re-run", true),
                         Tg("stamp", "Re-stamp outputs", "Refresh the provenance stamp", true)),
                     Info("run", "Review & Run", "Copies the ticked family types from the link into the host."),

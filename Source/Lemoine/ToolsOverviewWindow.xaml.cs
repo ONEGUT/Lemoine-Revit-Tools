@@ -22,7 +22,7 @@ namespace LemoineTools.Lemoine
     //
     // Modelled on GlobalSettingsWindow (NOT StepFlowWindow — no wizard chrome).
     // Makes no Revit API calls; opened on Revit's main STA thread by OpenOverviewCommand.
-    // All colours/sizes via SetResourceReference; named global-event handlers are
+    // All colors/sizes via SetResourceReference; named global-event handlers are
     // detached on Closed to avoid the leaked-subscription Revit crash.
     // ─────────────────────────────────────────────────────────────────────────
     public partial class ToolsOverviewWindow : Window
@@ -501,7 +501,7 @@ namespace LemoineTools.Lemoine
                 var runBtn = LemoineControlStyles.BuildSmallButton("Dummy run ▶",
                     LemoineControlStyles.LemoineButtonVariant.Primary);
                 runBtn.VerticalAlignment = VerticalAlignment.Center;
-                runBtn.ToolTip = $"Open {tool.Name} in a tool window and step through it — simulated, no Revit changes.";
+                runBtn.ToolTip = $"Step through {tool.Name} in a real tool window. It's a demo, so nothing gets changed.";
                 runBtn.Click += (s, e) => LaunchDemo(tool.Name);
                 DockPanel.SetDock(runBtn, Dock.Right);
                 top.Children.Add(runBtn);

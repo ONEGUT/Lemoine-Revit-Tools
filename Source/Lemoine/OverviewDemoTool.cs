@@ -79,7 +79,7 @@ namespace LemoineTools.Lemoine
             }
         }
 
-        public string Title    => _spec.Title + "  —  Demo (no Revit changes)";
+        public string Title    => _spec.Title + "  (Demo run)";
         public string RunLabel => _spec.RunLabel;
 
         public StepDefinition[] Steps =>
@@ -247,7 +247,7 @@ namespace LemoineTools.Lemoine
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            pushLog("Simulated run — no Revit document is opened or modified.", "info");
+            pushLog("This is a demo run. It doesn't open or change your Revit model.", "info");
 
             int pass = 0, fail = 0, skip = 0;
             var log = _spec.RunLog;
