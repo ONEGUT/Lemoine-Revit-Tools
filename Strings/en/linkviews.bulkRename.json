@@ -1,0 +1,104 @@
+// linkviews.bulkRename.json — Bulk Rename tool + run-handler logs.
+// Command: BulkRenameCommand. NOTE: {Token} placeholders and default token patterns
+// stay in code. Mode/target/field display strings are externalized here but kept
+// self-consistent (the same value is used for both display and equality checks).
+{
+  "title": "Bulk Rename",
+  "runLabel": "Rename in Revit →",
+
+  "steps": {
+    "S1": "Target",
+    "S2": "Select Items",
+    "S3": "Field & Operation",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S4":        "Ready to run",
+    "itemCount": "{0} item(s)",
+    "s3":        "{0} · {1} change(s)"     // {0}=operation {1}=change count
+  },
+
+  "labels": {
+    "targetSheets":   "Sheets",
+    "targetViews":    "Views",
+    "fieldSheetName": "Sheet Name",
+    "fieldSheetNumber":"Sheet Number",
+    "fieldViewName":  "View Name",
+    "tokViewType":    "View Type",
+    "tokSeq":         "Sequence #",
+
+    "modeFindReplace":  "Find & Replace",
+    "modePrefixSuffix": "Add Prefix / Suffix",
+    "modeSequential":   "Sequential Numbering",
+    "modeToken":        "Token Pattern",
+
+    "a11yTarget":     "Rename target",
+    "a11yField":      "Field to rewrite",
+    "a11yOperation":  "Rename operation",
+    "headerTarget":   "RENAME TARGET",
+    "hintTarget":     "Views have no sheet number, so a view rename always rewrites the view Name.",
+    "itemsPicker":    "Items to rename",
+    "renamingView":   "Renaming: View Name",
+    "headerField":    "FIELD",
+    "headerOperation":"OPERATION",
+    "headerPreview":  "PREVIEW",
+
+    "findLabel":      "Find",
+    "findPlaceholder":"text to find",
+    "replaceLabel":   "Replace with",
+    "replacePlaceholder":"replacement (blank to delete)",
+    "caseSensitive":  "Case sensitive",
+    "wholeField":     "Match whole field only",
+    "findOptions":    "Find options",
+    "prefixLabel":    "Prefix",
+    "prefixPlaceholder":"text to prepend",
+    "suffixLabel":    "Suffix",
+    "suffixPlaceholder":"text to append",
+    "seqStart":       "Start",
+    "seqIncrement":   "Increment",
+    "seqPad":         "Pad digits",
+
+    "previewNone":    "No items selected.",
+    "previewCounts":  "{0} change(s) · {1} collision(s) · {2} empty",
+    "previewDash":    "—",
+    "previewLine":    "{0}  →  {1}",                  // {0}=old {1}=new
+    "sfxCollides":    "   (collides — will skip)",
+    "sfxEmpty":       "   (empty — will skip)",
+    "sfxNoChange":    "   (no change)",
+    "previewMore":    "… and {0} more"
+  },
+
+  "review": {
+    "itemTarget":  "Target",
+    "itemField":   "Field",
+    "itemMode":    "Operation",
+    "itemCount":   "Selected",
+    "itemChanges": "Will Rename",
+    "itemSkips":   "Will Skip",
+
+    "countValue": "{0} item(s)",
+    "note":       "Each selected item is renamed once. Items whose new value is unchanged, empty, or would collide with an existing/earlier value are skipped and logged.",
+    "warnCollide":"{0} would collide with an existing/earlier value",
+    "warnEmpty":  "{0} resolve to an empty value",
+    "warnSuffix": " — these will be skipped."
+  },
+
+  "log": {
+    "raising":     "Raising Revit external event…",
+    "noDoc":       "No active Revit document.",
+    "error":       "Error: {0}",
+    "nonFatal":    "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "skipGone":    "Skip — element {0} no longer exists.",      // {0} = id
+    "skipWrongType":"Skip — element {0} is not a {1}.",         // {0}=id {1}=sheet/view word
+    "wordSheet":   "sheet",
+    "wordView":    "view",
+    "nothingToDo": "Nothing to do — no valid items selected.",
+    "skipNoChange":"Skip '{0}' — no change.",                   // {0} = old value
+    "skipEmpty":   "Skip '{0}' — new value is empty.",
+    "skipInUse":   "Skip '{0}' → '{1}' — value already in use.",
+    "renamed":     "'{0}' → '{1}'",                             // {0}=old {1}=new
+    "failed":      "Failed '{0}' → '{1}': {2}",                 // {0}=old {1}=new {2}=error
+    "complete":    "Complete — {0} renamed, {1} skipped, {2} failed."
+  }
+}

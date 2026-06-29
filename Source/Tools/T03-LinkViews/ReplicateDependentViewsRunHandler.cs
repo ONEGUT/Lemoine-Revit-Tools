@@ -36,10 +36,10 @@ namespace LemoineTools.Tools.LinkViews
             try
             {
                 try { Run(doc, ref pass, ref fail, ref skip); }
-                catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+                catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log(LemoineStrings.T("linkviews.replicateDependent.log.error", ex.Message), "fail"); fail++; }
                 Progress(100, pass, fail, skip);
                 long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                if (__issues > 0) Log(LemoineStrings.T("linkviews.replicateDependent.log.nonFatal", __issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -55,14 +55,14 @@ namespace LemoineTools.Tools.LinkViews
         {
             if (SourceEntry == null || TargetEntries.Count == 0)
             {
-                Log("Nothing to do: no source or targets.", "info");
+                Log(LemoineStrings.T("linkviews.replicateDependent.log.nothingToDo"), "info");
                 return;
             }
 
             var deps = SourceEntry.Deps ?? new List<DepEntry>();
             if (deps.Count == 0)
             {
-                Log("Source view has no dependents to copy.", "info");
+                Log(LemoineStrings.T("linkviews.replicateDependent.log.noDeps"), "info");
                 return;
             }
 
@@ -80,14 +80,14 @@ namespace LemoineTools.Tools.LinkViews
                     if (cancelled) break;
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;   // falls through to the existing tx.Commit() below
                     }
 
                     View? targetView = doc.GetElement(target.ViewId) as View;
                     if (targetView == null)
                     {
-                        Log($"[SKIP] Target view not found: {target.Name}", "info");
+                        Log(LemoineStrings.T("linkviews.replicateDependent.log.skipNotFound", target.Name), "info");
                         skip += deps.Count;
                         done += deps.Count;
                         Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
@@ -97,21 +97,19 @@ namespace LemoineTools.Tools.LinkViews
                     // ── Log existing dependents on this target ─────────
                     if (target.ExistingDepCount > 0)
                     {
-                        Log($"[INFO] '{target.Name}' already has {target.ExistingDepCount} " +
-                            $"dependent view{(target.ExistingDepCount != 1 ? "s" : "")}.", "info");
+                        Log(LemoineStrings.T("linkviews.replicateDependent.log.infoExisting", target.Name, target.ExistingDepCount), "info");
                     }
 
                     if (target.OrientationWarning)
                     {
-                        Log($"[WARN] '{target.Name}' has a different view orientation — " +
-                            "crop regions may not transfer correctly.", "info");
+                        Log(LemoineStrings.T("linkviews.replicateDependent.log.warnOrient", target.Name), "info");
                     }
 
                     foreach (var dep in deps)
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                             cancelled = true;
                             break;   // breaks inner loop; outer loop guard breaks too → existing tx.Commit() runs
                         }
@@ -121,7 +119,7 @@ namespace LemoineTools.Tools.LinkViews
                         // Skip if already exists
                         if (ViewNameExists(doc, newName))
                         {
-                            Log($"[SKIP] '{newName}' already exists.", "info");
+                            Log(LemoineStrings.T("linkviews.replicateDependent.log.skipExists", newName), "info");
                             skip++;
                             done++;
                             Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
@@ -142,12 +140,12 @@ namespace LemoineTools.Tools.LinkViews
                             if (dep.HasCrop)
                                 ApplyCrop(newDep, dep, doc);
 
-                            Log($"Created: {newName}", "pass");
+                            Log(LemoineStrings.T("linkviews.replicateDependent.log.created", newName), "pass");
                             pass++;
                         }
                         catch (Exception e)
                         {
-                            Log($"[FAIL] '{newName}': {e.Message}", "fail");
+                            Log(LemoineStrings.T("linkviews.replicateDependent.log.fail", newName, e.Message), "fail");
                             fail++;
                         }
 
@@ -159,7 +157,7 @@ namespace LemoineTools.Tools.LinkViews
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} created, {skip} skipped, {fail} failed.", "pass");
+            Log(LemoineStrings.T("linkviews.replicateDependent.log.complete", pass, skip, fail), "pass");
         }
 
         // ── Helpers ───────────────────────────────────────────────────

@@ -1,0 +1,59 @@
+// linkviews.duplicate.json — Bulk Duplicate Views tool + run-handler logs.
+// Command: ViewsBulkDuplicateCommand. NOTE: duplicate-mode strings (Duplicate /
+// Duplicate with Detailing / Duplicate as Dependent) stay in code — they map to the
+// run handler's mode and are compared by value.
+{
+  "title": "Bulk Duplicate Views",
+  "runLabel": "Duplicate in Revit →",
+
+  "steps": {
+    "S1": "Source Views",
+    "S2": "Duplicate Mode",
+    "S3": "View Naming",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S4":        "Ready to run",
+    "viewCount": "{0} view(s)"
+  },
+
+  "labels": {
+    "sourceViews":     "Source views",
+    "modeHeader":      "DUPLICATE MODE",
+    "hintDuplicate":   "Copies the model view only — no view-specific annotations or detailing.",
+    "hintDetailing":   "Copies the view together with its view-specific annotations (dimensions, tags, detail lines).",
+    "hintDependent":   "Creates a dependent view that shares the parent's crop region and stays linked to it.",
+    "namePattern":     "NAME PATTERN",
+    "preview":         "PREVIEW",
+    "emptyName":       "(empty name)",
+    "exView":          "Floor Plan 01",
+    "exType":          "Floor Plan"
+  },
+
+  "review": {
+    "itemViews":   "Source views",
+    "itemMode":    "Duplicate mode",
+    "itemPattern": "Name pattern",
+    "itemTotal":   "Views to create",
+
+    "viewsValue": "{0} view(s)",
+    "totalValue": "up to {0}",
+    "note":       "Each selected view is duplicated once. Copies whose name already exists are skipped; a view that does not support the chosen duplicate mode is reported as failed.",
+    "warnSameName":"Name pattern resolves to each view's own name — every copy would collide with its source and be skipped. Add a suffix or token to differentiate."
+  },
+
+  "log": {
+    "raising":    "Raising Revit external event…",
+    "noDoc":      "No active Revit document.",
+    "error":      "Error: {0}",
+    "nonFatal":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "nothingToDo":"Nothing to do — no valid views selected.",
+    "skipEmpty":  "Skip '{0}' — empty name.",                   // {0} = view name
+    "skipExists": "Skip '{0}' (name already exists).",
+    "skipMode":   "Skip '{0}' — cannot {1}.",                   // {0}=view {1}=mode (lowercased)
+    "created":    "Created '{0}'",
+    "failed":     "Failed '{0}': {1}",                          // {0}=view {1}=error
+    "complete":   "Complete — {0} created, {1} skipped, {2} failed."
+  }
+}

@@ -1,0 +1,98 @@
+// linkviews.level.json — Bulk Views by Level tool + run-handler logs.
+// Command: LinkViewsLevelCommand. NOTE: naming-slot tokens (None/Host Level/Model
+// Name/View Type/Custom) and view-type codes (3D/FP/RCP) stay as code identifiers —
+// they drive switch/equality logic, not just display.
+{
+  "title": "Bulk Views by Level",
+  "runLabel": "Create Views in Revit →",
+
+  "steps": {
+    "S1": "Source Documents",
+    "S2": "Levels & View Types",
+    "S3": "View Naming",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S4":        "Ready to run",
+    "docsCount": "{0} document(s)",          // {0} = document count
+    "s2":        "{0} level(s) · {1}",        // {0}=level count {1}=view-type codes
+    "s3Default": "Default"
+  },
+
+  "labels": {
+    "geoHeader":         "VIEW GEOMETRY",
+    "bufferXY":          "XY buffer (ft)",
+    "bufferXYHint":      "Margin added around each building cluster crop box.",
+    "clusterThreshold":  "Cluster threshold (ft)",
+    "clusterThresholdHint":"Maximum room-edge gap for union-find building cluster merging.",
+    "cutOffset":         "Cut plane offset (ft)",
+    "cutOffsetHint":     "Height above level elevation for the floor/ceiling plan cut plane.",
+
+    "noLevels":          "No levels found in the selected documents.",
+    "scanningRooms":     "Scanning rooms in selected documents…",
+    "scanError":         "Scan error: {0}",
+    "noLevelsWithRooms": "No levels with placed rooms found. Enable \"Show all levels\" below to see all model levels.",
+    "levelWithRooms":    "{0}   (Elev {1:F2} ft · {2} room(s))",   // {0}=name {1}=elev {2}=rooms
+    "levelNoRooms":      "{0}   (Elev {1:F2} ft)",
+
+    "showAllLabel":      "Show all levels",
+    "showAllDesc":       "Include levels without placed rooms (fallback)",
+    "typeHeader":        "VIEW TYPES TO CREATE",
+    "type3dLabel":       "3D Views",
+    "type3dDesc":        "Isometric view with section box per cluster",
+    "typeFpLabel":       "Floor Plans",
+    "typeFpDesc":        "Plan view with crop box and view range per cluster",
+    "typeRcpLabel":      "Ceiling Plans",
+    "typeRcpDesc":       "RCP with crop box and view range per cluster",
+    "optionsHeader":     "VIEW OPTIONS",
+    "colSubDiscipline":  "Sub Discipline",
+    "colViewTemplate":   "View Template",
+    "templateNone":      "(none)",
+    "printSetsLabel":    "Create print sets",
+    "printSetsDesc":     "Add created views to Coordination print sets (3D Views, Floor Plans, Ceiling Plans)",
+
+    "slotFront":         "Front",
+    "slotCenter":        "Center",
+    "slotEnd":           "End",
+    "customPlaceholder": "(custom)",
+    "bldgLabel":         "Bldg label",
+    "bldgHint":          " — used when multiple building clusters found per level",
+    "appendTypeLabel":   "Append view type",
+    "appendTypeDesc":    "Append 3D / FP / RCP as the final name segment",
+    "previewHeader":     "PREVIEW",
+    "multiClusterSuffix":"{0}\n{1}  (multi-cluster)"   // {0}=single {1}=multi example
+  },
+
+  "review": {
+    "itemDocs":   "Source documents",
+    "itemLevels": "Levels selected",
+    "itemTypes":  "View types",
+    "itemMin":    "Min. views expected",
+
+    "docsValue":   "{0} document(s)",
+    "levelsValue": "{0} level(s)",
+    "minValue":    "≥ {0}  (more with multi-building levels)",
+    "note":        "Creates cropped coordination views per level and building cluster. Levels with rooms spread across separate building footprints will generate one view per cluster."
+  },
+
+  "log": {
+    "raising":          "Raising Revit external event…",
+    "error":            "Error: {0}",
+    "nonFatalIssues":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "no3dType":         "No 3D ViewFamilyType found — 3D views will be skipped.",
+    "noFpType":         "No FloorPlan ViewFamilyType found — floor plans will be skipped.",
+    "noRcpType":        "No CeilingPlan ViewFamilyType found — ceiling plans will be skipped.",
+    "skipExists":       "Skip '{0}' (exists)",                     // {0} = view name
+    "created3d":        "Created 3D: {0}",
+    "createdFp":        "Created FP: {0}",
+    "createdRcp":       "Created RCP: {0}",
+    "created3dNoRooms": "Created 3D (no rooms): {0}",
+    "createdFpNoRooms": "Created FP (no rooms): {0}",
+    "createdRcpNoRooms":"Created RCP (no rooms): {0}",
+    "fail3d":           "[3D] '{0}': {1}",                          // {0}=name {1}=error
+    "failFp":           "[FP] '{0}': {1}",
+    "failRcp":          "[RCP] '{0}': {1}",
+    "complete":         "Complete — {0} created, {1} skipped, {2} failed."
+  }
+}

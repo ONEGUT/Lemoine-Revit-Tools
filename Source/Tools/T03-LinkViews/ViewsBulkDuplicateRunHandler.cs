@@ -40,7 +40,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 if (doc == null)
                 {
-                    Log("No active Revit document.", "fail");
+                    Log(LemoineStrings.T("linkviews.duplicate.log.noDoc"), "fail");
                     Complete(0, 1, 0);
                     return;
                 }
@@ -49,13 +49,13 @@ namespace LemoineTools.Tools.LinkViews
                 catch (Exception ex)
                 {
                     LemoineLog.Error("Bulk duplicate views: run aborted", ex);
-                    Log($"Error: {ex.Message}", "fail");
+                    Log(LemoineStrings.T("linkviews.duplicate.log.error", ex.Message), "fail");
                     fail++;
                 }
 
                 Progress(100, pass, fail, skip);
                 long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                if (__issues > 0) Log(LemoineStrings.T("linkviews.duplicate.log.nonFatal", __issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.LinkViews
 
             if (views.Count == 0)
             {
-                Log("Nothing to do — no valid views selected.", "info");
+                Log(LemoineStrings.T("linkviews.duplicate.log.nothingToDo"), "info");
                 return;
             }
 
@@ -100,7 +100,7 @@ namespace LemoineTools.Tools.LinkViews
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;   // falls through to the existing tx.Commit() below
                     }
 
@@ -116,19 +116,19 @@ namespace LemoineTools.Tools.LinkViews
 
                     if (string.IsNullOrWhiteSpace(name))
                     {
-                        Log($"Skip '{view.Name}' — empty name.", "info");
+                        Log(LemoineStrings.T("linkviews.duplicate.log.skipEmpty", view.Name), "info");
                         skip++;
                         continue;
                     }
                     if (usedNames.Contains(name))
                     {
-                        Log($"Skip '{name}' (name already exists).", "info");
+                        Log(LemoineStrings.T("linkviews.duplicate.log.skipExists", name), "info");
                         skip++;
                         continue;
                     }
                     if (!view.CanViewBeDuplicated(option))
                     {
-                        Log($"Skip '{view.Name}' — cannot {Mode.ToLowerInvariant()}.", "info");
+                        Log(LemoineStrings.T("linkviews.duplicate.log.skipMode", view.Name, Mode.ToLowerInvariant()), "info");
                         skip++;
                         continue;
                     }
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.LinkViews
                         dup.Name = name;
 
                         usedNames.Add(name);
-                        Log($"Created '{name}'", "pass");
+                        Log(LemoineStrings.T("linkviews.duplicate.log.created", name), "pass");
                         pass++;
                     }
                     catch (Exception e)
@@ -159,7 +159,7 @@ namespace LemoineTools.Tools.LinkViews
                                     $"Bulk duplicate views: delete orphan duplicate {newId.Value}", delEx);
                             }
                         }
-                        Log($"Failed '{view.Name}': {e.Message}", "fail");
+                        Log(LemoineStrings.T("linkviews.duplicate.log.failed", view.Name, e.Message), "fail");
                         fail++;
                     }
                 }
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.LinkViews
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} created, {skip} skipped, {fail} failed.", "pass");
+            Log(LemoineStrings.T("linkviews.duplicate.log.complete", pass, skip, fail), "pass");
         }
 
         private static ViewDuplicateOption MapMode(string mode)
