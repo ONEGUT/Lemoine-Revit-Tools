@@ -1,0 +1,60 @@
+// autofilters.applyFilters.json — Apply Filters to Views tool + handler logs.
+// Command: ApplyFiltersToViewsLaunchCommand / ApplyFiltersToViewsEventHandler.
+{
+  "title": "Apply Filters to Views",
+  "runLabel": "Apply to Views →",
+
+  "steps": {
+    "S1": "Select Filters",
+    "S2": "Select Views",
+    "S3": "Options",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S1": "{0} filter(s) selected",   // {0} = filter count
+    "S2": "{0} view(s) selected",     // {0} = view count
+    "S3": "Ready to run"
+  },
+
+  "labels": {
+    "noFilters":     "No view filters found in this project. Run Auto Filters first.",
+    "noViews":       "No views supporting graphic overrides found in this project.",
+    "pickerName":    "Target views",
+    "overwriteLabel":"Overwrite existing overrides",
+    "overwriteDesc": "Re-apply color overrides to views that already have the filter. Off = skip filters already present on a view.",
+    "colorLabel":    "Apply color overrides",
+    "colorDesc":     "Set fill and line colors from the MEP color map. Off = add filters without any graphic override."
+  },
+
+  "review": {
+    "itemFilters":   "Filters",
+    "itemViews":     "Target views",
+    "itemOverwrite": "Overwrite",
+    "itemColor":     "Color overrides",
+
+    "filtersValue": "{0} selected",   // {0} = filter count
+    "viewsValue":   "{0} selected",   // {0} = view count
+    "overwriteYes": "Yes — replace overrides",
+    "overwriteNo":  "No — skip if present",
+    "colorYes":     "Apply from color map",
+    "colorNo":      "None"
+  },
+
+  "log": {
+    "applying":       "Applying {0} filter(s) to {1} view(s)…",   // {0}=filters {1}=views
+    "error":          "Error: {0}",
+    "noSelection":    "No filters or views selected.",
+    "droppedViews":   "{0} selected view(s) were skipped (deleted or do not support graphic overrides).",
+    "noViewsSupport": "None of the selected views support graphic overrides.",
+    "warnEntry":      "'{0}': {1}",                              // {0}=filter name {1}=warning
+    "synced":         "Synced {0} filter definition(s) from current rules.",
+    "filterNotFound": "Filter not found in project: '{0}'",      // {0} = filter name
+    "noneExist":      "None of the selected filters exist in this project.",
+    "beginning":      "{0} filter(s), {1} view(s) — beginning apply…",
+    "noRuleOwns":     "No current rule owns '{0}' — added without overrides.",   // {0} = filter name
+    "applyFailed":    "'{0}' on '{1}': {2}",                     // {0}=filter {1}=view {2}=error
+    "complete":       "Complete — {0} applied, {1} skipped (already present), {2} failed.",
+    "linkByLinkedView":"⚠ Link '{0}' is shown 'By Linked View' in '{1}' — host filters won't affect it. Set its display to 'By Host View' to apply overrides."
+  }
+}

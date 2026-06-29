@@ -43,7 +43,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters legend: run aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters legend: run aborted", ex); Log(LemoineStrings.T("autofilters.legend.log.error", ex.Message), "fail");
                 fail++;
             }
 
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.AutoFilters
         {
             if (!view.AreGraphicsOverridesAllowed())
             {
-                Log($"Active view '{view.Name}' does not support graphic overrides.", "fail");
+                Log(LemoineStrings.T("autofilters.legend.log.noOverrides", view.Name), "fail");
                 fail++;
                 return;
             }
@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.AutoFilters
             var filterIds = view.GetFilters().ToList();
             if (filterIds.Count == 0)
             {
-                Log($"No filters applied to '{view.Name}'. Run Auto Filters first.", "fail");
+                Log(LemoineStrings.T("autofilters.legend.log.noFilters", view.Name), "fail");
                 fail++;
                 return;
             }
@@ -126,7 +126,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (rows.Count == 0)
             {
-                Log("No usable filter entries on active view.", "fail");
+                Log(LemoineStrings.T("autofilters.legend.log.noUsable"), "fail");
                 fail++;
                 return;
             }
@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (existingLegend == null)
             {
-                Log("No Legend view found in project. Create one in Revit (View → New Legend) then re-run.", "fail");
+                Log(LemoineStrings.T("autofilters.legend.log.noLegend"), "fail");
                 fail++;
                 return;
             }
@@ -170,7 +170,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (baseFRT == null || textTypeId == ElementId.InvalidElementId)
             {
-                Log("Missing required project element (FilledRegionType or TextNoteType).", "fail");
+                Log(LemoineStrings.T("autofilters.legend.log.missingType"), "fail");
                 fail++;
                 return;
             }
@@ -181,10 +181,10 @@ namespace LemoineTools.Tools.AutoFilters
                 .Where(v => v.ViewType == ViewType.Legend)
                 .Select(v => v.Name).ToHashSet();
 
-            string legendName = "Filter Color Legend";
+            string legendName = LemoineStrings.T("autofilters.legend.labels.legendName");
             int n = 1;
             while (allLegendNames.Contains(legendName))
-                legendName = $"Filter Color Legend ({++n})";
+                legendName = LemoineStrings.T("autofilters.legend.labels.legendNameN", ++n);
 
             Progress(40, pass, fail, skip);
 
@@ -212,7 +212,7 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {swatchesDone} of {needed.Count} swatch type(s) processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", swatchesDone, needed.Count), "warn");
                         break;
                     }
                     swatchesDone++;
@@ -238,7 +238,7 @@ namespace LemoineTools.Tools.AutoFilters
                     }
                     catch (Exception ex)
                     {
-                        log.Add($"Swatch type failed: {ex.Message}");
+                        log.Add(LemoineStrings.T("autofilters.legend.log.swatchTypeFailed", ex.Message));
                     }
                 }
 
@@ -249,7 +249,7 @@ namespace LemoineTools.Tools.AutoFilters
                 View? dv = doc.GetElement(newLegendId) as View;
                 if (dv == null)
                 {
-                    Log("Failed to duplicate the template legend view.", "fail");
+                    Log(LemoineStrings.T("autofilters.legend.log.dupFailed"), "fail");
                     fail++;
                     tx.Commit();
                     return;
@@ -276,7 +276,7 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {rowsDone} of {totalRows} legend row(s) processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", rowsDone, totalRows), "warn");
                             cancelled = true;
                             break;
                         }
@@ -297,7 +297,7 @@ namespace LemoineTools.Tools.AutoFilters
                             }
                             catch (Exception ex)
                             {
-                                log.Add($"Swatch '{val}': {ex.Message}");
+                                log.Add(LemoineStrings.T("autofilters.legend.log.swatchFailed", val, ex.Message));
                                 fail++;
                             }
                         }
@@ -320,8 +320,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
 
             foreach (var l in log) Log(l, "info");
-            Log($"Created legend view '{legendName}' — {pass} swatch row(s) drawn across "
-              + $"{groups.Count} group(s), {fail} failed.", fail > 0 ? "fail" : "pass");
+            Log(LemoineStrings.T("autofilters.legend.log.created", legendName, pass, groups.Count, fail), fail > 0 ? "fail" : "pass");
         }
 
         // ── Helpers ─────────────────────────────────────────────────────────────

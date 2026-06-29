@@ -24,15 +24,15 @@ namespace LemoineTools.Tools.AutoFilters
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── ILemoineTool identity ──────────────────────────────────────────────
-        public string Title    => "Apply Filters to Views";
-        public string RunLabel => "Apply to Views →";
+        public string Title    => LemoineStrings.T("autofilters.applyFilters.title");
+        public string RunLabel => LemoineStrings.T("autofilters.applyFilters.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Filters",     required: true),
-            new StepDefinition("S2", "Select Views",       required: true),
-            new StepDefinition("S3", "Options",            required: false),
-            new StepDefinition("S4", "Review & Run",       required: false),
+            new StepDefinition("S1", LemoineStrings.T("autofilters.applyFilters.steps.S1"),     required: true),
+            new StepDefinition("S2", LemoineStrings.T("autofilters.applyFilters.steps.S2"),       required: true),
+            new StepDefinition("S3", LemoineStrings.T("autofilters.applyFilters.steps.S3"),            required: false),
+            new StepDefinition("S4", LemoineStrings.T("autofilters.applyFilters.steps.S4"),       required: false),
         };
 
         // ── State ──────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ namespace LemoineTools.Tools.AutoFilters
                     // FIX: empty-state text uses LemoineText + italic, not LemoineTextDim
                     var none = new TextBlock
                     {
-                        Text         = "No ParameterFilterElements found in this project. Run Auto Filters first.",
+                        Text         = LemoineStrings.T("autofilters.applyFilters.labels.noFilters"),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle    = FontStyles.Italic,
                     };
@@ -121,7 +121,7 @@ namespace LemoineTools.Tools.AutoFilters
                     // FIX: empty-state text uses LemoineText + italic, not LemoineTextDim
                     var none = new TextBlock
                     {
-                        Text         = "No views supporting graphic overrides found in this project.",
+                        Text         = LemoineStrings.T("autofilters.applyFilters.labels.noViews"),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle    = FontStyles.Italic,
                     };
@@ -134,7 +134,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var picker = new LemoineBrowserTreePicker
                 {
                     Height         = 300,
-                    AccessibleName = "Target views",
+                    AccessibleName = LemoineStrings.T("autofilters.applyFilters.labels.pickerName"),
                 };
                 // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
                 picker.SelectionChanged += ids =>
@@ -159,17 +159,15 @@ namespace LemoineTools.Tools.AutoFilters
                     new ToggleItem
                     {
                         Id        = "overwrite",
-                        Label     = "Overwrite Existing Overrides",
-                        Desc      = "Re-apply color overrides to views that already have the filter. " +
-                                    "Off = skip filters already present on a view.",
+                        Label     = LemoineStrings.T("autofilters.applyFilters.labels.overwriteLabel"),
+                        Desc      = LemoineStrings.T("autofilters.applyFilters.labels.overwriteDesc"),
                         DefaultOn = false,
                     },
                     new ToggleItem
                     {
                         Id        = "color",
-                        Label     = "Apply Color Overrides",
-                        Desc      = "Set fill and line colors from the MEP color map. " +
-                                    "Off = add filters without any graphic override.",
+                        Label     = LemoineStrings.T("autofilters.applyFilters.labels.colorLabel"),
+                        Desc      = LemoineStrings.T("autofilters.applyFilters.labels.colorDesc"),
                         DefaultOn = true,
                     },
                 }, _optionState.Count > 0 ? _optionState : null);
@@ -192,18 +190,18 @@ namespace LemoineTools.Tools.AutoFilters
         // ── ILemoineReviewable (P3) — framework renders the final review step ─
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("filters",   "Filters"),
-            ("views",     "Target Views"),
-            ("overwrite", "Overwrite"),
-            ("color",     "Color Overrides"),
+            ("filters",   LemoineStrings.T("autofilters.applyFilters.review.itemFilters")),
+            ("views",     LemoineStrings.T("autofilters.applyFilters.review.itemViews")),
+            ("overwrite", LemoineStrings.T("autofilters.applyFilters.review.itemOverwrite")),
+            ("color",     LemoineStrings.T("autofilters.applyFilters.review.itemColor")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["filters"]   = $"{_selectedFilters.Count} selected",
-            ["views"]     = $"{_selectedViewIds.Count} selected",
-            ["overwrite"] = GetOpt("overwrite") ? "Yes — replace overrides" : "No — skip if present",
-            ["color"]     = GetOpt("color")     ? "Apply from color map"    : "None",
+            ["filters"]   = LemoineStrings.T("autofilters.applyFilters.review.filtersValue", _selectedFilters.Count),
+            ["views"]     = LemoineStrings.T("autofilters.applyFilters.review.viewsValue", _selectedViewIds.Count),
+            ["overwrite"] = GetOpt("overwrite") ? LemoineStrings.T("autofilters.applyFilters.review.overwriteYes") : LemoineStrings.T("autofilters.applyFilters.review.overwriteNo"),
+            ["color"]     = GetOpt("color")     ? LemoineStrings.T("autofilters.applyFilters.review.colorYes")    : LemoineStrings.T("autofilters.applyFilters.review.colorNo"),
         };
 
         public IList<string>? ReviewChips   => null;
@@ -219,9 +217,9 @@ namespace LemoineTools.Tools.AutoFilters
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return $"{_selectedFilters.Count} filter(s) selected";
-            if (stepId == "S2") return $"{_selectedViewIds.Count} view(s) selected";
-            if (stepId == "S3") return "Ready to run";
+            if (stepId == "S1") return LemoineStrings.T("autofilters.applyFilters.summaries.S1", _selectedFilters.Count);
+            if (stepId == "S2") return LemoineStrings.T("autofilters.applyFilters.summaries.S2", _selectedViewIds.Count);
+            if (stepId == "S3") return LemoineStrings.T("autofilters.applyFilters.summaries.S3");
             return "—";
         }
 
@@ -239,7 +237,7 @@ namespace LemoineTools.Tools.AutoFilters
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;
 
-            pushLog($"Applying {_selectedFilters.Count} filter(s) to {_selectedViewIds.Count} view(s)…", "info");
+            pushLog(LemoineStrings.T("autofilters.applyFilters.log.applying", _selectedFilters.Count, _selectedViewIds.Count), "info");
             _event.Raise();
         }
 

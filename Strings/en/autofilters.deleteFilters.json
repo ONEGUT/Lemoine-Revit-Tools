@@ -1,0 +1,42 @@
+// autofilters.deleteFilters.json — Remove Filters from View tool + handler logs.
+// Command: ApplyFiltersToViewsLaunchCommand / DeleteFiltersEventHandler.
+{
+  "title": "Remove Filters from View",
+  "runLabel": "Remove Selected →",
+
+  "steps": {
+    "S1": "Select Filters",
+    "S2": "Review & Run"
+  },
+
+  "summaries": {
+    "S1": "{0} filter(s) selected",   // {0} = selected count
+    "S2": "Ready to run"
+  },
+
+  "labels": {
+    "noFilters":          "No filters are currently applied to the active view.",
+    "activeViewFallback": "Active View"   // shown in review when the view name is unavailable
+  },
+
+  "review": {
+    "itemView":      "View",
+    "itemRemove":    "Filters to remove",
+    "itemRemaining": "Remaining",
+    "itemAction":    "Action",
+
+    "removeValue":    "{0} selected",       // {0} = count to remove
+    "remainingValue": "{0} will stay",      // {0} = count remaining
+    "action":         "Detach from view (not deleted)",
+    "note":           "Selected filters are detached from the active view only — they are NOT deleted from the project and can be re-applied later."
+  },
+
+  "log": {
+    "removing":     "Removing {0} filter(s) from view…",     // {0} = count
+    "noneSelected": "No filters selected.",
+    "notApplied":   "— '{0}' is not applied to this view — skipped.",   // {0} = filter name
+    "removeFailed": "Failed to remove filter {0}: {1}.",     // {0}=id {1}=error
+    "complete":     "Complete — {0} removed, {1} failed, {2} skipped (not on this view).",
+    "error":        "Error: {0}"
+  }
+}

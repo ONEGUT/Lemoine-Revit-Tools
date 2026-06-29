@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 if (SelectedFilterNames == null || SelectedFilterNames.Count == 0)
                 {
-                    Log("No filters selected.", "fail");
+                    Log(LemoineStrings.T("autofilters.deleteFilters.log.noneSelected"), "fail");
                     fail++;
                     Progress(100, pass, fail, skip);
                     Complete(pass, fail, skip);
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.AutoFilters
                 // accounts for every filter the user selected.
                 foreach (var n in SelectedFilterNames.Where(n => !appliedFilters.ContainsKey(n)))
                 {
-                    Log($"— '{n}' is not applied to this view — skipped.", "info");
+                    Log(LemoineStrings.T("autofilters.deleteFilters.log.notApplied", n), "info");
                     skip++;
                 }
 
@@ -76,7 +76,7 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                             break;
                         }
 
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.AutoFilters
                         }
                         catch (Exception ex)
                         {
-                            Log($"Failed to remove filter {id}: {ex.Message}", "fail");
+                            Log(LemoineStrings.T("autofilters.deleteFilters.log.removeFailed", id, ex.Message), "fail");
                             fail++;
                         }
                         done++;
@@ -97,12 +97,12 @@ namespace LemoineTools.Tools.AutoFilters
                     tx.Commit();
                 }
 
-                Log($"Complete — {pass} removed, {fail} failed, {skip} skipped (not on this view).",
+                Log(LemoineStrings.T("autofilters.deleteFilters.log.complete", pass, fail, skip),
                     fail > 0 ? "fail" : "pass");
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: delete filters aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: delete filters aborted", ex); Log(LemoineStrings.T("autofilters.deleteFilters.log.error", ex.Message), "fail");
                 fail++;
             }
             finally

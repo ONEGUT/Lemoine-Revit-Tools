@@ -117,7 +117,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: discover aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: discover aborted", ex); Log(LemoineStrings.T("autofilters.discover.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -179,21 +179,21 @@ namespace LemoineTools.Tools.AutoFilters
             foreach (var link in specsByLink)
             {
                 int catCount = link.Specs.Count;
-                Log($"Queued  {link.TradeName}  ({catCount} categor{(catCount == 1 ? "y" : "ies")})", "info");
+                Log(LemoineStrings.T("autofilters.discover.log.queued", link.TradeName, catCount), "info");
             }
 
             foreach (var link in specsByLink)
             {
                 if (cancelled) break;
 
-                Log($"→  Scanning {link.TradeName}…", "info");
+                Log(LemoineStrings.T("autofilters.discover.log.scanningLink", link.TradeName), "info");
                 int resultsBefore = results.Count;
 
                 foreach (var spec in link.Specs)
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         cancelled = true;
                         break;
                     }
@@ -201,18 +201,18 @@ namespace LemoineTools.Tools.AutoFilters
                     done++;
                     Progress((int)(5 + 90.0 * done / Math.Max(1, total)), pass, fail, skip);
 
-                    Log($"     {spec.OstCategory}", "info");
+                    Log(LemoineStrings.T("autofilters.discover.log.scanCategory", spec.OstCategory), "info");
 
                     if (!Enum.TryParse<BuiltInCategory>(spec.OstCategory, false, out var bic))
                     {
-                        Log($"     · unknown category — skipped", "info");
+                        Log(LemoineStrings.T("autofilters.discover.log.unknownCategory"), "info");
                         skip++;
                         continue;
                     }
 
                     if (!linkDocMap.TryGetValue(spec.LinkId, out var scanDoc))
                     {
-                        Log($"     · link document not found — skipped", "info");
+                        Log(LemoineStrings.T("autofilters.discover.log.linkDocNotFound"), "info");
                         skip++;
                         continue;
                     }
@@ -279,11 +279,11 @@ namespace LemoineTools.Tools.AutoFilters
                 }
 
                 int linkRules = results.Count - resultsBefore;
-                Log($"   ✓  {link.TradeName} — {linkRules} rule(s) found", linkRules > 0 ? "pass" : "info");
+                Log(LemoineStrings.T("autofilters.discover.log.linkComplete", link.TradeName, linkRules), linkRules > 0 ? "pass" : "info");
             }
 
             ScanResults = results;
-            Log($"Scan complete — {pass} rule(s) discovered, {skip} skipped.", pass > 0 ? "pass" : "info");
+            Log(LemoineStrings.T("autofilters.discover.log.scanComplete", pass, skip), pass > 0 ? "pass" : "info");
         }
 
         /// <summary>
@@ -378,7 +378,7 @@ namespace LemoineTools.Tools.AutoFilters
 
         private void RunCommit(ref int pass, ref int fail, ref int skip)
         {
-            Log("Saving rules to Auto Filters settings…", "info");
+            Log(LemoineStrings.T("autofilters.discover.log.savingRules"), "info");
             var settings = AutoFiltersSettings.Instance;
 
             int committed = 0;
@@ -386,7 +386,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user — {committed} of {CommitSpecs.Count} processed; work so far preserved.", "warn");
+                    Log(LemoineStrings.T("common.log.stoppedByUser", committed, CommitSpecs.Count), "warn");
                     break;
                 }
                 committed++;
@@ -436,12 +436,12 @@ namespace LemoineTools.Tools.AutoFilters
 
                         if (added > 0)
                         {
-                            Log($"Merged into existing '{spec.RuleName}' ({added} categor{(added == 1 ? "y" : "ies")}/keyword(s)).", "pass");
+                            Log(LemoineStrings.T("autofilters.discover.log.merged", spec.RuleName, added), "pass");
                             pass++;
                         }
                         else
                         {
-                            Log($"'{spec.RuleName}' already exists in '{spec.TradeName}' — skipped.", "info");
+                            Log(LemoineStrings.T("autofilters.discover.log.alreadyExists", spec.RuleName, spec.TradeName), "info");
                             skip++;
                         }
                         continue;
@@ -478,12 +478,12 @@ namespace LemoineTools.Tools.AutoFilters
                     }
 
                     trade.Rules.Add(rule);
-                    Log($"Added '{rule.Name}' → '{trade.Label}'", "pass");
+                    Log(LemoineStrings.T("autofilters.discover.log.added", rule.Name, trade.Label), "pass");
                     pass++;
                 }
                 catch (Exception ex)
                 {
-                    Log($"Failed to commit '{spec.RuleName}': {ex.Message}", "fail");
+                    Log(LemoineStrings.T("autofilters.discover.log.commitFailed", spec.RuleName, ex.Message), "fail");
                     fail++;
                 }
             }
@@ -495,7 +495,7 @@ namespace LemoineTools.Tools.AutoFilters
             // never treats two discovered trades as one.
             AutoFiltersSettings.EnsureUniqueTradeIds(settings.Trades);
             settings.Save();
-            Log($"Done — {pass} rule(s) added, {skip} skipped, {fail} failed.", pass > 0 ? "pass" : "info");
+            Log(LemoineStrings.T("autofilters.discover.log.done", pass, skip, fail), pass > 0 ? "pass" : "info");
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────

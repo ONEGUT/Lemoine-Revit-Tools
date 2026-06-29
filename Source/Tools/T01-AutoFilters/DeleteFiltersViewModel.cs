@@ -20,13 +20,13 @@ namespace LemoineTools.Tools.AutoFilters
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── ILemoineTool identity ──────────────────────────────────────────────
-        public string Title    => "Remove Filters from View";
-        public string RunLabel => "Remove Selected →";
+        public string Title    => LemoineStrings.T("autofilters.deleteFilters.title");
+        public string RunLabel => LemoineStrings.T("autofilters.deleteFilters.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Filters", required: true),
-            new StepDefinition("S2", "Review & Run",   required: false),
+            new StepDefinition("S1", LemoineStrings.T("autofilters.deleteFilters.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("autofilters.deleteFilters.steps.S2"),   required: false),
         };
 
         // ── State ──────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ namespace LemoineTools.Tools.AutoFilters
             _handler        = handler;
             _event          = externalEvent;
             _allFilterNames = filterNames ?? new List<string>();
-            _viewName       = viewName    ?? "Active View";
+            _viewName       = viewName    ?? LemoineStrings.T("autofilters.deleteFilters.labels.activeViewFallback");
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -76,7 +76,7 @@ namespace LemoineTools.Tools.AutoFilters
                     // FIX: empty-state text uses LemoineText + italic, not LemoineTextDim
                     var none = new TextBlock
                     {
-                        Text         = "No filters are currently applied to the active view.",
+                        Text         = LemoineStrings.T("autofilters.deleteFilters.labels.noFilters"),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle    = FontStyles.Italic,
                     };
@@ -110,23 +110,22 @@ namespace LemoineTools.Tools.AutoFilters
                 // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("view",      "View"),
-            ("remove",    "Filters to Remove"),
-            ("remaining", "Remaining"),
-            ("action",    "Action"),
+            ("view",      LemoineStrings.T("autofilters.deleteFilters.review.itemView")),
+            ("remove",    LemoineStrings.T("autofilters.deleteFilters.review.itemRemove")),
+            ("remaining", LemoineStrings.T("autofilters.deleteFilters.review.itemRemaining")),
+            ("action",    LemoineStrings.T("autofilters.deleteFilters.review.itemAction")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["view"]      = _viewName,
-            ["remove"]    = $"{_selectedNames.Count} selected",
-            ["remaining"] = $"{_allFilterNames.Count - _selectedNames.Count} will stay",
-            ["action"]    = "Detach from view (not deleted)",
+            ["remove"]    = LemoineStrings.T("autofilters.deleteFilters.review.removeValue", _selectedNames.Count),
+            ["remaining"] = LemoineStrings.T("autofilters.deleteFilters.review.remainingValue", _allFilterNames.Count - _selectedNames.Count),
+            ["action"]    = LemoineStrings.T("autofilters.deleteFilters.review.action"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Selected filters will be detached from the active view only — they " +
-            "will NOT be deleted from the project and can be re-applied later.";
+        public string?        ReviewNote    => LemoineStrings.T("autofilters.deleteFilters.review.note");
         public string?        ReviewWarning => null;
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -140,8 +139,8 @@ namespace LemoineTools.Tools.AutoFilters
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return $"{_selectedNames.Count} filter(s) selected";
-            if (stepId == "S2") return "Ready to run";
+            if (stepId == "S1") return LemoineStrings.T("autofilters.deleteFilters.summaries.S1", _selectedNames.Count);
+            if (stepId == "S2") return LemoineStrings.T("autofilters.deleteFilters.summaries.S2");
             return "—";
         }
 
@@ -155,7 +154,7 @@ namespace LemoineTools.Tools.AutoFilters
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;
 
-            pushLog($"Removing {_selectedNames.Count} filter(s) from view…", "info");
+            pushLog(LemoineStrings.T("autofilters.deleteFilters.log.removing", _selectedNames.Count), "info");
             _event.Raise();
         }
     }

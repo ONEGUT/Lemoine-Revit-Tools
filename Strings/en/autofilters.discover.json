@@ -1,0 +1,82 @@
+// autofilters.discover.json — Discover Rules tool window + handler logs.
+// Command: DiscoverLaunchCommand / DiscoverEventHandler. Scans linked models to
+// discover trade rules, then commits them to Auto Filters.
+// NOTE: category-group labels and scan-mode strings are NOT here — they are matched
+// against Revit's category map, so they stay as code identifiers.
+{
+  "title": "Discover Rules",
+  "runLabel": "Commit Rules →",
+
+  "steps": {
+    "S1": "Select Links",
+    "S2": "Configure Links",
+    "S3": "Scanning",
+    "S4": "Review Rules",
+    "S5": "Confirm & Commit"
+  },
+
+  "summaries": {
+    "s1None":       "No links selected",
+    "s1Multi":      "{0} link(s): {1}",          // {0}=count {1}=trade names
+    "s2None":       "No links configured",
+    "s2Count":      "{0} link(s) configured",
+    "s3Found":      "{0} rule(s) found",
+    "s3NotScanned": "Not yet scanned",
+    "s4Selected":   "{0} of {1} rule(s) selected"
+  },
+
+  "labels": {
+    "confirmS2":      "Discover Rules →",         // S2 Confirm button label
+    "noteS1":         "Select which loaded Revit links to scan. Each link produces one trade.",
+    "noLinks":        "⚠  No loaded Revit links found in the active document.",
+    "trade":          "Trade:",
+    "noteS2":         "For each link, pick the categories to scan and configure the scan parameter. Then click Discover Rules.",
+    "noLinksSelected":"⚠  No links selected. Go back to Step 1 and select at least one link.",
+    "selectCats":     "Select categories above to configure the scan.",
+    "colCategory":    "Category",
+    "colParameter":   "Parameter",
+    "wholeCategory":  "Whole Category",
+    "paramWarnTip":   "This parameter may not resolve in all documents.\nKnown-safe: System Classification, Type Name, Family Name, Fabrication Service, Structural Material.",
+    "noRules":        "Run the scan in Step 2 to see discovered rules here.",
+    "noRulesFound":   "⚠  No rules discovered. Try a different scan mode or check your link selection.",
+    "rulesDiscovered":"{0} rule(s) discovered. Check to include, click the color swatch to change color, double-click the name to rename.",
+    "colRuleName":    "Rule Name",
+    "colCount":       "Count",
+    "createLabel":    "Create filters in project after commit",
+    "createDesc":     "Build the filter elements for the committed rules right away. Off = only save rules; create them later from Auto Filters.",
+    "noCreateWarn":   "⚠  Existing Revit filter elements are not updated automatically. After committing, run 'Auto Filters' to apply updated rules to your views."
+  },
+
+  "status": {
+    "waiting":           "Waiting for scan to start…",
+    "scanning":          "● Scanning…",
+    "scanningPct":       "● Scanning… {0}%",            // {0} = percent
+    "scanCompleteFound": "● Scan complete — {0} rule(s) found",
+    "scanCompleteNone":  "● Scan complete — no rules found"
+  },
+
+  "review": {
+    "itemTotal":   "Total rules",
+    "itemInclude": "To commit",
+    "itemSkip":    "To skip",
+    "itemTrades":  "Trades affected"
+  },
+
+  "log": {
+    "creatingFilters": "Creating filter elements in project…",
+    "error":           "Error: {0}",
+    "queued":          "Queued  {0}  ({1} categor(ies))",   // {0}=trade {1}=category count
+    "scanningLink":    "→  Scanning {0}…",                   // {0} = trade
+    "scanCategory":    "     {0}",                           // {0} = OST category
+    "unknownCategory": "     · unknown category — skipped",
+    "linkDocNotFound": "     · link document not found — skipped",
+    "linkComplete":    "   ✓  {0} — {1} rule(s) found",      // {0}=trade {1}=count
+    "scanComplete":    "Scan complete — {0} rule(s) discovered, {1} skipped.",
+    "savingRules":     "Saving rules to Auto Filters settings…",
+    "merged":          "Merged into existing '{0}' ({1} categor(ies)/keyword(s)).",
+    "alreadyExists":   "'{0}' already exists in '{1}' — skipped.",
+    "added":           "Added '{0}' → '{1}'",
+    "commitFailed":    "Failed to commit '{0}': {1}",
+    "done":            "Done — {0} rule(s) added, {1} skipped, {2} failed."
+  }
+}
