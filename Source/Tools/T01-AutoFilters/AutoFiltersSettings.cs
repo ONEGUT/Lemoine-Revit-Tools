@@ -113,7 +113,7 @@ namespace LemoineTools.Tools.AutoFilters
             set
             {
                 if (!string.IsNullOrEmpty(value) && !BuiltInCategories.Contains(value!))
-                    BuiltInCategories.Add(value);
+                    BuiltInCategories.Add(value!);
             }
         }
 

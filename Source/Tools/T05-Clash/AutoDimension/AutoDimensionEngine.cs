@@ -865,7 +865,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
             try
             {
                 var dt = doc.GetElement(dimTypeId) as DimensionType;
-                FormatOptions fo = dt?.GetUnitsFormatOptions();
+                FormatOptions? fo = dt?.GetUnitsFormatOptions();
                 if (fo != null && !fo.UseDefault)
                     units.SetFormatOptions(SpecTypeId.Length, fo);
             }
