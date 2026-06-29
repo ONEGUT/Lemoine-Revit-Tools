@@ -1,0 +1,35 @@
+// modify.extendWalls.json — Extend Walls to Level tool + handler logs.
+{
+  "title": "Extend Walls to Level",
+  "runLabel": "Extend in Revit →",
+  "steps": { "S1": "Select Base Levels", "S2": "Options", "S3": "Review & Run" },
+  "summaries": {
+    "S3": "Ready to run",
+    "s1": "{0} level(s) selected",
+    "s2": "Ceiling: {0:F2} ft — Scope: {1}",
+    "scopeActiveWord": "active view",
+    "scopeDocWord": "document"
+  },
+  "labels": {
+    "noItems":      "No processable levels found. At least two levels are required: a base level and a level above it.",
+    "ceilingLabel": "Assumed ceiling height (ft)",
+    "viewOnlyLabel":"Active view only",
+    "viewOnlyDesc": "When on, only walls visible in the active view are scanned. When off, all walls in the document are scanned."
+  },
+  "review": {
+    "itemLevels": "Base Levels", "itemCeiling": "Assumed Ceiling Height", "itemScope": "Scope", "itemTarget": "Target",
+    "levelsValue":  "{0} level(s)",
+    "ceilingValue": "{0:F2} ft (used when no Ceiling element found)",
+    "scopeActive": "Active view", "scopeDoc": "Entire document",
+    "target": "Walls above ceiling — set Top Constraint to next level",
+    "note": "Walls whose top elevation exceeds the ceiling threshold at their base level will have their Top Constraint set to the next level up, with Top Offset zeroed. Curtain walls and walls without a base constraint are skipped."
+  },
+  "log": {
+    "noQualifying": "No qualifying walls found. Already correct: {0}. Skipped: {1}.",
+    "found":        "Found {0} wall(s) to extend. Already correct: {1}.",
+    "wallOk":       "✓ Wall {0} [{1}] → {2}",
+    "wallFail":     "✗ Wall {0}: {1}",
+    "done":         "Done — {0} extended, {1} failed, {2} skipped/already correct.",
+    "error":        "Error: {0}"
+  }
+}

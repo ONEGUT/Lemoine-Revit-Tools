@@ -56,7 +56,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!grids.Any())
                 {
-                    pushLog("No valid grids found.", "fail");
+                    pushLog(LemoineStrings.T("modify.splitByGrid.log.noValid"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -68,16 +68,16 @@ namespace LemoineTools.Tools.ModifyElements
                         .Select(id => doc.GetElement(id))
                         .Where(e => e != null)
                         .ToList()!;
-                    pushLog($"Operating on {elements.Count} pre-selected element(s).", "info");
+                    pushLog(LemoineStrings.T("modify.splitByGrid.log.preSelected", elements.Count), "info");
                 }
                 else
                 {
                     View? view = ActiveViewId != null ? doc.GetElement(ActiveViewId) as View : null;
                     elements = CollectByName(doc, view, SelectedCategoryNames);
-                    pushLog($"Found {elements.Count} elements across {SelectedCategoryNames.Count} category(ies).", "info");
+                    pushLog(LemoineStrings.T("modify.splitByGrid.log.foundCats", elements.Count, SelectedCategoryNames.Count), "info");
                 }
 
-                pushLog($"Splitting {elements.Count} element(s) at {grids.Count} grid plane(s)...", "info");
+                pushLog(LemoineStrings.T("modify.splitByGrid.log.splitting", elements.Count, grids.Count), "info");
 
                 var progress = new RunProgressReporter(pushLog, elements.Count, "elements");
 
@@ -105,18 +105,17 @@ namespace LemoineTools.Tools.ModifyElements
                 if (LemoineRun.CancelRequested)
                 {
                     int processed = stats.SplitCount + stats.SkipCount + stats.FailCount;
-                    pushLog($"Stopped by user — {processed} of {elements.Count} processed; work so far preserved.", "warn");
+                    pushLog(LemoineStrings.T("common.log.stoppedByUser", processed, elements.Count), "warn");
                 }
 
-                pushLog($"Done — {stats.SegmentsCreated} segment(s) created from {stats.SplitCount} element(s), "
-                      + $"{stats.SkipCount} skipped, {stats.FailCount} failed.",
+                pushLog(LemoineStrings.T("modify.splitByGrid.log.done", stats.SegmentsCreated, stats.SplitCount, stats.SkipCount, stats.FailCount),
                         stats.FailCount > 0 ? "fail" : "pass");
                 onProgress(100, stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
                 onComplete(stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
             }
             catch (Exception ex)
             {
-                pushLog($"Error: {ex.Message}", "fail");
+                pushLog(LemoineStrings.T("modify.splitByGrid.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally

@@ -1,0 +1,31 @@
+// modify.splitByGrid.json — Split Elements by Grid Lines tool + handler logs.
+{
+  "title": "Split Elements by Grid Lines",
+  "runLabel": "Split in Revit →",
+  "steps": { "S1": "Select Categories", "S2": "Select Grids", "S3": "Review & Run" },
+  "summaries": { "S3": "Ready to run", "fromSelection": "From selection ({0} elements)", "s2": "{0} grid(s) selected" },
+  "labels": {
+    "countStrip":     "{0} categories · {1} elements in document",
+    "activeViewLabel":"Active view elements only",
+    "activeViewDesc": "When on, only elements visible in the current Revit view will be split.",
+    "fromSelection":  "FROM CURRENT SELECTION",
+    "preselCount":    "{0} element(s) across {1} categor(ies)",
+    "preselNote":     "Close and reopen the tool to use category selection instead.",
+    "noItems":        "No linear grids found in the document. Only linear (non-arc) grids can be used as split planes."
+  },
+  "review": {
+    "itemCats": "Categories Selected", "itemX": "Grids Selected", "itemOp": "Operation", "itemScope": "Scope",
+    "xValue": "{0} grid(s)",
+    "op": "Split elements at each selected grid plane",
+    "scopeFromSel": "From selection ({0} elements)", "scopeActive": "Active view only", "scopeDoc": "Entire document",
+    "note": "Elements whose LocationCurve intersects a selected grid plane will be split at that intersection point. Elements with no linear curve are skipped. Only linear (non-arc) grids are supported as split planes."
+  },
+  "log": {
+    "noValid":     "No valid grids found.",
+    "preSelected": "Operating on {0} pre-selected element(s).",
+    "foundCats":   "Found {0} elements across {1} category(ies).",
+    "splitting":   "Splitting {0} element(s) at {1} grid plane(s)...",
+    "done":        "Done — {0} segment(s) created from {1} element(s), {2} skipped, {3} failed.",
+    "error":       "Error: {0}"
+  }
+}

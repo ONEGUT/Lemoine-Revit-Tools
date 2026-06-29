@@ -18,14 +18,14 @@ namespace LemoineTools.Tools.ModifyElements
         public string? ResultNoun => "segments";
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
-        public string Title    => "Split Elements by Grid Lines";
-        public string RunLabel => "Split in Revit →";
+        public string Title    => LemoineStrings.T("modify.splitByGrid.title");
+        public string RunLabel => LemoineStrings.T("modify.splitByGrid.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Categories", required: true),
-            new StepDefinition("S2", "Select Grids",      required: true),
-            new StepDefinition("S3", "Review & Run",      required: false),
+            new StepDefinition("S1", LemoineStrings.T("modify.splitByGrid.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("modify.splitByGrid.steps.S2"),      required: true),
+            new StepDefinition("S3", LemoineStrings.T("modify.splitByGrid.steps.S3"),      required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ namespace LemoineTools.Tools.ModifyElements
             int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = $"{totalCats} categories · {_totalElements} elements in document",
+                Text         = LemoineStrings.T("modify.splitByGrid.labels.countStrip", totalCats, _totalElements),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -160,8 +160,8 @@ namespace LemoineTools.Tools.ModifyElements
                     new ToggleItem
                     {
                         Id        = "activeView",
-                        Label     = "Active view elements only",
-                        Desc      = "When on, only elements visible in the current Revit view will be split.",
+                        Label     = LemoineStrings.T("modify.splitByGrid.labels.activeViewLabel"),
+                        Desc      = LemoineStrings.T("modify.splitByGrid.labels.activeViewDesc"),
                         DefaultOn = false,
                     },
                 });
@@ -187,7 +187,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = "FROM CURRENT SELECTION", Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByGrid.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -196,7 +196,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = $"{cnt} element{(cnt == 1 ? "" : "s")} across {cats} categor{(cats == 1 ? "y" : "ies")}",
+                Text         = LemoineStrings.T("modify.splitByGrid.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -216,7 +216,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = "Close and reopen the tool to use category selection instead.",
+                Text         = LemoineStrings.T("modify.splitByGrid.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -239,7 +239,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 var msg = new TextBlock
                 {
-                    Text         = "No linear grids found in the document. Only linear (non-arc) grids can be used as split planes.",
+                    Text         = LemoineStrings.T("modify.splitByGrid.labels.noItems"),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
@@ -271,26 +271,24 @@ namespace LemoineTools.Tools.ModifyElements
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",  "Categories Selected"),
-            ("grids", "Grids Selected"),
-            ("op",    "Operation"),
-            ("scope", "Scope"),
+            ("cats",  LemoineStrings.T("modify.splitByGrid.review.itemCats")),
+            ("grids", LemoineStrings.T("modify.splitByGrid.review.itemX")),
+            ("op",    LemoineStrings.T("modify.splitByGrid.review.itemOp")),
+            ("scope", LemoineStrings.T("modify.splitByGrid.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]  = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["grids"] = _selectedGridNames.Count == 0 ? "—" : $"{_selectedGridNames.Count} grid(s)",
-            ["op"]    = "Split elements at each selected grid plane",
-            ["scope"] = _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
-                : _useActiveView ? "Active view only"
-                : "Entire document",
+            ["grids"] = _selectedGridNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByGrid.review.xValue", _selectedGridNames.Count),
+            ["op"]    = LemoineStrings.T("modify.splitByGrid.review.op"),
+            ["scope"] = _preSelectedIds.Count > 0 ? LemoineStrings.T("modify.splitByGrid.review.scopeFromSel", _preSelectedIds.Count)
+                : _useActiveView ? LemoineStrings.T("modify.splitByGrid.review.scopeActive")
+                : LemoineStrings.T("modify.splitByGrid.review.scopeDoc"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Elements whose LocationCurve intersects a selected grid plane will " +
-            "be split at that intersection point. Elements with no linear curve are skipped. Only linear (non-arc) " +
-            "grids are supported as split planes.";
+        public string?        ReviewNote    => LemoineStrings.T("modify.splitByGrid.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -304,13 +302,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return $"From selection ({_preSelectedIds.Count} elements)";
+                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByGrid.review.scopeFromSel", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return _selectedGridNames.Count == 0 ? "—" : $"{_selectedGridNames.Count} grid(s) selected";
+                return _selectedGridNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByGrid.summaries.s2", _selectedGridNames.Count);
             if (stepId == "S3")
-                return "Ready to run";
+                return LemoineStrings.T("modify.splitByGrid.summaries.S3");
             return "—";
         }
 

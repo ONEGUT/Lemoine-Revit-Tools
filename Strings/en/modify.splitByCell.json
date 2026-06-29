@@ -1,0 +1,39 @@
+// modify.splitByCell.json — Split Elements by Cell tool + handler logs.
+// NOTE: category labels (Floors/Ceilings/Roofs/...) stay in code — they map from
+// BuiltInCategory and round-trip to the handler.
+{
+  "title": "Split Elements by Cell",
+  "runLabel": "Split in Revit →",
+  "steps": { "S1": "Select Categories", "S2": "Cell Size", "S3": "Review & Run" },
+  "summaries": { "S3": "Ready to run", "fromSelection": "From selection ({0} elements)", "cellSize": "{0:F2} ft × {1:F2} ft" },
+  "labels": {
+    "fromSelection": "FROM CURRENT SELECTION",
+    "preselCount":   "{0} element(s) across {1} categor(ies)",
+    "preselNote":    "Close and reopen the tool to use category selection instead.",
+    "cellXLabel":    "Cell X width (ft)",
+    "cellYLabel":    "Cell Y height (ft)",
+    "originLabel":   "Align grid to project origin",
+    "originDesc":    "When on, the cell grid snaps to the project base point so cells are consistent across the model. When off, each element's own bounding box is used."
+  },
+  "review": {
+    "itemCats": "Categories", "itemCell": "Cell Size", "itemOrigin": "Grid Origin", "itemScope": "Scope",
+    "cellValue": "{0:F2} ft × {1:F2} ft",
+    "originProject": "Project base point", "originBbox": "Per-element bounding box",
+    "scopeFromSel": "From selection ({0} elements)", "scopeActive": "Active view",
+    "note": "Sketch-based elements in the active view will be split into a regular grid of cells. Elements that fit within a single cell are skipped. Each element runs in its own transaction — the entire operation collapses to a single Ctrl+Z undo step."
+  },
+  "log": {
+    "noActiveView": "No active view or view is a template.",
+    "preSelected":  "Operating on {0} pre-selected element(s).",
+    "noElements":   "No elements found for the selected categories in the active view.",
+    "foundElements":"Found {0} element(s) to process.",
+    "noBasePoint":  "Project base point not found; grid aligned to document origin (0,0,0).",
+    "cellOk":       "✓ {0} {1} → {2} cell(s)",
+    "fitsOneCell":  "— {0} {1}: fits in one cell, skipped",
+    "noSolid":      "— {0} {1}: no solid geometry, skipped",
+    "boolFail":     "✗ {0} {1}: boolean intersection returned no cells — the element's geometry may be non-planar or the solid could not be intersected",
+    "cellError":    "✗ {0} {1}: {2}",
+    "done":         "Done — {0} cell(s) created, {1} skipped, {2} failed.",
+    "error":        "Error: {0}"
+  }
+}

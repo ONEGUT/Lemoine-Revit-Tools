@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!levels.Any())
                 {
-                    pushLog("No valid levels found.", "fail");
+                    pushLog(LemoineStrings.T("modify.splitByLevel.log.noValid"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -69,16 +69,16 @@ namespace LemoineTools.Tools.ModifyElements
                         .Select(id => doc.GetElement(id))
                         .Where(e => e != null)
                         .ToList()!;
-                    pushLog($"Operating on {elements.Count} pre-selected element(s).", "info");
+                    pushLog(LemoineStrings.T("modify.splitByLevel.log.preSelected", elements.Count), "info");
                 }
                 else
                 {
                     View? view = ActiveViewId != null ? doc.GetElement(ActiveViewId) as View : null;
                     elements = CollectByName(doc, view, SelectedCategoryNames);
-                    pushLog($"Found {elements.Count} elements across {SelectedCategoryNames.Count} category(ies).", "info");
+                    pushLog(LemoineStrings.T("modify.splitByLevel.log.foundCats", elements.Count, SelectedCategoryNames.Count), "info");
                 }
 
-                pushLog($"Splitting {elements.Count} element(s) at {levels.Count} level(s)...", "info");
+                pushLog(LemoineStrings.T("modify.splitByLevel.log.splitting", elements.Count, levels.Count), "info");
 
                 var progress = new RunProgressReporter(pushLog, elements.Count, "elements");
 
@@ -106,18 +106,17 @@ namespace LemoineTools.Tools.ModifyElements
                 if (LemoineRun.CancelRequested)
                 {
                     int processed = stats.SplitCount + stats.SkipCount + stats.FailCount;
-                    pushLog($"Stopped by user — {processed} of {elements.Count} processed; work so far preserved.", "warn");
+                    pushLog(LemoineStrings.T("common.log.stoppedByUser", processed, elements.Count), "warn");
                 }
 
-                pushLog($"Done — {stats.SegmentsCreated} segment(s) created from {stats.SplitCount} element(s), "
-                      + $"{stats.SkipCount} skipped, {stats.FailCount} failed.",
+                pushLog(LemoineStrings.T("modify.splitByLevel.log.done", stats.SegmentsCreated, stats.SplitCount, stats.SkipCount, stats.FailCount),
                         stats.FailCount > 0 ? "fail" : "pass");
                 onProgress(100, stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
                 onComplete(stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
             }
             catch (Exception ex)
             {
-                pushLog($"Error: {ex.Message}", "fail");
+                pushLog(LemoineStrings.T("modify.splitByLevel.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally
