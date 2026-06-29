@@ -79,9 +79,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Framework assembly (GAC) — JavaScriptSerializer, used by LemoineStrings to read the
-         localized text JSON. Built into .NET Framework 4.8; not a NuGet package. -->
-    <Reference Include="System.Web.Extensions" />
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
       <Private>False</Private>

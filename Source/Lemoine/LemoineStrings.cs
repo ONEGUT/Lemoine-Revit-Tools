@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using System.Web.Script.Serialization;
 
 namespace LemoineTools.Lemoine
 {
@@ -132,7 +131,6 @@ namespace LemoineTools.Lemoine
                 return map;
             }
 
-            var serializer = new JavaScriptSerializer();
             foreach (var file in Directory.GetFiles(dir, "*.json"))
             {
                 // Each file is its own namespace: "ceilings.projectGrids.json" -> prefix "ceilings.projectGrids".
@@ -141,7 +139,7 @@ namespace LemoineTools.Lemoine
                 {
                     string raw     = File.ReadAllText(file);
                     string cleaned = StripComments(raw);
-                    if (serializer.DeserializeObject(cleaned) is Dictionary<string, object> root)
+                    if (MiniJson.Parse(cleaned) is Dictionary<string, object?> root)
                         Flatten(prefix, root, map);
                     else
                         LemoineLog.Warn("LemoineStrings", $"file is not a JSON object, skipped: {file}");
@@ -157,7 +155,7 @@ namespace LemoineTools.Lemoine
 
         // Recursively flatten nested JSON objects into "prefix.key" entries. String leaves are stored
         // verbatim; numeric/bool leaves are stringified; nulls are skipped.
-        private static void Flatten(string prefix, Dictionary<string, object> node, Dictionary<string, string> map)
+        private static void Flatten(string prefix, Dictionary<string, object?> node, Dictionary<string, string> map)
         {
             foreach (var kv in node)
             {
@@ -166,7 +164,7 @@ namespace LemoineTools.Lemoine
                 {
                     case null:
                         break;
-                    case Dictionary<string, object> child:
+                    case Dictionary<string, object?> child:
                         Flatten(key, child, map);
                         break;
                     case string s:
@@ -219,6 +217,147 @@ namespace LemoineTools.Lemoine
                 sb.Append(c);
             }
             return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Minimal, dependency-free JSON reader. The full framework JSON readers either need a NuGet
+    /// package (System.Text.Json / Newtonsoft) or drag System.Web into the WPF XAML compiler
+    /// (System.Web.Extensions → MC1000), so this small recursive-descent parser keeps the resource
+    /// loader truly zero-dependency. It is deliberately read-only and only as permissive as the
+    /// resource files need: objects, arrays, strings, numbers, true/false/null. Comments are removed
+    /// upstream by <see cref="LemoineStrings.StripComments"/> before parsing.
+    /// </summary>
+    internal static class MiniJson
+    {
+        /// <summary>Parses a JSON document into nested <see cref="Dictionary{TKey,TValue}"/> /
+        /// <see cref="List{T}"/> / string / double / bool / null. Throws <see cref="FormatException"/>
+        /// on malformed input.</summary>
+        public static object? Parse(string json)
+        {
+            int i = 0;
+            object? value = ParseValue(json, ref i);
+            SkipWs(json, ref i);
+            if (i != json.Length)
+                throw new FormatException($"unexpected trailing characters at position {i}");
+            return value;
+        }
+
+        private static object? ParseValue(string s, ref int i)
+        {
+            SkipWs(s, ref i);
+            if (i >= s.Length) throw new FormatException("unexpected end of input");
+            char c = s[i];
+            switch (c)
+            {
+                case '{': return ParseObject(s, ref i);
+                case '[': return ParseArray(s, ref i);
+                case '"': return ParseString(s, ref i);
+                case 't': Expect(s, ref i, "true");  return true;
+                case 'f': Expect(s, ref i, "false"); return false;
+                case 'n': Expect(s, ref i, "null");  return null;
+                default:  return ParseNumber(s, ref i);
+            }
+        }
+
+        private static Dictionary<string, object?> ParseObject(string s, ref int i)
+        {
+            var obj = new Dictionary<string, object?>(StringComparer.Ordinal);
+            i++; // consume '{'
+            SkipWs(s, ref i);
+            if (i < s.Length && s[i] == '}') { i++; return obj; }
+            while (true)
+            {
+                SkipWs(s, ref i);
+                if (i >= s.Length || s[i] != '"') throw new FormatException($"expected key string at position {i}");
+                string key = ParseString(s, ref i);
+                SkipWs(s, ref i);
+                if (i >= s.Length || s[i] != ':') throw new FormatException($"expected ':' at position {i}");
+                i++;
+                obj[key] = ParseValue(s, ref i);
+                SkipWs(s, ref i);
+                if (i >= s.Length) throw new FormatException("unterminated object");
+                if (s[i] == ',') { i++; continue; }
+                if (s[i] == '}') { i++; break; }
+                throw new FormatException($"expected ',' or '}}' at position {i}");
+            }
+            return obj;
+        }
+
+        private static List<object?> ParseArray(string s, ref int i)
+        {
+            var arr = new List<object?>();
+            i++; // consume '['
+            SkipWs(s, ref i);
+            if (i < s.Length && s[i] == ']') { i++; return arr; }
+            while (true)
+            {
+                arr.Add(ParseValue(s, ref i));
+                SkipWs(s, ref i);
+                if (i >= s.Length) throw new FormatException("unterminated array");
+                if (s[i] == ',') { i++; continue; }
+                if (s[i] == ']') { i++; break; }
+                throw new FormatException($"expected ',' or ']' at position {i}");
+            }
+            return arr;
+        }
+
+        private static string ParseString(string s, ref int i)
+        {
+            var sb = new StringBuilder();
+            i++; // consume opening quote
+            while (i < s.Length)
+            {
+                char c = s[i++];
+                if (c == '"') return sb.ToString();
+                if (c == '\\')
+                {
+                    if (i >= s.Length) break;
+                    char e = s[i++];
+                    switch (e)
+                    {
+                        case '"':  sb.Append('"');  break;
+                        case '\\': sb.Append('\\'); break;
+                        case '/':  sb.Append('/');  break;
+                        case 'b':  sb.Append('\b'); break;
+                        case 'f':  sb.Append('\f'); break;
+                        case 'n':  sb.Append('\n'); break;
+                        case 'r':  sb.Append('\r'); break;
+                        case 't':  sb.Append('\t'); break;
+                        case 'u':
+                            if (i + 4 > s.Length) throw new FormatException("incomplete \\u escape");
+                            sb.Append((char)Convert.ToInt32(s.Substring(i, 4), 16));
+                            i += 4;
+                            break;
+                        default: throw new FormatException($"invalid escape '\\{e}' at position {i - 1}");
+                    }
+                }
+                else sb.Append(c);
+            }
+            throw new FormatException("unterminated string");
+        }
+
+        private static double ParseNumber(string s, ref int i)
+        {
+            int start = i;
+            while (i < s.Length && (char.IsDigit(s[i]) || "+-.eE".IndexOf(s[i]) >= 0)) i++;
+            string token = s.Substring(start, i - start);
+            if (double.TryParse(token, System.Globalization.NumberStyles.Any,
+                                CultureInfo.InvariantCulture, out double d))
+                return d;
+            throw new FormatException($"invalid number '{token}' at position {start}");
+        }
+
+        private static void Expect(string s, ref int i, string literal)
+        {
+            if (i + literal.Length > s.Length || s.Substring(i, literal.Length) != literal)
+                throw new FormatException($"expected '{literal}' at position {i}");
+            i += literal.Length;
+        }
+
+        private static void SkipWs(string s, ref int i)
+        {
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
         }
     }
 }
