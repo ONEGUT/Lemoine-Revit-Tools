@@ -24,6 +24,11 @@
     "failedToLoad": "This step ('{0}') failed to load."  // shown when a step's content throws ({0} = step id)
   },
 
+  // tooltip — shared hover tooltips
+  "tooltip": {
+    "close": "Close"  // window close button (×) in the top bar
+  },
+
   // defaults — fall-backs used when a tool does not supply its own
   "defaults": {
     "runLabel": "Run in Revit →"  // final action button when a tool doesn't set one
@@ -31,7 +36,7 @@
 
   // log — standard Output-log lines shared across tools
   "log": {
-    "progress":      "{0}% — {1} of {2} {3} processed",  // {0}=percent {1}=done {2}=total {3}=item noun
+    "progress":      "{0}% — {1:N0} of {2:N0} {3} processed",  // {0}=percent {1}=done {2}=total {3}=item noun
     "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved"  // cooperative cancel
   }
 }
