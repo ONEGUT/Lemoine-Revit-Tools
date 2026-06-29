@@ -79,6 +79,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Framework assembly (GAC) — JavaScriptSerializer, used by LemoineStrings to read the
+         localized text JSON. Built into .NET Framework 4.8; not a NuGet package. -->
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
       <Private>False</Private>
@@ -93,6 +96,15 @@
     <Content Include="LemoineTools.addin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <!-- Localized user-facing text. Loaded at runtime by LemoineStrings from a Strings\ folder
+       next to the DLL, so it must be copied (loose, editable) into the deploy/output dir. These
+       are already default 'None' items under the SDK glob; Update just adds the copy behavior. -->
+  <ItemGroup>
+    <None Update="Strings\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->

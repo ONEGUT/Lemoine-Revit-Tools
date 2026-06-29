@@ -128,17 +128,13 @@ Rules:
 - Files for windows without steps/logs (e.g. `ribbon.json`) keep only the sections they use,
   but those window files are themselves mutually consistent (ribbon files all share one schema, etc.).
 
-### JSON-with-comments needs one dependency — **for your sign-off**
-Strict JSON forbids comments, but you asked for both JSON and per-line documentation. The clean
-way to get both is **Newtonsoft.Json** (the de-facto .NET JSON library, single DLL, supports `//`
-comments via `CommentHandling.Ignore`). The project currently references **no** JSON library, so
-this adds exactly one NuGet dependency, deployed alongside `LemoineTools.dll`.
-
-- **Recommended:** add `Newtonsoft.Json` → JSONC files with inline documentation, exactly as above.
-- **No-new-dependency alternative:** use XML resource files instead (the project already uses
-  `XmlSerializer` everywhere; XML supports `<!-- -->` comments natively). Same outcome, not JSON.
-
-Plan assumes the recommended Newtonsoft path unless you choose the XML alternative at approval.
+### JSON-with-comments — no outside dependency (Approach A, approved)
+Files are authored as JSON with full-line `//` comments documenting each entry. At load time a
+small pre-pass strips any line whose first non-whitespace characters are `//` (whole-line comments
+only — never `//` inside a string value such as a URL), then the cleaned text is parsed by the
+framework's **built-in** JSON reader (`System.Web.Extensions` → `JavaScriptSerializer`, a GAC
+framework assembly — **no NuGet, nothing to install**). Result: friendly commented-JSON authoring,
+every line documented, zero outside dependencies.
 
 ---
 
