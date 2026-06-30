@@ -38,16 +38,16 @@ namespace LemoineTools.Tools.Clash
             _handler.OnResultChips = null;
         }
 
-        public string Title    => "Clash Finder & Dimension";
-        public string RunLabel => "Find & Mark Clashes →";
+        public string Title    => LemoineStrings.T("clash.finder.title");
+        public string RunLabel => LemoineStrings.T("clash.finder.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Definitions",   required: true),
-            new StepDefinition("S2", "Select Views",         required: true),
-            new StepDefinition("S3", "Marker Settings",      required: false),
-            new StepDefinition("S4", "Dimensioning",         required: false),
-            new StepDefinition("S5", "Review & Run",         required: false),
+            new StepDefinition("S1", LemoineStrings.T("clash.finder.steps.S1"),   required: true),
+            new StepDefinition("S2", LemoineStrings.T("clash.finder.steps.S2"),         required: true),
+            new StepDefinition("S3", LemoineStrings.T("clash.finder.steps.S3"),      required: false),
+            new StepDefinition("S4", LemoineStrings.T("clash.finder.steps.S4"),         required: false),
+            new StepDefinition("S5", LemoineStrings.T("clash.finder.steps.S5"),         required: false),
         };
 
         // ── Unit conversion (UI imperial ↔ stored mm) ─────────────────────────
@@ -126,9 +126,9 @@ namespace LemoineTools.Tools.Clash
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
         // Dimensions) — the run always uses the saved values.
-        private const string GridDisplay   = "To Grid";
-        private const string SlabDisplay   = "To Slab Edge";
-        private const string ManualDisplay = "To Picked Edge";
+        private static readonly string GridDisplay   = LemoineStrings.T("clash.finder.labels.destGrid");
+        private static readonly string SlabDisplay   = LemoineStrings.T("clash.finder.labels.destSlab");
+        private static readonly string ManualDisplay = LemoineStrings.T("clash.finder.labels.destManual");
         private string _dimTargetType =
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
@@ -154,7 +154,7 @@ namespace LemoineTools.Tools.Clash
             var used = new HashSet<string>();
             foreach (var def in _definitions)
             {
-                string baseName = string.IsNullOrWhiteSpace(def.Name) ? "(unnamed)" : def.Name;
+                string baseName = string.IsNullOrWhiteSpace(def.Name) ? LemoineStrings.T("clash.finder.labels.unnamed") : def.Name;
                 string display  = baseName;
                 int n = 2;
                 while (!used.Add(display)) display = $"{baseName} ({n++})";
@@ -196,15 +196,15 @@ namespace LemoineTools.Tools.Clash
 
             if (_defDisplayToDef.Count == 0)
             {
-                AddDim(outer, "No clash definitions saved yet. Open “Clash Definitions” to create one first.");
+                AddDim(outer, LemoineStrings.T("clash.finder.labels.noDefs"));
                 return WrapInScroll(outer);
             }
 
-            AddLabel(outer, "Pick one or more saved clash definitions to run.");
+            AddLabel(outer, LemoineStrings.T("clash.finder.labels.pickDefs"));
 
             var groups = new Dictionary<string, List<string>>
             {
-                ["Saved Definitions"] = _defDisplayToDef.Keys.ToList(),
+                [LemoineStrings.T("clash.finder.labels.groupSaved")] = _defDisplayToDef.Keys.ToList(),
             };
 
             var tabs = new LemoineMultiSelectTabs();
@@ -226,7 +226,7 @@ namespace LemoineTools.Tools.Clash
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Views to scan",
+                AccessibleName = LemoineStrings.T("clash.finder.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -249,8 +249,8 @@ namespace LemoineTools.Tools.Clash
             var toggles = new LemoineToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "clear", Label = "Clear previous clash markers before running",
-                                 Desc = "Removes earlier Lemoine clash markers in the selected views first.", DefaultOn = _clearPrevious },
+                new ToggleItem { Id = "clear", Label = LemoineStrings.T("clash.finder.labels.clearLabel"),
+                                 Desc = LemoineStrings.T("clash.finder.labels.clearDesc"), DefaultOn = _clearPrevious },
             });
             toggles.StateChanged += state =>
             {
@@ -261,14 +261,13 @@ namespace LemoineTools.Tools.Clash
 
             AddDivider(outer);
             AddStepperRow(outer,
-                "Marker oversize (in, 0 = exact element size)",
-                "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much — e.g. 2 in makes a 4 in pipe a 6 in round and adds 2 in to a duct's width and height.",
+                LemoineStrings.T("clash.finder.labels.oversizeLabel"),
+                LemoineStrings.T("clash.finder.labels.oversizeHint"),
                 _roundSizeMm / MmPerInch, min: 0, max: 40, step: 0.25, decimals: 2,
                 v => { _roundSizeMm = v * MmPerInch; Fire(); });
 
             AddDivider(outer);
-            AddDim(outer, "The storey depth margin (how far below a level a clash still counts as "
-                        + "that level's storey) lives in Settings → Dimensions.");
+            AddDim(outer, LemoineStrings.T("clash.finder.labels.storeyNote"));
 
             return WrapInScroll(outer);
         }
@@ -278,17 +277,16 @@ namespace LemoineTools.Tools.Clash
         {
             var outer = new StackPanel();
 
-            AddDim(outer, "Chaining, callouts, grouping distances, and layout spacing are saved "
-                        + "defaults (Settings → Dimensions) and apply to every run.");
+            AddDim(outer, LemoineStrings.T("clash.finder.labels.dimDefaults"));
             AddDivider(outer);
 
             var toggles = new LemoineToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "dimPass", Label = "Place dimensions after marking",
-                                 Desc = "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.", DefaultOn = _runDimensionPass },
-                new ToggleItem { Id = "userCallouts", Label = "Use my drawn callouts as clash groups",
-                                 Desc = "Any callout you drew on a selected view becomes its own pre-defined group: the clashes inside it mark and dimension only there — never clustered with markers outside it — and the tool grows its crop to the room and sets a legible scale, like an automatic dense-area callout.", DefaultOn = _adoptUserCallouts },
+                new ToggleItem { Id = "dimPass", Label = LemoineStrings.T("clash.finder.labels.dimPassLabel"),
+                                 Desc = LemoineStrings.T("clash.finder.labels.dimPassDesc"), DefaultOn = _runDimensionPass },
+                new ToggleItem { Id = "userCallouts", Label = LemoineStrings.T("clash.finder.labels.userCalloutsLabel"),
+                                 Desc = LemoineStrings.T("clash.finder.labels.userCalloutsDesc"), DefaultOn = _adoptUserCallouts },
             });
             toggles.StateChanged += state =>
             {
@@ -299,10 +297,8 @@ namespace LemoineTools.Tools.Clash
             outer.Children.Add(toggles);
 
             AddDivider(outer);
-            AddLabel(outer, "Finest callout scale — a dense area won't enlarge past this. A smaller "
-                          + "scale (e.g. 1/4\" = 1'-0\") keeps callouts smaller; a larger one (e.g. "
-                          + "1\" = 1'-0\") lets them zoom in further.");
-            var calloutScalePicker = new LemoineSingleSelect { Label = "Finest callout scale" };
+            AddLabel(outer, LemoineStrings.T("clash.finder.labels.calloutScaleHelp"));
+            var calloutScalePicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.finder.labels.calloutScaleLabel") };
             calloutScalePicker.Items        = RevitScales.Select(s => s.Label).ToList();
             calloutScalePicker.SelectedItem = ArchScaleLabel(_maxCalloutScale);
             calloutScalePicker.SelectionChanged += sel =>
@@ -314,8 +310,8 @@ namespace LemoineTools.Tools.Clash
             outer.Children.Add(calloutScalePicker);
 
             AddDivider(outer);
-            AddLabel(outer, "Dimension destination (used when the dimension pass is on).");
-            var destPicker = new LemoineSingleSelect { Label = "Destination" };
+            AddLabel(outer, LemoineStrings.T("clash.finder.labels.destHelp"));
+            var destPicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.finder.labels.destLabel") };
             destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
             destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay
                                     : _dimTargetType == "ManualDatum" ? ManualDisplay : GridDisplay;
@@ -323,32 +319,31 @@ namespace LemoineTools.Tools.Clash
 
             // Manual-datum note — shown only for that destination.
             var manualSection = new StackPanel();
-            AddDim(manualSection, "Manual: you'll pick one datum edge per view when the dimension pass starts.");
+            AddDim(manualSection, LemoineStrings.T("clash.finder.labels.manualNote"));
             outer.Children.Add(manualSection);
 
             // Slab-edge config — shown only for that destination. Default targets each clash's own
             // Group 2 element; the buttons override every clash with one specific floor.
             var slabSection = new StackPanel();
             AddDivider(slabSection);
-            AddLabel(slabSection, "Slab edge mode dimensions each clash to the EDGE of the exact element it hit "
-                          + "(the Group 2 element — slab, wall, etc.). Optionally override with one specific floor for every clash.");
+            AddLabel(slabSection, LemoineStrings.T("clash.finder.labels.slabHelp"));
             var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
             slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             slabStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             Action refreshSlab = () => slabStatus.Text = _pickedSlab == null
-                ? "Default: dimensions to each clash's own Group 2 element edge (legacy markers fall back to nearest floor edge)."
-                : $"Override — every clash dimensions to: {_pickedSlabName}";
+                ? LemoineStrings.T("clash.finder.labels.slabDefault")
+                : LemoineStrings.T("clash.finder.labels.slabOverride", _pickedSlabName);
             refreshSlab();
 
             var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var pickBtn = LemoineControlStyles.BuildButton("Pick host slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var pickBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.pickHost"), LemoineControlStyles.LemoineButtonVariant.Primary);
             pickBtn.Margin = new Thickness(0, 0, 8, 0);
             pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: false);
-            var pickLinkBtn = LemoineControlStyles.BuildButton("Pick linked slab…", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var pickLinkBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.pickLinked"), LemoineControlStyles.LemoineButtonVariant.Primary);
             pickLinkBtn.Margin = new Thickness(0, 0, 8, 0);
             pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: true);
-            var clearBtn = LemoineControlStyles.BuildButton("Clear", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            var clearBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.clear"), LemoineControlStyles.LemoineButtonVariant.Ghost);
             clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
             slabRow.Children.Add(pickBtn);
             slabRow.Children.Add(pickLinkBtn);
@@ -393,21 +388,21 @@ namespace LemoineTools.Tools.Clash
         {
             switch (stepId)
             {
-                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : $"{_selectedDefDisplays.Count} definition(s)";
-                case "S2": return _selectedViewIds.Count     == 0 ? "—" : $"{_selectedViewIds.Count} view(s)";
+                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : LemoineStrings.T("clash.finder.summaries.defCount", _selectedDefDisplays.Count);
+                case "S2": return _selectedViewIds.Count     == 0 ? "—" : LemoineStrings.T("clash.finder.summaries.viewCount", _selectedViewIds.Count);
                 case "S3":
                 {
                     var bits = new List<string>();
-                    if (_clearPrevious) bits.Add("clear");
-                    bits.Add(_roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in" : "exact size");
+                    if (_clearPrevious) bits.Add(LemoineStrings.T("clash.finder.summaries.clear"));
+                    bits.Add(_roundSizeMm > 0 ? LemoineStrings.T("clash.finder.summaries.oversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.finder.summaries.exactSize"));
                     return string.Join(" · ", bits);
                 }
                 case "S4":
                     return _runDimensionPass
-                        ? $"dim → {(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
-                          + (_adoptUserCallouts ? " · my callouts" : "")
-                        : "dim pass off";
-                case "S5": return "Ready to run";
+                        ? LemoineStrings.T("clash.finder.summaries.dimTo", _dimTargetType == "SlabEdge" ? LemoineStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? LemoineStrings.T("clash.finder.words.pickedEdge") : LemoineStrings.T("clash.finder.words.grid"))
+                          + (_adoptUserCallouts ? LemoineStrings.T("clash.finder.summaries.myCallouts") : "")
+                        : LemoineStrings.T("clash.finder.summaries.dimOff");
+                case "S5": return LemoineStrings.T("clash.finder.summaries.S5");
                 default: return "—";
             }
         }
@@ -415,20 +410,20 @@ namespace LemoineTools.Tools.Clash
         // ── ILemoineReviewable — framework renders the review step ────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("defs",   "Definitions"),
-            ("views",  "Views"),
-            ("marker", "Marker"),
-            ("dim",    "Dimensioning"),
+            ("defs",   LemoineStrings.T("clash.finder.review.itemDefs")),
+            ("views",  LemoineStrings.T("clash.finder.review.itemViews")),
+            ("marker", LemoineStrings.T("clash.finder.review.itemMarker")),
+            ("dim",    LemoineStrings.T("clash.finder.review.itemDim")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["defs"]   = _selectedDefDisplays.Count > 0 ? $"{_selectedDefDisplays.Count} definition(s)" : "—",
-            ["views"]  = _selectedViewIds.Count     > 0 ? $"{_selectedViewIds.Count} view(s)"          : "—",
-            ["marker"] = _roundSizeMm > 0 ? $"+{_roundSizeMm / MmPerInch:0.##} in oversize" : "exact element size",
+            ["defs"]   = _selectedDefDisplays.Count > 0 ? LemoineStrings.T("clash.finder.review.defsValue", _selectedDefDisplays.Count) : "—",
+            ["views"]  = _selectedViewIds.Count     > 0 ? LemoineStrings.T("clash.finder.review.viewsValue", _selectedViewIds.Count)          : "—",
+            ["marker"] = _roundSizeMm > 0 ? LemoineStrings.T("clash.finder.review.markerOversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.finder.review.markerExact"),
             ["dim"]    = _runDimensionPass
-                ? $"{(_dimTargetType == "SlabEdge" ? "slab edge" : _dimTargetType == "ManualDatum" ? "picked edge" : "grid")}"
-                : "off",
+                ? (_dimTargetType == "SlabEdge" ? LemoineStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? LemoineStrings.T("clash.finder.words.pickedEdge") : LemoineStrings.T("clash.finder.words.grid"))
+                : LemoineStrings.T("clash.finder.review.dimOff"),
         };
 
         public IList<string>? ReviewChips
@@ -436,21 +431,19 @@ namespace LemoineTools.Tools.Clash
             get
             {
                 var chips = new List<string>();
-                if (_clearPrevious) chips.Add("clear previous");
-                if (_runDimensionPass && _adoptUserCallouts) chips.Add("my callouts = groups");
+                if (_clearPrevious) chips.Add(LemoineStrings.T("clash.finder.review.chipClear"));
+                if (_runDimensionPass && _adoptUserCallouts) chips.Add(LemoineStrings.T("clash.finder.review.chipMyCallouts"));
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
-                    chips.Add(_pickedSlab != null ? $"slab: {_pickedSlabName}" : "slab: clashed element");
-                if (_runDimensionPass) chips.Add($"callouts ≤ {ArchScaleLabel(_maxCalloutScale)}");
+                    chips.Add(_pickedSlab != null ? LemoineStrings.T("clash.finder.review.chipSlab", _pickedSlabName) : LemoineStrings.T("clash.finder.review.chipSlabClashed"));
+                if (_runDimensionPass) chips.Add(LemoineStrings.T("clash.finder.review.chipCalloutsCap", ArchScaleLabel(_maxCalloutScale)));
                 return chips.Count > 0 ? chips : null;
             }
         }
 
-        public string? ReviewNote => "Detects clashes from the selected definitions across the chosen "
-            + "views, places coloured ES-tagged markers, and (if the dimension pass is on) dimensions "
-            + "each run out to the chosen destination.";
+        public string? ReviewNote => LemoineStrings.T("clash.finder.review.note");
 
         public string? ReviewWarning => _runDimensionPass && _dimTargetType == "ManualDatum"
-            ? "Manual datum: you'll be prompted to pick one edge per view once the run starts."
+            ? LemoineStrings.T("clash.finder.review.warnManual")
             : null;
 
         // ── Run ───────────────────────────────────────────────────────────────

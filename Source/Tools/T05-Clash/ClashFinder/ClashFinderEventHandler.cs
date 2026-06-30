@@ -51,12 +51,12 @@ namespace LemoineTools.Tools.Clash
             {
                 if (Definitions == null || Definitions.Count == 0)
                 {
-                    Log("No clash definitions selected.", "fail");
+                    Log(LemoineStrings.T("clash.finder.log.noDefs"), "fail");
                     viewsFailed++;
                 }
                 else if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log("No views selected.", "fail");
+                    Log(LemoineStrings.T("clash.finder.log.noViews"), "fail");
                     viewsFailed++;
                 }
                 else
@@ -72,11 +72,11 @@ namespace LemoineTools.Tools.Clash
                         // marks only what was already detected (its own check then stops it too).
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {defsDetected} of {Definitions.Count} definition(s) detected; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", defsDetected, Definitions.Count), "warn");
                             break;
                         }
 
-                        Log($"— Detecting '{def.Name}' —", "info");
+                        Log(LemoineStrings.T("clash.finder.log.detecting", def.Name), "info");
                         var opts = new ClashMarkingOptions
                         {
                             ToleranceMm       = def.ToleranceMm,
@@ -123,7 +123,7 @@ namespace LemoineTools.Tools.Clash
                             // in its own transaction below, so every view already processed is preserved.
                             if (LemoineRun.CancelRequested)
                             {
-                                Log($"Stopped by user — {processed} of {ViewIds.Count} view(s) processed; work so far preserved.", "warn");
+                                Log(LemoineStrings.T("common.log.stoppedByUser", processed, ViewIds.Count), "warn");
                                 break;
                             }
 
@@ -137,7 +137,7 @@ namespace LemoineTools.Tools.Clash
                                 continue;
                             }
 
-                            Log($"— View '{view.Name}' —", "info");
+                            Log(LemoineStrings.T("clash.finder.log.viewHeader", view.Name), "info");
                             int markers = 0, markerFails = 0;
                             bool viewFailed = false;
                             try
@@ -151,7 +151,7 @@ namespace LemoineTools.Tools.Clash
                                     if (ClearPrevious)
                                     {
                                         int removed = ClearViewMarkers(doc, viewId);
-                                        if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{view.Name}'.", "info");
+                                        if (removed > 0) Log(LemoineStrings.T("clash.finder.log.cleared", removed, view.Name), "info");
                                     }
                                     foreach (var (engine, det, cache) in dets)
                                     {
@@ -164,7 +164,7 @@ namespace LemoineTools.Tools.Clash
                                     }
                                     tx.Commit();
                                 }
-                                Log($"View '{view.Name}': {markers} marker(s) placed.", markers > 0 ? "pass" : "info");
+                                Log(LemoineStrings.T("clash.finder.log.viewMarkers", view.Name, markers), markers > 0 ? "pass" : "info");
 
                                 // Dimension this view (its own transaction), only when it has markers.
                                 if (RunDimensionPass && markers > 0)
@@ -215,7 +215,7 @@ namespace LemoineTools.Tools.Clash
                                             foreach (var r in requests)
                                                 r.ClusterId = "c" + (calloutSeq++).ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
                                             if (pass > 0)
-                                                Log($"Re-assessed the remaining clashes — {requests.Count} more dense area(s) qualify for callouts.", "info");
+                                                Log(LemoineStrings.T("clash.finder.log.reassessed", requests.Count), "info");
                                             var ids = CreateDenseCallouts(doc, view, requests, dets, deferred,
                                                 ref totalMarkers, ref totalMarkerFails);
                                             allRequests.AddRange(requests);
@@ -250,13 +250,13 @@ namespace LemoineTools.Tools.Clash
                                     var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes, cropBounded);
                                     totalDims     += dimResult.Placed;
                                     totalDimFails += dimResult.Failures;
-                                    Log($"View '{view.Name}': {dimResult.Placed} dimension(s) placed across it and {dimViewIds.Count - 1} callout(s), {dimResult.Failures} failure(s).",
+                                    Log(LemoineStrings.T("clash.finder.log.viewDims", view.Name, dimResult.Placed, dimViewIds.Count - 1, dimResult.Failures),
                                         dimResult.Placed > 0 ? "pass" : "info");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                Log($"View '{view.Name}': failed — {ex.Message}", "fail");
+                                Log(LemoineStrings.T("clash.finder.log.viewFailed", view.Name, ex.Message), "fail");
                                 viewFailed = true;
                             }
 
@@ -276,15 +276,13 @@ namespace LemoineTools.Tools.Clash
                         dimCfg.MaxCalloutScale = snapMaxCallout;
                     }
 
-                    Log($"Done — {totalMarkers} marker(s) and {totalDims} dimension(s) placed "
-                      + $"across {viewsDone} view(s); {totalMarkerFails + totalDimFails} placement failure(s); "
-                      + $"{viewsFailed} view(s) failed, {viewsSkipped} view(s) with nothing to mark.",
+                    Log(LemoineStrings.T("clash.finder.log.done", totalMarkers, totalDims, viewsDone, totalMarkerFails + totalDimFails, viewsFailed, viewsSkipped),
                         totalMarkers + totalDims > 0 ? "pass" : (totalMarkerFails + totalDimFails) > 0 ? "fail" : "info");
                 }
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                Log(LemoineStrings.T("clash.finder.log.fatal", ex.Message), "fail");
                 totalMarkerFails++;
             }
 
@@ -355,14 +353,12 @@ namespace LemoineTools.Tools.Clash
 
                         ids.Add(cv.Id);
                         deferred.AddRange(req.SourceKeys);
-                        Log($"Dense area {req.ClusterId} → callout '{cv.Name}' at 1:{cv.Scale} — "
-                          + $"{placed} marker(s) placed there; {parentRemoved} parent marker element(s) removed, "
-                          + $"its {req.ClashCount} clash(es) show and dimension only in the callout.", "pass");
+                        Log(LemoineStrings.T("clash.finder.log.denseCallout", req.ClusterId, cv.Name, cv.Scale, placed, parentRemoved, req.ClashCount), "pass");
                     }
                     catch (Exception ex)
                     {
                         LemoineLog.Error("ClashFinderEventHandler: create dense-area callout", ex);
-                        Log($"Dense area {req.ClusterId}: callout failed ({ex.Message}) — its clashes stay dimensioned in the parent view.", "fail");
+                        Log(LemoineStrings.T("clash.finder.log.denseFailed", req.ClusterId, ex.Message), "fail");
                     }
                 }
 
@@ -455,8 +451,7 @@ namespace LemoineTools.Tools.Clash
                             // A crop that fails to grow starves the cropBounded dimension pass of
                             // references outside the drawn boundary — tell the run log, don't just swallow.
                             LemoineLog.Swallowed("ClashFinderEventHandler: grow user callout crop", ex);
-                            Log($"User callout '{cv.Name}': could not grow its crop ({ex.Message}) — "
-                              + "dimensions may miss references outside the drawn boundary.", "fail");
+                            Log(LemoineStrings.T("clash.finder.log.userCropFail", cv.Name, ex.Message), "fail");
                         }
                         doc.Regenerate();   // crop/scale must be current before the marker pass filters by view volume
 
@@ -487,21 +482,16 @@ namespace LemoineTools.Tools.Clash
 
                         if (!UserCalloutSchema.Stamp(cv, req.MembershipMinWorld, req.MembershipMaxWorld,
                                 req.MinWorld, req.MaxWorld))
-                            Log($"User callout '{cv.Name}': could not stamp its group boundary — a re-run "
-                              + "will re-baseline the group to the grown crop.", "fail");
+                            Log(LemoineStrings.T("clash.finder.log.userStampFail", cv.Name), "fail");
 
                         ids.Add(cv.Id);
                         deferred.AddRange(req.SourceKeys);
-                        Log($"User callout '{cv.Name}' adopted at 1:{cv.Scale} — {placed} marker(s) placed"
-                          + (pruned > 0 ? $", {pruned} non-member marker element(s) pruned" : "")
-                          + $"; {parentRemoved} parent marker element(s) removed, its {req.ClashCount} "
-                          + "clash(es) show and dimension only in this callout.", "pass");
+                        Log(LemoineStrings.T("clash.finder.log.userAdopted", cv.Name, cv.Scale, placed, (pruned > 0 ? LemoineStrings.T("clash.finder.log.prunedClause", pruned) : ""), parentRemoved, req.ClashCount), "pass");
                     }
                     catch (Exception ex)
                     {
                         LemoineLog.Error("ClashFinderEventHandler: adopt user callout", ex);
-                        Log($"User callout '{calloutName}': adoption failed ({ex.Message}) — its clashes stay "
-                          + "dimensioned in the parent view.", "fail");
+                        Log(LemoineStrings.T("clash.finder.log.userAdoptFail", calloutName, ex.Message), "fail");
                     }
                     // The survey claimed this rectangle's clashes for THIS callout (first
                     // containment wins) whether or not adoption succeeded — later callouts
@@ -570,8 +560,7 @@ namespace LemoineTools.Tools.Clash
             catch (Exception ex)
             {
                 LemoineLog.Swallowed("ClashFinderEventHandler: collect callout markers for membership prune", ex);
-                Log($"User callout '{calloutView.Name}': could not scan its markers for membership pruning "
-                  + $"({ex.Message}) — markers of clashes outside the drawn boundary may remain.", "fail");
+                Log(LemoineStrings.T("clash.finder.log.userScanFail", calloutView.Name, ex.Message), "fail");
             }
 
             int removed = 0;
@@ -619,12 +608,12 @@ namespace LemoineTools.Tools.Clash
                     try
                     {
                         doc.Delete(stale.Id);
-                        Log($"Deleted stale dense-area callout '{staleName}'.", "info");
+                        Log(LemoineStrings.T("clash.finder.log.deletedStale", staleName), "info");
                     }
                     catch (Exception ex)
                     {
                         LemoineLog.Swallowed("ClashFinderEventHandler: delete stale callout", ex);
-                        Log($"Could not delete stale callout '{staleName}' — remove it manually.", "fail");
+                        Log(LemoineStrings.T("clash.finder.log.deleteStaleFail", staleName), "fail");
                     }
                 }
             }
@@ -690,7 +679,7 @@ namespace LemoineTools.Tools.Clash
             View callout = ViewSection.CreateCallout(doc, parentView.Id, parentView.GetTypeId(), req.MinWorld, req.MaxWorld);
             if (callout == null)
             {
-                Log($"Dense area {req.ClusterId}: Revit returned no callout view — skipped.", "fail");
+                Log(LemoineStrings.T("clash.finder.log.noCalloutView", req.ClusterId), "fail");
                 return null;
             }
 
@@ -733,12 +722,12 @@ namespace LemoineTools.Tools.Clash
             {
                 callout.Scale = scale;
                 if (callout.Scale != scale)
-                    Log($"Callout '{callout.Name}': scale stayed 1:{callout.Scale} after setting 1:{scale} — check its view template.", "fail");
+                    Log(LemoineStrings.T("clash.finder.log.scaleStuck", callout.Name, callout.Scale, scale), "fail");
             }
             catch (Exception ex)
             {
                 LemoineLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
-                Log($"Callout '{callout.Name}': could not set scale 1:{scale} (view template may pin it) — set it manually.", "fail");
+                Log(LemoineStrings.T("clash.finder.log.scaleSetFail", callout.Name, scale), "fail");
             }
         }
 

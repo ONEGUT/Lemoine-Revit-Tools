@@ -34,14 +34,14 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
             _handler.OnResultChips = null;
         }
 
-        public string Title    => "Refine Dimensions";
-        public string RunLabel => "Refine Dimensions →";
+        public string Title    => LemoineStrings.T("clash.refineDimensions.title");
+        public string RunLabel => LemoineStrings.T("clash.refineDimensions.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Views",   required: true),
-            new StepDefinition("S2", "Destination",    required: false),
-            new StepDefinition("S3", "Review & Run",   required: false),
+            new StepDefinition("S1", LemoineStrings.T("clash.refineDimensions.steps.S1"),   required: true),
+            new StepDefinition("S2", LemoineStrings.T("clash.refineDimensions.steps.S2"),    required: false),
+            new StepDefinition("S3", LemoineStrings.T("clash.refineDimensions.steps.S3"),   required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -58,8 +58,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
         // ── State ─────────────────────────────────────────────────────────────
         private List<long> _selectedViewIds = new List<long>();
 
-        private const string GridDisplay = "To Grid";
-        private const string SlabDisplay = "To Slab Edge";
+        private static readonly string GridDisplay = LemoineStrings.T("clash.refineDimensions.labels.destGrid");
+        private static readonly string SlabDisplay = LemoineStrings.T("clash.refineDimensions.labels.destSlab");
         private string _dimTargetType =
             string.Equals(AutoDimensionConfig.Instance.TargetType, "Grid", StringComparison.OrdinalIgnoreCase)
               ? "Grid" : "SlabEdge";
@@ -105,13 +105,12 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
         private FrameworkElement BuildViewsStep()
         {
             var outer = new StackPanel();
-            AddDim(outer, "Pick the views to re-dimension. Each should already carry Lemoine clash markers — "
-                        + "this tool dimensions existing markers and never detects or marks clashes.");
+            AddDim(outer, LemoineStrings.T("clash.refineDimensions.labels.s1Help"));
 
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Views to refine",
+                AccessibleName = LemoineStrings.T("clash.refineDimensions.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -131,8 +130,8 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
         {
             var outer = new StackPanel();
 
-            AddLabel(outer, "Dimension destination — each clash measures to the nearest one VISIBLE in the view.");
-            var destPicker = new LemoineSingleSelect { Label = "Destination" };
+            AddLabel(outer, LemoineStrings.T("clash.refineDimensions.labels.destLabel2"));
+            var destPicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.refineDimensions.labels.destLabel") };
             destPicker.Items        = new List<string> { SlabDisplay, GridDisplay };
             destPicker.SelectedItem = _dimTargetType == "Grid" ? GridDisplay : SlabDisplay;
             destPicker.SelectionChanged += sel =>
@@ -143,10 +142,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
             outer.Children.Add(destPicker);
 
             AddDivider(outer);
-            AddDim(outer, "Refine never creates callouts and never changes a view's scale. It replaces the "
-                        + "dimensions this tool placed before on the selected views; clash markers and other "
-                        + "annotations are left untouched. Chaining, grouping, and spacing use the saved "
-                        + "Settings → Dimensions values.");
+            AddDim(outer, LemoineStrings.T("clash.refineDimensions.labels.s2Help"));
             return WrapInScroll(outer);
         }
 
@@ -164,9 +160,9 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
         {
             switch (stepId)
             {
-                case "S1": return _selectedViewIds.Count == 0 ? "—" : $"{_selectedViewIds.Count} view(s)";
-                case "S2": return _dimTargetType == "Grid" ? "nearest grid" : "nearest slab edge";
-                case "S3": return "Ready to run";
+                case "S1": return _selectedViewIds.Count == 0 ? "—" : LemoineStrings.T("clash.refineDimensions.summaries.viewCount", _selectedViewIds.Count);
+                case "S2": return _dimTargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.summaries.destGrid") : LemoineStrings.T("clash.refineDimensions.summaries.destSlab");
+                case "S3": return LemoineStrings.T("clash.refineDimensions.summaries.S3");
                 default:   return "—";
             }
         }
@@ -174,21 +170,19 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
         // ── ILemoineReviewable — framework renders the review step ────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views", "Views"),
-            ("dest",  "Destination"),
+            ("views", LemoineStrings.T("clash.refineDimensions.review.itemViews")),
+            ("dest",  LemoineStrings.T("clash.refineDimensions.review.itemDest")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"] = _selectedViewIds.Count > 0 ? $"{_selectedViewIds.Count} view(s)" : "—",
-            ["dest"]  = _dimTargetType == "Grid" ? "nearest visible grid" : "nearest visible slab edge",
+            ["views"] = _selectedViewIds.Count > 0 ? LemoineStrings.T("clash.refineDimensions.review.viewsValue", _selectedViewIds.Count) : "—",
+            ["dest"]  = _dimTargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.review.destGrid") : LemoineStrings.T("clash.refineDimensions.review.destSlab"),
         };
 
-        public IList<string>? ReviewChips => new List<string> { "no callouts", "scale unchanged" };
+        public IList<string>? ReviewChips => new List<string> { LemoineStrings.T("clash.refineDimensions.review.chipNoCallouts"), LemoineStrings.T("clash.refineDimensions.review.chipScaleUnchanged") };
 
-        public string? ReviewNote => "Re-dimensions existing clash markers on the selected views to the "
-            + "nearest grid or slab edge visible in each view, replacing the dimensions this tool placed "
-            + "before. No clash detection, no callouts, no scale change.";
+        public string? ReviewNote => LemoineStrings.T("clash.refineDimensions.review.note");
 
         public string? ReviewWarning => null;
 

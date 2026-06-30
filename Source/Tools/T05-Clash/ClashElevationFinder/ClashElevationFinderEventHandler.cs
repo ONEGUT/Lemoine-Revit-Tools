@@ -46,12 +46,12 @@ namespace LemoineTools.Tools.Testing
             {
                 if (Definitions == null || Definitions.Count == 0)
                 {
-                    Log("No clash definitions selected.", "fail");
+                    Log(LemoineStrings.T("clash.elevationFinder.log.noDefs"), "fail");
                     fail++;
                 }
                 else if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log("No views selected.", "fail");
+                    Log(LemoineStrings.T("clash.elevationFinder.log.noViews"), "fail");
                     fail++;
                 }
                 else
@@ -64,7 +64,7 @@ namespace LemoineTools.Tools.Testing
                         if (ClearPrevious)
                         {
                             int removed = ClearPreviousMarkers(doc);
-                            if (removed > 0) Log($"Cleared {removed} previous marker element(s).", "info");
+                            if (removed > 0) Log(LemoineStrings.T("clash.elevationFinder.log.cleared", removed), "info");
                         }
 
                         int done = 0;
@@ -74,12 +74,12 @@ namespace LemoineTools.Tools.Testing
                             // (below) still run so markers placed for definitions done so far are preserved.
                             if (LemoineRun.CancelRequested)
                             {
-                                Log($"Stopped by user — {done} of {Definitions.Count} definition(s) processed; work so far preserved.", "warn");
+                                Log(LemoineStrings.T("common.log.stoppedByUser", done, Definitions.Count), "warn");
                                 break;
                             }
 
                             Progress(10 + (int)(done * 70.0 / Definitions.Count), pass, fail, skip);
-                            Log($"— Definition '{def.Name}' —", "info");
+                            Log(LemoineStrings.T("clash.elevationFinder.log.defHeader", def.Name), "info");
 
                             var opts = new ClashMarkingOptions
                             {
@@ -105,7 +105,7 @@ namespace LemoineTools.Tools.Testing
                         }
 
                         tx.Commit();
-                        Log($"Marking done — {pass} marker(s), {fail} failure(s).", pass > 0 ? "pass" : "fail");
+                        Log(LemoineStrings.T("clash.elevationFinder.log.markingDone", pass, fail), pass > 0 ? "pass" : "fail");
                     }
 
                     // Elevation-tag pass: place a spot elevation at each marker. Runs after the marking
@@ -114,18 +114,18 @@ namespace LemoineTools.Tools.Testing
                     {
                         if (SpotTypeId == ElementId.InvalidElementId)
                         {
-                            Log("No spot elevation type available in this project — markers placed, but no tags. Create a spot elevation type and re-run.", "fail");
+                            Log(LemoineStrings.T("clash.elevationFinder.log.noSpotType"), "fail");
                             fail++;
                         }
                         else
                         {
                             Progress(85, pass, fail, skip);
-                            Log("Placing elevation tags…", "info");
+                            Log(LemoineStrings.T("clash.elevationFinder.log.placingTags"), "info");
 
                             var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
                             tagsPlaced += tagResult.Placed;
                             fail       += tagResult.Failures;
-                            Log($"Elevation tags — {tagResult.Placed} placed, {tagResult.Failures} failure(s).",
+                            Log(LemoineStrings.T("clash.elevationFinder.log.tagsDone", tagResult.Placed, tagResult.Failures),
                                 tagResult.Placed > 0 ? "pass" : "fail");
                         }
                     }
@@ -133,7 +133,7 @@ namespace LemoineTools.Tools.Testing
             }
             catch (Exception ex)
             {
-                Log($"Fatal: {ex.Message}", "fail");
+                Log(LemoineStrings.T("clash.elevationFinder.log.fatal", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -142,7 +142,7 @@ namespace LemoineTools.Tools.Testing
                 // throwing callback can never skip the payload clear (memory discipline).
                 try
                 {
-                    Log($"Done — {pass} clash marker(s) placed, {tagsPlaced} elevation tag(s), {fail} failure(s).",
+                    Log(LemoineStrings.T("clash.elevationFinder.log.done", pass, tagsPlaced, fail),
                         pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
                     Progress(100, pass, fail, skip);
                     OnResultChips?.Invoke(new List<ResultChip>
