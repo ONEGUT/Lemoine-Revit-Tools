@@ -119,7 +119,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: run aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: run aborted", ex); Log(LemoineStrings.T("autofilters.filtersWindow.log.errorGeneric", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -147,17 +147,17 @@ namespace LemoineTools.Tools.AutoFilters
         {
             try
             {
-                var dlg = new TaskDialog("Auto Filters")
+                var dlg = new TaskDialog(LemoineStrings.T("autofilters.filtersWindow.dialogs.title"))
                 {
                     MainInstruction = fail == 1
-                        ? "1 filter could not be created."
-                        : $"{fail} filters could not be created.",
-                    MainContent     = "The remaining filters were created or left unchanged.",
+                        ? LemoineStrings.T("autofilters.filtersWindow.dialogs.mainInstructionSingular")
+                        : LemoineStrings.T("autofilters.filtersWindow.dialogs.mainInstructionPlural", fail),
+                    MainContent     = LemoineStrings.T("autofilters.filtersWindow.dialogs.mainContent"),
                     ExpandedContent = string.Join("\n", _failures),
                     CommonButtons   = TaskDialogCommonButtons.Close,
                 };
                 dlg.AddCommandLink(TaskDialogCommandLinkId.CommandLink1,
-                    "Open diagnostics log", "Shows the full per-rule failure detail.");
+                    LemoineStrings.T("autofilters.filtersWindow.dialogs.openLogLink"), LemoineStrings.T("autofilters.filtersWindow.dialogs.openLogDesc"));
                 if (dlg.Show() == TaskDialogResult.CommandLink1)
                     LemoineLog.OpenInDefaultViewer();
             }
@@ -192,7 +192,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (!createOnly && !view.AreGraphicsOverridesAllowed())
             {
-                Log($"Active view '{view.Name}' does not support graphic overrides.", "fail");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.viewNoOverrides", view.Name), "fail");
                 fail++; return;
             }
 
@@ -209,7 +209,7 @@ namespace LemoineTools.Tools.AutoFilters
                 if (selectedLinkSet.Contains(title) && !sourceDocs.Any(d => d.Equals(ld)))
                     sourceDocs.Add(ld);
             }
-            Log($"Scanning {sourceDocs.Count} document(s)…", "info");
+            Log(LemoineStrings.T("autofilters.filtersWindow.log.scanningDocuments", sourceDocs.Count), "info");
 
             // ── Load V2 config ────────────────────────────────────────────────
             var trades = AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>();
@@ -235,7 +235,7 @@ namespace LemoineTools.Tools.AutoFilters
             });
             if (totalRules == 0)
             {
-                Log("No enabled rules with match keywords found for selected trades.", "fail");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.noEnabledRules"), "fail");
                 fail++; return;
             }
             int rulesDone = 0;
@@ -288,7 +288,7 @@ namespace LemoineTools.Tools.AutoFilters
                         {
                             if (LemoineRun.CancelRequested)
                             {
-                                Log($"Stopped by user — {removed} orphan(s) removed; work so far preserved.", "warn");
+                                Log(LemoineStrings.T("autofilters.filtersWindow.log.stoppedOrphans", removed), "warn");
                                 break;
                             }
 
@@ -300,11 +300,11 @@ namespace LemoineTools.Tools.AutoFilters
                                     doc.Delete(orphan.Id);
                                     existingFilters.Remove(orphanName);
                                     removed++;
-                                    Log($"Removed '{orphanName}'.", "info");
+                                    Log(LemoineStrings.T("autofilters.filtersWindow.log.removedFilter", orphanName), "info");
                                 }
                                 catch (Exception ex)
                                 {
-                                    Log($"Could not remove '{orphanName}': {ex.Message}", "fail");
+                                    Log(LemoineStrings.T("autofilters.filtersWindow.log.removeFailed", orphanName, ex.Message), "fail");
                                 }
                             }
                         }
@@ -339,7 +339,7 @@ namespace LemoineTools.Tools.AutoFilters
                         {
                             if (LemoineRun.CancelRequested)
                             {
-                                Log($"Stopped by user — {rulesDone} of {totalRules} rule(s) processed; work so far preserved.", "warn");
+                                Log(LemoineStrings.T("common.log.stoppedByUser", rulesDone, totalRules), "warn");
                                 cancelled = true;
                                 break;
                             }
@@ -362,7 +362,7 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {rulesDone} of {totalRules} rule(s) processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", rulesDone, totalRules), "warn");
                             cancelled = true;
                             break;
                         }
@@ -384,7 +384,7 @@ namespace LemoineTools.Tools.AutoFilters
                         doc, trades, ApplyOverrideFilterNames,
                         solidFillId, solidLineId, fillPatternMap, linePatternMap, existingFilters);
                     if (recolored > 0)
-                        Log($"Re-applied overrides to {recolored} view/template placement(s).", "info");
+                        Log(LemoineStrings.T("autofilters.filtersWindow.log.reappliedOverrides", recolored), "info");
                 }
 
                 tx.Commit();
@@ -401,8 +401,8 @@ namespace LemoineTools.Tools.AutoFilters
                 AutoFiltersSettings.Instance.Save();
             }
 
-            string removeMsg = removed > 0 ? $", {removed} removed" : "";
-            Log($"Complete — {pass} created, {reused} reused, {fail} failed, {skip} skipped{removeMsg}.", "pass");
+            string removeMsg = removed > 0 ? LemoineStrings.T("autofilters.filtersWindow.log.removedSuffix", removed) : "";
+            Log(LemoineStrings.T("autofilters.filtersWindow.log.completeSummary", pass, reused, fail, skip, removeMsg), "pass");
             pass += reused;
         }
 
@@ -445,7 +445,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (catIds.Count == 0)
             {
-                Log($"[{trade.Id}/{rule.Name}] No BuiltInCategory resolved — skipped.", "info");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.noCategoryResolved", trade.Id, rule.Name), "info");
                 skip++; rulesDone++;
                 return;
             }
@@ -458,7 +458,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var pr = ResolveParamId(doc, sourceDocs, rule.Parameter, catIds, bipMap, paramCache);
                 if (pr.Id == null)
                 {
-                    Log($"[{trade.Id}/{rule.Name}] Could not resolve parameter '{rule.Parameter}'.", "fail");
+                    Log(LemoineStrings.T("autofilters.filtersWindow.log.paramNotResolved", trade.Id, rule.Name, rule.Parameter), "fail");
                     fail++; rulesDone++;
                     return;
                 }
@@ -466,7 +466,7 @@ namespace LemoineTools.Tools.AutoFilters
                 // Tell the user when a rule's parameter cannot reliably drive a filter
                 // over linked elements — the most common "filter created but does nothing".
                 if (pr.Warn != null)
-                    Log($"[{trade.Id}/{rule.Name}] {pr.Warn}", "info");
+                    Log(LemoineStrings.T("autofilters.filtersWindow.log.paramWarnPrefixed", trade.Id, rule.Name, pr.Warn), "info");
 
                 // Narrow categories to the ones the parameter can actually filter.
                 // ParameterFilterElement.Create requires the parameter to apply to EVERY
@@ -479,7 +479,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var filterableCats = NarrowToFilterable(doc, paramId!, catIds);
                 if (filterableCats.Count > 0 && filterableCats.Count < catIds.Count)
                 {
-                    Log($"[{trade.Id}/{rule.Name}] Parameter '{rule.Parameter}' applies to {filterableCats.Count} of {catIds.Count} categories — creating filter for the compatible ones.", "info");
+                    Log(LemoineStrings.T("autofilters.filtersWindow.log.narrowedCategories", trade.Id, rule.Name, rule.Parameter, filterableCats.Count, catIds.Count), "info");
                     catIds = filterableCats;
                 }
             }
@@ -575,7 +575,7 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         // buildFailed — leave the existing definition untouched rather than
                         // break a working filter.
-                        Log($"Kept '{filterName}': could not rebuild filter rule, left unchanged.", "info");
+                        Log(LemoineStrings.T("autofilters.filtersWindow.log.keptUnchanged", filterName), "info");
                     }
                     else if (KeepExistingOverrides)
                     {
@@ -589,7 +589,7 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     if (buildFailed)
                     {
-                        Log($"Skip '{filterName}': could not build filter rule.", "info");
+                        Log(LemoineStrings.T("autofilters.filtersWindow.log.skipCouldNotBuild", filterName), "info");
                         skip++; rulesDone++;
                         return;
                     }
@@ -627,7 +627,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Error '{filterName}': {ex.Message}", "fail");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.errorFilter", filterName, ex.Message), "fail");
                 fail++;
             }
 
@@ -709,7 +709,7 @@ namespace LemoineTools.Tools.AutoFilters
             string filterName = AutoFiltersSettings.MakeFilterName(trade.Id, rule.Name);
             if (!existingFilters.TryGetValue(filterName, out var pfe))
             {
-                Log($"[{trade.Id}/{rule.Name}] '{filterName}' not found — run {trade.Label}'s own tool first.", "info");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.filterNotFound", trade.Id, rule.Name, filterName, trade.Label), "info");
                 skip++; rulesDone++;
                 return;
             }
@@ -728,7 +728,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                Log($"Error '{filterName}': {ex.Message}", "fail");
+                Log(LemoineStrings.T("autofilters.filtersWindow.log.errorFilter", filterName, ex.Message), "fail");
                 fail++;
             }
 
@@ -933,7 +933,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (!wholeCat)
             {
                 var pr = ResolveParamId(doc, ctx.SourceDocs, rule.Parameter, catIds, ctx.BipMap, ctx.ParamCache);
-                if (pr.Id == null) { warn = $"Could not resolve parameter '{rule.Parameter}'."; return null; }
+                if (pr.Id == null) { warn = LemoineStrings.T("autofilters.filtersWindow.warn.couldNotResolveParam", rule.Parameter); return null; }
                 paramId = pr.Id;
                 warn = pr.Warn;
                 var filterable = NarrowToFilterable(doc, paramId!, catIds);
@@ -954,7 +954,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (buildFailed)
             {
                 // Don't break a working filter — leave the existing definition (if any) untouched.
-                warn ??= "Could not build filter rule; left unchanged.";
+                warn ??= LemoineStrings.T("autofilters.filtersWindow.warn.couldNotBuildLeftUnchanged");
                 return pfe;
             }
 
@@ -1365,17 +1365,17 @@ namespace LemoineTools.Tools.AutoFilters
                     return new ParamResolve(hostSpe.Id, true, null);
 
                 return new ParamResolve(null, false,
-                    $"⚠ '{paramName}' is a shared parameter present in a link but not bound in the host — add it to the host's shared-parameter bindings so the filter can match linked elements.");
+                    LemoineStrings.T("autofilters.filtersWindow.warn.sharedNotBoundInHost", paramName));
             }
 
             // Non-shared project/family parameter: its id is document-specific.
             if (isLink)
                 return new ParamResolve(null, false,
-                    $"⚠ '{paramName}' is a project parameter that exists only in a link — host view filters cannot reference or match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
+                    LemoineStrings.T("autofilters.filtersWindow.warn.projectParamLinkOnly", paramName));
 
             // Host project parameter: usable on host elements, but won't match linked ones.
             return new ParamResolve(p.Id, false,
-                $"⚠ '{paramName}' is a project parameter — view filters cannot match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.");
+                LemoineStrings.T("autofilters.filtersWindow.warn.projectParamHostOnly", paramName));
         }
 
         // "System Type" is RBS_DUCT_SYSTEM_TYPE_PARAM for duct categories and

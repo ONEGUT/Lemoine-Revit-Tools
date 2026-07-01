@@ -1,0 +1,104 @@
+// autofilters.filtersWindow.json — Auto Filters ribbon-launched configuration window
+// (FiltersSettingsWindow.xaml.cs: toolbar chrome, undo/redo history, floating status chip,
+// shared popup helpers) + its run handler (AutoFiltersEventHandler.cs: create/apply run log,
+// link-safety warnings surfaced via ParamResolve.Warn, and the close-failure TaskDialog).
+//
+// The bulk of this window's UI (trades sidebar, rule editor, category picker, templates
+// popup — same FiltersSettingsWindow class via the partial file GlobalSettingsWindow.Filters.cs)
+// was already externalized to globalSettings.filters.json in a prior commit; this file covers
+// only the pieces still living in FiltersSettingsWindow.xaml.cs itself.
+//
+// NOT localized (left as code):
+//   - single-glyph icon strings ("×", "⚙", Segoe MDL2 codepoints via ConvertFromUtf32) —
+//     decorative iconography, not language text.
+//   - "AutoFilters: ..." LemoineLog context strings and Debug.WriteLine — debug-only, out of scope.
+{
+  "window": {
+    "toolbar": {
+      "title": "Auto Filters",
+      "deleteFromProject": "Delete from Project",
+      "deleteFromProjectTooltip": "Permanently delete ParameterFilterElements from the project (opens a picker).",
+      "undoTooltip": "Undo (in-window edits)",
+      "redoTooltip": "Redo (in-window edits)",
+      "historyButton": "History ▾",
+      "historyButtonTooltip": "Change history — click an entry to jump to that state."
+    },
+
+    "history": {
+      "opened": "Opened",
+      "addTrade": "Add trade",
+      "addTradesPlural": "Add {0} trades",
+      "deleteTrade": "Delete trade",
+      "deleteTradesPlural": "Delete {0} trades",
+      "addRule": "Add rule",
+      "addRulesPlural": "Add {0} rules",
+      "deleteRule": "Delete rule",
+      "deleteRulesPlural": "Delete {0} rules",
+      "moveRules": "Move rule(s)",
+      "rename": "Rename “{0}” → “{1}”",
+      "edit": "Edit “{0}”",
+      "editGeneric": "Edit",
+      "popupHeader": "History — click an entry to jump",
+      "tagNow": "now",
+      "tagRedo": "redo"
+    },
+
+    "status": {
+      "discoverUnavailable": "Discover unavailable.",
+      "openingDiscover": "Opening Discover…",
+      "noTradeSelected": "No trade selected.",
+      "noTradesSelected": "No trades selected — check at least one.",
+      "removeUnavailable": "Remove unavailable.",
+      "noFiltersToRemove": "No filters to remove for the selected trades.",
+      "removingOne": "Removing “{0}” from the active view…",
+      "removingMany": "Removing {0} trades from the active view…",
+      "deleteFromProjectUnavailable": "Delete from Project unavailable.",
+      "openingDeleteFromProject": "Opening Delete from Project…",
+      "applyUnavailable": "Apply unavailable.",
+      "applyingOne": "Applying “{0}” to the active view…",
+      "applyingMany": "Applying {0} trades to the active view…"
+    },
+
+    "common": {
+      "cancel": "Cancel"
+    }
+  },
+
+  "log": {
+    "errorGeneric": "Error: {0}",
+    "viewNoOverrides": "Active view '{0}' does not support graphic overrides.",
+    "scanningDocuments": "Scanning {0} document(s)…",
+    "noEnabledRules": "No enabled rules with match keywords found for selected trades.",
+    "stoppedOrphans": "Stopped by user — {0} orphan(s) removed; work so far preserved.",
+    "removedFilter": "Removed '{0}'.",
+    "removeFailed": "Could not remove '{0}': {1}",
+    "reappliedOverrides": "Re-applied overrides to {0} view/template placement(s).",
+    "completeSummary": "Complete — {0} created, {1} reused, {2} failed, {3} skipped{4}.",
+    "removedSuffix": ", {0} removed",
+    "noCategoryResolved": "[{0}/{1}] No BuiltInCategory resolved — skipped.",
+    "paramNotResolved": "[{0}/{1}] Could not resolve parameter '{2}'.",
+    "paramWarnPrefixed": "[{0}/{1}] {2}",
+    "narrowedCategories": "[{0}/{1}] Parameter '{2}' applies to {3} of {4} categories — creating filter for the compatible ones.",
+    "keptUnchanged": "Kept '{0}': could not rebuild filter rule, left unchanged.",
+    "skipCouldNotBuild": "Skip '{0}': could not build filter rule.",
+    "errorFilter": "Error '{0}': {1}",
+    "filterNotFound": "[{0}/{1}] '{2}' not found — run {3}'s own tool first."
+  },
+
+  "warn": {
+    "sharedNotBoundInHost": "⚠ '{0}' is a shared parameter present in a link but not bound in the host — add it to the host's shared-parameter bindings so the filter can match linked elements.",
+    "projectParamLinkOnly": "⚠ '{0}' is a project parameter that exists only in a link — host view filters cannot reference or match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.",
+    "projectParamHostOnly": "⚠ '{0}' is a project parameter — view filters cannot match it on linked elements. Use a built-in/shared parameter or turn on 'Whole category'.",
+    "couldNotResolveParam": "Could not resolve parameter '{0}'.",
+    "couldNotBuildLeftUnchanged": "Could not build filter rule; left unchanged."
+  },
+
+  "dialogs": {
+    "title": "Auto Filters",
+    "mainInstructionSingular": "1 filter could not be created.",
+    "mainInstructionPlural": "{0} filters could not be created.",
+    "mainContent": "The remaining filters were created or left unchanged.",
+    "openLogLink": "Open diagnostics log",
+    "openLogDesc": "Shows the full per-rule failure detail."
+  }
+}

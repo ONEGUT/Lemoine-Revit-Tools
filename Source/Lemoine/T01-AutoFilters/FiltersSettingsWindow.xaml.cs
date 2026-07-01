@@ -135,7 +135,7 @@ namespace LemoineTools.Lemoine
         private void SetupHistory()
         {
             _history.Clear();
-            _history.Add(("Opened", SerializeTrades(_filterTrades)));
+            _history.Add((LemoineStrings.T("autofilters.filtersWindow.window.history.opened"), SerializeTrades(_filterTrades)));
             _historyIndex = 0;
             UpdateUndoRedoEnabled();
 
@@ -232,13 +232,13 @@ namespace LemoineTools.Lemoine
             var cur  = DeserializeTrades(curSnap)  ?? new List<FilterTradeConfig>();
 
             int pt = prev.Count, ct = cur.Count;
-            if (ct > pt) return ct - pt == 1 ? "Add trade"    : $"Add {ct - pt} trades";
-            if (ct < pt) return pt - ct == 1 ? "Delete trade" : $"Delete {pt - ct} trades";
+            if (ct > pt) return ct - pt == 1 ? LemoineStrings.T("autofilters.filtersWindow.window.history.addTrade")    : LemoineStrings.T("autofilters.filtersWindow.window.history.addTradesPlural", ct - pt);
+            if (ct < pt) return pt - ct == 1 ? LemoineStrings.T("autofilters.filtersWindow.window.history.deleteTrade") : LemoineStrings.T("autofilters.filtersWindow.window.history.deleteTradesPlural", pt - ct);
 
             int pr = prev.Sum(t => t.Rules?.Count ?? 0);
             int cr = cur.Sum(t => t.Rules?.Count ?? 0);
-            if (cr > pr) return cr - pr == 1 ? "Add rule"    : $"Add {cr - pr} rules";
-            if (cr < pr) return pr - cr == 1 ? "Delete rule" : $"Delete {pr - cr} rules";
+            if (cr > pr) return cr - pr == 1 ? LemoineStrings.T("autofilters.filtersWindow.window.history.addRule")    : LemoineStrings.T("autofilters.filtersWindow.window.history.addRulesPlural", cr - pr);
+            if (cr < pr) return pr - cr == 1 ? LemoineStrings.T("autofilters.filtersWindow.window.history.deleteRule") : LemoineStrings.T("autofilters.filtersWindow.window.history.deleteRulesPlural", pr - cr);
 
             var prevName   = new Dictionary<string, string>();
             var prevTrade  = new Dictionary<string, string>();
@@ -250,14 +250,14 @@ namespace LemoineTools.Lemoine
                 foreach (var r in t.Rules ?? new List<FilterRuleConfig>())
                 {
                     if (prevTrade.TryGetValue(r.Id, out var pid) && pid != t.Id)
-                        return "Move rule(s)";
+                        return LemoineStrings.T("autofilters.filtersWindow.window.history.moveRules");
                     if (prevName.TryGetValue(r.Id, out var pn) && pn != (r.Name ?? ""))
-                        return $"Rename “{pn}” → “{r.Name}”";
+                        return LemoineStrings.T("autofilters.filtersWindow.window.history.rename", pn, r.Name);
                 }
 
             var active = cur.FirstOrDefault(t => t.Id == _fActiveTradeId)?
                 .Rules?.FirstOrDefault(r => r.Id == _fActiveRuleId);
-            return active != null ? $"Edit “{active.Name}”" : "Edit";
+            return active != null ? LemoineStrings.T("autofilters.filtersWindow.window.history.edit", active.Name) : LemoineStrings.T("autofilters.filtersWindow.window.history.editGeneric");
         }
 
         // History dropdown — entries newest-first. The current position is highlighted ("now");
@@ -283,7 +283,7 @@ namespace LemoineTools.Lemoine
             outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
 
             var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 6) };
-            var hdr = MiniLabel("History — click an entry to jump");
+            var hdr = MiniLabel(LemoineStrings.T("autofilters.filtersWindow.window.history.popupHeader"));
             hdr.Margin = new Thickness(12, 0, 12, 6);
             panel.Children.Add(hdr);
             var sep = new Border { Height = 1 };
@@ -320,7 +320,7 @@ namespace LemoineTools.Lemoine
                 Grid.SetColumn(lbl, 0);
                 rowGrid.Children.Add(lbl);
 
-                string tagText = isCur ? "now" : (isRedo ? "redo" : "");
+                string tagText = isCur ? LemoineStrings.T("autofilters.filtersWindow.window.history.tagNow") : (isRedo ? LemoineStrings.T("autofilters.filtersWindow.window.history.tagRedo") : "");
                 if (tagText.Length > 0)
                 {
                     var tag = new Border
@@ -460,12 +460,12 @@ namespace LemoineTools.Lemoine
             if (evt == null)
             {
                 LemoineLog.Warn("FiltersSettingsWindow", "Discover unavailable: event handler not registered.");
-                FlashStatus("Discover unavailable.");
+                FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.discoverUnavailable"));
                 return;
             }
 
             evt.Raise();
-            FlashStatus("Opening Discover…");
+            FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.openingDiscover"));
         }
 
         // When focus returns (e.g. after Discover wrote new rules into the shared AutoFiltersSettings
@@ -501,7 +501,7 @@ namespace LemoineTools.Lemoine
         {
             if (_filterTrades == null) return;
             var trade = _filterTrades.FirstOrDefault(t => t.Id == _fActiveTradeId);
-            if (trade == null) { FlashStatus("No trade selected."); return; }
+            if (trade == null) { FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.noTradeSelected")); return; }
             ApplyTradesToView(new List<FilterTradeConfig> { trade });
         }
 
@@ -512,7 +512,7 @@ namespace LemoineTools.Lemoine
         {
             if (_filterTrades == null) return;
             var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
-            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+            if (selected.Count == 0) { FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.noTradesSelected")); return; }
             ApplyTradesToView(selected);
         }
 
@@ -524,14 +524,14 @@ namespace LemoineTools.Lemoine
         {
             if (_filterTrades == null) return;
             var selected = _filterTrades.Where(t => !_fApplyExcludedTradeIds.Contains(t.Id)).ToList();
-            if (selected.Count == 0) { FlashStatus("No trades selected — check at least one."); return; }
+            if (selected.Count == 0) { FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.noTradesSelected")); return; }
 
             var handler = App.DeleteFiltersHandler;
             var evt     = App.DeleteFiltersEvent;
             if (handler == null || evt == null)
             {
                 LemoineLog.Warn("FiltersSettingsWindow", "Remove from view unavailable: handler not registered.");
-                FlashStatus("Remove unavailable.");
+                FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.removeUnavailable"));
                 return;
             }
 
@@ -544,7 +544,7 @@ namespace LemoineTools.Lemoine
                     names.Add(AutoFiltersSettings.MakeFilterName(t.Id, r.Name));
                 }
 
-            if (names.Count == 0) { FlashStatus("No filters to remove for the selected trades."); return; }
+            if (names.Count == 0) { FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.noFiltersToRemove")); return; }
 
             handler.SelectedFilterNames = names;
             handler.PushLog    = null;
@@ -552,8 +552,8 @@ namespace LemoineTools.Lemoine
             handler.OnComplete = null;
             evt.Raise();
             FlashStatus(selected.Count == 1
-                ? $"Removing “{selected[0].Label}” from the active view…"
-                : $"Removing {selected.Count} trades from the active view…");
+                ? LemoineStrings.T("autofilters.filtersWindow.window.status.removingOne", selected[0].Label)
+                : LemoineStrings.T("autofilters.filtersWindow.window.status.removingMany", selected.Count));
         }
 
         // Toolbar "Delete from Project" — opens the existing Delete-from-Project picker window
@@ -565,11 +565,11 @@ namespace LemoineTools.Lemoine
             if (evt == null)
             {
                 LemoineLog.Warn("FiltersSettingsWindow", "Delete from Project unavailable: handler not registered.");
-                FlashStatus("Delete from Project unavailable.");
+                FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.deleteFromProjectUnavailable"));
                 return;
             }
             evt.Raise();
-            FlashStatus("Opening Delete from Project…");
+            FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.openingDeleteFromProject"));
         }
 
         // Creates and applies the given trades' filters to Revit's current view.
@@ -587,7 +587,7 @@ namespace LemoineTools.Lemoine
             if (handler == null || evt == null)
             {
                 LemoineLog.Warn("FiltersSettingsWindow", "Apply to view skipped: event handler unavailable.");
-                FlashStatus("Apply unavailable.");
+                FlashStatus(LemoineStrings.T("autofilters.filtersWindow.window.status.applyUnavailable"));
                 return;
             }
 
@@ -611,8 +611,8 @@ namespace LemoineTools.Lemoine
 
             evt.Raise();
             FlashStatus(trades.Count == 1
-                ? $"Applying “{trades[0].Label}” to the active view…"
-                : $"Applying {trades.Count} trades to the active view…");
+                ? LemoineStrings.T("autofilters.filtersWindow.window.status.applyingOne", trades[0].Label)
+                : LemoineStrings.T("autofilters.filtersWindow.window.status.applyingMany", trades.Count));
         }
 
         // ── Floating bottom-right status chip ───────────────────────────────────
@@ -713,10 +713,10 @@ namespace LemoineTools.Lemoine
             // rule list and trades sidebar. The toolbar carries the destructive "Delete from
             // Project" action (opens the existing window) plus the window close button.
             var deleteProjBtn = LemoineControlStyles.BuildSmallButton(
-                "Delete from Project", LemoineControlStyles.LemoineButtonVariant.Danger);
+                LemoineStrings.T("autofilters.filtersWindow.window.toolbar.deleteFromProject"), LemoineControlStyles.LemoineButtonVariant.Danger);
             deleteProjBtn.VerticalAlignment = VerticalAlignment.Center;
             deleteProjBtn.Margin            = new Thickness(0, 0, 8, 0);
-            deleteProjBtn.ToolTip           = "Permanently delete ParameterFilterElements from the project (opens a picker).";
+            deleteProjBtn.ToolTip           = LemoineStrings.T("autofilters.filtersWindow.window.toolbar.deleteFromProjectTooltip");
             deleteProjBtn.Click += (s, e) => OpenDeleteFromProject();
 
             // Undo / Redo / History for in-window menu edits.
@@ -730,13 +730,13 @@ namespace LemoineTools.Lemoine
                 b.Click += (s, e) => onClick();
                 return b;
             }
-            _undoBtn = IconBtn(0xE7A7, "Undo (in-window edits)", HistoryUndo);  // Segoe MDL2: Undo
-            _redoBtn = IconBtn(0xE7A6, "Redo (in-window edits)", HistoryRedo);  // Segoe MDL2: Redo
+            _undoBtn = IconBtn(0xE7A7, LemoineStrings.T("autofilters.filtersWindow.window.toolbar.undoTooltip"), HistoryUndo);  // Segoe MDL2: Undo
+            _redoBtn = IconBtn(0xE7A6, LemoineStrings.T("autofilters.filtersWindow.window.toolbar.redoTooltip"), HistoryRedo);  // Segoe MDL2: Redo
 
-            var historyBtn = LemoineControlStyles.BuildSmallButton("History ▾");
+            var historyBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("autofilters.filtersWindow.window.toolbar.historyButton"));
             historyBtn.VerticalAlignment = VerticalAlignment.Center;
             historyBtn.Margin            = new Thickness(0, 0, 12, 0);
-            historyBtn.ToolTip           = "Change history — click an entry to jump to that state.";
+            historyBtn.ToolTip           = LemoineStrings.T("autofilters.filtersWindow.window.toolbar.historyButtonTooltip");
             historyBtn.Click += (s, e) => ShowHistoryPopup(historyBtn);
 
             var closeBtn = BuildFlatButton("×");
@@ -756,7 +756,7 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
             {
-                Title        = "Auto Filters",
+                Title        = LemoineStrings.T("autofilters.filtersWindow.window.toolbar.title"),
                 IconGlyph    = "⚙",
                 RightContent = rightPanel,
             };
@@ -897,7 +897,7 @@ namespace LemoineTools.Lemoine
                 confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
                 confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
                 confirmBtn.Click += (ss, ee) => { popup.IsOpen = false; onConfirm(); };
-                var cancelBtn = FlatSmBtn("Cancel");
+                var cancelBtn = FlatSmBtn(LemoineStrings.T("autofilters.filtersWindow.window.common.cancel"));
                 cancelBtn.Margin = new Thickness(6, 0, 0, 0);
                 cancelBtn.Click += (ss, ee) => popup.IsOpen = false;
                 var btnRow = new StackPanel { Orientation = Orientation.Horizontal };
