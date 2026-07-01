@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -307,7 +308,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var freeRow = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(8, 6, 8, 6) };
                 freeRow.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                var freeHint = new TextBlock { Text = "Press Enter to add typed value" };
+                var freeHint = new TextBlock { Text = LemoineStrings.T("controls.pickers.tagChipInput.freeTextHint") };
                 freeHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 freeHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 freeHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -399,7 +400,7 @@ namespace LemoineTools.Lemoine.Controls
             if (_rowStack == null) return;
             var none = new TextBlock
             {
-                Text   = AllowFreeText ? "No matches — press Enter to add" : "No matches",
+                Text   = AllowFreeText ? LemoineStrings.T("controls.pickers.tagChipInput.noMatchesFreeText") : LemoineStrings.T("controls.pickers.tagChipInput.noMatches"),
                 Margin = new Thickness(8, 6, 8, 6),
             };
             none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");

@@ -1,0 +1,79 @@
+// controls.pickers.json — shared picker/selection control library text.
+// Files: LemoineColorPickerPanel.xaml.cs, LemoineColorPickerWindow.xaml.cs, LemoineSwatchPicker.xaml.cs,
+//        LemoineBrowserTreePicker.xaml.cs, LemoineMultiSelectTabs.xaml.cs, LemoineTagChipInput.xaml.cs.
+//
+// NOTE — deliberately left in code (not externalized):
+//  - LemoineSwatchPicker's shape/fill kind tokens ("square","circle","tri","line","dash","solid","hatch","dots")
+//    are persisted/logic tokens compared with == and fed straight into LemoineSwatchGlyph's Kind/Fill props;
+//    the FILL row's own visible label reuses that same token as its text, so translating it would desync the
+//    displayed word from the stored/compared value.
+//  - LemoineColorPickerPanel's XML persistence tag/attribute names ("ColorSets","Set","Slot","RecentColors",
+//    "Color","activeIndex","name") and every "#RRGGBB"-style hex format string are data, not prose.
+//  - Segoe MDL2 / Unicode glyphs used icon-only (▾ ▸ × + ✕ ◐ ✓) stay in code per CLAUDE.md convention.
+//  - LemoineLog.* context strings (e.g. "ColorPicker: load saved swatches") are diagnostics-only, out of scope.
+{
+  "colorPickerPanel": {
+    "defaults": {
+      "setFallbackName": "Set",
+      "setOneName": "Set 1",
+      "newSetName": "Set {0}"
+    },
+    "labels": {
+      "hex": "HEX",
+      "hashPrefix": "#",
+      "r": "R",
+      "g": "G",
+      "b": "B",
+      "a": "A",
+      "recent": "Recent"
+    },
+    "buttons": {
+      "clear": "Clear",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteSet": "Delete Set",
+      "newSet": "+ New Set",
+      "add": "Add",
+      "remove": "Remove"
+    },
+    "tooltips": {
+      "projectSwatch": "{0} · Right-click to remove",
+      "emptySwatch": "Click to save current color here"
+    }
+  },
+  "colorPickerWindow": {
+    "title": "Pick Color",
+    "cancel": "Cancel",
+    "applyColor": "Apply Color"
+  },
+  "swatchPicker": {
+    "defaultTitle": "SYMBOL",
+    "shapeHeader": "{0} · SHAPE",
+    "fillHeader": "FILL",
+    "colorHeader": "COLOR",
+    "pickColorLabel": "Pick color…"
+  },
+  "browserTreePicker": {
+    "filterHint": "Filter views & sheets…",
+    "expandAll": "Expand all",
+    "collapse": "Collapse",
+    "noMatches": "No matches.",
+    "nothingToPick": "Nothing to pick in this project.",
+    "dependentsTooltip": "Right-click to select all dependent views",
+    "selectedPill": "{0} selected",
+    "viewWord": "view",
+    "sheetWord": "sheet",
+    "clear": "Clear",
+    "noneSelected": "None selected"
+  },
+  "multiSelectTabs": {
+    "selectedTabLabel": "Selected",
+    "noItemsSelected": "No items selected.",
+    "allGroupRow": "All {0}"
+  },
+  "tagChipInput": {
+    "freeTextHint": "Press Enter to add typed value",
+    "noMatchesFreeText": "No matches — press Enter to add",
+    "noMatches": "No matches"
+  }
+}

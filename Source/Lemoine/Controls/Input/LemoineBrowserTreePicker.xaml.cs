@@ -6,6 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -62,7 +63,7 @@ namespace LemoineTools.Lemoine.Controls
             _filterHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             _filterHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             _filterHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _filterHint.Text = "Filter views & sheets…";
+            _filterHint.Text = LemoineStrings.T("controls.pickers.browserTreePicker.filterHint");
 
             _filterBox.TextChanged += (s, e) =>
             {
@@ -72,12 +73,12 @@ namespace LemoineTools.Lemoine.Controls
                 RebuildRows();
             };
 
-            var expandBtn = LemoineControlStyles.BuildSmallButton("Expand all");
+            var expandBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("controls.pickers.browserTreePicker.expandAll"));
             expandBtn.Margin = new Thickness(0, 0, 4, 0);
             expandBtn.Click += (s, e) => { ExpandAll(); RebuildRows(); };
             _filterBtns.Children.Add(expandBtn);
 
-            var collapseBtn = LemoineControlStyles.BuildSmallButton("Collapse");
+            var collapseBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("controls.pickers.browserTreePicker.collapse"));
             collapseBtn.Click += (s, e) => { CollapseAll(); RebuildRows(); };
             _filterBtns.Children.Add(collapseBtn);
 
@@ -184,7 +185,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var none = new TextBlock
                 {
-                    Text         = filtering ? "No matches." : "Nothing to pick in this project.",
+                    Text         = filtering ? LemoineStrings.T("controls.pickers.browserTreePicker.noMatches") : LemoineStrings.T("controls.pickers.browserTreePicker.nothingToPick"),
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(6, 6, 0, 4),
                     TextWrapping = TextWrapping.Wrap,
@@ -355,7 +356,7 @@ namespace LemoineTools.Lemoine.Controls
             int dependentCount = n.LeafIds.Count - (n.Eligible ? 1 : 0);
             if (!SingleSelect && dependentCount > 0)
             {
-                row.ToolTip = "Right-click to select all dependent views";
+                row.ToolTip = LemoineStrings.T("controls.pickers.browserTreePicker.dependentsTooltip");
                 row.MouseRightButtonDown += (s, e) =>
                 {
                     e.Handled = true;
@@ -435,7 +436,7 @@ namespace LemoineTools.Lemoine.Controls
                 pill.SetResourceReference(Border.BorderBrushProperty,  "LemoineAccent");
                 pill.BorderThickness = new Thickness(1);
 
-                var pillText = new TextBlock { Text = $"{_selected.Count} selected", FontWeight = FontWeights.Medium };
+                var pillText = new TextBlock { Text = LemoineStrings.T("controls.pickers.browserTreePicker.selectedPill", _selected.Count), FontWeight = FontWeights.Medium };
                 pillText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 pillText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 pillText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -443,10 +444,12 @@ namespace LemoineTools.Lemoine.Controls
                 DockPanel.SetDock(pill, Dock.Left);
                 _footerPanel.Children.Add(pill);
 
+                string viewWord  = LemoineStrings.T("controls.pickers.browserTreePicker.viewWord");
+                string sheetWord = LemoineStrings.T("controls.pickers.browserTreePicker.sheetWord");
                 string breakdown =
-                    views > 0 && sheets > 0 ? $"{views} view{(views == 1 ? "" : "s")}  ·  {sheets} sheet{(sheets == 1 ? "" : "s")}"
-                    : views > 0             ? $"{views} view{(views == 1 ? "" : "s")}"
-                                            : $"{sheets} sheet{(sheets == 1 ? "" : "s")}";
+                    views > 0 && sheets > 0 ? $"{views} {viewWord}{(views == 1 ? "" : "s")}  ·  {sheets} {sheetWord}{(sheets == 1 ? "" : "s")}"
+                    : views > 0             ? $"{views} {viewWord}{(views == 1 ? "" : "s")}"
+                                            : $"{sheets} {sheetWord}{(sheets == 1 ? "" : "s")}";
                 var detail = new TextBlock
                 {
                     Text              = breakdown,
@@ -461,7 +464,7 @@ namespace LemoineTools.Lemoine.Controls
 
                 var clear = new TextBlock
                 {
-                    Text              = "Clear",
+                    Text              = LemoineStrings.T("controls.pickers.browserTreePicker.clear"),
                     Cursor            = Cursors.Hand,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
@@ -484,7 +487,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var none = new TextBlock
                 {
-                    Text              = "None selected",
+                    Text              = LemoineStrings.T("controls.pickers.browserTreePicker.noneSelected"),
                     FontStyle         = FontStyles.Italic,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
