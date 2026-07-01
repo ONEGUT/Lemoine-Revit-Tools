@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using LemoineTools.Lemoine;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
 using Microsoft.Win32;
@@ -481,7 +482,7 @@ namespace LemoineTools.Lemoine.Controls
 
             var addGrpLabel = new TextBlock
             {
-                Text                = "＋  Add New Group",
+                Text                = LemoineStrings.T("testing.legendCreator.builder.builder.canvas.addNewGroup"),
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
             addGrpLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -607,7 +608,7 @@ namespace LemoineTools.Lemoine.Controls
 
             var stack = new StackPanel { Margin = new Thickness(10, 10, 10, 10) };
 
-            var header = new TextBlock { Text = "BATCH BLOCK EDIT" };
+            var header = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.header") };
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -615,7 +616,7 @@ namespace LemoineTools.Lemoine.Controls
 
             stack.Children.Add(MakeBulkSep());
 
-            var note = new TextBlock { Text = $"{_lSelectedBlockIds.Count} blocks selected.", FontStyle = FontStyles.Italic, Margin = new Thickness(0, 4, 0, 4) };
+            var note = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.selectedCount", _lSelectedBlockIds.Count), FontStyle = FontStyles.Italic, Margin = new Thickness(0, 4, 0, 4) };
             note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -629,7 +630,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 string firstColor = selectedBlocks.FirstOrDefault()?.Color ?? "#888888";
                 var colorRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 3) };
-                var colorLabel   = MakeBulkRowLabel("COLOR");
+                var colorLabel   = MakeBulkRowLabel(LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.colorLabel"));
                 var swatchBorder = new Border
                 {
                     Width = 22, Height = 14, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2),
@@ -653,8 +654,8 @@ namespace LemoineTools.Lemoine.Controls
                             container.Resources[key] = win.Resources[key];
 
                     var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
-                    var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
-                    var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    var applyBtn  = LemoineControlStyles.BuildButton(LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.applyColor"), LemoineControlStyles.LemoineButtonVariant.Primary);
+                    var cancelBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.cancel"),      LemoineControlStyles.LemoineButtonVariant.Ghost);
                     cancelBtn.Margin = new Thickness(0, 0, 6, 0);
 
                     var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 0) };
@@ -694,7 +695,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 bool anyVisible = selectedBlocks.Any(b => b.Visible);
                 var visRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 3) };
-                var visLabel = MakeBulkRowLabel("VISIBLE");
+                var visLabel = MakeBulkRowLabel(LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.visibleLabel"));
                 var eyeBtn = new Border
                 {
                     Width = 28, Height = 22, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
@@ -729,7 +730,7 @@ namespace LemoineTools.Lemoine.Controls
             deleteBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineRed");
             deleteBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
 
-            var deleteTb = new TextBlock { Text = "Delete All ✕", VerticalAlignment = VerticalAlignment.Center };
+            var deleteTb = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.deleteAll"), VerticalAlignment = VerticalAlignment.Center };
             deleteTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
             deleteTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             deleteTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -739,7 +740,7 @@ namespace LemoineTools.Lemoine.Controls
             deleteBorder.MouseLeave += (s, e) => deleteBorder.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
             deleteBorder.MouseLeftButtonUp += (s, e) =>
             {
-                if (!_confirmDelete) { deleteTb.Text = "Confirm — click again"; _confirmDelete = true; }
+                if (!_confirmDelete) { deleteTb.Text = LemoineStrings.T("testing.legendCreator.builder.builder.bulkEditor.confirmDelete"); _confirmDelete = true; }
                 else
                 {
                     var ids = new HashSet<string>(_lSelectedBlockIds);
@@ -807,7 +808,7 @@ namespace LemoineTools.Lemoine.Controls
                 }
                 case LegendDragPayload.Kind.PaletteCustom:
                 {
-                    var block = new LegendBlockConfig { Id=LegendIdGen.New("b"), Name="Custom", Custom=true, Color="#888888", Kind="square", Fill="solid", Visible=true };
+                    var block = new LegendBlockConfig { Id=LegendIdGen.New("b"), Name=LemoineStrings.T("testing.legendCreator.builder.builder.defaults.customLabel"), Custom=true, Color="#888888", Kind="square", Fill="solid", Visible=true };
                     int idx = Math.Max(0, Math.Min(args.TargetIndex, grp.Blocks.Count));
                     grp.Blocks.Insert(idx, block);
                     break;
@@ -834,7 +835,7 @@ namespace LemoineTools.Lemoine.Controls
             var grp = new LegendGroupConfig
             {
                 Id = LegendIdGen.New("g"),
-                Title = (trade?.Label ?? "Custom").ToUpperInvariant(),
+                Title = (trade?.Label ?? LemoineStrings.T("testing.legendCreator.builder.builder.defaults.customLabel")).ToUpperInvariant(),
                 SourceTradeId = trade?.Id ?? "",
             };
             if (trade?.Rules != null)
@@ -994,7 +995,7 @@ namespace LemoineTools.Lemoine.Controls
             }
 
             // ── Saved templates list ──────────────────────────────────────────
-            AddSectionHeader("SAVED TEMPLATES");
+            AddSectionHeader(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.savedTemplatesHeader"));
             var templateListPanel = new StackPanel();
 
             void RebuildTemplateList()
@@ -1003,7 +1004,7 @@ namespace LemoineTools.Lemoine.Controls
                 var current = store.List();
                 if (current.Count == 0)
                 {
-                    var empty = new TextBlock { Text = "No saved templates yet.", Margin = new Thickness(12, 4, 12, 4), FontStyle = FontStyles.Italic };
+                    var empty = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.noSavedTemplates"), Margin = new Thickness(12, 4, 12, 4), FontStyle = FontStyles.Italic };
                     empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                     empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                     empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1073,7 +1074,7 @@ namespace LemoineTools.Lemoine.Controls
                         }
                         else
                         {
-                            MessageBox.Show("Failed to load template.", "Template Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            MessageBox.Show(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.loadFailedMessage"), LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.templateErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     };
 
@@ -1132,7 +1133,7 @@ namespace LemoineTools.Lemoine.Controls
                     }
                     else
                     {
-                        MessageBox.Show("Save failed: " + err, "Template Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.saveFailedMessage", err), LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.templateErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
 
@@ -1142,7 +1143,7 @@ namespace LemoineTools.Lemoine.Controls
                     if (e.Key == Key.Escape) { e.Handled = true; ShowSaveButtonState(); }
                 };
 
-                var confirmBtn = MakeFlatSmBtn("Save");
+                var confirmBtn = MakeFlatSmBtn(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.saveButton"));
                 confirmBtn.Margin = new Thickness(6, 0, 0, 0);
                 confirmBtn.Click += (s, e) => DoSave();
 
@@ -1174,7 +1175,7 @@ namespace LemoineTools.Lemoine.Controls
                 icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 icon.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-                var lbl = new TextBlock { Text = "Save Current as Template", Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+                var lbl = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.saveCurrentAsTemplate"), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -1195,12 +1196,12 @@ namespace LemoineTools.Lemoine.Controls
 
             // ── File operations ───────────────────────────────────────────────
             AddSep();
-            AddSectionHeader("FILE");
+            AddSectionHeader(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.fileSectionHeader"));
 
-            AddMenuRow("↑", "Import from File", () =>
+            AddMenuRow("↑", LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.importFromFile"), () =>
             {
                 popup.IsOpen = false;
-                var dlg = new OpenFileDialog { Title = "Import Legend Template", Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*" };
+                var dlg = new OpenFileDialog { Title = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.importDialogTitle"), Filter = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.xmlFileFilter") };
                 if (dlg.ShowDialog() == true)
                 {
                     var loaded = LegendCreatorSettings.TryLoad(dlg.FileName);
@@ -1213,15 +1214,15 @@ namespace LemoineTools.Lemoine.Controls
                     }
                     else
                     {
-                        MessageBox.Show("Failed to import file.", "Import Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.importFailedMessage"), LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.importErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
             });
 
-            AddMenuRow("↓", "Export to File", () =>
+            AddMenuRow("↓", LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.exportToFile"), () =>
             {
                 popup.IsOpen = false;
-                var dlg = new SaveFileDialog { Title = "Export Legend Template", Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*", DefaultExt = "xml" };
+                var dlg = new SaveFileDialog { Title = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.exportDialogTitle"), Filter = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.xmlFileFilter"), DefaultExt = "xml" };
                 if (dlg.ShowDialog() == true)
                 {
                     var snapshot = new LegendCreatorSettings
@@ -1279,7 +1280,7 @@ namespace LemoineTools.Lemoine.Controls
             btn.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                if (!confirmed) { tb.Text = "Sure?"; confirmed = true; }
+                if (!confirmed) { tb.Text = LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.deleteConfirm"); confirmed = true; }
                 else onConfirm();
             };
             return btn;

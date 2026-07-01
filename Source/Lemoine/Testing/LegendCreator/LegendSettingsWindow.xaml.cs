@@ -157,7 +157,7 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new LemoineTitleBar
             {
-                Title        = "Legend Creation",
+                Title        = LemoineStrings.T("testing.legendCreator.builder.window.titleBar.title"),
                 IconGlyph    = "⚙",
                 RightContent = rightPanel,
             };
@@ -173,16 +173,16 @@ namespace LemoineTools.Lemoine
             _statusChip.Margin              = new Thickness(0, 0, 0, 6);
 
             // Preview pill — sits directly above the Create pill
-            _previewPill = LemoineControlStyles.BuildActionPill("Preview", primary: false, TogglePreviewFromPill);
+            _previewPill = LemoineControlStyles.BuildActionPill(LemoineStrings.T("testing.legendCreator.builder.window.actions.previewButton"), primary: false, TogglePreviewFromPill);
             _previewPill.HorizontalAlignment = HorizontalAlignment.Center;
             _previewPill.Margin              = new Thickness(0, 0, 0, 8);
-            _previewPill.ToolTip             = "Toggle a live preview of the legend";
+            _previewPill.ToolTip             = LemoineStrings.T("testing.legendCreator.builder.window.actions.previewTooltip");
             _previewPillLabel = _previewPill.Child as TextBlock;
 
             // Create / Update pill
-            _createPill = LemoineControlStyles.BuildActionPill("Create Legend →", primary: true, HandleCreateUpdate);
+            _createPill = LemoineControlStyles.BuildActionPill(LemoineStrings.T("testing.legendCreator.builder.window.actions.createLegend"), primary: true, HandleCreateUpdate);
             _createPill.HorizontalAlignment = HorizontalAlignment.Center;
-            _createPill.ToolTip             = "Create or update the Legend view in Revit";
+            _createPill.ToolTip             = LemoineStrings.T("testing.legendCreator.builder.window.actions.createTooltip");
             _createPillLabel = _createPill.Child as TextBlock;
 
             var stack = new StackPanel
@@ -273,13 +273,13 @@ namespace LemoineTools.Lemoine
             };
             st.BeginAnimation(ScaleTransform.ScaleXProperty, open);
             st.BeginAnimation(ScaleTransform.ScaleYProperty, open);
-            if (_previewPillLabel != null) _previewPillLabel.Text = "Hide Preview";
+            if (_previewPillLabel != null) _previewPillLabel.Text = LemoineStrings.T("testing.legendCreator.builder.window.actions.hidePreviewButton");
         }
 
         private void ClosePreview()
         {
             _previewVisible = false;
-            if (_previewPillLabel != null) _previewPillLabel.Text = "Preview";
+            if (_previewPillLabel != null) _previewPillLabel.Text = LemoineStrings.T("testing.legendCreator.builder.window.actions.previewButton");
             if (_previewOverlayGrid == null) return;
             var st    = (ScaleTransform)_previewOverlayGrid.RenderTransform;
             var close = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140))
@@ -434,7 +434,7 @@ namespace LemoineTools.Lemoine
                 Orientation         = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
-            var pillText = new TextBlock { Text = "Templates", VerticalAlignment = VerticalAlignment.Center };
+            var pillText = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.window.sidebar.templatesPill"), VerticalAlignment = VerticalAlignment.Center };
             pillText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             pillText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             pillText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -558,7 +558,7 @@ namespace LemoineTools.Lemoine
             // Edit pencil (✎) — bordered hover button matching the filters trade edit.
             // Opens the Title / Subtitle editor moved here from the builder's old bar.
             var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
-            editBtn.ToolTip = "Edit legend title and subtitle";
+            editBtn.ToolTip = LemoineStrings.T("testing.legendCreator.builder.window.sidebar.editTooltip");
             editBtn.Margin  = new Thickness(4, 0, 0, 0);
             editBtn.MouseLeftButtonUp += (s, e) =>
             {
@@ -622,12 +622,12 @@ namespace LemoineTools.Lemoine
                 MinWidth    = 200,
             };
 
-            panel.Children.Add(MakeEditLabel("Title"));
+            panel.Children.Add(MakeEditLabel(LemoineStrings.T("testing.legendCreator.builder.window.editPopup.titleLabel")));
             var titleBox = MakeEditBox(entry.Layout?.Title ?? "");
             titleBox.Margin = new Thickness(0, 0, 0, 8);
             panel.Children.Add(titleBox);
 
-            panel.Children.Add(MakeEditLabel("Subtitle"));
+            panel.Children.Add(MakeEditLabel(LemoineStrings.T("testing.legendCreator.builder.window.editPopup.subtitleLabel")));
             var subBox = MakeEditBox(entry.Layout?.Subtitle ?? "");
             subBox.Margin = new Thickness(0, 0, 0, 10);
             panel.Children.Add(subBox);
@@ -647,7 +647,7 @@ namespace LemoineTools.Lemoine
             }
 
             var saveBtn = LemoineControlStyles.BuildButton(
-                "Save", LemoineControlStyles.LemoineButtonVariant.Primary);
+                LemoineStrings.T("testing.legendCreator.builder.window.editPopup.save"), LemoineControlStyles.LemoineButtonVariant.Primary);
             saveBtn.Click += (s, e) => Commit();
             panel.Children.Add(saveBtn);
 
@@ -669,7 +669,7 @@ namespace LemoineTools.Lemoine
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var dupBtn = LemoineControlStyles.BuildSmallButton(
-                    "Duplicate", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    LemoineStrings.T("testing.legendCreator.builder.window.editPopup.duplicate"), LemoineControlStyles.LemoineButtonVariant.Ghost);
                 dupBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
                 WpfGrid.SetColumn(dupBtn, 0);
                 dupBtn.Click += (s, e) => { popup.IsOpen = false; DuplicateLegend(entry); };
@@ -692,7 +692,7 @@ namespace LemoineTools.Lemoine
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var confirmBtn = LemoineControlStyles.BuildSmallButton(
-                    "Delete legend", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    LemoineStrings.T("testing.legendCreator.builder.window.editPopup.deleteLegend"), LemoineControlStyles.LemoineButtonVariant.Ghost);
                 confirmBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
                 confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
                 confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
@@ -701,7 +701,7 @@ namespace LemoineTools.Lemoine
                 row.Children.Add(confirmBtn);
 
                 var cancelBtn = LemoineControlStyles.BuildSmallButton(
-                    "Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    LemoineStrings.T("testing.legendCreator.builder.window.editPopup.cancel"), LemoineControlStyles.LemoineButtonVariant.Ghost);
                 cancelBtn.Margin = new Thickness(6, 0, 0, 0);
                 WpfGrid.SetColumn(cancelBtn, 1);
                 cancelBtn.Click += (s, e) => ShowActionButtons();
@@ -802,7 +802,7 @@ namespace LemoineTools.Lemoine
             copy.RevitViewId = -1;
             copy.DisplayName = null;
             if (copy.Layout == null) copy.Layout = new LegendLayoutConfig();
-            copy.Layout.Title = (entry.Layout?.Title ?? "Legend") + " (copy)";
+            copy.Layout.Title = (entry.Layout?.Title ?? LemoineStrings.T("testing.legendCreator.builder.window.defaults.untitledLegend")) + LemoineStrings.T("testing.legendCreator.builder.window.defaults.copySuffix");
 
             list.Insert(idx + 1, copy);
             LegendCreatorSettings.Instance.Save();
@@ -980,7 +980,7 @@ namespace LemoineTools.Lemoine
             // Preview is a single window-level overlay; reflect its state and, if
             // it's showing, repoint it at the newly-active legend.
             if (_previewPillLabel != null)
-                _previewPillLabel.Text = _previewVisible ? "Hide Preview" : "Preview";
+                _previewPillLabel.Text = _previewVisible ? LemoineStrings.T("testing.legendCreator.builder.window.actions.hidePreviewButton") : LemoineStrings.T("testing.legendCreator.builder.window.actions.previewButton");
             if (_previewVisible && _previewControl != null)
                 _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
             RebuildTabStack();
@@ -1007,7 +1007,7 @@ namespace LemoineTools.Lemoine
             _createBusy = false;
             if (_createPill != null) _createPill.Opacity = 1.0;
             if (_createPillLabel == null) return;
-            _createPillLabel.Text = entry.RevitViewId != -1 ? "Update Legend →" : "Create Legend →";
+            _createPillLabel.Text = entry.RevitViewId != -1 ? LemoineStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : LemoineStrings.T("testing.legendCreator.builder.window.actions.createLegend");
         }
 
         // Toggles the floating Create pill between idle and in-flight (busy) states.
@@ -1024,7 +1024,7 @@ namespace LemoineTools.Lemoine
             var entries = LegendCreatorSettings.Instance.Legends;
             if (_activeIndex >= 0 && _activeIndex < entries.Count)
                 _createPillLabel.Text =
-                    entries[_activeIndex].RevitViewId != -1 ? "Update Legend →" : "Create Legend →";
+                    entries[_activeIndex].RevitViewId != -1 ? LemoineStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : LemoineStrings.T("testing.legendCreator.builder.window.actions.createLegend");
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -1046,20 +1046,20 @@ namespace LemoineTools.Lemoine
             // legend comes from the assigned Text Styles, so there is no "Font pt" row.
             AddScaleDropdownRow(grid, 0, layout.ViewScale,
                 denom => { layout.ViewScale = denom; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 1, "Swatch W", layout.SwatchW, 0.05, 3.0, 0.05,
+            AddSizingRow(grid, 1, LemoineStrings.T("testing.legendCreator.builder.window.sizing.swatchW"), layout.SwatchW, 0.05, 3.0, 0.05,
                 d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 2, "Swatch H", layout.SwatchH, 0.02, 2.0, 0.05,
+            AddSizingRow(grid, 2, LemoineStrings.T("testing.legendCreator.builder.window.sizing.swatchH"), layout.SwatchH, 0.02, 2.0, 0.05,
                 d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
             // Three explicit gaps (paper inches): the old single "Gap" changed the row
             // spacing in the preview but the swatch→label spacing in the output.
-            AddSizingRow(grid, 3, "Row Gap", layout.RowGap, 0.0, 3.0, 0.02,
+            AddSizingRow(grid, 3, LemoineStrings.T("testing.legendCreator.builder.window.sizing.rowGap"), layout.RowGap, 0.0, 3.0, 0.02,
                 d => { layout.RowGap = d; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 4, "Col Gap", layout.ColGap, 0.0, 3.0, 0.02,
+            AddSizingRow(grid, 4, LemoineStrings.T("testing.legendCreator.builder.window.sizing.colGap"), layout.ColGap, 0.0, 3.0, 0.02,
                 d => { layout.ColGap = d; builder.NotifyLayoutChanged(); });
-            AddSizingRow(grid, 5, "Swatch–Label", layout.SwatchLabelGap, 0.0, 1.0, 0.01,
+            AddSizingRow(grid, 5, LemoineStrings.T("testing.legendCreator.builder.window.sizing.swatchLabelGap"), layout.SwatchLabelGap, 0.0, 1.0, 0.01,
                 d => { layout.SwatchLabelGap = d; builder.NotifyLayoutChanged(); });
 
-            return WrapCard("SIZING", grid);
+            return WrapCard(LemoineStrings.T("testing.legendCreator.builder.window.sizing.header"), grid);
         }
 
         // Standard Revit imperial view scales: label shown to the user → 1:n denominator
@@ -1086,7 +1086,7 @@ namespace LemoineTools.Lemoine
         {
             var lbl = new TextBlock
             {
-                Text              = "Scale",
+                Text              = LemoineStrings.T("testing.legendCreator.builder.window.sizing.scaleLabel"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
             };
@@ -1166,13 +1166,13 @@ namespace LemoineTools.Lemoine
             {
                 var noTypes = new TextBlock
                 {
-                    Text         = "No TextNoteTypes found in project.",
+                    Text         = LemoineStrings.T("testing.legendCreator.builder.window.textStyles.noTypesFound"),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 noTypes.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 noTypes.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 noTypes.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                return WrapCard("TEXT STYLES", noTypes);
+                return WrapCard(LemoineStrings.T("testing.legendCreator.builder.window.textStyles.header"), noTypes);
             }
 
             var grid = new WpfGrid();
@@ -1187,12 +1187,12 @@ namespace LemoineTools.Lemoine
             // its caps (ActiveRoleCaps) when a selection changes.
             void SetAndRefresh(Action<long> set, long id) { set(id); OnBuilderEdited(); }
 
-            AddTextTypeRow(grid, 0, "TITLE",        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
-            AddTextTypeRow(grid, 1, "SUBTITLE",     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
-            AddTextTypeRow(grid, 2, "GROUP HEADER", entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
-            AddTextTypeRow(grid, 3, "LABEL",        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
+            AddTextTypeRow(grid, 0, LemoineStrings.T("testing.legendCreator.builder.window.textStyles.title"),        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
+            AddTextTypeRow(grid, 1, LemoineStrings.T("testing.legendCreator.builder.window.textStyles.subtitle"),     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
+            AddTextTypeRow(grid, 2, LemoineStrings.T("testing.legendCreator.builder.window.textStyles.groupHeader"), entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
+            AddTextTypeRow(grid, 3, LemoineStrings.T("testing.legendCreator.builder.window.textStyles.label"),        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
 
-            return WrapCard("TEXT STYLES", grid);
+            return WrapCard(LemoineStrings.T("testing.legendCreator.builder.window.textStyles.header"), grid);
         }
 
         private void AddTextTypeRow(WpfGrid grid, int row, string label, long storedId, Action<long> onChanged)
@@ -1250,7 +1250,7 @@ namespace LemoineTools.Lemoine
 
             if (App.LegendCreatorHandler == null || App.LegendCreatorEvent == null)
             {
-                FlashStatus("Legend creator not initialised.");
+                FlashStatus(LemoineStrings.T("testing.legendCreator.builder.window.status.notInitialized"));
                 return;
             }
 
@@ -1304,7 +1304,7 @@ namespace LemoineTools.Lemoine
                         LegendCreatorSettings.Instance.Save();
                         UpdateCreateUpdateButton(list[capturedIndex]);
                     }
-                    FlashStatus("Legend created.");
+                    FlashStatus(LemoineStrings.T("testing.legendCreator.builder.window.status.createdMessage"));
                     SetCreateBusy(false, null);
                 }));
             };
@@ -1314,12 +1314,12 @@ namespace LemoineTools.Lemoine
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SetCreateBusy(false, null);
-                    if (fail > 0)                          FlashStatus(lastFailMsg ?? $"Completed with {fail} error(s).");
-                    else if (isUpdate && !createdNewView)  FlashStatus("Legend updated.");
+                    if (fail > 0)                          FlashStatus(lastFailMsg ?? LemoineStrings.T("testing.legendCreator.builder.window.status.completedWithErrors", fail));
+                    else if (isUpdate && !createdNewView)  FlashStatus(LemoineStrings.T("testing.legendCreator.builder.window.status.updatedMessage"));
                 }));
             };
 
-            SetCreateBusy(true, isUpdate ? "Updating…" : "Creating…");
+            SetCreateBusy(true, isUpdate ? LemoineStrings.T("testing.legendCreator.builder.window.status.updating") : LemoineStrings.T("testing.legendCreator.builder.window.status.creating"));
 
             LegendCreatorSettings.Instance.Save();
             App.LegendCreatorEvent.Raise();
@@ -1333,7 +1333,7 @@ namespace LemoineTools.Lemoine
             var entry = new LegendEntry
             {
                 Id     = LegendIdGen.New("legend"),
-                Layout = new LegendLayoutConfig { Title = "New Legend" },
+                Layout = new LegendLayoutConfig { Title = LemoineStrings.T("testing.legendCreator.builder.window.defaults.newLegendTitle") },
             };
             LegendCreatorSettings.Instance.Legends.Add(entry);
             LegendCreatorSettings.Instance.Save();

@@ -1,0 +1,105 @@
+// testing.legendCreator.builder.json — Legend Creator builder UI (window chrome + canvas control).
+// Files: Source/Lemoine/Controls/Legend/LemoineLegendBuilder.xaml.cs (canvas, palette drag/drop,
+//        block editor, bulk editor, footer counts, templates popup),
+//        Source/Lemoine/Testing/LegendCreator/LegendSettingsWindow.xaml.cs (host window: title bar,
+//        tabs, title/subtitle popup, sizing, text styles, create/update, status flash).
+// NOTE: the run-log lines for LegendCreatorEventHandler.cs live in testing.legendCreator.json —
+// this file is display/UI text only, no overlap. Kept in code: shape-kind tokens ("square"/"solid")
+// persisted on LegendBlockConfig, the standard imperial view-scale ladder (ImperialScales array —
+// data, not prose, mirrors Revit's own scale dropdown), the "✕"/"＋"/"↑"/"↓"/"˅"/"✎"/"×" standalone
+// icon glyphs and the Segoe MDL2 trash glyph (ConvertFromUtf32), and internal Tag markers
+// ("deleteBtn"). Icon glyphs baked into a translated label (e.g. "＋  Add New Group") stay inline
+// with the text, matching the established clashDefinitions.json convention.
+{
+  "builder": {
+    "canvas": {
+      "addNewGroup": "＋  Add New Group"
+    },
+    "bulkEditor": {
+      "header": "BATCH BLOCK EDIT",
+      "selectedCount": "{0} blocks selected.",
+      "colorLabel": "COLOR",
+      "applyColor": "Apply Color",
+      "cancel": "Cancel",
+      "visibleLabel": "VISIBLE",
+      "deleteAll": "Delete All ✕",
+      "confirmDelete": "Confirm — click again"
+    },
+    "templatesPopup": {
+      "savedTemplatesHeader": "SAVED TEMPLATES",
+      "noSavedTemplates": "No saved templates yet.",
+      "loadFailedMessage": "Failed to load template.",
+      "saveFailedMessage": "Save failed: {0}",
+      "templateErrorTitle": "Template Error",
+      "saveButton": "Save",
+      "saveCurrentAsTemplate": "Save Current as Template",
+      "fileSectionHeader": "FILE",
+      "importFromFile": "Import from File",
+      "exportToFile": "Export to File",
+      "importDialogTitle": "Import Legend Template",
+      "exportDialogTitle": "Export Legend Template",
+      "xmlFileFilter": "XML Files (*.xml)|*.xml|All Files (*.*)|*.*",
+      "importFailedMessage": "Failed to import file.",
+      "importErrorTitle": "Import Error",
+      "deleteConfirm": "Sure?"
+    },
+    "defaults": {
+      "customLabel": "Custom"
+    }
+  },
+  "window": {
+    "titleBar": {
+      "title": "Legend Creation"
+    },
+    "actions": {
+      "previewTooltip": "Toggle a live preview of the legend",
+      "createTooltip": "Create or update the Legend view in Revit",
+      "previewButton": "Preview",
+      "hidePreviewButton": "Hide Preview",
+      "createLegend": "Create Legend →",
+      "updateLegend": "Update Legend →"
+    },
+    "sidebar": {
+      "templatesPill": "Templates",
+      "editTooltip": "Edit legend title and subtitle"
+    },
+    "editPopup": {
+      "titleLabel": "Title",
+      "subtitleLabel": "Subtitle",
+      "save": "Save",
+      "duplicate": "Duplicate",
+      "deleteLegend": "Delete legend",
+      "cancel": "Cancel"
+    },
+    "defaults": {
+      "untitledLegend": "Legend",
+      "copySuffix": " (copy)",
+      "newLegendTitle": "New Legend"
+    },
+    "sizing": {
+      "header": "SIZING",
+      "scaleLabel": "Scale",
+      "swatchW": "Swatch W",
+      "swatchH": "Swatch H",
+      "rowGap": "Row Gap",
+      "colGap": "Col Gap",
+      "swatchLabelGap": "Swatch–Label"
+    },
+    "textStyles": {
+      "header": "TEXT STYLES",
+      "noTypesFound": "No TextNoteTypes found in project.",
+      "title": "TITLE",
+      "subtitle": "SUBTITLE",
+      "groupHeader": "GROUP HEADER",
+      "label": "LABEL"
+    },
+    "status": {
+      "notInitialized": "Legend creator not initialised.",
+      "createdMessage": "Legend created.",
+      "updatedMessage": "Legend updated.",
+      "completedWithErrors": "Completed with {0} error(s).",
+      "updating": "Updating…",
+      "creating": "Creating…"
+    }
+  }
+}
