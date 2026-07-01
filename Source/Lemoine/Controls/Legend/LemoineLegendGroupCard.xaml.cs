@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
 
@@ -125,7 +126,7 @@ namespace LemoineTools.Lemoine.Controls
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // 7: delete
 
             // Collapse chevron
-            var chev = MakeIconButton(Group.Collapsed ? "▸" : "▾", Group.Collapsed ? "Expand" : "Collapse");
+            var chev = MakeIconButton(Group.Collapsed ? "▸" : "▾", Group.Collapsed ? LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.expand") : LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.collapse"));
             chev.Click += (s, e) => { Group.Collapsed = !Group.Collapsed; Changed?.Invoke(this, EventArgs.Empty); BuildAll(); };
             Grid.SetColumn(chev, 0);
             grid.Children.Add(chev);
@@ -148,7 +149,7 @@ namespace LemoineTools.Lemoine.Controls
                 Bold = true,
                 Uppercase = true,
                 FontSizeKey = "LemoineFS_MD",
-                Placeholder = string.IsNullOrEmpty(Group.SourceTradeId) ? "CUSTOM" : "(group)",
+                Placeholder = string.IsNullOrEmpty(Group.SourceTradeId) ? LemoineStrings.T("testing.legendCreator.builder.groupCard.placeholders.customTitle") : LemoineStrings.T("testing.legendCreator.builder.groupCard.placeholders.groupTitle"),
                 VerticalAlignment = VerticalAlignment.Center,
                 MaxWidth = 160,
             };
@@ -177,7 +178,7 @@ namespace LemoineTools.Lemoine.Controls
             var eyeAll = new Button
             {
                 Content = LemoineEyeGlyph.Make(allVisible, size: 16),
-                ToolTip = anyHidden ? "Show all" : "Hide all",
+                ToolTip = anyHidden ? LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.showAll") : LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.hideAll"),
                 Width = 24, Height = 22,
                 Padding = new Thickness(0),
                 Background = Brushes.Transparent,
@@ -197,14 +198,14 @@ namespace LemoineTools.Lemoine.Controls
             grid.Children.Add(eyeAll);
 
             // Add custom block inside this group
-            var addCustom = MakeIconButton("+", "Add custom block");
+            var addCustom = MakeIconButton("+", LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.addCustomBlock"));
             addCustom.Click += (s, e) =>
             {
                 Group.Blocks ??= new List<LegendBlockConfig>();
                 Group.Blocks.Add(new LegendBlockConfig
                 {
                     Id = LegendIdGen.New("b"),
-                    Name = "New",
+                    Name = LemoineStrings.T("testing.legendCreator.builder.groupCard.defaults.newBlockName"),
                     Custom = true,
                     Color = "#888888",
                     Kind = "square", Fill = "solid",
@@ -217,7 +218,7 @@ namespace LemoineTools.Lemoine.Controls
             grid.Children.Add(addCustom);
 
             // Delete
-            var del = MakeIconButton("✕", "Delete group");
+            var del = MakeIconButton("✕", LemoineStrings.T("testing.legendCreator.builder.groupCard.tooltips.deleteGroup"));
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
             Grid.SetColumn(del, 7);
             grid.Children.Add(del);
@@ -584,7 +585,7 @@ namespace LemoineTools.Lemoine.Controls
 
             var tb = new TextBlock
             {
-                Text = "drop a filter / custom here",
+                Text = LemoineStrings.T("testing.legendCreator.builder.groupCard.emptyState.dropHint"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 FontStyle = FontStyles.Italic,
