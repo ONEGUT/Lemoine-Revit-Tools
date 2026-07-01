@@ -82,7 +82,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 var doc = app.ActiveUIDocument?.Document;
                 if (doc == null)
                 {
-                    Log("No active project — open a document and try again.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noDoc"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -98,7 +98,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
 
                 if (sourceSheets.Count == 0)
                 {
-                    Log("No valid source sheets — open a document and pick at least one reference sheet.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noSourceSheets"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -111,15 +111,15 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                     string label = $"{s.SheetNumber} - {s.Name}";
                     if (entries.Count == 0)
                     {
-                        Log($"Source '{label}' has no placeable views with a crop box — ignored as a reference.", "warn");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.sourceNoViews", label), "warn");
                         continue;
                     }
                     sources.Add(new SourceSheet(s.Id, label, entries));
-                    Log($"Source '{label}': {entries.Count} reference view(s).", "info");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.sourceRefViews", label, entries.Count), "info");
                 }
                 if (sources.Count == 0)
                 {
-                    Log("None of the selected source sheets carry placeable views — nothing to align to.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noSourcesWithViews"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -135,14 +135,14 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
 
                 if (targets.Count == 0)
                 {
-                    Log("No valid target sheets (a sheet listed as both source and target is treated as a source).", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noTargets"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
 
                 if (PreviewOnly)
                 {
-                    Log("Preview only — reporting matches; no viewports will be moved.", "info");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.previewOnly"), "info");
                     (pass, fail, skip, _) = DriveTargets(doc, sources, targets, applyMoves: false, onProgress);
                 }
                 else
@@ -166,16 +166,16 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
 
                 long issues = LemoineLog.IssuesSince(issues0);
                 if (issues > 0)
-                    Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.issuesRecorded", issues), "warn");
 
-                Log($"Done — {pass} aligned, {fail} error(s), {skip} skipped across {targets.Count} target sheet(s).",
+                Log(LemoineStrings.T("testing.alignSheetViews.log.done", pass, fail, skip, targets.Count),
                     fail > 0 ? "warn" : "pass");
                 onProgress(100, pass, fail, skip);
                 onComplete(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                Log($"Align Sheet Views error: {ex.Message}", "fail");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.fatalError", ex.Message), "fail");
                 LemoineLog.Error("AlignSheetViews.Execute", ex);
                 onComplete(pass, fail + 1, skip);
             }
@@ -200,7 +200,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user — {i} of {total} target sheet(s) processed; work so far preserved.", "warn");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.stoppedByUser", i, total), "warn");
                     break;   // falls through to caller's commit
                 }
 
@@ -209,7 +209,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 var targetEntries = CaptureSheet(doc, sheet);
                 if (targetEntries.Count == 0)
                 {
-                    Log($"[{label}] No placeable views found — cannot align this sheet.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noPlaceableViews", label), "fail");
                     f++;
                     onProgress(Pct(i + 1, total), p, f, s);
                     continue;
@@ -232,36 +232,36 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
 
                 if (bestSource == null || bestMatch == null || bestMatch.Pairs.Count == 0)
                 {
-                    Log($"[{label}] No counterpart views found on any of the {sources.Count} source sheet(s) — left unchanged.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noCounterpart", label, sources.Count), "fail");
                     f++;
                     onProgress(Pct(i + 1, total), p, f, s);
                     continue;
                 }
 
-                Log($"[{label}] Best reference: '{bestSource.Label}' — {bestMatch.Pairs.Count} of {bestSource.Entries.Count} view(s) matched.", "info");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.bestReference", label, bestSource.Label, bestMatch.Pairs.Count, bestSource.Entries.Count), "info");
                 if (sources.Count > 1)
                 {
                     var others = scored.Where(x => x.src != bestSource)
-                                       .Select(x => $"'{x.src.Label}' ({x.m.Pairs.Count})");
-                    Log($"[{label}] Other candidates: {string.Join(", ", others)}.", "info");
+                                       .Select(x => LemoineStrings.T("testing.alignSheetViews.log.candidateItem", x.src.Label, x.m.Pairs.Count));
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.otherCandidates", label, string.Join(", ", others)), "info");
                 }
 
                 // Report the gaps for the chosen source.
                 foreach (var miss in bestMatch.Missing)
                 {
-                    Log($"[{label}] MISSING counterpart for source view '{miss.ViewName}'.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.missing", label, miss.ViewName), "fail");
                     LemoineLog.Warn("AlignSheetViews", $"No counterpart for '{miss.ViewName}' on sheet {sheet.Id.Value}.");
                     f++;
                 }
                 foreach (var amb in bestMatch.Ambiguous)
                 {
-                    Log($"[{label}] AMBIGUOUS — source view '{amb.src.ViewName}' overlaps both '{amb.a.ViewName}' and '{amb.b.ViewName}'. Left unchanged.", "fail");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.ambiguous", label, amb.src.ViewName, amb.a.ViewName, amb.b.ViewName), "fail");
                     LemoineLog.Warn("AlignSheetViews", $"Ambiguous match for '{amb.src.ViewName}' on sheet {sheet.Id.Value}.");
                     f++;
                 }
                 foreach (var extra in bestMatch.Extra)
                 {
-                    Log($"[{label}] EXTRA view '{extra.ViewName}' has no source counterpart — left unchanged.", "warn");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.extra", label, extra.ViewName), "warn");
                     s++;
                 }
 
@@ -270,18 +270,17 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 {
                     pr.Label = label;
                     if (pr.Target.Scale != pr.Source.Scale)
-                        Log($"[{label}] '{pr.Target.ViewName}' scale 1:{pr.Target.Scale} differs from source 1:{pr.Source.Scale} — only the anchor point will register.", "warn");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.scaleDiffers", label, pr.Target.ViewName, pr.Target.Scale, pr.Source.Scale), "warn");
                     if (!OrientationMatches(pr.Source, pr.Target))
-                        Log($"[{label}] '{pr.Target.ViewName}' orientation differs from source — field overlay not guaranteed.", "warn");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.orientationDiffers", label, pr.Target.ViewName), "warn");
                     if (pr.Target.Rotation != ViewportRotation.None)
-                        Log($"[{label}] '{pr.Target.ViewName}' viewport is rotated ({pr.Target.Rotation}) — overlay aligns the anchor only.", "warn");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.rotated", label, pr.Target.ViewName, pr.Target.Rotation), "warn");
                 }
 
                 if (!applyMoves)
                 {
                     foreach (var pr in bestMatch.Pairs)
-                        Log($"[{label}] Would align '{pr.Target.ViewName}' → source '{pr.Source.ViewName}'" +
-                            (AlignTitles ? " (and its view title)." : "."), "info");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.wouldAlign", label, pr.Target.ViewName, pr.Source.ViewName, (AlignTitles ? LemoineStrings.T("testing.alignSheetViews.log.wouldAlignTitle") : LemoineStrings.T("testing.alignSheetViews.log.wouldAlignEnd"))), "info");
                     s += bestMatch.Pairs.Count;
                     onProgress(Pct(i + 1, total), p, f, s);
                     continue;
@@ -304,7 +303,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                             assigned++;
                         }
                     }
-                    if (assigned > 0) Log($"[{label}] {assigned} scope box assignment(s) applied.", "info");
+                    if (assigned > 0) Log(LemoineStrings.T("testing.alignSheetViews.log.scopeBoxApplied", label, assigned), "info");
                 }
                 if (InheritCropSize)
                 {
@@ -321,13 +320,13 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 {
                     if (TryAlign(doc, pr.Source, pr.Target))
                     {
-                        Log($"[{label}] Aligned '{pr.Target.ViewName}' → source '{pr.Source.ViewName}'.", "info");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.aligned", label, pr.Target.ViewName, pr.Source.ViewName), "info");
                         allPairs.Add(pr);
                         p++;
                     }
                     else
                     {
-                        Log($"[{label}] Failed to move '{pr.Target.ViewName}' — see diagnostics log.", "fail");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.failedMove", label, pr.Target.ViewName), "fail");
                         f++;
                     }
                 }
@@ -356,7 +355,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             }
             catch (Exception ex)
             {
-                Log($"[{label}] Could not assign scope box to '{pr.Target.ViewName}'.", "warn");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotAssignScope", label, pr.Target.ViewName), "warn");
                 LemoineLog.Swallowed($"AlignSheetViews: scope box on view {pr.Target.ViewId.Value}", ex);
                 return false;
             }
@@ -375,7 +374,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 // when the view inherited a scope box this run — a scope box governs the crop region.
                 if (gotScopeBox)
                 {
-                    Log($"[{label}] '{pr.Target.ViewName}' crop is scope-box governed — crop-size inheritance skipped (annotation crop still applied).", "info");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.cropScopeGoverned", label, pr.Target.ViewName), "info");
                 }
                 else
                 {
@@ -403,7 +402,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             }
             catch (Exception ex)
             {
-                Log($"[{label}] Could not match crop size for '{pr.Target.ViewName}'.", "warn");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotMatchCropSize", label, pr.Target.ViewName), "warn");
                 LemoineLog.Swallowed($"AlignSheetViews: crop size on view {pr.Target.ViewId.Value}", ex);
             }
             return changed;
@@ -435,7 +434,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             }
             catch (Exception ex)
             {
-                Log($"[{label}] Could not match annotation crop for '{pr.Target.ViewName}' (this view type may not support one).", "warn");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotMatchAnnoCrop", label, pr.Target.ViewName), "warn");
                 LemoineLog.Swallowed($"AlignSheetViews: annotation crop on view {pr.Target.ViewId.Value}", ex);
                 return false;
             }
@@ -451,7 +450,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
             }
             catch (Exception ex)
             {
-                Log($"[{label}] Could not match crop visibility for '{pr.Target.ViewName}'.", "warn");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotMatchCropVis", label, pr.Target.ViewName), "warn");
                 LemoineLog.Swallowed($"AlignSheetViews: crop visibility on view {pr.Target.ViewId.Value}", ex);
             }
         }
@@ -494,15 +493,16 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 }
 
                 if (srcGrids.Count == 0)
-                    Log($"[{label}] '{pr.Source.ViewName}' has no grids to trim.", "info");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.noGrids", label, pr.Source.ViewName), "info");
                 else
-                    Log($"[{label}] Grids on '{pr.Target.ViewName}': {trimmed} trimmed" +
-                        (skipped > 0 ? $", {skipped} skipped (not visible / not collinear)." : "."),
+                    Log(skipped > 0
+                        ? LemoineStrings.T("testing.alignSheetViews.log.gridsTrimmedSome", label, pr.Target.ViewName, trimmed, skipped)
+                        : LemoineStrings.T("testing.alignSheetViews.log.gridsTrimmedNone", label, pr.Target.ViewName, trimmed),
                         skipped > 0 ? "warn" : "info");
             }
             catch (Exception ex)
             {
-                Log($"[{label}] Could not trim grids for '{pr.Target.ViewName}'.", "warn");
+                Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotTrimGrids", label, pr.Target.ViewName), "warn");
                 LemoineLog.Swallowed($"AlignSheetViews: trim grids on view {pr.Target.ViewId.Value}", ex);
             }
         }
@@ -527,7 +527,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 }
                 catch (Exception ex)
                 {
-                    Log($"[{pr.Label}] Could not match title line length for '{pr.Target.ViewName}'.", "warn");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotMatchTitleLine", pr.Label, pr.Target.ViewName), "warn");
                     LemoineLog.Swallowed($"AlignSheetViews: LabelLineLength on viewport {pr.Target.ViewportId.Value}", ex);
                 }
             }
@@ -556,13 +556,13 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                 catch (Exception ex)
                 {
                     titleFail++;
-                    Log($"[{pr.Label}] Could not align title for '{pr.Target.ViewName}'.", "warn");
+                    Log(LemoineStrings.T("testing.alignSheetViews.log.couldNotAlignTitle", pr.Label, pr.Target.ViewName), "warn");
                     LemoineLog.Swallowed($"AlignSheetViews: align title on viewport {pr.Target.ViewportId.Value}", ex);
                 }
             }
 
             string tone = titleFail > 0 ? "warn" : "info";
-            Log($"View titles: {titled} aligned" + (titleFail > 0 ? $", {titleFail} could not be adjusted." : "."), tone);
+            Log(titleFail > 0 ? LemoineStrings.T("testing.alignSheetViews.log.viewTitlesSome", titled, titleFail) : LemoineStrings.T("testing.alignSheetViews.log.viewTitlesOk", titled), tone);
         }
 
         // ── Capture ───────────────────────────────────────────────────────────
@@ -613,7 +613,7 @@ namespace LemoineTools.Tools.Testing.AlignSheetViews
                     });
 
                     if (!view.CropBoxActive)
-                        Log($"[note] View '{view.Name}' has no active crop — region matched from its default crop box.", "info");
+                        Log(LemoineStrings.T("testing.alignSheetViews.log.noteNoCrop", view.Name), "info");
                 }
                 catch (Exception ex)
                 {
