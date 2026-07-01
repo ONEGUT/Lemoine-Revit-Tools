@@ -1,0 +1,14 @@
+// overviewDemo.json — OverviewDemoTool (the generic "Dummy run" simulation engine used by
+// the Tools Overview window). Per-tool demo content (step titles/hints/sample data/run log
+// lines) lives in ToolsOverviewDemos.cs / overviewDemos.json, not here — this file only
+// covers this engine's own generic chrome (placeholders, the demo-run banner, summary
+// fallback text). NOTE: log-tone tokens ("info"/"pass"/"fail"/"skip") stay in code.
+{
+  "browsePlaceholder": "Browse…",
+  "searchPlaceholder": "Search…",
+  "textPlaceholder": "Type a value…",
+  "demoBanner": "This is a demo run. It doesn't open or change your Revit model.",
+  "noneSelected": "None selected",
+  "noFile": "No file",
+  "ready": "Ready"
+}

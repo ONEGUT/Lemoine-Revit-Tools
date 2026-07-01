@@ -40,7 +40,7 @@ namespace LemoineTools.Lemoine
         public string NumUnit  { get; set; } = "";
 
         public string FileFilter      { get; set; } = "All files|*.*";
-        public string FilePlaceholder { get; set; } = "Browse…";
+        public string FilePlaceholder { get; set; } = LemoineStrings.T("overviewDemo.browsePlaceholder");
 
         public string TextDefault     { get; set; } = "";
         public string TextPlaceholder { get; set; } = "";
@@ -181,7 +181,7 @@ namespace LemoineTools.Lemoine
             var sa = new LemoineSearchAutocomplete
             {
                 Items       = s.Items ?? new List<string>(),
-                Placeholder = string.IsNullOrEmpty(s.TextPlaceholder) ? "Search…" : s.TextPlaceholder,
+                Placeholder = string.IsNullOrEmpty(s.TextPlaceholder) ? LemoineStrings.T("overviewDemo.searchPlaceholder") : s.TextPlaceholder,
             };
             sa.SelectionChanged += v => { _value[s.Id] = v ?? ""; Changed(); };
             return sa;
@@ -192,7 +192,7 @@ namespace LemoineTools.Lemoine
             var edit = new LemoineInlineEdit
             {
                 Text        = s.TextDefault,
-                Placeholder = string.IsNullOrEmpty(s.TextPlaceholder) ? "Type a value…" : s.TextPlaceholder,
+                Placeholder = string.IsNullOrEmpty(s.TextPlaceholder) ? LemoineStrings.T("overviewDemo.textPlaceholder") : s.TextPlaceholder,
             };
             edit.TextCommitted += (_, t) => { _value[s.Id] = t ?? ""; Changed(); };
             return edit;
@@ -225,10 +225,10 @@ namespace LemoineTools.Lemoine
             {
                 case "multi":
                     return _multi.TryGetValue(stepId, out var m) && m.Count > 0
-                        ? $"{m.Count} selected" : "None selected";
+                        ? $"{m.Count} selected" : LemoineStrings.T("overviewDemo.noneSelected");
                 case "file":
                     return _value.TryGetValue(stepId, out var f) && !string.IsNullOrEmpty(f)
-                        ? System.IO.Path.GetFileName(f) : "No file";
+                        ? System.IO.Path.GetFileName(f) : LemoineStrings.T("overviewDemo.noFile");
                 case "single":
                 case "search":
                 case "text":
@@ -237,7 +237,7 @@ namespace LemoineTools.Lemoine
                     return _number.TryGetValue(stepId, out var n)
                         ? $"{n}{(string.IsNullOrEmpty(step.NumUnit) ? "" : " " + step.NumUnit)}" : "—";
                 default:
-                    return "Ready";
+                    return LemoineStrings.T("overviewDemo.ready");
             }
         }
 
@@ -247,7 +247,7 @@ namespace LemoineTools.Lemoine
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            pushLog("This is a demo run. It doesn't open or change your Revit model.", "info");
+            pushLog(LemoineStrings.T("overviewDemo.demoBanner"), "info");
 
             int pass = 0, fail = 0, skip = 0;
             var log = _spec.RunLog;
