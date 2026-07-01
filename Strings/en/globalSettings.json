@@ -19,5 +19,20 @@
     "modify": "Modify",
     "clash": "Clash",
     "copy": "Copy"
+  },
+  "general": {
+    "header": "General",
+    "colorTheme": "Color theme",
+    "dark": "DARK",
+    "light": "LIGHT",
+    "active": "Active",
+    "uiSize": "UI size",
+    "sizeSmall": "Small — Compact",
+    "sizeMedium": "Medium — Default",
+    "sizeLarge": "Large — Comfortable",
+    "sizeExtraLarge": "Extra Large — Spacious",
+    "diagnostics": "Diagnostics",
+    "diagnosticsDesc": "Best-effort operations that fail quietly are recorded here, so a half-applied result is never invisible. The log is written to:",
+    "openLog": "Open diagnostics log"
   }
 }

@@ -30,19 +30,19 @@ namespace LemoineTools.Lemoine
             };
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
 
-            panel.Children.Add(ContentHeader("General"));
-            panel.Children.Add(SubLabel("Colour theme"));
+            panel.Children.Add(ContentHeader(LemoineStrings.T("globalSettings.general.header")));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.colorTheme")));
             _themeRows.Clear();
 
-            panel.Children.Add(ThemeSectionLabel("DARK"));
+            panel.Children.Add(ThemeSectionLabel(LemoineStrings.T("globalSettings.general.dark")));
             panel.Children.Add(BuildThemeCardGrid(LemoineTheme.All.Where(t => IsThemeDark(t))));
             panel.Children.Add(HSep(8));
 
-            panel.Children.Add(ThemeSectionLabel("LIGHT"));
+            panel.Children.Add(ThemeSectionLabel(LemoineStrings.T("globalSettings.general.light")));
             panel.Children.Add(BuildThemeCardGrid(LemoineTheme.All.Where(t => !IsThemeDark(t))));
 
             panel.Children.Add(HSep(12));
-            panel.Children.Add(SubLabel("UI size"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.uiSize")));
             _sizeRows.Clear();
             foreach (LemoineUiSize sz in Enum.GetValues(typeof(LemoineUiSize)))
             {
@@ -52,7 +52,7 @@ namespace LemoineTools.Lemoine
             }
 
             panel.Children.Add(HSep(12));
-            panel.Children.Add(SubLabel("Diagnostics"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.diagnostics")));
             panel.Children.Add(BuildDiagnosticsSection());
 
             scroll.Content = panel;
@@ -68,8 +68,7 @@ namespace LemoineTools.Lemoine
 
             var desc = new TextBlock
             {
-                Text = "Best-effort operations that fail quietly are recorded here, so a "
-                     + "half-applied result is never invisible. The log is written to:",
+                Text = LemoineStrings.T("globalSettings.general.diagnosticsDesc"),
                 FontStyle    = FontStyles.Italic,
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
@@ -90,7 +89,7 @@ namespace LemoineTools.Lemoine
             path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             stack.Children.Add(path);
 
-            var btn = BuildFlatButton("Open diagnostics log");
+            var btn = BuildFlatButton(LemoineStrings.T("globalSettings.general.openLog"));
             btn.HorizontalAlignment = HorizontalAlignment.Left;
             // OpenInDefaultViewer records its own failure to the log, so the bool
             // result is intentionally not surfaced again here.
@@ -185,7 +184,7 @@ namespace LemoineTools.Lemoine
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Visibility          = active ? Visibility.Visible : Visibility.Collapsed,
             };
-            var badgeTb = new TextBlock { Text = "Active", Foreground = theme.Accent };
+            var badgeTb = new TextBlock { Text = LemoineStrings.T("globalSettings.general.active"), Foreground = theme.Accent };
             badgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             badgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             badge.Child = badgeTb;
@@ -234,9 +233,9 @@ namespace LemoineTools.Lemoine
             name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             var desc = new TextBlock
             {
-                Text = size == LemoineUiSize.Small       ? "Small — Compact"         :
-                       size == LemoineUiSize.Large       ? "Large — Comfortable"     :
-                       size == LemoineUiSize.ExtraLarge  ? "Extra Large — Spacious"  : "Medium — Default",
+                Text = size == LemoineUiSize.Small       ? LemoineStrings.T("globalSettings.general.sizeSmall")         :
+                       size == LemoineUiSize.Large       ? LemoineStrings.T("globalSettings.general.sizeLarge")     :
+                       size == LemoineUiSize.ExtraLarge  ? LemoineStrings.T("globalSettings.general.sizeExtraLarge")  : LemoineStrings.T("globalSettings.general.sizeMedium"),
                 FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 0),
             };
             desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
