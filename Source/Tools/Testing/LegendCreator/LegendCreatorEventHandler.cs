@@ -57,13 +57,13 @@ namespace LemoineTools.Tools.Testing.LegendCreator
             var uidoc = app.ActiveUIDocument;
             if (uidoc == null)
             {
-                Log("No active document.", "fail");
+                Log(LemoineStrings.T("testing.legendCreator.log.noActiveDoc"), "fail");
                 Complete(0, 1, 0);
                 return;
             }
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(uidoc.Document, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log(LemoineStrings.T("testing.legendCreator.log.error", ex.Message), "fail"); fail++; }
             finally
             {
                 // Session-long static handler — drop the run's payload.
@@ -99,7 +99,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     .FirstOrDefault(v => v.ViewType == ViewType.Legend);
             if (!UpdateMode && templateLegend == null)
             {
-                Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
+                Log(LemoineStrings.T("testing.legendCreator.log.noLegendView"), "fail");
                 fail++;
                 return;
             }
@@ -113,7 +113,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
             if (baseFRT == null || textTypeId == ElementId.InvalidElementId)
             {
-                Log("Missing required project type (FilledRegionType or TextNoteType).", "fail");
+                Log(LemoineStrings.T("testing.legendCreator.log.missingType"), "fail");
                 fail++;
                 return;
             }
@@ -232,7 +232,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         frtMap[(colorHex, fill)] = newFRT.Id;
                         frtByKey[tname]          = newFRT.Id;
                     }
-                    catch (Exception ex) { logMsgs.Add($"Swatch type: {ex.Message}"); }
+                    catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchTypeError", ex.Message)); }
                 }
 
                 Progress(60, pass, fail, skip);
@@ -277,7 +277,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                         // The bound view was deleted, or this is a different project. Don't
                         // dead-end the run — fall through to creating a fresh legend, which
                         // also rebinds the entry via OnLegendCreated.
-                        Log("Bound legend view not found in this project — creating a new legend instead.", "info");
+                        Log(LemoineStrings.T("testing.legendCreator.log.boundViewMissing"), "info");
                         updating = false;
                         dv       = null;
                     }
@@ -292,7 +292,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 {
                     if (templateLegend == null)
                     {
-                        Log("No Legend view found in project. Create one first via View → New Legend.", "fail");
+                        Log(LemoineStrings.T("testing.legendCreator.log.noLegendView"), "fail");
                         fail++;
                         tx.Commit();
                         return;
@@ -301,7 +301,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     dv = doc.GetElement(newLegendId) as View;
                     if (dv == null)
                     {
-                        Log("Failed to duplicate the template legend view.", "fail");
+                        Log(LemoineStrings.T("testing.legendCreator.log.duplicateFailed"), "fail");
                         fail++;
                         tx.Commit();
                         return;
@@ -316,7 +316,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 // provable (and defends the invariant if the flow above ever changes).
                 if (dv == null)
                 {
-                    Log("No legend view resolved.", "fail");
+                    Log(LemoineStrings.T("testing.legendCreator.log.noViewResolved"), "fail");
                     fail++;
                     tx.Commit();
                     return;
@@ -330,7 +330,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                 catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set legend view scale", __lex); }
                 double scale = dv.Scale > 0 ? dv.Scale : requestedScale;
                 if ((int)scale != requestedScale)
-                    Log($"View scale is 1:{(int)scale} (requested 1:{requestedScale}) — legend sized for the actual scale.", "info");
+                    Log(LemoineStrings.T("testing.legendCreator.log.scaleAdjusted", (int)scale, requestedScale), "info");
 
                 // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
                 double swatchW  = LegendLayout.InchesToFeet(layout.SwatchW, scale);
@@ -381,7 +381,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                     try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
                     try { o.VerticalAlignment = VerticalTextAlignment.Middle; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note vertical alignment", __lex); }
                     try   { TextNote.Create(doc, viewId, centerOrigin, text, o); }
-                    catch (Exception ex) { logMsgs.Add($"TextNote '{text}': {ex.Message}"); textFails++; }
+                    catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.textNoteError", text, ex.Message)); textFails++; }
                 }
 
                 double cy = 0.0;
@@ -434,7 +434,7 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                             if (LemoineRun.CancelRequested)
                             {
                                 cancelled = true;
-                                Log($"Stopped by user — {blocksDone} of {totalBlocks} block(s) drawn; work so far preserved.", "warn");
+                                Log(LemoineStrings.T("testing.legendCreator.log.stoppedByUser", blocksDone, totalBlocks), "warn");
                                 break;   // breaks block loop; the group/row loops break on the cancelled flag
                             }
                             if (!blk.Visible) { skip++; continue; }
@@ -453,14 +453,14 @@ namespace LemoineTools.Tools.Testing.LegendCreator
                                     CurveLoop loop = MakeShapeLoop(blk.Kind ?? "square", x0, y0, x1, y1);
                                     FilledRegion.Create(doc, frtId, dv.Id, new List<CurveLoop> { loop });
                                 }
-                                catch (Exception ex) { logMsgs.Add($"Swatch '{blk.Name}': {ex.Message}"); fail++; }
+                                catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchError", blk.Name, ex.Message)); fail++; }
                             }
                             else if (rgb.HasValue)
                             {
                                 // The colour resolved but its FilledRegionType wasn't built
                                 // (failure already in logMsgs) — say which block lost its
                                 // swatch instead of dropping it silently.
-                                logMsgs.Add($"Swatch '{blk.Name}': no swatch type for {hex}/{fill} — drawn without a swatch.");
+                                logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchNoType", blk.Name, hex, fill));
                             }
 
                             // Label: Middle-aligned at blockY — the swatch is also centred
@@ -503,8 +503,8 @@ namespace LemoineTools.Tools.Testing.LegendCreator
 
                 foreach (var l in logMsgs) Log(l, "info");
                 Log(createdNew
-                    ? $"Created legend view '{legendName}' — {pass} block(s) drawn, {skip} hidden, {fail} failed."
-                    : $"Updated legend view '{baseTitle}' — {pass} block(s) drawn, {skip} hidden, {fail} failed.",
+                    ? LemoineStrings.T("testing.legendCreator.log.createdSummary", legendName, pass, skip, fail)
+                    : LemoineStrings.T("testing.legendCreator.log.updatedSummary", baseTitle, pass, skip, fail),
                     fail > 0 ? "fail" : "pass");
             }
         }

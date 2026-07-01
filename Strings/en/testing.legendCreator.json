@@ -1,0 +1,23 @@
+// testing.legendCreator.json — Legend Creator run-handler (Log) lines.
+// Command: LegendCreatorCommand (run output only; the builder window's UI text is
+// externalized with the shared Legend builder control). NOTE: log-level tone tokens,
+// the default color "#888888", and the shape/fill kind tokens ("square"/"solid") stay in code.
+{
+  "log": {
+    "noActiveDoc":     "No active document.",
+    "error":           "Error: {0}",
+    "noLegendView":    "No Legend view found in project. Create one first via View → New Legend.",
+    "missingType":     "Missing required project type (FilledRegionType or TextNoteType).",
+    "swatchTypeError": "Swatch type: {0}",
+    "boundViewMissing":"Bound legend view not found in this project — creating a new legend instead.",
+    "duplicateFailed": "Failed to duplicate the template legend view.",
+    "noViewResolved":  "No legend view resolved.",
+    "scaleAdjusted":   "View scale is 1:{0} (requested 1:{1}) — legend sized for the actual scale.",
+    "textNoteError":   "TextNote '{0}': {1}",
+    "stoppedByUser":   "Stopped by user — {0} of {1} block(s) drawn; work so far preserved.",
+    "swatchError":     "Swatch '{0}': {1}",
+    "swatchNoType":    "Swatch '{0}': no swatch type for {1}/{2} — drawn without a swatch.",
+    "createdSummary":  "Created legend view '{0}' — {1} block(s) drawn, {2} hidden, {3} failed.",
+    "updatedSummary":  "Updated legend view '{0}' — {1} block(s) drawn, {2} hidden, {3} failed."
+  }
+}
