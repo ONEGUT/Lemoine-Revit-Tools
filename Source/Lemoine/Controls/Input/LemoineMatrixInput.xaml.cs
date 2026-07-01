@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -63,7 +64,7 @@ namespace LemoineTools.Lemoine.Controls
 
             // Header row
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var rowHdr = BuildHeaderCell("Row", 0, 0);
+            var rowHdr = BuildHeaderCell(LemoineStrings.T("controls.inputs.matrixInput.rowHeader"), 0, 0);
             Grid.SetRow(rowHdr, 0); Grid.SetColumn(rowHdr, 0);
             _root.Children.Add(rowHdr);
 

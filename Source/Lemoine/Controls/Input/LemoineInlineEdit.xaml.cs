@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -25,7 +26,7 @@ namespace LemoineTools.Lemoine.Controls
 
         public static readonly DependencyProperty PlaceholderProperty =
             DependencyProperty.Register(nameof(Placeholder), typeof(string), typeof(LemoineInlineEdit),
-                new PropertyMetadata("(empty)", OnVisualChanged));
+                new PropertyMetadata(LemoineStrings.T("controls.inputs.inlineEdit.defaultPlaceholder"), OnVisualChanged));
 
         public static readonly DependencyProperty FontSizeKeyProperty =
             DependencyProperty.Register(nameof(FontSizeKey), typeof(string), typeof(LemoineInlineEdit),

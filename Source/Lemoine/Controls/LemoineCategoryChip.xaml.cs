@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -16,7 +17,7 @@ namespace LemoineTools.Lemoine.Controls
     {
         public static readonly DependencyProperty LabelProperty =
             DependencyProperty.Register(nameof(Label), typeof(string), typeof(LemoineCategoryChip),
-                new PropertyMetadata("Chip", OnVisualChanged));
+                new PropertyMetadata(LemoineStrings.T("controls.inputs.categoryChip.defaultLabel"), OnVisualChanged));
 
         public static readonly DependencyProperty ActiveProperty =
             DependencyProperty.Register(nameof(Active), typeof(bool), typeof(LemoineCategoryChip),
