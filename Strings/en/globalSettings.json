@@ -160,5 +160,8 @@
     "maxStackedRowsDesc": "How many rows a string may step outward to clear a collision before giving up.",
     "repairPasses": "Repair passes",
     "repairPassesDesc": "Extra worst-first refinement passes over the laid-out plan before committing. 0 disables repair."
+  },
+  "spec": {
+    "noSettings": "No settings for this tool."
   }
 }

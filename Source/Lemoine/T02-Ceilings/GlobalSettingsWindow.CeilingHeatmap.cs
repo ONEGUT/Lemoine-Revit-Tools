@@ -185,7 +185,7 @@ namespace LemoineTools.Lemoine
                 {
                     var tb = new TextBlock
                     {
-                        Text = "No settings for this tool.", FontStyle = FontStyles.Italic,
+                        Text = LemoineStrings.T("globalSettings.spec.noSettings"), FontStyle = FontStyles.Italic,
                         Margin = new Thickness(0, 2, 0, 2),
                     };
                     tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
