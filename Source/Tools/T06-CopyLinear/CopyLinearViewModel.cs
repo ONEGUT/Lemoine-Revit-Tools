@@ -21,18 +21,18 @@ namespace LemoineTools.Tools.CopyLinear
     /// </summary>
     public class CopyLinearViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware, ILemoineToolCleanup
     {
-        public string Title    => "Copy Linear Elements";
-        public string RunLabel => "Run in Revit →";
+        public string Title    => LemoineStrings.T("copy.linear.title");
+        public string RunLabel => LemoineStrings.T("copy.linear.runLabel");
         public string? ResultNoun => _mode == "Replace" ? "instances" : "segments";
         public IReadOnlyList<ResultChip>? ResultChips => null;
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source",    "Source",            required: true),
-            new StepDefinition("filters",   "Parameter Filters", required: false),
-            new StepDefinition("operation", "Operation",         required: true),
-            new StepDefinition("changes",   "Change Detection",  required: false),
-            new StepDefinition("run",       "Review & Run",      required: false),
+            new StepDefinition("source",    LemoineStrings.T("copy.linear.steps.source"),            required: true),
+            new StepDefinition("filters",   LemoineStrings.T("copy.linear.steps.filters"), required: false),
+            new StepDefinition("operation", LemoineStrings.T("copy.linear.steps.operation"),         required: true),
+            new StepDefinition("changes",   LemoineStrings.T("copy.linear.steps.changes"),  required: false),
+            new StepDefinition("run",       LemoineStrings.T("copy.linear.steps.run"),      required: false),
         };
 
         // ── Injected ───────────────────────────────────────────────────────────
@@ -155,12 +155,12 @@ namespace LemoineTools.Tools.CopyLinear
 
             if (_docs.Count == 0)
             {
-                outer.Children.Add(Dim("No documents available. Open the host project in Revit."));
+                outer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.noDocs")));
                 return outer;
             }
 
             // Source document (single).
-            outer.Children.Add(Label("Source document"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.linear.labels.sourceDoc")));
             _docDisplayToId.Clear();
             foreach (var d in _docs) _docDisplayToId[d.Name] = d.LinkInstId;
             var docSelect = new LemoineSingleSelect
@@ -182,7 +182,7 @@ namespace LemoineTools.Tools.CopyLinear
             Divider(outer);
 
             // Categories — all filterable Revit categories, grouped by discipline (same pattern as ClashGroupEditor).
-            outer.Children.Add(Label("Categories to copy"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.linear.labels.catsToCopy")));
             var catTabs = new LemoineMultiSelectTabs();
             catTabs.SelectionChanged += sel =>
             {
@@ -203,7 +203,7 @@ namespace LemoineTools.Tools.CopyLinear
             Divider(outer);
 
             // Worksets (per chosen doc).
-            outer.Children.Add(Label("Worksets (unchecked = excluded)"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.linear.labels.worksets")));
             _worksetContainer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
             outer.Children.Add(_worksetContainer);
             RebuildWorksets();
@@ -218,9 +218,8 @@ namespace LemoineTools.Tools.CopyLinear
         {
             _disp = Dispatcher.CurrentDispatcher;
             var outer = new StackPanel();
-            outer.Children.Add(Label("Parameter filters"));
-            outer.Children.Add(Dim("Narrow the copied elements by any parameter found on the scanned source. "
-                + "Add a filter, choose its parameter, then tick the values to keep. No filters = copy every matched element."));
+            outer.Children.Add(Label(LemoineStrings.T("copy.linear.labels.paramFilters")));
+            outer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.paramFiltersHelp")));
 
             _filterContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             outer.Children.Add(_filterContainer);
@@ -248,7 +247,7 @@ namespace LemoineTools.Tools.CopyLinear
 
             var doc = _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId);
             var ws  = doc?.Worksets ?? new List<CopyLinearWorksetInfo>();
-            if (ws.Count == 0) { _worksetContainer.Children.Add(Dim("No user worksets in this document.")); return; }
+            if (ws.Count == 0) { _worksetContainer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.noWorksets"))); return; }
 
             var excluded = new HashSet<int>(_spec.ExcludedWorksetIds);
             var tabs = new LemoineMultiSelectTabs();
@@ -270,22 +269,22 @@ namespace LemoineTools.Tools.CopyLinear
             if (_filterContainer == null) return;
             _filterContainer.Children.Clear();
 
-            if (_scanning)        { _filterContainer.Children.Add(Dim("Scanning source…")); return; }
-            if (_scanError != null) { _filterContainer.Children.Add(Dim($"Scan error: {_scanError}")); return; }
+            if (_scanning)        { _filterContainer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.scanning"))); return; }
+            if (_scanError != null) { _filterContainer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.scanError", _scanError))); return; }
             if (!_scanDone)
             {
                 _filterContainer.Children.Add(Dim(_spec.Categories.Count == 0
-                    ? "Pick at least one category in the Source step, then return here."
-                    : "Confirm the Source step to scan for parameters."));
+                    ? LemoineStrings.T("copy.linear.labels.pickCatFirst")
+                    : LemoineStrings.T("copy.linear.labels.confirmToScan")));
                 return;
             }
             if (_scan.ParameterValues.Count == 0)
             {
-                _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) found — no parameters with 2+ distinct values to filter on."));
+                _filterContainer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.noParams", _scan.ElementCount)));
                 return;
             }
 
-            _filterContainer.Children.Add(Dim($"{_scan.ElementCount} element(s) · {_scan.ParameterValues.Count} filterable parameter(s)."));
+            _filterContainer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.paramsSummary", _scan.ElementCount, _scan.ParameterValues.Count)));
 
             // Prune filter state for params no longer present in this scan.
             _activeFilterParams.RemoveAll(p => !_scan.ParameterValues.ContainsKey(p));
@@ -299,7 +298,7 @@ namespace LemoineTools.Tools.CopyLinear
             var used = new HashSet<string>(_activeFilterParams, StringComparer.Ordinal);
             if (!_scan.ParameterValues.Keys.Any(k => !used.Contains(k))) return;
 
-            var addBtn = LemoineControlStyles.BuildButton("+ Add filter");
+            var addBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("copy.linear.labels.addFilter"));
             addBtn.Margin = new Thickness(0, 8, 0, 0);
             addBtn.Click += (s, e) =>
             {
@@ -341,7 +340,7 @@ namespace LemoineTools.Tools.CopyLinear
                 .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            var picker = new LemoineSingleSelect { Label = "Parameter", Items = options };
+            var picker = new LemoineSingleSelect { Label = LemoineStrings.T("copy.linear.labels.parameter"), Items = options };
             picker.SelectedItem = currentParam;   // safe before the handler is wired
             Grid.SetColumn(picker, 0);
             header.Children.Add(picker);
@@ -443,15 +442,15 @@ namespace LemoineTools.Tools.CopyLinear
         private FrameworkElement BuildOperationStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(Label("Operation"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.linear.labels.operation")));
             var modeSelect = new LemoineSingleSelect
             {
-                Items        = new List<string> { "Split into segments", "Replace with family" },
-                SelectedItem = _mode == "Replace" ? "Replace with family" : "Split into segments",
+                Items        = new List<string> { LemoineStrings.T("copy.linear.labels.modeSplit"), LemoineStrings.T("copy.linear.labels.modeReplace") },
+                SelectedItem = _mode == "Replace" ? LemoineStrings.T("copy.linear.labels.modeReplace") : LemoineStrings.T("copy.linear.labels.modeSplit"),
             };
             modeSelect.SelectionChanged += v =>
             {
-                _mode = v == "Replace with family" ? "Replace" : "Split";
+                _mode = v == LemoineStrings.T("copy.linear.labels.modeReplace") ? "Replace" : "Split";
                 PopulateOperationBody();
                 Changed();
             };
@@ -474,17 +473,17 @@ namespace LemoineTools.Tools.CopyLinear
 
         private void BuildSplitBody(StackPanel body)
         {
-            body.Children.Add(Label("Segment length (feet)"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.segLength")));
             body.Children.Add(Stepper(_segLenFeet, 0.5, 1000, 1, 1, v => _segLenFeet = v));
 
-            body.Children.Add(Label("Gap between pieces (inches)"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.gap")));
             body.Children.Add(Stepper(_gapInches, 0, 48, 0.25, 2, v => _gapInches = v));
 
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "rem", Label = "Keep final remainder piece",
-                    Desc = "Off = drop a trailing piece shorter than the segment length.", DefaultOn = _keepRemainder },
+                new ToggleItem { Id = "rem", Label = LemoineStrings.T("copy.linear.labels.keepRemLabel"),
+                    Desc = LemoineStrings.T("copy.linear.labels.keepRemDesc"), DefaultOn = _keepRemainder },
             });
             toggles.StateChanged += st => { if (st.TryGetValue("rem", out var on)) { _keepRemainder = on; Changed(); } };
             body.Children.Add(toggles);
@@ -493,16 +492,16 @@ namespace LemoineTools.Tools.CopyLinear
         private void BuildReplaceBody(StackPanel body)
         {
             _disp = Dispatcher.CurrentDispatcher;
-            body.Children.Add(Label("Family type to place"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.familyType")));
             if (_families.Count == 0)
-                body.Children.Add(Dim("No placeable family types found in the host model."));
+                body.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.noFamilies")));
             else
             {
                 if (!_familyByKey.ContainsKey(_familyKey)) _familyKey = _families[0].Key;
                 var famSearch = new LemoineSearchAutocomplete
                 {
                     Items          = _families.Select(f => f.Key).ToList(),
-                    Placeholder    = "Search family types…",
+                    Placeholder    = LemoineStrings.T("copy.linear.labels.familySearch"),
                     MaxSuggestions = 12,
                     Value          = _familyKey,
                 };
@@ -521,27 +520,25 @@ namespace LemoineTools.Tools.CopyLinear
                 body.Children.Add(famSearch);
             }
 
-            body.Children.Add(Label("Placement interval (feet)"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.interval")));
             body.Children.Add(Stepper(_intervalFeet, 0.25, 1000, 1, 2, v => _intervalFeet = v));
 
-            body.Children.Add(Label("Extra spacing (inches)"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.extraSpacing")));
             body.Children.Add(Stepper(_extraSpacingInches, 0, 120, 0.25, 2, v => _extraSpacingInches = v));
 
-            body.Children.Add(Label("Length parameter to set (optional)"));
-            body.Children.Add(Dim("Pick the family parameter that gets the placement interval written into it "
-                + "(trimmed to the remaining run on the last piece)."));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.lengthParam")));
+            body.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.lengthParamHelp")));
             _lengthParamHost = new StackPanel();
             body.Children.Add(_lengthParamHost);
             PopulateLengthParam();
 
-            body.Children.Add(Label("Rotate placements (degrees — about each source run's own axes)"));
-            body.Children.Add(Dim("Applied to every instance, with or without auto-align: X = about the run "
-                + "direction, Y = about the side axis, Z = plan rotation. Line-based families are skipped."));
-            body.Children.Add(Label("Rotate X — about the run"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.rotateHeader")));
+            body.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.rotateHelp")));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.rotateX")));
             body.Children.Add(Stepper(_rotXDeg, -360, 360, 5, 1, v => _rotXDeg = v));
-            body.Children.Add(Label("Rotate Y — about the side axis"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.rotateY")));
             body.Children.Add(Stepper(_rotYDeg, -360, 360, 5, 1, v => _rotYDeg = v));
-            body.Children.Add(Label("Rotate Z — plan rotation"));
+            body.Children.Add(Label(LemoineStrings.T("copy.linear.labels.rotateZ")));
             body.Children.Add(Stepper(_rotZDeg, -360, 360, 5, 1, v => _rotZDeg = v));
 
             // Every instance is always rotated to its run direction; the toggle only governs
@@ -552,22 +549,20 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 manualHost.Children.Clear();
                 if (_alignToSource) return;
-                manualHost.Children.Add(Dim("Manual placement override — applied to every instance relative to "
-                    + "its own source element's run (X = along the run, Y = sideways, Z = up), instead of the "
-                    + "automatic alignment."));
-                manualHost.Children.Add(Label("Move X — along run (inches)"));
+                manualHost.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.manualHelp")));
+                manualHost.Children.Add(Label(LemoineStrings.T("copy.linear.labels.moveX")));
                 manualHost.Children.Add(Stepper(_manualXInches, -1200, 1200, 1, 2, v => _manualXInches = v));
-                manualHost.Children.Add(Label("Move Y — side (inches)"));
+                manualHost.Children.Add(Label(LemoineStrings.T("copy.linear.labels.moveY")));
                 manualHost.Children.Add(Stepper(_manualYInches, -1200, 1200, 1, 2, v => _manualYInches = v));
-                manualHost.Children.Add(Label("Move Z — up (inches)"));
+                manualHost.Children.Add(Label(LemoineStrings.T("copy.linear.labels.moveZ")));
                 manualHost.Children.Add(Stepper(_manualZInches, -1200, 1200, 1, 2, v => _manualZInches = v));
             }
 
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 10, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "align", Label = "Align each instance to its source element",
-                    Desc = "After rotating to the run, each placement is corrected relative to its own source element's box — fixes Z/side offsets. Line-based families are skipped. Off = set the offsets yourself below.", DefaultOn = _alignToSource },
+                new ToggleItem { Id = "align", Label = LemoineStrings.T("copy.linear.labels.alignLabel"),
+                    Desc = LemoineStrings.T("copy.linear.labels.alignDesc"), DefaultOn = _alignToSource },
             });
             toggles.StateChanged += st =>
             {
@@ -582,7 +577,7 @@ namespace LemoineTools.Tools.CopyLinear
         }
 
         // ── Length-parameter dropdown ───────────────────────────────────────────
-        private const string NoLengthParam = "(none)";
+        private static readonly string NoLengthParam = LemoineStrings.T("copy.linear.labels.noLengthParam");
 
         private long CurrentSymbolId => _familyByKey.TryGetValue(_familyKey, out var f) ? f.SymbolId : 0L;
 
@@ -594,7 +589,7 @@ namespace LemoineTools.Tools.CopyLinear
             _lengthParamHost.Children.Clear();
 
             long symbolId = CurrentSymbolId;
-            if (symbolId == 0L) { _lengthParamHost.Children.Add(Dim("Pick a family type first.")); return; }
+            if (symbolId == 0L) { _lengthParamHost.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.pickFamilyFirst"))); return; }
 
             // No Revit thread available (preview hosting) — fall back to free text.
             if (_scanHandler == null || _scanEvent == null)
@@ -610,8 +605,7 @@ namespace LemoineTools.Tools.CopyLinear
                 if (names.Count == 0)
                 {
                     _lengthParam = "";
-                    _lengthParamHost.Children.Add(Dim("No writable length-type parameters found on this family "
-                        + "(or it couldn't be read — see the diagnostics log)."));
+                    _lengthParamHost.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.noWritableParams")));
                     return;
                 }
                 // Re-anchor the saved name onto this family's actual list (case-normalised).
@@ -631,7 +625,7 @@ namespace LemoineTools.Tools.CopyLinear
                 return;
             }
 
-            _lengthParamHost.Children.Add(Dim("Reading family parameters…"));
+            _lengthParamHost.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.readingParams")));
             TriggerFamilyParams(symbolId);
         }
 
@@ -655,9 +649,7 @@ namespace LemoineTools.Tools.CopyLinear
         private FrameworkElement BuildChangesStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(Dim("By default each run's outputs are finished elements — once created they are "
-                + "detached from this tool and a later run never deletes them. Turn on delete-previous to keep "
-                + "outputs stamped so a re-run on the same source elements replaces them instead of adding duplicates."));
+            outer.Children.Add(Dim(LemoineStrings.T("copy.linear.labels.changesNote")));
 
             // The reconciliation toggles only mean anything in delete-previous mode — they
             // expand beneath the master toggle when it is on.
@@ -669,10 +661,10 @@ namespace LemoineTools.Tools.CopyLinear
                 var sub = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
                 sub.SetItems(new List<ToggleItem>
                 {
-                    new ToggleItem { Id = "only", Label = "Only process elements changed since last run",
-                        Desc = "On = leave unchanged runs untouched and rebuild only new/moved/resized ones. Off = rebuild every matched run.", DefaultOn = _onlyChanged },
-                    new ToggleItem { Id = "orph", Label = "Delete outputs whose source no longer matches",
-                        Desc = "Removes stamped segments/instances when their source run is gone or no longer passes the filters.", DefaultOn = _deleteOrphans },
+                    new ToggleItem { Id = "only", Label = LemoineStrings.T("copy.linear.labels.onlyLabel"),
+                        Desc = LemoineStrings.T("copy.linear.labels.onlyDesc"), DefaultOn = _onlyChanged },
+                    new ToggleItem { Id = "orph", Label = LemoineStrings.T("copy.linear.labels.orphLabel"),
+                        Desc = LemoineStrings.T("copy.linear.labels.orphDesc"), DefaultOn = _deleteOrphans },
                 });
                 sub.StateChanged += st =>
                 {
@@ -686,8 +678,8 @@ namespace LemoineTools.Tools.CopyLinear
             var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "prev", Label = "Delete previous run outputs",
-                    Desc = "On = outputs from earlier runs of the same source elements are deleted and rebuilt, and this run's outputs stay linked for the next one. Off = nothing from previous runs is touched and this run's outputs are left as plain elements.", DefaultOn = _deletePrevious },
+                new ToggleItem { Id = "prev", Label = LemoineStrings.T("copy.linear.labels.prevLabel"),
+                    Desc = LemoineStrings.T("copy.linear.labels.prevDesc"), DefaultOn = _deletePrevious },
             });
             toggles.StateChanged += st =>
             {
@@ -705,33 +697,33 @@ namespace LemoineTools.Tools.CopyLinear
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("doc", "Source"), ("cats", "Categories"), ("filters", "Filters"),
-            ("mode", "Operation"), ("params", "Settings"), ("changes", "Change Detection"),
+            ("doc", LemoineStrings.T("copy.linear.review.itemDoc")), ("cats", LemoineStrings.T("copy.linear.review.itemCats")), ("filters", LemoineStrings.T("copy.linear.review.itemFilters")),
+            ("mode", LemoineStrings.T("copy.linear.review.itemMode")), ("params", LemoineStrings.T("copy.linear.review.itemParams")), ("changes", LemoineStrings.T("copy.linear.review.itemChanges")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["doc"]     = _docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "—",
-            ["cats"]    = _spec.Categories.Count == 0 ? "—" : $"{_spec.Categories.Count} category(ies)",
+            ["cats"]    = _spec.Categories.Count == 0 ? "—" : LemoineStrings.T("copy.linear.review.catsValue", _spec.Categories.Count),
             ["filters"] = FilterSummary(),
-            ["mode"]    = _mode == "Replace" ? "Replace with family" : "Split into segments",
+            ["mode"]    = _mode == "Replace" ? LemoineStrings.T("copy.linear.review.modeReplace") : LemoineStrings.T("copy.linear.review.modeSplit"),
             ["params"]  = _mode == "Replace"
-                ? $"every {_intervalFeet:0.##} ft" + (_extraSpacingInches > 0 ? $" +{_extraSpacingInches:0.##}\" " : "")
-                    + (_alignToSource ? " · aligned to source" : HasManualOverride ? " · manual override" : "")
-                    + (HasRotation ? " · rotated" : "")
-                : $"{_segLenFeet:0.##} ft" + (_gapInches > 0 ? $", {_gapInches:0.##}\" gap" : ""),
+                ? LemoineStrings.T("copy.linear.review.paramsInterval", _intervalFeet) + (_extraSpacingInches > 0 ? LemoineStrings.T("copy.linear.review.paramsExtra", _extraSpacingInches) : "")
+                    + (_alignToSource ? LemoineStrings.T("copy.linear.review.paramsAligned") : HasManualOverride ? LemoineStrings.T("copy.linear.review.paramsManual") : "")
+                    + (HasRotation ? LemoineStrings.T("copy.linear.review.paramsRotated") : "")
+                : LemoineStrings.T("copy.linear.review.paramsSegLen", _segLenFeet) + (_gapInches > 0 ? LemoineStrings.T("copy.linear.review.paramsGap", _gapInches) : ""),
             ["changes"] = ChangesSummary(),
         };
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => null;
         public string?        ReviewWarning => _mode == "Replace" && string.IsNullOrEmpty(_familyKey)
-            ? "Pick a family type for Replace mode." : null;
+            ? LemoineStrings.T("copy.linear.review.warnPickFamily") : null;
 
         private string FilterSummary()
         {
             int active = _spec.ParamFilters.Count(kv => kv.Value?.Count > 0);
-            return active == 0 ? "All" : $"{active} param filter(s)";
+            return active == 0 ? LemoineStrings.T("copy.linear.review.filterAll") : LemoineStrings.T("copy.linear.review.filterCount", active);
         }
 
         private bool HasManualOverride =>
@@ -742,8 +734,8 @@ namespace LemoineTools.Tools.CopyLinear
             Math.Abs(_rotXDeg) > 1e-9 || Math.Abs(_rotYDeg) > 1e-9 || Math.Abs(_rotZDeg) > 1e-9;
 
         private string ChangesSummary() => !_deletePrevious
-            ? "Keep previous outputs"
-            : _onlyChanged ? "Delete previous · only changed" : "Delete previous · rebuild all";
+            ? LemoineStrings.T("copy.linear.review.changesKeep")
+            : _onlyChanged ? LemoineStrings.T("copy.linear.review.changesOnlyChanged") : LemoineStrings.T("copy.linear.review.changesRebuildAll");
 
         // ── Validation / Summary ────────────────────────────────────────────────
         public bool IsValid(string stepId)
@@ -764,14 +756,14 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 case "source":
                     return _spec.Categories.Count == 0 ? "—"
-                        : $"{(_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source")} · {_spec.Categories.Count} cat";
+                        : LemoineStrings.T("copy.linear.summaries.source", (_docs.FirstOrDefault(d => d.LinkInstId == _spec.LinkInstId)?.Name ?? "source"), _spec.Categories.Count);
                 case "filters":
                     return FilterSummary();
                 case "operation":
-                    return _mode == "Replace" ? $"Replace · every {_intervalFeet:0.##} ft" : $"Split · {_segLenFeet:0.##} ft";
+                    return _mode == "Replace" ? LemoineStrings.T("copy.linear.summaries.opReplace", _intervalFeet) : LemoineStrings.T("copy.linear.summaries.opSplit", _segLenFeet);
                 case "changes":
                     return ChangesSummary();
-                case "run": return "Ready to run";
+                case "run": return LemoineStrings.T("copy.linear.summaries.run");
                 default:    return "—";
             }
         }
@@ -779,7 +771,7 @@ namespace LemoineTools.Tools.CopyLinear
         // ── Run ──────────────────────────────────────────────────────────────────
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null) { pushLog(LemoineStrings.T("copy.linear.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
 
             SaveSettings();
 
@@ -808,7 +800,7 @@ namespace LemoineTools.Tools.CopyLinear
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("copy.linear.log.raising"), "info");
             _runEvent.Raise();
         }
 
