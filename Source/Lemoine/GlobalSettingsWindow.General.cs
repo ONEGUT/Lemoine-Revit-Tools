@@ -52,6 +52,19 @@ namespace LemoineTools.Lemoine
             }
 
             panel.Children.Add(HSep(12));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.language")));
+            _languageRows.Clear();
+            var cultures = LemoineStrings.AvailableCultures();
+            if (cultures.Count == 0) cultures = new List<string> { LemoineSettings.Instance.Language };
+            foreach (var culture in cultures)
+            {
+                var row = BuildLanguageRow(culture);
+                _languageRows.Add((row, culture));
+                panel.Children.Add(row);
+            }
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.languageHint")));
+
+            panel.Children.Add(HSep(12));
             panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.diagnostics")));
             panel.Children.Add(BuildDiagnosticsSection());
 
@@ -251,6 +264,49 @@ namespace LemoineTools.Lemoine
             return row;
         }
 
+        // ═════════════════════════════════════════════════════════════════════
+        private Border BuildLanguageRow(string culture)
+        {
+            bool active = culture == LemoineSettings.Instance.Language;
+            var row = ToggleRowShell(active);
+            var pill = Pill(active);
+            var name = new TextBlock { Text = LanguageDisplayName(culture), FontWeight = FontWeights.Medium };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
+            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var desc = new TextBlock
+            {
+                Text      = culture,
+                FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 0),
+            };
+            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            var inner = new StackPanel();
+            inner.Children.Add(name); inner.Children.Add(desc);
+            var dp = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(pill, Dock.Right);
+            dp.Children.Add(pill); dp.Children.Add(inner);
+            row.Child = dp;
+            row.MouseLeftButtonDown += (s, e) => { LemoineSettings.Instance.SetLanguage(culture); RefreshLanguageRows(); };
+            return row;
+        }
+
+        // Best-effort friendly name for a culture folder — falls back to the raw folder
+        // name when it isn't a recognizable BCP-47 tag (e.g. a custom culture folder).
+        private static string LanguageDisplayName(string culture)
+        {
+            try
+            {
+                return new System.Globalization.CultureInfo(culture).NativeName;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed($"GlobalSettingsWindow: resolve culture display name for '{culture}'", ex);
+                return culture;
+            }
+        }
+
         private void RefreshThemeRows()
         {
             foreach (var (row, theme) in _themeRows)
@@ -268,6 +324,19 @@ namespace LemoineTools.Lemoine
             foreach (var (row, size) in _sizeRows)
             {
                 bool active = size == LemoineSettings.Instance.UiSize;
+                if (active) row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                else row.Background = Brushes.Transparent;
+                row.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent" : "LemoineBorder");
+                if (row.Child is DockPanel dp && dp.Children[0] is Border pill)
+                    UpdatePill(pill, active);
+            }
+        }
+
+        private void RefreshLanguageRows()
+        {
+            foreach (var (row, culture) in _languageRows)
+            {
+                bool active = culture == LemoineSettings.Instance.Language;
                 if (active) row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
                 else row.Background = Brushes.Transparent;
                 row.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent" : "LemoineBorder");

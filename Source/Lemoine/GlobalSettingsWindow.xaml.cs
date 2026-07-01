@@ -19,6 +19,7 @@ namespace LemoineTools.Lemoine
         // ── Theme rows (General tab) ──────────────────────────────────────────
         private readonly List<(Border row, LemoineTheme theme)>  _themeRows = new List<(Border, LemoineTheme)>();
         private readonly List<(Border row, LemoineUiSize size)>  _sizeRows  = new List<(Border, LemoineUiSize)>();
+        private readonly List<(Border row, string culture)>      _languageRows = new List<(Border, string)>();
 
         // ── Nav pill state ────────────────────────────────────────────────────
         private string _activeTabId = "general";
