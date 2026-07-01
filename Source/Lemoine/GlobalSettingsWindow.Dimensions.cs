@@ -18,9 +18,9 @@ namespace LemoineTools.Lemoine
     public partial class GlobalSettingsWindow
     {
         // Destination display ↔ stored TargetType, shared with the wizard's mapping.
-        private const string DimGridDisplay   = "To Grid";
-        private const string DimSlabDisplay   = "To Slab Edge";
-        private const string DimManualDisplay = "To Picked Edge";
+        private static readonly string DimGridDisplay   = LemoineStrings.T("globalSettings.dim.destGrid");
+        private static readonly string DimSlabDisplay   = LemoineStrings.T("globalSettings.dim.destSlab");
+        private static readonly string DimManualDisplay = LemoineStrings.T("globalSettings.dim.destManual");
 
         private UIElement BuildDimensionsContent()
         {
@@ -33,18 +33,16 @@ namespace LemoineTools.Lemoine
             };
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
 
-            panel.Children.Add(ContentHeader("Clash"));
-            panel.Children.Add(SubLabel("Finder & Dimension"));
-            panel.Children.Add(DimIntro(
-                "Settings for the auto-dimension engine. Every Clash Finder & Dimension run uses these "
-              + "values (only the destination can be overridden per run). Saved automatically."));
+            panel.Children.Add(ContentHeader(LemoineStrings.T("globalSettings.dim.header")));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.dim.finderSub")));
+            panel.Children.Add(DimIntro(LemoineStrings.T("globalSettings.dim.intro")));
 
             // ── Run defaults ─────────────────────────────────────────────────
-            panel.Children.Add(SubLabel("Run defaults"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.dim.runDefaults")));
 
             var destPicker = new LemoineSingleSelect
             {
-                Label        = "Default destination",
+                Label        = LemoineStrings.T("globalSettings.dim.defaultDest"),
                 Items        = new List<string> { DimGridDisplay, DimSlabDisplay, DimManualDisplay },
                 SelectedItem = cfg.TargetType == "SlabEdge" ? DimSlabDisplay
                              : cfg.TargetType == "ManualDatum" ? DimManualDisplay : DimGridDisplay,
@@ -61,23 +59,23 @@ namespace LemoineTools.Lemoine
             var runToggles = new LemoineToggleSwitches();
             runToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "chain", Label = "Chain aligned clash dimensions",
-                                 Desc = "Merge collinear clashes that sit close together into one multi-segment string.",
+                new ToggleItem { Id = "chain", Label = LemoineStrings.T("globalSettings.dim.chainLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.chainDesc"),
                                  DefaultOn = cfg.ChainAligned },
-                new ToggleItem { Id = "density", Label = "Auto-chain dense areas",
-                                 Desc = "Clashes packed tighter than their value texts collapse into one chained string per axis, split by nearest reference — instead of overlapping solo dimensions.",
+                new ToggleItem { Id = "density", Label = LemoineStrings.T("globalSettings.dim.densityLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.densityDesc"),
                                  DefaultOn = cfg.DensityChaining },
-                new ToggleItem { Id = "callouts", Label = "Enlarged callouts for extreme density",
-                                 Desc = "Areas too dense even for chained strings get a plan callout at a computed larger scale (Clash Finder runs only); their clashes are dimensioned in the callout, not the parent view.",
+                new ToggleItem { Id = "callouts", Label = LemoineStrings.T("globalSettings.dim.calloutsLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.calloutsDesc"),
                                  DefaultOn = cfg.DenseCalloutsEnabled },
-                new ToggleItem { Id = "bothAxes", Label = "Dimension both axes",
-                                 Desc = "Measure each clash in the view's X and Y directions (two dimensions per clash).",
+                new ToggleItem { Id = "bothAxes", Label = LemoineStrings.T("globalSettings.dim.bothAxesLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.bothAxesDesc"),
                                  DefaultOn = cfg.DimensionBothAxes },
-                new ToggleItem { Id = "links", Label = "Include linked models as targets",
-                                 Desc = "Use loaded Revit links as target sources (coordination slabs / grids).",
+                new ToggleItem { Id = "links", Label = LemoineStrings.T("globalSettings.dim.linksLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.linksDesc"),
                                  DefaultOn = cfg.IncludeLinks },
-                new ToggleItem { Id = "slabDiag", Label = "Diagnose slab edge (log only)",
-                                 Desc = "Logs a per-source face tally (host vs each link) and per-clash candidate ranking during a To Slab Edge run, to pinpoint why auto mode misses a linked slab. No effect on placement.",
+                new ToggleItem { Id = "slabDiag", Label = LemoineStrings.T("globalSettings.dim.slabDiagLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.slabDiagDesc"),
                                  DefaultOn = cfg.DiagnoseSlabEdge },
             });
             runToggles.StateChanged += state =>
@@ -92,52 +90,52 @@ namespace LemoineTools.Lemoine
             };
             panel.Children.Add(runToggles);
 
-            AddCfgStepper(panel, "Cluster grouping distance (paper in)",
-                "Clashes within this distance of each other ON PAPER group into one cluster (and one chained run). Paper-space, so the same value groups identically at any view scale — including enlarged callouts. 5/8\" equals 5 ft at 1:96.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.clusterDist"),
+                LemoineStrings.T("globalSettings.dim.clusterDistDesc"),
                 cfg.ClusterLinkPaperIn, 0, 4, 0.0625, 4,
                 v => { cfg.ClusterLinkPaperIn = v; cfg.Save(); });
-            AddCfgStepper(panel, "Run line tolerance (paper in)",
-                "How far a clash may sit OFF a run's line, on paper, and still join it. Also the across-run snap: members within this share one dimension. 1/16\" equals 0.5 ft at 1:96.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.runLineTol"),
+                LemoineStrings.T("globalSettings.dim.runLineTolDesc"),
                 cfg.RunCrossPaperIn, 0, 1, 0.03125, 5,
                 v => { cfg.RunCrossPaperIn = v; cfg.Save(); });
-            AddCfgStepper(panel, "Callout minimum clashes",
-                "A dense area only becomes an enlarged callout when at least this many clash markers fall inside it; smaller pockets stay chained in the parent view.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.calloutMin"),
+                LemoineStrings.T("globalSettings.dim.calloutMinDesc"),
                 cfg.CalloutMinClashes, 2, 50, 1, 0,
                 v => { cfg.CalloutMinClashes = (int)Math.Round(v); cfg.Save(); });
 
             var clashSettings = ClashDimensionSettings.Instance;
-            AddCfgStepper(panel, "Storey depth margin (ft)",
-                "Clashes within this depth below a level still count as that level's storey, so slabs and structure hanging just under the floor are marked on its plan. Increase if penetrations are missed; 0 cuts exactly at the level.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.storeyMargin"),
+                LemoineStrings.T("globalSettings.dim.storeyMarginDesc"),
                 clashSettings.StoreyMarginMm / 304.8, 0, 12, 0.5, 2,
                 v => { clashSettings.StoreyMarginMm = v * 304.8; clashSettings.Save(); });
 
             panel.Children.Add(HSep(12));
 
             // ── Target resolution ────────────────────────────────────────────
-            panel.Children.Add(SubLabel("Target resolution"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.dim.targetRes")));
 
-            AddCfgStepper(panel, "Max target distance (ft)",
-                "Reject targets whose projected horizontal distance exceeds this.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.maxDist"),
+                LemoineStrings.T("globalSettings.dim.maxDistDesc"),
                 cfg.MaxDistanceFt, 1, 200, 1, 1,
                 v => { cfg.MaxDistanceFt = v; cfg.Save(); });
-            AddCfgStepper(panel, "Axis tolerance (deg)",
-                "Keep faces / grids within this many degrees of the measurement axis.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.axisTol"),
+                LemoineStrings.T("globalSettings.dim.axisTolDesc"),
                 cfg.AxisToleranceDeg, 0, 45, 1, 1,
                 v => { cfg.AxisToleranceDeg = v; cfg.Save(); });
-            AddCfgStepper(panel, "Ambiguity threshold (in)",
-                "If the top two slab faces score within this, the pick is flagged ambiguous rather than guessed.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.ambiguity"),
+                LemoineStrings.T("globalSettings.dim.ambiguityDesc"),
                 cfg.AmbiguityThresholdFt * 12.0, 0, 12, 0.25, 2,
                 v => { cfg.AmbiguityThresholdFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, "Slab axis weight",
-                "Slab-face scoring weight on axis deviation (degrees → feet-equivalent).",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.slabAxisW"),
+                LemoineStrings.T("globalSettings.dim.slabAxisWDesc"),
                 cfg.SlabAxisWeight, 0, 1, 0.01, 2,
                 v => { cfg.SlabAxisWeight = v; cfg.Save(); });
-            AddCfgStepper(panel, "Slab length weight",
-                "Slab-face scoring credit for a larger / more primary boundary face.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.slabLenW"),
+                LemoineStrings.T("globalSettings.dim.slabLenWDesc"),
                 cfg.SlabLengthWeight, 0, 1, 0.01, 2,
                 v => { cfg.SlabLengthWeight = v; cfg.Save(); });
 
-            panel.Children.Add(DimRowLabel("Dimension type name (blank = document default)"));
+            panel.Children.Add(DimRowLabel(LemoineStrings.T("globalSettings.dim.dimTypeName")));
             var typeBox = new TextBox { Text = cfg.DimensionTypeName, Width = 240,
                                         HorizontalAlignment = HorizontalAlignment.Left };
             typeBox.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
@@ -153,41 +151,41 @@ namespace LemoineTools.Lemoine
             panel.Children.Add(HSep(12));
 
             // ── Layout spacing (paper-space, inches) ─────────────────────────
-            panel.Children.Add(SubLabel("Layout spacing (paper-space, inches)"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.dim.layoutSpacing")));
 
-            AddCfgStepper(panel, "First string offset (in)",
-                "How far the first dimension string sits off the source run, on paper.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.firstOffset"),
+                LemoineStrings.T("globalSettings.dim.firstOffsetDesc"),
                 cfg.Layout.FirstOffsetFt * 12.0, 0, 2, 0.0625, 4,
                 v => { cfg.Layout.FirstOffsetFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, "String spacing (in)",
-                "Paper-space gap between stacked dimension strings.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.stringSpacing"),
+                LemoineStrings.T("globalSettings.dim.stringSpacingDesc"),
                 cfg.Layout.StringSpacingFt * 12.0, 0, 2, 0.0625, 4,
                 v => { cfg.Layout.StringSpacingFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, "Rounding precision (in)",
-                "Rounding applied to displayed dimension values.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.roundingPrec"),
+                LemoineStrings.T("globalSettings.dim.roundingPrecDesc"),
                 cfg.Layout.PrecisionFt * 12.0, 0, 2, 0.0625, 4,
                 v => { cfg.Layout.PrecisionFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, "Text height (in)",
-                "Paper-space text height used to size collision bands.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.textHeight"),
+                LemoineStrings.T("globalSettings.dim.textHeightDesc"),
                 cfg.Layout.TextHeightFt * 12.0, 0.03125, 1, 0.015625, 4,
                 v => { cfg.Layout.TextHeightFt = v / 12.0; cfg.Save(); });
 
             panel.Children.Add(HSep(12));
 
             // ── Advanced layout ──────────────────────────────────────────────
-            panel.Children.Add(SubLabel("Advanced layout"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.dim.advLayout")));
 
             var layoutToggles = new LemoineToggleSwitches();
             layoutToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "alignRows", Label = "Align dimensions sharing a row",
-                                 Desc = "Pulls opposite-direction strings at nearly the same level onto one shared line, so they read as a single aligned dimension line.",
+                new ToggleItem { Id = "alignRows", Label = LemoineStrings.T("globalSettings.dim.alignRowsLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.alignRowsDesc"),
                                  DefaultOn = cfg.Layout.AlignSharedRows },
-                new ToggleItem { Id = "stagger", Label = "Stagger stacked values",
-                                 Desc = "Nudges value texts on adjacent rows apart so stacked dimensions don't pile their numbers into one column.",
+                new ToggleItem { Id = "stagger", Label = LemoineStrings.T("globalSettings.dim.staggerLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.staggerDesc"),
                                  DefaultOn = cfg.Layout.StaggerStackedText },
-                new ToggleItem { Id = "snapshot", Label = "Dump layout snapshots (diagnostic)",
-                                 Desc = "Writes a layout snapshot XML per dimensioned view to %AppData%\\LemoineTools\\LayoutSnapshots — the full problem and solution with per-dimension score breakdowns, for tuning the engine. No effect on placement.",
+                new ToggleItem { Id = "snapshot", Label = LemoineStrings.T("globalSettings.dim.snapshotLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.dim.snapshotDesc"),
                                  DefaultOn = cfg.DumpLayoutSnapshots },
             });
             layoutToggles.StateChanged += state =>
@@ -199,12 +197,12 @@ namespace LemoineTools.Lemoine
             };
             panel.Children.Add(layoutToggles);
 
-            AddCfgStepper(panel, "Max stacked rows",
-                "How many rows a string may step outward to clear a collision before giving up.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.maxStackedRows"),
+                LemoineStrings.T("globalSettings.dim.maxStackedRowsDesc"),
                 cfg.Layout.MaxOffsetSteps, 1, 20, 1, 0,
                 v => { cfg.Layout.MaxOffsetSteps = (int)Math.Round(v); cfg.Save(); });
-            AddCfgStepper(panel, "Repair passes",
-                "Extra worst-first refinement passes over the laid-out plan before committing. 0 disables repair.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.dim.repairPasses"),
+                LemoineStrings.T("globalSettings.dim.repairPassesDesc"),
                 cfg.Layout.MaxRepairPasses, 0, 10, 1, 0,
                 v => { cfg.Layout.MaxRepairPasses = (int)Math.Round(v); cfg.Save(); });
 
