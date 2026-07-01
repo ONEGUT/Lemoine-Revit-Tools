@@ -1,0 +1,58 @@
+// explode.byTrade.json — Explode 3D View by Trade tool + handler logs.
+// Command: ExplodeViewByTradeCommand.
+{
+  "title": "Explode 3D View by Trade",
+  "runLabel": "Explode View →",
+  "steps": { "S1": "Select Source 3D View", "S2": "Select Trades", "S3": "Options", "S4": "Review & Run" },
+  "summaries": {
+    "S4": "Ready to run",
+    "oneView": "1 view selected",
+    "tradeCount": "{0} trade(s) selected",
+    "byElevation": "By elevation", "configOrder": "Config order",
+    "numbered": "Numbered", "colored": "Colored",
+    "isolated": "Isolated", "withContext": "With context"
+  },
+  "labels": {
+    "noViews":      "No 3D views found in this document.",
+    "sourceView":   "Source 3D view",
+    "noTrades":     "No AutoFilters trades have created filters in this project. Open AutoFilters and run \"Create Filters\" first, then reopen this tool.",
+    "tradesHidden": "{0} trade(s) are hidden because their filters aren't created in this project yet: {1}. Run AutoFilters → Create Filters to include them.",
+    "orderLabel":   "Order views by elevation",
+    "orderDesc":    "Scan each trade's element elevations (host + linked) and stack the output views top → bottom by median height. Off keeps the AutoFilters order.",
+    "numberLabel":  "Number-prefix view names",
+    "numberDesc":   "Prefix each new view name with 01_, 02_… so the Project Browser sorts the stack.",
+    "colorLabel":   "Apply trade color overrides",
+    "colorDesc":    "Apply each trade's AutoFilters color/line overrides to the trade shown in its view.",
+    "hideLabel":    "Hide all other elements",
+    "hideDesc":     "Hide every model category that isn't part of the isolated trade, so only that trade is visible. Off keeps the rest of the model as light background context. (Cascades onto links shown \"By Host View\".)"
+  },
+  "review": {
+    "itemSource": "Source View", "itemTrades": "Trades", "itemOrder": "Order by Elevation",
+    "itemNumber": "Number Prefix", "itemColor": "Color Overrides", "itemHide": "Hide Other Elements",
+    "oneView": "1 view", "tradeCount": "{0} trade(s)",
+    "yes": "Yes", "no": "No",
+    "note": "One 3D view is created per selected trade at the source view's exact camera angle and section box. Each view shows its own trade and hides the other selected trades via AutoFilters view filters. Linked elements are only hidden/shown where the link is displayed \"By Host View\"."
+  },
+  "log": {
+    "starting":       "Starting Explode 3D View by Trade…",
+    "error":          "Error: {0}",
+    "notView":        "Source view is not a 3D view (or no longer exists).",
+    "noTrades":       "No trades selected.",
+    "tradeNoFilters": "Trade \"{0}\" has no created filters in this project — skipped. Run AutoFilters → Create Filters first.",
+    "noneHaveFilters":"None of the selected trades have filters created in this project — nothing to explode.",
+    "noSectionBox":   "Source view has no active section box — elevation scan covers the whole model for each trade (this may be slow on large links).",
+    "stoppedScan":    "Stopped by user during elevation scan — {0} of {1} trade(s) scanned.",
+    "noElementsForTrade":"No elements found for \"{0}\" in view scope — it will stack at the bottom.",
+    "foundElements":  "Found {0} element(s) for \"{1}\" — median {2} (range {3} … {4}).",
+    "stackOrder":     "Stack order (top → bottom): ",
+    "dupFailed":      "Could not duplicate the source view for \"{0}\".",
+    "renameFailed":   "Could not rename exploded view to \"{0}\": {1} (left with Revit's default name).",
+    "filterFailed":   "Filter '{0}' on '{1}': {2}",
+    "created":        "Created \"{0}\" isolating \"{1}\"{2}.",
+    "othersHidden":   " (others hidden)",
+    "createFailed":   "Failed to create exploded view for \"{0}\": {1}",
+    "complete":       "Complete — {0} view(s) created from \"{1}\", {2} trade(s) skipped.",
+    "hidCategories":  "Hid {0} non-trade model categor(ies) in \"{1}\".",
+    "linkNotByHost":  "Link \"{0}\" is displayed \"{1}\", not \"By Host View\" — the exploded views' filters will not hide/show its elements. Set it to \"By Host View\" in Visibility/Graphics."
+  }
+}

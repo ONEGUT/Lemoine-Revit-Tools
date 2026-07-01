@@ -20,15 +20,15 @@ namespace LemoineTools.Tools.ExplodeViews
         : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
     {
         // ── Identity ─────────────────────────────────────────────────────────────
-        public string Title    => "Explode 3D View by Trade";
-        public string RunLabel => "Explode View →";
+        public string Title    => LemoineStrings.T("explode.byTrade.title");
+        public string RunLabel => LemoineStrings.T("explode.byTrade.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Source 3D View", required: true),
-            new StepDefinition("S2", "Select Trades",         required: true),
-            new StepDefinition("S3", "Options",               required: false),
-            new StepDefinition("S4", "Review & Run",          required: false),
+            new StepDefinition("S1", LemoineStrings.T("explode.byTrade.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("explode.byTrade.steps.S2"),         required: true),
+            new StepDefinition("S3", LemoineStrings.T("explode.byTrade.steps.S3"),               required: false),
+            new StepDefinition("S4", LemoineStrings.T("explode.byTrade.steps.S4"),          required: false),
         };
 
         // ── Run result strip ───────────────────────────────────────────────────
@@ -117,13 +117,13 @@ namespace LemoineTools.Tools.ExplodeViews
         private FrameworkElement BuildS1()
         {
             if (_eligibleViewIds.Count == 0)
-                return Hint("No 3D views found in this document.");
+                return Hint(LemoineStrings.T("explode.byTrade.labels.noViews"));
 
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
                 SingleSelect   = true,
-                AccessibleName = "Source 3D view",
+                AccessibleName = LemoineStrings.T("explode.byTrade.labels.sourceView"),
             };
             picker.SelectionChanged += ids =>
             {
@@ -139,8 +139,7 @@ namespace LemoineTools.Tools.ExplodeViews
         private FrameworkElement BuildS2()
         {
             if (_labelToTradeId.Count == 0)
-                return Hint("No AutoFilters trades have created filters in this project. "
-                    + "Open AutoFilters and run \"Create Filters\" first, then reopen this tool.");
+                return Hint(LemoineStrings.T("explode.byTrade.labels.noTrades"));
 
             var outer = new StackPanel();
 
@@ -169,10 +168,7 @@ namespace LemoineTools.Tools.ExplodeViews
             if (_tradesWithoutFilters.Count > 0)
             {
                 outer.Children.Add(new FrameworkElement { Height = 8 });
-                outer.Children.Add(Hint(
-                    $"{_tradesWithoutFilters.Count} trade(s) are hidden because their filters aren't "
-                    + "created in this project yet: " + string.Join(", ", _tradesWithoutFilters)
-                    + ". Run AutoFilters → Create Filters to include them."));
+                outer.Children.Add(Hint(LemoineStrings.T("explode.byTrade.labels.tradesHidden", _tradesWithoutFilters.Count, string.Join(", ", _tradesWithoutFilters))));
             }
 
             return outer;
@@ -187,32 +183,29 @@ namespace LemoineTools.Tools.ExplodeViews
                 new ToggleItem
                 {
                     Id        = "order",
-                    Label     = "Order views by elevation",
-                    Desc      = "Scan each trade's element elevations (host + linked) and stack the output "
-                              + "views top → bottom by median height. Off keeps the AutoFilters order.",
+                    Label     = LemoineStrings.T("explode.byTrade.labels.orderLabel"),
+                    Desc      = LemoineStrings.T("explode.byTrade.labels.orderDesc"),
                     DefaultOn = _orderByElevation,
                 },
                 new ToggleItem
                 {
                     Id        = "number",
-                    Label     = "Number-prefix view names",
-                    Desc      = "Prefix each new view name with 01_, 02_… so the Project Browser sorts the stack.",
+                    Label     = LemoineStrings.T("explode.byTrade.labels.numberLabel"),
+                    Desc      = LemoineStrings.T("explode.byTrade.labels.numberDesc"),
                     DefaultOn = _numberPrefix,
                 },
                 new ToggleItem
                 {
                     Id        = "color",
-                    Label     = "Apply trade colour overrides",
-                    Desc      = "Apply each trade's AutoFilters colour/line overrides to the trade shown in its view.",
+                    Label     = LemoineStrings.T("explode.byTrade.labels.colorLabel"),
+                    Desc      = LemoineStrings.T("explode.byTrade.labels.colorDesc"),
                     DefaultOn = _applyColorOverride,
                 },
                 new ToggleItem
                 {
                     Id        = "hide",
-                    Label     = "Hide all other elements",
-                    Desc      = "Hide every model category that isn't part of the isolated trade, so only that "
-                              + "trade is visible. Off keeps the rest of the model as light background context. "
-                              + "(Cascades onto links shown \"By Host View\".)",
+                    Label     = LemoineStrings.T("explode.byTrade.labels.hideLabel"),
+                    Desc      = LemoineStrings.T("explode.byTrade.labels.hideDesc"),
                     DefaultOn = _hideOthers,
                 },
             });
@@ -230,23 +223,23 @@ namespace LemoineTools.Tools.ExplodeViews
         // ── Review (ILemoineReviewable) ────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("source", "Source View"),
-            ("trades", "Trades"),
-            ("order",  "Order by Elevation"),
-            ("number", "Number Prefix"),
-            ("color",  "Colour Overrides"),
-            ("hide",   "Hide Other Elements"),
+            ("source", LemoineStrings.T("explode.byTrade.review.itemSource")),
+            ("trades", LemoineStrings.T("explode.byTrade.review.itemTrades")),
+            ("order",  LemoineStrings.T("explode.byTrade.review.itemOrder")),
+            ("number", LemoineStrings.T("explode.byTrade.review.itemNumber")),
+            ("color",  LemoineStrings.T("explode.byTrade.review.itemColor")),
+            ("hide",   LemoineStrings.T("explode.byTrade.review.itemHide")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["source"] = _sourceViewId == 0 ? "—" : (SourceViewName() ?? "1 view"),
+            ["source"] = _sourceViewId == 0 ? "—" : (SourceViewName() ?? LemoineStrings.T("explode.byTrade.review.oneView")),
             ["trades"] = _selectedTradeIds.Count == 0 ? "—"
-                : $"{_selectedTradeIds.Count} trade{(_selectedTradeIds.Count == 1 ? "" : "s")}",
-            ["order"]  = _orderByElevation ? "Yes" : "No",
-            ["number"] = _numberPrefix ? "Yes" : "No",
-            ["color"]  = _applyColorOverride ? "Yes" : "No",
-            ["hide"]   = _hideOthers ? "Yes" : "No",
+                : LemoineStrings.T("explode.byTrade.review.tradeCount", _selectedTradeIds.Count),
+            ["order"]  = _orderByElevation ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
+            ["number"] = _numberPrefix ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
+            ["color"]  = _applyColorOverride ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
+            ["hide"]   = _hideOthers ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
         };
 
         public IList<string>? ReviewChips => _selectedTradeIds.Count == 0 ? null
@@ -254,10 +247,7 @@ namespace LemoineTools.Tools.ExplodeViews
                              .Select(kv => kv.Key).ToList();
 
         public string? ReviewNote =>
-            "One 3D view is created per selected trade at the source view's exact camera angle and "
-            + "section box. Each view shows its own trade and hides the other selected trades via "
-            + "AutoFilters view filters. Linked elements are only hidden/shown where the link is "
-            + "displayed \"By Host View\".";
+            LemoineStrings.T("explode.byTrade.review.note");
 
         public string? ReviewWarning => null;
 
@@ -272,20 +262,20 @@ namespace LemoineTools.Tools.ExplodeViews
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1")
-                return _sourceViewId == 0 ? "—" : (SourceViewName() ?? "1 view selected");
+                return _sourceViewId == 0 ? "—" : (SourceViewName() ?? LemoineStrings.T("explode.byTrade.summaries.oneView"));
             if (stepId == "S2")
                 return _selectedTradeIds.Count == 0 ? "—"
-                    : $"{_selectedTradeIds.Count} trade{(_selectedTradeIds.Count == 1 ? "" : "s")} selected";
+                    : LemoineStrings.T("explode.byTrade.summaries.tradeCount", _selectedTradeIds.Count);
             if (stepId == "S3")
             {
                 var parts = new List<string>();
-                parts.Add(_orderByElevation ? "By elevation" : "Config order");
-                if (_numberPrefix)       parts.Add("Numbered");
-                if (_applyColorOverride) parts.Add("Coloured");
-                parts.Add(_hideOthers ? "Isolated" : "With context");
+                parts.Add(_orderByElevation ? LemoineStrings.T("explode.byTrade.summaries.byElevation") : LemoineStrings.T("explode.byTrade.summaries.configOrder"));
+                if (_numberPrefix)       parts.Add(LemoineStrings.T("explode.byTrade.summaries.numbered"));
+                if (_applyColorOverride) parts.Add(LemoineStrings.T("explode.byTrade.summaries.colored"));
+                parts.Add(_hideOthers ? LemoineStrings.T("explode.byTrade.summaries.isolated") : LemoineStrings.T("explode.byTrade.summaries.withContext"));
                 return string.Join(" · ", parts);
             }
-            if (stepId == "S4") return "Ready to run";
+            if (stepId == "S4") return LemoineStrings.T("explode.byTrade.summaries.S4");
             return "—";
         }
 
@@ -308,7 +298,7 @@ namespace LemoineTools.Tools.ExplodeViews
             _handler.OnComplete          = onComplete;
             _handler.OnResultChips       = chips => _resultChips = chips;
 
-            pushLog("Starting Explode 3D View by Trade…", "info");
+            pushLog(LemoineStrings.T("explode.byTrade.log.starting"), "info");
             _event!.Raise();
         }
 
