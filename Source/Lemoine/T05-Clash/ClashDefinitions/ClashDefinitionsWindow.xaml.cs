@@ -138,7 +138,7 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new LemoineTitleBar
             {
-                Title        = "Clash Definitions",
+                Title        = LemoineStrings.T("clashDefinitions.window.title"),
                 IconGlyph    = char.ConvertFromUtf32(0xE71C),   // Segoe MDL2: Filter
                 RightContent = rightPanel,
             };
@@ -166,14 +166,14 @@ namespace LemoineTools.Lemoine
             foreach (var def in _defs)
                 _sidebarPanel.Children.Add(BuildDefRow(def));
 
-            _sidebarPanel.Children.Add(LemoineControlStyles.BuildAddPill("＋ Add definition", AddDefinition));
+            _sidebarPanel.Children.Add(LemoineControlStyles.BuildAddPill(LemoineStrings.T("clashDefinitions.window.addPill"), AddDefinition));
         }
 
         private Border BuildDefRow(ClashDefinition def)
         {
             var nameTb = new TextBlock
             {
-                Text              = string.IsNullOrWhiteSpace(def.Name) ? "(unnamed)" : def.Name,
+                Text              = string.IsNullOrWhiteSpace(def.Name) ? LemoineStrings.T("clashDefinitions.window.unnamed") : def.Name,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming      = TextTrimming.CharacterEllipsis,
                 IsHitTestVisible  = false,
@@ -182,10 +182,10 @@ namespace LemoineTools.Lemoine
             nameTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             nameTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
 
-            var dupBtn = GlyphButton(char.ConvertFromUtf32(0xE8C8), "Duplicate");   // Copy
+            var dupBtn = GlyphButton(char.ConvertFromUtf32(0xE8C8), LemoineStrings.T("clashDefinitions.window.dupTooltip"));   // Copy
             dupBtn.Click += (s, e) => DuplicateDefinition(def.Id);
 
-            var delBtn = GlyphButton(char.ConvertFromUtf32(0xE74D), "Delete");   // Trash
+            var delBtn = GlyphButton(char.ConvertFromUtf32(0xE74D), LemoineStrings.T("clashDefinitions.window.delTooltip"));   // Trash
             delBtn.Click += (s, e) => DeleteDefinition(def.Id);
 
             var grid = new Grid();
@@ -269,7 +269,7 @@ namespace LemoineTools.Lemoine
             if (src == null) return;
             var copy = ClashDefinitionsSettings.DeepCopy(src);
             copy.Id   = "C" + Guid.NewGuid().ToString("N").Substring(0, 7);
-            copy.Name = string.IsNullOrWhiteSpace(src.Name) ? "Definition (copy)" : src.Name + " (copy)";
+            copy.Name = string.IsNullOrWhiteSpace(src.Name) ? LemoineStrings.T("clashDefinitions.window.copyDefault") : src.Name + LemoineStrings.T("clashDefinitions.window.copySuffix");
             int idx = _defs.FindIndex(d => d.Id == id);
             _defs.Insert(idx + 1, copy);
             _activeId = copy.Id;
@@ -304,17 +304,17 @@ namespace LemoineTools.Lemoine
             var def = _defs.Find(d => d.Id == _activeId);
             if (def == null)
             {
-                AddDim(panel, "No definition selected. Use “＋ Add definition” on the left to create one.");
+                AddDim(panel, LemoineStrings.T("clashDefinitions.window.noSelection"));
                 SetEditorContent(panel);
                 return;
             }
 
             // ── Name ──────────────────────────────────────────────────────────
-            AddLabel(panel, "Name");
+            AddLabel(panel, LemoineStrings.T("clashDefinitions.labels.name"));
             var nameEdit = new LemoineInlineEdit { Text = def.Name, Margin = new Thickness(0, 0, 0, 10) };
             nameEdit.TextCommitted += (s, txt) =>
             {
-                def.Name = string.IsNullOrWhiteSpace(txt) ? "(unnamed)" : txt.Trim();
+                def.Name = string.IsNullOrWhiteSpace(txt) ? LemoineStrings.T("clashDefinitions.window.unnamed") : txt.Trim();
                 RefreshSidebar();
             };
             panel.Children.Add(nameEdit);
@@ -323,7 +323,7 @@ namespace LemoineTools.Lemoine
             var g1Editor = new ClashGroupEditor(def.Group1, _docs, _pickHandler, _pickEvent, null);
             panel.Children.Add(new LemoineSectionCard
             {
-                Header      = "Group 1 — Source (sets marker colour & size)",
+                Header      = LemoineStrings.T("clashDefinitions.labels.group1Header"),
                 CardContent = g1Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
@@ -331,7 +331,7 @@ namespace LemoineTools.Lemoine
             var g2Editor = new ClashGroupEditor(def.Group2, _docs, _pickHandler, _pickEvent, null);
             panel.Children.Add(new LemoineSectionCard
             {
-                Header      = "Group 2 — Target (tested against Group 1)",
+                Header      = LemoineStrings.T("clashDefinitions.labels.group2Header"),
                 CardContent = g2Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
@@ -339,28 +339,28 @@ namespace LemoineTools.Lemoine
             // ── Marking settings ──────────────────────────────────────────────
             var marking = new StackPanel();
 
-            AddStepperRow(marking, "Clash Tolerance (mm)",
-                "Extra margin added to each side of the clash bounding box marker.",
+            AddStepperRow(marking, LemoineStrings.T("clashDefinitions.labels.tolerance"),
+                LemoineStrings.T("clashDefinitions.labels.toleranceDesc"),
                 def.ToleranceMm, 0, 100, 0.5, 1, v => def.ToleranceMm = v);
 
-            AddStepperRow(marking, "Max Clashes",
-                "Stop detecting after this many clashes. Raise if clashes are being missed.",
+            AddStepperRow(marking, LemoineStrings.T("clashDefinitions.labels.maxClashes"),
+                LemoineStrings.T("clashDefinitions.labels.maxClashesDesc"),
                 def.MaxClashes, 1, 100000, 1, 0, v => def.MaxClashes = (int)v);
 
-            AddLabel(marking, "Fill Style");
+            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.fillStyle"));
             var fillSelect = new LemoineSingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = def.FillStyle };
             fillSelect.SelectionChanged += val => { if (val != null) def.FillStyle = val; };
             marking.Children.Add(fillSelect);
 
             AddDivider(marking);
-            AddLabel(marking, "Marker Reference");
+            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.markerReference"));
             var targetSelect = new LemoineSingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = def.DimTarget };
             targetSelect.SelectionChanged += val => { if (val != null) def.DimTarget = val; };
             marking.Children.Add(targetSelect);
 
             AddDivider(marking);
-            AddLabel(marking, "Phase");
-            const string PhaseAll = "All phases", PhaseMatch = "Match view phase", PhaseSpecific = "Specific phase";
+            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.phase"));
+            string PhaseAll = LemoineStrings.T("clashDefinitions.phase.all"), PhaseMatch = LemoineStrings.T("clashDefinitions.phase.match"), PhaseSpecific = LemoineStrings.T("clashDefinitions.phase.specific");
             var phaseSelect = new LemoineSingleSelect
             {
                 Items        = new[] { PhaseAll, PhaseMatch, PhaseSpecific },
@@ -368,9 +368,7 @@ namespace LemoineTools.Lemoine
                              : def.PhaseMode == "Specific"  ? PhaseSpecific : PhaseAll,
             };
             marking.Children.Add(phaseSelect);
-            AddDim(marking, "Match view phase: a clash marks in a view only when both elements exist in that "
-                          + "view's phase. Specific phase culls detection to one host phase. Linked-model "
-                          + "phases map to the host by name; unmapped names pass through and are logged.");
+            AddDim(marking, LemoineStrings.T("clashDefinitions.labels.phaseDesc"));
 
             // Specific-phase picker — visible only in Specific mode. Shown default = the saved
             // name when valid, else the last (newest) host phase; written back only on user action.
@@ -381,7 +379,7 @@ namespace LemoineTools.Lemoine
             LemoineSingleSelect? specificSelect = null;
             if (_hostPhaseNames.Count > 0)
             {
-                AddLabel(specificSection, "Host phase");
+                AddLabel(specificSection, LemoineStrings.T("clashDefinitions.labels.hostPhase"));
                 specificSelect = new LemoineSingleSelect
                 {
                     Items        = _hostPhaseNames.ToArray(),
@@ -392,7 +390,7 @@ namespace LemoineTools.Lemoine
             }
             else
             {
-                AddDim(specificSection, "No host phases captured — open this window with a document active to pick one.");
+                AddDim(specificSection, LemoineStrings.T("clashDefinitions.labels.noHostPhases"));
             }
             specificSection.Visibility = def.PhaseMode == "Specific"
                 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
@@ -409,20 +407,20 @@ namespace LemoineTools.Lemoine
             };
 
             AddDivider(marking);
-            AddLabel(marking, "Cross Line Style");
-            var lineItems = new List<string> { "(Default)" };
+            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.crossLineStyle"));
+            var lineItems = new List<string> { LemoineStrings.T("clashDefinitions.labels.lineDefault") };
             lineItems.AddRange(_lineStyleNames);
             var lineSelect = new LemoineSingleSelect
             {
                 Items        = lineItems.ToArray(),
-                SelectedItem = _lineStyleNames.Contains(def.CrossLineTypeName) ? def.CrossLineTypeName : "(Default)",
+                SelectedItem = _lineStyleNames.Contains(def.CrossLineTypeName) ? def.CrossLineTypeName : LemoineStrings.T("clashDefinitions.labels.lineDefault"),
             };
             lineSelect.SelectionChanged += val =>
-                def.CrossLineTypeName = (val == null || val == "(Default)") ? "" : val;
+                def.CrossLineTypeName = (val == null || val == LemoineStrings.T("clashDefinitions.labels.lineDefault")) ? "" : val;
             marking.Children.Add(lineSelect);
 
             AddDivider(marking);
-            AddLabel(marking, "Fallback Colour (for clashes matching no Auto Filter rule)");
+            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.fallbackColor"));
             var picker = new LemoineColorPickerPanel
             {
                 SelectedColor = BrushHelper.ColorFromHex(def.FallbackColorHex, LemoineTheme.FallbackGrey),
@@ -432,7 +430,7 @@ namespace LemoineTools.Lemoine
 
             panel.Children.Add(new LemoineSectionCard
             {
-                Header      = "Marking Settings",
+                Header      = LemoineStrings.T("clashDefinitions.labels.markingSettings"),
                 CardContent = marking,
                 Margin      = new Thickness(0, 0, 0, 14),
             });

@@ -1,0 +1,45 @@
+// clashDefinitions.json — Clash Definitions library window + the blank-definition default name.
+// Files: ClashDefinitionsWindow.xaml.cs, ClashDefinition.cs (NewBlank default name).
+// NOTE: the Fill Style (Solid/Outline), Marker Reference (Edge/Centre) and PhaseMode
+// combo VALUES are persisted tokens compared in code and stay there; the "×" close glyph
+// and Segoe MDL2 icons stay too. The phase picker labels are compared by reference to
+// these same strings, so they load once into locals.
+{
+  "window": {
+    "title": "Clash Definitions",
+    "addPill": "＋ Add definition",
+    "unnamed": "(unnamed)",
+    "dupTooltip": "Duplicate",
+    "delTooltip": "Delete",
+    "copyDefault": "Definition (copy)",
+    "copySuffix": " (copy)",
+    "noSelection": "No definition selected. Use “＋ Add definition” on the left to create one."
+  },
+  "labels": {
+    "name": "Name",
+    "group1Header": "Group 1 — Source (sets marker color & size)",
+    "group2Header": "Group 2 — Target (tested against Group 1)",
+    "tolerance": "Clash Tolerance (mm)",
+    "toleranceDesc": "Extra margin added to each side of the clash bounding box marker.",
+    "maxClashes": "Max Clashes",
+    "maxClashesDesc": "Stop detecting after this many clashes. Raise if clashes are being missed.",
+    "fillStyle": "Fill Style",
+    "markerReference": "Marker Reference",
+    "phase": "Phase",
+    "phaseDesc": "Match view phase: a clash marks in a view only when both elements exist in that view's phase. Specific phase culls detection to one host phase. Linked-model phases map to the host by name; unmapped names pass through and are logged.",
+    "hostPhase": "Host phase",
+    "noHostPhases": "No host phases captured — open this window with a document active to pick one.",
+    "crossLineStyle": "Cross Line Style",
+    "lineDefault": "(Default)",
+    "fallbackColor": "Fallback Color (for clashes matching no Auto Filter rule)",
+    "markingSettings": "Marking Settings"
+  },
+  "phase": {
+    "all": "All phases",
+    "match": "Match view phase",
+    "specific": "Specific phase"
+  },
+  "defaults": {
+    "newName": "New Definition"
+  }
+}
