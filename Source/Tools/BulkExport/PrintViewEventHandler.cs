@@ -72,7 +72,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 if (app.ActiveUIDocument == null)
                 {
-                    pushLog("No active Revit document.", "fail");
+                    pushLog(LemoineStrings.T("export.printView.log.noDoc"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -81,7 +81,7 @@ namespace LemoineTools.Tools.BulkExport
 
                 if (string.IsNullOrWhiteSpace(OutputFolder))
                 {
-                    pushLog("Output folder not specified.", "fail");
+                    pushLog(LemoineStrings.T("export.printView.log.noFolder"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -89,7 +89,7 @@ namespace LemoineTools.Tools.BulkExport
                 try { Directory.CreateDirectory(OutputFolder); }
                 catch (Exception ex)
                 {
-                    pushLog($"Cannot create output folder: {ex.Message}", "fail");
+                    pushLog(LemoineStrings.T("export.printView.log.folderFail", ex.Message), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -97,14 +97,14 @@ namespace LemoineTools.Tools.BulkExport
                 var element = doc.GetElement(ViewId);
                 if (element == null)
                 {
-                    pushLog("The view could not be found — it may have been deleted since the window was opened.", "fail");
+                    pushLog(LemoineStrings.T("export.printView.log.viewGone"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
 
                 if (!ExportPdf && !ExportDwg && !ExportNwc && !ExportIfc)
                 {
-                    pushLog("No export format selected — choose at least one in Step 1.", "fail");
+                    pushLog(LemoineStrings.T("export.printView.log.noFormat"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -122,23 +122,23 @@ namespace LemoineTools.Tools.BulkExport
                             ColorDepth, RasterQuality, ZoomSetting, ZoomPercent,
                             ViewLinksInBlue, ReplaceHalftoneWithThinLines);
 
-                        pushLog($"Exporting '{filename}' to PDF…", "info");
+                        pushLog(LemoineStrings.T("export.printView.log.pdfExporting", filename), "info");
                         if (doc.Export(OutputFolder, ids, opts))
                         {
                             pass++;
-                            pushLog($"PDF: {filename}.pdf", "pass");
+                            pushLog(LemoineStrings.T("export.printView.log.pdfOk", filename), "pass");
                         }
                         else
                         {
                             fail++;
-                            pushLog($"PDF failed — '{filename}': Revit returned false. Check view visibility and titleblock.", "fail");
+                            pushLog(LemoineStrings.T("export.printView.log.pdfFalse", filename), "fail");
                             LemoineLog.Warn("PrintView", $"PDF doc.Export returned false for view {ViewId.Value}");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog($"PDF failed — '{filename}': {ex.Message}", "fail");
+                        pushLog(LemoineStrings.T("export.printView.log.pdfFail", filename, ex.Message), "fail");
                         LemoineLog.Error("PrintView.PDF", ex);
                     }
                 }
@@ -152,24 +152,24 @@ namespace LemoineTools.Tools.BulkExport
                         if (dwgOpts == null)
                         {
                             skip++;
-                            pushLog($"DWG: Skipped — export setup '{DwgSetupName}' not found in this project.", "warn");
+                            pushLog(LemoineStrings.T("export.printView.log.dwgNoSetup", DwgSetupName), "warn");
                         }
                         else if (doc.Export(OutputFolder, filename, ids, dwgOpts))
                         {
                             pass++;
-                            pushLog($"DWG: {filename}.dwg", "pass");
+                            pushLog(LemoineStrings.T("export.printView.log.dwgOk", filename), "pass");
                         }
                         else
                         {
                             fail++;
-                            pushLog($"DWG failed — '{filename}': export returned false.", "fail");
+                            pushLog(LemoineStrings.T("export.printView.log.dwgFalse", filename), "fail");
                             LemoineLog.Warn("PrintView", $"DWG doc.Export returned false for view {ViewId.Value}");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog($"DWG failed — '{filename}': {ex.Message}", "fail");
+                        pushLog(LemoineStrings.T("export.printView.log.dwgFail", filename, ex.Message), "fail");
                         LemoineLog.Error("PrintView.DWG", ex);
                     }
                 }
@@ -183,12 +183,12 @@ namespace LemoineTools.Tools.BulkExport
                         if (!(element is View3D view3d))
                         {
                             skip++;
-                            pushLog($"NWC: Skipped '{filename}' — NWC exports 3D views only.", "warn");
+                            pushLog(LemoineStrings.T("export.printView.log.nwcNot3d", filename), "warn");
                         }
                         else if (!OptionalFunctionalityUtils.IsNavisworksExporterAvailable())
                         {
                             skip++;
-                            pushLog("NWC: Skipped — Navisworks Exporter not available. Is Navisworks Manage installed and loaded in this session?", "warn");
+                            pushLog(LemoineStrings.T("export.printView.log.nwcNoExporter"), "warn");
                             LemoineLog.Warn("PrintView", "NWC skipped — IsNavisworksExporterAvailable() returned false.");
                         }
                         else
@@ -197,13 +197,13 @@ namespace LemoineTools.Tools.BulkExport
                             var opts = ExportOptionsFactory.BuildNwcOptions(nwc, view3d.Id, pushLog);
                             doc.Export(OutputFolder, filename, opts);
                             pass++;
-                            pushLog($"NWC: {filename}.nwc", "pass");
+                            pushLog(LemoineStrings.T("export.printView.log.nwcOk", filename), "pass");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog($"NWC failed — '{filename}': {ex.Message}", "fail");
+                        pushLog(LemoineStrings.T("export.printView.log.nwcFail", filename, ex.Message), "fail");
                         LemoineLog.Error("PrintView.NWC", ex);
                     }
                 }
@@ -217,7 +217,7 @@ namespace LemoineTools.Tools.BulkExport
                         if (!(element is View3D))
                         {
                             skip++;
-                            pushLog($"IFC: Skipped '{filename}' — IFC exports 3D views only.", "warn");
+                            pushLog(LemoineStrings.T("export.printView.log.ifcNot3d", filename), "warn");
                         }
                         else
                         {
@@ -231,13 +231,13 @@ namespace LemoineTools.Tools.BulkExport
                                 t.Commit();
                             }
                             pass++;
-                            pushLog($"IFC: {filename}.ifc", "pass");
+                            pushLog(LemoineStrings.T("export.printView.log.ifcOk", filename), "pass");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog($"IFC failed — '{filename}': {ex.Message}", "fail");
+                        pushLog(LemoineStrings.T("export.printView.log.ifcFail", filename, ex.Message), "fail");
                         LemoineLog.Error("PrintView.IFC", ex);
                     }
                 }
@@ -248,7 +248,7 @@ namespace LemoineTools.Tools.BulkExport
             catch (Exception ex)
             {
                 LemoineLog.Error("PrintView.Execute", ex);
-                pushLog($"Print error: {ex.Message}", "fail");
+                pushLog(LemoineStrings.T("export.printView.log.printError", ex.Message), "fail");
                 onComplete(pass, fail == 0 ? 1 : fail, skip);
             }
             finally
