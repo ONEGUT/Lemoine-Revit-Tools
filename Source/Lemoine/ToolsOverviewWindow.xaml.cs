@@ -115,7 +115,7 @@ namespace LemoineTools.Lemoine
             BuildFooterBar();
             SelectCategory(ToolsOverviewCatalog.Categories[0].Id);
 
-            AutomationProperties.SetName(this, "Tools Overview");
+            AutomationProperties.SetName(this, LemoineStrings.T("overview.window.automationName"));
         }
 
         private void UpdateRowHeights()
@@ -146,7 +146,7 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
             {
-                Title          = "Lemoine Tools — Overview",
+                Title          = LemoineStrings.T("overview.window.title"),
                 IconGlyph      = char.ConvertFromUtf32(0xE946), // ⓘ Info
                 AllowsMaximize = true,
                 RightContent   = rightPanel,
@@ -439,7 +439,7 @@ namespace LemoineTools.Lemoine
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 badge.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                var badgeTb = new TextBlock { Text = $"STAGE {stage.Number} · {stage.Name.ToUpperInvariant()}" };
+                var badgeTb = new TextBlock { Text = LemoineStrings.T("overview.window.stageBadge", stage.Number, stage.Name.ToUpperInvariant()) };
                 badgeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 badgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                 badgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -498,10 +498,10 @@ namespace LemoineTools.Lemoine
 
             if (ToolsOverviewDemos.For(tool.Name) != null)
             {
-                var runBtn = LemoineControlStyles.BuildSmallButton("Dummy run ▶",
+                var runBtn = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("overview.window.runButton"),
                     LemoineControlStyles.LemoineButtonVariant.Primary);
                 runBtn.VerticalAlignment = VerticalAlignment.Center;
-                runBtn.ToolTip = $"Step through {tool.Name} in a real tool window. It's a demo, so nothing gets changed.";
+                runBtn.ToolTip = LemoineStrings.T("overview.window.runTooltip", tool.Name);
                 runBtn.Click += (s, e) => LaunchDemo(tool.Name);
                 DockPanel.SetDock(runBtn, Dock.Right);
                 top.Children.Add(runBtn);
@@ -545,9 +545,9 @@ namespace LemoineTools.Lemoine
             stack.Children.Add(blurb);
 
             // Relationships
-            var fedBy = BuildRelationship("FED BY", tool.FedBy, accent: false);
+            var fedBy = BuildRelationship(LemoineStrings.T("overview.window.fedBy"), tool.FedBy, accent: false);
             if (fedBy != null) stack.Children.Add(fedBy);
-            var feeds = BuildRelationship("FEEDS", tool.Feeds, accent: true);
+            var feeds = BuildRelationship(LemoineStrings.T("overview.window.feeds"), tool.Feeds, accent: true);
             if (feeds != null) stack.Children.Add(feeds);
 
             // Example
@@ -600,7 +600,7 @@ namespace LemoineTools.Lemoine
                 if (linkable)
                 {
                     tb.TextDecorations = TextDecorations.Underline;
-                    chip.ToolTip = $"Go to {toolName ?? catId}";
+                    chip.ToolTip = LemoineStrings.T("overview.window.goToTooltip", toolName ?? catId);
                     chip.MouseLeftButtonDown += (s, e) => { NavigateToTool(catId, toolName); e.Handled = true; };
                 }
                 chip.Child = tb;
@@ -701,7 +701,7 @@ namespace LemoineTools.Lemoine
 
             var hint = new TextBlock
             {
-                Text              = "A guide to every Lemoine tool and how they tie together.",
+                Text              = LemoineStrings.T("overview.window.footerHint"),
                 VerticalAlignment = VerticalAlignment.Center,
                 FontStyle         = FontStyles.Italic,
             };
@@ -709,7 +709,7 @@ namespace LemoineTools.Lemoine
             hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-            var closeBtn = BuildGhostButton("Close");
+            var closeBtn = BuildGhostButton(LemoineStrings.T("overview.window.close"));
             closeBtn.Click += (s, e) => Close();
 
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };

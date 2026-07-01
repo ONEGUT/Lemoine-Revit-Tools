@@ -1,0 +1,216 @@
+// overview.json — Tools Overview window (read-only field guide) + its catalog data.
+// Files: ToolsOverviewWindow.xaml.cs (chrome) + ToolsOverviewCatalog.cs (per-tool prose).
+// NOTE: Segoe MDL2 glyphs, category ids, stage numbers/category-id lists, and the
+// FedBy/Feeds cross-link keys stay in code (the links resolve tool cards by these names).
+{
+  "window": {
+    "automationName": "Tools Overview",
+    "title": "Lemoine Tools — Overview",
+    "stageBadge": "STAGE {0} · {1}",
+    "runButton": "Dummy run ▶",
+    "runTooltip": "Step through {0} in a real tool window. It's a demo, so nothing gets changed.",
+    "fedBy": "FED BY",
+    "feeds": "FEEDS",
+    "goToTooltip": "Go to {0}",
+    "footerHint": "A guide to every Lemoine tool and how they tie together.",
+    "close": "Close"
+  },
+  "cat": {
+    "filters": {
+      "name": "Filters & Legends",
+      "intro": "Set up the view filters and legend the rest of the workflow leans on. The trades you define here get reused by the view, ceiling and clash tools, so this is usually the first stop.",
+      "tools": {
+        "autoFilters": {
+          "name": "Auto Filters",
+          "blurb": "Scans the linked models for the systems in use, builds one view filter per trade, and applies its color across the views you choose. Explode View by Trade, the clash tools and Ceiling Heatmap all reuse these trades instead of setting them up again.",
+          "example": "\"Chilled Water Supply\" becomes a blue filter, reused as a clash group and a legend row"
+        },
+        "legendCreation": {
+          "name": "Legend Creation",
+          "blurb": "Builds and updates a Legend view from the same filters, so the legend on the sheet always matches the colors on the views.",
+          "example": "add a trade in Auto Filters, run this again, and the new swatch turns up in the legend"
+        }
+      }
+    },
+    "ceilings": {
+      "name": "Ceilings",
+      "intro": "Color ceilings by height, and build, project or refresh the DWG ceiling grids.",
+      "tools": {
+        "heatmap": {
+          "name": "Ceiling Heatmap",
+          "blurb": "Colors each ceiling by its height using view-filter overrides, so high and low areas read at a glance. Because it works through filters, ceilings inside links set to \"By Host View\" get colored too.",
+          "example": "ceilings at 2700, 3000 and 3300 mm fall into three color bands"
+        },
+        "makeGrids": {
+          "name": "Make Ceiling Grids",
+          "blurb": "Builds a reflected ceiling plan per level that shows only the ceilings, then exports each one to DWG. This is the first half of the ceiling-grid round trip.",
+          "example": "the Level 2 RCP exports to L02-Ceilings.dwg"
+        },
+        "projectGrids": {
+          "name": "Project Grids",
+          "blurb": "Imports a ceiling-grid DWG and lays its lines onto the actual ceiling soffit faces as model curves.",
+          "example": "an imported grid lands on the real soffit instead of a flat plane"
+        },
+        "reprojectGrids": {
+          "name": "Reproject Grids",
+          "blurb": "Moves the existing grid curves onto the current ceiling heights after the design changes, so you don't have to import the DWG again.",
+          "example": "raise a ceiling 150 mm and its grid lines follow it up"
+        }
+      }
+    },
+    "views": {
+      "name": "Views",
+      "intro": "Create and duplicate views in bulk: per level, across templates, as dependents, or one per trade.",
+      "tools": {
+        "byLevel": {
+          "name": "Bulk Views by Level",
+          "blurb": "Creates cropped 3D, floor plan and ceiling plan views for every level and building cluster in one go.",
+          "example": "5 levels across 2 clusters gives 30 cropped views"
+        },
+        "duplicate": {
+          "name": "Bulk Duplicate",
+          "blurb": "Duplicates the views you pick (plain, with detailing, or as a dependent) and names the copies from a token pattern.",
+          "example": "{ViewName} - COORD names every copy in one pass"
+        },
+        "byTemplate": {
+          "name": "Bulk Views by Template",
+          "blurb": "Duplicates each selected view once for every view template you pick, naming each result from a token pattern.",
+          "example": "3 views across 4 templates gives 12 named views"
+        },
+        "dependents": {
+          "name": "Bulk Dependent Views",
+          "blurb": "Copies a view's dependents and their crop regions onto other views, so you set a crop layout up once and reuse it instead of redrawing it.",
+          "example": "clone a source view's 4 dependent crops onto each target"
+        },
+        "explode": {
+          "name": "Explode View by Trade",
+          "blurb": "Copies a 3D view once per trade at the same camera angle and section box, isolates each copy to its trade using the Auto Filters filters, and stacks the copies by elevation.",
+          "example": "one coordination view becomes a separate 3D for each trade"
+        }
+      }
+    },
+    "sheets": {
+      "name": "Sheets",
+      "intro": "Get views onto sheets, line up matching viewports, and rename sheets or views in bulk.",
+      "tools": {
+        "placeDependent": {
+          "name": "Place Dependent Views",
+          "blurb": "Makes one sheet per view and drops that view's dependents onto it, each trimmed to its crop and packed so nothing overlaps.",
+          "example": "a parent view and its 6 dependents land on a single packed sheet"
+        },
+        "alignViews": {
+          "name": "Align Sheet Views",
+          "blurb": "Lines the viewports on your sheets up against a reference sheet so matching views sit exactly on top of each other. It pairs views by scope box, or by crop overlap when there isn't one, and can inherit the scope box, grid extents and crop.",
+          "example": "snap the MEP sheet's viewports to match the architectural reference"
+        },
+        "rename": {
+          "name": "Bulk Rename",
+          "blurb": "Renames sheets or views in bulk by find-and-replace, a prefix or suffix, a running number, or a token pattern. It checks for duplicate numbers and names and skips the clashes.",
+          "example": "turn A-101, A-102... into M-101, M-102... in one pass"
+        }
+      }
+    },
+    "export": {
+      "name": "Export",
+      "intro": "Send finished sheets and views out to PDF, DWG, NWC or IFC.",
+      "tools": {
+        "bulkExport": {
+          "name": "Bulk Export",
+          "blurb": "Exports the sheets and views you pick to PDF, DWG, NWC or IFC, naming each file from a token pattern. It only offers the formats that suit your selection, since NWC and IFC need a 3D view.",
+          "example": "every sheet exports as {SheetNumber}-{SheetName}.pdf"
+        },
+        "printView": {
+          "name": "Print View",
+          "blurb": "Exports just the active view or sheet to PDF using the same settings as Bulk Export. One click, no picker.",
+          "example": "the active sheet becomes a single PDF"
+        }
+      }
+    },
+    "modify": {
+      "name": "Modify",
+      "intro": "Tidy up host geometry: split elements along levels, grids, reference planes or a cell grid, and push walls up to the next level.",
+      "tools": {
+        "splitLevels": {
+          "name": "Split by Levels",
+          "blurb": "Cuts walls, columns and MEP runs at the levels you choose.",
+          "example": "a three-story wall becomes one wall per level"
+        },
+        "splitGrid": {
+          "name": "Split by Grid Lines",
+          "blurb": "Cuts walls and MEP runs where they cross the grid planes you pick.",
+          "example": "a run crossing grids 1 to 4 becomes four pieces"
+        },
+        "splitRefPlane": {
+          "name": "Split by Ref Plane",
+          "blurb": "Cuts walls and MEP runs at the reference planes you choose.",
+          "example": "split a duct right on a reference plane"
+        },
+        "splitCell": {
+          "name": "Split by Cell",
+          "blurb": "Cuts floors, ceilings and filled regions into an even grid of cells.",
+          "example": "one floor becomes a 2 m by 2 m grid of cells"
+        },
+        "extendWalls": {
+          "name": "Extend Walls",
+          "blurb": "Finds walls that run past the ceiling and sets their top constraint to the next level up.",
+          "example": "walls poking through the ceiling get re-hosted to the level above"
+        }
+      }
+    },
+    "clash": {
+      "name": "Clash",
+      "intro": "Find where two groups of elements run into each other, mark and color them in plan or section, and dimension each one to the nearest grid or slab edge. Definitions hold the rules, the finders run them, and Refine just redoes the dimensions.",
+      "tools": {
+        "definitions": {
+          "name": "Clash Definitions",
+          "blurb": "Where you build the named clash rules: two groups of elements, by category or trade, plus how the clash gets marked. Nothing runs here. The finders read the definitions you save.",
+          "example": "Duct vs Structure pairs ducts against beams and floors with a red marker"
+        },
+        "finderDim": {
+          "name": "Clash Finder & Dimension",
+          "blurb": "Runs your saved definitions across the plan views you pick: finds the clashes, drops a colored tagged marker on each, and dimensions them to the nearest grid or slab edge. It can survey busy areas and rescale views to fit.",
+          "example": "each plan view comes back with tagged markers and dimensions"
+        },
+        "finderElev": {
+          "name": "Clash Finder & Elevation",
+          "blurb": "The same detection for sections and elevations. It marks each clash with a round marker and tags it with a spot elevation at the top, middle or bottom of the round.",
+          "example": "a section comes back with round markers and spot-elevation tags"
+        },
+        "refine": {
+          "name": "Refine Dimensions",
+          "blurb": "Takes views that already have clash markers and redoes the dimensions to the nearest grid or slab edge. It never finds clashes, adds callouts or changes the view scale.",
+          "example": "use it when the markers are fine but the grid moved"
+        }
+      }
+    },
+    "copy": {
+      "name": "Copy from Link",
+      "intro": "Pull elements out of a linked model into the host so the other tools can work on real host geometry. Run any of these again and only what changed gets redone.",
+      "tools": {
+        "linear": {
+          "name": "Copy Linear",
+          "blurb": "Copies linear runs out of a link into the host and either splits them into standard lengths or swaps in a family at set spacing. Run it again and only the changed runs get redone.",
+          "example": "a linked pipe run comes in as host pipes in 6 m lengths"
+        },
+        "grids": {
+          "name": "Copy Grids",
+          "blurb": "Copies grids from a link into the host. Any grid whose name already exists is skipped and noted, since grid names have to be unique.",
+          "example": "link grids A to F come across, and existing names are left alone"
+        },
+        "elements": {
+          "name": "Copy Elements",
+          "blurb": "Copies elements from a link into the host: pick the categories, then tick the family types you want. Run it again and only the changed elements get redone.",
+          "example": "pick Mechanical Equipment, then tick the AHU types to bring in"
+        }
+      }
+    }
+  },
+  "stages": {
+    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link" },
+    "s02": { "name": "Prep Geometry", "tagline": "Modify" },
+    "s03": { "name": "Build Views",   "tagline": "Views · Ceilings" },
+    "s04": { "name": "Coordinate",    "tagline": "Clash" },
+    "s05": { "name": "Document",      "tagline": "Sheets" },
+    "s06": { "name": "Output",        "tagline": "Export" }
+  }
+}
