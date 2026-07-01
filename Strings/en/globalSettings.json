@@ -1,0 +1,23 @@
+// globalSettings.json — the Manage Settings window (GlobalSettingsWindow + partials).
+// This one file backs the whole settings window: the shell (tabs/title/footer) plus each
+// tab's content partial. NOTE: tab ids, the "⚙"/"×" glyphs, theme/size enum tokens, and
+// any persisted combo VALUES stay in code; only the visible labels/prose live here.
+{
+  "window": {
+    "automationName": "Manage Settings",
+    "title": "Settings",
+    "close": "Close",
+    "buildInfoTooltip": "Build metadata (build time · git branch @ commit)"
+  },
+  "nav": {
+    "general": "General",
+    "filters": "Filters",
+    "ceilings": "Ceilings",
+    "views": "Views",
+    "sheets": "Sheets",
+    "export": "Export",
+    "modify": "Modify",
+    "clash": "Clash",
+    "copy": "Copy"
+  }
+}
