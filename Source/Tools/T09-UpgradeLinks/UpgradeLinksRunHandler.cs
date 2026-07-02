@@ -124,7 +124,10 @@ namespace LemoineTools.Tools.UpgradeLinks
                         if (Spec.Destination == UpgradeDestination.Cloud)
                         {
                             string cloudName = UniqueName(baseName, usedNames);
-                            savedMp = linkDoc.SaveAsCloudModel(Spec.CloudAccountId, Spec.CloudProjectId, Spec.CloudFolderId, cloudName);
+                            // SaveAsCloudModel returns void — the resulting cloud ModelPath is read back
+                            // from the document itself once the save has re-pointed it at the cloud.
+                            linkDoc.SaveAsCloudModel(Spec.CloudAccountId, Spec.CloudProjectId, Spec.CloudFolderId, cloudName);
+                            savedMp = linkDoc.GetCloudModelPath();
                         }
                         else
                         {
