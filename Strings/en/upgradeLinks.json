@@ -1,0 +1,92 @@
+// upgradeLinks.json — Upgrade & Link Models tool + scan/run-handler logs.
+// Command: UpgradeLinksCommand. NOTE: placement tokens (origin/center/shared/site)
+// and destination tokens stay in code as enum values; only their DISPLAY labels live here.
+{
+  "title": "Upgrade & Link Models",
+  "runLabel": "Upgrade & link in Revit →",
+  "resultNoun": "links",
+  "steps": {
+    "files": "Files & Placement",
+    "dest":  "Destination",
+    "run":   "Review & Run"
+  },
+  "summaries": {
+    "filesEmpty":   "No files added",
+    "files":        "{0} file(s) · {1} need upgrade",
+    "destSubfolder":"Subfolder “{0}”",
+    "destOverwrite":"Overwrite originals",
+    "destCloud":    "Cloud model",
+    "run":          "Ready to run"
+  },
+  "labels": {
+    "filesHint":     "Add Revit files from any folder — they accumulate into one list. Each is upgraded to the current version on save, then linked into this model. The saved version is read from the file; nothing is opened yet.",
+    "empty":         "No files added yet. Click “Add files…” to pick Revit models from any folder.",
+    "addFiles":      "＋ Add files…",
+    "clearList":     "Clear list",
+    "setAll":        "Set all placement",
+    "colFile":       "File",
+    "colVersion":    "Version",
+    "colPlacement":  "Placement",
+    "verUnknown":    "?",
+    "verCurrent":    "{0} (current)",
+    "verUpgrade":    "{0} → current",
+    "verUnreadable": "unreadable",
+    "auditLabel":    "Audit each file on open",
+    "auditDesc":     "On = run Revit's audit while opening (slower, repairs some corruption). Off = plain open.",
+    "reloadLabel":   "Reload existing link if a name already exists",
+    "reloadDesc":    "On = if a link with the same name is already in this model, re-point it at the upgraded copy. Off = skip that file and log it.",
+    "scanning":      "Reading file versions…",
+    "unreadableNote":"{0} file(s) could not be read and will be skipped.",
+    "destQuestion":  "Where should the upgraded files be saved?",
+    "destHint":      "The link always points at the saved copy — choose where that copy lives.",
+    "optSubfolderTitle":"New subfolder next to this model",
+    "optSubfolderDesc": "Creates a folder beside the current model and saves every upgraded copy inside it. Originals are untouched.",
+    "subfolderName":    "Subfolder name",
+    "subfolderPreview": "→ {0}",
+    "noHostFolder":     "This model has no local folder (unsaved or cloud), so a subfolder can't be created next to it. Choose another destination.",
+    "optOverwriteTitle":"Overwrite the original files",
+    "optOverwriteDesc": "Saves each upgraded model back over its source path.",
+    "optOverwriteWarn": "⚠ Destructive — originals become current-version files and can no longer open in older Revit.",
+    "optCloudTitle":    "Cloud model — same folder as this model",
+    "optCloudDesc":     "Saves upgraded copies into the host's Autodesk Construction Cloud folder and links them from the cloud."
+  },
+  "placement": {
+    "origin": "Origin to Origin",
+    "center": "Center to Center",
+    "shared": "Shared Coordinates",
+    "site":   "By Shared Site"
+  },
+  "review": {
+    "itemFiles": "Files",
+    "itemPlacement": "Placement",
+    "itemDest": "Destination",
+    "filesValue": "{0} file(s), {1} to upgrade",
+    "filesNone": "None",
+    "placementMixed": "Mixed",
+    "warnNoFiles": "Add at least one readable Revit file.",
+    "warnOverwrite": "Overwrite mode is destructive — the original files will be replaced with current-version copies.",
+    "warnUnreadable": "{0} unreadable file(s) will be skipped."
+  },
+  "log": {
+    "handlerMissing": "Internal error: run handler not registered.",
+    "raising":        "Starting upgrade & link…",
+    "noDoc":          "No active document.",
+    "noFiles":        "No files to process.",
+    "noHostFolder":   "The active model has no local folder — cannot create a subfolder next to it.",
+    "subfolderFail":  "Could not create subfolder {0}: {1}",
+    "cloudNotReady":  "Cloud destination is not available — no cloud target could be resolved for this model.",
+    "start":          "Processing {0} file(s) · destination: {1}",
+    "missing":        "Skipped — file not found: {0}",
+    "openFail":       "Failed to open (upgrade) {0}.",
+    "linked":         "{0}/{1}: upgraded and linked {2}",
+    "linkExistsSkip": "Skipped {0} — a link with that name already exists (reload is off).",
+    "linkReloaded":   "Reloaded existing link {0} from the upgraded copy.",
+    "sharedFallback": "{0}: no shared coordinates — placed at Origin instead.",
+    "fileFail":       "Failed on {0}: {1} — {2}",
+    "progress":       "{0}% · {1}/{2} processed · {3} linked",
+    "revitFailure":   "Revit reported: {0}",
+    "nonFatal":       "{0} non-fatal issue(s) logged during the run — see diagnostics.",
+    "done":           "Done — {0} linked, {1} skipped, {2} failed.",
+    "aborted":        "Run aborted: {0}"
+  }
+}

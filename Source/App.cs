@@ -129,6 +129,12 @@ namespace LemoineTools
         internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler?  CopyFromLinkRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyFromLinkRunEvent  { get; private set; }
 
+        // ── Upgrade & Link Models ────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler? UpgradeLinksScanHandler { get; private set; }
+        internal static ExternalEvent?             UpgradeLinksScanEvent { get; private set; }
+        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
+        internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
+
         // ── Coordination — Align Coordinates / Compare Grids ─────────────────────────
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
@@ -256,6 +262,11 @@ namespace LemoineTools
             CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
             CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
             CopyFromLinkRunEvent    = ExternalEvent.Create(CopyFromLinkRunHandler);
+
+            UpgradeLinksScanHandler = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler();
+            UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
+            UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
+            UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
 
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
@@ -531,6 +542,11 @@ namespace LemoineTools
                 "LT_CompareGrids", "Compare\nGrids", "CompareGridsCommand",
                 "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file.",
                 char.ConvertFromUtf32(0xE80A)));  // GridView
+
+            coordPanel.AddItem(Btn(
+                "LT_UpgradeLinks", "Upgrade &\nLink Models", "UpgradeLinksCommand",
+                "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat.",
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
             // ── Settings ──────────────────────────────────────────────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.settings"));
