@@ -262,13 +262,22 @@
     own implicit restore-before-build makes an explicit Restore target
     unnecessary here (unlike the in-process MSBuild task, which doesn't get
     that implicit restore).
+
+    /nodeReuse:false on every invocation — MSBuild's persistent worker-node
+    reuse can serve a build of this exact project path from an already-warm
+    node (e.g. the one that just built the outer Debug config), which served
+    a stale/cached evaluation instead of genuinely re-evaluating with the new
+    Configuration: all four "year" builds compiled from obj\Debug\... and hit
+    the same errors regardless of which -c was passed. Forcing a fresh node
+    per invocation prevents any state bleeding between the four year builds
+    or from the outer VS build that triggered this target.
   -->
   <Target Name="BuildAllYears">
     <ItemGroup>
       <_RevitBuildYears Include="2024;2025;2026;2027" />
     </ItemGroup>
     <Message Text="=== Building Release%(_RevitBuildYears.Identity) ===" Importance="high" />
-    <Exec Command="dotnet build &quot;$(MSBuildProjectFullPath)&quot; -c Release%(_RevitBuildYears.Identity)"
+    <Exec Command="dotnet build &quot;$(MSBuildProjectFullPath)&quot; -c Release%(_RevitBuildYears.Identity) /nodeReuse:false"
           ContinueOnError="WarnAndContinue" />
   </Target>
 
