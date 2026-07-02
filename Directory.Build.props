@@ -1,0 +1,38 @@
+<Project>
+
+  <!--
+    Multi-year Revit support needs each year-suffixed Configuration to restore
+    into its OWN NuGet output (project.assets.json / *.nuget.g.props /
+    *.nuget.g.targets), not the shared default. LemoineTools.csproj picks a
+    different TargetFramework per Configuration (net48 for *2024,
+    net8.0-windows for *2025/2026/2027) — NuGet restore writes those files to
+    $(MSBuildProjectExtensionsPath), which defaults to the SAME location
+    (obj\) for every Configuration, so restoring one year clobbers the
+    net48-vs-net8.0-windows-specific output another year just restored into
+    (this is what caused NETSDK1005 "doesn't have a target for
+    'net8.0-windows'" when BuildAllYears built each year back-to-back).
+
+    Redirect ONLY MSBuildProjectExtensionsPath, not BaseIntermediateOutputPath.
+    BaseIntermediateOutputPath also controls the SDK's default compile-item
+    exclude ($(BaseIntermediateOutputPath)** is excluded from the default
+    "**\*.cs" glob) — redirecting it per-Configuration made a Release2024
+    build only exclude obj\Release2024\**, leaving the bare Debug
+    Configuration's leftover obj\Debug\**\*.g.i.cs (stale generated XAML
+    code-behind from an earlier build) unexcluded, so the default glob swept
+    those stale files into @(Compile) and the compiler choked on their
+    now-invalid embedded source references (CS1504 "could not be opened").
+    IntermediateOutputPath (the general generated-file/output path) is
+    already segmented per Configuration+TargetFramework by the SDK's own
+    default computation, so it never needed a manual override at all — only
+    the shared NuGet restore-output path did.
+
+    Only redirect the year-suffixed Configurations (used by BuildAllYears'
+    nested per-process dotnet build calls, which each restore independently).
+    The bare "Debug"/"Release" Configuration — what Visual Studio's normal
+    Build/F5 uses — is left on the SDK's default path entirely.
+  -->
+  <PropertyGroup Condition="$(Configuration.EndsWith('2024')) or $(Configuration.EndsWith('2025')) or $(Configuration.EndsWith('2026')) or $(Configuration.EndsWith('2027'))">
+    <MSBuildProjectExtensionsPath>obj\$(Configuration)\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
+</Project>
