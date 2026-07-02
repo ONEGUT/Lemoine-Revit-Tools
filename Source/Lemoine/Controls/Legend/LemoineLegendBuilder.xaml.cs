@@ -1133,7 +1133,7 @@ namespace LemoineTools.Lemoine.Controls
                     }
                     else
                     {
-                        MessageBox.Show(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.saveFailedMessage", err), LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.templateErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.saveFailedMessage", err ?? string.Empty), LemoineStrings.T("testing.legendCreator.builder.builder.templatesPopup.templateErrorTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
 

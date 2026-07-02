@@ -2883,7 +2883,7 @@ namespace LemoineTools.Lemoine
                         }
                         else
                         {
-                            MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.loadFailed", loadErr), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
+                            MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.loadFailed", loadErr ?? string.Empty), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
                                 MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     };
@@ -2952,7 +2952,7 @@ namespace LemoineTools.Lemoine
                     }
                     else
                     {
-                        MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.saveFailed", saveErr), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
+                        MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.saveFailed", saveErr ?? string.Empty), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
                             MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
@@ -3196,7 +3196,7 @@ namespace LemoineTools.Lemoine
             }
             else
             {
-                MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.importFailed", error), LemoineStrings.T("globalSettings.filters.dialogs.importError"),
+                MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.importFailed", error ?? string.Empty), LemoineStrings.T("globalSettings.filters.dialogs.importError"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

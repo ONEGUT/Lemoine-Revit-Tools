@@ -136,7 +136,7 @@ namespace LemoineTools.Tools.Coordinates
                     {
                         try
                         {
-                            doc.PublishCoordinates(new ElementId(linkId));
+                            doc.PublishCoordinates(new LinkElementId(new ElementId(linkId)));
                             published++;
                         }
                         catch (Exception ex)

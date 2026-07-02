@@ -290,7 +290,7 @@ namespace LemoineTools.Tools.CopyLinear
                 var hostSymbol = FindOrCopySymbol(doc, srcDoc, srcFi.Symbol);
                 if (hostSymbol == null)
                 {
-                    Log(LemoineStrings.T("copy.linear.log.familyNotLoaded", run.Element.Id, srcFi.Symbol?.Family?.Name), "fail");
+                    Log(LemoineStrings.T("copy.linear.log.familyNotLoaded", run.Element.Id, srcFi.Symbol?.Family?.Name ?? string.Empty), "fail");
                     return (0, 1);
                 }
                 if (!hostSymbol.IsActive) hostSymbol.Activate();
