@@ -163,15 +163,6 @@
     succeeds — so a missing git never leaks an error string into the UI. Everything
     falls back to "unknown" rather than breaking the build.
   -->
-  <!--
-    Temporary diagnostic — prints the resolved multi-year properties for every
-    build so we can see what a given Configuration actually resolves to,
-    instead of guessing blind. Remove once BuildAllYears is confirmed working.
-  -->
-  <Target Name="DiagnoseMultiYearProps" BeforeTargets="CoreCompile">
-    <Message Importance="high" Text="DIAG: Configuration=$(Configuration) RevitYear=$(RevitYear) TargetFramework=$(TargetFramework) BaseIntermediateOutputPath=$(BaseIntermediateOutputPath) IntermediateOutputPath=$(IntermediateOutputPath) MSBuildProjectExtensionsPath=$(MSBuildProjectExtensionsPath)" />
-  </Target>
-
   <Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
     <PropertyGroup>
       <_GitDir>$(MSBuildProjectDirectory)\.git</_GitDir>
