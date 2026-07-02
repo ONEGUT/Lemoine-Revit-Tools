@@ -8,6 +8,10 @@
   "searchPlaceholder": "Search…",
   "textPlaceholder": "Type a value…",
   "demoBanner": "This is a demo run. It doesn't open or change your Revit model.",
+  "sampledFrom": "Inputs sampled from your open model: {0}.",
+  "cannedData": "No document was open, so the inputs are canned sample data.",
+  "titleSuffix": "  (Demo run)",
+  "moreSuffix": " +{0} more",
   "noneSelected": "None selected",
   "noFile": "No file",
   "ready": "Ready"

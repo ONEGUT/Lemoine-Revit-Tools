@@ -17,8 +17,22 @@ namespace LemoineTools.Commands
                 return Result.Succeeded;
             }
 
+            // Snapshot the active document (main thread) so the dummy runs present
+            // real view/sheet/level/link names. Cleared with the window so the
+            // captured strings don't outlive it. A capture failure must not block
+            // the overview — the demos just fall back to canned sample data.
+            try
+            {
+                OverviewSamples.Set(ToolsOverviewSampleCapture.Capture(commandData.Application.ActiveUIDocument));
+            }
+            catch (System.Exception ex)
+            {
+                OverviewSamples.Clear();
+                LemoineLog.Error("OpenOverview: sample capture", ex);
+            }
+
             App.Overview = new ToolsOverviewWindow();
-            App.Overview.Closed += (s, e) => App.Overview = null;
+            App.Overview.Closed += (s, e) => { App.Overview = null; OverviewSamples.Clear(); ToolsOverviewDemos.DropCache(); };
             App.Overview.Show();
             return Result.Succeeded;
         }
