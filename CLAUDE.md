@@ -305,6 +305,17 @@ Discovered building **Place Dependent Views** (one sheet per parent view, its de
 
 ---
 
+## Shared Coordinates & Base Points
+
+Discovered building **Align Coordinates** (move host points to a grid intersection, then coordinate links).
+
+- **`Document.AcquireCoordinates(ElementId linkInstanceId)` and `Document.PublishCoordinates(ElementId linkInstanceId)` exist in Revit 2024, but must be called OUTSIDE a transaction** — they manage their own and throw if one is open. Commit any link-instance moves in a transaction first, then call Publish/Acquire on the committed positions. Shared coordinates are written back into the link files when the host is saved.
+- **Publish/Acquire never moves geometry** — it only records a shared-coordinate relationship at the link's *current* position. To coordinate misaligned links, use **move-then-publish**: reposition each link instance (translate + rotate about the vertical axis so its grids match the host), *then* `PublishCoordinates`. Publish-only leaves whatever misalignment exists. (Aligning two grid intersections fixes only translation; match grid *directions* to also fix rotation — normalise the angle to (−90°, 90°] so a grid is never flipped end-for-end.)
+- **Base-point handles:** `BasePoint.GetProjectBasePoint(doc)` / `BasePoint.GetSurveyPoint(doc)` return the point elements; `BasePoint.Position` is the location in **internal** coordinates, so move a point to a target with `ElementTransformUtils.MoveElement(doc, bp.Id, target − bp.Position)`. **Clip state governs whether the shared-coordinate origin travels with the marker** (clipped vs. unclipped) — *this and the publish-on-save behaviour are unverified on Windows and need a Revit plot.*
+- **Unpin before transforming.** Link instances and base points can be pinned; read `Element.Pinned`, set it false, `MoveElement`/`RotateElement`, then restore the original pinned state. A pinned element silently refuses the move otherwise.
+
+---
+
 ## Reusable Components — Prefer Over Hand-Rolling
 
 - **Numeric input:** `LemoineInlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.

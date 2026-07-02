@@ -129,6 +129,12 @@ namespace LemoineTools
         internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler?  CopyFromLinkRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyFromLinkRunEvent  { get; private set; }
 
+        // ── Coordination — Align Coordinates / Compare Grids ─────────────────────────
+        internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
+        internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
+        internal static LemoineTools.Tools.Coordinates.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
+        internal static ExternalEvent?             CompareGridsRunEvent     { get; private set; }
+
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
         internal static SplitByLevelEventHandler?          SplitByLevelHandler          { get; private set; }
@@ -250,6 +256,11 @@ namespace LemoineTools
             CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
             CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
             CopyFromLinkRunEvent    = ExternalEvent.Create(CopyFromLinkRunHandler);
+
+            AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
+            AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
+            CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
+            CompareGridsRunEvent       = ExternalEvent.Create(CompareGridsRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -507,6 +518,19 @@ namespace LemoineTools
                 "LT_CopyFromLink", L.T("ribbon.buttons.copyFromLink.label"), "CopyFromLinkCommand",
                 L.T("ribbon.buttons.copyFromLink.tip"),
                 char.ConvertFromUtf32(0xE8B3)));  // SelectAll
+
+            // ── Coordination ──────────────────────────────────────────────────
+            var coordPanel = application.CreateRibbonPanel("Lemoine Tools", "Coordination");
+
+            coordPanel.AddItem(Btn(
+                "LT_AlignCoordinates", "Align\nCoordinates", "AlignCoordinatesCommand",
+                "Move the host Survey Point and/or Project Base Point to a picked grid intersection + level, then rotate/translate every selected link so its same-named grid intersection coincides, and publish the host's shared coordinates to those links.",
+                char.ConvertFromUtf32(0xE809)));  // MapPin
+
+            coordPanel.AddItem(Btn(
+                "LT_CompareGrids", "Compare\nGrids", "CompareGridsCommand",
+                "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file.",
+                char.ConvertFromUtf32(0xE80A)));  // GridView
 
             // ── Settings ──────────────────────────────────────────────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.settings"));
