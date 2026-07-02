@@ -249,6 +249,13 @@
     warning rather than aborting the remaining years. Check the log for
     "Build succeeded" / "Build FAILED" under each "Building ReleaseYYYY"
     banner to see which years actually produced output.
+
+    Targets="Restore;Build" (not just "Build") — a raw <MSBuild> task call
+    does not get the CLI's implicit restore-before-build, and each year needs
+    its own restore because it resolves a different TargetFramework (net48 vs
+    net8.0-windows). Requires the per-Configuration BaseIntermediateOutputPath
+    in Directory.Build.props so each year's restore doesn't clobber another
+    year's project.assets.json.
   -->
   <Target Name="BuildAllYears">
     <ItemGroup>
@@ -256,7 +263,7 @@
     </ItemGroup>
     <Message Text="=== Building Release%(_RevitBuildYears.Identity) ===" Importance="high" />
     <MSBuild Projects="$(MSBuildProjectFullPath)"
-             Targets="Build"
+             Targets="Restore;Build"
              Properties="Configuration=Release%(_RevitBuildYears.Identity)"
              ContinueOnError="WarnAndContinue" />
   </Target>
