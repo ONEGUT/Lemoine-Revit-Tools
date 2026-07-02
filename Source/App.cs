@@ -10,6 +10,7 @@ using LemoineTools.Tools.Clash;
 using LemoineTools.Tools.ExplodeViews;
 using LemoineTools.Tools.Testing.LegendCreator;
 using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.Debuggers;
 using System;
 using L = LemoineTools.Lemoine.LemoineStrings;
 
@@ -148,6 +149,9 @@ namespace LemoineTools
         internal static ExtendWallsEventHandler?           ExtendWallsHandler           { get; private set; }
         internal static ExternalEvent?                     ExtendWallsEvent             { get; private set; }
 
+        internal static DebugSplitToolsEventHandler? DebugSplitToolsHandler { get; private set; }
+        internal static ExternalEvent?                DebugSplitToolsEvent   { get; private set; }
+
         // Global settings window — singleton, stays open across tool windows
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
@@ -273,6 +277,8 @@ namespace LemoineTools
             SplitByReferencePlaneEvent   = ExternalEvent.Create(SplitByReferencePlaneHandler);
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
+            DebugSplitToolsHandler        = new DebugSplitToolsEventHandler();
+            DebugSplitToolsEvent          = ExternalEvent.Create(DebugSplitToolsHandler);
 
             try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { LemoineLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;

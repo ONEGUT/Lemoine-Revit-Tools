@@ -68,8 +68,41 @@ namespace LemoineTools.Lemoine
             panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.diagnostics")));
             panel.Children.Add(BuildDiagnosticsSection());
 
+            panel.Children.Add(HSep(12));
+            panel.Children.Add(SubLabel("Developer"));
+            panel.Children.Add(BuildDeveloperSection());
+
             scroll.Content = panel;
             return scroll;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Developer — debug harnesses. Reserved slot per CLAUDE.md's
+        // "Crashes & Large Ambiguous Issues" guidance: a dedicated debug tool, reachable here,
+        // that exercises the real engine instead of theorizing from code alone. Remove or
+        // repoint individual harness buttons once the issue they were built for is resolved.
+        private UIElement BuildDeveloperSection()
+        {
+            var stack = new StackPanel();
+
+            var desc = new TextBlock
+            {
+                Text         = "Debug harnesses for isolating hard-to-reproduce tool bugs. These run the real engine against auto-selected elements and commit real changes — use a scratch/test file.",
+                FontStyle    = FontStyles.Italic,
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 6),
+            };
+            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            stack.Children.Add(desc);
+
+            var btn = BuildFlatButton("Open Split Tools Debugger");
+            btn.HorizontalAlignment = HorizontalAlignment.Left;
+            btn.Click += (s, e) => LemoineTools.Tools.Debuggers.DebugSplitToolsLauncher.Launch();
+            stack.Children.Add(btn);
+
+            return stack;
         }
 
         // ─────────────────────────────────────────────────────────────────────
