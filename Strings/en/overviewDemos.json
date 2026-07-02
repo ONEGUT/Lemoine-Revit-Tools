@@ -6,6 +6,8 @@
 // ("info"/"pass"/"fail"/"skip") stay in code — they're matched in a switch, not shown to users.
 // Arrays are stored as numbered objects ("1", "2", ...) since the loader only flattens
 // JSON objects, not arrays; ToolsOverviewDemos.cs reconstructs each List<string> in order.
+// Run-log lines may carry {count:step}/{sel:step}/{first:step}/{value:step}/{file:step}
+// tokens — OverviewDemoTool expands them from the user's live demo selections at run time.
 {
   "pools": {
     "planViews": {
@@ -164,9 +166,9 @@
       "title": "Auto Filters",
       "runLabel": "Create Filters →",
       "runLog": {
-        "1": "Scanning 3 links…",
-        "2": "Found 6 candidate trades",
-        "3": "Created 6 view filters",
+        "1": "Scanning {count:S1} documents…",
+        "2": "Found {count:S4} candidate trades",
+        "3": "Created {count:S4} view filters",
         "4": "Applied color overrides to active view"
       }
     },
@@ -211,8 +213,8 @@
       "title": "Legend Creation",
       "runLabel": "Build Legend →",
       "runLog": {
-        "1": "Building legend from 5 filters…",
-        "2": "Placed 5 swatch rows",
+        "1": "Building legend from {count:S1} filters…",
+        "2": "Placed {count:S1} swatch rows",
         "3": "Legend view 'MEP Legend' updated"
       }
     },
@@ -257,7 +259,7 @@
       "title": "Ceiling Heatmap",
       "runLabel": "Color Ceilings →",
       "runLog": {
-        "1": "Reading ceiling heights on 3 views…",
+        "1": "Reading ceiling heights on {count:S1} views…",
         "2": "8 height bands detected",
         "3": "Color overrides applied",
         "4": "Legend placed"
@@ -293,8 +295,8 @@
       "runLabel": "Export DWGs →",
       "runLog": {
         "1": "Creating RCP views per level…",
-        "2": "3 RCP views created",
-        "3": "Exported 3 DWG files"
+        "2": "RCP views created for {count:docs} documents",
+        "3": "Exported {count:docs} DWG files"
       }
     },
     "projectGrids": {
@@ -313,7 +315,7 @@
       "title": "Project Grids",
       "runLabel": "Project →",
       "runLog": {
-        "1": "Importing ceiling-grid DWG…",
+        "1": "Importing {file:S1}…",
         "2": "Projected 124 curves onto soffits"
       }
     },
@@ -331,7 +333,7 @@
       "title": "Reproject Grids",
       "runLabel": "Reproject →",
       "runLog": {
-        "1": "Reprojecting grid curves on 3 plans…",
+        "1": "Reprojecting grid curves on {count:S1} plans…",
         "2": "Updated 124 curves to new elevations"
       }
     },
@@ -405,8 +407,8 @@
       "title": "Bulk Duplicate",
       "runLabel": "Duplicate →",
       "runLog": {
-        "1": "Duplicating 4 views (With Detailing)…",
-        "2": "4 views created"
+        "1": "Duplicating {count:S1} views ({value:S2})…",
+        "2": "{count:S1} views created"
       }
     },
     "bulkViewsByTemplate": {
@@ -433,8 +435,8 @@
       "title": "Bulk Views by Template",
       "runLabel": "Duplicate →",
       "runLog": {
-        "1": "4 views across 3 templates…",
-        "2": "12 views created"
+        "1": "{count:S1} views across {count:S2} templates…",
+        "2": "One copy created per view × template pair"
       }
     },
     "bulkDependentViews": {
@@ -465,8 +467,8 @@
       "title": "Bulk Dependent Views",
       "runLabel": "Replicate →",
       "runLog": {
-        "1": "Source has 4 dependents…",
-        "2": "Cloned onto 3 target views",
+        "1": "Source '{value:S1}' has 4 dependents…",
+        "2": "Cloned onto {count:S3} target views",
         "3": "12 dependent views created"
       }
     },
@@ -506,8 +508,8 @@
       "title": "Explode View by Trade",
       "runLabel": "Explode →",
       "runLog": {
-        "1": "Source camera + section box captured…",
-        "2": "6 trade views created",
+        "1": "Camera + section box captured from '{value:S1}'…",
+        "2": "{count:S2} trade views created",
         "3": "Stacked by elevation"
       }
     },
@@ -553,8 +555,8 @@
       "title": "Place Dependent Views",
       "runLabel": "Place on Sheets →",
       "runLog": {
-        "1": "Measuring 4 parent views…",
-        "2": "4 sheets created",
+        "1": "Measuring {count:S1} parent views…",
+        "2": "{count:S1} sheets created on {value:S2}",
         "3": "18 dependents placed without overlap"
       }
     },
@@ -599,7 +601,7 @@
       "runLabel": "Align →",
       "runLog": {
         "1": "Pairing views by scope box…",
-        "2": "3 sheets aligned",
+        "2": "{count:S2} sheets aligned",
         "3": "1 ambiguous pair reported"
       }
     },
@@ -636,8 +638,8 @@
       "title": "Bulk Rename",
       "runLabel": "Rename →",
       "runLog": {
-        "1": "Renaming 3 sheets (Prefix)…",
-        "2": "3 sheets renamed"
+        "1": "Renaming {count:S2} items ({value:S3})…",
+        "2": "{count:S2} items renamed"
       }
     },
     "bulkExport": {
@@ -700,9 +702,9 @@
       "title": "Bulk Export",
       "runLabel": "Export →",
       "runLog": {
-        "1": "Exporting 3 sheets to PDF…",
-        "2": "M-101 → M-101-Level 1 Mechanical.pdf",
-        "3": "3 of 3 exported"
+        "1": "Exporting {count:S1} sheets to PDF…",
+        "2": "{first:S1} → PDF written",
+        "3": "{count:S1} of {count:S1} exported"
       }
     },
     "printView": {
@@ -745,8 +747,8 @@
       "title": "Print View",
       "runLabel": "Print →",
       "runLog": {
-        "1": "Exporting active sheet to PDF…",
-        "2": "M-102-Level 2 Mechanical.pdf written"
+        "1": "Exporting '{value:S1}' to PDF…",
+        "2": "{file:S6} written"
       }
     },
     "splitByLevels": {
@@ -767,7 +769,7 @@
       "title": "Split by Levels",
       "runLabel": "Split →",
       "runLog": {
-        "1": "Splitting walls & MEP at 5 levels…",
+        "1": "Splitting {sel:S1} at {count:S2} levels…",
         "2": "42 elements split"
       }
     },
@@ -789,7 +791,7 @@
       "title": "Split by Grid Lines",
       "runLabel": "Split →",
       "runLog": {
-        "1": "Splitting at 6 grid planes…",
+        "1": "Splitting {sel:S1} at {count:S2} grid planes…",
         "2": "31 elements split"
       }
     },
@@ -811,7 +813,7 @@
       "title": "Split by Ref Plane",
       "runLabel": "Split →",
       "runLog": {
-        "1": "Splitting at 3 reference planes…",
+        "1": "Splitting {sel:S1} at {count:S2} reference planes…",
         "2": "12 elements split"
       }
     },
@@ -834,7 +836,7 @@
       "title": "Split by Cell",
       "runLabel": "Split →",
       "runLog": {
-        "1": "Splitting floors into 2000 mm cells…",
+        "1": "Splitting {sel:S1} into {value:S2} mm cells…",
         "2": "1 floor → 24 cells"
       }
     },
@@ -866,7 +868,7 @@
       "title": "Extend Walls",
       "runLabel": "Extend →",
       "runLog": {
-        "1": "Checking walls on 5 levels…",
+        "1": "Checking walls on {count:S1} levels…",
         "2": "18 walls re-constrained to Level Above"
       }
     },
@@ -913,7 +915,7 @@
       "runLabel": "Save Definition →",
       "runLog": {
         "1": "Validating groups…",
-        "2": "Definition 'Duct vs Structure' saved to library"
+        "2": "Definition '{value:name}' saved to library"
       }
     },
     "clashFinderDimension": {
@@ -970,9 +972,9 @@
       "title": "Clash Finder & Dimension",
       "runLabel": "Find & Dimension →",
       "runLog": {
-        "1": "Running 3 definitions over 4 views…",
-        "2": "Level 1 - Mechanical: 4 clashes marked",
-        "3": "Level 2 - Mechanical: 2 clashes marked",
+        "1": "Running {count:S1} definitions over {count:S2} views…",
+        "2": "{first:S2}: 4 clashes marked",
+        "3": "Dense clusters grouped into callouts",
         "4": "6 markers dimensioned to grids"
       }
     },
@@ -1003,8 +1005,8 @@
       "title": "Clash Finder & Elevation",
       "runLabel": "Find & Elevate →",
       "runLog": {
-        "1": "Running 3 definitions over 3 views…",
-        "2": "Section A-A: 5 clashes marked",
+        "1": "Running {count:S1} definitions over {count:S2} views…",
+        "2": "{first:S2}: 5 clashes marked",
         "3": "Spot elevations tagged at top of round"
       }
     },
@@ -1031,8 +1033,8 @@
       "title": "Refine Dimensions",
       "runLabel": "Re-dimension →",
       "runLog": {
-        "1": "Re-dimensioning markers on 4 views…",
-        "2": "17 markers re-dimensioned to nearest grid"
+        "1": "Re-dimensioning markers on {count:S1} views…",
+        "2": "17 markers re-dimensioned ({value:S2})"
       }
     },
     "copyLinear": {
@@ -1095,7 +1097,7 @@
       "runLog": {
         "1": "Reading linked runs…",
         "2": "Copied 28 segments into host",
-        "3": "Split into 6 m standard lengths"
+        "3": "Applied: {value:operation}"
       }
     },
     "copyGrids": {
@@ -1177,7 +1179,63 @@
       "runLabel": "Copy →",
       "runLog": {
         "1": "Reading linked elements…",
-        "2": "Copied 36 elements into host"
+        "2": "Copied elements of {count:types} family types into host"
+      }
+    },
+    "alignCoordinates": {
+      "steps": {
+        "host": {
+          "title": "Host Reference",
+          "hint": "Pick the two grids whose intersection anchors the coordinates, and the level that sets its elevation.",
+          "parts": {
+            "grid1": "Grid 1",
+            "grid2": "Grid 2",
+            "level": "Level",
+            "points": "Move which host point(s)",
+            "survey": "Survey Point",
+            "pbp": "Project Base Point"
+          }
+        },
+        "links": {
+          "title": "Links to Align",
+          "hint": "Each selected link is rotated and translated so its same-named grid intersection lands on the host's."
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Moves the host point(s), aligns each link, then publishes the host's shared coordinates to those links. Publishing runs outside the transaction, after the moves are committed."
+        }
+      },
+      "title": "Align Coordinates",
+      "runLabel": "Align in Revit →",
+      "runLog": {
+        "1": "Moving host points to {value:grid1} ∩ {value:grid2} at {value:level}…",
+        "2": "Aligned {count:links} links to the host grids",
+        "3": "Published shared coordinates to {count:links} links"
+      }
+    },
+    "compareGrids": {
+      "steps": {
+        "files": {
+          "title": "Files & Tolerances",
+          "hint": "Grids are compared in a common world frame — meaningful once the files share coordinates.",
+          "parts": {
+            "links": "Links to include",
+            "inclHost": "Include host grids",
+            "posTol": "Lateral offset tolerance (inches)",
+            "angTol": "Angle tolerance (degrees)"
+          }
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Read-only — reports matched, offset, rotated and missing grids; nothing in any file is changed."
+        }
+      },
+      "title": "Compare Grids Across Links",
+      "runLabel": "Compare Grids →",
+      "runLog": {
+        "1": "Comparing grids across the host + {count:links} links…",
+        "2": "Grids matched within {value:postol}\" and {value:angtol}°",
+        "3": "Differences reported to the log only — no changes made"
       }
     }
   }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LemoineTools.Lemoine.Controls;
@@ -13,30 +14,55 @@ namespace LemoineTools.Lemoine
     public static class ToolsOverviewDemos
     {
         // ── Shared sample pools ───────────────────────────────────────────────
+        // Each pool prefers the live document snapshot captured when the overview
+        // opened (OverviewSamples) and falls back to the canned JSON strings when
+        // no document was open or that pool came back empty.
         private static List<string> L(params string[] s) => s.ToList();
 
-        private static readonly List<string> PlanViews = L(LemoineStrings.T("overviewDemos.pools.planViews.1"), LemoineStrings.T("overviewDemos.pools.planViews.2"), LemoineStrings.T("overviewDemos.pools.planViews.3"), LemoineStrings.T("overviewDemos.pools.planViews.4"));
-        private static readonly List<string> CeilingPlans = L(LemoineStrings.T("overviewDemos.pools.ceilingPlans.1"), LemoineStrings.T("overviewDemos.pools.ceilingPlans.2"), LemoineStrings.T("overviewDemos.pools.ceilingPlans.3"));
-        private static readonly List<string> Views3D = L(LemoineStrings.T("overviewDemos.pools.views3D.1"), LemoineStrings.T("overviewDemos.pools.views3D.2"), LemoineStrings.T("overviewDemos.pools.views3D.3"));
-        private static readonly List<string> Sections = L(LemoineStrings.T("overviewDemos.pools.sections.1"), LemoineStrings.T("overviewDemos.pools.sections.2"), LemoineStrings.T("overviewDemos.pools.sections.3"));
-        private static readonly List<string> Sheets = L(LemoineStrings.T("overviewDemos.pools.sheets.1"), LemoineStrings.T("overviewDemos.pools.sheets.2"), LemoineStrings.T("overviewDemos.pools.sheets.3"));
-        private static readonly List<string> Levels = L(LemoineStrings.T("overviewDemos.pools.levels.1"), LemoineStrings.T("overviewDemos.pools.levels.2"), LemoineStrings.T("overviewDemos.pools.levels.3"), LemoineStrings.T("overviewDemos.pools.levels.4"), LemoineStrings.T("overviewDemos.pools.levels.5"));
-        private static readonly List<string> Documents = L(LemoineStrings.T("overviewDemos.pools.documents.1"), LemoineStrings.T("overviewDemos.pools.documents.2"), LemoineStrings.T("overviewDemos.pools.documents.3"));
-        private static readonly List<string> Trades = L(LemoineStrings.T("overviewDemos.pools.trades.1"), LemoineStrings.T("overviewDemos.pools.trades.2"), LemoineStrings.T("overviewDemos.pools.trades.3"), LemoineStrings.T("overviewDemos.pools.trades.4"), LemoineStrings.T("overviewDemos.pools.trades.5"), LemoineStrings.T("overviewDemos.pools.trades.6"));
-        private static readonly List<string> Filters = L(LemoineStrings.T("overviewDemos.pools.filters.1"), LemoineStrings.T("overviewDemos.pools.filters.2"), LemoineStrings.T("overviewDemos.pools.filters.3"), LemoineStrings.T("overviewDemos.pools.filters.4"), LemoineStrings.T("overviewDemos.pools.filters.5"));
-        private static readonly List<string> Definitions = L(LemoineStrings.T("overviewDemos.pools.definitions.1"), LemoineStrings.T("overviewDemos.pools.definitions.2"), LemoineStrings.T("overviewDemos.pools.definitions.3"));
-        private static readonly List<string> Templates = L(LemoineStrings.T("overviewDemos.pools.templates.1"), LemoineStrings.T("overviewDemos.pools.templates.2"), LemoineStrings.T("overviewDemos.pools.templates.3"));
-        private static readonly List<string> Grids = L(LemoineStrings.T("overviewDemos.pools.grids.1"), LemoineStrings.T("overviewDemos.pools.grids.2"), LemoineStrings.T("overviewDemos.pools.grids.3"), LemoineStrings.T("overviewDemos.pools.grids.4"), LemoineStrings.T("overviewDemos.pools.grids.5"), LemoineStrings.T("overviewDemos.pools.grids.6"));
-        private static readonly List<string> RefPlanes = L(LemoineStrings.T("overviewDemos.pools.refPlanes.1"), LemoineStrings.T("overviewDemos.pools.refPlanes.2"), LemoineStrings.T("overviewDemos.pools.refPlanes.3"));
-        private static readonly List<string> TitleBlocks = L(LemoineStrings.T("overviewDemos.pools.titleBlocks.1"), LemoineStrings.T("overviewDemos.pools.titleBlocks.2"), LemoineStrings.T("overviewDemos.pools.titleBlocks.3"));
-
-        private static Dictionary<string, List<string>> Categories() => new Dictionary<string, List<string>>
+        private static List<string> Canned(string prefix, int count)
         {
-            [LemoineStrings.T("overviewDemos.categoryGroups.mechanical.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.3")),
-            [LemoineStrings.T("overviewDemos.categoryGroups.piping.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.piping.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.piping.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.piping.items.3")),
-            [LemoineStrings.T("overviewDemos.categoryGroups.electrical.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.electrical.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.electrical.items.2")),
-            [LemoineStrings.T("overviewDemos.categoryGroups.structure.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.structure.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.structure.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.structure.items.3")),
-        };
+            var list = new List<string>(count);
+            for (int i = 1; i <= count; i++) list.Add(LemoineStrings.T($"{prefix}.{i}"));
+            return list;
+        }
+
+        private static List<string> Pool(Func<OverviewSampleSnapshot, List<string>> pick, string cannedPrefix, int cannedCount)
+        {
+            var snap = OverviewSamples.Current;
+            var live = snap == null ? null : pick(snap);
+            return live != null && live.Count > 0 ? live : Canned(cannedPrefix, cannedCount);
+        }
+
+        private static List<string> PlanViews    => Pool(s => s.PlanViews,    "overviewDemos.pools.planViews", 4);
+        private static List<string> CeilingPlans => Pool(s => s.CeilingPlans, "overviewDemos.pools.ceilingPlans", 3);
+        private static List<string> Views3D      => Pool(s => s.Views3D,      "overviewDemos.pools.views3D", 3);
+        private static List<string> Sections     => Pool(s => s.Sections,     "overviewDemos.pools.sections", 3);
+        private static List<string> Sheets       => Pool(s => s.Sheets,       "overviewDemos.pools.sheets", 3);
+        private static List<string> Levels       => Pool(s => s.Levels,       "overviewDemos.pools.levels", 5);
+        private static List<string> Documents    => Pool(s => s.Documents,    "overviewDemos.pools.documents", 3);
+        private static List<string> Links        => Pool(s => s.Links,        "overviewDemos.pools.documents", 3);
+        private static List<string> Trades       => Pool(s => s.Trades,       "overviewDemos.pools.trades", 6);
+        private static List<string> Filters      => Pool(s => s.Filters,      "overviewDemos.pools.filters", 5);
+        private static List<string> Definitions  => Pool(s => s.Definitions,  "overviewDemos.pools.definitions", 3);
+        private static List<string> Templates    => Pool(s => s.Templates,    "overviewDemos.pools.templates", 3);
+        private static List<string> Grids        => Pool(s => s.Grids,        "overviewDemos.pools.grids", 6);
+        private static List<string> RefPlanes    => Pool(s => s.RefPlanes,    "overviewDemos.pools.refPlanes", 3);
+        private static List<string> TitleBlocks  => Pool(s => s.TitleBlocks,  "overviewDemos.pools.titleBlocks", 3);
+
+        private static Dictionary<string, List<string>> Categories()
+        {
+            var snap = OverviewSamples.Current;
+            if (snap != null && snap.CategoryGroups.Count > 0)
+                return snap.CategoryGroups.ToDictionary(kv => kv.Key, kv => new List<string>(kv.Value));
+
+            return new Dictionary<string, List<string>>
+            {
+                [LemoineStrings.T("overviewDemos.categoryGroups.mechanical.label")] = Canned("overviewDemos.categoryGroups.mechanical.items", 3),
+                [LemoineStrings.T("overviewDemos.categoryGroups.piping.label")]     = Canned("overviewDemos.categoryGroups.piping.items", 3),
+                [LemoineStrings.T("overviewDemos.categoryGroups.electrical.label")] = Canned("overviewDemos.categoryGroups.electrical.items", 2),
+                [LemoineStrings.T("overviewDemos.categoryGroups.structure.label")]  = Canned("overviewDemos.categoryGroups.structure.items", 3),
+            };
+        }
 
         private static Dictionary<string, List<string>> Group(string key, List<string> items) =>
             new Dictionary<string, List<string>> { [key] = items };
@@ -61,8 +87,11 @@ namespace LemoineTools.Lemoine
             => new OverviewDemoStep { Id = id, Title = title, Required = req, Kind = "single", Hint = hint, Items = items.ToList() };
         private static OverviewDemoStep FileStep(string id, string title, bool req, string hint, string filter, string ph)
             => new OverviewDemoStep { Id = id, Title = title, Required = req, Kind = "file", Hint = hint, FileFilter = filter, FilePlaceholder = ph };
-        private static OverviewDemoStep Num(string id, string title, string hint, double val, double min, double max, double step, string unit)
-            => new OverviewDemoStep { Id = id, Title = title, Kind = "number", Hint = hint, NumValue = val, NumMin = min, NumMax = max, NumStep = step, NumUnit = unit };
+        private static OverviewDemoStep Num(string id, string title, string hint, double val, double min, double max, double step, string unit, int decimals = 0)
+            => new OverviewDemoStep { Id = id, Title = title, Kind = "number", Hint = hint, NumValue = val, NumMin = min, NumMax = max, NumStep = step, NumUnit = unit, NumDecimals = decimals };
+        private static OverviewDemoStep Pre(OverviewDemoStep s, int index) { s.PreselectIndex = index; return s; }
+        private static OverviewDemoStep Composite(string id, string title, bool req, string hint, params OverviewDemoStep[] parts)
+            => new OverviewDemoStep { Id = id, Title = title, Required = req, Kind = "composite", Hint = hint, Parts = parts.ToList() };
         private static OverviewDemoStep Txt(string id, string title, bool req, string hint, string def, string ph)
             => new OverviewDemoStep { Id = id, Title = title, Required = req, Kind = "text", Hint = hint, TextDefault = def, TextPlaceholder = ph };
         private static OverviewDemoStep Info(string id, string title, string info)
@@ -71,11 +100,29 @@ namespace LemoineTools.Lemoine
         private static (string, string)[] RL(params (string, string)[] lines) => lines;
 
         // ── Lookup ────────────────────────────────────────────────────────────
-        public static OverviewDemoSpec? For(string toolName)
-            => _specs.TryGetValue(toolName, out var s) ? s : null;
+        // Specs are rebuilt whenever the document snapshot changes (each overview
+        // open recaptures), so the sample pools never go stale across documents.
+        private static Dictionary<string, OverviewDemoSpec>? _specs;
+        private static OverviewSampleSnapshot?               _builtFrom;
 
-        private static readonly Dictionary<string, OverviewDemoSpec> _specs =
-            new Dictionary<string, OverviewDemoSpec>
+        public static OverviewDemoSpec? For(string toolName)
+        {
+            var snap = OverviewSamples.Current;
+            if (_specs == null || !ReferenceEquals(_builtFrom, snap))
+            {
+                _specs     = BuildSpecs();
+                _builtFrom = snap;
+            }
+            return _specs.TryGetValue(toolName, out var s) ? s : null;
+        }
+
+        /// <summary>Drop the cached specs when the overview window closes so the
+        /// captured document strings don't stay rooted on this static.</summary>
+        public static void DropCache() { _specs = null; _builtFrom = null; }
+
+        private static Dictionary<string, OverviewDemoSpec> BuildSpecs()
+        {
+            var specs = new Dictionary<string, OverviewDemoSpec>
         {
             ["Auto Filters"] = new OverviewDemoSpec
             {
@@ -478,6 +525,45 @@ namespace LemoineTools.Lemoine
                 },
                 RunLog = RL((LemoineStrings.T("overviewDemos.tools.copyElements.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.copyElements.runLog.2"), "pass")),
             },
+
+            ["Align Coordinates"] = new OverviewDemoSpec
+            {
+                Title = LemoineStrings.T("overviewDemos.tools.alignCoordinates.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.alignCoordinates.runLabel"),
+                Steps = new[]
+                {
+                    Composite("host", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.title"), true, LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.hint"),
+                        Pre(Single("grid1", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.grid1"), true, "", Grids.ToArray()), 0),
+                        Pre(Single("grid2", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.grid2"), true, "", Grids.ToArray()), 1),
+                        Pre(Single("level", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.level"), true, "", Levels.ToArray()), 0),
+                        Toggles("points", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.points"), "",
+                            Tg("survey", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.survey"), "", true),
+                            Tg("pbp", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.host.parts.pbp"), "", true))),
+                    MultiFlat("links", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.links.title"), false, LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.links.hint"), Links),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.run.title"), LemoineStrings.T("overviewDemos.tools.alignCoordinates.steps.run.info")),
+                },
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.alignCoordinates.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.alignCoordinates.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.alignCoordinates.runLog.3"), "pass")),
+            },
+
+            ["Compare Grids"] = new OverviewDemoSpec
+            {
+                Title = LemoineStrings.T("overviewDemos.tools.compareGrids.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.compareGrids.runLabel"),
+                Steps = new[]
+                {
+                    Composite("files", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.title"), true, LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.hint"),
+                        MultiFlat("links", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.links"), true, "", Links),
+                        Toggles("host", "", "",
+                            Tg("inclhost", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.inclHost"), "", true)),
+                        Num("postol", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.posTol"), "", 0.5, 0, 120, 0.0625, "", 3),
+                        Num("angtol", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.angTol"), "", 0.5, 0, 45, 0.05, "", 2)),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.compareGrids.steps.run.title"), LemoineStrings.T("overviewDemos.tools.compareGrids.steps.run.info")),
+                },
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.compareGrids.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.compareGrids.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.compareGrids.runLog.3"), "skip")),
+            },
         };
+
+            string sampledFrom = OverviewSamples.Current?.DocumentTitle ?? "";
+            foreach (var s in specs.Values) s.SampledFrom = sampledFrom;
+            return specs;
+        }
     }
 }

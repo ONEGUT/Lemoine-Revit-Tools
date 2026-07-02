@@ -319,12 +319,35 @@ namespace LemoineTools.Lemoine
                     },
                 },
             },
+
+            new OverviewCategory
+            {
+                Id = "coordination", Name = LemoineStrings.T("overview.cat.coordination.name"), Glyph = G(0xE809),
+                Intro = LemoineStrings.T("overview.cat.coordination.intro"),
+                Tools = new[]
+                {
+                    new OverviewTool
+                    {
+                        Name = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.name"), Glyph = G(0xE809),
+                        Blurb = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.blurb"),
+                        Feeds = new[] { "Compare Grids", "Copy from Link", "Clash" },
+                        Example = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = LemoineStrings.T("overview.cat.coordination.tools.compareGrids.name"), Glyph = G(0xE80A),
+                        Blurb = LemoineStrings.T("overview.cat.coordination.tools.compareGrids.blurb"),
+                        FedBy = new[] { "Align Coordinates" },
+                        Example = LemoineStrings.T("overview.cat.coordination.tools.compareGrids.example"),
+                    },
+                },
+            },
         };
 
         // ── Workflow stages (top strip order) ─────────────────────────────────
         public static readonly OverviewStage[] Stages =
         {
-            new OverviewStage { Number = "01", Name = LemoineStrings.T("overview.stages.s01.name"),        Tagline = LemoineStrings.T("overview.stages.s01.tagline"), CategoryIds = new[] { "filters", "copy" } },
+            new OverviewStage { Number = "01", Name = LemoineStrings.T("overview.stages.s01.name"),        Tagline = LemoineStrings.T("overview.stages.s01.tagline"), CategoryIds = new[] { "filters", "copy", "coordination" } },
             new OverviewStage { Number = "02", Name = LemoineStrings.T("overview.stages.s02.name"), Tagline = LemoineStrings.T("overview.stages.s02.tagline"),                        CategoryIds = new[] { "modify" } },
             new OverviewStage { Number = "03", Name = LemoineStrings.T("overview.stages.s03.name"),   Tagline = LemoineStrings.T("overview.stages.s03.tagline"),         CategoryIds = new[] { "views", "ceilings" } },
             new OverviewStage { Number = "04", Name = LemoineStrings.T("overview.stages.s04.name"),    Tagline = LemoineStrings.T("overview.stages.s04.tagline"),                         CategoryIds = new[] { "clash" } },

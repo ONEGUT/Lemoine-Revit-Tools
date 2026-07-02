@@ -203,10 +203,26 @@
           "example": "pick Mechanical Equipment, then tick the AHU types to bring in"
         }
       }
+    },
+    "coordination": {
+      "name": "Coordination",
+      "intro": "Line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
+      "tools": {
+        "alignCoordinates": {
+          "name": "Align Coordinates",
+          "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, rotates and translates each selected link so its same-named grid intersection lands on the host's, then publishes the host's shared coordinates to those links.",
+          "example": "Survey Point to A ∩ 1 at Level 1, 3 links aligned, coordinates published"
+        },
+        "compareGrids": {
+          "name": "Compare Grids",
+          "blurb": "Read-only audit that compares grid lines across the host and its loaded links in one shared frame, flagging grids that are missing, offset, rotated, or present in only one file.",
+          "example": "host vs 2 links: 14 grids match, grid C is offset 3/8\", grid F only exists in STR"
+        }
+      }
     }
   },
   "stages": {
-    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link" },
+    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link · Coordination" },
     "s02": { "name": "Prep Geometry", "tagline": "Modify" },
     "s03": { "name": "Build Views",   "tagline": "Views · Ceilings" },
     "s04": { "name": "Coordinate",    "tagline": "Clash" },
