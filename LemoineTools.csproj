@@ -250,22 +250,26 @@
     "Build succeeded" / "Build FAILED" under each "Building ReleaseYYYY"
     banner to see which years actually produced output.
 
-    Targets="Restore;Build" (not just "Build") — a raw <MSBuild> task call
-    does not get the CLI's implicit restore-before-build, and each year needs
-    its own restore because it resolves a different TargetFramework (net48 vs
-    net8.0-windows). Requires the per-Configuration BaseIntermediateOutputPath
-    in Directory.Build.props so each year's restore doesn't clobber another
-    year's project.assets.json.
+    Each year is built via a separate `dotnet build` PROCESS (<Exec>), not the
+    in-process <MSBuild> task. When this target itself already runs inside a
+    live Visual Studio build of this exact project file, an in-process
+    <MSBuild> call with Properties="Configuration=ReleaseYYYY" silently kept
+    reusing the outer build's already-evaluated Debug/net48 project instance
+    instead of switching Configuration (every "sub-build" compiled from
+    obj\Debug\... regardless of which year it claimed to be building) — a
+    separate `dotnet build` process has no such shared state, so it reliably
+    picks up its own `-c ReleaseYYYY` and TargetFramework. `dotnet build`'s
+    own implicit restore-before-build makes an explicit Restore target
+    unnecessary here (unlike the in-process MSBuild task, which doesn't get
+    that implicit restore).
   -->
   <Target Name="BuildAllYears">
     <ItemGroup>
       <_RevitBuildYears Include="2024;2025;2026;2027" />
     </ItemGroup>
     <Message Text="=== Building Release%(_RevitBuildYears.Identity) ===" Importance="high" />
-    <MSBuild Projects="$(MSBuildProjectFullPath)"
-             Targets="Restore;Build"
-             Properties="Configuration=Release%(_RevitBuildYears.Identity)"
-             ContinueOnError="WarnAndContinue" />
+    <Exec Command="dotnet build &quot;$(MSBuildProjectFullPath)&quot; -c Release%(_RevitBuildYears.Identity)"
+          ContinueOnError="WarnAndContinue" />
   </Target>
 
   <!--
