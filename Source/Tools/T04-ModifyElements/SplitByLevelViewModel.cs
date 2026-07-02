@@ -18,14 +18,14 @@ namespace LemoineTools.Tools.ModifyElements
         public string? ResultNoun => "segments";
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
-        public string Title    => "Split Elements by Levels";
-        public string RunLabel => "Split in Revit →";
+        public string Title    => LemoineStrings.T("modify.splitByLevel.title");
+        public string RunLabel => LemoineStrings.T("modify.splitByLevel.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Categories", required: true),
-            new StepDefinition("S2", "Select Levels",     required: true),
-            new StepDefinition("S3", "Review & Run",      required: false),
+            new StepDefinition("S1", LemoineStrings.T("modify.splitByLevel.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("modify.splitByLevel.steps.S2"),     required: true),
+            new StepDefinition("S3", LemoineStrings.T("modify.splitByLevel.steps.S3"),      required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ namespace LemoineTools.Tools.ModifyElements
             int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = $"{totalCats} categories · {_totalElements} elements in document",
+                Text         = LemoineStrings.T("modify.splitByLevel.labels.countStrip", totalCats, _totalElements),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -163,8 +163,8 @@ namespace LemoineTools.Tools.ModifyElements
                     new ToggleItem
                     {
                         Id        = "activeView",
-                        Label     = "Active view elements only",
-                        Desc      = "When on, only elements visible in the current Revit view will be split.",
+                        Label     = LemoineStrings.T("modify.splitByLevel.labels.activeViewLabel"),
+                        Desc      = LemoineStrings.T("modify.splitByLevel.labels.activeViewDesc"),
                         DefaultOn = false,
                     },
                 });
@@ -190,7 +190,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = "FROM CURRENT SELECTION", Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByLevel.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -199,7 +199,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = $"{cnt} element{(cnt == 1 ? "" : "s")} across {cats} categor{(cats == 1 ? "y" : "ies")}",
+                Text         = LemoineStrings.T("modify.splitByLevel.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -219,7 +219,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = "Close and reopen the tool to use category selection instead.",
+                Text         = LemoineStrings.T("modify.splitByLevel.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -240,7 +240,7 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (_levelsByName.Count == 0)
             {
-                var msg = new TextBlock { Text = "No levels found in the document.", TextWrapping = TextWrapping.Wrap };
+                var msg = new TextBlock { Text = LemoineStrings.T("modify.splitByLevel.labels.noItems"), TextWrapping = TextWrapping.Wrap };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 msg.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 msg.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -270,26 +270,24 @@ namespace LemoineTools.Tools.ModifyElements
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   "Categories Selected"),
-            ("levels", "Levels Selected"),
-            ("op",     "Operation"),
-            ("scope",  "Scope"),
+            ("cats",   LemoineStrings.T("modify.splitByLevel.review.itemCats")),
+            ("levels", LemoineStrings.T("modify.splitByLevel.review.itemX")),
+            ("op",     LemoineStrings.T("modify.splitByLevel.review.itemOp")),
+            ("scope",  LemoineStrings.T("modify.splitByLevel.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["levels"] = _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
-            ["op"]     = "Split elements at each selected level boundary",
-            ["scope"]  = _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
-                : _useActiveView ? "Active view only"
-                : "Entire document",
+            ["levels"] = _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByLevel.review.xValue", _selectedLevelNames.Count),
+            ["op"]     = LemoineStrings.T("modify.splitByLevel.review.op"),
+            ["scope"]  = _preSelectedIds.Count > 0 ? LemoineStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count)
+                : _useActiveView ? LemoineStrings.T("modify.splitByLevel.review.scopeActive")
+                : LemoineStrings.T("modify.splitByLevel.review.scopeDoc"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Elements spanning multiple selected levels will be split into one " +
-            "segment per span. Walls and columns use level constraints; MEP curves and framing use LocationCurve " +
-            "adjustment. Elements with no applicable split strategy are skipped.";
+        public string?        ReviewNote    => LemoineStrings.T("modify.splitByLevel.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -303,13 +301,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return $"From selection ({_preSelectedIds.Count} elements)";
+                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s) selected";
+                return _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByLevel.summaries.s2", _selectedLevelNames.Count);
             if (stepId == "S3")
-                return "Ready to run";
+                return LemoineStrings.T("modify.splitByLevel.summaries.S3");
             return "—";
         }
 

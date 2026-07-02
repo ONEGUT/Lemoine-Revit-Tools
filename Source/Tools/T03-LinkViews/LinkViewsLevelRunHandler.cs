@@ -159,10 +159,10 @@ namespace LemoineTools.Tools.LinkViews
             try
             {
                 try { RunViews(doc, ref pass, ref fail, ref skip); }
-                catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log($"Error: {ex.Message}", "fail"); fail++; }
+                catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log(LemoineStrings.T("linkviews.level.log.error", ex.Message), "fail"); fail++; }
                 Progress(100, pass, fail, skip);
                 long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log($"{__issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                if (__issues > 0) Log(LemoineStrings.T("linkviews.level.log.nonFatalIssues", __issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -217,9 +217,9 @@ namespace LemoineTools.Tools.LinkViews
             var vftFP  = CreateFP  ? FindVFT(doc, ViewFamily.FloorPlan)        : null;
             var vftRCP = CreateRCP ? FindVFT(doc, ViewFamily.CeilingPlan)      : null;
 
-            if (Create3D  && vft3d  == null) Log("No 3D ViewFamilyType found — 3D views will be skipped.", "info");
-            if (CreateFP  && vftFP  == null) Log("No FloorPlan ViewFamilyType found — floor plans will be skipped.", "info");
-            if (CreateRCP && vftRCP == null) Log("No CeilingPlan ViewFamilyType found — ceiling plans will be skipped.", "info");
+            if (Create3D  && vft3d  == null) Log(LemoineStrings.T("linkviews.level.log.no3dType"), "info");
+            if (CreateFP  && vftFP  == null) Log(LemoineStrings.T("linkviews.level.log.noFpType"), "info");
+            if (CreateRCP && vftRCP == null) Log(LemoineStrings.T("linkviews.level.log.noRcpType"), "info");
 
             // Estimate total for progress
             int totalEst = 0;
@@ -245,7 +245,7 @@ namespace LemoineTools.Tools.LinkViews
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {idx} of {keptLevels.Count} levels processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", idx, keptLevels.Count), "warn");
                         break;   // falls through to the existing tx.Commit() below
                     }
 
@@ -277,7 +277,7 @@ namespace LemoineTools.Tools.LinkViews
                             if (Create3D && vft3d != null)
                             {
                                 string n = BuildViewName(baseName, "3D", lvl.Id);
-                                if (View3dExists(doc, n)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                                if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                                 else
                                 {
                                     try
@@ -291,9 +291,9 @@ namespace LemoineTools.Tools.LinkViews
                                         });
                                         SetSubDisc(v, SubDisc3D);
                                         created3d.Add(v);
-                                        Log($"Created 3D: {n}", "pass"); pass++;
+                                        Log(LemoineStrings.T("linkviews.level.log.created3d", n), "pass"); pass++;
                                     }
-                                    catch (Exception e) { Log($"[3D] '{n}': {e.Message}", "fail"); fail++; }
+                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
                                 }
                             }
 
@@ -301,7 +301,7 @@ namespace LemoineTools.Tools.LinkViews
                             if (CreateFP && vftFP != null)
                             {
                                 string n = BuildViewName(baseName, "FP", lvl.Id);
-                                if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                                if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                                 else
                                 {
                                     try
@@ -312,9 +312,9 @@ namespace LemoineTools.Tools.LinkViews
                                         SetPlanCrop(fp, x0, y0, x1, y1, zBot, zTop, lvl.Elevation, s.CutOffset);
                                         SetSubDisc(fp, SubDiscFP);
                                         createdFP.Add(fp);
-                                        Log($"Created FP: {n}", "pass"); pass++;
+                                        Log(LemoineStrings.T("linkviews.level.log.createdFp", n), "pass"); pass++;
                                     }
-                                    catch (Exception e) { Log($"[FP] '{n}': {e.Message}", "fail"); fail++; }
+                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failFp", n, e.Message), "fail"); fail++; }
                                 }
                             }
 
@@ -322,7 +322,7 @@ namespace LemoineTools.Tools.LinkViews
                             if (CreateRCP && vftRCP != null)
                             {
                                 string n = BuildViewName(baseName, "RCP", lvl.Id);
-                                if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                                if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                                 else
                                 {
                                     try
@@ -333,9 +333,9 @@ namespace LemoineTools.Tools.LinkViews
                                         SetPlanCrop(rcp, x0, y0, x1, y1, zBot, zTop, lvl.Elevation, s.CutOffset);
                                         SetSubDisc(rcp, SubDiscRCP);
                                         createdRCP.Add(rcp);
-                                        Log($"Created RCP: {n}", "pass"); pass++;
+                                        Log(LemoineStrings.T("linkviews.level.log.createdRcp", n), "pass"); pass++;
                                     }
-                                    catch (Exception e) { Log($"[RCP] '{n}': {e.Message}", "fail"); fail++; }
+                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failRcp", n, e.Message), "fail"); fail++; }
                                 }
                             }
 
@@ -351,7 +351,7 @@ namespace LemoineTools.Tools.LinkViews
                         if (Create3D && vft3d != null)
                         {
                             string n = BuildViewName(baseName, "3D", lvl.Id);
-                            if (View3dExists(doc, n)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                            if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                             else
                             {
                                 try
@@ -360,16 +360,16 @@ namespace LemoineTools.Tools.LinkViews
                                     ApplyTemplate(v, Template3D);
                                     SetSubDisc(v, SubDisc3D);
                                     created3d.Add(v);
-                                    Log($"Created 3D (no rooms): {n}", "pass"); pass++;
+                                    Log(LemoineStrings.T("linkviews.level.log.created3dNoRooms", n), "pass"); pass++;
                                 }
-                                catch (Exception e) { Log($"[3D] '{n}': {e.Message}", "fail"); fail++; }
+                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
                             }
                         }
 
                         if (CreateFP && vftFP != null)
                         {
                             string n = BuildViewName(baseName, "FP", lvl.Id);
-                            if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                            if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                             else
                             {
                                 try
@@ -379,16 +379,16 @@ namespace LemoineTools.Tools.LinkViews
                                     ApplyTemplate(fp, TemplateFP);
                                     SetSubDisc(fp, SubDiscFP);
                                     createdFP.Add(fp);
-                                    Log($"Created FP (no rooms): {n}", "pass"); pass++;
+                                    Log(LemoineStrings.T("linkviews.level.log.createdFpNoRooms", n), "pass"); pass++;
                                 }
-                                catch (Exception e) { Log($"[FP] '{n}': {e.Message}", "fail"); fail++; }
+                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failFp", n, e.Message), "fail"); fail++; }
                             }
                         }
 
                         if (CreateRCP && vftRCP != null)
                         {
                             string n = BuildViewName(baseName, "RCP", lvl.Id);
-                            if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log($"Skip '{n}' (exists)", "info"); skip++; }
+                            if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                             else
                             {
                                 try
@@ -398,9 +398,9 @@ namespace LemoineTools.Tools.LinkViews
                                     ApplyTemplate(rcp, TemplateRCP);
                                     SetSubDisc(rcp, SubDiscRCP);
                                     createdRCP.Add(rcp);
-                                    Log($"Created RCP (no rooms): {n}", "pass"); pass++;
+                                    Log(LemoineStrings.T("linkviews.level.log.createdRcpNoRooms", n), "pass"); pass++;
                                 }
-                                catch (Exception e) { Log($"[RCP] '{n}': {e.Message}", "fail"); fail++; }
+                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failRcp", n, e.Message), "fail"); fail++; }
                             }
                         }
 
@@ -420,7 +420,7 @@ namespace LemoineTools.Tools.LinkViews
             }
 
             foreach (var line in txLog) Log(line, "info");
-            Log($"Complete — {pass} created, {skip} skipped, {fail} failed.", "pass");
+            Log(LemoineStrings.T("linkviews.level.log.complete", pass, skip, fail), "pass");
         }
 
         /// <summary>

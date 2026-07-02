@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 using LemoineTools.Tools.Testing.LegendCreator;
 
 namespace LemoineTools.Lemoine.Controls
@@ -65,7 +66,7 @@ namespace LemoineTools.Lemoine.Controls
                 FontWeight = FontWeights.Bold,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            pillLabel.Text = _layout.Title ?? "Legend";
+            pillLabel.Text = _layout.Title ?? LemoineStrings.T("testing.legendCreator.builder.layoutBar.pill.defaultTitle");
             pillLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
             pillLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             pillLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -122,7 +123,7 @@ namespace LemoineTools.Lemoine.Controls
                 MinWidth = 200,
             };
 
-            var titleLabel = new TextBlock { Text = "Title", Margin = new Thickness(0, 0, 0, 2) };
+            var titleLabel = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.layoutBar.editPopup.titleLabel"), Margin = new Thickness(0, 0, 0, 2) };
             titleLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             titleLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             titleLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -143,7 +144,7 @@ namespace LemoineTools.Lemoine.Controls
             titleBox.SetResourceReference(TextBox.CaretBrushProperty,    "LemoineText");
             panel.Children.Add(titleBox);
 
-            var subLabel = new TextBlock { Text = "Subtitle", Margin = new Thickness(0, 0, 0, 2) };
+            var subLabel = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.layoutBar.editPopup.subtitleLabel"), Margin = new Thickness(0, 0, 0, 2) };
             subLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             subLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             subLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -172,7 +173,7 @@ namespace LemoineTools.Lemoine.Controls
                 AllowsTransparency = false,
             };
 
-            var saveBtn = LemoineControlStyles.BuildButton("Save", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var saveBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("testing.legendCreator.builder.layoutBar.editPopup.save"), LemoineControlStyles.LemoineButtonVariant.Primary);
             saveBtn.Click += (s, e) =>
             {
                 _layout.Title    = titleBox.Text.Trim();

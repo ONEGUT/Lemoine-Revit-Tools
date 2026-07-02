@@ -18,14 +18,14 @@ namespace LemoineTools.Tools.ModifyElements
         public string? ResultNoun => "pieces";
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
-        public string Title    => "Split Elements by Cell";
-        public string RunLabel => "Split in Revit →";
+        public string Title    => LemoineStrings.T("modify.splitByCell.title");
+        public string RunLabel => LemoineStrings.T("modify.splitByCell.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Categories", required: true),
-            new StepDefinition("S2", "Cell Size",         required: true),
-            new StepDefinition("S3", "Review & Run",      required: false),
+            new StepDefinition("S1", LemoineStrings.T("modify.splitByCell.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("modify.splitByCell.steps.S2"),         required: true),
+            new StepDefinition("S3", LemoineStrings.T("modify.splitByCell.steps.S3"),      required: false),
         };
 
         // Maps BuiltInCategory → display label; shared with SplitByCellCommand for counts + pre-selection.
@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = "FROM CURRENT SELECTION", Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByCell.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -156,7 +156,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = $"{cnt} element{(cnt == 1 ? "" : "s")} across {cats} categor{(cats == 1 ? "y" : "ies")}",
+                Text         = LemoineStrings.T("modify.splitByCell.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -176,7 +176,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = "Close and reopen the tool to use category selection instead.",
+                Text         = LemoineStrings.T("modify.splitByCell.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -199,8 +199,8 @@ namespace LemoineTools.Tools.ModifyElements
 
             var sizeRange = new LemoineNumberRange
             {
-                MinLabel = "Cell X width (ft)",
-                MaxLabel = "Cell Y height (ft)",
+                MinLabel = LemoineStrings.T("modify.splitByCell.labels.cellXLabel"),
+                MaxLabel = LemoineStrings.T("modify.splitByCell.labels.cellYLabel"),
                 AbsMin   = 0.1,
                 AbsMax   = 1000,
                 Step     = 0.5,
@@ -220,8 +220,8 @@ namespace LemoineTools.Tools.ModifyElements
                 new ToggleItem
                 {
                     Id        = "projOrigin",
-                    Label     = "Align grid to project origin",
-                    Desc      = "When on, the cell grid snaps to the project base point so cells are consistent across the model. When off, each element's own bounding box is used.",
+                    Label     = LemoineStrings.T("modify.splitByCell.labels.originLabel"),
+                    Desc      = LemoineStrings.T("modify.splitByCell.labels.originDesc"),
                     DefaultOn = false,
                 },
             });
@@ -243,26 +243,24 @@ namespace LemoineTools.Tools.ModifyElements
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   "Categories"),
-            ("cell",   "Cell Size"),
-            ("origin", "Grid Origin"),
-            ("scope",  "Scope"),
+            ("cats",   LemoineStrings.T("modify.splitByCell.review.itemCats")),
+            ("cell",   LemoineStrings.T("modify.splitByCell.review.itemCell")),
+            ("origin", LemoineStrings.T("modify.splitByCell.review.itemOrigin")),
+            ("scope",  LemoineStrings.T("modify.splitByCell.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["cell"]   = $"{_cellX:F2} ft × {_cellY:F2} ft",
-            ["origin"] = _useProjectOrigin ? "Project base point" : "Per-element bounding box",
+            ["cell"]   = LemoineStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY),
+            ["origin"] = _useProjectOrigin ? LemoineStrings.T("modify.splitByCell.review.originProject") : LemoineStrings.T("modify.splitByCell.review.originBbox"),
             ["scope"]  = _preSelectedIds.Count > 0
-                ? $"From selection ({_preSelectedIds.Count} elements)"
-                : "Active view",
+                ? LemoineStrings.T("modify.splitByCell.review.scopeFromSel", _preSelectedIds.Count)
+                : LemoineStrings.T("modify.splitByCell.review.scopeActive"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Sketch-based elements in the active view will be split into a " +
-            "regular grid of cells. Elements that fit within a single cell are skipped. Each element runs in its " +
-            "own transaction — the entire operation collapses to a single Ctrl+Z undo step.";
+        public string?        ReviewNote    => LemoineStrings.T("modify.splitByCell.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -276,13 +274,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return $"From selection ({_preSelectedIds.Count} elements)";
+                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByCell.summaries.fromSelection", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return $"{_cellX:F2} ft × {_cellY:F2} ft";
+                return LemoineStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY);
             if (stepId == "S3")
-                return "Ready to run";
+                return LemoineStrings.T("modify.splitByCell.summaries.S3");
             return "—";
         }
 

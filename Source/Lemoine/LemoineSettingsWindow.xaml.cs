@@ -79,11 +79,11 @@ namespace LemoineTools.Lemoine
             // Close × — ghost styling only; red is reserved for destructive actions.
             var closeX = LemoineControlStyles.BuildButton("x", LemoineControlStyles.LemoineButtonVariant.Ghost);
             closeX.Click += (s, e) => Close();
-            closeX.ToolTip = "Close";
+            closeX.ToolTip = LemoineStrings.T("appearanceSettings.close");
             _toolbarBorder.BorderThickness = new Thickness(0);
             _toolbarBorder.Child = new Controls.LemoineTitleBar
             {
-                Title        = "Appearance",
+                Title        = LemoineStrings.T("appearanceSettings.title"),
                 IconGlyph    = "",   // Segoe MDL2 "Color" paint-roller
                 RightContent = closeX,
             };
@@ -151,7 +151,7 @@ namespace LemoineTools.Lemoine
                     BorderThickness = new System.Windows.Thickness(1),
                     BorderBrush     = theme.Accent,
                 };
-                var activeText = new TextBlock { Text = "Active", Foreground = theme.Accent, FontFamily = theme.UiFont };
+                var activeText = new TextBlock { Text = LemoineStrings.T("appearanceSettings.active"), Foreground = theme.Accent, FontFamily = theme.UiFont };
                 activeTag.Child = activeText;
 
                 var inner = new StackPanel();
@@ -167,7 +167,7 @@ namespace LemoineTools.Lemoine
             }
 
             panel.Children.Add(themeGrid);
-            AddSection("Appearance", panel);
+            AddSection(LemoineStrings.T("appearanceSettings.appearanceSection"), panel);
         }
 
         private void SelectTheme(LemoineTheme theme)
@@ -225,7 +225,7 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private void BuildFooter()
         {
-            var closeBtn = LemoineControlStyles.BuildButton("Close", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var closeBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("appearanceSettings.close"), LemoineControlStyles.LemoineButtonVariant.Primary);
             closeBtn.HorizontalAlignment = HorizontalAlignment.Right;
             closeBtn.Click += (s, e) => Close();
 

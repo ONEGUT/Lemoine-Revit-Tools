@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -31,7 +32,7 @@ namespace LemoineTools.Lemoine.Controls
 
         public static readonly DependencyProperty TitleProperty =
             DependencyProperty.Register(nameof(Title), typeof(string), typeof(LemoineSwatchPicker),
-                new PropertyMetadata("SYMBOL", OnAnyChanged));
+                new PropertyMetadata(LemoineStrings.T("controls.pickers.swatchPicker.defaultTitle"), OnAnyChanged));
 
         public static readonly DependencyProperty AllowColorPickProperty =
             DependencyProperty.Register(nameof(AllowColorPick), typeof(bool), typeof(LemoineSwatchPicker),
@@ -70,7 +71,7 @@ namespace LemoineTools.Lemoine.Controls
             _inner.Children.Clear();
 
             // SHAPE header
-            _inner.Children.Add(MakeHeader($"{Title?.ToUpperInvariant()} · SHAPE"));
+            _inner.Children.Add(MakeHeader(LemoineStrings.T("controls.pickers.swatchPicker.shapeHeader", Title?.ToUpperInvariant())));
 
             // SHAPE row
             var shapeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
@@ -97,7 +98,7 @@ namespace LemoineTools.Lemoine.Controls
             _inner.Children.Add(shapeRow);
 
             // FILL header
-            _inner.Children.Add(MakeHeader("FILL"));
+            _inner.Children.Add(MakeHeader(LemoineStrings.T("controls.pickers.swatchPicker.fillHeader")));
 
             // FILL row
             var fillRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -149,7 +150,7 @@ namespace LemoineTools.Lemoine.Controls
                 sep.SetResourceReference(Border.BackgroundProperty, "LemoineBorderMid");
                 _inner.Children.Add(sep);
 
-                _inner.Children.Add(MakeHeader("COLOR"));
+                _inner.Children.Add(MakeHeader(LemoineStrings.T("controls.pickers.swatchPicker.colorHeader")));
 
                 var colorBtn = MakeButton(active: false);
                 colorBtn.Padding = new Thickness(6, 3, 6, 3);
@@ -169,7 +170,7 @@ namespace LemoineTools.Lemoine.Controls
                 };
                 chip.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
                 colorRow.Children.Add(chip);
-                var colorLbl = new TextBlock { Text = "Pick color…", VerticalAlignment = VerticalAlignment.Center };
+                var colorLbl = new TextBlock { Text = LemoineStrings.T("controls.pickers.swatchPicker.pickColorLabel"), VerticalAlignment = VerticalAlignment.Center };
                 colorLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 colorLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 colorLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");

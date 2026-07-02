@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -17,8 +18,8 @@ namespace LemoineTools.Lemoine.Controls
     /// </summary>
     public partial class LemoineNumberRange : UserControl
     {
-        public string MinLabel { get; set; } = "Min";
-        public string MaxLabel { get; set; } = "Max";
+        public string MinLabel { get; set; } = LemoineStrings.T("controls.inputs.numberRange.defaultMinLabel");
+        public string MaxLabel { get; set; } = LemoineStrings.T("controls.inputs.numberRange.defaultMaxLabel");
         public string Unit     { get; set; } = "";
         public double  Step    { get; set; } = 1;
         public double? AbsMin  { get; set; }

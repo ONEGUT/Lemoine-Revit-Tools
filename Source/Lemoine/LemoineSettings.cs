@@ -16,6 +16,9 @@ namespace LemoineTools.Lemoine
     {
         [XmlAttribute] public string Theme  { get; set; } = nameof(LemoineTheme.DarkMono);
         [XmlAttribute] public string UiSize { get; set; } = nameof(LemoineUiSize.Medium);
+
+        /// <summary>Culture folder for user-facing text (e.g. "en", "fr"). Empty = use the fallback ("en").</summary>
+        [XmlAttribute] public string Language { get; set; } = "en";
     }
 
     /// <summary>Singleton facade for persisted UI preferences (theme and scale). Changes are saved to disk immediately.</summary>
@@ -30,11 +33,17 @@ namespace LemoineTools.Lemoine
         /// <summary>Currently active UI size preset that drives the <see cref="Scale"/> multiplier.</summary>
         public LemoineUiSize UiSize      { get; private set; } = LemoineUiSize.Medium;
 
+        /// <summary>Currently active language (culture folder) for user-facing text. Defaults to "en".</summary>
+        public string Language { get; private set; } = "en";
+
         /// <summary>Fired after <see cref="ActiveTheme"/> changes; the new theme is passed as the argument.</summary>
         public event Action<LemoineTheme>?  ThemeChanged;
 
         /// <summary>Fired after <see cref="UiSize"/> changes; the new size is passed as the argument.</summary>
         public event Action<LemoineUiSize>? UiSizeChanged;
+
+        /// <summary>Fired after <see cref="Language"/> changes; the new culture is passed as the argument.</summary>
+        public event Action<string>? LanguageChanged;
 
         private LemoineSettings()
         {
@@ -58,6 +67,19 @@ namespace LemoineTools.Lemoine
             if (size == UiSize) return;
             UiSize = size;
             RaiseIsolated(UiSizeChanged, size, "LemoineSettings.SetUiSize");
+            SaveToDisk();
+        }
+
+        /// <summary>Switches the active language, reloads the string tables, raises <see cref="LanguageChanged"/>,
+        /// and persists the choice. No-op if unchanged. Newly opened tool windows pick up the new language;
+        /// already-open windows are not rebuilt.</summary>
+        /// <param name="culture">The culture folder to activate (e.g. "en", "fr").</param>
+        public void SetLanguage(string culture)
+        {
+            if (string.IsNullOrWhiteSpace(culture) || culture == Language) return;
+            Language = culture;
+            LemoineStrings.Load(culture);
+            RaiseIsolated(LanguageChanged, culture, "LemoineSettings.SetLanguage");
             SaveToDisk();
         }
 
@@ -218,6 +240,8 @@ namespace LemoineTools.Lemoine
                     if (t != null) ActiveTheme = t;
                     if (Enum.TryParse<LemoineUiSize>(dto.UiSize, out var s))
                         UiSize = s;
+                    if (!string.IsNullOrWhiteSpace(dto.Language))
+                        Language = dto.Language;
                 }
             }
             catch (Exception ex)
@@ -233,7 +257,7 @@ namespace LemoineTools.Lemoine
                 string path = SettingsFilePath;
                 string? dir = Path.GetDirectoryName(path);
                 if (dir != null) Directory.CreateDirectory(dir);
-                var dto = new UISettingsDto { Theme = ActiveTheme.Name, UiSize = UiSize.ToString() };
+                var dto = new UISettingsDto { Theme = ActiveTheme.Name, UiSize = UiSize.ToString(), Language = Language };
                 var xs = new XmlSerializer(typeof(UISettingsDto));
                 using (var w = new StreamWriter(path)) xs.Serialize(w, dto);
             }

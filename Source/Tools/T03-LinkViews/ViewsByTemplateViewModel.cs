@@ -27,15 +27,15 @@ namespace LemoineTools.Tools.LinkViews
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => "Bulk Views by Template";
-        public string RunLabel => "Create Views in Revit →";
+        public string Title    => LemoineStrings.T("linkviews.byTemplate.title");
+        public string RunLabel => LemoineStrings.T("linkviews.byTemplate.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Source Views",   required: true),
-            new StepDefinition("S2", "View Templates", required: true),
-            new StepDefinition("S3", "View Naming",    required: true),
-            new StepDefinition("S4", "Review & Run",   required: false),
+            new StepDefinition("S1", LemoineStrings.T("linkviews.byTemplate.steps.S1"),   required: true),
+            new StepDefinition("S2", LemoineStrings.T("linkviews.byTemplate.steps.S2"), required: true),
+            new StepDefinition("S3", LemoineStrings.T("linkviews.byTemplate.steps.S3"),    required: true),
+            new StepDefinition("S4", LemoineStrings.T("linkviews.byTemplate.steps.S4"),   required: false),
         };
 
         // ── Data types passed in from Command (main thread) ───────────
@@ -120,7 +120,7 @@ namespace LemoineTools.Tools.LinkViews
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Source views",
+                AccessibleName = LemoineStrings.T("linkviews.byTemplate.labels.sourceViews"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -155,7 +155,7 @@ namespace LemoineTools.Tools.LinkViews
                 list.Add(key);
             }
 
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = "View templates" };
+            var tabs = new LemoineMultiSelectTabs { AccessibleName = LemoineStrings.T("linkviews.byTemplate.labels.viewTemplates") };
             tabs.SelectionChanged += selected =>
             {
                 _selectedTemplateIds = selected
@@ -175,7 +175,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 var msg = new TextBlock
                 {
-                    Text         = "No view templates found in this document.",
+                    Text         = LemoineStrings.T("linkviews.byTemplate.labels.noTemplates"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 4, 0, 0),
@@ -193,7 +193,7 @@ namespace LemoineTools.Tools.LinkViews
         {
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-            var header = new TextBlock { Text = "NAME PATTERN", Margin = new Thickness(0, 0, 0, 6) };
+            var header = new TextBlock { Text = LemoineStrings.T("linkviews.byTemplate.labels.namePattern"), Margin = new Thickness(0, 0, 0, 6) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -207,7 +207,7 @@ namespace LemoineTools.Tools.LinkViews
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            var previewHeader = new TextBlock { Text = "PREVIEW", Margin = new Thickness(0, 0, 0, 4) };
+            var previewHeader = new TextBlock { Text = LemoineStrings.T("linkviews.byTemplate.labels.preview"), Margin = new Thickness(0, 0, 0, 4) };
             previewHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             previewHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             previewHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -233,9 +233,9 @@ namespace LemoineTools.Tools.LinkViews
             {
                 var v = FirstSelectedView();
                 var t = FirstSelectedTemplate();
-                string viewName = v?.Name      ?? "Floor Plan 01";
-                string viewType = v?.TypeLabel ?? "Floor Plan";
-                string tmplName = t?.Name      ?? "Coordination";
+                string viewName = v?.Name      ?? LemoineStrings.T("linkviews.byTemplate.labels.exView");
+                string viewType = v?.TypeLabel ?? LemoineStrings.T("linkviews.byTemplate.labels.exType");
+                string tmplName = t?.Name      ?? LemoineStrings.T("linkviews.byTemplate.labels.exTemplate");
 
                 string resolved = LemoineTokenInput.Resolve(_namePattern,
                     new Dictionary<string, string>
@@ -245,7 +245,7 @@ namespace LemoineTools.Tools.LinkViews
                         ["TemplateName"] = tmplName,
                     });
                 previewText.Text = string.IsNullOrWhiteSpace(resolved)
-                    ? "(empty name)"
+                    ? LemoineStrings.T("linkviews.byTemplate.labels.emptyName")
                     : resolved;
             }
 
@@ -276,30 +276,28 @@ namespace LemoineTools.Tools.LinkViews
         // ── ILemoineReviewable — framework renders the review step ─────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views",     "Source Views"),
-            ("templates", "View Templates"),
-            ("pattern",   "Name Pattern"),
-            ("total",     "Views to Create"),
+            ("views",     LemoineStrings.T("linkviews.byTemplate.review.itemViews")),
+            ("templates", LemoineStrings.T("linkviews.byTemplate.review.itemTemplates")),
+            ("pattern",   LemoineStrings.T("linkviews.byTemplate.review.itemPattern")),
+            ("total",     LemoineStrings.T("linkviews.byTemplate.review.itemTotal")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]     = _selectedViewIds.Count     > 0 ? $"{_selectedViewIds.Count} view(s)"         : "—",
-            ["templates"] = _selectedTemplateIds.Count > 0 ? $"{_selectedTemplateIds.Count} template(s)" : "—",
+            ["views"]     = _selectedViewIds.Count     > 0 ? LemoineStrings.T("linkviews.byTemplate.review.viewsValue", _selectedViewIds.Count)         : "—",
+            ["templates"] = _selectedTemplateIds.Count > 0 ? LemoineStrings.T("linkviews.byTemplate.review.templatesValue", _selectedTemplateIds.Count) : "—",
             ["pattern"]   = string.IsNullOrWhiteSpace(_namePattern) ? "—" : _namePattern,
             ["total"]     = _selectedViewIds.Count > 0 && _selectedTemplateIds.Count > 0
-                                ? $"up to {_selectedViewIds.Count * _selectedTemplateIds.Count}"
+                                ? LemoineStrings.T("linkviews.byTemplate.review.totalValue", _selectedViewIds.Count * _selectedTemplateIds.Count)
                                 : "—",
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Each selected view is duplicated (with detailing) once per template. " +
-            "Pairs whose name already exists are skipped; a template that cannot apply to a view's type is reported as failed.";
+        public string?        ReviewNote    => LemoineStrings.T("linkviews.byTemplate.review.note");
         public string?        ReviewWarning =>
             (_selectedViewIds.Count > 0 && _selectedTemplateIds.Count > 1
              && !_namePattern.Contains("{TemplateName}"))
-                ? "Name pattern has no {TemplateName} token — every template resolves to the same name per view, " +
-                  "so only the first copy is created and the rest are skipped. Add {TemplateName} to differentiate."
+                ? LemoineStrings.T("linkviews.byTemplate.review.warnNoToken")
                 : null;
 
         // ═══════════════════════════════════════════════════════════════
@@ -315,10 +313,10 @@ namespace LemoineTools.Tools.LinkViews
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return _selectedViewIds.Count     > 0 ? $"{_selectedViewIds.Count} view(s)"         : "—";
-            if (stepId == "S2") return _selectedTemplateIds.Count > 0 ? $"{_selectedTemplateIds.Count} template(s)" : "—";
+            if (stepId == "S1") return _selectedViewIds.Count     > 0 ? LemoineStrings.T("linkviews.byTemplate.summaries.viewCount", _selectedViewIds.Count)         : "—";
+            if (stepId == "S2") return _selectedTemplateIds.Count > 0 ? LemoineStrings.T("linkviews.byTemplate.summaries.templateCount", _selectedTemplateIds.Count) : "—";
             if (stepId == "S3") return string.IsNullOrWhiteSpace(_namePattern) ? "—" : _namePattern;
-            if (stepId == "S4") return "Ready to run";
+            if (stepId == "S4") return LemoineStrings.T("linkviews.byTemplate.summaries.S4");
             return "—";
         }
 
@@ -337,7 +335,7 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.OnProgress          = onProgress;
             _runHandler.OnComplete          = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("linkviews.byTemplate.log.raising"), "info");
             _runEvent!.Raise();
         }
     }

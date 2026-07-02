@@ -74,7 +74,7 @@ namespace LemoineTools.Lemoine.Controls
                 Height = ExpandList ? GridLength.Auto : new GridLength(1, GridUnitType.Star),
             });
 
-            AddRow(0, MakeMonoLabel("PALETTE"));
+            AddRow(0, MakeMonoLabel(LemoineStrings.T("testing.legendCreator.builder.palette.labels.header")));
 
             _scopeRow = new StackPanel
             {
@@ -83,7 +83,7 @@ namespace LemoineTools.Lemoine.Controls
             };
             AddRow(1, _scopeRow);
 
-            AddRow(2, MakeMonoLabel("FILTERS — drag into a group"));
+            AddRow(2, MakeMonoLabel(LemoineStrings.T("testing.legendCreator.builder.palette.labels.filtersHeader")));
 
             _filterList = new StackPanel();
             if (ExpandList)
@@ -122,7 +122,7 @@ namespace LemoineTools.Lemoine.Controls
             var trades = AutoFiltersSettings.Instance.Trades ?? new List<FilterTradeConfig>();
 
             // "All" pill
-            var allPill = MakeScopePill("All", _scope == "All");
+            var allPill = MakeScopePill(LemoineStrings.T("testing.legendCreator.builder.palette.scope.allPill"), _scope == "All");
             allPill.MouseLeftButtonUp += (s, e) =>
             {
                 _scope = "All";
@@ -132,7 +132,7 @@ namespace LemoineTools.Lemoine.Controls
             _scopeRow.Children.Add(allPill);
 
             // Trade dropdown pill
-            string tradeLabel = "All trades";
+            string tradeLabel = LemoineStrings.T("testing.legendCreator.builder.palette.scope.allTradesDefault");
             bool tradeActive = _scope != "All";
             if (tradeActive)
             {
@@ -201,7 +201,7 @@ namespace LemoineTools.Lemoine.Controls
             // drag it onto the canvas to add that trade's filters as a new group.
             if (tradeActive)
             {
-                tradePill.ToolTip = "Click to change trade  ·  Drag to add as new group";
+                tradePill.ToolTip = LemoineStrings.T("testing.legendCreator.builder.palette.tooltips.tradeDragHint");
 
                 LemoineMotion.WireDragArm(tradePill, e =>
                 {
@@ -361,7 +361,7 @@ namespace LemoineTools.Lemoine.Controls
             {
                 var tb = new TextBlock
                 {
-                    Text = "no matches",
+                    Text = LemoineStrings.T("testing.legendCreator.builder.palette.emptyState.noMatches"),
                     FontStyle = FontStyles.Italic,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 8, 0, 8),

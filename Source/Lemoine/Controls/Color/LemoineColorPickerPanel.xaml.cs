@@ -144,7 +144,7 @@ namespace LemoineTools.Lemoine.Controls
 
                     foreach (var setEl in setsEl.Elements("Set"))
                     {
-                        var name  = setEl.Attribute("name")?.Value ?? "Set";
+                        var name  = setEl.Attribute("name")?.Value ?? LemoineStrings.T("controls.pickers.colorPickerPanel.defaults.setFallbackName");
                         var cs    = new ColorSet(name);
                         var slots = setEl.Elements("Slot").ToList();
                         for (int i = 0; i < Math.Min(slots.Count, SetSlotCount); i++)
@@ -168,7 +168,7 @@ namespace LemoineTools.Lemoine.Controls
             catch (Exception __lex) { LemoineLog.Swallowed("ColorPicker: load saved swatches", __lex); }
 
             if (_colorSets.Count == 0)
-                _colorSets.Add(new ColorSet("Set 1"));
+                _colorSets.Add(new ColorSet(LemoineStrings.T("controls.pickers.colorPickerPanel.defaults.setOneName")));
         }
 
         private void SavePersisted()
@@ -405,7 +405,7 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Add(right);
 
             // HEX
-            var hexLbl = MakeLabel("HEX");
+            var hexLbl = MakeLabel(LemoineStrings.T("controls.pickers.colorPickerPanel.labels.hex"));
             hexLbl.Margin = new Thickness(0, 0, 0, 5);
             right.Children.Add(hexLbl);
 
@@ -419,7 +419,7 @@ namespace LemoineTools.Lemoine.Controls
             hexBox.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var hexInner = new StackPanel { Orientation = Orientation.Horizontal };
-            var hashLbl  = MakeLabel("#");
+            var hashLbl  = MakeLabel(LemoineStrings.T("controls.pickers.colorPickerPanel.labels.hashPrefix"));
             hashLbl.Margin            = new Thickness(8, 0, 2, 0);
             hashLbl.VerticalAlignment = VerticalAlignment.Center;
             _hexBox = new TextBox
@@ -465,7 +465,7 @@ namespace LemoineTools.Lemoine.Controls
             rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(4) });
             rgbaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            string[] rgbaLabels = { "R", "G", "B", "A" };
+            string[] rgbaLabels = { LemoineStrings.T("controls.pickers.colorPickerPanel.labels.r"), LemoineStrings.T("controls.pickers.colorPickerPanel.labels.g"), LemoineStrings.T("controls.pickers.colorPickerPanel.labels.b"), LemoineStrings.T("controls.pickers.colorPickerPanel.labels.a") };
             int[]    labelCols  = { 0, 2, 4, 6 };
 
             for (int i = 0; i < rgbaLabels.Length; i++)
@@ -532,13 +532,13 @@ namespace LemoineTools.Lemoine.Controls
             recentHeader.ColumnDefinitions.Add(new ColumnDefinition());
             recentHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var recentLbl = MakeLabel("Recent");
+            var recentLbl = MakeLabel(LemoineStrings.T("controls.pickers.colorPickerPanel.labels.recent"));
             Grid.SetColumn(recentLbl, 0);
             recentHeader.Children.Add(recentLbl);
 
             var clearBtn = new TextBlock
             {
-                Text              = "Clear",
+                Text              = LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.clear"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor            = Cursors.Hand,
             };
@@ -707,7 +707,7 @@ namespace LemoineTools.Lemoine.Controls
                 row.Children.Add(renameBox);
 
                 var editBtn = LemoineControlStyles.BuildSmallButton(
-                    "Edit", LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.edit"), LemoineControlStyles.LemoineButtonVariant.Ghost);
                 editBtn.Margin = new Thickness(4, 2, 2, 2);
                 Grid.SetColumn(editBtn, 1);
                 row.Children.Add(editBtn);
@@ -753,14 +753,14 @@ namespace LemoineTools.Lemoine.Controls
                 if (_colorSets.Count > 1)
                 {
                     var deleteBtn = LemoineControlStyles.BuildSmallButton(
-                        "Delete", LemoineControlStyles.LemoineButtonVariant.Danger);
+                        LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.delete"), LemoineControlStyles.LemoineButtonVariant.Danger);
                     deleteBtn.Margin = new Thickness(4, 2, 2, 2);
                     deleteBtn.Click += (s, e) =>
                     {
                         if (_removePopup?.IsOpen == true) _removePopup.IsOpen = false;
 
                         var confirmBtn = LemoineControlStyles.BuildSmallButton(
-                            "Delete Set", LemoineControlStyles.LemoineButtonVariant.Danger);
+                            LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.deleteSet"), LemoineControlStyles.LemoineButtonVariant.Danger);
                         confirmBtn.Click += (cs, ce) =>
                         {
                             if (_removePopup != null) _removePopup.IsOpen = false;
@@ -815,7 +815,7 @@ namespace LemoineTools.Lemoine.Controls
 
             var addLabel = new TextBlock
             {
-                Text   = "+ New Set",
+                Text   = LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.newSet"),
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(8, 4, 8, 4),
             };
@@ -843,7 +843,7 @@ namespace LemoineTools.Lemoine.Controls
             entryRow.Children.Add(_newSetNameBox);
 
             var confirmBtn = LemoineControlStyles.BuildSmallButton(
-                "Add", LemoineControlStyles.LemoineButtonVariant.Primary);
+                LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.add"), LemoineControlStyles.LemoineButtonVariant.Primary);
             confirmBtn.Margin           = new Thickness(4, 0, 0, 0);
             confirmBtn.VerticalAlignment = VerticalAlignment.Stretch;
             Grid.SetColumn(confirmBtn, 1);
@@ -852,7 +852,7 @@ namespace LemoineTools.Lemoine.Controls
             Action confirmCreate = () =>
             {
                 var name = _newSetNameBox?.Text?.Trim() ?? "";
-                if (string.IsNullOrEmpty(name)) name = $"Set {_colorSets.Count + 1}";
+                if (string.IsNullOrEmpty(name)) name = LemoineStrings.T("controls.pickers.colorPickerPanel.defaults.newSetName", _colorSets.Count + 1);
                 CreateNewSet(name);
             };
 
@@ -944,7 +944,7 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     var c  = color.Value;
                     swatch = MakeColorSwatch(c, ProjectSwatchSize);
-                    swatch.ToolTip = $"#{c.R:X2}{c.G:X2}{c.B:X2} · Right-click to remove";
+                    swatch.ToolTip = LemoineStrings.T("controls.pickers.colorPickerPanel.tooltips.projectSwatch", $"#{c.R:X2}{c.G:X2}{c.B:X2}");
 
                     // Left-click: load this color into the picker
                     swatch.MouseLeftButtonUp += (s, e) => { FromColor(c); PushOut(); };
@@ -955,7 +955,7 @@ namespace LemoineTools.Lemoine.Controls
                         if (_removePopup?.IsOpen == true) _removePopup.IsOpen = false;
 
                         var removeBtn = LemoineControlStyles.BuildSmallButton(
-                            "Remove", LemoineControlStyles.LemoineButtonVariant.Danger);
+                            LemoineStrings.T("controls.pickers.colorPickerPanel.buttons.remove"), LemoineControlStyles.LemoineButtonVariant.Danger);
 
                         removeBtn.Click += (bs, be) =>
                         {
@@ -991,7 +991,7 @@ namespace LemoineTools.Lemoine.Controls
                 else
                 {
                     swatch         = MakeEmptySwatch();
-                    swatch.ToolTip = "Click to save current color here";
+                    swatch.ToolTip = LemoineStrings.T("controls.pickers.colorPickerPanel.tooltips.emptySwatch");
 
                     // Left-click: fill this slot with the current color immediately
                     swatch.MouseLeftButtonUp += (s, e) =>

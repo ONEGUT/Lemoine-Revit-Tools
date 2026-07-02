@@ -1,0 +1,1184 @@
+// overviewDemos.json — Per-tool "Dummy run" demo specs for the Tools Overview window
+// (ToolsOverviewDemos.cs). Every tool's simulated step flow, sample data, and run-log
+// lines shown when a user clicks "Dummy run ▶" on a tool card. This is separate from
+// overviewDemo.json, which covers the generic simulation engine's own chrome (OverviewDemoTool.cs).
+// NOTE: Kind tokens ("multi"/"toggles"/"file"/etc.) and RunLog status tokens
+// ("info"/"pass"/"fail"/"skip") stay in code — they're matched in a switch, not shown to users.
+// Arrays are stored as numbered objects ("1", "2", ...) since the loader only flattens
+// JSON objects, not arrays; ToolsOverviewDemos.cs reconstructs each List<string> in order.
+{
+  "pools": {
+    "planViews": {
+      "1": "Level 1 - Mechanical",
+      "2": "Level 2 - Mechanical",
+      "3": "Level 3 - Mechanical",
+      "4": "Roof - Mechanical"
+    },
+    "ceilingPlans": {
+      "1": "Level 1 - RCP",
+      "2": "Level 2 - RCP",
+      "3": "Level 3 - RCP"
+    },
+    "views3D": {
+      "1": "3D - Coordination",
+      "2": "3D - MEP Overall",
+      "3": "3D - Level 2"
+    },
+    "sections": {
+      "1": "Section A-A",
+      "2": "Elevation - North",
+      "3": "Section - Riser 1"
+    },
+    "sheets": {
+      "1": "M-101 - Level 1 Mechanical",
+      "2": "M-102 - Level 2 Mechanical",
+      "3": "M-103 - Level 3 Mechanical"
+    },
+    "levels": {
+      "1": "Level 1",
+      "2": "Level 2",
+      "3": "Level 3",
+      "4": "Level 4",
+      "5": "Roof"
+    },
+    "documents": {
+      "1": "ARCH - Architecture.rvt",
+      "2": "STR - Structure.rvt",
+      "3": "MEP - Services.rvt"
+    },
+    "trades": {
+      "1": "Supply Air",
+      "2": "Return Air",
+      "3": "Exhaust Air",
+      "4": "Chilled Water",
+      "5": "Heating Water",
+      "6": "Domestic Cold Water"
+    },
+    "filters": {
+      "1": "Supply Air",
+      "2": "Return Air",
+      "3": "Chilled Water Supply",
+      "4": "Chilled Water Return",
+      "5": "Hot Water Supply"
+    },
+    "definitions": {
+      "1": "Duct vs Structure",
+      "2": "Pipe vs Duct",
+      "3": "Cable Tray vs Beam"
+    },
+    "templates": {
+      "1": "MEP - Coordination",
+      "2": "MEP - Working",
+      "3": "Architectural - Presentation"
+    },
+    "grids": {
+      "1": "Grid A",
+      "2": "Grid B",
+      "3": "Grid C",
+      "4": "Grid 1",
+      "5": "Grid 2",
+      "6": "Grid 3"
+    },
+    "refPlanes": {
+      "1": "Centerline",
+      "2": "Corridor Edge",
+      "3": "Shaft Boundary"
+    },
+    "titleBlocks": {
+      "1": "A1 Metric",
+      "2": "A3 Landscape",
+      "3": "Custom 30x42"
+    }
+  },
+  "categoryGroups": {
+    "mechanical": {
+      "label": "Mechanical",
+      "items": {
+        "1": "Ducts",
+        "2": "Duct Fittings",
+        "3": "Air Terminals"
+      }
+    },
+    "piping": {
+      "label": "Piping",
+      "items": {
+        "1": "Pipes",
+        "2": "Pipe Fittings",
+        "3": "Pipe Accessories"
+      }
+    },
+    "electrical": {
+      "label": "Electrical",
+      "items": {
+        "1": "Cable Trays",
+        "2": "Conduits"
+      }
+    },
+    "structure": {
+      "label": "Structure",
+      "items": {
+        "1": "Walls",
+        "2": "Structural Columns",
+        "3": "Structural Framing"
+      }
+    }
+  },
+  "tools": {
+    "autoFilters": {
+      "steps": {
+        "s1": {
+          "title": "Select Links",
+          "hint": "Choose the linked models to scan for trades / systems."
+        },
+        "s2": {
+          "toggles": {
+            "sys": {
+              "label": "By system name",
+              "desc": "Group by Revit system name"
+            },
+            "fab": {
+              "label": "By fabrication service",
+              "desc": "Group by MEP fabrication service"
+            },
+            "host": {
+              "label": "Include host model",
+              "desc": "Also scan the host document"
+            }
+          },
+          "title": "Configure Links",
+          "hint": "How each link's elements are read into trades."
+        },
+        "s3": {
+          "title": "Scanning",
+          "info": "Discover scans the selected links and groups elements into candidate trades. (Simulated here.)"
+        },
+        "s4": {
+          "title": "Review Rules",
+          "hint": "Tick the discovered trade rules to keep."
+        },
+        "s5": {
+          "title": "Confirm & Commit",
+          "info": "Creates one view filter per kept trade and applies its color override across the selected views."
+        }
+      },
+      "title": "Auto Filters",
+      "runLabel": "Create Filters →",
+      "runLog": {
+        "1": "Scanning 3 links…",
+        "2": "Found 6 candidate trades",
+        "3": "Created 6 view filters",
+        "4": "Applied color overrides to active view"
+      }
+    },
+    "legendCreation": {
+      "steps": {
+        "s1": {
+          "title": "Select Filters",
+          "hint": "Pick the filters to include as legend rows."
+        },
+        "s2": {
+          "title": "Layout",
+          "hint": "Legend layout.",
+          "items": {
+            "1": "Single column",
+            "2": "Two columns",
+            "3": "By system group"
+          }
+        },
+        "s3": {
+          "toggles": {
+            "swatch": {
+              "label": "Color swatch",
+              "desc": "Show the filter's color"
+            },
+            "count": {
+              "label": "Element count",
+              "desc": "Show how many elements match"
+            },
+            "desc": {
+              "label": "Description",
+              "desc": "Show the trade description"
+            }
+          },
+          "title": "Options",
+          "hint": "Legend row content."
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Builds or updates a Legend view from the selected filters."
+        }
+      },
+      "title": "Legend Creation",
+      "runLabel": "Build Legend →",
+      "runLog": {
+        "1": "Building legend from 5 filters…",
+        "2": "Placed 5 swatch rows",
+        "3": "Legend view 'MEP Legend' updated"
+      }
+    },
+    "ceilingHeatmap": {
+      "steps": {
+        "s1": {
+          "title": "Select Ceiling Plan Views",
+          "hint": "Reflected ceiling plans to color by height."
+        },
+        "s_ramp": {
+          "title": "Color Ramp",
+          "hint": "How height maps to color.",
+          "items": {
+            "1": "Blue to Red (low to high)",
+            "2": "Viridis",
+            "3": "Grayscale"
+          }
+        },
+        "s2": {
+          "toggles": {
+            "hidelinked": {
+              "label": "Hide linked ceilings",
+              "desc": "Suppress ceilings inside links"
+            },
+            "legend": {
+              "label": "Add legend",
+              "desc": "Place a height legend"
+            },
+            "halftone": {
+              "label": "Halftone background",
+              "desc": "Halftone everything else"
+            }
+          },
+          "title": "Run Options",
+          "hint": "Overrides applied with the heatmap."
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Applies per-height color overrides through view filters."
+        }
+      },
+      "title": "Ceiling Heatmap",
+      "runLabel": "Color Ceilings →",
+      "runLog": {
+        "1": "Reading ceiling heights on 3 views…",
+        "2": "8 height bands detected",
+        "3": "Color overrides applied",
+        "4": "Legend placed"
+      }
+    },
+    "makeCeilingGrids": {
+      "steps": {
+        "docs": {
+          "title": "Select Documents",
+          "hint": "Models to build ceiling RCPs for."
+        },
+        "filter": {
+          "items": {
+            "1": "Compound Ceiling 600x600",
+            "2": "GWB on Mtl. Stud",
+            "3": "ACT 1200x600"
+          },
+          "title": "Filter Ceiling Types",
+          "hint": "Limit to these ceiling types (optional)."
+        },
+        "export": {
+          "title": "Export Location",
+          "hint": "Folder for the DWG output.",
+          "filter": "Folders|*.*",
+          "placeholder": "Choose export folder…"
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Creates an RCP per level showing only ceilings, then exports each as a DWG."
+        }
+      },
+      "title": "Make Ceiling Grids",
+      "runLabel": "Export DWGs →",
+      "runLog": {
+        "1": "Creating RCP views per level…",
+        "2": "3 RCP views created",
+        "3": "Exported 3 DWG files"
+      }
+    },
+    "projectGrids": {
+      "steps": {
+        "s1": {
+          "title": "DWG Source",
+          "hint": "The ceiling-grid DWG to project onto soffits.",
+          "filter": "AutoCAD DWG|*.dwg",
+          "placeholder": "Browse for .dwg…"
+        },
+        "s2": {
+          "title": "Review & Run",
+          "info": "Projects the DWG lines onto ceiling soffit faces as model curves."
+        }
+      },
+      "title": "Project Grids",
+      "runLabel": "Project →",
+      "runLog": {
+        "1": "Importing ceiling-grid DWG…",
+        "2": "Projected 124 curves onto soffits"
+      }
+    },
+    "reprojectGrids": {
+      "steps": {
+        "s1": {
+          "title": "Select Ceiling Plans",
+          "hint": "Plans whose grid curves should follow updated ceilings."
+        },
+        "s2": {
+          "title": "Review & Run",
+          "info": "Reprojects existing grid model curves onto current ceiling elevations."
+        }
+      },
+      "title": "Reproject Grids",
+      "runLabel": "Reproject →",
+      "runLog": {
+        "1": "Reprojecting grid curves on 3 plans…",
+        "2": "Updated 124 curves to new elevations"
+      }
+    },
+    "bulkViewsByLevel": {
+      "steps": {
+        "s1": {
+          "title": "Source Documents",
+          "hint": "Models to create per-level views from."
+        },
+        "s2": {
+          "groups": {
+            "levels": {
+              "label": "Levels"
+            },
+            "viewTypes": {
+              "label": "View Types",
+              "items": {
+                "1": "3D",
+                "2": "Floor Plan",
+                "3": "Ceiling Plan"
+              }
+            }
+          },
+          "title": "Levels & View Types",
+          "hint": "Levels and the view types to create for each."
+        },
+        "s3": {
+          "title": "View Naming",
+          "hint": "Token pattern for new view names.",
+          "default": "{Level} - {ViewType}",
+          "placeholder": "{Level} - {ViewType}"
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Creates cropped views per level and building cluster."
+        }
+      },
+      "title": "Bulk Views by Level",
+      "runLabel": "Create Views →",
+      "runLog": {
+        "1": "Creating views for 5 levels…",
+        "2": "30 cropped views created"
+      }
+    },
+    "bulkDuplicate": {
+      "steps": {
+        "s1": {
+          "title": "Source Views",
+          "hint": "Views to duplicate."
+        },
+        "s2": {
+          "title": "Duplicate Mode",
+          "hint": "How to duplicate.",
+          "items": {
+            "1": "Duplicate",
+            "2": "With Detailing",
+            "3": "As Dependent"
+          }
+        },
+        "s3": {
+          "title": "View Naming",
+          "hint": "Token pattern for the copies.",
+          "default": "{ViewName} - COORD",
+          "placeholder": "{ViewName} - COORD"
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Duplicates each selected view with token-based naming."
+        }
+      },
+      "title": "Bulk Duplicate",
+      "runLabel": "Duplicate →",
+      "runLog": {
+        "1": "Duplicating 4 views (With Detailing)…",
+        "2": "4 views created"
+      }
+    },
+    "bulkViewsByTemplate": {
+      "steps": {
+        "s1": {
+          "title": "Source Views",
+          "hint": "Views to duplicate across templates."
+        },
+        "s2": {
+          "title": "View Templates",
+          "hint": "Templates to apply, one copy per template."
+        },
+        "s3": {
+          "title": "View Naming",
+          "hint": "Token pattern.",
+          "default": "{ViewName} - {Template}",
+          "placeholder": "{ViewName} - {Template}"
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Duplicates each view once per selected template."
+        }
+      },
+      "title": "Bulk Views by Template",
+      "runLabel": "Duplicate →",
+      "runLog": {
+        "1": "4 views across 3 templates…",
+        "2": "12 views created"
+      }
+    },
+    "bulkDependentViews": {
+      "steps": {
+        "s1": {
+          "title": "Source View",
+          "hint": "The view whose dependents/crops are copied."
+        },
+        "s2": {
+          "title": "Dependent Preview",
+          "info": "The source's dependent views and crop regions are previewed here."
+        },
+        "s3": {
+          "title": "Target Views",
+          "hint": "Views to copy the dependents onto."
+        },
+        "s4": {
+          "title": "View Naming",
+          "hint": "Token pattern for new dependents.",
+          "default": "{ParentView} - {Dependent}",
+          "placeholder": "{ParentView} - {Dependent}"
+        },
+        "s5": {
+          "title": "Review & Run",
+          "info": "Copies dependents and crop regions onto each target view."
+        }
+      },
+      "title": "Bulk Dependent Views",
+      "runLabel": "Replicate →",
+      "runLog": {
+        "1": "Source has 4 dependents…",
+        "2": "Cloned onto 3 target views",
+        "3": "12 dependent views created"
+      }
+    },
+    "explodeViewByTrade": {
+      "steps": {
+        "s1": {
+          "title": "Select Source 3D View",
+          "hint": "The 3D view to explode."
+        },
+        "s2": {
+          "title": "Select Trades",
+          "hint": "One isolated 3D view is made per trade."
+        },
+        "s3": {
+          "toggles": {
+            "box": {
+              "label": "Keep section box",
+              "desc": "Reuse the source's section box"
+            },
+            "stack": {
+              "label": "Stack by elevation",
+              "desc": "Offset each trade view by element elevation"
+            },
+            "tags": {
+              "label": "Copy tags",
+              "desc": "Carry annotation tags across"
+            }
+          },
+          "title": "Options",
+          "hint": "How the exploded views are made."
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Duplicates the 3D view once per trade, isolated by its filters."
+        }
+      },
+      "title": "Explode View by Trade",
+      "runLabel": "Explode →",
+      "runLog": {
+        "1": "Source camera + section box captured…",
+        "2": "6 trade views created",
+        "3": "Stacked by elevation"
+      }
+    },
+    "placeDependentViews": {
+      "steps": {
+        "s1": {
+          "title": "Views to Place",
+          "hint": "Parent views: one sheet each, with the dependents packed on it."
+        },
+        "s2": {
+          "title": "Title Block",
+          "hint": "Title block for the new sheets."
+        },
+        "s3": {
+          "title": "Sheet Naming",
+          "hint": "Token pattern for sheet names.",
+          "default": "{ParentView}",
+          "placeholder": "{ParentView}"
+        },
+        "s4": {
+          "toggles": {
+            "pack": {
+              "label": "Pack without overlap",
+              "desc": "Avoid viewport overlap"
+            },
+            "trim": {
+              "label": "Trim annotations",
+              "desc": "Annotation-crop each dependent"
+            },
+            "align": {
+              "label": "Align titles",
+              "desc": "Align the view titles"
+            }
+          },
+          "title": "Layout",
+          "hint": "Packing options."
+        },
+        "s5": {
+          "title": "Review & Run",
+          "info": "Creates one sheet per view and packs its dependents."
+        }
+      },
+      "title": "Place Dependent Views",
+      "runLabel": "Place on Sheets →",
+      "runLog": {
+        "1": "Measuring 4 parent views…",
+        "2": "4 sheets created",
+        "3": "18 dependents placed without overlap"
+      }
+    },
+    "alignSheetViews": {
+      "steps": {
+        "s1": {
+          "title": "Source Sheets",
+          "hint": "Reference sheets to align to."
+        },
+        "s2": {
+          "title": "Target Sheets",
+          "hint": "Sheets whose viewports get aligned."
+        },
+        "s3": {
+          "toggles": {
+            "scope": {
+              "label": "Inherit scope box",
+              "desc": "Match the reference scope box"
+            },
+            "crop": {
+              "label": "Match crop size",
+              "desc": "Match crop region size"
+            },
+            "vis": {
+              "label": "Match crop visibility",
+              "desc": "Match crop visibility"
+            },
+            "grid": {
+              "label": "Inherit grid extents",
+              "desc": "Match grid bubble extents"
+            }
+          },
+          "title": "Options",
+          "hint": "What to inherit from the reference."
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Aligns target viewports so matching views overlay the reference."
+        }
+      },
+      "title": "Align Sheet Views",
+      "runLabel": "Align →",
+      "runLog": {
+        "1": "Pairing views by scope box…",
+        "2": "3 sheets aligned",
+        "3": "1 ambiguous pair reported"
+      }
+    },
+    "bulkRename": {
+      "steps": {
+        "s1": {
+          "title": "Target",
+          "hint": "What to rename.",
+          "items": {
+            "1": "Sheets",
+            "2": "Views"
+          }
+        },
+        "s2": {
+          "title": "Select Items",
+          "hint": "Items to rename."
+        },
+        "s3": {
+          "title": "Field & Operation",
+          "hint": "How to rename.",
+          "items": {
+            "1": "Find & Replace",
+            "2": "Prefix",
+            "3": "Suffix",
+            "4": "Sequential Number",
+            "5": "Token Pattern"
+          }
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Applies the rename, skipping and logging any duplicate-number/name clashes."
+        }
+      },
+      "title": "Bulk Rename",
+      "runLabel": "Rename →",
+      "runLog": {
+        "1": "Renaming 3 sheets (Prefix)…",
+        "2": "3 sheets renamed"
+      }
+    },
+    "bulkExport": {
+      "steps": {
+        "s1": {
+          "title": "Select Sheets / Views",
+          "hint": "What to export."
+        },
+        "s3": {
+          "toggles": {
+            "pdf": {
+              "label": "PDF",
+              "desc": "Export PDF"
+            },
+            "dwg": {
+              "label": "DWG",
+              "desc": "Export DWG"
+            },
+            "nwc": {
+              "label": "NWC",
+              "desc": "Export NWC (3D only)"
+            },
+            "ifc": {
+              "label": "IFC",
+              "desc": "Export IFC (3D only)"
+            }
+          },
+          "title": "Filename & Formats",
+          "hint": "Output formats (filename pattern: {SheetNumber}-{SheetName})."
+        },
+        "s4": {
+          "toggles": {
+            "combine": {
+              "label": "Single combined PDF",
+              "desc": "One file for all sheets"
+            },
+            "vector": {
+              "label": "Vector processing",
+              "desc": "Vector rather than raster"
+            },
+            "hideref": {
+              "label": "Hide ref work planes",
+              "desc": "Suppress reference planes"
+            }
+          },
+          "title": "PDF Settings",
+          "hint": "PDF options."
+        },
+        "s8": {
+          "title": "Output",
+          "hint": "Export destination folder.",
+          "filter": "Folders|*.*",
+          "placeholder": "Choose export folder…"
+        },
+        "s9": {
+          "title": "Review & Run",
+          "info": "Exports each selected sheet/view with token-based filenames."
+        }
+      },
+      "title": "Bulk Export",
+      "runLabel": "Export →",
+      "runLog": {
+        "1": "Exporting 3 sheets to PDF…",
+        "2": "M-101 → M-101-Level 1 Mechanical.pdf",
+        "3": "3 of 3 exported"
+      }
+    },
+    "printView": {
+      "steps": {
+        "s1": {
+          "title": "Formats",
+          "hint": "Format for the active view/sheet.",
+          "items": {
+            "1": "PDF",
+            "2": "DWG",
+            "3": "NWC (3D only)",
+            "4": "IFC (3D only)"
+          }
+        },
+        "s2": {
+          "toggles": {
+            "vector": {
+              "label": "Vector processing",
+              "desc": "Vector rather than raster"
+            },
+            "hideref": {
+              "label": "Hide ref work planes",
+              "desc": "Suppress reference planes"
+            }
+          },
+          "title": "PDF Settings",
+          "hint": "PDF options."
+        },
+        "s6": {
+          "title": "Output",
+          "hint": "Export destination folder.",
+          "filter": "Folders|*.*",
+          "placeholder": "Choose export folder…"
+        },
+        "s7": {
+          "title": "Review & Run",
+          "info": "Exports just the active view or sheet using the Bulk Export settings."
+        }
+      },
+      "title": "Print View",
+      "runLabel": "Print →",
+      "runLog": {
+        "1": "Exporting active sheet to PDF…",
+        "2": "M-102-Level 2 Mechanical.pdf written"
+      }
+    },
+    "splitByLevels": {
+      "steps": {
+        "s1": {
+          "title": "Select Categories",
+          "hint": "Element categories to split."
+        },
+        "s2": {
+          "title": "Select Levels",
+          "hint": "Split at these level elevations."
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Splits the selected elements at each chosen level."
+        }
+      },
+      "title": "Split by Levels",
+      "runLabel": "Split →",
+      "runLog": {
+        "1": "Splitting walls & MEP at 5 levels…",
+        "2": "42 elements split"
+      }
+    },
+    "splitByGridLines": {
+      "steps": {
+        "s1": {
+          "title": "Select Categories",
+          "hint": "Element categories to split."
+        },
+        "s2": {
+          "title": "Select Grids",
+          "hint": "Split at these grid planes."
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Splits the selected elements at each chosen grid plane."
+        }
+      },
+      "title": "Split by Grid Lines",
+      "runLabel": "Split →",
+      "runLog": {
+        "1": "Splitting at 6 grid planes…",
+        "2": "31 elements split"
+      }
+    },
+    "splitByRefPlane": {
+      "steps": {
+        "s1": {
+          "title": "Select Categories",
+          "hint": "Element categories to split."
+        },
+        "s2": {
+          "title": "Select Reference Planes",
+          "hint": "Split at these reference planes."
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Splits the selected elements at each chosen reference plane."
+        }
+      },
+      "title": "Split by Ref Plane",
+      "runLabel": "Split →",
+      "runLog": {
+        "1": "Splitting at 3 reference planes…",
+        "2": "12 elements split"
+      }
+    },
+    "splitByCell": {
+      "steps": {
+        "s1": {
+          "title": "Select Categories",
+          "hint": "Floors, ceilings, or filled regions to split."
+        },
+        "s2": {
+          "title": "Cell Size",
+          "hint": "Size of each grid cell.",
+          "unit": "mm"
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Splits each selected surface into a regular grid of cells."
+        }
+      },
+      "title": "Split by Cell",
+      "runLabel": "Split →",
+      "runLog": {
+        "1": "Splitting floors into 2000 mm cells…",
+        "2": "1 floor → 24 cells"
+      }
+    },
+    "extendWalls": {
+      "steps": {
+        "s1": {
+          "title": "Select Base Levels",
+          "hint": "Walls based on these levels are considered."
+        },
+        "s2": {
+          "toggles": {
+            "aboveceil": {
+              "label": "Only walls above ceiling",
+              "desc": "Limit to walls that pass the ceiling"
+            },
+            "levelup": {
+              "label": "Snap to level above",
+              "desc": "Set top constraint to the next level"
+            }
+          },
+          "title": "Options",
+          "hint": "Extend behavior."
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Re-hosts qualifying walls' top constraint to the level above."
+        }
+      },
+      "title": "Extend Walls",
+      "runLabel": "Extend →",
+      "runLog": {
+        "1": "Checking walls on 5 levels…",
+        "2": "18 walls re-constrained to Level Above"
+      }
+    },
+    "clashDefinitions": {
+      "steps": {
+        "name": {
+          "title": "Definition Name",
+          "hint": "Name this clash definition.",
+          "default": "Duct vs Structure",
+          "placeholder": "Name this definition"
+        },
+        "groupa": {
+          "title": "Group A",
+          "hint": "First element group."
+        },
+        "groupb": {
+          "title": "Group B",
+          "hint": "Second element group."
+        },
+        "marker": {
+          "toggles": {
+            "color": {
+              "label": "Colored marker",
+              "desc": "Place a colored marker"
+            },
+            "tag": {
+              "label": "Tag clash",
+              "desc": "Add a clash tag"
+            },
+            "round": {
+              "label": "Round marker",
+              "desc": "Use a round marker"
+            }
+          },
+          "title": "Marker Settings",
+          "hint": "How clashes are marked."
+        },
+        "save": {
+          "title": "Save Definition",
+          "info": "Adds this definition to the reusable library used by the finders."
+        }
+      },
+      "title": "Clash Definitions",
+      "runLabel": "Save Definition →",
+      "runLog": {
+        "1": "Validating groups…",
+        "2": "Definition 'Duct vs Structure' saved to library"
+      }
+    },
+    "clashFinderDimension": {
+      "steps": {
+        "s1": {
+          "title": "Select Definitions",
+          "hint": "Saved clash definitions to run."
+        },
+        "s2": {
+          "title": "Select Views",
+          "hint": "Plan views to detect and mark in."
+        },
+        "s3": {
+          "toggles": {
+            "color": {
+              "label": "Colored markers",
+              "desc": "Color by definition"
+            },
+            "tag": {
+              "label": "Tag each clash",
+              "desc": "Add a tag per clash"
+            },
+            "dense": {
+              "label": "Survey dense areas",
+              "desc": "Add callouts where clashes cluster"
+            }
+          },
+          "title": "Marker Settings",
+          "hint": "Marker behavior."
+        },
+        "s4": {
+          "toggles": {
+            "grid": {
+              "label": "Dimension to grids",
+              "desc": "Dimension to nearest grid"
+            },
+            "slab": {
+              "label": "Dimension to slab edges",
+              "desc": "Dimension to nearest slab edge"
+            },
+            "scale": {
+              "label": "Change view scale",
+              "desc": "Rescale views to fit"
+            }
+          },
+          "title": "Dimensioning",
+          "hint": "Dimension targets."
+        },
+        "s5": {
+          "title": "Review & Run",
+          "info": "Detects clashes, marks them, and dimensions each out."
+        }
+      },
+      "title": "Clash Finder & Dimension",
+      "runLabel": "Find & Dimension →",
+      "runLog": {
+        "1": "Running 3 definitions over 4 views…",
+        "2": "Level 1 - Mechanical: 4 clashes marked",
+        "3": "Level 2 - Mechanical: 2 clashes marked",
+        "4": "6 markers dimensioned to grids"
+      }
+    },
+    "clashFinderElevation": {
+      "steps": {
+        "s1": {
+          "title": "Select Definitions",
+          "hint": "Saved clash definitions to run."
+        },
+        "s2": {
+          "title": "Select Views",
+          "hint": "Sections / elevations to mark in."
+        },
+        "s3": {
+          "title": "Marker & Tag Settings",
+          "hint": "Where the spot elevation sits on the round marker.",
+          "items": {
+            "1": "Top of round",
+            "2": "Center",
+            "3": "Bottom of round"
+          }
+        },
+        "s4": {
+          "title": "Review & Run",
+          "info": "Detects clashes and tags each with a spot elevation."
+        }
+      },
+      "title": "Clash Finder & Elevation",
+      "runLabel": "Find & Elevate →",
+      "runLog": {
+        "1": "Running 3 definitions over 3 views…",
+        "2": "Section A-A: 5 clashes marked",
+        "3": "Spot elevations tagged at top of round"
+      }
+    },
+    "refineDimensions": {
+      "steps": {
+        "s1": {
+          "title": "Select Views",
+          "hint": "Views that already carry clash markers."
+        },
+        "s2": {
+          "title": "Destination",
+          "hint": "Where to dimension each marker.",
+          "items": {
+            "1": "Nearest grid",
+            "2": "Nearest slab edge",
+            "3": "Grid then slab edge"
+          }
+        },
+        "s3": {
+          "title": "Review & Run",
+          "info": "Re-dimensions the existing markers. No detection, no scale change."
+        }
+      },
+      "title": "Refine Dimensions",
+      "runLabel": "Re-dimension →",
+      "runLog": {
+        "1": "Re-dimensioning markers on 4 views…",
+        "2": "17 markers re-dimensioned to nearest grid"
+      }
+    },
+    "copyLinear": {
+      "steps": {
+        "source": {
+          "groups": {
+            "linkedModel": {
+              "label": "Linked Model"
+            },
+            "runCategories": {
+              "label": "Run Categories",
+              "items": {
+                "1": "Pipes",
+                "2": "Ducts",
+                "3": "Cable Trays"
+              }
+            }
+          },
+          "title": "Source",
+          "hint": "Linked model and the linear run categories."
+        },
+        "filters": {
+          "items": {
+            "1": "System: Chilled Water",
+            "2": "Size: 150 mm",
+            "3": "Reference Level: Level 2"
+          },
+          "title": "Parameter Filters",
+          "hint": "Limit by parameter values (optional)."
+        },
+        "operation": {
+          "title": "Operation",
+          "hint": "What to do with the copied runs.",
+          "items": {
+            "1": "Split into standard lengths",
+            "2": "Replace with family at intervals"
+          }
+        },
+        "changes": {
+          "toggles": {
+            "changed": {
+              "label": "Only changed elements",
+              "desc": "Skip unchanged sources on re-run"
+            },
+            "stamp": {
+              "label": "Re-stamp outputs",
+              "desc": "Refresh the provenance stamp"
+            }
+          },
+          "title": "Change Detection",
+          "hint": "What a re-run does."
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Copies linked runs into the host and applies the chosen operation."
+        }
+      },
+      "title": "Copy Linear",
+      "runLabel": "Copy →",
+      "runLog": {
+        "1": "Reading linked runs…",
+        "2": "Copied 28 segments into host",
+        "3": "Split into 6 m standard lengths"
+      }
+    },
+    "copyGrids": {
+      "steps": {
+        "source": {
+          "groups": {
+            "linkedModel": {
+              "label": "Linked Model"
+            },
+            "grids": {
+              "label": "Grids"
+            }
+          },
+          "title": "Source Link & Grids",
+          "hint": "Linked model and the grids to copy."
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Copies the selected grids into the host; existing names are skipped."
+        }
+      },
+      "title": "Copy Grids",
+      "runLabel": "Copy Grids →",
+      "runLog": {
+        "1": "Copying 6 grids…",
+        "2": "4 grids copied",
+        "3": "2 grids skipped (name already exists)"
+      }
+    },
+    "copyElements": {
+      "steps": {
+        "source": {
+          "groups": {
+            "linkedModel": {
+              "label": "Linked Model"
+            },
+            "categories": {
+              "label": "Categories",
+              "items": {
+                "1": "Mechanical Equipment",
+                "2": "Air Terminals",
+                "3": "Plumbing Fixtures"
+              }
+            }
+          },
+          "title": "Source Link & Categories",
+          "hint": "Linked model and the categories to pull from."
+        },
+        "types": {
+          "items": {
+            "1": "AHU-01",
+            "2": "VAV-Series",
+            "3": "Diffuser 600x600",
+            "4": "FCU-Series"
+          },
+          "title": "Families to Copy",
+          "hint": "Tick the family types within those categories."
+        },
+        "changes": {
+          "toggles": {
+            "changed": {
+              "label": "Only changed elements",
+              "desc": "Skip unchanged sources on re-run"
+            },
+            "stamp": {
+              "label": "Re-stamp outputs",
+              "desc": "Refresh the provenance stamp"
+            }
+          },
+          "title": "Change Detection",
+          "hint": "What a re-run does."
+        },
+        "run": {
+          "title": "Review & Run",
+          "info": "Copies the ticked family types from the link into the host."
+        }
+      },
+      "title": "Copy Elements",
+      "runLabel": "Copy →",
+      "runLog": {
+        "1": "Reading linked elements…",
+        "2": "Copied 36 elements into host"
+      }
+    }
+  }
+}

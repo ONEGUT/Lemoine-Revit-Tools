@@ -16,13 +16,13 @@ namespace LemoineTools.Tools.CopyLinear
     /// </summary>
     public class CopyGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
-        public string Title    => "Copy Grids from Link";
-        public string RunLabel => "Copy in Revit →";
+        public string Title    => LemoineStrings.T("copy.grids.title");
+        public string RunLabel => LemoineStrings.T("copy.grids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source", "Source Link & Grids", required: true),
-            new StepDefinition("run",    "Review & Run",        required: false),
+            new StepDefinition("source", LemoineStrings.T("copy.grids.steps.source"), required: true),
+            new StepDefinition("run",    LemoineStrings.T("copy.grids.steps.run"),        required: false),
         };
 
         private readonly CopyGridsRunHandler? _runHandler;
@@ -66,11 +66,11 @@ namespace LemoineTools.Tools.CopyLinear
             var outer = new StackPanel();
             if (_links.Count == 0)
             {
-                outer.Children.Add(Dim("No loaded links contain grids."));
+                outer.Children.Add(Dim(LemoineStrings.T("copy.grids.labels.noLinks")));
                 return outer;
             }
 
-            outer.Children.Add(Label("Source link"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.grids.labels.sourceLink")));
             var linkSelect = new LemoineSingleSelect
             {
                 Items        = _links.Select(l => l.Name).ToList(),
@@ -86,7 +86,7 @@ namespace LemoineTools.Tools.CopyLinear
             outer.Children.Add(linkSelect);
 
             Divider(outer);
-            outer.Children.Add(Label("Grids to copy"));
+            outer.Children.Add(Label(LemoineStrings.T("copy.grids.labels.gridsToCopy")));
             _gridContainer = new StackPanel();
             outer.Children.Add(_gridContainer);
             RebuildGrids();
@@ -107,8 +107,8 @@ namespace LemoineTools.Tools.CopyLinear
             if (copyable.Count == 0)
             {
                 _gridContainer.Children.Add(Dim(existing > 0
-                    ? $"All {existing} grid(s) in this link already exist in the host."
-                    : "This link has no grids."));
+                    ? LemoineStrings.T("copy.grids.labels.allExist", existing)
+                    : LemoineStrings.T("copy.grids.labels.noGrids")));
                 return;
             }
 
@@ -127,19 +127,19 @@ namespace LemoineTools.Tools.CopyLinear
             _gridContainer.Children.Add(tabs);
 
             if (existing > 0)
-                _gridContainer.Children.Add(Dim($"{existing} grid(s) already exist in the host and were hidden."));
+                _gridContainer.Children.Add(Dim(LemoineStrings.T("copy.grids.labels.someHidden", existing)));
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("link", "Source Link"), ("grids", "Grids"),
+            ("link", LemoineStrings.T("copy.grids.review.itemLink")), ("grids", LemoineStrings.T("copy.grids.review.itemGrids")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["link"]  = _links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "—",
-            ["grids"] = _selectedGridIds.Count == 0 ? "None" : $"{_selectedGridIds.Count} grid(s)",
+            ["grids"] = _selectedGridIds.Count == 0 ? LemoineStrings.T("copy.grids.review.gridsNone") : LemoineStrings.T("copy.grids.review.gridsValue", _selectedGridIds.Count),
         };
 
         public IList<string>? ReviewChips   => null;
@@ -154,15 +154,15 @@ namespace LemoineTools.Tools.CopyLinear
             {
                 case "source":
                     return _selectedGridIds.Count == 0 ? "—"
-                        : $"{(_links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "link")} · {_selectedGridIds.Count} grid(s)";
-                case "run": return "Ready to run";
+                        : LemoineStrings.T("copy.grids.summaries.source", (_links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "link"), _selectedGridIds.Count);
+                case "run": return LemoineStrings.T("copy.grids.summaries.run");
                 default:    return "—";
             }
         }
 
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null) { pushLog(LemoineStrings.T("copy.grids.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
 
             _runHandler.LinkInstId  = _linkId;
             _runHandler.GridElemIds = _selectedGridIds.ToList();
@@ -170,7 +170,7 @@ namespace LemoineTools.Tools.CopyLinear
             _runHandler.OnProgress  = onProgress;
             _runHandler.OnComplete  = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("copy.grids.log.raising"), "info");
             _runEvent.Raise();
         }
 

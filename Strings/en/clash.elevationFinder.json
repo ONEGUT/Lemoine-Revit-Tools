@@ -1,0 +1,59 @@
+// clash.elevationFinder.json — Clash Finder & Elevation Tag tool + handler logs.
+// Command: ClashElevationFinderCommand. NOTE: internal anchor tokens (Top/Centre/
+// Bottom) stay in code; displayed labels are externalized and use American "center".
+{
+  "title": "Clash Finder & Elevation Tag",
+  "runLabel": "Find & Tag Clashes →",
+  "steps": { "S1": "Select Definitions", "S2": "Select Views", "S3": "Marker & Tag Settings", "S4": "Review & Run" },
+  "words": { "top": "top", "bottom": "bottom", "center": "center" },
+  "summaries": {
+    "S4": "Ready to run",
+    "defCount": "{0} definition(s)",
+    "viewCount": "{0} view(s)",
+    "clear": "clear",
+    "tag": "tag {0}",
+    "oversize": "+{0:0.##} in",
+    "exactSize": "exact size"
+  },
+  "labels": {
+    "unnamed":      "(unnamed)",
+    "noDefs":       "No clash definitions saved yet. Open “Clash Definitions” to create one first.",
+    "pickDefs":     "Pick one or more saved clash definitions to run.",
+    "groupSaved":   "Saved Definitions",
+    "pickViews":    "Pick the section and/or elevation views to mark and tag.",
+    "pickerName":   "Views to mark and tag",
+    "clearLabel":   "Clear previous clash markers before running",
+    "clearDesc":    "Removes earlier Lemoine clash markers and tags in the selected views first.",
+    "oversizeLabel":"Marker oversize (in, 0 = exact element size)",
+    "oversizeHint": "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much. Top/bottom tag elevations are measured at the marker's edge, so the oversize also sets how far above/below the clash center they read.",
+    "tagWhere":     "Where on the round to place the elevation tag.",
+    "tagPosLabel":  "Tag position",
+    "anchorTop":    "Top of round",
+    "anchorCenter": "Center of round",
+    "anchorBottom": "Bottom of round",
+    "spotWhich":    "Spot elevation type used for each tag.",
+    "noSpotType":   "No spot elevation type found in this project. Create one (Annotate → Spot Elevation) and re-open this tool — markers will still be placed, but without tags.",
+    "spotTypeLabel":"Spot type"
+  },
+  "review": {
+    "itemDefs": "Definitions", "itemViews": "Views", "itemMarker": "Marker", "itemTag": "Tag",
+    "defsValue": "{0} definition(s)", "viewsValue": "{0} view(s)",
+    "markerOversize": "+{0:0.##} in oversize", "markerExact": "exact element size",
+    "tagNoSpot": " · no spot type",
+    "chipClear": "clear previous",
+    "note": "Detects clashes from the selected definitions across the chosen sections and elevations, places colored round markers, and tags each with a spot elevation at the chosen position on the round.",
+    "warnNoSpot": "No spot elevation type found — markers will be placed but cannot be tagged."
+  },
+  "log": {
+    "noDefs":      "No clash definitions selected.",
+    "noViews":     "No views selected.",
+    "cleared":     "Cleared {0} previous marker element(s).",
+    "defHeader":   "— Definition '{0}' —",
+    "markingDone": "Marking done — {0} marker(s), {1} failure(s).",
+    "noSpotType":  "No spot elevation type available in this project — markers placed, but no tags. Create a spot elevation type and re-run.",
+    "placingTags": "Placing elevation tags…",
+    "tagsDone":    "Elevation tags — {0} placed, {1} failure(s).",
+    "fatal":       "Fatal: {0}",
+    "done":        "Done — {0} clash marker(s) placed, {1} elevation tag(s), {2} failure(s)."
+  }
+}

@@ -44,12 +44,12 @@ namespace LemoineTools.Lemoine.Controls
 
             var closeX = LemoineControlStyles.BuildButton("✕", LemoineControlStyles.LemoineButtonVariant.Ghost);
             closeX.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
-            closeX.ToolTip = "Cancel";
+            closeX.ToolTip = LemoineStrings.T("controls.pickers.colorPickerWindow.cancel");
 
             _toolbarBorder.BorderThickness = new Thickness(0);
             _toolbarBorder.Child = new LemoineTitleBar
             {
-                Title        = "Pick Color",
+                Title        = LemoineStrings.T("controls.pickers.colorPickerWindow.title"),
                 IconGlyph    = "◐",
                 RightContent = closeX,
             };
@@ -60,11 +60,11 @@ namespace LemoineTools.Lemoine.Controls
             _footerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
             _footerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var cancelBtn = LemoineControlStyles.BuildButton("Cancel", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            var cancelBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("controls.pickers.colorPickerWindow.cancel"), LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelBtn.Margin = new Thickness(0, 0, 6, 0);
             cancelBtn.Click += (s, e) => { Result = null; DialogResult = false; Close(); };
 
-            var okBtn = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
+            var okBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("controls.pickers.colorPickerWindow.applyColor"), LemoineControlStyles.LemoineButtonVariant.Primary);
             okBtn.Click += (s, e) =>
             {
                 Result = _panel.SelectedColor;

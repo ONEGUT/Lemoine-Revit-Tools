@@ -1,0 +1,91 @@
+// ceilings.heatmap.json — Ceiling Elevation Heatmap tool window + handler logs.
+// Command: CeilingHeatmapCommand. Color-codes ceilings by height-offset bucket via
+// view filters, optionally placing a tag at each ceiling.
+{
+  "title": "Ceiling Elevation Heatmap",
+  "runLabel": "Apply Heatmap →",
+
+  "steps": {
+    "S1":     "Select Ceiling Plan Views",
+    "S_RAMP": "Color Ramp",
+    "S2":     "Run Options",
+    "S3":     "Review & Run"
+  },
+
+  "summaries": {
+    "S3":            "Ready to run",
+    "viewsSelected": "{0} view(s) selected",   // {0} = selected view count
+    "s2Delete":      "Delete existing",
+    "s2Tags":        "Place tags",
+    "s2Tol":         "Tol {0} in"               // {0} = tolerance in inches
+  },
+
+  "labels": {
+    "noViews":          "No reflected ceiling plan views found in this document.",
+    "pickerName":       "Ceiling plan views",
+    "savedRamps":       "SAVED RAMPS",
+    "delete":           "Delete",
+    "load":             "Load",
+    "save":             "Save",
+    "rampNameTip":      "Ramp name…",
+    "colorStops":       "COLOR STOPS",
+    "chipLow":          "LOW",
+    "chipMid":          "MID",
+    "chipHigh":         "HIGH",
+    "rampPreview":      "RAMP PREVIEW",
+    "rampDisplay":      "{0} → {1} → {2}",      // low → mid → high hex; used in summary and review
+    "toggleDeleteLabel":"Delete existing heatmap filters",
+    "toggleDeleteDesc": "Remove all \"Ceiling Heatmap\" view filters from the project before applying the new set.",
+    "toggleTagsLabel":  "Place ceiling tags",
+    "toggleTagsDesc":   "Place a Ceiling Tag at the centroid of each ceiling after applying the heatmap. Ceilings that already carry a tag are skipped.",
+    "elevTol":          "ELEVATION TOLERANCE",
+    "inUnit":           "  in",
+    "tolHint":          "Ceilings within this elevation range share one color filter bucket."
+  },
+
+  "review": {
+    "itemViews":  "Views selected",
+    "itemRamp":   "Color ramp",
+    "itemDelete": "Delete existing filters",
+    "itemTags":   "Place ceiling tags",
+    "itemTol":    "Elevation tolerance",
+
+    "viewsValue": "{0} view(s)",   // {0} = selected count
+    "yes":        "Yes",
+    "no":         "No",
+    "tolValue":   "{0} in",        // {0} = tolerance in inches
+
+    "note":       "Selected ceiling plan views are scanned for \"Height Offset From Level\" data in both the host model and every visible link. One view filter is created per distinct height-offset bucket and applied to every selected view as a solid surface color override. Linked ceilings are colored only where the link is displayed \"By Host View\"."
+  },
+
+  "log": {
+    "starting":          "Starting Ceiling Elevation Heatmap…",
+    "error":             "Error: {0}",
+    "noViews":           "No views selected.",
+    "scanning":          "Scanning ceiling height offsets from level (host + linked models)…",
+    "scanned":           "Scanned {0} host ceiling(s) and {1} linked ceiling(s).",
+    "noOffsets":         "No ceiling height offsets found in the selected views (checked the host model and every visible link).",
+    "foundBuckets":      "Found {0} distinct height-offset bucket(s).",
+    "noSolidFill":       "Solid fill pattern not found — color overrides will be applied without a fill pattern.",
+    "creatingFilters":   "Creating and applying view filters…",
+    "filterCreateError": "Error creating filter '{0}': {1}.",       // {0}=name {1}=error
+    "filterApplyError":  "Error applying filter to view: {0}.",
+    "complete":          "Complete — {0} filter(s) created, {1} reused.",
+    "range":             "Height-offset range: {0} AFF (low) → {1} AFF (high).",
+    "appliedTo":         "Applied to {0} view(s).",
+    "placingTags":       "Placing ceiling tags…",
+    "tagFamilyMissing":  "Ceiling tag family not found and could not be loaded — skipping tag placement.",
+    "tagHostFailed":     "Could not place tag on host ceiling {0}: {1}.",   // {0}=id {1}=error
+    "tagLinkedFailed":   "Could not place tag on linked ceiling {0}: {1}.", // {0}=id {1}=error
+    "tagsPlacedReplaced":"Tags placed: {0} ({1} existing removed and replaced, {2} net new).",
+    "tagsPlacedNone":    "Tags placed: {0} (none previously existed).",
+    "resourceMissing":   "Embedded resource '{0}' not found in assembly. Verify the .rfa is marked as EmbeddedResource in the .csproj.",
+    "tagFamilyLoadFailed":"Failed to load ceiling tag family from embedded resource: {0}.",
+    "noHeatmapFilters":  "No existing heatmap filters found.",
+    "removingFilters":   "Removing {0} existing heatmap filter(s)…",
+    "filterDeleteError": "Could not delete filter '{0}': {1}.",
+    "tradeRegistered":   "Registered '{0}' trade with {1} rule(s).",
+    "rulesUpdateFailed": "Filters applied, but could not update the rules list: {0}.",
+    "linkNotByHost":     "Link \"{0}\" in view \"{1}\" is displayed \"{2}\", not \"By Host View\" — its ceilings will not be colored. Set it to \"By Host View\" in Visibility/Graphics to include them."
+  }
+}

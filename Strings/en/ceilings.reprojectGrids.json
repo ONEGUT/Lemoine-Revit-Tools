@@ -1,0 +1,40 @@
+// ceilings.reprojectGrids.json — Reproject Ceiling Grids tool window.
+// Command: ReprojectCeilingGridsCommand. Shared run-log lines live in ceilings.grids.json.
+{
+  "title": "Reproject Ceiling Grids",
+  "runLabel": "Run in Revit →",
+
+  "steps": {
+    "S1": "Select Ceiling Plans",
+    "S2": "Review & Run"
+  },
+
+  "summaries": {
+    "S2": "Ready to run"  // S1 summary is the selected-plan count (runtime)
+  },
+
+  "labels": {
+    "noViews":    "No ceiling-plan views found in this project.",
+    "pickerName": "Ceiling plan views",  // accessible name for the view picker
+    "warning":    "⚠  Original curves will be deleted and replaced — this cannot be undone individually.",
+    "planCount":  "{0} ceiling plan(s)"  // {0} = selected count; used in review and step summary
+  },
+
+  "review": {
+    "itemViews":  "Views selected",
+    "itemTarget": "Target ceilings",
+    "itemOp":     "Operation",
+    "itemOutput": "Output",
+
+    "viewsNone":  "None",
+    "target":     "Visible per view",
+    "op":         "Delete → Reproject",
+    "output":     "Model curves (updated Z)",
+
+    "note":       "For each selected ceiling plan, all model curves visible in that view are projected onto the current soffit geometry, then recreated at the updated ceiling elevations. Curves with no ceiling overlap are skipped."
+  },
+
+  "log": {
+    "raising": "Raising Revit external event…"
+  }
+}

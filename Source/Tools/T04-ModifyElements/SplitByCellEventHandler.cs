@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (view == null || view.IsTemplate)
                 {
-                    pushLog("No active view or view is a template.", "fail");
+                    pushLog(LemoineStrings.T("modify.splitByCell.log.noActiveView"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -46,7 +46,7 @@ namespace LemoineTools.Tools.ModifyElements
                 if (PreSelectedIds != null && PreSelectedIds.Count > 0)
                 {
                     targetIds = new List<ElementId>(PreSelectedIds);
-                    pushLog($"Operating on {targetIds.Count} pre-selected element(s).", "info");
+                    pushLog(LemoineStrings.T("modify.splitByCell.log.preSelected", targetIds.Count), "info");
                 }
                 else
                 {
@@ -65,19 +65,19 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!targetIds.Any())
                 {
-                    pushLog("No elements found for the selected categories in the active view.", "info");
+                    pushLog(LemoineStrings.T("modify.splitByCell.log.noElements"), "info");
                     onComplete(0, 0, 0);
                     return;
                 }
 
-                pushLog($"Found {targetIds.Count} element(s) to process.", "info");
+                pushLog(LemoineStrings.T("modify.splitByCell.log.foundElements", targetIds.Count), "info");
 
                 XYZ? gridOrigin = null;
                 if (UseProjectOrigin)
                 {
                     XYZ? bp = SplitByCellHelpers.GetProjectBasePoint(doc);
                     if (bp == null)
-                        pushLog("Project base point not found; grid aligned to document origin (0,0,0).", "info");
+                        pushLog(LemoineStrings.T("modify.splitByCell.log.noBasePoint"), "info");
                     gridOrigin = bp ?? XYZ.Zero;
                 }
 
@@ -97,7 +97,7 @@ namespace LemoineTools.Tools.ModifyElements
                         // (below) still run so every per-element split already committed survives.
                         if (LemoineRun.CancelRequested)
                         {
-                            pushLog($"Stopped by user — {progress.Done} of {targetIds.Count} processed; work so far preserved.", "warn");
+                            pushLog(LemoineStrings.T("common.log.stoppedByUser", progress.Done, targetIds.Count), "warn");
                             break;
                         }
 
@@ -125,33 +125,33 @@ namespace LemoineTools.Tools.ModifyElements
                                 if (cellStatus == CellSplitStatus.Split)
                                 {
                                     created += n;
-                                    pushLog($"✓ {el.Category?.Name} {el.Id} → {n} cell(s)", "pass");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name, el.Id, n), "pass");
                                     tx.Commit();
                                 }
                                 else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog($"— {el.Category?.Name} {el.Id}: fits in one cell, skipped", "info");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name, el.Id), "info");
                                 }
                                 else if (cellStatus == CellSplitStatus.NoGeometry)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog($"— {el.Category?.Name} {el.Id}: no solid geometry, skipped", "info");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name, el.Id), "info");
                                 }
                                 else // NoCellsIntersected
                                 {
                                     tx.RollBack();
                                     failed++;
-                                    pushLog($"✗ {el.Category?.Name} {el.Id}: boolean intersection returned no cells — the element's geometry may be non-planar or the solid could not be intersected", "fail");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name, el.Id), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
                                 tx.RollBack();
                                 failed++;
-                                pushLog($"✗ {el.Category?.Name} {el.Id}: {ex.Message}", "fail");
+                                pushLog(LemoineStrings.T("modify.splitByCell.log.cellError", el.Category?.Name, el.Id, ex.Message), "fail");
                             }
                         }
 
@@ -162,14 +162,14 @@ namespace LemoineTools.Tools.ModifyElements
                     tg.Assimilate();
                 }
 
-                pushLog($"Done — {created} cell(s) created, {skipped} skipped, {failed} failed.",
+                pushLog(LemoineStrings.T("modify.splitByCell.log.done", created, skipped, failed),
                         failed > 0 ? "fail" : "pass");
                 onProgress(100, created, failed, skipped);
                 onComplete(created, failed, skipped);
             }
             catch (Exception ex)
             {
-                pushLog($"Error: {ex.Message}", "fail");
+                pushLog(LemoineStrings.T("modify.splitByCell.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally

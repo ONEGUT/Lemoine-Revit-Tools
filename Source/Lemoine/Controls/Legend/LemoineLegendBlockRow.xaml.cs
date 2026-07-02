@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Lemoine;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Testing.LegendCreator;
 
@@ -91,7 +92,7 @@ namespace LemoineTools.Lemoine.Controls
                 VerticalAlignment   = VerticalAlignment.Center,
             };
             colorSwatch.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            var colorBtn = MakeIconHostButton(colorSwatch, "Pick color");
+            var colorBtn = MakeIconHostButton(colorSwatch, LemoineStrings.T("testing.legendCreator.builder.blockRow.tooltips.pickColor"));
             colorBtn.Click += (s, e) => OpenColorPickerInline(colorBtn, resolvedColor);
             Grid.SetColumn(colorBtn, 0);
             _root.Children.Add(colorBtn);
@@ -100,7 +101,7 @@ namespace LemoineTools.Lemoine.Controls
             var name = new LemoineInlineEdit
             {
                 Text = ResolveName(),
-                Placeholder = Block.Custom ? "Custom label" : "(rule name)",
+                Placeholder = Block.Custom ? LemoineStrings.T("testing.legendCreator.builder.blockRow.placeholders.customLabel") : LemoineStrings.T("testing.legendCreator.builder.blockRow.placeholders.ruleName"),
                 FontSizeKey = "LemoineFS_MD",
                 VerticalAlignment = VerticalAlignment.Center,
                 // Shrink to the text so the name's hit box is only as wide as its label — the rest
@@ -131,7 +132,7 @@ namespace LemoineTools.Lemoine.Controls
                 };
                 cust.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
                 cust.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                var custLbl = new TextBlock { Text = "CUST" };
+                var custLbl = new TextBlock { Text = LemoineStrings.T("testing.legendCreator.builder.blockRow.labels.customTag") };
                 custLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
                 custLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
                 custLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -146,7 +147,7 @@ namespace LemoineTools.Lemoine.Controls
                 if (LookupRule() == null)
                 {
                     var miss = MakeGlyphLabel("⚠", "LemoineRed");
-                    miss.ToolTip = "Source rule missing — value frozen at last seen.";
+                    miss.ToolTip = LemoineStrings.T("testing.legendCreator.builder.blockRow.tooltips.missingSource");
                     miss.Margin = new Thickness(4, 0, 4, 0);
                     miss.VerticalAlignment = VerticalAlignment.Center;
                     Grid.SetColumn(miss, 3);
@@ -157,7 +158,7 @@ namespace LemoineTools.Lemoine.Controls
             // ── 4: Eye toggle ──────────────────────────────────────────────
             var eyeBtn = MakeIconHostButton(
                 child:   LemoineEyeGlyph.Make(Block.Visible, size: 16),
-                tooltip: Block.Visible ? "Hide" : "Show");
+                tooltip: Block.Visible ? LemoineStrings.T("testing.legendCreator.builder.blockRow.tooltips.hide") : LemoineStrings.T("testing.legendCreator.builder.blockRow.tooltips.show"));
             eyeBtn.BorderThickness = new Thickness(0); // no chip outline; eye is enough
             eyeBtn.Click += (s, e) =>
             {
@@ -169,7 +170,7 @@ namespace LemoineTools.Lemoine.Controls
             _root.Children.Add(eyeBtn);
 
             // ── 5: Delete ──────────────────────────────────────────────────
-            var del = MakeIconButton("✕", "Delete");
+            var del = MakeIconButton("✕", LemoineStrings.T("testing.legendCreator.builder.blockRow.tooltips.delete"));
             del.SetResourceReference(Control.ForegroundProperty, "LemoineTextDim");
             del.Click += (s, e) => DeleteRequested?.Invoke(this, EventArgs.Empty);
             Grid.SetColumn(del, 5);
@@ -220,8 +221,8 @@ namespace LemoineTools.Lemoine.Controls
 
             var pickerPanel = new LemoineColorPickerPanel { SelectedColor = initial };
 
-            var applyBtn  = LemoineControlStyles.BuildButton("Apply Color", LemoineControlStyles.LemoineButtonVariant.Primary);
-            var cancelBtn = LemoineControlStyles.BuildButton("Cancel",      LemoineControlStyles.LemoineButtonVariant.Ghost);
+            var applyBtn  = LemoineControlStyles.BuildButton(LemoineStrings.T("testing.legendCreator.builder.blockRow.colorPicker.applyColor"), LemoineControlStyles.LemoineButtonVariant.Primary);
+            var cancelBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("testing.legendCreator.builder.blockRow.colorPicker.cancel"),      LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelBtn.Margin = new Thickness(0, 0, 6, 0);
 
             var btnRow = new StackPanel

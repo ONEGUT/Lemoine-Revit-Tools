@@ -74,7 +74,7 @@ namespace LemoineTools.Lemoine
             if (bucket > _lastBucket)
             {
                 _lastBucket = bucket;
-                _pushLog($"{bucket}% — {_done:N0} of {Total:N0} {_noun} processed", "info");
+                _pushLog(LemoineStrings.T("common.log.progress", bucket, _done, Total, _noun), "info");
             }
         }
     }

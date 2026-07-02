@@ -19,6 +19,7 @@ namespace LemoineTools.Lemoine
         // ── Theme rows (General tab) ──────────────────────────────────────────
         private readonly List<(Border row, LemoineTheme theme)>  _themeRows = new List<(Border, LemoineTheme)>();
         private readonly List<(Border row, LemoineUiSize size)>  _sizeRows  = new List<(Border, LemoineUiSize)>();
+        private readonly List<(Border row, string culture)>      _languageRows = new List<(Border, string)>();
 
         // ── Nav pill state ────────────────────────────────────────────────────
         private string _activeTabId = "general";
@@ -88,7 +89,7 @@ namespace LemoineTools.Lemoine
             BuildFooter();
             SwitchTab(_activeTabId);
             // Distinguish from LemoineSettingsWindow ("Appearance Settings") for screen readers
-            AutomationProperties.SetName(this, "Manage Settings");
+            AutomationProperties.SetName(this, LemoineStrings.T("globalSettings.window.automationName"));
         }
 
         private void UpdateRowHeights()
@@ -130,7 +131,7 @@ namespace LemoineTools.Lemoine
 
             _toolbarBorder.Child = new Controls.LemoineTitleBar
             {
-                Title        = "Settings",
+                Title        = LemoineStrings.T("globalSettings.window.title"),
                 IconGlyph    = "⚙",   // ⚙ gear
                 RightContent = rightPanel,
             };
@@ -141,17 +142,18 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         // One tab per ribbon group (plus General). Labels are kept short so all nine
         // pills fit the fixed-width nav; each maps to its ribbon panel.
-        private static readonly (string Id, string Label)[] _navDefs =
+        private static (string Id, string Label)[] _navDefs =>
+        new (string, string)[]
         {
-            ("general",  "General"),
-            ("filters",  "Filters"),
-            ("ceilings", "Ceilings"),
-            ("views",    "Views"),
-            ("sheets",   "Sheets"),
-            ("export",   "Export"),
-            ("modify",   "Modify"),
-            ("clash",    "Clash"),
-            ("copy",     "Copy"),
+            ("general",  LemoineStrings.T("globalSettings.nav.general")),
+            ("filters",  LemoineStrings.T("globalSettings.nav.filters")),
+            ("ceilings", LemoineStrings.T("globalSettings.nav.ceilings")),
+            ("views",    LemoineStrings.T("globalSettings.nav.views")),
+            ("sheets",   LemoineStrings.T("globalSettings.nav.sheets")),
+            ("export",   LemoineStrings.T("globalSettings.nav.export")),
+            ("modify",   LemoineStrings.T("globalSettings.nav.modify")),
+            ("clash",    LemoineStrings.T("globalSettings.nav.clash")),
+            ("copy",     LemoineStrings.T("globalSettings.nav.copy")),
         };
 
         private void BuildTabNav()
@@ -287,7 +289,7 @@ namespace LemoineTools.Lemoine
             // Settings auto-save the moment each control changes (theme/size on click,
             // tool fields via ApplySettings on change), so there is no Apply button —
             // only Close. _fStatusText is retained for the Filters template messages.
-            var closeBtn = BuildFlatButton("Close");
+            var closeBtn = BuildFlatButton(LemoineStrings.T("globalSettings.window.close"));
             closeBtn.Click += (s, e) => Close();
 
             // Build-info line (build time · branch @ commit) — dim, monospace, docked
@@ -297,7 +299,7 @@ namespace LemoineTools.Lemoine
             {
                 Text              = BuildInfo.Summary,
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip           = "Build metadata (build time · git branch @ commit)",
+                ToolTip           = LemoineStrings.T("globalSettings.window.buildInfoTooltip"),
             };
             _fBuildInfoText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             _fBuildInfoText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");

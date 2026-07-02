@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -103,7 +104,7 @@ namespace LemoineTools.Lemoine.Controls
 
                 // From
                 var fromStack = new StackPanel();
-                var fromHdr   = MiniLabel("FROM");
+                var fromHdr   = MiniLabel(LemoineStrings.T("controls.inputs.datePicker.from"));
                 _fromPicker   = BuildPicker();
                 _fromPicker.SelectedDateChanged += (s, e) =>
                     DateChanged?.Invoke(ToIso(_fromPicker.SelectedDate), ToIso(_toPicker?.SelectedDate));
@@ -124,7 +125,7 @@ namespace LemoineTools.Lemoine.Controls
 
                 // To
                 var toStack = new StackPanel();
-                var toHdr   = MiniLabel("TO");
+                var toHdr   = MiniLabel(LemoineStrings.T("controls.inputs.datePicker.to"));
                 _toPicker   = BuildPicker();
                 _toPicker.SelectedDateChanged += (s, e) =>
                     DateChanged?.Invoke(ToIso(_fromPicker?.SelectedDate), ToIso(_toPicker.SelectedDate));

@@ -46,7 +46,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension
                     var r = uidoc.Selection.PickObject(ot,
                         new SlabScopePicker.FloorFilter(uidoc.Document), prompt);
                     scope = SlabScopePicker.ResolveScope(uidoc.Document, r, out name);
-                    if (scope == null) PushLog?.Invoke("Picked element is not a floor.", "info");
+                    if (scope == null) PushLog?.Invoke(LemoineStrings.T("clash.finder.log.pickedNotFloor"), "info");
                 }
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)

@@ -95,6 +95,15 @@
     </Content>
   </ItemGroup>
 
+  <!-- Localized user-facing text. Loaded at runtime by LemoineStrings from a Strings\ folder
+       next to the DLL, so it must be copied (loose, editable) into the deploy/output dir. These
+       are already default 'None' items under the SDK glob; Update just adds the copy behavior. -->
+  <ItemGroup>
+    <None Update="Strings\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />

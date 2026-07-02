@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -72,7 +73,7 @@ namespace LemoineTools.Lemoine.Controls
             // UIA: expose label, description, and on/off state to screen readers
             AutomationProperties.SetName(row, item.Label);
             AutomationProperties.SetHelpText(row, item.Desc ?? string.Empty);
-            AutomationProperties.SetItemStatus(row, on ? "On" : "Off");
+            AutomationProperties.SetItemStatus(row, on ? LemoineStrings.T("controls.inputs.toggleSwitches.statusOn") : LemoineStrings.T("controls.inputs.toggleSwitches.statusOff"));
 
             // Toggle pill
             var trackBg = new Border();
@@ -189,7 +190,7 @@ namespace LemoineTools.Lemoine.Controls
                 track.SetResourceReference(Border.BackgroundProperty, newOn ? "LemoineAccent" : "LemoineBorder");
 
             // Update UIA state so screen readers announce the new value
-            AutomationProperties.SetItemStatus(row, newOn ? "On" : "Off");
+            AutomationProperties.SetItemStatus(row, newOn ? LemoineStrings.T("controls.inputs.toggleSwitches.statusOn") : LemoineStrings.T("controls.inputs.toggleSwitches.statusOff"));
 
             StateChanged?.Invoke(State);
         }

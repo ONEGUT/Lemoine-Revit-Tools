@@ -18,21 +18,21 @@ namespace LemoineTools.Tools.BulkExport
     public class PrintViewViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, ILemoineToolCleanup
     {
         // ── ILemoineTool ──────────────────────────────────────────────────────
-        public string Title    => "Print View";
-        public string RunLabel => "Print in Revit →";
+        public string Title    => LemoineStrings.T("export.printView.title");
+        public string RunLabel => LemoineStrings.T("export.printView.runLabel");
 
         // Each format's settings live in its own step, shown only when that format is
         // enabled (ILemoineConditionalSteps). The settings steps are never last —
         // S6 (Output) and S7 (Review & Run) are always visible.
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Formats",       required: true),
-            new StepDefinition("S2", "PDF Settings",  required: false),
-            new StepDefinition("S3", "DWG Settings",  required: false),
-            new StepDefinition("S4", "NWC Settings",  required: false),
-            new StepDefinition("S5", "IFC Settings",  required: false),
-            new StepDefinition("S6", "Output",        required: true),
-            new StepDefinition("S7", "Review & Run",  required: false),
+            new StepDefinition("S1", LemoineStrings.T("export.printView.steps.S1"),       required: true),
+            new StepDefinition("S2", LemoineStrings.T("export.printView.steps.S2"),  required: false),
+            new StepDefinition("S3", LemoineStrings.T("export.printView.steps.S3"),  required: false),
+            new StepDefinition("S4", LemoineStrings.T("export.printView.steps.S4"),  required: false),
+            new StepDefinition("S5", LemoineStrings.T("export.printView.steps.S5"),  required: false),
+            new StepDefinition("S6", LemoineStrings.T("export.printView.steps.S6"),        required: true),
+            new StepDefinition("S7", LemoineStrings.T("export.printView.steps.S7"),  required: false),
         };
 
         // ── ILemoineConditionalSteps ──────────────────────────────────────────
@@ -165,17 +165,17 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS1Formats()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, "FORMATS");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secFormats"));
 
             var items = new List<ToggleItem>
             {
-                new ToggleItem { Id = "pdf", Label = "PDF", Desc = "Vector PDF via Revit engine",  DefaultOn = _pdfOn },
-                new ToggleItem { Id = "dwg", Label = "DWG", Desc = "AutoCAD DWG via Revit export", DefaultOn = _dwgOn },
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = LemoineStrings.T("export.printView.labels.descPdf"),  DefaultOn = _pdfOn },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = LemoineStrings.T("export.printView.labels.descDwg"), DefaultOn = _dwgOn },
             };
             if (_isThreeD)
             {
-                items.Add(new ToggleItem { Id = "nwc", Label = "NWC", Desc = "Navisworks NWC via Navisworks Manage", DefaultOn = _nwcOn });
-                items.Add(new ToggleItem { Id = "ifc", Label = "IFC", Desc = "Open BIM IFC via Revit engine",        DefaultOn = _ifcOn });
+                items.Add(new ToggleItem { Id = "nwc", Label = "NWC", Desc = LemoineStrings.T("export.printView.labels.descNwc"), DefaultOn = _nwcOn });
+                items.Add(new ToggleItem { Id = "ifc", Label = "IFC", Desc = LemoineStrings.T("export.printView.labels.descIfc"),        DefaultOn = _ifcOn });
             }
 
             var formatToggles = new LemoineToggleSwitches();
@@ -196,7 +196,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var hint = new TextBlock
                 {
-                    Text         = "NWC and IFC export 3D views only — open a 3D view to print those formats.",
+                    Text         = LemoineStrings.T("export.printView.labels.non3dHint"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 8, 0, 0),
@@ -216,9 +216,9 @@ namespace LemoineTools.Tools.BulkExport
             var outer = new StackPanel();
 
             // PAGE SETUP ──────────────────────────────────────────────────────
-            AddSectionLabel(outer, "PAGE SETUP");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secPageSetup"));
 
-            AddSmallLabel(outer, "Zoom");
+            AddSmallLabel(outer, LemoineStrings.T("export.printView.labels.lblZoom"));
             var fitBtn   = BuildModeButton("Fit to Page", _zoomSetting == "Fit to Page");
             var scaleBtn = BuildModeButton("Scale %",     _zoomSetting == "Scale %");
             var zoomRow  = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 4) };
@@ -245,7 +245,7 @@ namespace LemoineTools.Tools.BulkExport
             stepper.ValueChanged += (s, v) => { _zoomPct = (int)v; Fire(); };
             var pctLabel = new TextBlock
             {
-                Text              = "%",
+                Text              = LemoineStrings.T("export.printView.labels.pctPercent"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(6, 0, 0, 0),
             };
@@ -274,14 +274,14 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // OUTPUT QUALITY ──────────────────────────────────────────────────
-            AddSectionLabel(outer, "OUTPUT QUALITY");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secOutputQuality"));
 
-            AddLabeledComboBox(outer, "Color Depth",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblColorDepth"),
                 new[] { "Color", "Grayscale", "Black & White" },
                 GetIndex(new[] { "Color", "Grayscale", "Black & White" }, _colorDepth),
                 val => { _colorDepth = val; Fire(); });
 
-            AddLabeledComboBox(outer, "Raster Quality",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblRasterQuality"),
                 new[] { "Low", "Medium", "High", "Presentation" },
                 GetIndex(new[] { "Low", "Medium", "High", "Presentation" }, _rasterQuality),
                 val => { _rasterQuality = val; Fire(); });
@@ -289,13 +289,13 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // ADVANCED ────────────────────────────────────────────────────────
-            AddSectionLabel(outer, "ADVANCED");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secAdvanced"));
 
             var advToggles = new LemoineToggleSwitches();
             advToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "viewlinks",       Label = "View links in blue",              DefaultOn = _viewLinksBlue   },
-                new ToggleItem { Id = "replacehalftone", Label = "Replace halftone with thin lines", DefaultOn = _replaceHalftone },
+                new ToggleItem { Id = "viewlinks",       Label = LemoineStrings.T("export.printView.labels.advViewLinks"),              DefaultOn = _viewLinksBlue   },
+                new ToggleItem { Id = "replacehalftone", Label = LemoineStrings.T("export.printView.labels.advReplaceHalftone"), DefaultOn = _replaceHalftone },
             });
             advToggles.StateChanged += state =>
             {
@@ -312,18 +312,18 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS3Dwg()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, "DWG OPTIONS");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secDwgOptions"));
 
             var setupNames = _dwgSetupNames.Count > 0
                 ? _dwgSetupNames.ToArray()
-                : new[] { "(No DWG setups found in project)" };
+                : new[] { LemoineStrings.T("export.printView.labels.dwgNoSetups") };
             int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
-            AddLabeledComboBox(outer, "Export Setup", setupNames, initIdx,
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblExportSetup"), setupNames, initIdx,
                 val => { _dwgSetup = val; Fire(); });
 
             var note = new TextBlock
             {
-                Text         = "The export setup must already exist in the project (File → Export → DWG → modify a setup).",
+                Text         = LemoineStrings.T("export.printView.labels.dwgNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 6, 0, 0),
@@ -340,11 +340,11 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS4Nwc()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, "NWC OPTIONS");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secNwcOptions"));
 
             var note = new TextBlock
             {
-                Text         = "Exports the active 3D view via Navisworks Manage. Requires Navisworks Manage installed and loaded.",
+                Text         = LemoineStrings.T("export.printView.labels.nwcNote"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 4),
             };
@@ -356,14 +356,14 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // ── Coordinates & Parameters ──────────────────────────────────────
-            AddSectionLabel(outer, "COORDINATES & PARAMETERS");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secCoordParams"));
 
-            AddLabeledComboBox(outer, "Coordinate System",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblCoordSystem"),
                 new[] { "Shared", "Internal" },
                 _nwcCoordinates == "Internal" ? 1 : 0,
                 val => { _nwcCoordinates = val; Fire(); });
 
-            AddLabeledComboBox(outer, "Element Parameters",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblElementParams"),
                 new[] { "All", "Elements", "None" },
                 _nwcParameters == "Elements" ? 1 : _nwcParameters == "None" ? 2 : 0,
                 val => { _nwcParameters = val; Fire(); });
@@ -371,12 +371,12 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // ── Geometry & Mesh ───────────────────────────────────────────────
-            AddSectionLabel(outer, "GEOMETRY & MESH");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secGeomMesh"));
 
             int initFacetIdx = Array.IndexOf(NwcFacetingValues, _nwcFacetingFactor);
             if (initFacetIdx < 0) initFacetIdx = 1; // fallback to Standard
 
-            AddLabeledComboBox(outer, "Mesh Quality (Faceting Factor)",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblMeshQuality"),
                 NwcFacetingLabels, initFacetIdx,
                 val =>
                 {
@@ -385,23 +385,23 @@ namespace LemoineTools.Tools.BulkExport
                     Fire();
                 });
 
-            AddNwcCheckBox(outer, "Convert element properties", _nwcConvertElementProps, v => _nwcConvertElementProps = v);
-            AddNwcCheckBox(outer, "Convert Revit lights",       _nwcConvertLights,       v => _nwcConvertLights       = v);
-            AddNwcCheckBox(outer, "Convert linked CAD formats", _nwcConvertLinkedCad,    v => _nwcConvertLinkedCad    = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbConvertProps"), _nwcConvertElementProps, v => _nwcConvertElementProps = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbConvertLights"),       _nwcConvertLights,       v => _nwcConvertLights       = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbConvertCad"),    _nwcConvertLinkedCad,    v => _nwcConvertLinkedCad    = v);
 
             AddDivider(outer);
 
             // ── Content to Include ────────────────────────────────────────────
-            AddSectionLabel(outer, "CONTENT TO INCLUDE");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secContent"));
 
-            AddNwcCheckBox(outer, "Divide file into levels",                    _nwcDivideByLevel,        v => _nwcDivideByLevel        = v);
-            AddNwcCheckBox(outer, "Include linked Revit models",                _nwcExportLinks,          v => _nwcExportLinks          = v);
-            AddNwcCheckBox(outer, "Include Revit parts",                        _nwcExportParts,          v => _nwcExportParts          = v);
-            AddNwcCheckBox(outer, "Include element IDs (round-trip selection)", _nwcExportElementIds,     v => _nwcExportElementIds     = v);
-            AddNwcCheckBox(outer, "Include URL parameters",                     _nwcExportUrls,           v => _nwcExportUrls           = v);
-            AddNwcCheckBox(outer, "Find missing materials",                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
-            AddNwcCheckBox(outer, "Export room geometry (ignored in per-view exports)", _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
-            AddNwcCheckBox(outer, "Attach room data as element attributes",     _nwcExportRoomAsAttr,     v => _nwcExportRoomAsAttr     = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbDivideLevels"),                    _nwcDivideByLevel,        v => _nwcDivideByLevel        = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbLinkedRevit"),                _nwcExportLinks,          v => _nwcExportLinks          = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbParts"),                        _nwcExportParts,          v => _nwcExportParts          = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbElementIds"),     _nwcExportElementIds,     v => _nwcExportElementIds     = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbUrls"),                     _nwcExportUrls,           v => _nwcExportUrls           = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbMissingMats"),                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbRoomGeom"), _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
+            AddNwcCheckBox(outer, LemoineStrings.T("export.printView.labels.cbRoomAttr"),     _nwcExportRoomAsAttr,     v => _nwcExportRoomAsAttr     = v);
 
             return outer;
         }
@@ -410,11 +410,11 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS5Ifc()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, "IFC OPTIONS");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secIfcOptions"));
 
             var note = new TextBlock
             {
-                Text         = "Exports the active 3D view via Revit's IFC engine.",
+                Text         = LemoineStrings.T("export.printView.labels.ifcNote"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 4),
             };
@@ -423,7 +423,7 @@ namespace LemoineTools.Tools.BulkExport
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             outer.Children.Add(note);
 
-            AddLabeledComboBox(outer, "IFC Version",
+            AddLabeledComboBox(outer, LemoineStrings.T("export.printView.labels.lblIfcVersion"),
                 new[] { "IFC2x3", "IFC4" },
                 _ifcVersion == "IFC4" ? 1 : 0,
                 val => { _ifcVersion = val; Fire(); });
@@ -435,12 +435,12 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS6Output()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, "OUTPUT FOLDER");
+            AddSectionLabel(outer, LemoineStrings.T("export.printView.labels.secOutputFolder"));
 
             var folder = new LemoineFolderBrowser
             {
                 Path        = _outputFolder,
-                DialogTitle = "Select output folder",
+                DialogTitle = LemoineStrings.T("export.printView.labels.folderDialog"),
             };
             folder.PathChanged += p => { _outputFolder = p; Fire(); };
             outer.Children.Add(folder);
@@ -453,10 +453,10 @@ namespace LemoineTools.Tools.BulkExport
         // ═════════════════════════════════════════════════════════════════════
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("view",    "View"),
-            ("formats", "Formats"),
-            ("quality", "PDF Quality"),
-            ("folder",  "Output Folder"),
+            ("view",    LemoineStrings.T("export.printView.review.itemView")),
+            ("formats", LemoineStrings.T("export.printView.review.itemFormats")),
+            ("quality", LemoineStrings.T("export.printView.review.itemQuality")),
+            ("folder",  LemoineStrings.T("export.printView.review.itemFolder")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -492,10 +492,10 @@ namespace LemoineTools.Tools.BulkExport
             {
                 case "S1": return FormatsSummary();
                 case "S2": return $"{_colorDepth} · {_rasterQuality} · {_zoomSetting}";
-                case "S3": return string.IsNullOrEmpty(_dwgSetup) ? "Default setup" : _dwgSetup;
+                case "S3": return string.IsNullOrEmpty(_dwgSetup) ? LemoineStrings.T("export.printView.summaries.dwgDefault") : _dwgSetup;
                 case "S4": return $"{_nwcCoordinates} · {_nwcParameters}";
                 case "S5": return _ifcVersion;
-                case "S6": return string.IsNullOrEmpty(_outputFolder) ? "No output folder" : _outputFolder;
+                case "S6": return string.IsNullOrEmpty(_outputFolder) ? LemoineStrings.T("export.printView.summaries.noFolder") : _outputFolder;
                 default:   return "—";
             }
         }
@@ -507,7 +507,7 @@ namespace LemoineTools.Tools.BulkExport
             if (_dwgOn) on.Add("DWG");
             if (_nwcOn) on.Add("NWC");
             if (_ifcOn) on.Add("IFC");
-            return on.Count > 0 ? string.Join(" · ", on) : "No format selected";
+            return on.Count > 0 ? string.Join(" · ", on) : LemoineStrings.T("export.printView.summaries.formatsNone");
         }
 
         public void Run(

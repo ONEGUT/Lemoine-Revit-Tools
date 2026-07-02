@@ -1,0 +1,42 @@
+// common.json — shared chrome used by every tool window (StepFlowWindow), the run
+// footer, status line, and the standard progress / cancellation log lines.
+// Loaded by LemoineStrings; keys are addressed as "common.<section>.<key>".
+// Edit the values freely. // comments may sit on their own line or after a value.
+{
+  // footer — labels on the single footer button as its role changes during a run
+  "footer": {
+    "reset":  "Reset",   // idle, not on the first step
+    "reload": "Reload",  // first step, when the tool can re-read the model
+    "cancel": "Cancel"   // shown (in red) while a run is in progress
+  },
+
+  // status — the line under the step list / progress strip
+  "status": {
+    "waiting":    "Waiting…",                  // before a run starts
+    "processing": "● Processing in Revit…",    // while the Revit run is active
+    "required":   "✗ Required before proceeding"  // a required step is not yet valid
+  },
+
+  // step — per-step chrome
+  "step": {
+    "confirm":      "Confirm →",          // default Confirm button label
+    "counter":      "Step {0} / {1}",     // top-bar step counter ({0} = current, {1} = total)
+    "failedToLoad": "This step ('{0}') failed to load."  // shown when a step's content throws ({0} = step id)
+  },
+
+  // tooltip — shared hover tooltips
+  "tooltip": {
+    "close": "Close"  // window close button (×) in the top bar
+  },
+
+  // defaults — fall-backs used when a tool does not supply its own
+  "defaults": {
+    "runLabel": "Run in Revit →"  // final action button when a tool doesn't set one
+  },
+
+  // log — standard Output-log lines shared across tools
+  "log": {
+    "progress":      "{0}% — {1:N0} of {2:N0} {3} processed",  // {0}=percent {1}=done {2}=total {3}=item noun
+    "stoppedByUser": "Stopped by user — {0} of {1} processed; work so far preserved."  // cooperative cancel
+  }
+}

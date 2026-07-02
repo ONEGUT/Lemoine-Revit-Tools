@@ -20,12 +20,12 @@ namespace LemoineTools.Tools.AutoFilters
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── ILemoineTool identity ──────────────────────────────────────────────
-        public string Title    => "Filter Legend Creator";
-        public string RunLabel => "Create Legend →";
+        public string Title    => LemoineStrings.T("autofilters.legend.title");
+        public string RunLabel => LemoineStrings.T("autofilters.legend.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Review & Run", required: false),
+            new StepDefinition("S1", LemoineStrings.T("autofilters.legend.steps.S1"), required: false),
         };
 
         // ── Validation change notification ─────────────────────────────────────
@@ -70,24 +70,22 @@ namespace LemoineTools.Tools.AutoFilters
                 // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("source",   "Source"),
-            ("output",   "Output"),
-            ("grouping", "Grouping"),
-            ("swatches", "Swatches"),
+            ("source",   LemoineStrings.T("autofilters.legend.review.itemSource")),
+            ("output",   LemoineStrings.T("autofilters.legend.review.itemOutput")),
+            ("grouping", LemoineStrings.T("autofilters.legend.review.itemGrouping")),
+            ("swatches", LemoineStrings.T("autofilters.legend.review.itemSwatches")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["source"]   = "Active view filters",
-            ["output"]   = "New Legend view",
-            ["grouping"] = "By discipline prefix",
-            ["swatches"] = "One per unique color",
+            ["source"]   = LemoineStrings.T("autofilters.legend.review.source"),
+            ["output"]   = LemoineStrings.T("autofilters.legend.review.output"),
+            ["grouping"] = LemoineStrings.T("autofilters.legend.review.grouping"),
+            ["swatches"] = LemoineStrings.T("autofilters.legend.review.swatches"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Reads all filter overrides from the active view and creates a new " +
-            "Legend view with colored swatches and label text, grouped by discipline. Requires at least one " +
-            "existing Legend view in the project.";
+        public string?        ReviewNote    => LemoineStrings.T("autofilters.legend.review.note");
         public string?        ReviewWarning => null;
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -96,7 +94,7 @@ namespace LemoineTools.Tools.AutoFilters
         public bool IsValid(string stepId) => true;
 
         public string SummaryFor(string stepId) =>
-            stepId == "S1" ? "Ready to run" : "—";
+            stepId == "S1" ? LemoineStrings.T("autofilters.legend.summaries.S1") : "—";
 
         public void Run(
             Action<string, string>     pushLog,
@@ -107,7 +105,7 @@ namespace LemoineTools.Tools.AutoFilters
             _handler.OnProgress = onProgress;
             _handler.OnComplete = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("autofilters.legend.log.raising"), "info");
             _event.Raise();
         }
     }

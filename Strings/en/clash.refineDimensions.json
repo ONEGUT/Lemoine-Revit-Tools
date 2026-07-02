@@ -1,0 +1,43 @@
+// clash.refineDimensions.json — Refine Dimensions tool + handler logs.
+// Command: RefineDimensionsCommand. NOTE: "Grid"/"SlabEdge" internal target tokens
+// stay in code; the displayed "To Grid"/"To Slab Edge" labels are externalized.
+{
+  "title": "Refine Dimensions",
+  "runLabel": "Refine Dimensions →",
+  "steps": { "S1": "Select Views", "S2": "Destination", "S3": "Review & Run" },
+  "summaries": {
+    "S3": "Ready to run",
+    "viewCount": "{0} view(s)",
+    "destGrid": "nearest grid",
+    "destSlab": "nearest slab edge"
+  },
+  "labels": {
+    "destGrid":   "To Grid",
+    "destSlab":   "To Slab Edge",
+    "s1Help":     "Pick the views to re-dimension. Each should already carry Lemoine clash markers — this tool dimensions existing markers and never detects or marks clashes.",
+    "pickerName": "Views to refine",
+    "destLabel2": "Dimension destination — each clash measures to the nearest one VISIBLE in the view.",
+    "destLabel":  "Destination",
+    "s2Help":     "Refine never creates callouts and never changes a view's scale. It replaces the dimensions this tool placed before on the selected views; clash markers and other annotations are left untouched. Chaining, grouping, and spacing use the saved Settings → Dimensions values."
+  },
+  "review": {
+    "itemViews": "Views",
+    "itemDest":  "Destination",
+    "viewsValue":"{0} view(s)",
+    "destGrid":  "nearest visible grid",
+    "destSlab":  "nearest visible slab edge",
+    "chipNoCallouts": "no callouts",
+    "chipScaleUnchanged": "scale unchanged",
+    "note": "Re-dimensions existing clash markers on the selected views to the nearest grid or slab edge visible in each view, replacing the dimensions this tool placed before. No clash detection, no callouts, no scale change."
+  },
+  "log": {
+    "noDoc":        "No active document.",
+    "noViews":      "No views selected.",
+    "stoppedEarly": "Stopped by user before the refine pass began — nothing changed.",
+    "wordGrid":     "grid",
+    "wordSlabEdge": "slab edge",
+    "refining":     "Refine: re-dimensioning {0} view(s) to the nearest {1} visible in each view — no clash detection, no callouts, scale unchanged.",
+    "done":         "Done — {0} dimension(s) placed across {1} view(s); {2} prior dimension(s) replaced; {3} placement failure(s).",
+    "fatal":        "Fatal: {0}"
+  }
+}

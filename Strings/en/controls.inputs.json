@@ -1,0 +1,78 @@
+// controls.inputs.json — shared reusable Input + Layout control library text.
+// Files: Source/Lemoine/Controls/Input/LemoineDatePicker.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineInlineEdit.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineInlineStepper.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineMatrixInput.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineNumberRange.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineNumberStepper.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineSearchAutocomplete.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineSingleSelect.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineTextField.xaml.cs,
+//        Source/Lemoine/Controls/Input/LemoineToggleSwitches.xaml.cs,
+//        Source/Lemoine/Controls/Layout/LemoineFileBrowser.xaml.cs,
+//        Source/Lemoine/Controls/Layout/LemoineFolderBrowser.xaml.cs,
+//        Source/Lemoine/Controls/Layout/LemoineReviewSummary.xaml.cs,
+//        Source/Lemoine/Controls/Layout/LemoineTitleBar.xaml.cs,
+//        Source/Lemoine/Controls/LemoineCategoryChip.xaml.cs
+//
+// NOTE: most of these controls take their user-visible text (Label, Placeholder, Title,
+// DialogTitle, etc.) as caller-supplied properties, not literals baked into the control —
+// so several of the files above have NO strings of their own to externalize:
+// LemoineInlineStepper, LemoineNumberStepper, LemoineSearchAutocomplete, LemoineSingleSelect,
+// LemoineTextField, and LemoineTitleBar contain only resource-theme keys, glyphs (−, +, →,
+// ▾), .NET format specifiers ("F", "yyyy-MM-dd"), persisted mode tokens ("single"/"range"),
+// and UIA technical class names ("ToggleSwitch") — none of that is in scope. See CLAUDE.md
+// "Edit Tool — C# Unicode Escape Sequences" for why glyphs/arrows stay in code.
+{
+  // datePicker — LemoineDatePicker range-mode column headers
+  "datePicker": {
+    "from": "FROM",
+    "to": "TO"
+  },
+
+  // inlineEdit — LemoineInlineEdit default watermark shown when Text and Placeholder are both empty
+  "inlineEdit": {
+    "defaultPlaceholder": "(empty)"
+  },
+
+  // matrixInput — LemoineMatrixInput grid header
+  "matrixInput": {
+    "rowHeader": "Row"
+  },
+
+  // numberRange — LemoineNumberRange default side labels (callers usually override via MinLabel/MaxLabel)
+  "numberRange": {
+    "defaultMinLabel": "Min",
+    "defaultMaxLabel": "Max"
+  },
+
+  // toggleSwitches — UIA ItemStatus announced by screen readers for each toggle row
+  "toggleSwitches": {
+    "statusOn": "On",
+    "statusOff": "Off"
+  },
+
+  // fileBrowser — LemoineFileBrowser defaults (callers usually override via Filter/DialogTitle)
+  "fileBrowser": {
+    // Filter syntax ("All files|*.*") is kept as one token — the "All files" prose can't be
+    // cleanly split from the "|*.*" Win32 filter grammar without risking a malformed filter.
+    "defaultFilter": "All files|*.*",
+    "defaultDialogTitle": "Select File"
+  },
+
+  // folderBrowser — LemoineFolderBrowser default dialog title (caller usually overrides via DialogTitle)
+  "folderBrowser": {
+    "defaultDialogTitle": "Select Folder"
+  },
+
+  // reviewSummary — LemoineReviewSummary card grid + chip row
+  "reviewSummary": {
+    "itemsHeader": "ITEMS",
+    "emptyValue": "—"
+  },
+
+  // categoryChip — LemoineCategoryChip default label (design-time/no-Label fallback)
+  "categoryChip": {
+    "defaultLabel": "Chip"
+  }
+}

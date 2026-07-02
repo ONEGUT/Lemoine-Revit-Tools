@@ -1,0 +1,66 @@
+// copy.fromLink.json — Copy Elements from Link tool + run-handler logs.
+// Command: CopyFromLinkCommand. NOTE: discipline group labels (Mechanical/Piping/…)
+// stay in code (they key the category grouping).
+{
+  "title": "Copy Elements from Link",
+  "runLabel": "Copy in Revit →",
+  "steps": { "source": "Source Link & Categories", "types": "Families to Copy", "changes": "Change Detection", "run": "Review & Run" },
+  "summaries": {
+    "run": "Ready to run",
+    "source": "{0} · {1} cat",
+    "typeCount": "{0} family type(s)"
+  },
+  "labels": {
+    "noLinks":       "No loaded links found. Load a Revit link into the host project first.",
+    "sourceLink":    "Source link",
+    "catsToCopy":    "Categories to copy",
+    "worksets":      "Worksets (unchecked = excluded)",
+    "noWorksets":    "No user worksets in this link.",
+    "families":      "Families to copy",
+    "familiesHelp":  "Tick the family types found in the link for the chosen categories. Everything is selected by default — untick anything you don't want copied.",
+    "scanning":      "Scanning link…",
+    "scanError":     "Scan error: {0}",
+    "pickCatFirst":  "Pick at least one category in the Source step, then return here.",
+    "confirmToScan": "Confirm the Source step to scan for families.",
+    "noTypes":       "{0} element(s) found — no family types to list.",
+    "typesSummary":  "{0} element(s) · {1} family type(s) across {2} category(ies).",
+    "changesNote":   "By default each copy is a finished element — once created it is detached from this tool and a later run never deletes it. Turn on delete-previous to keep outputs stamped so a re-run on the same source elements replaces them instead of adding duplicates.",
+    "onlyLabel":     "Only copy elements changed since last run",
+    "onlyDesc":      "On = leave unchanged elements untouched and re-copy only new/moved/resized/retyped ones. Off = re-copy every selected element.",
+    "orphLabel":     "Delete outputs whose source no longer matches",
+    "orphDesc":      "Removes stamped copies when their source element is gone or no longer in the selection.",
+    "prevLabel":     "Delete previous run outputs",
+    "prevDesc":      "On = outputs from earlier runs of the same source elements are deleted and re-copied, and this run's outputs stay linked for the next one. Off = nothing from previous runs is touched and this run's outputs are left as plain elements."
+  },
+  "review": {
+    "itemLink": "Source Link", "itemCats": "Categories", "itemTypes": "Families", "itemChanges": "Change Detection",
+    "catsValue": "{0} category(ies)",
+    "typesNone": "None",
+    "typesValue": "{0} family type(s)",
+    "changesKeep": "Keep previous outputs",
+    "changesOnlyChanged": "Delete previous · only changed",
+    "changesReCopyAll": "Delete previous · re-copy all",
+    "warnNoTypes": "Select at least one family type to copy."
+  },
+  "log": {
+    "handlerMissing":  "Run handler not registered.",
+    "raising":         "Raising Revit external event…",
+    "noDoc":           "No active document.",
+    "pickLink":        "Pick a source link — this tool copies out of links only.",
+    "srcNotLoaded":    "Source link is not loaded.",
+    "noTypesSelected": "No family types selected — nothing to copy.",
+    "noMatching":      "No matching elements found in the link for the selected types ({0} element(s) in the categories did not match).",
+    "found":           "Found {0} element(s) to copy ({1} in the categories skipped — type not selected).",
+    "copying":         "Copying {0}, {1} unchanged, {2}",
+    "copyingOrphans":  "{0} orphaned output(s) to remove.",
+    "copyingUntouched":"previous outputs left untouched.",
+    "batchRetry":      "Batch of {0} failed ({1}) — retrying individually to isolate.",
+    "copyFail":        "✗ {0} ({1}): copy failed — {2}: {3}",
+    "progress":        "{0}% — {1} of {2} processed ({3} copied).",
+    "unattributed":    "{0} copied element(s) could not be linked back to a source for change-tracking — they won't reconcile on a re-run.",
+    "revitFailure":    "Revit failure: {0}",
+    "nonFatal":        "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "done":            "Done. {0} element(s) copied, {1} skipped, {2} failed.",
+    "aborted":         "Run aborted: {0}"
+  }
+}

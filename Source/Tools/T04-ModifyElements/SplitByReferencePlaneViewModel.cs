@@ -18,14 +18,14 @@ namespace LemoineTools.Tools.ModifyElements
         public string? ResultNoun => "segments";
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
-        public string Title    => "Split Elements by Reference Plane";
-        public string RunLabel => "Split in Revit →";
+        public string Title    => LemoineStrings.T("modify.splitByReferencePlane.title");
+        public string RunLabel => LemoineStrings.T("modify.splitByReferencePlane.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Categories",       required: true),
-            new StepDefinition("S2", "Select Reference Planes", required: true),
-            new StepDefinition("S3", "Review & Run",            required: false),
+            new StepDefinition("S1", LemoineStrings.T("modify.splitByReferencePlane.steps.S1"),       required: true),
+            new StepDefinition("S2", LemoineStrings.T("modify.splitByReferencePlane.steps.S2"), required: true),
+            new StepDefinition("S3", LemoineStrings.T("modify.splitByReferencePlane.steps.S3"),            required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ namespace LemoineTools.Tools.ModifyElements
 
         private static string RefPlaneName(ReferencePlane rp) =>
             string.IsNullOrWhiteSpace(rp.Name)
-                ? $"Ref Plane {rp.Id.Value}"
+                ? LemoineStrings.T("modify.splitByReferencePlane.labels.refPlaneFallback", rp.Id.Value)
                 : rp.Name;
 
         private static Dictionary<string, ReferencePlane> BuildRefPlaneMap(
@@ -138,7 +138,7 @@ namespace LemoineTools.Tools.ModifyElements
             int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = $"{totalCats} categories · {_totalElements} elements in document",
+                Text         = LemoineStrings.T("modify.splitByReferencePlane.labels.countStrip", totalCats, _totalElements),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -164,8 +164,8 @@ namespace LemoineTools.Tools.ModifyElements
                     new ToggleItem
                     {
                         Id        = "activeView",
-                        Label     = "Active view elements only",
-                        Desc      = "When on, only elements visible in the current Revit view will be split.",
+                        Label     = LemoineStrings.T("modify.splitByReferencePlane.labels.activeViewLabel"),
+                        Desc      = LemoineStrings.T("modify.splitByReferencePlane.labels.activeViewDesc"),
                         DefaultOn = false,
                     },
                 });
@@ -191,7 +191,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = "FROM CURRENT SELECTION", Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByReferencePlane.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -200,7 +200,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = $"{cnt} element{(cnt == 1 ? "" : "s")} across {cats} categor{(cats == 1 ? "y" : "ies")}",
+                Text         = LemoineStrings.T("modify.splitByReferencePlane.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -220,7 +220,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = "Close and reopen the tool to use category selection instead.",
+                Text         = LemoineStrings.T("modify.splitByReferencePlane.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -243,7 +243,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 var msg = new TextBlock
                 {
-                    Text         = "No reference planes found in the document.",
+                    Text         = LemoineStrings.T("modify.splitByReferencePlane.labels.noItems"),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
@@ -275,26 +275,24 @@ namespace LemoineTools.Tools.ModifyElements
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   "Categories Selected"),
-            ("planes", "Reference Planes"),
-            ("op",     "Operation"),
-            ("scope",  "Scope"),
+            ("cats",   LemoineStrings.T("modify.splitByReferencePlane.review.itemCats")),
+            ("planes", LemoineStrings.T("modify.splitByReferencePlane.review.itemX")),
+            ("op",     LemoineStrings.T("modify.splitByReferencePlane.review.itemOp")),
+            ("scope",  LemoineStrings.T("modify.splitByReferencePlane.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["planes"] = _selectedRefNames.Count == 0 ? "—" : $"{_selectedRefNames.Count} plane(s)",
-            ["op"]     = "Split elements at each reference plane",
-            ["scope"]  = _preSelectedIds.Count > 0 ? $"From selection ({_preSelectedIds.Count} elements)"
-                : _useActiveView ? "Active view only"
-                : "Entire document",
+            ["planes"] = _selectedRefNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByReferencePlane.review.xValue", _selectedRefNames.Count),
+            ["op"]     = LemoineStrings.T("modify.splitByReferencePlane.review.op"),
+            ["scope"]  = _preSelectedIds.Count > 0 ? LemoineStrings.T("modify.splitByReferencePlane.review.scopeFromSel", _preSelectedIds.Count)
+                : _useActiveView ? LemoineStrings.T("modify.splitByReferencePlane.review.scopeActive")
+                : LemoineStrings.T("modify.splitByReferencePlane.review.scopeDoc"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Elements whose LocationCurve intersects a reference plane will be " +
-            "split at that intersection. Elements with no linear curve are skipped. The reference plane's own normal " +
-            "vector is used as the cutting direction.";
+        public string?        ReviewNote    => LemoineStrings.T("modify.splitByReferencePlane.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -308,13 +306,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return $"From selection ({_preSelectedIds.Count} elements)";
+                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByReferencePlane.review.scopeFromSel", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return _selectedRefNames.Count == 0 ? "—" : $"{_selectedRefNames.Count} plane(s) selected";
+                return _selectedRefNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByReferencePlane.summaries.s2", _selectedRefNames.Count);
             if (stepId == "S3")
-                return "Ready to run";
+                return LemoineStrings.T("modify.splitByReferencePlane.summaries.S3");
             return "—";
         }
 

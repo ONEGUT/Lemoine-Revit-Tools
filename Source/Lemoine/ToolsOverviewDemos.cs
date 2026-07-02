@@ -15,27 +15,27 @@ namespace LemoineTools.Lemoine
         // ── Shared sample pools ───────────────────────────────────────────────
         private static List<string> L(params string[] s) => s.ToList();
 
-        private static readonly List<string> PlanViews   = L("Level 1 - Mechanical", "Level 2 - Mechanical", "Level 3 - Mechanical", "Roof - Mechanical");
-        private static readonly List<string> CeilingPlans= L("Level 1 - RCP", "Level 2 - RCP", "Level 3 - RCP");
-        private static readonly List<string> Views3D     = L("3D - Coordination", "3D - MEP Overall", "3D - Level 2");
-        private static readonly List<string> Sections    = L("Section A-A", "Elevation - North", "Section - Riser 1");
-        private static readonly List<string> Sheets      = L("M-101 - Level 1 Mechanical", "M-102 - Level 2 Mechanical", "M-103 - Level 3 Mechanical");
-        private static readonly List<string> Levels      = L("Level 1", "Level 2", "Level 3", "Level 4", "Roof");
-        private static readonly List<string> Documents   = L("ARCH - Architecture.rvt", "STR - Structure.rvt", "MEP - Services.rvt");
-        private static readonly List<string> Trades      = L("Supply Air", "Return Air", "Exhaust Air", "Chilled Water", "Heating Water", "Domestic Cold Water");
-        private static readonly List<string> Filters     = L("Supply Air", "Return Air", "Chilled Water Supply", "Chilled Water Return", "Hot Water Supply");
-        private static readonly List<string> Definitions = L("Duct vs Structure", "Pipe vs Duct", "Cable Tray vs Beam");
-        private static readonly List<string> Templates   = L("MEP - Coordination", "MEP - Working", "Architectural - Presentation");
-        private static readonly List<string> Grids       = L("Grid A", "Grid B", "Grid C", "Grid 1", "Grid 2", "Grid 3");
-        private static readonly List<string> RefPlanes   = L("Centerline", "Corridor Edge", "Shaft Boundary");
-        private static readonly List<string> TitleBlocks = L("A1 Metric", "A3 Landscape", "Custom 30x42");
+        private static readonly List<string> PlanViews = L(LemoineStrings.T("overviewDemos.pools.planViews.1"), LemoineStrings.T("overviewDemos.pools.planViews.2"), LemoineStrings.T("overviewDemos.pools.planViews.3"), LemoineStrings.T("overviewDemos.pools.planViews.4"));
+        private static readonly List<string> CeilingPlans = L(LemoineStrings.T("overviewDemos.pools.ceilingPlans.1"), LemoineStrings.T("overviewDemos.pools.ceilingPlans.2"), LemoineStrings.T("overviewDemos.pools.ceilingPlans.3"));
+        private static readonly List<string> Views3D = L(LemoineStrings.T("overviewDemos.pools.views3D.1"), LemoineStrings.T("overviewDemos.pools.views3D.2"), LemoineStrings.T("overviewDemos.pools.views3D.3"));
+        private static readonly List<string> Sections = L(LemoineStrings.T("overviewDemos.pools.sections.1"), LemoineStrings.T("overviewDemos.pools.sections.2"), LemoineStrings.T("overviewDemos.pools.sections.3"));
+        private static readonly List<string> Sheets = L(LemoineStrings.T("overviewDemos.pools.sheets.1"), LemoineStrings.T("overviewDemos.pools.sheets.2"), LemoineStrings.T("overviewDemos.pools.sheets.3"));
+        private static readonly List<string> Levels = L(LemoineStrings.T("overviewDemos.pools.levels.1"), LemoineStrings.T("overviewDemos.pools.levels.2"), LemoineStrings.T("overviewDemos.pools.levels.3"), LemoineStrings.T("overviewDemos.pools.levels.4"), LemoineStrings.T("overviewDemos.pools.levels.5"));
+        private static readonly List<string> Documents = L(LemoineStrings.T("overviewDemos.pools.documents.1"), LemoineStrings.T("overviewDemos.pools.documents.2"), LemoineStrings.T("overviewDemos.pools.documents.3"));
+        private static readonly List<string> Trades = L(LemoineStrings.T("overviewDemos.pools.trades.1"), LemoineStrings.T("overviewDemos.pools.trades.2"), LemoineStrings.T("overviewDemos.pools.trades.3"), LemoineStrings.T("overviewDemos.pools.trades.4"), LemoineStrings.T("overviewDemos.pools.trades.5"), LemoineStrings.T("overviewDemos.pools.trades.6"));
+        private static readonly List<string> Filters = L(LemoineStrings.T("overviewDemos.pools.filters.1"), LemoineStrings.T("overviewDemos.pools.filters.2"), LemoineStrings.T("overviewDemos.pools.filters.3"), LemoineStrings.T("overviewDemos.pools.filters.4"), LemoineStrings.T("overviewDemos.pools.filters.5"));
+        private static readonly List<string> Definitions = L(LemoineStrings.T("overviewDemos.pools.definitions.1"), LemoineStrings.T("overviewDemos.pools.definitions.2"), LemoineStrings.T("overviewDemos.pools.definitions.3"));
+        private static readonly List<string> Templates = L(LemoineStrings.T("overviewDemos.pools.templates.1"), LemoineStrings.T("overviewDemos.pools.templates.2"), LemoineStrings.T("overviewDemos.pools.templates.3"));
+        private static readonly List<string> Grids = L(LemoineStrings.T("overviewDemos.pools.grids.1"), LemoineStrings.T("overviewDemos.pools.grids.2"), LemoineStrings.T("overviewDemos.pools.grids.3"), LemoineStrings.T("overviewDemos.pools.grids.4"), LemoineStrings.T("overviewDemos.pools.grids.5"), LemoineStrings.T("overviewDemos.pools.grids.6"));
+        private static readonly List<string> RefPlanes = L(LemoineStrings.T("overviewDemos.pools.refPlanes.1"), LemoineStrings.T("overviewDemos.pools.refPlanes.2"), LemoineStrings.T("overviewDemos.pools.refPlanes.3"));
+        private static readonly List<string> TitleBlocks = L(LemoineStrings.T("overviewDemos.pools.titleBlocks.1"), LemoineStrings.T("overviewDemos.pools.titleBlocks.2"), LemoineStrings.T("overviewDemos.pools.titleBlocks.3"));
 
         private static Dictionary<string, List<string>> Categories() => new Dictionary<string, List<string>>
         {
-            ["Mechanical"] = L("Ducts", "Duct Fittings", "Air Terminals"),
-            ["Piping"]     = L("Pipes", "Pipe Fittings", "Pipe Accessories"),
-            ["Electrical"] = L("Cable Trays", "Conduits"),
-            ["Structure"]  = L("Walls", "Structural Columns", "Structural Framing"),
+            [LemoineStrings.T("overviewDemos.categoryGroups.mechanical.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.mechanical.items.3")),
+            [LemoineStrings.T("overviewDemos.categoryGroups.piping.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.piping.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.piping.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.piping.items.3")),
+            [LemoineStrings.T("overviewDemos.categoryGroups.electrical.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.electrical.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.electrical.items.2")),
+            [LemoineStrings.T("overviewDemos.categoryGroups.structure.label")] = L(LemoineStrings.T("overviewDemos.categoryGroups.structure.items.1"), LemoineStrings.T("overviewDemos.categoryGroups.structure.items.2"), LemoineStrings.T("overviewDemos.categoryGroups.structure.items.3")),
         };
 
         private static Dictionary<string, List<string>> Group(string key, List<string> items) =>
@@ -79,419 +79,404 @@ namespace LemoineTools.Lemoine
         {
             ["Auto Filters"] = new OverviewDemoSpec
             {
-                Title = "Auto Filters", RunLabel = "Create Filters →",
+                Title = LemoineStrings.T("overviewDemos.tools.autoFilters.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.autoFilters.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Links", true, "Choose the linked models to scan for trades / systems.", Documents),
-                    Toggles("S2", "Configure Links", "How each link's elements are read into trades.",
-                        Tg("sys", "By system name", "Group by Revit system name", true),
-                        Tg("fab", "By fabrication service", "Group by MEP fabrication service", false),
-                        Tg("host", "Include host model", "Also scan the host document", false)),
-                    Info("S3", "Scanning", "Discover scans the selected links and groups elements into candidate trades. (Simulated here.)"),
-                    MultiFlat("S4", "Review Rules", true, "Tick the discovered trade rules to keep.", Trades),
-                    Info("S5", "Confirm & Commit", "Creates one view filter per kept trade and applies its color override across the selected views."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s1.hint"), Documents),
+                    Toggles("S2", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.hint"),
+                        Tg("sys", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.sys.label"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.sys.desc"), true),
+                        Tg("fab", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.fab.label"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.fab.desc"), false),
+                        Tg("host", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.host.label"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s2.toggles.host.desc"), false)),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s3.info")),
+                    MultiFlat("S4", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s4.title"), true, LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s4.hint"), Trades),
+                    Info("S5", LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s5.title"), LemoineStrings.T("overviewDemos.tools.autoFilters.steps.s5.info")),
                 },
-                RunLog = RL(("Scanning 3 links…", "info"), ("Found 6 candidate trades", "pass"),
-                            ("Created 6 view filters", "pass"), ("Applied color overrides to active view", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.autoFilters.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.autoFilters.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.autoFilters.runLog.3"), "pass"), (LemoineStrings.T("overviewDemos.tools.autoFilters.runLog.4"), "pass")),
             },
 
             ["Legend Creation"] = new OverviewDemoSpec
             {
-                Title = "Legend Creation", RunLabel = "Build Legend →",
+                Title = LemoineStrings.T("overviewDemos.tools.legendCreation.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.legendCreation.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Filters", true, "Pick the filters to include as legend rows.", Filters),
-                    Single("S2", "Layout", true, "Legend layout.", "Single column", "Two columns", "By system group"),
-                    Toggles("S3", "Options", "Legend row content.",
-                        Tg("swatch", "Color swatch", "Show the filter's color", true),
-                        Tg("count", "Element count", "Show how many elements match", false),
-                        Tg("desc", "Description", "Show the trade description", true)),
-                    Info("S4", "Review & Run", "Builds or updates a Legend view from the selected filters."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s1.hint"), Filters),
+                    Single("S2", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s2.hint"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s2.items.1"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s2.items.2"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s2.items.3")),
+                    Toggles("S3", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.hint"),
+                        Tg("swatch", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.swatch.label"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.swatch.desc"), true),
+                        Tg("count", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.count.label"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.count.desc"), false),
+                        Tg("desc", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.desc.label"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s3.toggles.desc.desc"), true)),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.legendCreation.steps.s4.info")),
                 },
-                RunLog = RL(("Building legend from 5 filters…", "info"), ("Placed 5 swatch rows", "pass"),
-                            ("Legend view 'MEP Legend' updated", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.legendCreation.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.legendCreation.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.legendCreation.runLog.3"), "pass")),
             },
 
             ["Ceiling Heatmap"] = new OverviewDemoSpec
             {
-                Title = "Ceiling Heatmap", RunLabel = "Color Ceilings →",
+                Title = LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Ceiling Plan Views", true, "Reflected ceiling plans to color by height.", CeilingPlans),
-                    Single("S_RAMP", "Color Ramp", true, "How height maps to color.", "Blue to Red (low to high)", "Viridis", "Grayscale"),
-                    Toggles("S2", "Run Options", "Overrides applied with the heatmap.",
-                        Tg("hidelinked", "Hide linked ceilings", "Suppress ceilings inside links", true),
-                        Tg("legend", "Add legend", "Place a height legend", true),
-                        Tg("halftone", "Halftone background", "Halftone everything else", false)),
-                    Info("S3", "Review & Run", "Applies per-height color overrides through view filters."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s1.hint"), CeilingPlans),
+                    Single("S_RAMP", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s_ramp.title"), true, LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s_ramp.hint"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s_ramp.items.1"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s_ramp.items.2"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s_ramp.items.3")),
+                    Toggles("S2", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.hint"),
+                        Tg("hidelinked", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.hidelinked.label"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.hidelinked.desc"), true),
+                        Tg("legend", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.legend.label"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.legend.desc"), true),
+                        Tg("halftone", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.halftone.label"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s2.toggles.halftone.desc"), false)),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.steps.s3.info")),
                 },
-                RunLog = RL(("Reading ceiling heights on 3 views…", "info"), ("8 height bands detected", "pass"),
-                            ("Color overrides applied", "pass"), ("Legend placed", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.runLog.3"), "pass"), (LemoineStrings.T("overviewDemos.tools.ceilingHeatmap.runLog.4"), "pass")),
             },
 
             ["Make Ceiling Grids"] = new OverviewDemoSpec
             {
-                Title = "Make Ceiling Grids", RunLabel = "Export DWGs →",
+                Title = LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("docs", "Select Documents", true, "Models to build ceiling RCPs for.", Documents),
-                    MultiFlat("filter", "Filter Ceiling Types", false, "Limit to these ceiling types (optional).",
-                        L("Compound Ceiling 600x600", "GWB on Mtl. Stud", "ACT 1200x600")),
-                    FileStep("export", "Export Location", true, "Folder for the DWG output.", "Folders|*.*", "Choose export folder…"),
-                    Info("run", "Review & Run", "Creates an RCP per level showing only ceilings, then exports each as a DWG."),
+                    MultiFlat("docs", LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.docs.title"), true, LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.docs.hint"), Documents),
+                    MultiFlat("filter", LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.filter.title"), false, LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.filter.hint"), L(LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.filter.items.1"), LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.filter.items.2"), LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.filter.items.3"))),
+                    FileStep("export", LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.export.title"), true, LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.export.hint"), LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.export.filter"), LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.export.placeholder")),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.run.title"), LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.steps.run.info")),
                 },
-                RunLog = RL(("Creating RCP views per level…", "info"), ("3 RCP views created", "pass"),
-                            ("Exported 3 DWG files", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.makeCeilingGrids.runLog.3"), "pass")),
             },
 
             ["Project Grids"] = new OverviewDemoSpec
             {
-                Title = "Project Grids", RunLabel = "Project →",
+                Title = LemoineStrings.T("overviewDemos.tools.projectGrids.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.projectGrids.runLabel"),
                 Steps = new[]
                 {
-                    FileStep("S1", "DWG Source", true, "The ceiling-grid DWG to project onto soffits.", "AutoCAD DWG|*.dwg", "Browse for .dwg…"),
-                    Info("S2", "Review & Run", "Projects the DWG lines onto ceiling soffit faces as model curves."),
+                    FileStep("S1", LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s1.hint"), LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s1.filter"), LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s1.placeholder")),
+                    Info("S2", LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.projectGrids.steps.s2.info")),
                 },
-                RunLog = RL(("Importing ceiling-grid DWG…", "info"), ("Projected 124 curves onto soffits", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.projectGrids.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.projectGrids.runLog.2"), "pass")),
             },
 
             ["Reproject Grids"] = new OverviewDemoSpec
             {
-                Title = "Reproject Grids", RunLabel = "Reproject →",
+                Title = LemoineStrings.T("overviewDemos.tools.reprojectGrids.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.reprojectGrids.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Ceiling Plans", true, "Plans whose grid curves should follow updated ceilings.", CeilingPlans),
-                    Info("S2", "Review & Run", "Reprojects existing grid model curves onto current ceiling elevations."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.reprojectGrids.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.reprojectGrids.steps.s1.hint"), CeilingPlans),
+                    Info("S2", LemoineStrings.T("overviewDemos.tools.reprojectGrids.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.reprojectGrids.steps.s2.info")),
                 },
-                RunLog = RL(("Reprojecting grid curves on 3 plans…", "info"), ("Updated 124 curves to new elevations", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.reprojectGrids.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.reprojectGrids.runLog.2"), "pass")),
             },
 
             ["Bulk Views by Level"] = new OverviewDemoSpec
             {
-                Title = "Bulk Views by Level", RunLabel = "Create Views →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Source Documents", true, "Models to create per-level views from.", Documents),
-                    Multi("S2", "Levels & View Types", true, "Levels and the view types to create for each.",
-                        Groups(("Levels", Levels), ("View Types", L("3D", "Floor Plan", "Ceiling Plan")))),
-                    Txt("S3", "View Naming", false, "Token pattern for new view names.", "{Level} - {ViewType}", "{Level} - {ViewType}"),
-                    Info("S4", "Review & Run", "Creates cropped views per level and building cluster."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s1.hint"), Documents),
+                    Multi("S2", LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.hint"), Groups((LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.groups.levels.label"), Levels), (LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.groups.viewTypes.label"), L(LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.groups.viewTypes.items.1"), LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.groups.viewTypes.items.2"), LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s2.groups.viewTypes.items.3"))))),
+                    Txt("S3", LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s3.title"), false, LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s3.default"), LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s3.placeholder")),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s4.info")),
                 },
-                RunLog = RL(("Creating views for 5 levels…", "info"), ("30 cropped views created", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkViewsByLevel.runLog.2"), "pass")),
             },
 
             ["Bulk Duplicate"] = new OverviewDemoSpec
             {
-                Title = "Bulk Duplicate", RunLabel = "Duplicate →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkDuplicate.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkDuplicate.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Source Views", true, "Views to duplicate.", PlanViews),
-                    Single("S2", "Duplicate Mode", true, "How to duplicate.", "Duplicate", "With Detailing", "As Dependent"),
-                    Txt("S3", "View Naming", true, "Token pattern for the copies.", "{ViewName} - COORD", "{ViewName} - COORD"),
-                    Info("S4", "Review & Run", "Duplicates each selected view with token-based naming."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s1.hint"), PlanViews),
+                    Single("S2", LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.hint"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.1"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.2"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.3")),
+                    Txt("S3", LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.title"), true, LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.default"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.placeholder")),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.bulkDuplicate.steps.s4.info")),
                 },
-                RunLog = RL(("Duplicating 4 views (With Detailing)…", "info"), ("4 views created", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkDuplicate.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkDuplicate.runLog.2"), "pass")),
             },
 
             ["Bulk Views by Template"] = new OverviewDemoSpec
             {
-                Title = "Bulk Views by Template", RunLabel = "Duplicate →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Source Views", true, "Views to duplicate across templates.", PlanViews),
-                    MultiFlat("S2", "View Templates", true, "Templates to apply, one copy per template.", Templates),
-                    Txt("S3", "View Naming", true, "Token pattern.", "{ViewName} - {Template}", "{ViewName} - {Template}"),
-                    Info("S4", "Review & Run", "Duplicates each view once per selected template."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s1.hint"), PlanViews),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s2.hint"), Templates),
+                    Txt("S3", LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.title"), true, LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.default"), LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.placeholder")),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s4.info")),
                 },
-                RunLog = RL(("4 views across 3 templates…", "info"), ("12 views created", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLog.2"), "pass")),
             },
 
             ["Bulk Dependent Views"] = new OverviewDemoSpec
             {
-                Title = "Bulk Dependent Views", RunLabel = "Replicate →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkDependentViews.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkDependentViews.runLabel"),
                 Steps = new[]
                 {
-                    Single("S1", "Source View", true, "The view whose dependents/crops are copied.", PlanViews.ToArray()),
-                    Info("S2", "Dependent Preview", "The source's dependent views and crop regions are previewed here."),
-                    MultiFlat("S3", "Target Views", true, "Views to copy the dependents onto.", PlanViews),
-                    Txt("S4", "View Naming", false, "Token pattern for new dependents.", "{ParentView} - {Dependent}", "{ParentView} - {Dependent}"),
-                    Info("S5", "Review & Run", "Copies dependents and crop regions onto each target view."),
+                    Single("S1", LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s1.hint"), PlanViews.ToArray()),
+                    Info("S2", LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s2.info")),
+                    MultiFlat("S3", LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s3.title"), true, LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s3.hint"), PlanViews),
+                    Txt("S4", LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.title"), false, LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.hint"), LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.default"), LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.placeholder")),
+                    Info("S5", LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s5.title"), LemoineStrings.T("overviewDemos.tools.bulkDependentViews.steps.s5.info")),
                 },
-                RunLog = RL(("Source has 4 dependents…", "info"), ("Cloned onto 3 target views", "pass"), ("12 dependent views created", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkDependentViews.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkDependentViews.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.bulkDependentViews.runLog.3"), "pass")),
             },
 
             ["Explode View by Trade"] = new OverviewDemoSpec
             {
-                Title = "Explode View by Trade", RunLabel = "Explode →",
+                Title = LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.runLabel"),
                 Steps = new[]
                 {
-                    Single("S1", "Select Source 3D View", true, "The 3D view to explode.", Views3D.ToArray()),
-                    MultiFlat("S2", "Select Trades", true, "One isolated 3D view is made per trade.", Trades),
-                    Toggles("S3", "Options", "How the exploded views are made.",
-                        Tg("box", "Keep section box", "Reuse the source's section box", true),
-                        Tg("stack", "Stack by elevation", "Offset each trade view by element elevation", true),
-                        Tg("tags", "Copy tags", "Carry annotation tags across", false)),
-                    Info("S4", "Review & Run", "Duplicates the 3D view once per trade, isolated by its filters."),
+                    Single("S1", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s1.hint"), Views3D.ToArray()),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s2.hint"), Trades),
+                    Toggles("S3", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.hint"),
+                        Tg("box", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.box.label"), LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.box.desc"), true),
+                        Tg("stack", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.stack.label"), LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.stack.desc"), true),
+                        Tg("tags", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.tags.label"), LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s3.toggles.tags.desc"), false)),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.steps.s4.info")),
                 },
-                RunLog = RL(("Source camera + section box captured…", "info"), ("6 trade views created", "pass"), ("Stacked by elevation", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.explodeViewByTrade.runLog.3"), "pass")),
             },
 
             ["Place Dependent Views"] = new OverviewDemoSpec
             {
-                Title = "Place Dependent Views", RunLabel = "Place on Sheets →",
+                Title = LemoineStrings.T("overviewDemos.tools.placeDependentViews.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.placeDependentViews.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Views to Place", true, "Parent views: one sheet each, with the dependents packed on it.", PlanViews),
-                    Single("S2", "Title Block", true, "Title block for the new sheets.", TitleBlocks.ToArray()),
-                    Txt("S3", "Sheet Naming", true, "Token pattern for sheet names.", "{ParentView}", "{ParentView}"),
-                    Toggles("S4", "Layout", "Packing options.",
-                        Tg("pack", "Pack without overlap", "Avoid viewport overlap", true),
-                        Tg("trim", "Trim annotations", "Annotation-crop each dependent", true),
-                        Tg("align", "Align titles", "Align the view titles", false)),
-                    Info("S5", "Review & Run", "Creates one sheet per view and packs its dependents."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s1.hint"), PlanViews),
+                    Single("S2", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s2.hint"), TitleBlocks.ToArray()),
+                    Txt("S3", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s3.title"), true, LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s3.default"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s3.placeholder")),
+                    Toggles("S4", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.hint"),
+                        Tg("pack", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.pack.label"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.pack.desc"), true),
+                        Tg("trim", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.trim.label"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.trim.desc"), true),
+                        Tg("align", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.align.label"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s4.toggles.align.desc"), false)),
+                    Info("S5", LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s5.title"), LemoineStrings.T("overviewDemos.tools.placeDependentViews.steps.s5.info")),
                 },
-                RunLog = RL(("Measuring 4 parent views…", "info"), ("4 sheets created", "pass"), ("18 dependents placed without overlap", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.placeDependentViews.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.placeDependentViews.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.placeDependentViews.runLog.3"), "pass")),
             },
 
             ["Align Sheet Views"] = new OverviewDemoSpec
             {
-                Title = "Align Sheet Views", RunLabel = "Align →",
+                Title = LemoineStrings.T("overviewDemos.tools.alignSheetViews.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.alignSheetViews.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Source Sheets", true, "Reference sheets to align to.", Sheets),
-                    MultiFlat("S2", "Target Sheets", true, "Sheets whose viewports get aligned.", Sheets),
-                    Toggles("S3", "Options", "What to inherit from the reference.",
-                        Tg("scope", "Inherit scope box", "Match the reference scope box", true),
-                        Tg("crop", "Match crop size", "Match crop region size", true),
-                        Tg("vis", "Match crop visibility", "Match crop visibility", false),
-                        Tg("grid", "Inherit grid extents", "Match grid bubble extents", false)),
-                    Info("S4", "Review & Run", "Aligns target viewports so matching views overlay the reference."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s1.hint"), Sheets),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s2.hint"), Sheets),
+                    Toggles("S3", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.hint"),
+                        Tg("scope", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.scope.label"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.scope.desc"), true),
+                        Tg("crop", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.crop.label"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.crop.desc"), true),
+                        Tg("vis", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.vis.label"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.vis.desc"), false),
+                        Tg("grid", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.grid.label"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s3.toggles.grid.desc"), false)),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.alignSheetViews.steps.s4.info")),
                 },
-                RunLog = RL(("Pairing views by scope box…", "info"), ("3 sheets aligned", "pass"), ("1 ambiguous pair reported", "skip")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.alignSheetViews.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.alignSheetViews.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.alignSheetViews.runLog.3"), "skip")),
             },
 
             ["Bulk Rename"] = new OverviewDemoSpec
             {
-                Title = "Bulk Rename", RunLabel = "Rename →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkRename.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkRename.runLabel"),
                 Steps = new[]
                 {
-                    Single("S1", "Target", true, "What to rename.", "Sheets", "Views"),
-                    MultiFlat("S2", "Select Items", true, "Items to rename.", Sheets),
-                    Single("S3", "Field & Operation", true, "How to rename.", "Find & Replace", "Prefix", "Suffix", "Sequential Number", "Token Pattern"),
-                    Info("S4", "Review & Run", "Applies the rename, skipping and logging any duplicate-number/name clashes."),
+                    Single("S1", LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s1.hint"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s1.items.1"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s1.items.2")),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s2.hint"), Sheets),
+                    Single("S3", LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.title"), true, LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.items.1"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.items.2"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.items.3"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.items.4"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s3.items.5")),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.bulkRename.steps.s4.info")),
                 },
-                RunLog = RL(("Renaming 3 sheets (Prefix)…", "info"), ("3 sheets renamed", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkRename.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkRename.runLog.2"), "pass")),
             },
 
             ["Bulk Export"] = new OverviewDemoSpec
             {
-                Title = "Bulk Export", RunLabel = "Export →",
+                Title = LemoineStrings.T("overviewDemos.tools.bulkExport.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.bulkExport.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Sheets / Views", true, "What to export.", Sheets),
-                    Toggles("S3", "Filename & Formats", "Output formats (filename pattern: {SheetNumber}-{SheetName}).",
-                        Tg("pdf", "PDF", "Export PDF", true),
-                        Tg("dwg", "DWG", "Export DWG", false),
-                        Tg("nwc", "NWC", "Export NWC (3D only)", false),
-                        Tg("ifc", "IFC", "Export IFC (3D only)", false)),
-                    Toggles("S4", "PDF Settings", "PDF options.",
-                        Tg("combine", "Single combined PDF", "One file for all sheets", true),
-                        Tg("vector", "Vector processing", "Vector rather than raster", true),
-                        Tg("hideref", "Hide ref work planes", "Suppress reference planes", true)),
-                    FileStep("S8", "Output", true, "Export destination folder.", "Folders|*.*", "Choose export folder…"),
-                    Info("S9", "Review & Run", "Exports each selected sheet/view with token-based filenames."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s1.hint"), Sheets),
+                    Toggles("S3", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.hint"),
+                        Tg("pdf", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.pdf.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.pdf.desc"), true),
+                        Tg("dwg", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.dwg.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.dwg.desc"), false),
+                        Tg("nwc", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.nwc.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.nwc.desc"), false),
+                        Tg("ifc", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.ifc.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s3.toggles.ifc.desc"), false)),
+                    Toggles("S4", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.hint"),
+                        Tg("combine", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.combine.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.combine.desc"), true),
+                        Tg("vector", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.vector.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.vector.desc"), true),
+                        Tg("hideref", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.hideref.label"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s4.toggles.hideref.desc"), true)),
+                    FileStep("S8", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s8.title"), true, LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s8.hint"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s8.filter"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s8.placeholder")),
+                    Info("S9", LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s9.title"), LemoineStrings.T("overviewDemos.tools.bulkExport.steps.s9.info")),
                 },
-                RunLog = RL(("Exporting 3 sheets to PDF…", "info"), ("M-101 → M-101-Level 1 Mechanical.pdf", "pass"),
-                            ("3 of 3 exported", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.bulkExport.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.bulkExport.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.bulkExport.runLog.3"), "pass")),
             },
 
             ["Print View"] = new OverviewDemoSpec
             {
-                Title = "Print View", RunLabel = "Print →",
+                Title = LemoineStrings.T("overviewDemos.tools.printView.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.printView.runLabel"),
                 Steps = new[]
                 {
-                    Single("S1", "Formats", true, "Format for the active view/sheet.", "PDF", "DWG", "NWC (3D only)", "IFC (3D only)"),
-                    Toggles("S2", "PDF Settings", "PDF options.",
-                        Tg("vector", "Vector processing", "Vector rather than raster", true),
-                        Tg("hideref", "Hide ref work planes", "Suppress reference planes", true)),
-                    FileStep("S6", "Output", true, "Export destination folder.", "Folders|*.*", "Choose export folder…"),
-                    Info("S7", "Review & Run", "Exports just the active view or sheet using the Bulk Export settings."),
+                    Single("S1", LemoineStrings.T("overviewDemos.tools.printView.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.printView.steps.s1.hint"), LemoineStrings.T("overviewDemos.tools.printView.steps.s1.items.1"), LemoineStrings.T("overviewDemos.tools.printView.steps.s1.items.2"), LemoineStrings.T("overviewDemos.tools.printView.steps.s1.items.3"), LemoineStrings.T("overviewDemos.tools.printView.steps.s1.items.4")),
+                    Toggles("S2", LemoineStrings.T("overviewDemos.tools.printView.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.printView.steps.s2.hint"),
+                        Tg("vector", LemoineStrings.T("overviewDemos.tools.printView.steps.s2.toggles.vector.label"), LemoineStrings.T("overviewDemos.tools.printView.steps.s2.toggles.vector.desc"), true),
+                        Tg("hideref", LemoineStrings.T("overviewDemos.tools.printView.steps.s2.toggles.hideref.label"), LemoineStrings.T("overviewDemos.tools.printView.steps.s2.toggles.hideref.desc"), true)),
+                    FileStep("S6", LemoineStrings.T("overviewDemos.tools.printView.steps.s6.title"), true, LemoineStrings.T("overviewDemos.tools.printView.steps.s6.hint"), LemoineStrings.T("overviewDemos.tools.printView.steps.s6.filter"), LemoineStrings.T("overviewDemos.tools.printView.steps.s6.placeholder")),
+                    Info("S7", LemoineStrings.T("overviewDemos.tools.printView.steps.s7.title"), LemoineStrings.T("overviewDemos.tools.printView.steps.s7.info")),
                 },
-                RunLog = RL(("Exporting active sheet to PDF…", "info"), ("M-102-Level 2 Mechanical.pdf written", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.printView.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.printView.runLog.2"), "pass")),
             },
 
             ["Split by Levels"] = new OverviewDemoSpec
             {
-                Title = "Split by Levels", RunLabel = "Split →",
+                Title = LemoineStrings.T("overviewDemos.tools.splitByLevels.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.splitByLevels.runLabel"),
                 Steps = new[]
                 {
-                    Multi("S1", "Select Categories", true, "Element categories to split.", Categories()),
-                    MultiFlat("S2", "Select Levels", true, "Split at these level elevations.", Levels),
-                    Info("S3", "Review & Run", "Splits the selected elements at each chosen level."),
+                    Multi("S1", LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s1.hint"), Categories()),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s2.hint"), Levels),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.splitByLevels.steps.s3.info")),
                 },
-                RunLog = RL(("Splitting walls & MEP at 5 levels…", "info"), ("42 elements split", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.splitByLevels.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.splitByLevels.runLog.2"), "pass")),
             },
 
             ["Split by Grid Lines"] = new OverviewDemoSpec
             {
-                Title = "Split by Grid Lines", RunLabel = "Split →",
+                Title = LemoineStrings.T("overviewDemos.tools.splitByGridLines.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.splitByGridLines.runLabel"),
                 Steps = new[]
                 {
-                    Multi("S1", "Select Categories", true, "Element categories to split.", Categories()),
-                    MultiFlat("S2", "Select Grids", true, "Split at these grid planes.", Grids),
-                    Info("S3", "Review & Run", "Splits the selected elements at each chosen grid plane."),
+                    Multi("S1", LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s1.hint"), Categories()),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s2.hint"), Grids),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.splitByGridLines.steps.s3.info")),
                 },
-                RunLog = RL(("Splitting at 6 grid planes…", "info"), ("31 elements split", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.splitByGridLines.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.splitByGridLines.runLog.2"), "pass")),
             },
 
             ["Split by Ref Plane"] = new OverviewDemoSpec
             {
-                Title = "Split by Ref Plane", RunLabel = "Split →",
+                Title = LemoineStrings.T("overviewDemos.tools.splitByRefPlane.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.splitByRefPlane.runLabel"),
                 Steps = new[]
                 {
-                    Multi("S1", "Select Categories", true, "Element categories to split.", Categories()),
-                    MultiFlat("S2", "Select Reference Planes", true, "Split at these reference planes.", RefPlanes),
-                    Info("S3", "Review & Run", "Splits the selected elements at each chosen reference plane."),
+                    Multi("S1", LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s1.hint"), Categories()),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s2.hint"), RefPlanes),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.splitByRefPlane.steps.s3.info")),
                 },
-                RunLog = RL(("Splitting at 3 reference planes…", "info"), ("12 elements split", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.splitByRefPlane.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.splitByRefPlane.runLog.2"), "pass")),
             },
 
             ["Split by Cell"] = new OverviewDemoSpec
             {
-                Title = "Split by Cell", RunLabel = "Split →",
+                Title = LemoineStrings.T("overviewDemos.tools.splitByCell.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.splitByCell.runLabel"),
                 Steps = new[]
                 {
-                    Multi("S1", "Select Categories", true, "Floors, ceilings, or filled regions to split.", Categories()),
-                    Num("S2", "Cell Size", "Size of each grid cell.", 2000, 100, 10000, 100, "mm"),
-                    Info("S3", "Review & Run", "Splits each selected surface into a regular grid of cells."),
+                    Multi("S1", LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s1.hint"), Categories()),
+                    Num("S2", LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s2.hint"), 2000, 100, 10000, 100, LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s2.unit")),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.splitByCell.steps.s3.info")),
                 },
-                RunLog = RL(("Splitting floors into 2000 mm cells…", "info"), ("1 floor → 24 cells", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.splitByCell.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.splitByCell.runLog.2"), "pass")),
             },
 
             ["Extend Walls"] = new OverviewDemoSpec
             {
-                Title = "Extend Walls", RunLabel = "Extend →",
+                Title = LemoineStrings.T("overviewDemos.tools.extendWalls.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.extendWalls.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Base Levels", true, "Walls based on these levels are considered.", Levels),
-                    Toggles("S2", "Options", "Extend behavior.",
-                        Tg("aboveceil", "Only walls above ceiling", "Limit to walls that pass the ceiling", true),
-                        Tg("levelup", "Snap to level above", "Set top constraint to the next level", true)),
-                    Info("S3", "Review & Run", "Re-hosts qualifying walls' top constraint to the level above."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s1.hint"), Levels),
+                    Toggles("S2", LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.title"), LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.hint"),
+                        Tg("aboveceil", LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.toggles.aboveceil.label"), LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.toggles.aboveceil.desc"), true),
+                        Tg("levelup", LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.toggles.levelup.label"), LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s2.toggles.levelup.desc"), true)),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.extendWalls.steps.s3.info")),
                 },
-                RunLog = RL(("Checking walls on 5 levels…", "info"), ("18 walls re-constrained to Level Above", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.extendWalls.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.extendWalls.runLog.2"), "pass")),
             },
 
             ["Clash Definitions"] = new OverviewDemoSpec
             {
-                Title = "Clash Definitions", RunLabel = "Save Definition →",
+                Title = LemoineStrings.T("overviewDemos.tools.clashDefinitions.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.clashDefinitions.runLabel"),
                 Steps = new[]
                 {
-                    Txt("name", "Definition Name", true, "Name this clash definition.", "Duct vs Structure", "Name this definition"),
-                    Multi("groupA", "Group A", true, "First element group.", Categories()),
-                    Multi("groupB", "Group B", true, "Second element group.", Categories()),
-                    Toggles("marker", "Marker Settings", "How clashes are marked.",
-                        Tg("color", "Colored marker", "Place a colored marker", true),
-                        Tg("tag", "Tag clash", "Add a clash tag", true),
-                        Tg("round", "Round marker", "Use a round marker", false)),
-                    Info("save", "Save Definition", "Adds this definition to the reusable library used by the finders."),
+                    Txt("name", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.name.title"), true, LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.name.hint"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.name.default"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.name.placeholder")),
+                    Multi("groupA", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.groupa.title"), true, LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.groupa.hint"), Categories()),
+                    Multi("groupB", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.groupb.title"), true, LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.groupb.hint"), Categories()),
+                    Toggles("marker", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.title"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.hint"),
+                        Tg("color", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.color.label"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.color.desc"), true),
+                        Tg("tag", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.tag.label"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.tag.desc"), true),
+                        Tg("round", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.round.label"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.marker.toggles.round.desc"), false)),
+                    Info("save", LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.save.title"), LemoineStrings.T("overviewDemos.tools.clashDefinitions.steps.save.info")),
                 },
-                RunLog = RL(("Validating groups…", "info"), ("Definition 'Duct vs Structure' saved to library", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.clashDefinitions.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.clashDefinitions.runLog.2"), "pass")),
             },
 
             ["Clash Finder & Dimension"] = new OverviewDemoSpec
             {
-                Title = "Clash Finder & Dimension", RunLabel = "Find & Dimension →",
+                Title = LemoineStrings.T("overviewDemos.tools.clashFinderDimension.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.clashFinderDimension.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Definitions", true, "Saved clash definitions to run.", Definitions),
-                    MultiFlat("S2", "Select Views", true, "Plan views to detect and mark in.", PlanViews),
-                    Toggles("S3", "Marker Settings", "Marker behavior.",
-                        Tg("color", "Colored markers", "Color by definition", true),
-                        Tg("tag", "Tag each clash", "Add a tag per clash", true),
-                        Tg("dense", "Survey dense areas", "Add callouts where clashes cluster", true)),
-                    Toggles("S4", "Dimensioning", "Dimension targets.",
-                        Tg("grid", "Dimension to grids", "Dimension to nearest grid", true),
-                        Tg("slab", "Dimension to slab edges", "Dimension to nearest slab edge", true),
-                        Tg("scale", "Change view scale", "Rescale views to fit", false)),
-                    Info("S5", "Review & Run", "Detects clashes, marks them, and dimensions each out."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s1.hint"), Definitions),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s2.hint"), PlanViews),
+                    Toggles("S3", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.hint"),
+                        Tg("color", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.color.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.color.desc"), true),
+                        Tg("tag", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.tag.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.tag.desc"), true),
+                        Tg("dense", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.dense.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s3.toggles.dense.desc"), true)),
+                    Toggles("S4", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.hint"),
+                        Tg("grid", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.grid.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.grid.desc"), true),
+                        Tg("slab", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.slab.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.slab.desc"), true),
+                        Tg("scale", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.scale.label"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s4.toggles.scale.desc"), false)),
+                    Info("S5", LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s5.title"), LemoineStrings.T("overviewDemos.tools.clashFinderDimension.steps.s5.info")),
                 },
-                RunLog = RL(("Running 3 definitions over 4 views…", "info"), ("Level 1 - Mechanical: 4 clashes marked", "pass"),
-                            ("Level 2 - Mechanical: 2 clashes marked", "pass"), ("6 markers dimensioned to grids", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.clashFinderDimension.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.clashFinderDimension.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.clashFinderDimension.runLog.3"), "pass"), (LemoineStrings.T("overviewDemos.tools.clashFinderDimension.runLog.4"), "pass")),
             },
 
             ["Clash Finder & Elevation"] = new OverviewDemoSpec
             {
-                Title = "Clash Finder & Elevation", RunLabel = "Find & Elevate →",
+                Title = LemoineStrings.T("overviewDemos.tools.clashFinderElevation.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.clashFinderElevation.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Definitions", true, "Saved clash definitions to run.", Definitions),
-                    MultiFlat("S2", "Select Views", true, "Sections / elevations to mark in.", Sections),
-                    Single("S3", "Marker & Tag Settings", false, "Where the spot elevation sits on the round marker.", "Top of round", "Center", "Bottom of round"),
-                    Info("S4", "Review & Run", "Detects clashes and tags each with a spot elevation."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s1.hint"), Definitions),
+                    MultiFlat("S2", LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s2.title"), true, LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s2.hint"), Sections),
+                    Single("S3", LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s3.title"), false, LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s3.hint"), LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s3.items.1"), LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s3.items.2"), LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s3.items.3")),
+                    Info("S4", LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s4.title"), LemoineStrings.T("overviewDemos.tools.clashFinderElevation.steps.s4.info")),
                 },
-                RunLog = RL(("Running 3 definitions over 3 views…", "info"), ("Section A-A: 5 clashes marked", "pass"),
-                            ("Spot elevations tagged at top of round", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.clashFinderElevation.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.clashFinderElevation.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.clashFinderElevation.runLog.3"), "pass")),
             },
 
             ["Refine Dimensions"] = new OverviewDemoSpec
             {
-                Title = "Refine Dimensions", RunLabel = "Re-dimension →",
+                Title = LemoineStrings.T("overviewDemos.tools.refineDimensions.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.refineDimensions.runLabel"),
                 Steps = new[]
                 {
-                    MultiFlat("S1", "Select Views", true, "Views that already carry clash markers.", PlanViews),
-                    Single("S2", "Destination", false, "Where to dimension each marker.", "Nearest grid", "Nearest slab edge", "Grid then slab edge"),
-                    Info("S3", "Review & Run", "Re-dimensions the existing markers. No detection, no scale change."),
+                    MultiFlat("S1", LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s1.title"), true, LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s1.hint"), PlanViews),
+                    Single("S2", LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s2.title"), false, LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s2.hint"), LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s2.items.1"), LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s2.items.2"), LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s2.items.3")),
+                    Info("S3", LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s3.title"), LemoineStrings.T("overviewDemos.tools.refineDimensions.steps.s3.info")),
                 },
-                RunLog = RL(("Re-dimensioning markers on 4 views…", "info"), ("17 markers re-dimensioned to nearest grid", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.refineDimensions.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.refineDimensions.runLog.2"), "pass")),
             },
 
             ["Copy Linear"] = new OverviewDemoSpec
             {
-                Title = "Copy Linear", RunLabel = "Copy →",
+                Title = LemoineStrings.T("overviewDemos.tools.copyLinear.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.copyLinear.runLabel"),
                 Steps = new[]
                 {
-                    Multi("source", "Source", true, "Linked model and the linear run categories.",
-                        Groups(("Linked Model", Documents), ("Run Categories", L("Pipes", "Ducts", "Cable Trays")))),
-                    MultiFlat("filters", "Parameter Filters", false, "Limit by parameter values (optional).",
-                        L("System: Chilled Water", "Size: 150 mm", "Reference Level: Level 2")),
-                    Single("operation", "Operation", true, "What to do with the copied runs.", "Split into standard lengths", "Replace with family at intervals"),
-                    Toggles("changes", "Change Detection", "What a re-run does.",
-                        Tg("changed", "Only changed elements", "Skip unchanged sources on re-run", true),
-                        Tg("stamp", "Re-stamp outputs", "Refresh the provenance stamp", true)),
-                    Info("run", "Review & Run", "Copies linked runs into the host and applies the chosen operation."),
+                    Multi("source", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.title"), true, LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.hint"), Groups((LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.groups.linkedModel.label"), Documents), (LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.groups.runCategories.label"), L(LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.groups.runCategories.items.1"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.groups.runCategories.items.2"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.source.groups.runCategories.items.3"))))),
+                    MultiFlat("filters", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.filters.title"), false, LemoineStrings.T("overviewDemos.tools.copyLinear.steps.filters.hint"), L(LemoineStrings.T("overviewDemos.tools.copyLinear.steps.filters.items.1"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.filters.items.2"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.filters.items.3"))),
+                    Single("operation", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.operation.title"), true, LemoineStrings.T("overviewDemos.tools.copyLinear.steps.operation.hint"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.operation.items.1"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.operation.items.2")),
+                    Toggles("changes", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.title"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.hint"),
+                        Tg("changed", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.toggles.changed.label"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.toggles.changed.desc"), true),
+                        Tg("stamp", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.toggles.stamp.label"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.changes.toggles.stamp.desc"), true)),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.copyLinear.steps.run.title"), LemoineStrings.T("overviewDemos.tools.copyLinear.steps.run.info")),
                 },
-                RunLog = RL(("Reading linked runs…", "info"), ("Copied 28 segments into host", "pass"),
-                            ("Split into 6 m standard lengths", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.copyLinear.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.copyLinear.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.copyLinear.runLog.3"), "pass")),
             },
 
             ["Copy Grids"] = new OverviewDemoSpec
             {
-                Title = "Copy Grids", RunLabel = "Copy Grids →",
+                Title = LemoineStrings.T("overviewDemos.tools.copyGrids.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.copyGrids.runLabel"),
                 Steps = new[]
                 {
-                    Multi("source", "Source Link & Grids", true, "Linked model and the grids to copy.",
-                        Groups(("Linked Model", Documents), ("Grids", Grids))),
-                    Info("run", "Review & Run", "Copies the selected grids into the host; existing names are skipped."),
+                    Multi("source", LemoineStrings.T("overviewDemos.tools.copyGrids.steps.source.title"), true, LemoineStrings.T("overviewDemos.tools.copyGrids.steps.source.hint"), Groups((LemoineStrings.T("overviewDemos.tools.copyGrids.steps.source.groups.linkedModel.label"), Documents), (LemoineStrings.T("overviewDemos.tools.copyGrids.steps.source.groups.grids.label"), Grids))),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.copyGrids.steps.run.title"), LemoineStrings.T("overviewDemos.tools.copyGrids.steps.run.info")),
                 },
-                RunLog = RL(("Copying 6 grids…", "info"), ("4 grids copied", "pass"), ("2 grids skipped (name already exists)", "skip")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.copyGrids.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.copyGrids.runLog.2"), "pass"), (LemoineStrings.T("overviewDemos.tools.copyGrids.runLog.3"), "skip")),
             },
 
             ["Copy Elements"] = new OverviewDemoSpec
             {
-                Title = "Copy Elements", RunLabel = "Copy →",
+                Title = LemoineStrings.T("overviewDemos.tools.copyElements.title"), RunLabel = LemoineStrings.T("overviewDemos.tools.copyElements.runLabel"),
                 Steps = new[]
                 {
-                    Multi("source", "Source Link & Categories", true, "Linked model and the categories to pull from.",
-                        Groups(("Linked Model", Documents), ("Categories", L("Mechanical Equipment", "Air Terminals", "Plumbing Fixtures")))),
-                    MultiFlat("types", "Families to Copy", true, "Tick the family types within those categories.",
-                        L("AHU-01", "VAV-Series", "Diffuser 600x600", "FCU-Series")),
-                    Toggles("changes", "Change Detection", "What a re-run does.",
-                        Tg("changed", "Only changed elements", "Skip unchanged sources on re-run", true),
-                        Tg("stamp", "Re-stamp outputs", "Refresh the provenance stamp", true)),
-                    Info("run", "Review & Run", "Copies the ticked family types from the link into the host."),
+                    Multi("source", LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.title"), true, LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.hint"), Groups((LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.groups.linkedModel.label"), Documents), (LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.groups.categories.label"), L(LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.groups.categories.items.1"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.groups.categories.items.2"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.source.groups.categories.items.3"))))),
+                    MultiFlat("types", LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.title"), true, LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.hint"), L(LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.items.1"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.items.2"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.items.3"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.types.items.4"))),
+                    Toggles("changes", LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.title"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.hint"),
+                        Tg("changed", LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.toggles.changed.label"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.toggles.changed.desc"), true),
+                        Tg("stamp", LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.toggles.stamp.label"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.changes.toggles.stamp.desc"), true)),
+                    Info("run", LemoineStrings.T("overviewDemos.tools.copyElements.steps.run.title"), LemoineStrings.T("overviewDemos.tools.copyElements.steps.run.info")),
                 },
-                RunLog = RL(("Reading linked elements…", "info"), ("Copied 36 elements into host", "pass")),
+                RunLog = RL((LemoineStrings.T("overviewDemos.tools.copyElements.runLog.1"), "info"), (LemoineStrings.T("overviewDemos.tools.copyElements.runLog.2"), "pass")),
             },
         };
     }

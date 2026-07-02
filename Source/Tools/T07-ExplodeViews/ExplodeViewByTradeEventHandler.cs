@@ -68,7 +68,7 @@ namespace LemoineTools.Tools.ExplodeViews
             catch (Exception ex)
             {
                 LemoineLog.Error("ExplodeViewByTrade: run aborted", ex);
-                Log($"Error: {ex.Message}", "fail");
+                Log(LemoineStrings.T("explode.byTrade.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -99,12 +99,12 @@ namespace LemoineTools.Tools.ExplodeViews
         {
             if (!(doc.GetElement(SourceViewId) is View3D source) || source.IsTemplate)
             {
-                Log("Source view is not a 3D view (or no longer exists).", "fail");
+                Log(LemoineStrings.T("explode.byTrade.log.notView"), "fail");
                 fail++; return;
             }
             if (SelectedTradeIds == null || SelectedTradeIds.Count == 0)
             {
-                Log("No trades selected.", "fail");
+                Log(LemoineStrings.T("explode.byTrade.log.noTrades"), "fail");
                 fail++; return;
             }
 
@@ -134,8 +134,7 @@ namespace LemoineTools.Tools.ExplodeViews
 
                 if (filters.Count == 0)
                 {
-                    Log($"Trade \"{trade.Label}\" has no created filters in this project — skipped. "
-                        + "Run AutoFilters → Create Filters first.", "warn");
+                    Log(LemoineStrings.T("explode.byTrade.log.tradeNoFilters", trade.Label), "warn");
                     _tradesSkipped++; skip++;
                     continue;
                 }
@@ -145,7 +144,7 @@ namespace LemoineTools.Tools.ExplodeViews
 
             if (plans.Count == 0)
             {
-                Log("None of the selected trades have filters created in this project — nothing to explode.", "fail");
+                Log(LemoineStrings.T("explode.byTrade.log.noneHaveFilters"), "fail");
                 fail++; return;
             }
 
@@ -172,8 +171,7 @@ namespace LemoineTools.Tools.ExplodeViews
             }
             else
             {
-                Log("Source view has no active section box — elevation scan covers the whole model "
-                    + "for each trade (this may be slow on large links).", "info");
+                Log(LemoineStrings.T("explode.byTrade.log.noSectionBox"), "info");
             }
 
             var links = new FilteredElementCollector(doc, source.Id)
@@ -186,7 +184,7 @@ namespace LemoineTools.Tools.ExplodeViews
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user during elevation scan — {i} of {plans.Count} trade(s) scanned.", "warn");
+                    Log(LemoineStrings.T("explode.byTrade.log.stoppedScan", i, plans.Count), "warn");
                     break;
                 }
 
@@ -194,10 +192,9 @@ namespace LemoineTools.Tools.ExplodeViews
 
                 var p = plans[i];
                 if (p.ElemCount == 0)
-                    Log($"No elements found for \"{p.Label}\" in view scope — it will stack at the bottom.", "info");
+                    Log(LemoineStrings.T("explode.byTrade.log.noElementsForTrade", p.Label), "info");
                 else
-                    Log($"Found {p.ElemCount} element(s) for \"{p.Label}\" — median {FormatFtIn(p.MedianZ)} "
-                        + $"(range {FormatFtIn(p.MinZ)} … {FormatFtIn(p.MaxZ)}).", "info");
+                    Log(LemoineStrings.T("explode.byTrade.log.foundElements", p.ElemCount, p.Label, FormatFtIn(p.MedianZ), FormatFtIn(p.MinZ), FormatFtIn(p.MaxZ)), "info");
 
                 Progress(15 + (int)((i + 1) * 40.0 / plans.Count), pass, fail, skip);
             }
@@ -218,7 +215,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 ordered = plans;
             }
 
-            Log("Stack order (top → bottom): "
+            Log(LemoineStrings.T("explode.byTrade.log.stackOrder")
                 + string.Join("  ›  ", ordered.Select(p => p.Label)), "info");
 
             // ── Link display diagnostic (host filters need "By Host View") ────────
@@ -273,7 +270,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {i} of {ordered.Count} view(s) created; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", i, ordered.Count), "warn");
                         break;
                     }
 
@@ -283,7 +280,7 @@ namespace LemoineTools.Tools.ExplodeViews
                         ElementId dupId = source.Duplicate(ViewDuplicateOption.Duplicate);
                         if (!(doc.GetElement(dupId) is View3D dup))
                         {
-                            Log($"Could not duplicate the source view for \"{plan.Label}\".", "fail");
+                            Log(LemoineStrings.T("explode.byTrade.log.dupFailed", plan.Label), "fail");
                             fail++; continue;
                         }
 
@@ -311,8 +308,7 @@ namespace LemoineTools.Tools.ExplodeViews
                         try { dup.Name = uniqueName; }
                         catch (Exception ex)
                         {
-                            Log($"Could not rename exploded view to \"{uniqueName}\": {ex.Message} "
-                                + "(left with Revit's default name).", "warn");
+                            Log(LemoineStrings.T("explode.byTrade.log.renameFailed", uniqueName, ex.Message), "warn");
                             LemoineLog.Swallowed("ExplodeViewByTrade: set view name", ex);
                         }
 
@@ -349,7 +345,7 @@ namespace LemoineTools.Tools.ExplodeViews
                             }
                             catch (Exception ex)
                             {
-                                Log($"Filter '{pfe.Name}' on '{uniqueName}': {ex.Message}", "fail");
+                                Log(LemoineStrings.T("explode.byTrade.log.filterFailed", pfe.Name, uniqueName, ex.Message), "fail");
                             }
                         }
 
@@ -360,11 +356,11 @@ namespace LemoineTools.Tools.ExplodeViews
                             HideNonTradeCategories(doc, dup, plan.Filters);
 
                         _viewsCreated++; pass++;
-                        Log($"Created \"{uniqueName}\" isolating \"{plan.Label}\"{(HideOthers ? " (others hidden)" : "")}.", "pass");
+                        Log(LemoineStrings.T("explode.byTrade.log.created", uniqueName, plan.Label, (HideOthers ? LemoineStrings.T("explode.byTrade.log.othersHidden") : "")), "pass");
                     }
                     catch (Exception ex)
                     {
-                        Log($"Failed to create exploded view for \"{plan.Label}\": {ex.Message}", "fail");
+                        Log(LemoineStrings.T("explode.byTrade.log.createFailed", plan.Label, ex.Message), "fail");
                         LemoineLog.Error("ExplodeViewByTrade: create view", ex);
                         fail++;
                     }
@@ -375,8 +371,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 tx.Commit();
             }
 
-            Log($"Complete — {_viewsCreated} view(s) created from \"{srcName}\", "
-                + $"{_tradesSkipped} trade(s) skipped.", "pass");
+            Log(LemoineStrings.T("explode.byTrade.log.complete", _viewsCreated, srcName, _tradesSkipped), "pass");
         }
 
         /// <summary>
@@ -420,7 +415,7 @@ namespace LemoineTools.Tools.ExplodeViews
             }
 
             if (hidden > 0)
-                Log($"Hid {hidden} non-trade model categor{(hidden == 1 ? "y" : "ies")} in \"{view.Name}\".", "info");
+                Log(LemoineStrings.T("explode.byTrade.log.hidCategories", hidden, view.Name), "info");
         }
 
         // ── Elevation scan ────────────────────────────────────────────────────────
@@ -545,9 +540,7 @@ namespace LemoineTools.Tools.ExplodeViews
                     LinkVisibility mode = gs?.LinkVisibilityType ?? LinkVisibility.ByHostView;
                     if (mode != LinkVisibility.ByHostView)
                     {
-                        Log($"Link \"{link.Name}\" is displayed \"{mode}\", not \"By Host View\" — "
-                            + "the exploded views' filters will not hide/show its elements. "
-                            + "Set it to \"By Host View\" in Visibility/Graphics.", "warn");
+                        Log(LemoineStrings.T("explode.byTrade.log.linkNotByHost", link.Name, mode), "warn");
                         LemoineLog.Warn("ExplodeViewByTrade",
                             $"link '{link.Name}' display={mode}; host filters won't cascade.");
                     }

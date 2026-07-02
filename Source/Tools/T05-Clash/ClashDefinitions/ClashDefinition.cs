@@ -1,5 +1,6 @@
 using System;
 using System.Xml.Serialization;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.Clash
 {
@@ -47,7 +48,7 @@ namespace LemoineTools.Tools.Clash
         public static ClashDefinition NewBlank() => new ClashDefinition
         {
             Id   = "C" + Guid.NewGuid().ToString("N").Substring(0, 7),
-            Name = "New Definition",
+            Name = LemoineStrings.T("clashDefinitions.defaults.newName"),
         };
     }
 }

@@ -18,14 +18,14 @@ namespace LemoineTools.Tools.ModifyElements
         public string? ResultNoun => "walls";
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
-        public string Title    => "Extend Walls to Level";
-        public string RunLabel => "Extend in Revit →";
+        public string Title    => LemoineStrings.T("modify.extendWalls.title");
+        public string RunLabel => LemoineStrings.T("modify.extendWalls.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Base Levels", required: true),
-            new StepDefinition("S2", "Options",            required: false),
-            new StepDefinition("S3", "Review & Run",       required: false),
+            new StepDefinition("S1", LemoineStrings.T("modify.extendWalls.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("modify.extendWalls.steps.S2"),            required: false),
+            new StepDefinition("S3", LemoineStrings.T("modify.extendWalls.steps.S3"),       required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 var msg = new TextBlock
                 {
-                    Text         = "No processable levels found. At least two levels are required: a base level and a level above it.",
+                    Text         = LemoineStrings.T("modify.extendWalls.labels.noItems"),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
@@ -116,7 +116,7 @@ namespace LemoineTools.Tools.ModifyElements
             // Using MinLabel for the value, MaxLabel deliberately left empty
             var heightRange = new LemoineNumberRange
             {
-                MinLabel = "Assumed ceiling height (ft)",
+                MinLabel = LemoineStrings.T("modify.extendWalls.labels.ceilingLabel"),
                 MaxLabel = "",
                 AbsMin   = 1.0,
                 AbsMax   = 100.0,
@@ -136,9 +136,8 @@ namespace LemoineTools.Tools.ModifyElements
                 new ToggleItem
                 {
                     Id        = "viewOnly",
-                    Label     = "Active view only",
-                    Desc      = "When on, only walls visible in the active view are scanned. " +
-                                "When off, all walls in the document are scanned.",
+                    Label     = LemoineStrings.T("modify.extendWalls.labels.viewOnlyLabel"),
+                    Desc      = LemoineStrings.T("modify.extendWalls.labels.viewOnlyDesc"),
                     DefaultOn = true,
                 },
             });
@@ -159,24 +158,22 @@ namespace LemoineTools.Tools.ModifyElements
         // ── ILemoineReviewable (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("levels",  "Base Levels"),
-            ("ceiling", "Assumed Ceiling Height"),
-            ("scope",   "Scope"),
-            ("target",  "Target"),
+            ("levels",  LemoineStrings.T("modify.extendWalls.review.itemLevels")),
+            ("ceiling", LemoineStrings.T("modify.extendWalls.review.itemCeiling")),
+            ("scope",   LemoineStrings.T("modify.extendWalls.review.itemScope")),
+            ("target",  LemoineStrings.T("modify.extendWalls.review.itemTarget")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["levels"]  = _selectedLevelNames.Count == 0 ? "—" : $"{_selectedLevelNames.Count} level(s)",
-            ["ceiling"] = $"{_assumedCeilingFt:F2} ft (used when no Ceiling element found)",
-            ["scope"]   = _activeViewOnly ? "Active view" : "Entire document",
-            ["target"]  = "Walls above ceiling — set Top Constraint to next level",
+            ["levels"]  = _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.extendWalls.review.levelsValue", _selectedLevelNames.Count),
+            ["ceiling"] = LemoineStrings.T("modify.extendWalls.review.ceilingValue", _assumedCeilingFt),
+            ["scope"]   = _activeViewOnly ? LemoineStrings.T("modify.extendWalls.review.scopeActive") : LemoineStrings.T("modify.extendWalls.review.scopeDoc"),
+            ["target"]  = LemoineStrings.T("modify.extendWalls.review.target"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Walls whose top elevation exceeds the ceiling threshold at their " +
-            "base level will have their Top Constraint set to the next level up, with Top Offset zeroed. Curtain " +
-            "walls and walls without a base constraint are skipped.";
+        public string?        ReviewNote    => LemoineStrings.T("modify.extendWalls.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -189,11 +186,11 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
                 return _selectedLevelNames.Count == 0 ? "—"
-                    : $"{_selectedLevelNames.Count} level(s) selected";
+                    : LemoineStrings.T("modify.extendWalls.summaries.s1", _selectedLevelNames.Count);
             if (stepId == "S2")
-                return $"Ceiling: {_assumedCeilingFt:F2} ft — Scope: {(_activeViewOnly ? "active view" : "document")}";
+                return LemoineStrings.T("modify.extendWalls.summaries.s2", _assumedCeilingFt, _activeViewOnly ? LemoineStrings.T("modify.extendWalls.summaries.scopeActiveWord") : LemoineStrings.T("modify.extendWalls.summaries.scopeDocWord"));
             if (stepId == "S3")
-                return "Ready to run";
+                return LemoineStrings.T("modify.extendWalls.summaries.S3");
             return "—";
         }
 

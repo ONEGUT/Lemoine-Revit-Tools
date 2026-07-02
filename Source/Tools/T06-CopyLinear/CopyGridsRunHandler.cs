@@ -33,10 +33,10 @@ namespace LemoineTools.Tools.CopyLinear
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
-                if (doc == null) { Log("No active document.", "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (doc == null) { Log(LemoineStrings.T("copy.grids.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var src = CopyLinearSource.Resolve(doc, LinkInstId);
-                if (src?.Doc == null || src.Link == null) { Log("Source link is not loaded.", "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (src?.Doc == null || src.Link == null) { Log(LemoineStrings.T("copy.grids.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 // Host grid names — the copy must not clash with an existing grid name.
                 var hostNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -51,7 +51,7 @@ namespace LemoineTools.Tools.CopyLinear
                     if (hostNames.Contains(g.Name))
                     {
                         skip++;
-                        Log($"— Grid '{g.Name}' already exists in host, skipped.", "info");
+                        Log(LemoineStrings.T("copy.grids.log.gridExists", g.Name), "info");
                         continue;
                     }
                     toCopy.Add(g.Id);
@@ -59,7 +59,7 @@ namespace LemoineTools.Tools.CopyLinear
 
                 if (toCopy.Count == 0)
                 {
-                    Log("No grids to copy (all selected grids already exist in the host).", "warn");
+                    Log(LemoineStrings.T("copy.grids.log.noGridsToCopy"), "warn");
                     OnProgress?.Invoke(100, 0, 0, skip);
                     OnComplete?.Invoke(0, 0, skip);
                     return;
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.CopyLinear
                         {
                             if (LemoineRun.CancelRequested)
                             {
-                                Log($"Stopped by user — {pass} grid(s) copied so far; work preserved.", "warn");
+                                Log(LemoineStrings.T("copy.grids.log.stopped", pass), "warn");
                                 break;   // falls through to doc.Regenerate() + tx.Commit() below
                             }
                             try
@@ -99,7 +99,7 @@ namespace LemoineTools.Tools.CopyLinear
                             {
                                 fail++;
                                 LemoineLog.Error("CopyGrids: copy grid", ex2);
-                                Log($"✗ Grid {id}: {ex2.Message}", "fail");
+                                Log(LemoineStrings.T("copy.grids.log.gridFail", id, ex2.Message), "fail");
                             }
                         }
                     }
@@ -109,15 +109,15 @@ namespace LemoineTools.Tools.CopyLinear
                 }
 
                 long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-                Log($"Done. {pass} grid(s) copied, {skip} skipped, {fail} failed.", fail > 0 ? "warn" : "pass");
+                if (issues > 0) Log(LemoineStrings.T("copy.grids.log.nonFatal", issues), "warn");
+                Log(LemoineStrings.T("copy.grids.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
                 LemoineLog.Error("CopyGridsRunHandler.Execute", ex);
-                Log($"Run aborted: {ex.Message}", "fail");
+                Log(LemoineStrings.T("copy.grids.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally

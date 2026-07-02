@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using WinForms = System.Windows.Forms;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -35,7 +36,7 @@ namespace LemoineTools.Lemoine.Controls
             set => _pathBox.Text = value ?? "";
         }
 
-        public string DialogTitle { get; set; } = "Select Folder";
+        public string DialogTitle { get; set; } = LemoineStrings.T("controls.inputs.folderBrowser.defaultDialogTitle");
 
         public event Action<string>? PathChanged;
 

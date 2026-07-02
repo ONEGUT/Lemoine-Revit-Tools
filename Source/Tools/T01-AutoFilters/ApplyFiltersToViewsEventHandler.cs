@@ -42,7 +42,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: apply filters to views aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: apply filters to views aborted", ex); Log(LemoineStrings.T("autofilters.applyFilters.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -61,7 +61,7 @@ namespace LemoineTools.Tools.AutoFilters
         {
             if (SelectedFilterNames.Count == 0 || SelectedViewIds.Count == 0)
             {
-                Log("No filters or views selected.", "fail");
+                Log(LemoineStrings.T("autofilters.applyFilters.log.noSelection"), "fail");
                 fail++; return;
             }
 
@@ -83,11 +83,11 @@ namespace LemoineTools.Tools.AutoFilters
 
             int droppedViews = SelectedViewIds.Count - viewList.Count;
             if (droppedViews > 0)
-                Log($"{droppedViews} selected view(s) were skipped (deleted or do not support graphic overrides).", "info");
+                Log(LemoineStrings.T("autofilters.applyFilters.log.droppedViews", droppedViews), "info");
 
             if (viewList.Count == 0)
             {
-                Log("None of the selected views support graphic overrides.", "fail");
+                Log(LemoineStrings.T("autofilters.applyFilters.log.noViewsSupport"), "fail");
                 fail++; return;
             }
 
@@ -151,11 +151,11 @@ namespace LemoineTools.Tools.AutoFilters
                     if (!ruleByName.TryGetValue(name, out var owner)) continue;
                     var pfe = AutoFiltersEventHandler.EnsureRuleFilterDefinition(
                         ctx, owner.Trade, owner.Rule, out var warn);
-                    if (warn != null) Log($"'{name}': {warn}", "info");
+                    if (warn != null) Log(LemoineStrings.T("autofilters.applyFilters.log.warnEntry", name, warn), "info");
                     if (pfe != null) refreshed++;
                 }
                 if (refreshed > 0)
-                    Log($"Synced {refreshed} filter definition(s) from current rules.", "info");
+                    Log(LemoineStrings.T("autofilters.applyFilters.log.synced", refreshed), "info");
 
                 // Build name → id from the refreshed index (ids may have changed on rebuild).
                 var filterMap = new Dictionary<string, ElementId>(StringComparer.OrdinalIgnoreCase);
@@ -164,17 +164,17 @@ namespace LemoineTools.Tools.AutoFilters
                         filterMap[name] = pfe.Id;
 
                 foreach (var m in SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)))
-                    Log($"Filter not found in project: '{m}'", "info");
+                    Log(LemoineStrings.T("autofilters.applyFilters.log.filterNotFound", m), "info");
 
                 if (filterMap.Count == 0)
                 {
-                    Log("None of the selected filters exist in this project.", "fail");
+                    Log(LemoineStrings.T("autofilters.applyFilters.log.noneExist"), "fail");
                     fail++;
                     tx.RollBack();
                     return;
                 }
 
-                Log($"{filterMap.Count} filter(s), {viewList.Count} view(s) — beginning apply…", "info");
+                Log(LemoineStrings.T("autofilters.applyFilters.log.beginning", filterMap.Count, viewList.Count), "info");
 
                 int totalOps = filterMap.Count * viewList.Count;
 
@@ -190,7 +190,7 @@ namespace LemoineTools.Tools.AutoFilters
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {done} of {totalOps} operation(s) processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", done, totalOps), "warn");
                             cancelled = true;
                             break;
                         }
@@ -228,14 +228,14 @@ namespace LemoineTools.Tools.AutoFilters
                             }
                             else
                             {
-                                Log($"No current rule owns '{filterName}' — added without overrides.", "info");
+                                Log(LemoineStrings.T("autofilters.applyFilters.log.noRuleOwns", filterName), "info");
                             }
 
                             pass++;
                         }
                         catch (Exception ex)
                         {
-                            Log($"'{filterName}' on '{view.Name}': {ex.Message}", "fail");
+                            Log(LemoineStrings.T("autofilters.applyFilters.log.applyFailed", filterName, view.Name, ex.Message), "fail");
                             fail++;
                         }
 
@@ -247,7 +247,7 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} applied, {skip} skipped (already present), {fail} failed.", "pass");
+            Log(LemoineStrings.T("autofilters.applyFilters.log.complete", pass, skip, fail), "pass");
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ namespace LemoineTools.Tools.AutoFilters
                         if (ovr != null && ovr.LinkVisibilityType == LinkVisibility.ByLinkView)
                         {
                             string title = li.GetLinkDocument()?.Title ?? li.Name;
-                            Log($"⚠ Link '{title}' is shown 'By Linked View' in '{view.Name}' — host filters won't affect it. Set its display to 'By Host View' to apply overrides.", "info");
+                            Log(LemoineStrings.T("autofilters.applyFilters.log.linkByLinkedView", title, view.Name), "info");
                             warned.Add(li.Id.Value);
                         }
                     }

@@ -34,7 +34,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: delete filters from project aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("AutoFilters: delete filters from project aborted", ex); Log(LemoineStrings.T("autofilters.deleteFromProject.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -52,7 +52,7 @@ namespace LemoineTools.Tools.AutoFilters
         {
             if (SelectedFilterNames == null || SelectedFilterNames.Count == 0)
             {
-                Log("No filters selected for deletion.", "fail");
+                Log(LemoineStrings.T("autofilters.deleteFromProject.log.noneSelected"), "fail");
                 fail++;
                 return;
             }
@@ -68,18 +68,18 @@ namespace LemoineTools.Tools.AutoFilters
             var notFound = SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)).ToList();
             foreach (var n in notFound)
             {
-                Log($"Not found in project: '{n}' — skipped.", "info");
+                Log(LemoineStrings.T("autofilters.deleteFromProject.log.notFound", n), "info");
                 skip++;
             }
 
             if (filterMap.Count == 0)
             {
-                Log("None of the selected filters exist in this project.", "fail");
+                Log(LemoineStrings.T("autofilters.deleteFromProject.log.noneExist"), "fail");
                 fail++;
                 return;
             }
 
-            Log($"Deleting {filterMap.Count} filter(s)…", "info");
+            Log(LemoineStrings.T("autofilters.deleteFromProject.log.deletingN", filterMap.Count), "info");
 
             int total = filterMap.Count;
             int done  = 0;
@@ -96,7 +96,7 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;
                     }
 
@@ -105,12 +105,12 @@ namespace LemoineTools.Tools.AutoFilters
                     try
                     {
                         doc.Delete(id);
-                        Log($"Deleted: '{name}'", "info");
+                        Log(LemoineStrings.T("autofilters.deleteFromProject.log.deleted", name), "info");
                         pass++;
                     }
                     catch (Exception ex)
                     {
-                        Log($"Failed to delete '{name}': {ex.Message}", "fail");
+                        Log(LemoineStrings.T("autofilters.deleteFromProject.log.deleteFailed", name, ex.Message), "fail");
                         fail++;
                     }
 
@@ -121,7 +121,7 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            Log($"Complete — {pass} deleted, {fail} failed, {skip} skipped.", "pass");
+            Log(LemoineStrings.T("autofilters.deleteFromProject.log.complete", pass, fail, skip), "pass");
         }
 
         // ── Callback wrappers ────────────────────────────────────────────────────

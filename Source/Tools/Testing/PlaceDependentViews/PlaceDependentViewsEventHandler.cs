@@ -85,19 +85,19 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 var doc = app.ActiveUIDocument?.Document;
                 if (doc == null)
                 {
-                    Log("No active project — open a document and try again.", "fail");
+                    Log(LemoineStrings.T("testing.placeDependentViews.log.noDoc"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
                 if (TitleBlockTypeId == ElementId.InvalidElementId)
                 {
-                    Log("No title block selected.", "fail");
+                    Log(LemoineStrings.T("testing.placeDependentViews.log.noTitleBlock"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
                 if (ParentViewIds.Count == 0)
                 {
-                    Log("No views selected.", "fail");
+                    Log(LemoineStrings.T("testing.placeDependentViews.log.noViews"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -137,7 +137,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     LayoutMode layout = Layout;
                     if (layout == LayoutMode.Grouped && !TrimBubbles)
                     {
-                        Log("[WARN] Grouped layout needs Trim on to be reliable — using Accurate (measured) this run.", "warn");
+                        Log(LemoineStrings.T("testing.placeDependentViews.log.groupedNeedsTrim"), "warn");
                         LemoineLog.Warn("PlaceDependentViews", "Grouped layout requested with trim off — fell back to measured.");
                         layout = LayoutMode.Measured;
                     }
@@ -147,10 +147,10 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     var sizeCache = new Dictionary<(long, long, int), (double w, double h)>();
 
                     Log(layout == LayoutMode.Estimate
-                        ? "Quick estimate — sizing views from their crop boxes."
+                        ? LemoineStrings.T("testing.placeDependentViews.log.announceEstimate")
                         : layout == LayoutMode.Grouped
-                            ? "Accurate (grouped) — measuring the first of each identical size, reusing the rest."
-                            : "Accurate — measuring each placed view.", "info");
+                            ? LemoineStrings.T("testing.placeDependentViews.log.announceGrouped")
+                            : LemoineStrings.T("testing.placeDependentViews.log.announceAccurate"), "info");
 
                     bool composite = Mode == PlaceViewsMode.CompositeOneSheet;
 
@@ -179,13 +179,13 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {i} of {total} sheet(s) processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.stoppedByUser", i, total), "warn");
                             break;   // falls through to tx.Commit() below
                         }
                         var parent = doc.GetElement(ParentViewIds[i]) as View;
                         if (parent == null)
                         {
-                            Log("[SKIP] A selected view no longer exists.", "warn");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.selectedGone"), "warn");
                             LemoineLog.Warn("PlaceDependentViews", $"Parent view {ParentViewIds[i]} not found.");
                             skip++;
                             onProgress(Pct(i + 1, total), pass, fail, skip);
@@ -201,8 +201,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         {
                             if (placedViewIds!.Contains(parent.Id))
                             {
-                                Log($"[FAIL] '{parent.Name}' is already placed on a sheet — " +
-                                    "composite sheet not created.", "fail");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.alreadyPlaced", parent.Name), "fail");
                                 fail++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
@@ -211,8 +210,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             var subs = DiscoverSubViews(doc, parent, viewsByName!);
                             if (subs.Count == 0)
                             {
-                                Log($"[SKIP] '{parent.Name}' has no visible callouts, sections " +
-                                    "or elevations.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.noVisibleMarkers", parent.Name), "warn");
                                 skip++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
@@ -227,7 +225,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             candidateIds = parent.GetDependentViewIds()?.ToList() ?? new List<ElementId>();
                             if (candidateIds.Count == 0)
                             {
-                                Log($"[SKIP] '{parent.Name}' has no dependent views.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.noDependents", parent.Name), "warn");
                                 skip++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
@@ -238,7 +236,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         string? sheetNumber = NextFreeNumber(ref number, NumberPrefix, NumberSuffix, usedNumbers);
                         if (sheetNumber == null)
                         {
-                            Log($"[FAIL] Could not find a free sheet number for '{parent.Name}'.", "fail");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.noFreeNumber", parent.Name), "fail");
                             fail++;
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
@@ -255,7 +253,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         }
                         catch (Exception ex)
                         {
-                            Log($"[FAIL] Could not create sheet for '{parent.Name}': {ex.Message}", "fail");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.createSheetFail", parent.Name, ex.Message), "fail");
                             LemoineLog.Error("PlaceDependentViews: create sheet", ex);
                             fail++;
                             onProgress(Pct(i + 1, total), pass, fail, skip);
@@ -284,8 +282,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             if (!Viewport.CanAddViewToSheet(doc, sheet.Id, depId))
                             {
                                 var dv0 = doc.GetElement(depId) as View;
-                                Log($"[SKIP] '{dv0?.Name ?? depId.ToString()}' can't be placed " +
-                                    "(already on a sheet, or not placeable).", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.cantPlaceView", dv0?.Name ?? depId.ToString()), "warn");
                                 skip++;
                                 continue;
                             }
@@ -293,15 +290,14 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                         }
                         if (sourceView != null && (toPlace.Count == 0 || toPlace[0].Id != sourceView.Id))
                         {
-                            Log($"[FAIL] Source view '{sourceView.Name}' can't be placed — " +
-                                $"sheet {sheetNumber} left empty.", "fail");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.sourceCantPlace", sourceView.Name, sheetNumber), "fail");
                             fail++;
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
                         if (toPlace.Count == 0)
                         {
-                            Log($"[WARN] Nothing to place on sheet {sheetNumber} — {sheetName}.", "warn");
+                            Log(LemoineStrings.T("testing.placeDependentViews.log.nothingToPlace", sheetNumber, sheetName), "warn");
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
@@ -319,7 +315,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             }
                             if (!areaKnown)
                             {
-                                Log($"[WARN] Could not read title-block size; sheet {sheetNumber} left empty.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.noTbSizeEstimate", sheetNumber), "warn");
                                 LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
                                 pass++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
@@ -347,14 +343,13 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 }
                                 catch (Exception ex)
                                 {
-                                    Log($"[FAIL] Could not place '{toPlace[k].Name}': {ex.Message}", "fail");
+                                    Log(LemoineStrings.T("testing.placeDependentViews.log.placeFail", toPlace[k].Name, ex.Message), "fail");
                                     LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create (estimate)", ex);
                                     fail++;
                                 }
                             }
                             if (overflow)
-                                Log($"[WARN] Sheet {sheetNumber}: estimated views don't fit the drawing area — " +
-                                    "they may extend past the margins.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.overflowEstimate", sheetNumber), "warn");
                         }
                         else
                         {
@@ -370,7 +365,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 try { vp = Viewport.Create(doc, sheet.Id, dv.Id, XYZ.Zero); }
                                 catch (Exception ex)
                                 {
-                                    Log($"[FAIL] Could not place '{dv.Name}': {ex.Message}", "fail");
+                                    Log(LemoineStrings.T("testing.placeDependentViews.log.placeFail", dv.Name, ex.Message), "fail");
                                     LemoineLog.Swallowed("PlaceDependentViews: Viewport.Create", ex);
                                     fail++;
                                     continue;
@@ -384,7 +379,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                             }
                             if (recs.Count == 0)
                             {
-                                Log($"[WARN] Nothing placed on sheet {sheetNumber} — {sheetName}.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.nothingPlaced", sheetNumber, sheetName), "warn");
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
                             }
@@ -400,8 +395,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                                              out areaMinX, out areaMinY, out areaW, out areaH);
                             if (!areaKnown)
                             {
-                                Log($"[WARN] Could not read title-block size for sheet {sheetNumber}; " +
-                                    "views left at the sheet origin.", "warn");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.noTbSizeAccurate", sheetNumber), "warn");
                                 LemoineLog.Warn("PlaceDependentViews", $"No title-block bbox on sheet {sheetNumber}.");
                                 pass++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
@@ -436,19 +430,18 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                 }
                                 else
                                 {
-                                    Log("[WARN] A viewport reported no size and was left at the sheet origin.", "warn");
+                                    Log(LemoineStrings.T("testing.placeDependentViews.log.vpNoSize"), "warn");
                                 }
                             }
                             if (grouped)
-                                Log($"  Grouped {keep.Count} view(s) — measured {measured}, reused {reused}.", "info");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.groupedSummary", keep.Count, measured, reused), "info");
 
                             // Composite layout anchors on the source view's measured size, so a
                             // source that reported no outline fails the whole sheet (viewports
                             // are left at the origin for manual cleanup).
                             if (sourceView != null && (keep.Count == 0 || keep[0].ViewId != sourceView.Id))
                             {
-                                Log($"[FAIL] Source view '{sourceView.Name}' reported no size — " +
-                                    $"sheet {sheetNumber} left unarranged.", "fail");
+                                Log(LemoineStrings.T("testing.placeDependentViews.log.sourceNoSize", sourceView.Name, sheetNumber), "fail");
                                 fail++;
                                 onProgress(Pct(i + 1, total), pass, fail, skip);
                                 continue;
@@ -464,16 +457,15 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                                     keep[k].SetBoxCenter(new XYZ(areaMinX + p.CenterX, areaMinY + p.CenterY, 0));
                                 }
                                 if (overflow)
-                                    Log($"[WARN] Sheet {sheetNumber}: {keep.Count} view(s) don't fit the drawing " +
-                                        "area at this scale — they extend past the margins.", "warn");
+                                    Log(LemoineStrings.T("testing.placeDependentViews.log.overflowAccurate", sheetNumber, keep.Count), "warn");
                             }
                             placedCount = keep.Count;
                         }
 
                         pass++;
                         Log(composite
-                            ? $"✓ Sheet {sheetNumber} — {sheetName}  (source + {Math.Max(0, placedCount - 1)} sub view(s))"
-                            : $"✓ Sheet {sheetNumber} — {sheetName}  ({placedCount} view(s) placed)", "pass");
+                            ? LemoineStrings.T("testing.placeDependentViews.log.doneComposite", sheetNumber, sheetName, Math.Max(0, placedCount - 1))
+                            : LemoineStrings.T("testing.placeDependentViews.log.doneDependents", sheetNumber, sheetName, placedCount), "pass");
                         onProgress(Pct(i + 1, total), pass, fail, skip);
                     }
 
@@ -482,14 +474,14 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
 
                 long issues = LemoineLog.IssuesSince(issues0);
                 if (issues > 0)
-                    Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
+                    Log(LemoineStrings.T("testing.placeDependentViews.log.issuesRecorded", issues), "warn");
 
                 onProgress(100, pass, fail, skip);
                 onComplete(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                Log($"Place Dependent Views error: {ex.Message}", "fail");
+                Log(LemoineStrings.T("testing.placeDependentViews.log.fatalError", ex.Message), "fail");
                 LemoineLog.Error("PlaceDependentViews.Execute", ex);
                 onComplete(pass, fail + 1, skip);
             }
@@ -516,7 +508,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 var res = CompositeSheetLayout.Pack(rects[0], rects.Skip(1).ToList(), areaW, areaH, gap);
                 var centers = new List<SheetLayoutPacker.Placement>(rects.Count) { res.Parent };
                 centers.AddRange(res.Children);
-                Log($"Sheet {sheetNumber}: source {(res.ParentOnTop ? "top-center, sub views in rows below" : "left-center, sub views in columns right")}.", "info");
+                Log(LemoineStrings.T("testing.placeDependentViews.log.sheetLayout", sheetNumber, (res.ParentOnTop ? LemoineStrings.T("testing.placeDependentViews.log.layoutTop") : LemoineStrings.T("testing.placeDependentViews.log.layoutLeft"))), "info");
                 return (centers, res.Overflow);
             }
             var packed = SheetLayoutPacker.Pack(rects, areaW, areaH, gap);
@@ -548,7 +540,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                     }
                     else
                     {
-                        Log($"[SKIP] Marker '{name}' in '{source.Name}' doesn't resolve to a view.", "warn");
+                        Log(LemoineStrings.T("testing.placeDependentViews.log.markerUnresolved", name, source.Name), "warn");
                         LemoineLog.Warn("PlaceDependentViews",
                             $"Unresolved viewer marker '{name}' in view {source.Id.Value}.");
                     }
@@ -575,7 +567,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
             }
             catch (Exception ex)
             {
-                Log($"[WARN] Could not scan '{source.Name}' for markers: {ex.Message}", "warn");
+                Log(LemoineStrings.T("testing.placeDependentViews.log.scanMarkersFail", source.Name, ex.Message), "warn");
                 LemoineLog.Error($"PlaceDependentViews: discover sub views in {source.Id.Value}", ex);
             }
 
@@ -754,7 +746,7 @@ namespace LemoineTools.Tools.Testing.PlaceDependentViews
                 if (!warned)
                 {
                     warned = true;
-                    Log($"[WARN] No writable text sheet parameter named '{SeriesParamName}' — series value skipped.", "warn");
+                    Log(LemoineStrings.T("testing.placeDependentViews.log.seriesParamMissing", SeriesParamName), "warn");
                     LemoineLog.Warn("PlaceDependentViews",
                         $"Series param '{SeriesParamName}' not found as a writable text parameter on sheets.");
                 }

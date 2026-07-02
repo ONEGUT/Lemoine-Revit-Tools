@@ -83,10 +83,8 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildFiltersGroupContent()
         {
-            var scroll = NewGroupPanel("Filters & Legends", out var panel);
-            AddGroupNote(panel,
-                "Auto Filters and Legend Creation each open their own configuration window from the "
-              + "ribbon, where their defaults live — there are no separate global defaults here.");
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrFilters"), out var panel);
+            AddGroupNote(panel, LemoineStrings.T("globalSettings.groups.noteFilters"));
             return scroll;
         }
 
@@ -95,24 +93,24 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildCeilingsGroupContent()
         {
-            var scroll = NewGroupPanel("Ceilings", out var panel);
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrCeilings"), out var panel);
 
             // ── Ceiling Heatmap ──────────────────────────────────────────────
             var hm = CeilingHeatmapSettings.Instance;
-            panel.Children.Add(SubLabel("Ceiling Heatmap"));
-            AddColorRow(panel, "Low elevation colour",    () => hm.ColorLow,  v => { hm.ColorLow  = v; hm.Save(); });
-            AddColorRow(panel, "Mid elevation colour",    () => hm.ColorMid,  v => { hm.ColorMid  = v; hm.Save(); });
-            AddColorRow(panel, "High elevation colour",   () => hm.ColorHigh, v => { hm.ColorHigh = v; hm.Save(); });
-            AddCfgStepper(panel, "Elevation tolerance (in)",
-                "Ceilings whose elevations differ by less than this share one colour band.",
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.hmSub")));
+            AddColorRow(panel, LemoineStrings.T("globalSettings.groups.lowColor"),    () => hm.ColorLow,  v => { hm.ColorLow  = v; hm.Save(); });
+            AddColorRow(panel, LemoineStrings.T("globalSettings.groups.midColor"),    () => hm.ColorMid,  v => { hm.ColorMid  = v; hm.Save(); });
+            AddColorRow(panel, LemoineStrings.T("globalSettings.groups.highColor"),   () => hm.ColorHigh, v => { hm.ColorHigh = v; hm.Save(); });
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.elevTol"),
+                LemoineStrings.T("globalSettings.groups.elevTolDesc"),
                 hm.ElevTolerance * 12.0, 0, 12, 0.0625, 4,
                 v => { hm.ElevTolerance = v / 12.0; hm.Save(); });
 
             var hmToggles = new LemoineToggleSwitches();
             hmToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "tags", Label = "Place elevation tags",
-                                 Desc = "Place a spot-elevation tag on each ceiling when colouring.",
+                new ToggleItem { Id = "tags", Label = LemoineStrings.T("globalSettings.groups.tagsLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.tagsDesc"),
                                  DefaultOn = hm.PlaceTags },
             });
             hmToggles.StateChanged += state =>
@@ -125,15 +123,15 @@ namespace LemoineTools.Lemoine
 
             // ── Make Ceiling Grids ───────────────────────────────────────────
             var mg = MakeCeilingGridsSettings.Instance;
-            panel.Children.Add(SubLabel("Make Ceiling Grids"));
-            AddTextRow(panel, "DWG output folder (blank = ask each run)", mg.OutputFolder,
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.mgSub")));
+            AddTextRow(panel, LemoineStrings.T("globalSettings.groups.dwgFolder"), mg.OutputFolder,
                 v => { mg.OutputFolder = v; mg.Save(); }, mono: true);
 
             var mgToggles = new LemoineToggleSwitches();
             mgToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "sub", Label = "Use \"Ceiling Grids\" subfolder",
-                                 Desc = "Write exports into a \"Ceiling Grids\" subfolder of the output folder.",
+                new ToggleItem { Id = "sub", Label = LemoineStrings.T("globalSettings.groups.subLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.subDesc"),
                                  DefaultOn = mg.UseCeilingGridsSubfolder },
             });
             mgToggles.StateChanged += state =>
@@ -150,18 +148,18 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildViewsGroupContent()
         {
-            var scroll = NewGroupPanel("Views", out var panel);
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrViews"), out var panel);
 
             var lv = LinkViewsLevelSettings.Instance;
-            panel.Children.Add(SubLabel("Bulk Views by Level"));
-            AddCfgStepper(panel, "Crop buffer (ft)",
-                "Extra space added around each cluster's crop box.",
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.byLevelSub")));
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.cropBuffer"),
+                LemoineStrings.T("globalSettings.groups.cropBufferDesc"),
                 lv.BufferXY, 0, 100, 1, 1, v => { lv.BufferXY = v; lv.Save(); });
-            AddCfgStepper(panel, "Cluster threshold (ft)",
-                "Elements farther apart than this fall into separate building clusters.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.clusterThreshold"),
+                LemoineStrings.T("globalSettings.groups.clusterThresholdDesc"),
                 lv.ClusterThreshold, 0, 500, 1, 1, v => { lv.ClusterThreshold = v; lv.Save(); });
-            AddCfgStepper(panel, "Cut plane offset (ft)",
-                "Height above each level used for the floor/ceiling plan cut plane.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.cutPlane"),
+                LemoineStrings.T("globalSettings.groups.cutPlaneDesc"),
                 lv.CutOffset, 0, 50, 0.5, 1, v => { lv.CutOffset = v; lv.Save(); });
 
             return scroll;
@@ -172,10 +170,8 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildSheetsGroupContent()
         {
-            var scroll = NewGroupPanel("Sheets", out var panel);
-            AddGroupNote(panel,
-                "Place Dependent Views, Align Sheet Views and Bulk Rename have no saved default "
-              + "settings yet — their options are chosen per run in each tool.");
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrSheets"), out var panel);
+            AddGroupNote(panel, LemoineStrings.T("globalSettings.groups.noteSheets"));
             return scroll;
         }
 
@@ -184,29 +180,29 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildExportGroupContent()
         {
-            var scroll = NewGroupPanel("Export", out var panel);
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrExport"), out var panel);
 
             var be = BulkExportSettings.Instance;
-            panel.Children.Add(SubLabel("Bulk Export"));
-            AddTextRow(panel, "Output folder (blank = ask each run)", be.OutputFolder,
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.bulkSub")));
+            AddTextRow(panel, LemoineStrings.T("globalSettings.groups.outputFolder"), be.OutputFolder,
                 v => { be.OutputFolder = v; be.Save(); }, mono: true);
-            AddTextRow(panel, "Sheet filename pattern", be.FilenamePattern,
+            AddTextRow(panel, LemoineStrings.T("globalSettings.groups.sheetPattern"), be.FilenamePattern,
                 v => { be.FilenamePattern = v; be.Save(); }, mono: true);
-            AddTextRow(panel, "View filename pattern", be.ViewFilenamePattern,
+            AddTextRow(panel, LemoineStrings.T("globalSettings.groups.viewPattern"), be.ViewFilenamePattern,
                 v => { be.ViewFilenamePattern = v; be.Save(); }, mono: true);
 
-            panel.Children.Add(SubLabel("Default formats"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.defaultFormats")));
             var beToggles = new LemoineToggleSwitches();
             beToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "pdf",   Label = "PDF",  Desc = "Export to PDF by default.",  DefaultOn = be.ExportPdf },
-                new ToggleItem { Id = "dwg",   Label = "DWG",  Desc = "Export to DWG by default.",  DefaultOn = be.ExportDwg },
-                new ToggleItem { Id = "nwc",   Label = "NWC",  Desc = "Export to NWC by default (3D views only).", DefaultOn = be.ExportNwc },
-                new ToggleItem { Id = "ifc",   Label = "IFC",  Desc = "Export to IFC by default (3D views only).", DefaultOn = be.ExportIfc },
-                new ToggleItem { Id = "combine", Label = "Combine PDFs into one file",
-                                 Desc = "Merge all exported sheets/views into a single PDF.", DefaultOn = be.CombinePdf },
-                new ToggleItem { Id = "split",   Label = "Split output by format",
-                                 Desc = "Write each format into its own subfolder.", DefaultOn = be.SplitByFormat },
+                new ToggleItem { Id = "pdf",   Label = "PDF",  Desc = LemoineStrings.T("globalSettings.groups.pdfDesc"),  DefaultOn = be.ExportPdf },
+                new ToggleItem { Id = "dwg",   Label = "DWG",  Desc = LemoineStrings.T("globalSettings.groups.dwgDesc"),  DefaultOn = be.ExportDwg },
+                new ToggleItem { Id = "nwc",   Label = "NWC",  Desc = LemoineStrings.T("globalSettings.groups.nwcDesc"), DefaultOn = be.ExportNwc },
+                new ToggleItem { Id = "ifc",   Label = "IFC",  Desc = LemoineStrings.T("globalSettings.groups.ifcDesc"), DefaultOn = be.ExportIfc },
+                new ToggleItem { Id = "combine", Label = LemoineStrings.T("globalSettings.groups.combineLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.combineDesc"), DefaultOn = be.CombinePdf },
+                new ToggleItem { Id = "split",   Label = LemoineStrings.T("globalSettings.groups.splitLabel"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.splitDesc"), DefaultOn = be.SplitByFormat },
             });
             beToggles.StateChanged += state =>
             {
@@ -228,10 +224,8 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildModifyGroupContent()
         {
-            var scroll = NewGroupPanel("Modify", out var panel);
-            AddGroupNote(panel,
-                "Split Elements and Extend Walls have no saved default settings yet — their options "
-              + "are chosen per run in each tool.");
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrModify"), out var panel);
+            AddGroupNote(panel, LemoineStrings.T("globalSettings.groups.noteModify"));
             return scroll;
         }
 
@@ -240,15 +234,15 @@ namespace LemoineTools.Lemoine
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildCopyGroupContent()
         {
-            var scroll = NewGroupPanel("Copy from Link", out var panel);
+            var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrCopy"), out var panel);
 
             // ── Copy Linear ──────────────────────────────────────────────────
             var cl = CopyLinearSettings.Instance;
-            panel.Children.Add(SubLabel("Copy Linear"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.linearSub")));
 
             var modePicker = new LemoineSingleSelect
             {
-                Label        = "Default mode",
+                Label        = LemoineStrings.T("globalSettings.groups.defaultMode"),
                 Items        = new List<string> { "Split", "Replace" },
                 SelectedItem = cl.Mode == "Replace" ? "Replace" : "Split",
             };
@@ -260,29 +254,29 @@ namespace LemoineTools.Lemoine
             panel.Children.Add(modePicker);
             panel.Children.Add(new FrameworkElement { Height = 8 });
 
-            AddCfgStepper(panel, "Split segment length (ft)",
-                "Standard length each linear run is split into (Split mode).",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.segLen"),
+                LemoineStrings.T("globalSettings.groups.segLenDesc"),
                 cl.SegmentLengthFeet, 0.5, 200, 0.5, 2, v => { cl.SegmentLengthFeet = v; cl.Save(); });
-            AddCfgStepper(panel, "Gap between segments (in)",
-                "Gap left between split segments.",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.gap"),
+                LemoineStrings.T("globalSettings.groups.gapDesc"),
                 cl.GapInches, 0, 24, 0.125, 3, v => { cl.GapInches = v; cl.Save(); });
-            AddCfgStepper(panel, "Replace interval (ft)",
-                "Spacing between placed families along the run (Replace mode).",
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.interval"),
+                LemoineStrings.T("globalSettings.groups.intervalDesc"),
                 cl.IntervalFeet, 0.5, 200, 0.5, 2, v => { cl.IntervalFeet = v; cl.Save(); });
 
             var clToggles = new LemoineToggleSwitches();
             clToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "remainder", Label = "Keep remainder segment",
-                                 Desc = "Keep the leftover short piece at the end of a split run.", DefaultOn = cl.KeepRemainder },
-                new ToggleItem { Id = "align", Label = "Align to source",
-                                 Desc = "Start placement from the source run's start point.", DefaultOn = cl.AlignToSource },
-                new ToggleItem { Id = "delprev", Label = "Delete previous outputs on re-run",
-                                 Desc = "Remove this tool's prior outputs before re-running.", DefaultOn = cl.DeletePrevious },
-                new ToggleItem { Id = "changed", Label = "Only process changed elements",
-                                 Desc = "Skip source runs whose geometry is unchanged since the last run.", DefaultOn = cl.OnlyChanged },
-                new ToggleItem { Id = "orphans", Label = "Delete orphaned outputs",
-                                 Desc = "Remove outputs whose source no longer exists.", DefaultOn = cl.DeleteOrphans },
+                new ToggleItem { Id = "remainder", Label = LemoineStrings.T("globalSettings.groups.keepRemainder"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.keepRemainderDesc"), DefaultOn = cl.KeepRemainder },
+                new ToggleItem { Id = "align", Label = LemoineStrings.T("globalSettings.groups.alignSource"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.alignSourceDesc"), DefaultOn = cl.AlignToSource },
+                new ToggleItem { Id = "delprev", Label = LemoineStrings.T("globalSettings.groups.delPrev"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.delPrevDesc"), DefaultOn = cl.DeletePrevious },
+                new ToggleItem { Id = "changed", Label = LemoineStrings.T("globalSettings.groups.onlyChanged"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.onlyChangedDescLinear"), DefaultOn = cl.OnlyChanged },
+                new ToggleItem { Id = "orphans", Label = LemoineStrings.T("globalSettings.groups.delOrphans"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.delOrphansDesc"), DefaultOn = cl.DeleteOrphans },
             });
             clToggles.StateChanged += state =>
             {
@@ -299,16 +293,16 @@ namespace LemoineTools.Lemoine
 
             // ── Copy Elements ────────────────────────────────────────────────
             var cf = CopyFromLinkSettings.Instance;
-            panel.Children.Add(SubLabel("Copy Elements"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.elementsSub")));
             var cfToggles = new LemoineToggleSwitches();
             cfToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "delprev", Label = "Delete previous outputs on re-run",
-                                 Desc = "Remove this tool's prior outputs before re-running.", DefaultOn = cf.DeletePrevious },
-                new ToggleItem { Id = "changed", Label = "Only process changed elements",
-                                 Desc = "Skip source elements whose geometry is unchanged since the last run.", DefaultOn = cf.OnlyChanged },
-                new ToggleItem { Id = "orphans", Label = "Delete orphaned outputs",
-                                 Desc = "Remove outputs whose source no longer exists.", DefaultOn = cf.DeleteOrphans },
+                new ToggleItem { Id = "delprev", Label = LemoineStrings.T("globalSettings.groups.delPrev"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.delPrevDesc"), DefaultOn = cf.DeletePrevious },
+                new ToggleItem { Id = "changed", Label = LemoineStrings.T("globalSettings.groups.onlyChanged"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.onlyChangedDescElements"), DefaultOn = cf.OnlyChanged },
+                new ToggleItem { Id = "orphans", Label = LemoineStrings.T("globalSettings.groups.delOrphans"),
+                                 Desc = LemoineStrings.T("globalSettings.groups.delOrphansDesc"), DefaultOn = cf.DeleteOrphans },
             });
             cfToggles.StateChanged += state =>
             {

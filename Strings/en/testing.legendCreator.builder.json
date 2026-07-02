@@ -1,0 +1,183 @@
+// testing.legendCreator.builder.json — Legend Creator builder UI (window chrome + canvas control
+// + the block-row/group-card/layout-bar/palette sub-controls it composes).
+// Files: Source/Lemoine/Controls/Legend/LemoineLegendBuilder.xaml.cs (canvas, palette drag/drop,
+//        block editor, bulk editor, footer counts, templates popup),
+//        Source/Lemoine/Testing/LegendCreator/LegendSettingsWindow.xaml.cs (host window: title bar,
+//        tabs, title/subtitle popup, sizing, text styles, create/update, status flash),
+//        Source/Lemoine/Controls/Legend/LemoineLegendBlockRow.xaml.cs (one swatch+label block row),
+//        Source/Lemoine/Controls/Legend/LemoineLegendGroupCard.xaml.cs (a group card of block rows),
+//        Source/Lemoine/Controls/Legend/LemoineLegendLayoutBar.xaml.cs (top ribbon: legend pill +
+//        title/subtitle edit popup),
+//        Source/Lemoine/Controls/Legend/LemoineLegendPalette.xaml.cs (source palette: scope pills,
+//        trade dropdown, filter list).
+// LemoineLegendPreview.xaml.cs was reviewed and has NO hardcoded display text — every TextBlock it
+// renders reads live from LegendLayoutConfig/LegendGroupConfig/LegendBlockConfig (Title, Subtitle,
+// group title, block name), so there is nothing to externalize there.
+// NOTE: the run-log lines for LegendCreatorEventHandler.cs live in testing.legendCreator.json —
+// this file is display/UI text only, no overlap. Kept in code: shape-kind tokens ("square"/"solid")
+// persisted on LegendBlockConfig, the standard imperial view-scale ladder (ImperialScales array —
+// data, not prose, mirrors Revit's own scale dropdown), the "✕"/"＋"/"↑"/"↓"/"˅"/"✎"/"×" standalone
+// icon glyphs and the Segoe MDL2 trash glyph (ConvertFromUtf32), and internal Tag markers
+// ("deleteBtn"). Icon glyphs baked into a translated label (e.g. "＋  Add New Group") stay inline
+// with the text, matching the established clashDefinitions.json convention. Also kept: the "All"
+// scope token compared against LemoineLegendPalette._scope (internal state, not display) — only
+// the label text passed to MakeScopePill for that same pill is externalized.
+{
+  "builder": {
+    "canvas": {
+      "addNewGroup": "＋  Add New Group"
+    },
+    "bulkEditor": {
+      "header": "BATCH BLOCK EDIT",
+      "selectedCount": "{0} blocks selected.",
+      "colorLabel": "COLOR",
+      "applyColor": "Apply Color",
+      "cancel": "Cancel",
+      "visibleLabel": "VISIBLE",
+      "deleteAll": "Delete All ✕",
+      "confirmDelete": "Confirm — click again"
+    },
+    "templatesPopup": {
+      "savedTemplatesHeader": "SAVED TEMPLATES",
+      "noSavedTemplates": "No saved templates yet.",
+      "loadFailedMessage": "Failed to load template.",
+      "saveFailedMessage": "Save failed: {0}",
+      "templateErrorTitle": "Template Error",
+      "saveButton": "Save",
+      "saveCurrentAsTemplate": "Save Current as Template",
+      "fileSectionHeader": "FILE",
+      "importFromFile": "Import from File",
+      "exportToFile": "Export to File",
+      "importDialogTitle": "Import Legend Template",
+      "exportDialogTitle": "Export Legend Template",
+      "xmlFileFilter": "XML Files (*.xml)|*.xml|All Files (*.*)|*.*",
+      "importFailedMessage": "Failed to import file.",
+      "importErrorTitle": "Import Error",
+      "deleteConfirm": "Sure?"
+    },
+    "defaults": {
+      "customLabel": "Custom"
+    }
+  },
+  "window": {
+    "titleBar": {
+      "title": "Legend Creation"
+    },
+    "actions": {
+      "previewTooltip": "Toggle a live preview of the legend",
+      "createTooltip": "Create or update the Legend view in Revit",
+      "previewButton": "Preview",
+      "hidePreviewButton": "Hide Preview",
+      "createLegend": "Create Legend →",
+      "updateLegend": "Update Legend →"
+    },
+    "sidebar": {
+      "templatesPill": "Templates",
+      "editTooltip": "Edit legend title and subtitle"
+    },
+    "editPopup": {
+      "titleLabel": "Title",
+      "subtitleLabel": "Subtitle",
+      "save": "Save",
+      "duplicate": "Duplicate",
+      "deleteLegend": "Delete legend",
+      "cancel": "Cancel"
+    },
+    "defaults": {
+      "untitledLegend": "Legend",
+      "copySuffix": " (copy)",
+      "newLegendTitle": "New Legend"
+    },
+    "sizing": {
+      "header": "SIZING",
+      "scaleLabel": "Scale",
+      "swatchW": "Swatch W",
+      "swatchH": "Swatch H",
+      "rowGap": "Row Gap",
+      "colGap": "Col Gap",
+      "swatchLabelGap": "Swatch–Label"
+    },
+    "textStyles": {
+      "header": "TEXT STYLES",
+      "noTypesFound": "No TextNoteTypes found in project.",
+      "title": "TITLE",
+      "subtitle": "SUBTITLE",
+      "groupHeader": "GROUP HEADER",
+      "label": "LABEL"
+    },
+    "status": {
+      "notInitialized": "Legend creator not initialised.",
+      "createdMessage": "Legend created.",
+      "updatedMessage": "Legend updated.",
+      "completedWithErrors": "Completed with {0} error(s).",
+      "updating": "Updating…",
+      "creating": "Creating…"
+    }
+  },
+  "blockRow": {
+    "tooltips": {
+      "pickColor": "Pick color",
+      "missingSource": "Source rule missing — value frozen at last seen.",
+      "hide": "Hide",
+      "show": "Show",
+      "delete": "Delete"
+    },
+    "placeholders": {
+      "customLabel": "Custom label",
+      "ruleName": "(rule name)"
+    },
+    "labels": {
+      "customTag": "CUST"
+    },
+    "colorPicker": {
+      "applyColor": "Apply Color",
+      "cancel": "Cancel"
+    }
+  },
+  "groupCard": {
+    "tooltips": {
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "showAll": "Show all",
+      "hideAll": "Hide all",
+      "addCustomBlock": "Add custom block",
+      "deleteGroup": "Delete group"
+    },
+    "placeholders": {
+      "customTitle": "CUSTOM",
+      "groupTitle": "(group)"
+    },
+    "defaults": {
+      "newBlockName": "New"
+    },
+    "emptyState": {
+      "dropHint": "drop a filter / custom here"
+    }
+  },
+  "layoutBar": {
+    "pill": {
+      "defaultTitle": "Legend"
+    },
+    "editPopup": {
+      "titleLabel": "Title",
+      "subtitleLabel": "Subtitle",
+      "save": "Save"
+    }
+  },
+  "palette": {
+    "labels": {
+      "header": "PALETTE",
+      "filtersHeader": "FILTERS — drag into a group"
+    },
+    "scope": {
+      "allPill": "All",
+      "allTradesDefault": "All trades"
+    },
+    "tooltips": {
+      "tradeDragHint": "Click to change trade  ·  Drag to add as new group"
+    },
+    "emptyState": {
+      "noMatches": "no matches"
+    }
+  }
+}

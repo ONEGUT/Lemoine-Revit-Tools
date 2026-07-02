@@ -10,6 +10,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using LemoineTools.Lemoine.Controls;
+using L = LemoineTools.Lemoine.LemoineStrings;
 
 namespace LemoineTools.Lemoine
 {
@@ -330,7 +331,7 @@ namespace LemoineTools.Lemoine
                 BorderThickness = new Thickness(1),
                 Margin  = new Thickness(6, 0, 0, 0),
                 Template = FlatBtnTemplate(),
-                ToolTip  = "Close",
+                ToolTip  = L.T("common.tooltip.close"),
             };
             closeBtn.SetResourceReference(Button.HeightProperty,     "LemoineH_BtnSm");
             closeBtn.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnSmPad");
@@ -460,7 +461,7 @@ namespace LemoineTools.Lemoine
             var sp = new StackPanel();
             var hdr = new TextBlock
             {
-                Text         = $"This step ('{stepId}') failed to load.",
+                Text         = L.T("common.step.failedToLoad", stepId),
                 TextWrapping = TextWrapping.Wrap,
                 FontWeight   = FontWeights.SemiBold,
             };
@@ -595,7 +596,7 @@ namespace LemoineTools.Lemoine
             // "Waiting…" — italic, main text color
             var waitingTb = new TextBlock
             {
-                Text = "Waiting…", Margin = new Thickness(0, 2, 0, 0),
+                Text = L.T("common.status.waiting"), Margin = new Thickness(0, 2, 0, 0),
                 Visibility = Visibility.Collapsed, FontStyle = FontStyles.Italic,
             };
             waitingTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -605,7 +606,7 @@ namespace LemoineTools.Lemoine
 
             var runningTb = new TextBlock
             {
-                Text = "● Processing in Revit…", Margin = new Thickness(0, 2, 0, 0),
+                Text = L.T("common.status.processing"), Margin = new Thickness(0, 2, 0, 0),
                 Visibility = Visibility.Collapsed,
             };
             runningTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -626,7 +627,7 @@ namespace LemoineTools.Lemoine
 
             var validTb = new TextBlock
             {
-                Text = "✗ Required before proceeding",
+                Text = L.T("common.status.required"),
                 Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap,
                 Visibility = Visibility.Collapsed,
             };
@@ -650,7 +651,7 @@ namespace LemoineTools.Lemoine
             else if (_tool is ILemoineStepConfirmable sc && sc.ConfirmLabelFor(step.Id) is string lbl)
                 btnLabel = lbl;
             else
-                btnLabel = "Confirm →";
+                btnLabel = L.T("common.step.confirm");
             var confirmBtn = BuildButton(btnLabel, true);
             confirmBtn.Click += (s, e) =>
             {
@@ -903,7 +904,7 @@ namespace LemoineTools.Lemoine
             // Single centred footer button. Its role depends on state: a "Reload" on the first
             // step (when a reload factory is wired), a red "Cancel" mid-run, otherwise "Reset".
             // The window is still closed via the toolbar's × — there is no footer close button.
-            _resetBtn = BuildButton("Reset", false);
+            _resetBtn = BuildButton(L.T("common.footer.reset"), false);
             _resetBtn.Width = 120;
             _resetBtn.HorizontalAlignment = HorizontalAlignment.Center;
             _resetBtn.VerticalAlignment   = VerticalAlignment.Center;
@@ -931,8 +932,8 @@ namespace LemoineTools.Lemoine
         private void UpdateResetButton()
         {
             if (_resetBtn == null || _isRunning) return;
-            if (CanReload()) _resetBtn.Content = char.ConvertFromUtf32(0x21BB) + " Reload"; // ↻
-            else             _resetBtn.Content = "Reset";
+            if (CanReload()) _resetBtn.Content = char.ConvertFromUtf32(0x21BB) + " " + L.T("common.footer.reload"); // ↻
+            else             _resetBtn.Content = L.T("common.footer.reset");
         }
 
         // ═══════════════════════════════════════ NAVIGATION ═══════════════════
@@ -1352,7 +1353,7 @@ namespace LemoineTools.Lemoine
                 total++;
                 if (i <= _activeStep) pos++;
             }
-            _stepCounter.Text = $"Step {pos} / {total}";
+            _stepCounter.Text = L.T("common.step.counter", pos, total);
         }
 
         // ── Run clock ──────────────────────────────────────────────────────────
@@ -1469,7 +1470,7 @@ namespace LemoineTools.Lemoine
         private void SetResetButtonToCancel()
         {
             _resetBtn.IsEnabled = true;
-            _resetBtn.Content   = "Cancel";
+            _resetBtn.Content   = L.T("common.footer.cancel");
             _resetBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineWarnBorder");
             _resetBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineWarnText");
         }

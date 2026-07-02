@@ -49,7 +49,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CeilingHeatmap: run aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingHeatmap: run aborted", ex); Log(LemoineStrings.T("ceilings.heatmap.log.error", ex.Message), "fail");
                 fail++;
             }
 
@@ -72,11 +72,11 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (SelectedViewIds == null || SelectedViewIds.Count == 0)
             {
-                Log("No views selected.", "fail"); fail++; return;
+                Log(LemoineStrings.T("ceilings.heatmap.log.noViews"), "fail"); fail++; return;
             }
 
             // ── Phase 1: Scan ceiling height offsets (0–20%) ─────────────────────
-            Log("Scanning ceiling height offsets from level (host + linked models)…", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.scanning"), "info");
 
             var heightBuckets = new List<double>();
             int hostCeilings = 0, linkedCeilings = 0;
@@ -86,7 +86,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user — {vi} of {viewCount} processed; work so far preserved.", "warn");
+                    Log(LemoineStrings.T("common.log.stoppedByUser", vi, viewCount), "warn");
                     break;
                 }
 
@@ -111,21 +111,21 @@ namespace LemoineTools.Tools.Ceilings
                 Progress((int)((vi + 1) * 20.0 / viewCount), pass, fail, skip);
             }
 
-            Log($"Scanned {hostCeilings} host ceiling(s) and {linkedCeilings} linked ceiling(s).", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.scanned", hostCeilings, linkedCeilings), "info");
             LemoineLog.Info("CeilingHeatmap",
                 $"scan complete — {hostCeilings} host + {linkedCeilings} linked ceilings across "
                 + $"{viewCount} view(s); {heightBuckets.Count} height bucket(s).");
 
             if (heightBuckets.Count == 0)
             {
-                Log("No ceiling height offsets found in the selected views (checked the host model and every visible link).", "fail");
+                Log(LemoineStrings.T("ceilings.heatmap.log.noOffsets"), "fail");
                 LemoineLog.Warn("CeilingHeatmap",
                     "no ceilings found in host or links for the selected views — nothing to bucket.");
                 fail++; return;
             }
 
             heightBuckets.Sort();
-            Log($"Found {heightBuckets.Count} distinct height offset bucket{(heightBuckets.Count == 1 ? "" : "s")}.", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.foundBuckets", heightBuckets.Count), "info");
 
             // ── Phase 2: Resolve Revit parameters (20–30%) ───────────────────────
             // "Height Offset From Level" is a built-in parameter, so its ElementId is
@@ -141,7 +141,7 @@ namespace LemoineTools.Tools.Ceilings
 
             ElementId solidFillId = GetSolidFillPatternId(doc);
             if (solidFillId == ElementId.InvalidElementId)
-                Log("Solid fill pattern not found — color overrides will be applied without fill pattern.", "info");
+                Log(LemoineStrings.T("ceilings.heatmap.log.noSolidFill"), "info");
 
             var rampColors = BuildHeatmapRamp(heightBuckets.Count);
             Progress(30, pass, fail, skip);
@@ -153,7 +153,7 @@ namespace LemoineTools.Tools.Ceilings
             Progress(40, pass, fail, skip);
 
             // ── Phase 4: Create/reuse filters, apply overrides (40–95%) ──────────
-            Log("Creating and applying view filters…", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.creatingFilters"), "info");
 
             var existingFilters = new FilteredElementCollector(doc)
                 .OfClass(typeof(ParameterFilterElement))
@@ -176,7 +176,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {i} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", i, total), "warn");
                         break;
                     }
 
@@ -210,7 +210,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log($"Error creating filter '{filterName}': {ex.Message}", "fail");
+                            Log(LemoineStrings.T("ceilings.heatmap.log.filterCreateError", filterName, ex.Message), "fail");
                             fail++; continue;
                         }
                     }
@@ -250,7 +250,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log($"Error applying filter to view: {ex.Message}", "fail");
+                            Log(LemoineStrings.T("ceilings.heatmap.log.filterApplyError", ex.Message), "fail");
                         }
                     }
 
@@ -275,20 +275,20 @@ namespace LemoineTools.Tools.Ceilings
             double highFt = UnitUtils.ConvertFromInternalUnits(heightBuckets.Last(),    UnitTypeId.Feet);
 
             _filtersCreated = created; _filtersReused = reused;
-            Log($"Complete — {created} filter(s) created, {reused} reused.", "pass");
-            Log($"Height offset range: {FormatFtIn(lowFt)} AFF (low) → {FormatFtIn(highFt)} AFF (high).", "info");
-            Log($"Applied to {SelectedViewIds.Count} view{(SelectedViewIds.Count == 1 ? "" : "s")}.", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.complete", created, reused), "pass");
+            Log(LemoineStrings.T("ceilings.heatmap.log.range", FormatFtIn(lowFt), FormatFtIn(highFt)), "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.appliedTo", SelectedViewIds.Count), "info");
         }
 
         // ── Phase 5: Place ceiling tags ───────────────────────────────────────────
         private void PlaceCeilingTags(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            Log("Placing ceiling tags…", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.placingTags"), "info");
 
             FamilySymbol? tagSymbol = GetOrLoadTagSymbol(doc);
             if (tagSymbol == null)
             {
-                Log("Ceiling tag family not found and could not be loaded — skipping tag placement.", "fail");
+                Log(LemoineStrings.T("ceilings.heatmap.log.tagFamilyMissing"), "fail");
                 fail++; return;
             }
 
@@ -318,7 +318,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {vi} of {viewCount} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", vi, viewCount), "warn");
                         break;
                     }
 
@@ -381,7 +381,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log($"Could not place tag on host ceiling {el.Id}: {ex.Message}", "fail");
+                            Log(LemoineStrings.T("ceilings.heatmap.log.tagHostFailed", el.Id, ex.Message), "fail");
                             fail++;
                         }
                         tagProgress.Tick();
@@ -402,7 +402,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log($"Could not place tag on linked ceiling {lc.El.Id}: {ex.Message}", "fail");
+                            Log(LemoineStrings.T("ceilings.heatmap.log.tagLinkedFailed", lc.El.Id, ex.Message), "fail");
                             fail++;
                         }
                         tagProgress.Tick();
@@ -415,10 +415,9 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             if (tagDeleted > 0)
-                Log($"Tags placed: {tagPlaced} ({tagDeleted} existing removed and replaced, " +
-                    $"{Math.Max(0, tagPlaced - tagDeleted)} net new).", "pass");
+                Log(LemoineStrings.T("ceilings.heatmap.log.tagsPlacedReplaced", tagPlaced, tagDeleted, Math.Max(0, tagPlaced - tagDeleted)), "pass");
             else
-                Log($"Tags placed: {tagPlaced} (none previously existed).", "pass");
+                Log(LemoineStrings.T("ceilings.heatmap.log.tagsPlacedNone", tagPlaced), "pass");
 
             // Tags are a primary deliverable of the heatmap — count them toward pass so the
             // headline total reflects the ceilings tagged, not just the bucket filters created.
@@ -450,8 +449,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (stream == null)
                     {
-                        Log($"Embedded resource '{ResourceName}' not found in assembly. " +
-                             "Verify the .rfa is marked as EmbeddedResource in the .csproj.", "fail");
+                        Log(LemoineStrings.T("ceilings.heatmap.log.resourceMissing", ResourceName), "fail");
                         return null;
                     }
                     using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
@@ -473,7 +471,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                Log($"Failed to load ceiling tag family from embedded resource: {ex.Message}", "fail");
+                Log(LemoineStrings.T("ceilings.heatmap.log.tagFamilyLoadFailed", ex.Message), "fail");
                 return null;
             }
             finally
@@ -663,11 +661,11 @@ namespace LemoineTools.Tools.Ceilings
 
             if (heatmapFilters.Count == 0)
             {
-                Log("No existing heatmap filters found.", "info");
+                Log(LemoineStrings.T("ceilings.heatmap.log.noHeatmapFilters"), "info");
                 return;
             }
 
-            Log($"Removing {heatmapFilters.Count} existing heatmap filter(s)…", "info");
+            Log(LemoineStrings.T("ceilings.heatmap.log.removingFilters", heatmapFilters.Count), "info");
 
             var allViews = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
@@ -695,7 +693,7 @@ namespace LemoineTools.Tools.Ceilings
                     try   { doc.Delete(pfe.Id); }
                     catch (Exception ex)
                     {
-                        Log($"Could not delete filter '{pfe.Name}': {ex.Message}", "fail");
+                        Log(LemoineStrings.T("ceilings.heatmap.log.filterDeleteError", pfe.Name, ex.Message), "fail");
                         fail++;
                     }
                 }
@@ -749,14 +747,14 @@ namespace LemoineTools.Tools.Ceilings
                 }
 
                 settings.Save();
-                Log($"Registered '{CHTradeLabel}' trade with {trade.Rules.Count} rule(s).", "info");
+                Log(LemoineStrings.T("ceilings.heatmap.log.tradeRegistered", CHTradeLabel, trade.Rules.Count), "info");
             }
             catch (Exception ex)
             {
                 // Non-fatal: the Revit filters were already created/applied above. Surface the
                 // failure so the rules-list sync issue isn't hidden.
                 LemoineLog.Error("CeilingHeatmap: register Ceiling Heatmap trade", ex);
-                Log($"Filters applied, but could not update the rules list: {ex.Message}", "fail");
+                Log(LemoineStrings.T("ceilings.heatmap.log.rulesUpdateFailed", ex.Message), "fail");
             }
         }
 
@@ -844,9 +842,7 @@ namespace LemoineTools.Tools.Ceilings
                     {
                         notCascading++;
                         string linkName = link.Name;
-                        Log($"Link \"{linkName}\" in view \"{view.Name}\" is displayed "
-                            + $"\"{mode}\", not \"By Host View\" — its ceilings will not be "
-                            + "colored. Set it to \"By Host View\" in Visibility/Graphics to include them.",
+                        Log(LemoineStrings.T("ceilings.heatmap.log.linkNotByHost", linkName, view.Name, mode),
                             "fail");
                         LemoineLog.Warn("CeilingHeatmap",
                             $"link '{linkName}' in view '{view.Name}' display={mode}; "

@@ -89,16 +89,16 @@ namespace LemoineTools.Tools.CopyLinear
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
-                if (doc == null) { Log("No active document.", "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (doc == null) { Log(LemoineStrings.T("copy.linear.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var src = CopyLinearSource.Resolve(doc, Spec.LinkInstId);
-                if (src?.Doc == null) { Log("Source document is not loaded.", "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (src?.Doc == null) { Log(LemoineStrings.T("copy.linear.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 FamilySymbol? symbol = null;
                 if (Mode == "Replace")
                 {
                     symbol = doc.GetElement(new ElementId(SymbolId)) as FamilySymbol;
-                    if (symbol == null) { Log("Pick a family type for Replace mode.", "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                    if (symbol == null) { Log(LemoineStrings.T("copy.linear.log.pickFamily"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
                 }
 
                 // ── Gather current source runs (straight lines only) keyed by stable identity ──
@@ -143,7 +143,7 @@ namespace LemoineTools.Tools.CopyLinear
                 }
 
                 skip += nonLinear;
-                if (nonLinear > 0) Log($"— {nonLinear} element(s) skipped — no straight location curve.", "info");
+                if (nonLinear > 0) Log(LemoineStrings.T("copy.linear.log.nonLinear", nonLinear), "info");
 
                 // ── Read existing stamps and decide what to (re)build / delete ──
                 var stampsByKey = new Dictionary<string, (List<ElementId> ids, string hash)>(StringComparer.Ordinal);
@@ -175,10 +175,9 @@ namespace LemoineTools.Tools.CopyLinear
 
                 string runId = Guid.NewGuid().ToString("N");
                 int total = toBuild.Count, done = 0;
-                Log($"{Mode} mode — {current.Count} source run(s); building {toBuild.Count}, {unchanged} unchanged, "
-                    + (DeletePrevious
-                        ? $"{orphanIds.Count} orphaned output(s) to remove."
-                        : "previous outputs left untouched."), "info");
+                Log(LemoineStrings.T("copy.linear.log.modeHeader", Mode, current.Count, toBuild.Count, unchanged, (DeletePrevious
+                        ? LemoineStrings.T("copy.linear.log.copyingOrphans", orphanIds.Count)
+                        : LemoineStrings.T("copy.linear.log.copyingUntouched"))), "info");
 
                 using (var tx = new Transaction(doc, "Copy Linear Elements"))
                 {
@@ -212,7 +211,7 @@ namespace LemoineTools.Tools.CopyLinear
                     {
                         if (LemoineRun.CancelRequested)
                         {
-                            Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                             break;   // falls through to doc.Regenerate() + tx.Commit() below
                         }
                         if (!described) { described = true; Log(DescribeSource(run.Element), "info"); }
@@ -229,7 +228,7 @@ namespace LemoineTools.Tools.CopyLinear
                         {
                             fail++;
                             LemoineLog.Error($"CopyLinear: build {run.Key}", ex);
-                            Log($"✗ {run.Element.Id}: {ex.Message}", "fail");
+                            Log(LemoineStrings.T("copy.linear.log.runFail", run.Element.Id, ex.Message), "fail");
                         }
                         done++;
                         if (total > 0) OnProgress?.Invoke((int)(done * 95.0 / total), pass, fail, skip);
@@ -243,21 +242,21 @@ namespace LemoineTools.Tools.CopyLinear
                     // ground truth for diagnosing "work plane" style errors.
                     foreach (var f in failureHandler.Captured.Distinct().Take(15))
                     {
-                        Log($"Revit failure: {f}", "warn");
+                        Log(LemoineStrings.T("copy.linear.log.revitFailure", f), "warn");
                         LemoineLog.Warn("CopyLinear: revit failure", f);
                     }
                 }
 
                 long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
-                Log($"Done. {pass} output(s) created, {skip} skipped, {fail} failed.", fail > 0 ? "warn" : "pass");
+                if (issues > 0) Log(LemoineStrings.T("copy.linear.log.nonFatal", issues), "warn");
+                Log(LemoineStrings.T("copy.linear.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
                 LemoineLog.Error("CopyLinearRunHandler.Execute", ex);
-                Log($"Run aborted: {ex.Message}", "fail");
+                Log(LemoineStrings.T("copy.linear.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally
@@ -291,7 +290,7 @@ namespace LemoineTools.Tools.CopyLinear
                 var hostSymbol = FindOrCopySymbol(doc, srcDoc, srcFi.Symbol);
                 if (hostSymbol == null)
                 {
-                    Log($"✗ {run.Element.Id}: family '{srcFi.Symbol?.Family?.Name}' is not loaded in the host document — load it first.", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.familyNotLoaded", run.Element.Id, srcFi.Symbol?.Family?.Name), "fail");
                     return (0, 1);
                 }
                 if (!hostSymbol.IsActive) hostSymbol.Activate();
@@ -299,7 +298,7 @@ namespace LemoineTools.Tools.CopyLinear
                 var sp = EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
                 if (sp == null)
                 {
-                    Log($"✗ {run.Element.Id}: could not create sketch plane for face-hosted split.", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.noSketchPlaneSplit", run.Element.Id), "fail");
                     return (0, 1);
                 }
                 try
@@ -309,7 +308,7 @@ namespace LemoineTools.Tools.CopyLinear
                 catch (Exception ex)
                 {
                     LemoineLog.Error($"CopyLinear: reconstruct face-hosted {run.Element.Id}", ex);
-                    Log($"✗ {run.Element.Id}: reconstruct failed — {ex.GetType().Name}: {ex.Message}", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.reconstructFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
                     return (0, 1);
                 }
             }
@@ -330,7 +329,7 @@ namespace LemoineTools.Tools.CopyLinear
                 catch (Exception ex)
                 {
                     LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
-                    Log($"✗ {run.Element.Id}: copy failed — {ex.GetType().Name}: {ex.Message}", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.copyFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
                     return (0, 1);
                 }
 
@@ -338,7 +337,7 @@ namespace LemoineTools.Tools.CopyLinear
                 if (hostCopy == null)
                 {
                     SafeDelete(doc, copied?.ToList() ?? new List<ElementId>());
-                    Log($"— {run.Element.Id}: copy has no straight curve, skipped.", "info");
+                    Log(LemoineStrings.T("copy.linear.log.copyNoCurve", run.Element.Id), "info");
                     return (0, 0);
                 }
             }
@@ -347,7 +346,7 @@ namespace LemoineTools.Tools.CopyLinear
             if (!(hostCopy.Location is LocationCurve hostLocCurve) || !(hostLocCurve.Curve is Line hostLine))
             {
                 SafeDelete(doc, new List<ElementId> { hostCopy.Id });
-                Log($"— {run.Element.Id}: placed instance has no straight location curve, skipped.", "info");
+                Log(LemoineStrings.T("copy.linear.log.placedNoCurve", run.Element.Id), "info");
                 return (0, 0);
             }
 
@@ -358,7 +357,7 @@ namespace LemoineTools.Tools.CopyLinear
             if (cells.Count == 0)
             {
                 SafeDelete(doc, new List<ElementId> { hostCopy.Id });
-                Log($"— {run.Element.Id}: run shorter than one segment, skipped.", "info");
+                Log(LemoineStrings.T("copy.linear.log.runTooShort", run.Element.Id), "info");
                 return (0, 0);
             }
 
@@ -370,7 +369,7 @@ namespace LemoineTools.Tools.CopyLinear
                 var c = ElementTransformUtils.CopyElement(doc, hostCopy.Id, XYZ.Zero);
                 if (c == null || c.Count == 0)
                 {
-                    Log($"✗ {run.Element.Id}: copy #{i} failed — split is incomplete.", "warn");
+                    Log(LemoineStrings.T("copy.linear.log.copyIncomplete", run.Element.Id, i), "warn");
                     break;
                 }
                 segIds.Add(c.First());
@@ -405,7 +404,7 @@ namespace LemoineTools.Tools.CopyLinear
                 {
                     if (i > 0) SafeDelete(doc, new List<ElementId> { seg.Id });
                     LemoineLog.Error($"CopyLinear: set segment curve {run.Element.Id}#{i}", ex);
-                    Log($"✗ {run.Element.Id} seg {i}: {ex.GetType().Name}: {ex.Message}", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.segFail", run.Element.Id, i, ex.GetType().Name, ex.Message), "fail");
                     innerFailed++;
                 }
             }
@@ -427,7 +426,7 @@ namespace LemoineTools.Tools.CopyLinear
             XYZ a = run.A, b = run.B;
             double totalLen = a.DistanceTo(b);
             var stations = CopyLinearEngine.PlacementStations(totalLen, IntervalFeet, ExtraSpacingFeet);
-            if (stations.Count == 0) { Log($"— {run.Element.Id}: no placement points, skipped.", "info"); return (0, 0); }
+            if (stations.Count == 0) { Log(LemoineStrings.T("copy.linear.log.noPlacementPts", run.Element.Id), "info"); return (0, 0); }
 
             FamilyPlacementType placement = FamilyPlacementType.OneLevelBased;
             try { placement = symbol.Family?.FamilyPlacementType ?? FamilyPlacementType.OneLevelBased; }
@@ -435,7 +434,7 @@ namespace LemoineTools.Tools.CopyLinear
 
             if (placement == FamilyPlacementType.CurveBasedDetail || placement == FamilyPlacementType.ViewBased)
             {
-                Log($"✗ {symbol.Name} is a detail (view-specific) family — pick a model family for Replace mode.", "fail");
+                Log(LemoineStrings.T("copy.linear.log.detailFamily", symbol.Name), "fail");
                 return (0, 1);
             }
 
@@ -452,22 +451,21 @@ namespace LemoineTools.Tools.CopyLinear
             if (!_loggedPlacement)
             {
                 _loggedPlacement = true;
-                Log($"Replace family '{symbol.Name}' — placement type {placement}, path: "
-                    + (curveBased ? "line + sketch plane" :
-                       placement == FamilyPlacementType.WorkPlaneBased ? "level plane reference" : "point + level"), "info");
+                Log(LemoineStrings.T("copy.linear.log.replaceFamily", symbol.Name, placement, (curveBased ? LemoineStrings.T("copy.linear.log.pathCurve") :
+                       placement == FamilyPlacementType.WorkPlaneBased ? LemoineStrings.T("copy.linear.log.pathWorkplane") : LemoineStrings.T("copy.linear.log.pathPoint"))), "info");
                 if (AlignToSource && curveBased)
-                    Log("Align to source: skipped — a line-based family already follows the run's curve.", "info");
+                    Log(LemoineStrings.T("copy.linear.log.alignSkipLine"), "info");
                 if (hasRotation && curveBased)
-                    Log("Placement rotation: skipped — a line-based family follows the run's curve and cannot be rotated off it.", "info");
+                    Log(LemoineStrings.T("copy.linear.log.rotSkipLine"), "info");
                 if (hasManual)
-                    Log("Manual placement override active — each instance is moved relative to its own source run.", "info");
+                    Log(LemoineStrings.T("copy.linear.log.manualActive"), "info");
             }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
             Level? level = NearestLevel(levels, (a.Z + b.Z) * 0.5);
             if (level == null && (curveBased || placement == FamilyPlacementType.WorkPlaneBased))
             {
-                Log($"✗ {run.Element.Id}: the project has no level to host '{symbol.Name}' on.", "fail");
+                Log(LemoineStrings.T("copy.linear.log.noLevelHost", run.Element.Id, symbol.Name), "fail");
                 return (0, 1);
             }
 
@@ -507,7 +505,7 @@ namespace LemoineTools.Tools.CopyLinear
                             var sp = EnsureHorizontalSketchPlane(doc, (p.Z + q.Z) * 0.5);
                             if (sp == null)
                             {
-                                Log($"✗ {run.Element.Id}: could not create sketch plane for CurveBased placement.", "fail");
+                                Log(LemoineStrings.T("copy.linear.log.noSketchPlaneCurve", run.Element.Id), "fail");
                                 innerFail++;
                                 continue;
                             }
@@ -530,7 +528,7 @@ namespace LemoineTools.Tools.CopyLinear
                 catch (Exception ex)
                 {
                     LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id} ({placement})", ex);
-                    Log($"✗ {run.Element.Id}: place failed ({placement}) — {ex.GetType().Name}: {ex.Message}", "fail");
+                    Log(LemoineStrings.T("copy.linear.log.placeFail", run.Element.Id, placement, ex.GetType().Name, ex.Message), "fail");
                     innerFail++;
                     continue;
                 }
@@ -568,7 +566,7 @@ namespace LemoineTools.Tools.CopyLinear
                         else if (!_alignNoBoxWarned)
                         {
                             _alignNoBoxWarned = true;
-                            Log($"Align to source: source {run.Element.Id} has no bounding box — its placements keep the standard position.", "warn");
+                            Log(LemoineStrings.T("copy.linear.log.alignNoBox", run.Element.Id), "warn");
                         }
                     }
                 }
@@ -615,19 +613,18 @@ namespace LemoineTools.Tools.CopyLinear
                 if (profile == null)
                 {
                     _alignCalibrationFailed = true;
-                    Log("Align to source: could not measure the first placed instance — placements keep the standard position.", "warn");
+                    Log(LemoineStrings.T("copy.linear.log.alignNoMeasure"), "warn");
                     LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
                     return;
                 }
                 _alignProfile = profile;
-                Log("Align to source: family footprint measured from the first placement — "
-                    + "each instance is now aligned to its own source element.", "info");
+                Log(LemoineStrings.T("copy.linear.log.alignMeasured"), "info");
             }
             catch (Exception ex)
             {
                 _alignCalibrationFailed = true;
                 LemoineLog.Error("CopyLinear: align calibration", ex);
-                Log($"Align to source failed ({ex.GetType().Name}: {ex.Message}) — placements keep the standard position.", "warn");
+                Log(LemoineStrings.T("copy.linear.log.alignFail", ex.GetType().Name, ex.Message), "warn");
             }
         }
 
@@ -651,7 +648,7 @@ namespace LemoineTools.Tools.CopyLinear
                 if (!_alignApplyWarned)
                 {
                     _alignApplyWarned = true;
-                    Log($"Align to source: instance {inst.Id} could not be adjusted ({ex.GetType().Name}) — it keeps the standard position; further failures go to the diagnostics log.", "warn");
+                    Log(LemoineStrings.T("copy.linear.log.alignInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }
@@ -677,7 +674,7 @@ namespace LemoineTools.Tools.CopyLinear
                 if (!_rotationApplyWarned)
                 {
                     _rotationApplyWarned = true;
-                    Log($"Placement rotation: instance {inst.Id} could not be rotated ({ex.GetType().Name}) — further failures go to the diagnostics log.", "warn");
+                    Log(LemoineStrings.T("copy.linear.log.rotInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }
@@ -700,7 +697,7 @@ namespace LemoineTools.Tools.CopyLinear
                 if (!_manualApplyWarned)
                 {
                     _manualApplyWarned = true;
-                    Log($"Manual override: instance {inst.Id} could not be adjusted ({ex.GetType().Name}) — it keeps the standard position; further failures go to the diagnostics log.", "warn");
+                    Log(LemoineStrings.T("copy.linear.log.manualInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }

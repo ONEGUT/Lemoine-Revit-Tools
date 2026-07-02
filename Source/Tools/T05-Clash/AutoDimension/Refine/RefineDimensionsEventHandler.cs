@@ -36,21 +36,21 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
                 var doc = app.ActiveUIDocument?.Document;
                 if (doc == null)
                 {
-                    Log("No active document.", "fail");
+                    Log(LemoineStrings.T("clash.refineDimensions.log.noDoc"), "fail");
                     Progress(100, 0, 1, 0);
                     Complete(0, 1, 0);
                     return;
                 }
                 if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log("No views selected.", "fail");
+                    Log(LemoineStrings.T("clash.refineDimensions.log.noViews"), "fail");
                     Progress(100, 0, 1, 0);
                     Complete(0, 1, 0);
                     return;
                 }
                 if (LemoineRun.CancelRequested)
                 {
-                    Log("Stopped by user before the refine pass began — nothing changed.", "warn");
+                    Log(LemoineStrings.T("clash.refineDimensions.log.stoppedEarly"), "warn");
                     Complete(0, 0, ViewIds.Count);
                     return;
                 }
@@ -66,9 +66,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
                     dimCfg.TargetType = string.Equals(DimTargetType, "Grid", StringComparison.OrdinalIgnoreCase)
                         ? "Grid" : "SlabEdge";
 
-                    Log($"Refine: re-dimensioning {ViewIds.Count} view(s) to the nearest "
-                      + $"{(dimCfg.TargetType == "Grid" ? "grid" : "slab edge")} visible in each view — "
-                      + "no clash detection, no callouts, scale unchanged.", "info");
+                    Log(LemoineStrings.T("clash.refineDimensions.log.refining", ViewIds.Count, dimCfg.TargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.log.wordGrid") : LemoineStrings.T("clash.refineDimensions.log.wordSlabEdge")), "info");
 
                     // Every selected view is crop-bounded: the resolvers reject any target whose
                     // dimension landing point falls outside what the view shows, so each clash
@@ -91,8 +89,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
                     dimCfg.TargetType = snapTarget;
                 }
 
-                Log($"Done — {placed} dimension(s) placed across {ViewIds.Count} view(s); "
-                  + $"{replaced} prior dimension(s) replaced; {failures} placement failure(s).",
+                Log(LemoineStrings.T("clash.refineDimensions.log.done", placed, ViewIds.Count, replaced, failures),
                     placed > 0 ? "pass" : failures > 0 ? "fail" : "info");
 
                 OnResultChips?.Invoke(new List<ResultChip>
@@ -108,7 +105,7 @@ namespace LemoineTools.Tools.Clash.AutoDimension.Refine
             catch (Exception ex)
             {
                 LemoineLog.Error("RefineDimensionsEventHandler: execute", ex);
-                Log($"Fatal: {ex.Message}", "fail");
+                Log(LemoineStrings.T("clash.refineDimensions.log.fatal", ex.Message), "fail");
                 Complete(placed, failures + 1, 0);
             }
             finally

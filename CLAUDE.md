@@ -313,6 +313,19 @@ Discovered building **Place Dependent Views** (one sheet per parent view, its de
 
 ---
 
+## Text Externalization — LemoineStrings
+
+Every user-facing display string and run-log output line is externalized, not hardcoded. `LemoineStrings.T(key, ...args)` (`Source/Lemoine/LemoineStrings.cs`, namespace `LemoineTools.Lemoine`) is a zero-dependency loader/accessor over per-culture JSON files at `Strings/<culture>/*.json` (currently just `Strings/en/`), one JSON file per tool/window/handler, keys dot-flattened from nested JSON objects (e.g. `Strings/en/clashDefinitions.json`'s `window.title` → `LemoineStrings.T("clashDefinitions.window.title")`). Lookup falls back active culture → English → the key literal (logged via `LemoineLog.Warn`), so a missing key surfaces in diagnostics rather than showing blank.
+
+- **All new user-facing text goes here — never a hardcoded string literal.** This covers step-flow tool chrome (titles, labels, hints, review text), bespoke-window UI, and run-log output (`pushLog`/`Log(...)` calls). It does **not** cover debug-only output — `LemoineLog.*` calls and `Debug.WriteLine` stay hardcoded, since they're developer diagnostics, not user-facing.
+- **JSON files are JSONC** (plain JSON with `//` line/inline comments, documenting what each key is for) — a `StripComments` pre-pass removes them before the built-in `MiniJson` parser runs. `MiniJson` is a small recursive-descent reader (objects/arrays/strings/numbers/bool/null) written specifically so this stays dependency-free — no NuGet package, no `System.Text.Json`/`Newtonsoft`. **Never reference `System.Web.Extensions` for JSON parsing** — it drags `System.Web` into the WPF XAML compiler and throws MC1000 ("Could not find assembly 'System.Web...'"); this happened once and was fixed by dropping the reference and writing `MiniJson` instead.
+- **Some strings stay hardcoded, deliberately** — never externalize: persisted/logic tokens compared with `==`/`switch` or used as dictionary keys (category group labels, mode tokens like `"Split"`/`"Replace"`, combo option VALUES that also drive behavior, naming-slot tokens), Segoe MDL2 glyph codepoints and `char.ConvertFromUtf32(...)` calls, `.NET` format specifiers (`"0.###"`, `"dd/MM/yy"`), and resource keys passed to `SetResourceReference`.
+- **Rewiring existing string literals to `LemoineStrings.T(...)` must be done with a Python `str.replace()` script, never the Edit tool** — build a list of `(old, new, expected_count)` tuples and count-check every one (`src.count(old) == expected_count`) before applying. This generalizes the "Edit Tool — C# Unicode Escape Sequences" rule above: a bulk text-externalization pass touches many interpolated/Unicode-bearing strings where the Edit tool's exact-match requirement is unreliable, and the count-check catches accidental multi-match or zero-match replacements before they corrupt the file.
+- **Verify before committing**: every `LemoineStrings.T("prefix...")` key referenced in a rewired `.cs` file must exist in the corresponding JSON (flatten the JSON, regex-scan the `.cs` file for `LemoineStrings\.T\(\s*"(prefix\.[^"]+)"`, diff the two key sets) — a missing key silently falls back to English-then-the-literal-key rather than failing to compile, so this check is the only guard against a typo'd key.
+- **The active language is set via `LemoineSettings.Instance.SetLanguage(culture)`**, which reloads `LemoineStrings` and persists the choice; already-open tool windows keep their current language (only windows opened afterward pick up the change). The language picker lives in `GlobalSettingsWindow.General.cs`, directly under the UI Size section, listing every culture folder found via `LemoineStrings.AvailableCultures()`.
+
+---
+
 ## Memory & Lifetime Discipline
 
 Discovered auditing why tools held RAM after running.

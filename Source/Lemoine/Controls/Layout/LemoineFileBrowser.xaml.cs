@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -27,8 +28,8 @@ namespace LemoineTools.Lemoine.Controls
 
         public string? Placeholder { get; set; }
 
-        public string Filter      { get; set; } = "All files|*.*";
-        public string DialogTitle { get; set; } = "Select File";
+        public string Filter      { get; set; } = LemoineStrings.T("controls.inputs.fileBrowser.defaultFilter");
+        public string DialogTitle { get; set; } = LemoineStrings.T("controls.inputs.fileBrowser.defaultDialogTitle");
 
         // Recents property kept for API compatibility — silently ignored
         public System.Collections.Generic.IList<string> Recents { set { } }

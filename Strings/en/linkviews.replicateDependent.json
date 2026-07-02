@@ -1,0 +1,76 @@
+// linkviews.replicateDependent.json — Bulk Dependent Views tool + run-handler logs.
+// Command: ReplicateDependentViewsCommand. NOTE: naming-slot tokens (None/Host Level/
+// Source View Name/Target View Name/View Type/Dep Suffix/Custom) and ViewType labels
+// stay in code — they drive switch/equality logic and dictionary keys.
+{
+  "title": "Bulk Dependent Views",
+  "runLabel": "Replicate in Revit →",
+
+  "steps": {
+    "S1": "Source View",
+    "S2": "Dependent Preview",
+    "S3": "Target Views",
+    "S4": "View Naming",
+    "S5": "Review & Run"
+  },
+
+  "summaries": {
+    "S5":          "Ready to run",
+    "depCount":    "{0} dependent(s)",
+    "noDeps":      "No deps",
+    "targetCount": "{0} target(s)",
+    "s4Defaults":  "Defaults"
+  },
+
+  "labels": {
+    "noSources":       "No views with existing dependent views were found in this project.",
+    "sourceView":      "Source view",       // picker accessible name
+    "targetViews":     "Target views",
+    "selectSourceFirst":"Select a source view in Step 1.",
+    "s2Header":        "Dependent views on \"{0}\":",      // {0} = source name
+    "noDepsOnSource":  "No dependent views found on this source.",
+    "crop":            "(crop)",
+    "noCrop":          "(no crop)",
+    "depName":         "— {0} - {1}",                       // {0}=source name {1}=suffix
+    "noOtherViews":    "No other {0} views found in this project.",   // {0} = type label
+    "orientationWarn": "⚠  {0} target(s) have a different view orientation and may not receive correct crop regions.",
+    "slotFront":       "Front",
+    "slotCenter":      "Center",
+    "slotEnd":         "End",
+    "customPlaceholder":"(custom)",
+    "noNameComponents":"(no name components set)",
+    "noLevel":         "No Level",
+    "exSource":        "Corridor Plan",
+    "exLevel":         "Level 2",
+    "exType":          "Floor Plan",
+    "exTarget":        "Area Plan - L2",
+    "exSuffix":        "N",
+    "previewHeader":   "PREVIEW  (suffix always appended last)"
+  },
+
+  "review": {
+    "itemSource":  "Source view",
+    "itemDeps":    "Dependents to copy",
+    "itemTargets": "Target views",
+    "itemCreate":  "Views to create",
+
+    "targetsValue": "{0} view(s)",
+    "createValue":  "≤ {0}",
+    "note":         "Creates one dependent view per target for each dependent on the source, transferring crop region and view range. Targets with existing dependents of the same name are skipped and logged."
+  },
+
+  "log": {
+    "raising":      "Raising Revit external event…",
+    "error":        "Error: {0}",
+    "nonFatal":     "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "nothingToDo":  "Nothing to do: no source or targets.",
+    "noDeps":       "Source view has no dependents to copy.",
+    "skipNotFound": "[SKIP] Target view not found: {0}",        // {0} = target name
+    "infoExisting": "[INFO] '{0}' already has {1} dependent view(s).",   // {0}=target {1}=count
+    "warnOrient":   "[WARN] '{0}' has a different view orientation — crop regions may not transfer correctly.",  // {0}=target
+    "skipExists":   "[SKIP] '{0}' already exists.",             // {0} = new name
+    "created":      "Created: {0}",                             // {0} = new name
+    "fail":         "[FAIL] '{0}': {1}",                        // {0}=name {1}=error
+    "complete":     "Complete — {0} created, {1} skipped, {2} failed."
+  }
+}

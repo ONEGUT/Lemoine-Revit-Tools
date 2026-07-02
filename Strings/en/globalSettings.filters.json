@@ -1,0 +1,182 @@
+// globalSettings.filters.json — Manage Settings window, "Filters" tab
+// (GlobalSettingsWindow.Filters.cs). Auto Filters trade/rule configuration UI:
+// trades sidebar, rule list, rule editor (Filter Logic / Override Style /
+// Appearance & Visibility), rule + trade edit popups, Templates popup, batch
+// edit / merge tools.
+//
+// NOT localized (left as code):
+//   - matchTypes dropdown items ("contains", "does not contain", "equals", …) —
+//     these are stored directly as FilterRuleConfig.MatchType and compared with
+//     == / switch elsewhere, so they are persisted logic tokens, not just labels.
+//   - fill/line pattern name fallbacks ("Solid Fill", "Solid") — these must match
+//     real Revit pattern names.
+//   - single-glyph icon strings ("˅", "＋", "↑", "↓", "↺", "✕", "✓" via
+//     ConvertFromUtf32) — decorative iconography, not language text.
+//   - default export filename "LemoineAutoFilters.xml" — a filename, not a phrase.
+{
+  "sidebar": {
+    "templatesButton": "Templates",
+    "discoverPill": "Discover",
+    "discoverTooltip": "Scan links/host for parameter values and propose color-coded rules.",
+    "addTradePill": "＋ Add Trade",
+    "addTradeTooltip": "Add a new trade.",
+    "editTradeTooltip": "Edit trade name and color",
+    "applyToViewLabel": "Apply to view",
+    "applyToViewTooltip": "Apply the checked trades' filters to the current view.",
+    "removeFromViewLabel": "Remove from view",
+    "removeFromViewTooltip": "Remove the checked trades' filters from the current view (kept in the project).",
+    "applyCheckboxTooltip": "Include this trade when applying selected trades to the view",
+    "noTrades": "No trades — use ＋ Add Trade below."
+  },
+
+  "ruleList": {
+    "applyTradeFooterLabel": "Apply trade to view",
+    "applyTradeFooterTooltip": "Create and apply the active trade's filters to the current view.",
+    "noTradesYet": "No trades yet — use ＋ Add Trade in the sidebar.",
+    "noRulesYet": "No rules yet — use ＋ Add Rule below.",
+    "addRulePill": "＋  Add Rule",
+    "editRuleTooltip": "Edit rule: rename, move/copy to another trade, delete",
+    "allCategories": "(all categories)",
+    "wholeCategorySuffix": "  ·  whole category"
+  },
+
+  "editor": {
+    "selectRulePrompt": "Select a rule to edit."
+  },
+
+  "sections": {
+    "filterLogic": "FILTER LOGIC",
+    "overrideStyle": "OVERRIDE STYLE",
+    "appearanceVisibility": "APPEARANCE & VISIBILITY",
+    "colors": "COLORS",
+    "batchEdit": "BATCH EDIT",
+    "merge": "MERGE"
+  },
+
+  "filterLogic": {
+    "categoryLabel": "CATEGORY",
+    "parameterLabel": "PARAMETER",
+    "searchStringLabel": "SEARCH STRING",
+    "categoryPlaceholder": "Add category…",
+    "parameterPlaceholder": "Add parameter…",
+    "keywordPlaceholder": "Add keyword…",
+    "hintWholeCategory": "✓ Whole category applies to linked models.",
+    "hintLinkSafe": "✓ Built-in parameter — applies to linked models.",
+    "hintNotLinkSafe": "⚠ May not affect linked models unless this is a shared parameter. Prefer a built-in parameter or Whole category.",
+    "wholeCategoryToggleLabel": "All",
+    "wholeCategoryToggleTooltip": "Select every element in the chosen categories",
+    "wholeCategoryDesc": "Whole category — match every element (ignores parameter & keywords)"
+  },
+
+  "overrideStyle": {
+    "surface": "Surface",
+    "cut": "Cut",
+    "lines": "Lines",
+    "fg": "FG",
+    "bg": "BG"
+  },
+
+  "transparency": {
+    "label": "Transparency"
+  },
+
+  "appearance": {
+    "halftone": "Halftone",
+    "visibleLabel": "Visible",
+    "visibleTooltip": "Elements visible — when off, matching elements are hidden in the view.",
+    "applyLabel": "Apply",
+    "applyTooltip": "Apply this rule — when off, the rule is skipped (no filter is created or applied)."
+  },
+
+  "ruleEditPopup": {
+    "nameLabel": "Rule Name",
+    "deleteRule": "Delete Rule",
+    "move": "Move",
+    "copy": "Copy"
+  },
+
+  "tradeEditPopup": {
+    "nameLabel": "Trade Name",
+    "duplicate": "Duplicate",
+    "deleteTrade": "Delete Trade"
+  },
+
+  "addTradeForm": {
+    "labelLabel": "Label",
+    "colorLabel": "Color",
+    "applyColor": "Apply Color",
+    "addTrade": "Add Trade"
+  },
+
+  "common": {
+    "tradeIdLabel": "Trade ID (e.g. MD)",
+    "cancel": "Cancel"
+  },
+
+  "templatesPopup": {
+    "savedTemplatesHeader": "SAVED TEMPLATES",
+    "noSavedTemplates": "No saved templates yet.",
+    "deleteTemplate": "Delete Template",
+    "saveCurrentAsTemplate": "Save Current as Template",
+    "save": "Save",
+    "fileHeader": "FILE",
+    "importFromFile": "Import from File",
+    "exportToFile": "Export to File",
+    "restoreDefaults": "Restore Defaults",
+    "restoreConfirm": "Replace all trades & rules with built-in defaults?",
+    "yesRestore": "Yes, Restore"
+  },
+
+  "dialogs": {
+    "importTitle": "Import Auto Filter Rules",
+    "exportTitle": "Export Auto Filter Rules",
+    "xmlFilter": "XML Files|*.xml",
+    "templateError": "Template Error",
+    "importError": "Import Error",
+    "exportError": "Export Error",
+    "loadFailed": "Load failed: {0}",
+    "saveFailed": "Save failed: {0}",
+    "importFailed": "Import failed: {0}",
+    "exportFailed": "Export failed: {0}"
+  },
+
+  "status": {
+    "loaded": "Loaded \"{0}\".",
+    "savedTemplate": "Saved template \"{0}\".",
+    "restoredDefaults": "Restored defaults.",
+    "imported": "Imported.",
+    "exported": "Exported."
+  },
+
+  "suffixes": {
+    "current": " (current)",
+    "copy": " (copy)",
+    "combined": " (combined)"
+  },
+
+  "batchEdit": {
+    "editingDesc": "Editing {0} rules — name is read-only. Changes apply to all selected rules immediately."
+  },
+
+  "merge": {
+    "blockedNeedTwo": "Select two or more rules to merge.",
+    "blockedSameParameter": "All selected rules must use the same parameter — a filter rule binds only one.",
+    "blockedKeywordOnly": "Whole-category and has-value rules can't be merged — only keyword rules.",
+    "blockedMixedMatch": "Mixed include/exclude match types can't be merged. Make them the same first.",
+    "summary": "Combine {0} rules → {1} keyword(s), {2} {3}, match \"{4}\".",
+    "categoryWordSingular": "category",
+    "categoryWordPlural": "categories",
+    "mergeIntoOne": "Merge into one",
+    "mergeIntoOneTooltip": "Keep \"{0}\" and delete the other selected rules.",
+    "createCombined": "Create combined",
+    "createCombinedTooltip": "Add a new combined rule and keep the originals.",
+    "confirmMerge": "Merge into \"{0}\" and delete {1} other rule(s)?",
+    "confirmCreate": "Create \"{0}\" and keep all originals?",
+    "keywordsLine": "Keywords: {0}",
+    "categoriesLine": "Categories: {0}",
+    "none": "(none)",
+    "all": "(all)",
+    "mergeBtn": "Merge",
+    "createBtn": "Create"
+  }
+}

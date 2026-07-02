@@ -133,8 +133,8 @@ namespace LemoineTools.Lemoine
             _fRuleScroll = ruleScroll;
 
             // Docked footer: applies the active trade's filters to the current view.
-            var applyTradeFooter = BuildApplyFooter("Apply trade to view",
-                "Create and apply the active trade's filters to the current view.",
+            var applyTradeFooter = BuildApplyFooter(LemoineStrings.T("globalSettings.filters.ruleList.applyTradeFooterLabel"),
+                LemoineStrings.T("globalSettings.filters.ruleList.applyTradeFooterTooltip"),
                 ApplyActiveTradeToView);
             DockPanel.SetDock(applyTradeFooter, Dock.Bottom);
             leftDock.Children.Add(applyTradeFooter);
@@ -187,7 +187,7 @@ namespace LemoineTools.Lemoine
                 Orientation         = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
-            var templatesLabel = new TextBlock { Text = "Templates", VerticalAlignment = VerticalAlignment.Center };
+            var templatesLabel = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sidebar.templatesButton"), VerticalAlignment = VerticalAlignment.Center };
             templatesLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             templatesLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             templatesLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -219,9 +219,9 @@ namespace LemoineTools.Lemoine
 
             // Docked footer: [Apply | Remove] for the checked trades, on the current view.
             var applyAllFooter = BuildApplyRemoveFooter(
-                "Apply to view",   "Apply the checked trades' filters to the current view.",
+                LemoineStrings.T("globalSettings.filters.sidebar.applyToViewLabel"),   LemoineStrings.T("globalSettings.filters.sidebar.applyToViewTooltip"),
                 ApplySelectedTradesToView,
-                "Remove from view", "Remove the checked trades' filters from the current view (kept in the project).",
+                LemoineStrings.T("globalSettings.filters.sidebar.removeFromViewLabel"), LemoineStrings.T("globalSettings.filters.sidebar.removeFromViewTooltip"),
                 RemoveSelectedTradesFromView);
             DockPanel.SetDock(applyAllFooter, Dock.Bottom);
 
@@ -255,7 +255,7 @@ namespace LemoineTools.Lemoine
             {
                 var empty = new TextBlock
                 {
-                    Text         = "No trades — use ＋ Add Trade below.",
+                    Text         = LemoineStrings.T("globalSettings.filters.sidebar.noTrades"),
                     Margin       = new Thickness(12, 12, 12, 0),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
@@ -348,17 +348,17 @@ namespace LemoineTools.Lemoine
                 return half;
             }
 
-            var discoverHalf = MakeHalf("Discover", 0, new CornerRadius(10, 0, 0, 10), accent: true, LaunchDiscover);
-            discoverHalf.ToolTip = "Scan links/host for parameter values and propose colour-coded rules.";
+            var discoverHalf = MakeHalf(LemoineStrings.T("globalSettings.filters.sidebar.discoverPill"), 0, new CornerRadius(10, 0, 0, 10), accent: true, LaunchDiscover);
+            discoverHalf.ToolTip = LemoineStrings.T("globalSettings.filters.sidebar.discoverTooltip");
 
             var divider = new Border { Width = 1 };
             divider.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
             Grid.SetColumn(divider, 1);
 
             Border addHalf = null!;
-            addHalf = MakeHalf("＋ Add Trade", 2, new CornerRadius(0, 10, 10, 0), accent: false,
+            addHalf = MakeHalf(LemoineStrings.T("globalSettings.filters.sidebar.addTradePill"), 2, new CornerRadius(0, 10, 10, 0), accent: false,
                 () => ShowAddTradeForm(addHalf));
-            addHalf.ToolTip = "Add a new trade.";
+            addHalf.ToolTip = LemoineStrings.T("globalSettings.filters.sidebar.addTradeTooltip");
 
             grid.Children.Add(discoverHalf);
             grid.Children.Add(divider);
@@ -451,7 +451,7 @@ namespace LemoineTools.Lemoine
 
             string editId = trade.Id;
             var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
-            editBtn.ToolTip = "Edit trade name and colour";
+            editBtn.ToolTip = LemoineStrings.T("globalSettings.filters.sidebar.editTradeTooltip");
             editBtn.Margin  = new Thickness(4, 0, 0, 0);
             editBtn.MouseLeftButtonUp += (s, e) =>
             {
@@ -577,7 +577,7 @@ namespace LemoineTools.Lemoine
                 Margin            = new Thickness(0, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor            = Cursors.Hand,
-                ToolTip           = "Include this trade when applying selected trades to the view",
+                ToolTip           = LemoineStrings.T("globalSettings.filters.sidebar.applyCheckboxTooltip"),
             };
 
             var check = new TextBlock
@@ -708,7 +708,7 @@ namespace LemoineTools.Lemoine
             {
                 var empty = new TextBlock
                 {
-                    Text = "No trades yet — use ＋ Add Trade in the sidebar.",
+                    Text = LemoineStrings.T("globalSettings.filters.ruleList.noTradesYet"),
                     Margin = new Thickness(14, 14, 14, 0),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle = FontStyles.Italic,
@@ -724,7 +724,7 @@ namespace LemoineTools.Lemoine
             {
                 var empty = new TextBlock
                 {
-                    Text = "No rules yet — use ＋ Add Rule below.",
+                    Text = LemoineStrings.T("globalSettings.filters.ruleList.noRulesYet"),
                     Margin = new Thickness(14, 14, 14, 0),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle = FontStyles.Italic,
@@ -747,7 +747,7 @@ namespace LemoineTools.Lemoine
         private void AppendAddRulePill()
         {
             if (_fRuleListPanel == null) return;
-            var pill = LemoineControlStyles.BuildAddPill("＋  Add Rule", () =>
+            var pill = LemoineControlStyles.BuildAddPill(LemoineStrings.T("globalSettings.filters.ruleList.addRulePill"), () =>
             {
                 var trade = _filterTrades?.FirstOrDefault(t => t.Id == _fActiveTradeId);
                 if (trade == null) return;
@@ -918,10 +918,10 @@ namespace LemoineTools.Lemoine
                         .Where(n => !string.IsNullOrEmpty(n));
                     cats = string.Join(", ", names);
                 }
-                else cats = "(all categories)";
+                else cats = LemoineStrings.T("globalSettings.filters.ruleList.allCategories");
 
                 return string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase)
-                    ? cats + "  ·  whole category"
+                    ? cats + LemoineStrings.T("globalSettings.filters.ruleList.wholeCategorySuffix")
                     : cats;
             }
             var subtextTb = new TextBlock
@@ -959,7 +959,7 @@ namespace LemoineTools.Lemoine
             // and inline trash were removed in Stage 2: enable/disable is the editor's single
             // "Apply" toggle (rule.Enabled), and delete now lives inside the edit popup.
             var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
-            editBtn.ToolTip = "Edit rule: rename, move/copy to another trade, delete";
+            editBtn.ToolTip = LemoineStrings.T("globalSettings.filters.ruleList.editRuleTooltip");
             editBtn.Margin  = new Thickness(4, 0, 0, 0);
             editBtn.MouseLeftButtonUp += (s, e) =>
             {
@@ -1142,7 +1142,7 @@ namespace LemoineTools.Lemoine
                 {
                     var ph = new TextBlock
                     {
-                        Text         = "Select a rule to edit.",
+                        Text         = LemoineStrings.T("globalSettings.filters.editor.selectRulePrompt"),
                         Margin       = new Thickness(14, 20, 14, 0),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle    = FontStyles.Italic,
@@ -1210,7 +1210,7 @@ namespace LemoineTools.Lemoine
                 Padding         = new Thickness(12, 8, 12, 4),
                 BorderThickness = new Thickness(0, 0, 0, 0),
             };
-            var sectionTb = new TextBlock { Text = "FILTER LOGIC" };
+            var sectionTb = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.filterLogic") };
             sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
             sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1252,7 +1252,7 @@ namespace LemoineTools.Lemoine
             {
                 ItemsSource   = AutoFiltersSettings.KnownCategoryDisplayNames,
                 SelectedItems = catDisplayNames,
-                Placeholder   = "Add category…",
+                Placeholder   = LemoineStrings.T("globalSettings.filters.filterLogic.categoryPlaceholder"),
                 // Nest related sub-categories under their parent behind an expand caret.
                 Hierarchy     = AutoFiltersSettings.CategorySubcategories,
             };
@@ -1271,7 +1271,7 @@ namespace LemoineTools.Lemoine
                 ItemsSource   = paramOptions,
                 SelectedItems = paramSelected,
                 MaxItems      = 1,
-                Placeholder   = "Add parameter…",
+                Placeholder   = LemoineStrings.T("globalSettings.filters.filterLogic.parameterPlaceholder"),
             };
             // Link-safety hint shown under the parameter row (see UpdateParamHint).
             var paramHint = new TextBlock
@@ -1287,7 +1287,7 @@ namespace LemoineTools.Lemoine
                 // Whole-category always matches linked elements (keys off the Category param).
                 if (string.Equals(rule.MatchType, "all", StringComparison.OrdinalIgnoreCase))
                 {
-                    paramHint.Text = "✓ Whole category applies to linked models.";
+                    paramHint.Text = LemoineStrings.T("globalSettings.filters.filterLogic.hintWholeCategory");
                     paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                     return;
                 }
@@ -1295,12 +1295,12 @@ namespace LemoineTools.Lemoine
                 if (string.IsNullOrEmpty(p)) { paramHint.Text = ""; return; }
                 if (AutoFiltersSettings.IsLinkSafeParameter(p))
                 {
-                    paramHint.Text = "✓ Built-in parameter — applies to linked models.";
+                    paramHint.Text = LemoineStrings.T("globalSettings.filters.filterLogic.hintLinkSafe");
                     paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 }
                 else
                 {
-                    paramHint.Text = "⚠ May not affect linked models unless this is a shared parameter. Prefer a built-in parameter or Whole category.";
+                    paramHint.Text = LemoineStrings.T("globalSettings.filters.filterLogic.hintNotLinkSafe");
                     paramHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineWarnText");
                 }
             }
@@ -1319,7 +1319,7 @@ namespace LemoineTools.Lemoine
                 ItemsSource   = Array.Empty<string>(),   // free-text only
                 SelectedItems = valSelected,
                 AllowFreeText = true,
-                Placeholder   = "Add keyword…",
+                Placeholder   = LemoineStrings.T("globalSettings.filters.filterLogic.keywordPlaceholder"),
             };
             valChip.Changed += (s, e) =>
             {
@@ -1375,7 +1375,7 @@ namespace LemoineTools.Lemoine
                 return wrap;
             }
 
-            AddRow("CATEGORY", catChip);
+            AddRow(LemoineStrings.T("globalSettings.filters.filterLogic.categoryLabel"), catChip);
 
             // ── WHOLE-CATEGORY toggle ─────────────────────────────────────────
             // Makes it unambiguous when a rule selects EVERY element in the chosen
@@ -1414,8 +1414,8 @@ namespace LemoineTools.Lemoine
             });
             cardStack.Children.Add(wholeCatToggle);
 
-            paramRow  = AddRow("PARAMETER", paramChip, paramHint);
-            searchRow = AddRow("SEARCH STRING", valChip, matchDd);
+            paramRow  = AddRow(LemoineStrings.T("globalSettings.filters.filterLogic.parameterLabel"), paramChip, paramHint);
+            searchRow = AddRow(LemoineStrings.T("globalSettings.filters.filterLogic.searchStringLabel"), valChip, matchDd);
             ApplyWholeCategory(wholeCatOn);
             UpdateParamHint();
 
@@ -1449,11 +1449,11 @@ namespace LemoineTools.Lemoine
                 Margin            = new Thickness(0, 0, 8, 0),
                 Cursor            = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip           = "Select every element in the chosen categories",
+                ToolTip           = LemoineStrings.T("globalSettings.filters.filterLogic.wholeCategoryToggleTooltip"),
             };
             var toggleTb = new TextBlock
             {
-                Text                = "All",
+                Text                = LemoineStrings.T("globalSettings.filters.filterLogic.wholeCategoryToggleLabel"),
                 TextAlignment       = TextAlignment.Center,
                 VerticalAlignment   = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -1492,7 +1492,7 @@ namespace LemoineTools.Lemoine
 
             var descTb = new TextBlock
             {
-                Text              = "Whole category — match every element (ignores parameter & keywords)",
+                Text              = LemoineStrings.T("globalSettings.filters.filterLogic.wholeCategoryDesc"),
                 TextWrapping      = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -1511,7 +1511,7 @@ namespace LemoineTools.Lemoine
             var outer = new StackPanel();
 
             var sectionLbl = new Border { Padding = new Thickness(12, 8, 12, 4) };
-            var sectionTb  = new TextBlock { Text = "OVERRIDE STYLE" };
+            var sectionTb  = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.overrideStyle") };
             sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
             sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1531,7 +1531,7 @@ namespace LemoineTools.Lemoine
             var cardStack = new StackPanel();
 
             // COLORS sub-label
-            var colorsLbl = new TextBlock { Text = "COLORS", Margin = new Thickness(0, 0, 0, 8) };
+            var colorsLbl = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.colors"), Margin = new Thickness(0, 0, 0, 8) };
             colorsLbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
             colorsLbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             colorsLbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1769,8 +1769,8 @@ namespace LemoineTools.Lemoine
                         return seg;
                     }
 
-                    fgSeg = MakeSeg("FG", false, new CornerRadius(4, 0, 0, 4));
-                    bgSeg = MakeSeg("BG", true,  new CornerRadius(0, 4, 4, 0));
+                    fgSeg = MakeSeg(LemoineStrings.T("globalSettings.filters.overrideStyle.fg"), false, new CornerRadius(4, 0, 0, 4));
+                    bgSeg = MakeSeg(LemoineStrings.T("globalSettings.filters.overrideStyle.bg"), true,  new CornerRadius(0, 4, 4, 0));
                     StyleSeg(fgSeg, true);
                     StyleSeg(bgSeg, false);
 
@@ -1794,7 +1794,7 @@ namespace LemoineTools.Lemoine
                 }
             }
 
-            AddColorRow(0, "Surface", "style.surf",
+            AddColorRow(0, LemoineStrings.T("globalSettings.filters.overrideStyle.surface"), "style.surf",
                 () => rule.OverrideSurf, v => rule.OverrideSurf = v,
                 () => rule.SurfColor,    h => rule.SurfColor    = h,
                 fillList, () => rule.SurfPattern ?? "", p => rule.SurfPattern = p,
@@ -1802,14 +1802,14 @@ namespace LemoineTools.Lemoine
                 getBgColor:   () => rule.SurfBgColor,    setBgColor:   h => rule.SurfBgColor    = h,
                 getBgPattern: () => rule.SurfBgPattern ?? "", setBgPattern: p => rule.SurfBgPattern = p,
                 onFgColorChanged: hex => { if (_fActiveColorDot != null) _fActiveColorDot.Background = BrushFromHex(hex); });
-            AddColorRow(1, "Cut", "style.cut",
+            AddColorRow(1, LemoineStrings.T("globalSettings.filters.overrideStyle.cut"), "style.cut",
                 () => rule.OverrideCut,  v => rule.OverrideCut  = v,
                 () => rule.CutColor,     h => rule.CutColor     = h,
                 fillList, () => rule.CutPattern ?? "", p => rule.CutPattern = p,
                 getBgEnabled: () => rule.OverrideCutBg, setBgEnabled: v => rule.OverrideCutBg = v,
                 getBgColor:   () => rule.CutBgColor,    setBgColor:   h => rule.CutBgColor    = h,
                 getBgPattern: () => rule.CutBgPattern ?? "", setBgPattern: p => rule.CutBgPattern = p);
-            AddColorRow(2, "Lines", "style.line",
+            AddColorRow(2, LemoineStrings.T("globalSettings.filters.overrideStyle.lines"), "style.line",
                 () => rule.OverrideLine, v => rule.OverrideLine = v,
                 () => rule.LineColor,    h => rule.LineColor    = h,
                 lineList, () => rule.LinePattern ?? "Solid", p => rule.LinePattern = p,
@@ -1833,7 +1833,7 @@ namespace LemoineTools.Lemoine
         {
             var container = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
 
-            var transpLbl = MiniLabel("Transparency");
+            var transpLbl = MiniLabel(LemoineStrings.T("globalSettings.filters.transparency.label"));
             transpLbl.Margin = new Thickness(0, 2, 0, 4);
             container.Children.Add(transpLbl);
 
@@ -1883,7 +1883,7 @@ namespace LemoineTools.Lemoine
             var outer = new StackPanel();
 
             var sectionLbl = new Border { Padding = new Thickness(12, 4, 12, 4) };
-            var sectionTb  = new TextBlock { Text = "APPEARANCE & VISIBILITY" };
+            var sectionTb  = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.appearanceVisibility") };
             sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XS");
             sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -1978,21 +1978,21 @@ namespace LemoineTools.Lemoine
             }
 
             // Halftone toggle
-            cardStack.Children.Add(MakeAppToggle("Halftone", "Halftone", rule.Halftone,
+            cardStack.Children.Add(MakeAppToggle(LemoineStrings.T("globalSettings.filters.appearance.halftone"), LemoineStrings.T("globalSettings.filters.appearance.halftone"), rule.Halftone,
                 v => { markDirty?.Invoke("appearance.halftone"); rule.Halftone = v; }));
 
             // (Transparency moved to the bottom of the Override Style card.)
 
             // Elements visible toggle
-            cardStack.Children.Add(MakeAppToggle("Visible",
-                "Elements visible — when off, matching elements are hidden in the view.",
+            cardStack.Children.Add(MakeAppToggle(LemoineStrings.T("globalSettings.filters.appearance.visibleLabel"),
+                LemoineStrings.T("globalSettings.filters.appearance.visibleTooltip"),
                 rule.Visible, v => { markDirty?.Invoke("appearance.visible"); rule.Visible = v; }));
 
             // Apply toggle — the single enable concept (Stage 2 merged the old per-row "eye"
             // Enabled flag into this). When off, the rule is skipped entirely: no filter is
             // created or applied. Keeps FilterOn in sync so existing apply logic is unchanged.
-            cardStack.Children.Add(MakeAppToggle("Apply",
-                "Apply this rule — when off, the rule is skipped (no filter is created or applied).",
+            cardStack.Children.Add(MakeAppToggle(LemoineStrings.T("globalSettings.filters.appearance.applyLabel"),
+                LemoineStrings.T("globalSettings.filters.appearance.applyTooltip"),
                 rule.Enabled, v =>
                 {
                     markDirty?.Invoke("appearance.apply");
@@ -2029,7 +2029,7 @@ namespace LemoineTools.Lemoine
             outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
 
             var panel = new StackPanel();
-            panel.Children.Add(MiniLabel("Rule Name"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.ruleEditPopup.nameLabel")));
 
             var nameBox = new TextBox
             {
@@ -2082,7 +2082,7 @@ namespace LemoineTools.Lemoine
             Grid.SetColumn(moveCopy, 0);
             actionRow.Children.Add(moveCopy);
 
-            var trash = BuildTrashConfirmButton("Delete Rule", () =>
+            var trash = BuildTrashConfirmButton(LemoineStrings.T("globalSettings.filters.ruleEditPopup.deleteRule"), () =>
             {
                 popup.IsOpen = false;
                 if (_fSelectedRuleIds.Contains(rule.Id) && _fSelectedRuleIds.Count >= 2)
@@ -2182,14 +2182,14 @@ namespace LemoineTools.Lemoine
                 return seg;
             }
 
-            grid.Children.Add(MakeSeg("Move", 0, false));
+            grid.Children.Add(MakeSeg(LemoineStrings.T("globalSettings.filters.ruleEditPopup.move"), 0, false));
 
             var divider = new Border { Width = 1 };
             divider.SetResourceReference(Border.BackgroundProperty, "LemoineAccent");
             Grid.SetColumn(divider, 1);
             grid.Children.Add(divider);
 
-            grid.Children.Add(MakeSeg("Copy", 2, true));
+            grid.Children.Add(MakeSeg(LemoineStrings.T("globalSettings.filters.ruleEditPopup.copy"), 2, true));
 
             bar.Child = grid;
             return bar;
@@ -2236,7 +2236,7 @@ namespace LemoineTools.Lemoine
                     };
                     var rc = new StackPanel { Orientation = Orientation.Horizontal };
                     var dot = new Ellipse { Width = 8, Height = 8, Fill = BrushFromHex(t.Color), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-                    var lbl = new TextBlock { Text = t.Label + (same ? " (current)" : ""), Opacity = same ? 0.45 : 1.0 };
+                    var lbl = new TextBlock { Text = t.Label + (same ? LemoineStrings.T("globalSettings.filters.suffixes.current") : ""), Opacity = same ? 0.45 : 1.0 };
                     lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                     lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                     lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -2274,7 +2274,7 @@ namespace LemoineTools.Lemoine
                                     foreach (var rule in rules)
                                     {
                                         var clone = FilterRuleConfig.NewBlank();
-                                        clone.Name = rule.Name + " (copy)"; clone.Enabled = rule.Enabled;
+                                        clone.Name = rule.Name + LemoineStrings.T("globalSettings.filters.suffixes.copy"); clone.Enabled = rule.Enabled;
                                         clone.CutColor = rule.CutColor; clone.SurfColor = rule.SurfColor;
                                         clone.LineColor = rule.LineColor; clone.LinePattern = rule.LinePattern;
                                         clone.LineWeight = rule.LineWeight; clone.Halftone = rule.Halftone;
@@ -2351,11 +2351,11 @@ namespace LemoineTools.Lemoine
                 return box;
             }
 
-            panel.Children.Add(MiniLabel("Trade Name"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.tradeEditPopup.nameLabel")));
             var labelBox = MakeEditBox(trade.Label);
             panel.Children.Add(labelBox);
 
-            panel.Children.Add(MiniLabel("Trade ID (e.g. MD)"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.common.tradeIdLabel")));
             var idBox = MakeEditBox(trade.Id, mono: true);
             idBox.MaxLength = 8;
             panel.Children.Add(idBox);
@@ -2399,7 +2399,7 @@ namespace LemoineTools.Lemoine
             actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var dupBtn = FlatSmBtn("Duplicate");
+            var dupBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.tradeEditPopup.duplicate"));
             dupBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
             Grid.SetColumn(dupBtn, 0);
             dupBtn.Click += (s, e) =>
@@ -2410,7 +2410,7 @@ namespace LemoineTools.Lemoine
                 var copies = AutoFiltersSettings.DeepCopy(new List<FilterTradeConfig> { orig });
                 var copy   = copies[0];
                 copy.Id    = "T" + DateTime.Now.Ticks.ToString().Substring(11, 3);
-                copy.Label = orig.Label + " (copy)";
+                copy.Label = orig.Label + LemoineStrings.T("globalSettings.filters.suffixes.copy");
                 int idx    = _filterTrades!.IndexOf(orig);
                 _filterTrades.Insert(idx + 1, copy);
                 _fActiveTradeId = copy.Id;
@@ -2422,7 +2422,7 @@ namespace LemoineTools.Lemoine
             actionRow.Children.Add(dupBtn);
 
             string delId = trade.Id;
-            var delBtn = BuildTrashConfirmButton("Delete Trade", () =>
+            var delBtn = BuildTrashConfirmButton(LemoineStrings.T("globalSettings.filters.tradeEditPopup.deleteTrade"), () =>
             {
                 _filterTrades?.RemoveAll(x => x.Id == delId);
                 if (_fActiveTradeId == delId)
@@ -2469,7 +2469,7 @@ namespace LemoineTools.Lemoine
             outer.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             var panel = new StackPanel();
-            panel.Children.Add(MiniLabel("Trade ID (e.g. MD)"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.common.tradeIdLabel")));
             var idBox = new TextBox
             {
                 Text            = "",
@@ -2487,7 +2487,7 @@ namespace LemoineTools.Lemoine
             idBox.SetResourceReference(TextBox.FontSizeProperty,   "LemoineFS_MD");
             panel.Children.Add(idBox);
 
-            panel.Children.Add(MiniLabel("Label"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.addTradeForm.labelLabel")));
             var labelBox = new TextBox
             {
                 Text            = "",
@@ -2505,7 +2505,7 @@ namespace LemoineTools.Lemoine
             panel.Children.Add(labelBox);
 
             // ── Color row: swatch + hex label (click to expand inline picker) ──
-            panel.Children.Add(MiniLabel("Color"));
+            panel.Children.Add(MiniLabel(LemoineStrings.T("globalSettings.filters.addTradeForm.colorLabel")));
             string newTradeColor = "#569cd6";
 
             var swatchRow = new StackPanel
@@ -2555,9 +2555,9 @@ namespace LemoineTools.Lemoine
             };
             pickerSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
 
-            var applyColorBtn  = LemoineControlStyles.BuildButton("Apply Color",
+            var applyColorBtn  = LemoineControlStyles.BuildButton(LemoineStrings.T("globalSettings.filters.addTradeForm.applyColor"),
                 LemoineControlStyles.LemoineButtonVariant.Primary);
-            var cancelColorBtn = LemoineControlStyles.BuildButton("Cancel",
+            var cancelColorBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("globalSettings.filters.common.cancel"),
                 LemoineControlStyles.LemoineButtonVariant.Ghost);
             cancelColorBtn.Margin = new Thickness(0, 0, 6, 0);
 
@@ -2611,7 +2611,7 @@ namespace LemoineTools.Lemoine
             };
 
             // ── Add Trade button ──────────────────────────────────────────────
-            var addBtn = BuildFlatButton("Add Trade");
+            var addBtn = BuildFlatButton(LemoineStrings.T("globalSettings.filters.addTradeForm.addTrade"));
             addBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
             addBtn.Click += (s, e) =>
             {
@@ -2767,7 +2767,7 @@ namespace LemoineTools.Lemoine
             }
 
             // ── 1. Saved templates list ───────────────────────────────────────
-            AddSectionHeader("SAVED TEMPLATES");
+            AddSectionHeader(LemoineStrings.T("globalSettings.filters.templatesPopup.savedTemplatesHeader"));
 
             var templates = store.List();
             var templateListPanel = new StackPanel();
@@ -2793,7 +2793,7 @@ namespace LemoineTools.Lemoine
                 {
                     var empty = new TextBlock
                     {
-                        Text         = "No saved templates yet.",
+                        Text         = LemoineStrings.T("globalSettings.filters.templatesPopup.noSavedTemplates"),
                         Margin       = new Thickness(12, 4, 12, 4),
                         FontStyle    = FontStyles.Italic,
                     };
@@ -2879,11 +2879,11 @@ namespace LemoineTools.Lemoine
                             _fActiveTradeId = _filterTrades.FirstOrDefault()?.Id;
                             _fActiveRuleId  = _filterTrades.FirstOrDefault()?.Rules.FirstOrDefault()?.Id;
                             _contentBorder.Child = BuildFiltersContent();
-                            FlashStatus($"Loaded \"{t.Name}\".");
+                            FlashStatus(LemoineStrings.T("globalSettings.filters.status.loaded", t.Name));
                         }
                         else
                         {
-                            MessageBox.Show("Load failed: " + loadErr, "Template Error",
+                            MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.loadFailed", loadErr), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
                                 MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     };
@@ -2891,7 +2891,7 @@ namespace LemoineTools.Lemoine
                     rowGrid.Children.Add(loadBorder);
 
                     // Delete button
-                    var delBtn = BuildTrashConfirmButton("Delete Template", () =>
+                    var delBtn = BuildTrashConfirmButton(LemoineStrings.T("globalSettings.filters.templatesPopup.deleteTemplate"), () =>
                     {
                         store.Delete(t, out _);
                         RebuildTemplateList();
@@ -2948,11 +2948,11 @@ namespace LemoineTools.Lemoine
                     {
                         RebuildTemplateList();
                         ShowSaveButtonState(); // revert to button after save
-                        FlashStatus($"Saved template \"{name}\".");
+                        FlashStatus(LemoineStrings.T("globalSettings.filters.status.savedTemplate", name));
                     }
                     else
                     {
-                        MessageBox.Show("Save failed: " + saveErr, "Template Error",
+                        MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.saveFailed", saveErr), LemoineStrings.T("globalSettings.filters.dialogs.templateError"),
                             MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
@@ -2963,7 +2963,7 @@ namespace LemoineTools.Lemoine
                     if (e.Key == Key.Escape) { e.Handled = true; ShowSaveButtonState(); }
                 };
 
-                var confirmBtn = FlatSmBtn("Save");
+                var confirmBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.templatesPopup.save"));
                 confirmBtn.Margin = new Thickness(6, 0, 0, 0);
                 confirmBtn.Click += (s, e) => DoSave();
 
@@ -3009,7 +3009,7 @@ namespace LemoineTools.Lemoine
 
                 var lbl = new TextBlock
                 {
-                    Text              = "Save Current as Template",
+                    Text              = LemoineStrings.T("globalSettings.filters.templatesPopup.saveCurrentAsTemplate"),
                     Margin            = new Thickness(7, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     IsHitTestVisible  = false,
@@ -3047,15 +3047,15 @@ namespace LemoineTools.Lemoine
 
             // ── 3. File operations ────────────────────────────────────────────
             AddSep();
-            AddSectionHeader("FILE");
+            AddSectionHeader(LemoineStrings.T("globalSettings.filters.templatesPopup.fileHeader"));
 
-            AddMenuRow("↑", "Import from File", () =>
+            AddMenuRow("↑", LemoineStrings.T("globalSettings.filters.templatesPopup.importFromFile"), () =>
             {
                 popup.IsOpen = false;
                 ImportFiltersFromFile();
             });
 
-            AddMenuRow("↓", "Export to File", () =>
+            AddMenuRow("↓", LemoineStrings.T("globalSettings.filters.templatesPopup.exportToFile"), () =>
             {
                 popup.IsOpen = false;
                 ExportFiltersToFile();
@@ -3089,7 +3089,7 @@ namespace LemoineTools.Lemoine
             restoreIcon.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             var restoreLabel = new TextBlock
             {
-                Text              = "Restore Defaults",
+                Text              = LemoineStrings.T("globalSettings.filters.templatesPopup.restoreDefaults"),
                 Margin            = new Thickness(7, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible  = false,
@@ -3122,7 +3122,7 @@ namespace LemoineTools.Lemoine
                 };
                 var warnTb = new TextBlock
                 {
-                    Text         = "Replace all trades & rules with built-in defaults?",
+                    Text         = LemoineStrings.T("globalSettings.filters.templatesPopup.restoreConfirm"),
                     TextWrapping = TextWrapping.Wrap,
                     Margin       = new Thickness(0, 0, 0, 8),
                 };
@@ -3130,7 +3130,7 @@ namespace LemoineTools.Lemoine
                 warnTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 warnTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
 
-                var confirmBtn = FlatSmBtn("Yes, Restore");
+                var confirmBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.templatesPopup.yesRestore"));
                 confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
                 confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
                 confirmBtn.Click += (ss, ee) =>
@@ -3139,9 +3139,9 @@ namespace LemoineTools.Lemoine
                     _filterTrades        = AutoFiltersSettings.BuildDefaultTrades();
                     _fActiveTradeId      = _filterTrades.FirstOrDefault()?.Id;
                     _contentBorder.Child = BuildFiltersContent();
-                    FlashStatus("Restored defaults.");
+                    FlashStatus(LemoineStrings.T("globalSettings.filters.status.restoredDefaults"));
                 };
-                var cancelBtn = FlatSmBtn("Cancel");
+                var cancelBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.common.cancel"));
                 cancelBtn.Margin = new Thickness(6, 0, 0, 0);
                 cancelBtn.Click += (ss, ee) =>
                 {
@@ -3181,8 +3181,8 @@ namespace LemoineTools.Lemoine
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
-                Title      = "Import Auto Filter Rules",
-                Filter     = "XML Files|*.xml",
+                Title      = LemoineStrings.T("globalSettings.filters.dialogs.importTitle"),
+                Filter     = LemoineStrings.T("globalSettings.filters.dialogs.xmlFilter"),
                 DefaultExt = ".xml",
             };
             if (dlg.ShowDialog() != true) return;
@@ -3192,11 +3192,11 @@ namespace LemoineTools.Lemoine
                 _fActiveTradeId      = _filterTrades.FirstOrDefault()?.Id;
                 _fActiveRuleId       = _filterTrades.FirstOrDefault()?.Rules.FirstOrDefault()?.Id;
                 _contentBorder.Child = BuildFiltersContent();
-                FlashStatus("Imported.");
+                FlashStatus(LemoineStrings.T("globalSettings.filters.status.imported"));
             }
             else
             {
-                MessageBox.Show("Import failed: " + error, "Import Error",
+                MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.importFailed", error), LemoineStrings.T("globalSettings.filters.dialogs.importError"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -3205,19 +3205,19 @@ namespace LemoineTools.Lemoine
         {
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
-                Title    = "Export Auto Filter Rules",
-                Filter   = "XML Files|*.xml",
+                Title    = LemoineStrings.T("globalSettings.filters.dialogs.exportTitle"),
+                Filter   = LemoineStrings.T("globalSettings.filters.dialogs.xmlFilter"),
                 FileName = "LemoineAutoFilters.xml",
             };
             if (dlg.ShowDialog() != true) return;
             try
             {
                 AutoFiltersSettings.ExportTo(dlg.FileName, _filterTrades ?? new List<FilterTradeConfig>());
-                FlashStatus("Exported.");
+                FlashStatus(LemoineStrings.T("globalSettings.filters.status.exported"));
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Export failed: " + ex.Message, "Export Error",
+                MessageBox.Show(LemoineStrings.T("globalSettings.filters.dialogs.exportFailed", ex.Message), LemoineStrings.T("globalSettings.filters.dialogs.exportError"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -3271,7 +3271,7 @@ namespace LemoineTools.Lemoine
             var outer = new StackPanel();
 
             var sectionLbl = new Border { Padding = new Thickness(12, 10, 12, 4) };
-            var sectionTb  = new TextBlock { Text = "BATCH EDIT" };
+            var sectionTb  = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.batchEdit") };
             sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -3290,7 +3290,7 @@ namespace LemoineTools.Lemoine
 
             var descTb = new TextBlock
             {
-                Text      = $"Editing {count} rules — name is read-only. Changes apply to all selected rules immediately.",
+                Text      = LemoineStrings.T("globalSettings.filters.batchEdit.editingDesc", count),
                 FontStyle = FontStyles.Italic,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -3378,18 +3378,18 @@ namespace LemoineTools.Lemoine
                 r.Id != anchor.Id && _fSelectedRuleIds.Contains(r.Id)));
 
             if (selected.Count < 2)
-                return MergePlan.Blocked("Select two or more rules to merge.");
+                return MergePlan.Blocked(LemoineStrings.T("globalSettings.filters.merge.blockedNeedTwo"));
 
             string param = anchor.Parameter ?? "";
             if (selected.Any(r => !string.Equals(r.Parameter ?? "", param, StringComparison.Ordinal)))
-                return MergePlan.Blocked("All selected rules must use the same parameter — a filter rule binds only one.");
+                return MergePlan.Blocked(LemoineStrings.T("globalSettings.filters.merge.blockedSameParameter"));
 
             // Every selected rule must be keyword-based (not whole-category / value-predicate).
             foreach (var r in selected)
             {
                 string mt = (r.MatchType ?? "contains").ToLowerInvariant();
                 if (mt == "all" || mt == "has a value" || mt == "has no value")
-                    return MergePlan.Blocked("Whole-category and has-value rules can't be merged — only keyword rules.");
+                    return MergePlan.Blocked(LemoineStrings.T("globalSettings.filters.merge.blockedKeywordOnly"));
             }
 
             // Resulting match type: same type if uniform; else, if all positive, widen to
@@ -3403,7 +3403,7 @@ namespace LemoineTools.Lemoine
             else if (matchTypes.All(mt => PositiveKeywordMatchTypes.Contains(mt)))
                 resultType = "contains";
             else
-                return MergePlan.Blocked("Mixed include/exclude match types can't be merged. Make them the same first.");
+                return MergePlan.Blocked(LemoineStrings.T("globalSettings.filters.merge.blockedMixedMatch"));
 
             var keywords = UnionStrings(selected.Select(r => r.Match ?? new List<string>()));
             var cats     = UnionStrings(selected.Select(r => r.BuiltInCategories ?? new List<string>()));
@@ -3425,7 +3425,7 @@ namespace LemoineTools.Lemoine
             var outer = new StackPanel();
 
             var sectionLbl = new Border { Padding = new Thickness(12, 4, 12, 4) };
-            var sectionTb  = new TextBlock { Text = "MERGE" };
+            var sectionTb  = new TextBlock { Text = LemoineStrings.T("globalSettings.filters.sections.merge") };
             sectionTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             sectionTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             sectionTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
@@ -3462,11 +3462,12 @@ namespace LemoineTools.Lemoine
                 return outer;
             }
 
+            string categoryWord = plan.Categories.Count == 1
+                ? LemoineStrings.T("globalSettings.filters.merge.categoryWordSingular")
+                : LemoineStrings.T("globalSettings.filters.merge.categoryWordPlural");
             var summaryTb = new TextBlock
             {
-                Text = $"Combine {_fSelectedRuleIds.Count} rules → {plan.Keywords.Count} keyword(s), " +
-                       $"{plan.Categories.Count} categor{(plan.Categories.Count == 1 ? "y" : "ies")}, " +
-                       $"match “{plan.MatchType}”.",
+                Text = LemoineStrings.T("globalSettings.filters.merge.summary", _fSelectedRuleIds.Count, plan.Keywords.Count, plan.Categories.Count, categoryWord, plan.MatchType),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 8),
             };
@@ -3477,14 +3478,14 @@ namespace LemoineTools.Lemoine
 
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal };
 
-            var mergeBtn = FlatSmBtn("Merge into one");
-            mergeBtn.ToolTip = $"Keep “{anchor.Name}” and delete the other selected rules.";
+            var mergeBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.merge.mergeIntoOne"));
+            mergeBtn.ToolTip = LemoineStrings.T("globalSettings.filters.merge.mergeIntoOneTooltip", anchor.Name);
             mergeBtn.Click += (s, e) =>
                 ShowMergeConfirmPopup(mergeBtn, trade, anchor, destructive: true);
 
-            var combineBtn = FlatSmBtn("Create combined");
+            var combineBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.merge.createCombined"));
             combineBtn.Margin  = new Thickness(6, 0, 0, 0);
-            combineBtn.ToolTip = "Add a new combined rule and keep the originals.";
+            combineBtn.ToolTip = LemoineStrings.T("globalSettings.filters.merge.createCombinedTooltip");
             combineBtn.Click += (s, e) =>
                 ShowMergeConfirmPopup(combineBtn, trade, anchor, destructive: false);
 
@@ -3506,7 +3507,7 @@ namespace LemoineTools.Lemoine
             var plan = ComputeMergePlan(trade, anchor);
             if (!plan.Ok) return;
 
-            string resultName = destructive ? anchor.Name : anchor.Name + " (combined)";
+            string resultName = destructive ? anchor.Name : anchor.Name + LemoineStrings.T("globalSettings.filters.suffixes.combined");
 
             var popup = new Popup
             {
@@ -3528,17 +3529,17 @@ namespace LemoineTools.Lemoine
             }
 
             Line(destructive
-                    ? $"Merge into “{resultName}” and delete {_fSelectedRuleIds.Count - 1} other rule(s)?"
-                    : $"Create “{resultName}” and keep all originals?",
+                    ? LemoineStrings.T("globalSettings.filters.merge.confirmMerge", resultName, _fSelectedRuleIds.Count - 1)
+                    : LemoineStrings.T("globalSettings.filters.merge.confirmCreate", resultName),
                 "LemoineFS_SM", "LemoineText", 6);
-            Line("Keywords: " + (plan.Keywords.Count > 0 ? string.Join(", ", plan.Keywords) : "(none)"),
+            Line(LemoineStrings.T("globalSettings.filters.merge.keywordsLine", plan.Keywords.Count > 0 ? string.Join(", ", plan.Keywords) : LemoineStrings.T("globalSettings.filters.merge.none")),
                 "LemoineFS_SM", "LemoineTextDim", 2);
-            Line("Categories: " + (plan.Categories.Count > 0
+            Line(LemoineStrings.T("globalSettings.filters.merge.categoriesLine", plan.Categories.Count > 0
                     ? string.Join(", ", plan.Categories.Select(AutoFiltersSettings.DisplayNameForOst))
-                    : "(all)"),
+                    : LemoineStrings.T("globalSettings.filters.merge.all")),
                 "LemoineFS_SM", "LemoineTextDim", 8);
 
-            var confirmBtn = FlatSmBtn(destructive ? "Merge" : "Create");
+            var confirmBtn = FlatSmBtn(destructive ? LemoineStrings.T("globalSettings.filters.merge.mergeBtn") : LemoineStrings.T("globalSettings.filters.merge.createBtn"));
             if (destructive)
             {
                 confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
@@ -3549,7 +3550,7 @@ namespace LemoineTools.Lemoine
                 popup.IsOpen = false;
                 ApplyMerge(trade, anchor, plan, destructive);
             };
-            var cancelBtn = FlatSmBtn("Cancel");
+            var cancelBtn = FlatSmBtn(LemoineStrings.T("globalSettings.filters.common.cancel"));
             cancelBtn.Margin = new Thickness(6, 0, 0, 0);
             cancelBtn.Click += (s, e) => popup.IsOpen = false;
 
@@ -3591,7 +3592,7 @@ namespace LemoineTools.Lemoine
             else
             {
                 var combined = FilterRuleConfig.NewBlank();
-                combined.Name              = anchor.Name + " (combined)";
+                combined.Name              = anchor.Name + LemoineStrings.T("globalSettings.filters.suffixes.combined");
                 combined.Parameter         = plan.Parameter;
                 combined.MatchType         = plan.MatchType;
                 combined.Match             = plan.Keywords;

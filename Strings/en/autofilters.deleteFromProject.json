@@ -1,0 +1,46 @@
+// autofilters.deleteFromProject.json — Delete Filters from Project tool + handler logs.
+// Command: DeleteFiltersFromProjectLaunchCommand / DeleteFiltersFromProjectEventHandler.
+{
+  "title": "Delete Filters from Project",
+  "runLabel": "Permanently Delete →",
+
+  "steps": {
+    "S1": "Select Filters",
+    "S2": "Review & Run"
+  },
+
+  "summaries": {
+    "S1": "{0} filter(s) selected",          // {0} = selected count
+    "S2": "Ready to run — action is permanent"
+  },
+
+  "labels": {
+    "noFilters":  "No view filters found in this project.",
+    "warnBanner": "⚠  Deleted filters are permanently removed from the project and cannot be recovered. They will be removed from all views."
+  },
+
+  "review": {
+    "itemDelete":    "Filters to delete",
+    "itemRemaining": "Remaining in project",
+    "itemScope":     "Scope",
+    "itemAction":    "Action",
+
+    "deleteValue":    "{0} selected",       // {0} = count to delete
+    "remainingValue": "{0} will remain",    // {0} = count remaining
+    "scope":          "Entire project",
+    "action":         "Permanent deletion (no undo)",
+    "warning":        "⚠  This will permanently delete {0} filter(s) from the project. This cannot be undone."
+  },
+
+  "log": {
+    "deleting":     "Permanently deleting {0} filter(s) from project…",  // {0} = count
+    "error":        "Error: {0}",
+    "noneSelected": "No filters selected for deletion.",
+    "notFound":     "Not found in project: '{0}' — skipped.",   // {0} = filter name
+    "noneExist":    "None of the selected filters exist in this project.",
+    "deletingN":    "Deleting {0} filter(s)…",                  // {0} = count
+    "deleted":      "Deleted: '{0}'",                            // {0} = filter name
+    "deleteFailed": "Failed to delete '{0}': {1}.",             // {0}=name {1}=error
+    "complete":     "Complete — {0} deleted, {1} failed, {2} skipped."
+  }
+}

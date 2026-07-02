@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -104,7 +105,7 @@ namespace LemoineTools.Lemoine.Controls
 
         private Border BuildTab(string groupName)
         {
-            string displayName = groupName == SelectedGroupKey ? "Selected" : groupName;
+            string displayName = groupName == SelectedGroupKey ? LemoineStrings.T("controls.pickers.multiSelectTabs.selectedTabLabel") : groupName;
 
             var badgeBorder = new Border
             {
@@ -224,7 +225,7 @@ namespace LemoineTools.Lemoine.Controls
                 {
                     var none = new TextBlock
                     {
-                        Text         = "No items selected.",
+                        Text         = LemoineStrings.T("controls.pickers.multiSelectTabs.noItemsSelected"),
                         FontStyle    = FontStyles.Italic,
                         Margin       = new Thickness(4, 6, 0, 0),
                         TextWrapping = TextWrapping.Wrap,
@@ -261,7 +262,7 @@ namespace LemoineTools.Lemoine.Controls
                 bool someChecked = allItems.Any(x => _selected.Contains(x)) && !allChecked;
 
                 _checkStack.Children.Add(BuildCheckItem(
-                    $"All {groupName}", allChecked, someChecked,
+                    LemoineStrings.T("controls.pickers.multiSelectTabs.allGroupRow", groupName), allChecked, someChecked,
                     on =>
                     {
                         if (on) foreach (var it in allItems) _selected.Add(it);
@@ -383,7 +384,7 @@ namespace LemoineTools.Lemoine.Controls
 
             _checkStack.Children.RemoveAt(0);
             var newAll = BuildCheckItem(
-                $"All {groupName}", allChecked, someChecked,
+                LemoineStrings.T("controls.pickers.multiSelectTabs.allGroupRow", groupName), allChecked, someChecked,
                 on =>
                 {
                     if (on) foreach (var it in items) _selected.Add(it);

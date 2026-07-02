@@ -132,10 +132,10 @@ namespace LemoineTools.Tools.LinkViews
 
         // ── Identity ──────────────────────────────────────────────────
         /// <summary>Gets the title displayed in the step-flow window header.</summary>
-        public string Title    => "Bulk Dependent Views";
+        public string Title    => LemoineStrings.T("linkviews.replicateDependent.title");
 
         /// <summary>Gets the label displayed on the final run button.</summary>
-        public string RunLabel => "Replicate in Revit →";
+        public string RunLabel => LemoineStrings.T("linkviews.replicateDependent.runLabel");
 
         /// <summary>
         /// Gets the ordered set of steps shown in the step-flow window. S1 (source) and S3 (targets)
@@ -143,11 +143,11 @@ namespace LemoineTools.Tools.LinkViews
         /// </summary>
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Source View",       required: true),
-            new StepDefinition("S2", "Dependent Preview", required: false),
-            new StepDefinition("S3", "Target Views",      required: true),
-            new StepDefinition("S4", "View Naming",       required: false),
-            new StepDefinition("S5", "Review & Run",      required: false),
+            new StepDefinition("S1", LemoineStrings.T("linkviews.replicateDependent.steps.S1"),       required: true),
+            new StepDefinition("S2", LemoineStrings.T("linkviews.replicateDependent.steps.S2"), required: false),
+            new StepDefinition("S3", LemoineStrings.T("linkviews.replicateDependent.steps.S3"),      required: true),
+            new StepDefinition("S4", LemoineStrings.T("linkviews.replicateDependent.steps.S4"),       required: false),
+            new StepDefinition("S5", LemoineStrings.T("linkviews.replicateDependent.steps.S5"),      required: false),
         };
 
         // ── State ──────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ namespace LemoineTools.Tools.LinkViews
         private FrameworkElement BuildS1()
         {
             if (_allSources.Count == 0)
-                return Message("No views with existing dependent views were found in this project.");
+                return Message(LemoineStrings.T("linkviews.replicateDependent.labels.noSources"));
 
             var preSelected = _selectedSourceKey != null && _sourceByKey.TryGetValue(_selectedSourceKey, out var sel)
                 ? new List<long> { sel.ViewId.Value }
@@ -291,7 +291,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 Height         = 300,
                 SingleSelect   = true,
-                AccessibleName = "Source view",
+                AccessibleName = LemoineStrings.T("linkviews.replicateDependent.labels.sourceView"),
             };
             picker.SelectionChanged += ids =>
             {
@@ -312,13 +312,13 @@ namespace LemoineTools.Tools.LinkViews
         private FrameworkElement BuildS2Content()
         {
             var source = SelectedSource;
-            if (source == null) return Message("Select a source view in Step 1.");
+            if (source == null) return Message(LemoineStrings.T("linkviews.replicateDependent.labels.selectSourceFirst"));
 
             var panel = new StackPanel();
 
             var header = new TextBlock
             {
-                Text = $"Dependent views on \"{source.Name}\":",
+                Text = LemoineStrings.T("linkviews.replicateDependent.labels.s2Header", source.Name),
                 TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8),
             };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -328,7 +328,7 @@ namespace LemoineTools.Tools.LinkViews
 
             if (source.Deps == null || source.Deps.Count == 0)
             {
-                panel.Children.Add(Message("No dependent views found on this source."));
+                panel.Children.Add(Message(LemoineStrings.T("linkviews.replicateDependent.labels.noDepsOnSource")));
                 return panel;
             }
 
@@ -340,7 +340,7 @@ namespace LemoineTools.Tools.LinkViews
                 var row  = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
                 var crop = new TextBlock
                 {
-                    Text = dep.HasCrop ? "(crop)" : "(no crop)",
+                    Text = dep.HasCrop ? LemoineStrings.T("linkviews.replicateDependent.labels.crop") : LemoineStrings.T("linkviews.replicateDependent.labels.noCrop"),
                     FontStyle = FontStyles.Italic, VerticalAlignment = VerticalAlignment.Center,
                 };
                 crop.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -350,7 +350,7 @@ namespace LemoineTools.Tools.LinkViews
 
                 var name = new TextBlock
                 {
-                    Text = $"— {source.Name} - {dep.Suffix}",
+                    Text = LemoineStrings.T("linkviews.replicateDependent.labels.depName", source.Name, dep.Suffix),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
@@ -371,7 +371,7 @@ namespace LemoineTools.Tools.LinkViews
         private FrameworkElement BuildS3Content()
         {
             var source = SelectedSource;
-            if (source == null) return Message("Select a source view in Step 1.");
+            if (source == null) return Message(LemoineStrings.T("linkviews.replicateDependent.labels.selectSourceFirst"));
 
             // Show floor plans, ceiling plans, and 3D views regardless of source type
             var allowedTypes = new HashSet<ViewType>
@@ -395,7 +395,7 @@ namespace LemoineTools.Tools.LinkViews
             }
 
             if (compatibleKvs.Count == 0)
-                return Message($"No other {source.TypeLabel} views found in this project.");
+                return Message(LemoineStrings.T("linkviews.replicateDependent.labels.noOtherViews", source.TypeLabel));
 
             int warnCount = compatibleKvs.Count(kv => kv.Value.OrientationWarning);
             var outer = new StackPanel();
@@ -410,8 +410,7 @@ namespace LemoineTools.Tools.LinkViews
                 warn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 var warnTb = new TextBlock
                 {
-                    Text = $"⚠  {warnCount} target(s) have a different view orientation " +
-                           "and may not receive correct crop regions.",
+                    Text = LemoineStrings.T("linkviews.replicateDependent.labels.orientationWarn", warnCount),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 warnTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -430,7 +429,7 @@ namespace LemoineTools.Tools.LinkViews
             var picker = new LemoineBrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = "Target views",
+                AccessibleName = LemoineStrings.T("linkviews.replicateDependent.labels.targetViews"),
             };
             picker.SelectionChanged += ids =>
             {
@@ -468,18 +467,18 @@ namespace LemoineTools.Tools.LinkViews
             void UpdatePreview()
             {
                 var source  = SelectedSource;
-                string srcName    = source?.Name ?? "Corridor Plan";
-                string levelEx    = "Level 2";
-                string typeEx     = "Floor Plan";
-                string targetEx   = "Area Plan - L2";
-                string suffixEx   = source?.Deps?.FirstOrDefault()?.Suffix ?? "N";
+                string srcName    = source?.Name ?? LemoineStrings.T("linkviews.replicateDependent.labels.exSource");
+                string levelEx    = LemoineStrings.T("linkviews.replicateDependent.labels.exLevel");
+                string typeEx     = LemoineStrings.T("linkviews.replicateDependent.labels.exType");
+                string targetEx   = LemoineStrings.T("linkviews.replicateDependent.labels.exTarget");
+                string suffixEx   = source?.Deps?.FirstOrDefault()?.Suffix ?? LemoineStrings.T("linkviews.replicateDependent.labels.exSuffix");
 
                 var firstTarget = _selectedTargetKeys
                     .Where(k => _targetByKey.ContainsKey(k))
                     .Select(k => _targetByKey[k]).FirstOrDefault();
                 if (firstTarget != null)
                 {
-                    levelEx  = string.IsNullOrEmpty(firstTarget.LevelName) ? "No Level" : firstTarget.LevelName;
+                    levelEx  = string.IsNullOrEmpty(firstTarget.LevelName) ? LemoineStrings.T("linkviews.replicateDependent.labels.noLevel") : firstTarget.LevelName;
                     typeEx   = firstTarget.TypeLabel;
                     targetEx = firstTarget.Name;
                 }
@@ -493,7 +492,7 @@ namespace LemoineTools.Tools.LinkViews
                         case "Target View Name":  return targetEx;
                         case "View Type":         return typeEx;
                         case "Dep Suffix":        return suffixEx;
-                        case "Custom":            return string.IsNullOrWhiteSpace(custom) ? "(custom)" : custom.Trim();
+                        case "Custom":            return string.IsNullOrWhiteSpace(custom) ? LemoineStrings.T("linkviews.replicateDependent.labels.customPlaceholder") : custom.Trim();
                         default:                  return null;
                     }
                 }
@@ -506,7 +505,7 @@ namespace LemoineTools.Tools.LinkViews
                 parts.Add(suffixEx);
                 previewText.Text = parts.Count > 1
                     ? string.Join(" - ", parts)
-                    : "(no name components set)";
+                    : LemoineStrings.T("linkviews.replicateDependent.labels.noNameComponents");
             }
 
             // Helper: one slot row — [label] [combo] [textbox shown only when Custom]
@@ -562,15 +561,15 @@ namespace LemoineTools.Tools.LinkViews
                 outer.Children.Add(row);
             }
 
-            AddSlotRow("Front",  _namingFront,  v => _namingFront  = v, _namingFrontCustom,  v => _namingFrontCustom  = v);
-            AddSlotRow("Center", _namingCenter, v => _namingCenter = v, _namingCenterCustom, v => _namingCenterCustom = v);
-            AddSlotRow("End",    _namingEnd,    v => _namingEnd    = v, _namingEndCustom,    v => _namingEndCustom    = v);
+            AddSlotRow(LemoineStrings.T("linkviews.replicateDependent.labels.slotFront"),  _namingFront,  v => _namingFront  = v, _namingFrontCustom,  v => _namingFrontCustom  = v);
+            AddSlotRow(LemoineStrings.T("linkviews.replicateDependent.labels.slotCenter"), _namingCenter, v => _namingCenter = v, _namingCenterCustom, v => _namingCenterCustom = v);
+            AddSlotRow(LemoineStrings.T("linkviews.replicateDependent.labels.slotEnd"),    _namingEnd,    v => _namingEnd    = v, _namingEndCustom,    v => _namingEndCustom    = v);
 
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 4, 0, 10) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            var previewHeader = new TextBlock { Text = "PREVIEW  (suffix always appended last)", Margin = new Thickness(0, 0, 0, 4) };
+            var previewHeader = new TextBlock { Text = LemoineStrings.T("linkviews.replicateDependent.labels.previewHeader"), Margin = new Thickness(0, 0, 0, 4) };
             previewHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             previewHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             previewHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -596,10 +595,10 @@ namespace LemoineTools.Tools.LinkViews
         // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("source",  "Source View"),
-            ("deps",    "Dependents to Copy"),
-            ("targets", "Target Views"),
-            ("create",  "Views to Create"),
+            ("source",  LemoineStrings.T("linkviews.replicateDependent.review.itemSource")),
+            ("deps",    LemoineStrings.T("linkviews.replicateDependent.review.itemDeps")),
+            ("targets", LemoineStrings.T("linkviews.replicateDependent.review.itemTargets")),
+            ("create",  LemoineStrings.T("linkviews.replicateDependent.review.itemCreate")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -612,16 +611,14 @@ namespace LemoineTools.Tools.LinkViews
                 {
                     ["source"]  = SelectedSource?.Name ?? "—",
                     ["deps"]    = deps.ToString(),
-                    ["targets"] = tgts > 0 ? $"{tgts} view(s)" : "—",
-                    ["create"]  = deps > 0 && tgts > 0 ? $"≤ {deps * tgts}" : "—",
+                    ["targets"] = tgts > 0 ? LemoineStrings.T("linkviews.replicateDependent.review.targetsValue", tgts) : "—",
+                    ["create"]  = deps > 0 && tgts > 0 ? LemoineStrings.T("linkviews.replicateDependent.review.createValue", deps * tgts) : "—",
                 };
             }
         }
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => "Creates one dependent view per target for each dependent on the " +
-            "source, transferring crop region and view range. Targets with existing dependents of the same name " +
-            "are skipped and logged.";
+        public string?        ReviewNote    => LemoineStrings.T("linkviews.replicateDependent.review.note");
         public string?        ReviewWarning => null;
 
         // ── Helpers ────────────────────────────────────────────────────
@@ -670,17 +667,17 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S2")
             {
                 int d = SelectedSource?.Deps?.Count ?? 0;
-                return d > 0 ? $"{d} dependent(s)" : "No deps";
+                return d > 0 ? LemoineStrings.T("linkviews.replicateDependent.summaries.depCount", d) : LemoineStrings.T("linkviews.replicateDependent.summaries.noDeps");
             }
             if (stepId == "S3") return _selectedTargetKeys.Count > 0
-                ? $"{_selectedTargetKeys.Count} target(s)" : "—";
+                ? LemoineStrings.T("linkviews.replicateDependent.summaries.targetCount", _selectedTargetKeys.Count) : "—";
             if (stepId == "S4")
             {
                 var set = new[] { _namingFront, _namingCenter, _namingEnd }
                     .Where(s => s != "None").ToList();
-                return set.Count > 0 ? string.Join(" / ", set) : "Defaults";
+                return set.Count > 0 ? string.Join(" / ", set) : LemoineStrings.T("linkviews.replicateDependent.summaries.s4Defaults");
             }
-            if (stepId == "S5") return "Ready to run";
+            if (stepId == "S5") return LemoineStrings.T("linkviews.replicateDependent.summaries.S5");
             return "—";
         }
 
@@ -718,7 +715,7 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.OnProgress    = onProgress;
             _runHandler.OnComplete    = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(LemoineStrings.T("linkviews.replicateDependent.log.raising"), "info");
             _runEvent.Raise();
         }
     }

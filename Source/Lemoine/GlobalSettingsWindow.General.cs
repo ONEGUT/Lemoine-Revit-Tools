@@ -30,19 +30,19 @@ namespace LemoineTools.Lemoine
             };
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
 
-            panel.Children.Add(ContentHeader("General"));
-            panel.Children.Add(SubLabel("Colour theme"));
+            panel.Children.Add(ContentHeader(LemoineStrings.T("globalSettings.general.header")));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.colorTheme")));
             _themeRows.Clear();
 
-            panel.Children.Add(ThemeSectionLabel("DARK"));
+            panel.Children.Add(ThemeSectionLabel(LemoineStrings.T("globalSettings.general.dark")));
             panel.Children.Add(BuildThemeCardGrid(LemoineTheme.All.Where(t => IsThemeDark(t))));
             panel.Children.Add(HSep(8));
 
-            panel.Children.Add(ThemeSectionLabel("LIGHT"));
+            panel.Children.Add(ThemeSectionLabel(LemoineStrings.T("globalSettings.general.light")));
             panel.Children.Add(BuildThemeCardGrid(LemoineTheme.All.Where(t => !IsThemeDark(t))));
 
             panel.Children.Add(HSep(12));
-            panel.Children.Add(SubLabel("UI size"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.uiSize")));
             _sizeRows.Clear();
             foreach (LemoineUiSize sz in Enum.GetValues(typeof(LemoineUiSize)))
             {
@@ -52,7 +52,20 @@ namespace LemoineTools.Lemoine
             }
 
             panel.Children.Add(HSep(12));
-            panel.Children.Add(SubLabel("Diagnostics"));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.language")));
+            _languageRows.Clear();
+            var cultures = LemoineStrings.AvailableCultures();
+            if (cultures.Count == 0) cultures = new List<string> { LemoineSettings.Instance.Language };
+            foreach (var culture in cultures)
+            {
+                var row = BuildLanguageRow(culture);
+                _languageRows.Add((row, culture));
+                panel.Children.Add(row);
+            }
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.languageHint")));
+
+            panel.Children.Add(HSep(12));
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.general.diagnostics")));
             panel.Children.Add(BuildDiagnosticsSection());
 
             scroll.Content = panel;
@@ -68,8 +81,7 @@ namespace LemoineTools.Lemoine
 
             var desc = new TextBlock
             {
-                Text = "Best-effort operations that fail quietly are recorded here, so a "
-                     + "half-applied result is never invisible. The log is written to:",
+                Text = LemoineStrings.T("globalSettings.general.diagnosticsDesc"),
                 FontStyle    = FontStyles.Italic,
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
@@ -90,7 +102,7 @@ namespace LemoineTools.Lemoine
             path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
             stack.Children.Add(path);
 
-            var btn = BuildFlatButton("Open diagnostics log");
+            var btn = BuildFlatButton(LemoineStrings.T("globalSettings.general.openLog"));
             btn.HorizontalAlignment = HorizontalAlignment.Left;
             // OpenInDefaultViewer records its own failure to the log, so the bool
             // result is intentionally not surfaced again here.
@@ -185,7 +197,7 @@ namespace LemoineTools.Lemoine
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Visibility          = active ? Visibility.Visible : Visibility.Collapsed,
             };
-            var badgeTb = new TextBlock { Text = "Active", Foreground = theme.Accent };
+            var badgeTb = new TextBlock { Text = LemoineStrings.T("globalSettings.general.active"), Foreground = theme.Accent };
             badgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             badgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             badge.Child = badgeTb;
@@ -234,9 +246,9 @@ namespace LemoineTools.Lemoine
             name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             var desc = new TextBlock
             {
-                Text = size == LemoineUiSize.Small       ? "Small — Compact"         :
-                       size == LemoineUiSize.Large       ? "Large — Comfortable"     :
-                       size == LemoineUiSize.ExtraLarge  ? "Extra Large — Spacious"  : "Medium — Default",
+                Text = size == LemoineUiSize.Small       ? LemoineStrings.T("globalSettings.general.sizeSmall")         :
+                       size == LemoineUiSize.Large       ? LemoineStrings.T("globalSettings.general.sizeLarge")     :
+                       size == LemoineUiSize.ExtraLarge  ? LemoineStrings.T("globalSettings.general.sizeExtraLarge")  : LemoineStrings.T("globalSettings.general.sizeMedium"),
                 FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 0),
             };
             desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -250,6 +262,49 @@ namespace LemoineTools.Lemoine
             row.Child = dp;
             row.MouseLeftButtonDown += (s, e) => { LemoineSettings.Instance.SetUiSize(size); RefreshSizeRows(); };
             return row;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        private Border BuildLanguageRow(string culture)
+        {
+            bool active = culture == LemoineSettings.Instance.Language;
+            var row = ToggleRowShell(active);
+            var pill = Pill(active);
+            var name = new TextBlock { Text = LanguageDisplayName(culture), FontWeight = FontWeights.Medium };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
+            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var desc = new TextBlock
+            {
+                Text      = culture,
+                FontStyle = FontStyles.Italic, Margin = new Thickness(0, 2, 0, 0),
+            };
+            desc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            desc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            var inner = new StackPanel();
+            inner.Children.Add(name); inner.Children.Add(desc);
+            var dp = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(pill, Dock.Right);
+            dp.Children.Add(pill); dp.Children.Add(inner);
+            row.Child = dp;
+            row.MouseLeftButtonDown += (s, e) => { LemoineSettings.Instance.SetLanguage(culture); RefreshLanguageRows(); };
+            return row;
+        }
+
+        // Best-effort friendly name for a culture folder — falls back to the raw folder
+        // name when it isn't a recognizable BCP-47 tag (e.g. a custom culture folder).
+        private static string LanguageDisplayName(string culture)
+        {
+            try
+            {
+                return new System.Globalization.CultureInfo(culture).NativeName;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed($"GlobalSettingsWindow: resolve culture display name for '{culture}'", ex);
+                return culture;
+            }
         }
 
         private void RefreshThemeRows()
@@ -269,6 +324,19 @@ namespace LemoineTools.Lemoine
             foreach (var (row, size) in _sizeRows)
             {
                 bool active = size == LemoineSettings.Instance.UiSize;
+                if (active) row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                else row.Background = Brushes.Transparent;
+                row.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent" : "LemoineBorder");
+                if (row.Child is DockPanel dp && dp.Children[0] is Border pill)
+                    UpdatePill(pill, active);
+            }
+        }
+
+        private void RefreshLanguageRows()
+        {
+            foreach (var (row, culture) in _languageRows)
+            {
+                bool active = culture == LemoineSettings.Instance.Language;
                 if (active) row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
                 else row.Background = Brushes.Transparent;
                 row.SetResourceReference(Border.BorderBrushProperty, active ? "LemoineAccent" : "LemoineBorder");

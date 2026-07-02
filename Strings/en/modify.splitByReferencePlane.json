@@ -1,0 +1,32 @@
+// modify.splitByReferencePlane.json — Split Elements by Reference Plane tool + handler logs.
+{
+  "title": "Split Elements by Reference Plane",
+  "runLabel": "Split in Revit →",
+  "steps": { "S1": "Select Categories", "S2": "Select Reference Planes", "S3": "Review & Run" },
+  "summaries": { "S3": "Ready to run", "fromSelection": "From selection ({0} elements)", "s2": "{0} plane(s) selected" },
+  "labels": {
+    "countStrip":     "{0} categories · {1} elements in document",
+    "activeViewLabel":"Active view elements only",
+    "activeViewDesc": "When on, only elements visible in the current Revit view will be split.",
+    "fromSelection":  "FROM CURRENT SELECTION",
+    "preselCount":    "{0} element(s) across {1} categor(ies)",
+    "preselNote":     "Close and reopen the tool to use category selection instead.",
+    "noItems":        "No reference planes found in the document.",
+    "refPlaneFallback":"Ref Plane {0}"
+  },
+  "review": {
+    "itemCats": "Categories Selected", "itemX": "Reference Planes", "itemOp": "Operation", "itemScope": "Scope",
+    "xValue": "{0} plane(s)",
+    "op": "Split elements at each reference plane",
+    "scopeFromSel": "From selection ({0} elements)", "scopeActive": "Active view only", "scopeDoc": "Entire document",
+    "note": "Elements whose LocationCurve intersects a reference plane will be split at that intersection. Elements with no linear curve are skipped. The reference plane's own normal vector is used as the cutting direction."
+  },
+  "log": {
+    "noValid":     "No valid reference planes found.",
+    "preSelected": "Operating on {0} pre-selected element(s).",
+    "foundCats":   "Found {0} elements across {1} category(ies).",
+    "splitting":   "Splitting {0} element(s) at {1} reference plane(s)...",
+    "done":        "Done — {0} segment(s) created from {1} element(s), {2} skipped, {3} failed.",
+    "error":       "Error: {0}"
+  }
+}

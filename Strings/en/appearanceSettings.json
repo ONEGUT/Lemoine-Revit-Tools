@@ -1,0 +1,10 @@
+// appearanceSettings.json — LemoineSettingsWindow (the "Appearance Settings" theme picker,
+// opened from the toolbar — distinct from the Manage Settings window / globalSettings.json).
+// NOTE: the "x" close glyph and Segoe MDL2 icon codepoint stay in code.
+{
+  "close": "Close",
+  "title": "Appearance",
+  "appearanceSection": "Appearance",
+  "active": "Active"
+}
+

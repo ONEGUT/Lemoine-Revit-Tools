@@ -1,0 +1,59 @@
+// linkviews.byTemplate.json — Bulk Views by Template tool + run-handler logs.
+// Command: ViewsByTemplateCommand. NOTE: naming-token labels and the default token
+// pattern stay in code (paired with {Token} placeholders / matched downstream).
+{
+  "title": "Bulk Views by Template",
+  "runLabel": "Create Views in Revit →",
+
+  "steps": {
+    "S1": "Source Views",
+    "S2": "View Templates",
+    "S3": "View Naming",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S4":            "Ready to run",
+    "viewCount":     "{0} view(s)",
+    "templateCount": "{0} template(s)"
+  },
+
+  "labels": {
+    "sourceViews":   "Source views",       // picker accessible name
+    "viewTemplates": "View templates",      // picker accessible name
+    "noTemplates":   "No view templates found in this document.",
+    "namePattern":   "NAME PATTERN",
+    "preview":       "PREVIEW",
+    "emptyName":     "(empty name)",
+    "exView":        "Floor Plan 01",
+    "exType":        "Floor Plan",
+    "exTemplate":    "Coordination"
+  },
+
+  "review": {
+    "itemViews":     "Source views",
+    "itemTemplates": "View templates",
+    "itemPattern":   "Name pattern",
+    "itemTotal":     "Views to create",
+
+    "viewsValue":     "{0} view(s)",
+    "templatesValue": "{0} template(s)",
+    "totalValue":     "up to {0}",
+    "note":           "Each selected view is duplicated (with detailing) once per template. Pairs whose name already exists are skipped; a template that cannot apply to a view's type is reported as failed.",
+    "warnNoToken":    "Name pattern has no {TemplateName} token — every template resolves to the same name per view, so only the first copy is created and the rest are skipped. Add {TemplateName} to differentiate."
+  },
+
+  "log": {
+    "raising":    "Raising Revit external event…",
+    "noDoc":      "No active Revit document.",
+    "error":      "Error: {0}",
+    "nonFatal":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "nothingToDo":"Nothing to do — no valid views or templates selected.",
+    "skipEmpty":  "Skip '{0}' × '{1}' — empty name.",          // {0}=view {1}=template
+    "skipExists": "Skip '{0}' (name already exists).",
+    "skipNoDup":  "Skip '{0}' — view cannot be duplicated.",
+    "created":    "Created '{0}'  ({1})",                       // {0}=name {1}=template
+    "failed":     "Failed '{0}' × '{1}': {2}",                  // {0}=view {1}=template {2}=error
+    "complete":   "Complete — {0} created, {1} skipped, {2} failed."
+  }
+}

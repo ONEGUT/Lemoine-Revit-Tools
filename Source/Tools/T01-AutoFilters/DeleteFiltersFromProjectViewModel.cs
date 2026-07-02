@@ -20,13 +20,13 @@ namespace LemoineTools.Tools.AutoFilters
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
 
         // ── ILemoineTool identity ──────────────────────────────────────────────
-        public string Title    => "Delete Filters from Project";
-        public string RunLabel => "Permanently Delete →";
+        public string Title    => LemoineStrings.T("autofilters.deleteFromProject.title");
+        public string RunLabel => LemoineStrings.T("autofilters.deleteFromProject.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", "Select Filters", required: true),
-            new StepDefinition("S2", "Review & Run",   required: false),
+            new StepDefinition("S1", LemoineStrings.T("autofilters.deleteFromProject.steps.S1"), required: true),
+            new StepDefinition("S2", LemoineStrings.T("autofilters.deleteFromProject.steps.S2"),   required: false),
         };
 
         // ── State ──────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ namespace LemoineTools.Tools.AutoFilters
                     // FIX: empty-state text uses LemoineText + italic, not LemoineTextDim
                     var none = new TextBlock
                     {
-                        Text         = "No ParameterFilterElements found in this project.",
+                        Text         = LemoineStrings.T("autofilters.deleteFromProject.labels.noFilters"),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle    = FontStyles.Italic,
                     };
@@ -86,8 +86,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var outer = new StackPanel();
 
                 var warn = new LemoineWarnBanner(
-                    "⚠  Deleted filters are permanently removed from the project " +
-                    "and cannot be recovered. They will be removed from all views.");
+                    LemoineStrings.T("autofilters.deleteFromProject.labels.warnBanner"));
                 outer.Children.Add(warn);
 
                 // Multi-select grouped by owning trade — nothing pre-selected.
@@ -115,23 +114,23 @@ namespace LemoineTools.Tools.AutoFilters
                 // ── ILemoineReviewable (P3) — framework renders the review step ───
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("delete",    "Filters to Delete"),
-            ("remaining", "Remaining in Project"),
-            ("scope",     "Scope"),
-            ("action",    "Action"),
+            ("delete",    LemoineStrings.T("autofilters.deleteFromProject.review.itemDelete")),
+            ("remaining", LemoineStrings.T("autofilters.deleteFromProject.review.itemRemaining")),
+            ("scope",     LemoineStrings.T("autofilters.deleteFromProject.review.itemScope")),
+            ("action",    LemoineStrings.T("autofilters.deleteFromProject.review.itemAction")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["delete"]    = $"{_selectedNames.Count} selected",
-            ["remaining"] = $"{_allFilterNames.Count - _selectedNames.Count} will remain",
-            ["scope"]     = "Entire project",
-            ["action"]    = "Permanent deletion (no undo)",
+            ["delete"]    = LemoineStrings.T("autofilters.deleteFromProject.review.deleteValue", _selectedNames.Count),
+            ["remaining"] = LemoineStrings.T("autofilters.deleteFromProject.review.remainingValue", _allFilterNames.Count - _selectedNames.Count),
+            ["scope"]     = LemoineStrings.T("autofilters.deleteFromProject.review.scope"),
+            ["action"]    = LemoineStrings.T("autofilters.deleteFromProject.review.action"),
         };
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => null;
-        public string?        ReviewWarning => $"⚠  This will permanently delete {_selectedNames.Count} filter(s) from the project. This cannot be undone.";
+        public string?        ReviewWarning => LemoineStrings.T("autofilters.deleteFromProject.review.warning", _selectedNames.Count);
 
         // ═══════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
@@ -144,8 +143,8 @@ namespace LemoineTools.Tools.AutoFilters
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return $"{_selectedNames.Count} filter(s) selected";
-            if (stepId == "S2") return "Ready to run — action is permanent";
+            if (stepId == "S1") return LemoineStrings.T("autofilters.deleteFromProject.summaries.S1", _selectedNames.Count);
+            if (stepId == "S2") return LemoineStrings.T("autofilters.deleteFromProject.summaries.S2");
             return "—";
         }
 
@@ -159,7 +158,7 @@ namespace LemoineTools.Tools.AutoFilters
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;
 
-            pushLog($"Permanently deleting {_selectedNames.Count} filter(s) from project…", "info");
+            pushLog(LemoineStrings.T("autofilters.deleteFromProject.log.deleting", _selectedNames.Count), "info");
             _event.Raise();
         }
     }

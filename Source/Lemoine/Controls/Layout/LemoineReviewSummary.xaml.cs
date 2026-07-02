@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls
 {
@@ -89,7 +90,7 @@ namespace LemoineTools.Lemoine.Controls
 
                 var val = new TextBlock
                 {
-                    Text         = display ?? "—",
+                    Text         = display ?? LemoineStrings.T("controls.inputs.reviewSummary.emptyValue"),
                     FontWeight   = FontWeights.Medium,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                 };
@@ -124,7 +125,7 @@ namespace LemoineTools.Lemoine.Controls
 
                 var chipHdr = new TextBlock
                 {
-                    Text   = "ITEMS",
+                    Text   = LemoineStrings.T("controls.inputs.reviewSummary.itemsHeader"),
                     
                     Margin = new Thickness(0, 0, 0, 5),
                 };

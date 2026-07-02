@@ -1,0 +1,41 @@
+// ceilings.grids.json — run-log lines for the shared ceiling-grid engine
+// (CeilingGridEventHandler), used by both Project Grids and Reproject Grids.
+// {0}, {1}… are runtime values. Keys are "ceilings.grids.log.<key>".
+{
+  "log": {
+    "error":                  "Error: {0}",                       // {0} = exception message
+    "folderNotFound":         "Folder not found: {0}",            // {0} = folder path
+    "noDwgInFolder":          "No DWG files found in: {0}",        // {0} = folder path
+    "foundDwgFiles":          "Found {0} DWG file(s) in folder.",  // {0} = count
+
+    "noViewSkipDwg":          "No ceiling-plan view '{0}' — skipping {1}.",  // {0}=view name {1}=dwg file
+    "projectingDwg":          "Projecting {0} → '{1}'",            // {0}=dwg file {1}=view name
+    "batchCompleteProject":   "Batch complete — {0} curve(s) created, {1} DWG(s) skipped.",
+
+    "batchReprojecting":      "Batch reprojecting {0} view(s).",   // {0} = view count
+    "viewNotFound":           "View {0} not found or is a template — skipped.",  // {0} = view id
+    "reprojecting":           "Reprojecting: {0}",                 // {0} = view name
+    "batchCompleteReproject": "Batch complete — {0} curve(s) created across {1} view(s).",
+
+    "noDwgPath":              "No DWG path set.",
+    "noCeilings":             "No ceiling elements in view '{0}'.",  // {0} = view name
+    "foundCeilings":          "Found {0} ceiling(s).",             // {0} = count
+    "noSoffit":               "Could not extract soffit faces.",
+    "noCurvesInDwg":          "No curves found in DWG.",
+    "extractedCurves":        "Extracted {0} curve(s) from DWG.",  // {0} = count
+    "curveCreateFailed":      "Curve creation failed: {0}",        // {0} = exception message
+    "completeProject":        "Complete — {0} model curve(s) created across {1} elevation(s).",
+    "noOverlapSkipped":       "{0} CAD curve(s) had no ceiling overlap and were skipped.",
+
+    "usingPreselected":       "Using {0} pre-selected curve(s).",  // {0} = count
+    "foundModelCurves":       "Found {0} model curve(s) in view '{1}'.",  // {0}=count {1}=view name
+    "noSourceCurves":         "No source curves found.",
+    "foundCeilingsFaces":     "Found {0} ceiling(s), {1} face(s).",
+    "completeReproject":      "Complete — {0} curve(s) created across {1} elevation(s).",
+    "noOverlapKept":          "{0} curve(s) had no ceiling overlap and were kept unchanged.",
+
+    "dwgImported":            "DWG imported: {0}",                 // {0} = file name
+    "dwgImportFalse":         "DWG import returned false — check the file path.",
+    "dwgImportError":         "DWG import error: {0}"              // {0} = exception message
+  }
+}

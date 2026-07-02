@@ -50,7 +50,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CeilingGrid: run aborted", ex); Log($"Error: {ex.Message}", "fail");
+                LemoineLog.Error("CeilingGrid: run aborted", ex); Log(LemoineStrings.T("ceilings.grids.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -73,7 +73,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (!Directory.Exists(BatchDwgFolder))
             {
-                Log($"Folder not found: {BatchDwgFolder}", "fail");
+                Log(LemoineStrings.T("ceilings.grids.log.folderNotFound", BatchDwgFolder), "fail");
                 fail++;
                 return;
             }
@@ -81,12 +81,12 @@ namespace LemoineTools.Tools.Ceilings
             var dwgFiles = Directory.GetFiles(BatchDwgFolder, "*.dwg", SearchOption.TopDirectoryOnly);
             if (dwgFiles.Length == 0)
             {
-                Log($"No DWG files found in: {BatchDwgFolder}", "fail");
+                Log(LemoineStrings.T("ceilings.grids.log.noDwgInFolder", BatchDwgFolder), "fail");
                 fail++;
                 return;
             }
 
-            Log($"Found {dwgFiles.Length} DWG file(s) in folder.", "info");
+            Log(LemoineStrings.T("ceilings.grids.log.foundDwgFiles", dwgFiles.Length), "info");
 
             var ceilingPlanViews = new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewPlan))
@@ -101,19 +101,19 @@ namespace LemoineTools.Tools.Ceilings
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                    Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                     break;
                 }
 
                 string viewName = Path.GetFileNameWithoutExtension(dwgFile);
                 if (!ceilingPlanViews.TryGetValue(viewName, out var targetView))
                 {
-                    Log($"No ceiling plan view '{viewName}' — skipping {Path.GetFileName(dwgFile)}.", "info");
+                    Log(LemoineStrings.T("ceilings.grids.log.noViewSkipDwg", viewName, Path.GetFileName(dwgFile)), "info");
                     skip++;
                 }
                 else
                 {
-                    Log($"Projecting {Path.GetFileName(dwgFile)} → '{targetView.Name}'", "info");
+                    Log(LemoineStrings.T("ceilings.grids.log.projectingDwg", Path.GetFileName(dwgFile), targetView.Name), "info");
                     DwgPath = dwgFile;
                     RunProject(doc, targetView, ref pass, ref fail, ref skip);
                 }
@@ -121,7 +121,7 @@ namespace LemoineTools.Tools.Ceilings
                 Progress((int)(done * 90.0 / total), pass, fail, skip);
             }
 
-            Log($"Batch complete — {pass} curve(s) created, {skip} DWG(s) skipped.", "pass");
+            Log(LemoineStrings.T("ceilings.grids.log.batchCompleteProject", pass, skip), "pass");
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -129,7 +129,7 @@ namespace LemoineTools.Tools.Ceilings
         // ═════════════════════════════════════════════════════════════════════
         private void RunBatchReproject(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            Log($"Batch reprojecting {SelectedViewIds.Count} view(s).", "info");
+            Log(LemoineStrings.T("ceilings.grids.log.batchReprojecting", SelectedViewIds.Count), "info");
 
             int total = SelectedViewIds.Count;
             int done  = 0;
@@ -138,26 +138,26 @@ namespace LemoineTools.Tools.Ceilings
             {
                 if (LemoineRun.CancelRequested)
                 {
-                    Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                    Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                     break;
                 }
 
                 var view = doc.GetElement(viewId) as View;
                 if (view == null || view.IsTemplate)
                 {
-                    Log($"View {viewId.Value} not found or is a template — skipped.", "info");
+                    Log(LemoineStrings.T("ceilings.grids.log.viewNotFound", viewId.Value), "info");
                     skip++;
                 }
                 else
                 {
-                    Log($"Reprojecting: {view.Name}", "info");
+                    Log(LemoineStrings.T("ceilings.grids.log.reprojecting", view.Name), "info");
                     RunReproject(doc, view, ref pass, ref fail, ref skip);
                 }
                 done++;
                 Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
             }
 
-            Log($"Batch complete — {pass} curve(s) created across {total} view(s).", "pass");
+            Log(LemoineStrings.T("ceilings.grids.log.batchCompleteReproject", pass, total), "pass");
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (string.IsNullOrWhiteSpace(DwgPath))
             {
-                Log("No DWG path set.", "fail"); fail++; return;
+                Log(LemoineStrings.T("ceilings.grids.log.noDwgPath"), "fail"); fail++; return;
             }
 
             using (var tx = new Transaction(doc, "Project Ceiling Grids"))
@@ -178,15 +178,15 @@ namespace LemoineTools.Tools.Ceilings
                 var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
                 if (ceilings.Count == 0)
                 {
-                    Log($"No ceiling elements in view '{view.Name}'.", "fail");
+                    Log(LemoineStrings.T("ceilings.grids.log.noCeilings", view.Name), "fail");
                     fail++; tx.RollBack(); return;
                 }
-                Log($"Found {ceilings.Count} ceiling(s).", "info");
+                Log(LemoineStrings.T("ceilings.grids.log.foundCeilings", ceilings.Count), "info");
 
                 var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
                 if (faces.Count == 0)
                 {
-                    Log("Could not extract soffit faces.", "fail");
+                    Log(LemoineStrings.T("ceilings.grids.log.noSoffit"), "fail");
                     fail++; tx.RollBack(); return;
                 }
 
@@ -196,10 +196,10 @@ namespace LemoineTools.Tools.Ceilings
                 var cadCurves = ExtractCadCurves(doc, importId);
                 if (cadCurves.Count == 0)
                 {
-                    Log("No curves found in DWG.", "fail");
+                    Log(LemoineStrings.T("ceilings.grids.log.noCurvesInDwg"), "fail");
                     doc.Delete(importId); fail++; tx.RollBack(); return;
                 }
-                Log($"Extracted {cadCurves.Count} curve(s) from DWG.", "info");
+                Log(LemoineStrings.T("ceilings.grids.log.extractedCurves", cadCurves.Count), "info");
 
                 doc.Delete(importId);
 
@@ -213,7 +213,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;
                     }
 
@@ -230,7 +230,7 @@ namespace LemoineTools.Tools.Ceilings
                             }
                             catch (Exception ex)
                             {
-                                Log($"Curve creation failed: {ex.Message}", "fail");
+                                Log(LemoineStrings.T("ceilings.grids.log.curveCreateFailed", ex.Message), "fail");
                                 fail++;
                             }
                         }
@@ -243,8 +243,8 @@ namespace LemoineTools.Tools.Ceilings
                 skip += noMatch;
                 tx.Commit();
 
-                Log($"Complete — {pass} model curve(s) created across {cache.Count} elevation(s).", "pass");
-                if (noMatch > 0) Log($"{noMatch} CAD curve(s) had no ceiling overlap and were skipped.", "info");
+                Log(LemoineStrings.T("ceilings.grids.log.completeProject", pass, cache.Count), "pass");
+                if (noMatch > 0) Log(LemoineStrings.T("ceilings.grids.log.noOverlapSkipped", noMatch), "info");
             }
         }
 
@@ -260,31 +260,31 @@ namespace LemoineTools.Tools.Ceilings
                     .Select(id => doc.GetElement(id))
                     .OfType<ModelCurve>()
                     .ToList();
-                Log($"Using {sourceCurves.Count} pre-selected curve(s).", "info");
+                Log(LemoineStrings.T("ceilings.grids.log.usingPreselected", sourceCurves.Count), "info");
             }
             else
             {
                 sourceCurves = CeilingGridHelpers.GetModelCurvesInView(doc, view);
-                Log($"Found {sourceCurves.Count} ModelCurve(s) in view '{view.Name}'.", "info");
+                Log(LemoineStrings.T("ceilings.grids.log.foundModelCurves", sourceCurves.Count, view.Name), "info");
             }
 
             if (sourceCurves.Count == 0)
             {
-                Log("No source curves found.", "fail"); fail++; return;
+                Log(LemoineStrings.T("ceilings.grids.log.noSourceCurves"), "fail"); fail++; return;
             }
 
             var ceilings = CeilingGridHelpers.GetCeilingsInView(doc, view);
             if (ceilings.Count == 0)
             {
-                Log($"No ceiling elements in view '{view.Name}'.", "fail"); fail++; return;
+                Log(LemoineStrings.T("ceilings.grids.log.noCeilings", view.Name), "fail"); fail++; return;
             }
 
             var faces = CeilingGridHelpers.GetCeilingBottomFaces(ceilings);
             if (faces.Count == 0)
             {
-                Log("Could not extract soffit faces.", "fail"); fail++; return;
+                Log(LemoineStrings.T("ceilings.grids.log.noSoffit"), "fail"); fail++; return;
             }
-            Log($"Found {ceilings.Count} ceiling(s), {faces.Count} face(s).", "info");
+            Log(LemoineStrings.T("ceilings.grids.log.foundCeilingsFaces", ceilings.Count, faces.Count), "info");
 
             using (var tx = new Transaction(doc, "Reproject Ceiling Grids"))
             {
@@ -307,7 +307,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;
                     }
 
@@ -341,7 +341,7 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     if (LemoineRun.CancelRequested)
                     {
-                        Log($"Stopped by user — {done} of {total} processed; work so far preserved.", "warn");
+                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;
                     }
 
@@ -352,7 +352,7 @@ namespace LemoineTools.Tools.Ceilings
                     }
                     catch (Exception ex)
                     {
-                        Log($"Curve creation failed: {ex.Message}", "fail");
+                        Log(LemoineStrings.T("ceilings.grids.log.curveCreateFailed", ex.Message), "fail");
                         fail++;
                     }
                     done++;
@@ -363,9 +363,9 @@ namespace LemoineTools.Tools.Ceilings
                 skip += noMatch;
                 tx.Commit();
 
-                Log($"Complete — {pass} curve(s) created across {cache.Count} elevation(s).", "pass");
+                Log(LemoineStrings.T("ceilings.grids.log.completeReproject", pass, cache.Count), "pass");
                 if (noMatch > 0)
-                    Log($"{noMatch} curve(s) had no ceiling overlap and were kept unchanged.", "info");
+                    Log(LemoineStrings.T("ceilings.grids.log.noOverlapKept", noMatch), "info");
             }
         }
 
@@ -384,13 +384,13 @@ namespace LemoineTools.Tools.Ceilings
                     ThisViewOnly = true,
                 };
                 bool ok = doc.Import(DwgPath, opts, view, out ElementId id);
-                if (ok) { Log($"DWG imported: {Path.GetFileName(DwgPath)}", "info"); return id; }
-                Log("DWG import returned false — check the file path.", "fail");
+                if (ok) { Log(LemoineStrings.T("ceilings.grids.log.dwgImported", Path.GetFileName(DwgPath)), "info"); return id; }
+                Log(LemoineStrings.T("ceilings.grids.log.dwgImportFalse"), "fail");
                 return ElementId.InvalidElementId;
             }
             catch (Exception ex)
             {
-                Log($"DWG import error: {ex.Message}", "fail");
+                Log(LemoineStrings.T("ceilings.grids.log.dwgImportError", ex.Message), "fail");
                 return ElementId.InvalidElementId;
             }
         }
