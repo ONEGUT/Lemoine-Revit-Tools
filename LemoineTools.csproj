@@ -261,4 +261,17 @@
              ContinueOnError="WarnAndContinue" />
   </Target>
 
+  <!--
+    Auto-fire BuildAllYears after any plain "Debug"/"Release" build (Visual
+    Studio's default Build/F5, or `dotnet build`/`msbuild` with no `-c`) so a
+    normal build produces every year's DLL, not just the 2024 fallback.
+
+    Guarded to the bare Configuration names only — BuildAllYears' own
+    per-year sub-builds run with Configuration=Release2024/2025/2026/2027
+    (never the bare "Debug"/"Release"), so this does not re-trigger itself.
+  -->
+  <Target Name="AutoBuildAllYears" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' or '$(Configuration)' == 'Release'">
+    <CallTarget Targets="BuildAllYears" />
+  </Target>
+
 </Project>
