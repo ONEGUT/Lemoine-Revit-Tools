@@ -2,19 +2,25 @@
 
   <!--
     Multi-year Revit support needs one obj\ (and its project.assets.json) per
-    Configuration, not one shared obj\ for the whole project. LemoineTools.csproj
-    picks a different TargetFramework per Configuration (net48 for *2024,
-    net8.0-windows for *2025/2026/2027) — NuGet restore writes a single
-    project.assets.json keyed to whichever TargetFramework was last restored,
-    so a shared obj\ gets clobbered every time a different Configuration is
-    restored (this is what caused NETSDK1005 "doesn't have a target for
-    'net8.0-windows'" when BuildAllYears built each year back-to-back: the
-    net48 restore from the default Debug build was overwritten, then the
-    net8.0-windows years needed their own restore that a plain Build target
-    never triggers). Splitting BaseIntermediateOutputPath by Configuration
-    isolates each year's restore/build artifacts from the others.
+    year-suffixed Configuration, not one shared obj\ for the whole project.
+    LemoineTools.csproj picks a different TargetFramework per Configuration
+    (net48 for *2024, net8.0-windows for *2025/2026/2027) — NuGet restore
+    writes a single project.assets.json keyed to whichever TargetFramework
+    was last restored, so a shared obj\ gets clobbered every time a different
+    Configuration is restored (this is what caused NETSDK1005 "doesn't have a
+    target for 'net8.0-windows'" when BuildAllYears built each year
+    back-to-back).
+
+    Only redirect the year-suffixed Configurations (used by BuildAllYears'
+    nested MSBuild calls, which explicitly run Restore;Build). The bare
+    "Debug"/"Release" Configuration — what Visual Studio's normal Build/F5
+    uses — is left on the SDK's default obj\ path: redirecting it too made
+    Visual Studio's own implicit/automatic restore miss the new location
+    (NETSDK1004 "assets file not found"), since VS's restore-before-build
+    doesn't reliably pick up a BaseIntermediateOutputPath change the same way
+    an explicit Restore;Build MSBuild-task invocation does.
   -->
-  <PropertyGroup>
+  <PropertyGroup Condition="$(Configuration.EndsWith('2024')) or $(Configuration.EndsWith('2025')) or $(Configuration.EndsWith('2026')) or $(Configuration.EndsWith('2027'))">
     <BaseIntermediateOutputPath>obj\$(Configuration)\</BaseIntermediateOutputPath>
   </PropertyGroup>
 
