@@ -236,4 +236,29 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    BuildAllYears — attempt every Revit-year Configuration in one pass. Each
+    year's own Configuration properties (see top of file) already point
+    OutputPath at that year's DeployDir, so this just needs to build each one;
+    no separate copy step is needed. Invoke with:
+        dotnet build LemoineTools.csproj -t:BuildAllYears
+
+    Years build independently: ContinueOnError="WarnAndContinue" means a
+    failure in one year (e.g. Release2027 before libs2027\ has real DLLs, or
+    any year whose libsYYYY\ folder hasn't been populated yet) is logged as a
+    warning rather than aborting the remaining years. Check the log for
+    "Build succeeded" / "Build FAILED" under each "Building ReleaseYYYY"
+    banner to see which years actually produced output.
+  -->
+  <Target Name="BuildAllYears">
+    <ItemGroup>
+      <_RevitBuildYears Include="2024;2025;2026;2027" />
+    </ItemGroup>
+    <Message Text="=== Building Release%(_RevitBuildYears.Identity) ===" Importance="high" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Build"
+             Properties="Configuration=Release%(_RevitBuildYears.Identity)"
+             ContinueOnError="WarnAndContinue" />
+  </Target>
+
 </Project>
