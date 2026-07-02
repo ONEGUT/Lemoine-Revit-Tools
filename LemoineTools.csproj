@@ -1,7 +1,38 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    Multi-year Revit support (2024-2027).
+
+    Revit 2024 runs .NET Framework 4.8; Revit 2025/2026/2027 all run .NET 8, so
+    plain SDK <TargetFrameworks> multi-targeting (one output per moniker) can't
+    produce four distinct outputs by itself. Instead, each Revit year gets its
+    own build Configuration (Debug2024/Release2024 ... Debug2027/Release2027),
+    and TargetFramework/RevitDir/DeployDir/DefineConstants are all selected by
+    Condition on that Configuration. Build a specific year with e.g.
+    `dotnet build -c Release2026`. Building with the bare `Debug`/`Release`
+    Configuration (no `-c` year suffix) falls back to 2024 behavior, matching
+    what this project did before multi-year support existed.
+
+    Revit 2027 has not shipped as of writing — Release2027/Debug2027 exist for
+    when Autodesk ships that year's API, but libs2027\ is an empty placeholder
+    and the Configuration will not build until real DLLs are added there (or a
+    local Revit 2027 install is present).
+  -->
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <Configurations>Debug;Release;Debug2024;Release2024;Debug2025;Release2025;Debug2026;Release2026;Debug2027;Release2027</Configurations>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RevitYear Condition="$(Configuration.EndsWith('2025'))">2025</RevitYear>
+    <RevitYear Condition="$(Configuration.EndsWith('2026'))">2026</RevitYear>
+    <RevitYear Condition="$(Configuration.EndsWith('2027'))">2027</RevitYear>
+    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
+
+    <TargetFramework Condition="'$(RevitYear)' == '2024'">net48</TargetFramework>
+    <TargetFramework Condition="'$(RevitYear)' != '2024'">net8.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <AssemblyName>LemoineTools</AssemblyName>
     <RootNamespace>LemoineTools</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
@@ -11,9 +42,15 @@
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <RevitDir Condition="Exists('C:\Program Files\Autodesk\Revit 2024')">C:\Program Files\Autodesk\Revit 2024</RevitDir>
-    <RevitDir Condition="!Exists('C:\Program Files\Autodesk\Revit 2024')">$(MSBuildThisFileDirectory)libs</RevitDir>
-    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\2024\</DeployDir>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
+
+    <!-- 2024 keeps the original bare "libs" fallback folder; 2025+ get their own libsYYYY. -->
+    <RevitLibsDir Condition="'$(RevitYear)' == '2024'">$(MSBuildThisFileDirectory)libs</RevitLibsDir>
+    <RevitLibsDir Condition="'$(RevitYear)' != '2024'">$(MSBuildThisFileDirectory)libs$(RevitYear)</RevitLibsDir>
+
+    <RevitDir Condition="Exists('C:\Program Files\Autodesk\Revit $(RevitYear)')">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitDir>
+    <RevitDir Condition="!Exists('C:\Program Files\Autodesk\Revit $(RevitYear)')">$(RevitLibsDir)</RevitDir>
+    <DeployDir>C:\ProgramData\Autodesk\Revit\Addins\$(RevitYear)\</DeployDir>
     <OutputPath>$(DeployDir)</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>

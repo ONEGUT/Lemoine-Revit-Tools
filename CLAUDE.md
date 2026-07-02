@@ -477,9 +477,16 @@ Discovered while making **Make Ceiling Grids** hide linked ceilings.
 
 ## Build Environment
 
-This project cannot be built on Linux. `UseWPF=true` + `net48` requires `Microsoft.NET.Sdk.WindowsDesktop`, which is Windows-only — neither the Linux .NET SDK nor Mono can satisfy it. Do not attempt Linux CI or cloud builds. Build and test on Windows only.
+This project cannot be built on Linux. `UseWPF=true` + (`net48` or `net8.0-windows`) requires `Microsoft.NET.Sdk.WindowsDesktop`, which is Windows-only — neither the Linux .NET SDK nor Mono can satisfy it. Do not attempt Linux CI or cloud builds. Build and test on Windows only.
 
-The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) are checked in to `libs/`. The `.csproj` falls back to `libs/` when the standard Revit 2024 install path (`C:\Program Files\Autodesk\Revit 2024`) does not exist, so cloning the repo is sufficient to resolve references without a local Revit installation.
+### Multi-year Revit support (2024-2027)
+
+Revit 2024 runs .NET Framework 4.8; Revit 2025, 2026, and 2027 all run .NET 8. Because three of the four target years share one runtime, plain SDK `<TargetFrameworks>` multi-targeting can't produce four distinct outputs on its own (one output per framework moniker, max two here). Instead, each Revit year is its own build **Configuration** — `Debug2024`/`Release2024` … `Debug2027`/`Release2027` — and `TargetFramework`, `RevitDir`, `DeployDir`, and a `REVITxxxx` `DefineConstants` symbol are all selected by `Condition` on that Configuration in `LemoineTools.csproj`.
+
+- Build a specific year with `dotnet build -c Release2026` (or the year of your choice). The bare `Debug`/`Release` Configuration (no year suffix, e.g. from an IDE that hasn't been told about the custom Configurations yet) falls back to 2024 behavior.
+- The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) for each year are checked in to `libs/` (2024), `libs2025/`, `libs2026/`, `libs2027/`. The `.csproj` falls back to the matching `libs*` folder when that year's standard install path (`C:\Program Files\Autodesk\Revit 20XX`) does not exist, so cloning the repo is sufficient to resolve references without a local Revit installation — **once those DLLs are actually present**. `libs2025/`, `libs2026/`, and `libs2027/` currently only hold placeholder READMEs; add the real DLLs from a matching Revit install to build those configurations.
+- **Revit 2027 has not shipped as of writing.** `Debug2027`/`Release2027` exist so the project is ready the day Autodesk releases it, but that Configuration cannot build until real 2027 API DLLs exist to reference.
+- Only add `#if REVIT2024` / `#if REVIT2025` / etc. branches at a specific call site once a real build against that year's SDK actually breaks — never speculatively.
 
 **`LemoineTools.csproj` is a root-level SDK-style project, so its default `**\*` globs sweep every subfolder — including sibling sub-projects' `obj\` output.** Each sibling project (`LemoinePreview`, `LemoineNavisworks`, any future one) must be `Remove`-excluded from `Compile`/`Page`/`None`/`EmbeddedResource`, or MSBuild compiles its generated `*.AssemblyAttributes.cs` (→ **CS0579** duplicate `TargetFrameworkAttribute`, sometimes for *both* net48 and net8 targets) and its XAML `*.g.cs` (→ **CS0102** duplicate `_root`/`_outer` field). Keep the exclusion **unconditional**: an untracked `obj\` folder survives a branch switch, so a sibling project that lives only on another branch can still poison this build locally.
 
@@ -490,7 +497,7 @@ The Revit API DLLs (`RevitAPI.dll`, `RevitAPIUI.dll`) are checked in to `libs/`.
 | Path | Purpose |
 |------|---------|
 | `LEMOINE_UI.md` | UI architecture, design system, component library, and tool contract |
-| `LemoineTools.csproj` | Project file (targets .NET Framework 4.8) |
+| `LemoineTools.csproj` | Project file (per-year Configuration selects net48 for 2024, net8.0-windows for 2025-2027) |
 | `Source/Lemoine/LemoineFailureCapture.cs` | Process-wide `FailuresProcessing`/`DialogBoxShowing` capture that routes Revit's own failures into the active run's log |
 | `Source/Lemoine/LemoineRunLog.cs` | Active run's log sink, set/cleared by the tool window |
 | `Source/Lemoine/LemoineRun.cs` | Thread-safe cancel flag (`CancelRequested`) for cooperative run cancellation |
