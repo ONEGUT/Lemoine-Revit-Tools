@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.ModifyElements
                             pOff?.Set(0.0);
 
                             changed++;
-                            pushLog(LemoineStrings.T("modify.extendWalls.log.wallOk", wall.Id, wall.WallType?.Name, nextLevel.Name), "pass");
+                            pushLog(LemoineStrings.T("modify.extendWalls.log.wallOk", wall.Id, wall.WallType?.Name ?? string.Empty, nextLevel.Name), "pass");
                         }
                         catch (Exception ex)
                         {

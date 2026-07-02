@@ -252,7 +252,7 @@ namespace LemoineTools.Lemoine
                     if (prevTrade.TryGetValue(r.Id, out var pid) && pid != t.Id)
                         return LemoineStrings.T("autofilters.filtersWindow.window.history.moveRules");
                     if (prevName.TryGetValue(r.Id, out var pn) && pn != (r.Name ?? ""))
-                        return LemoineStrings.T("autofilters.filtersWindow.window.history.rename", pn, r.Name);
+                        return LemoineStrings.T("autofilters.filtersWindow.window.history.rename", pn ?? string.Empty, r.Name ?? string.Empty);
                 }
 
             var active = cur.FirstOrDefault(t => t.Id == _fActiveTradeId)?

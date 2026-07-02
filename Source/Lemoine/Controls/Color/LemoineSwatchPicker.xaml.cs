@@ -71,7 +71,7 @@ namespace LemoineTools.Lemoine.Controls
             _inner.Children.Clear();
 
             // SHAPE header
-            _inner.Children.Add(MakeHeader(LemoineStrings.T("controls.pickers.swatchPicker.shapeHeader", Title?.ToUpperInvariant())));
+            _inner.Children.Add(MakeHeader(LemoineStrings.T("controls.pickers.swatchPicker.shapeHeader", Title?.ToUpperInvariant() ?? string.Empty)));
 
             // SHAPE row
             var shapeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };

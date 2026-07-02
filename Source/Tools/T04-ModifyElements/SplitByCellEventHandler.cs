@@ -125,33 +125,33 @@ namespace LemoineTools.Tools.ModifyElements
                                 if (cellStatus == CellSplitStatus.Split)
                                 {
                                     created += n;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name, el.Id, n), "pass");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name ?? string.Empty, el.Id, n), "pass");
                                     tx.Commit();
                                 }
                                 else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name, el.Id), "info");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name ?? string.Empty, el.Id), "info");
                                 }
                                 else if (cellStatus == CellSplitStatus.NoGeometry)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name, el.Id), "info");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name ?? string.Empty, el.Id), "info");
                                 }
                                 else // NoCellsIntersected
                                 {
                                     tx.RollBack();
                                     failed++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name, el.Id), "fail");
+                                    pushLog(LemoineStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name ?? string.Empty, el.Id), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
                                 tx.RollBack();
                                 failed++;
-                                pushLog(LemoineStrings.T("modify.splitByCell.log.cellError", el.Category?.Name, el.Id, ex.Message), "fail");
+                                pushLog(LemoineStrings.T("modify.splitByCell.log.cellError", el.Category?.Name ?? string.Empty, el.Id, ex.Message), "fail");
                             }
                         }
 
