@@ -89,6 +89,33 @@ Three near-identical handlers + three near-identical ViewModels + four near-iden
   user never confirmed; no pre-warning is given. Stacked/curtain/profile-edited walls aren't
   pre-filtered either.
 
+### 1.8 Footprint elements only reach one cutter, and the category list itself lies
+
+Confirmed as a hard requirement: **every cutter (Levels, Grid Lines, Reference Planes, Cell
+grid) must work on every footprint/sketch-based element** — `Floor`, `Ceiling`, `FootPrintRoof`,
+footprint-based `Structural Foundation` (slabs, which are `Floor` instances), and `FilledRegion`.
+Today only the Cell cutter reaches them at all; Grid and Reference Plane only handle walls and
+straight `LocationCurve` elements (§1.1), so a floor or roof can't be split along a grid line or a
+ref plane even though nothing in the Level/Grid/RefPlane engine is category-specific — it just
+never learned the boolean-intersect + recreate path that `SplitByCellHelpers` already has.
+
+`OST_StructuralFoundation` also repeats the §1.1 bug locally: the category **offered** by Split by
+Cell includes isolated footings and wall foundations, which are `FamilyInstance`s, not `Floor`
+instances — `IsSupportedForRecreation` rejects them and they throw `NotSupportedException` at run
+time (`SplitByCellHelpers.cs:16-23` vs. `:420-421`). The picker must filter to Floor-instance
+foundations only, exactly like §1.1's fix for the plane tools.
+
+**Open design question — Level cutter on a flat footprint element.** A Level cutter is a
+horizontal plane at an elevation. For a flat floor/ceiling (the overwhelming common case), no
+selected level elevation passes through the solid's thickness in a way that produces a meaningful
+two-piece split — the element sits *at* a level, it doesn't span across one the way a wall or a
+riser does. For a **sloped/stepped** floor or roof that does cross a level elevation, the cut is
+meaningful. Proposed default: attempt the cut for every footprint target; if the solid's Z-extent
+doesn't straddle the level's elevation, skip-log ("Floor 12345: does not cross Level 2's
+elevation") exactly like the existing MEP vertical-run degenerate check — never hide the Level tab
+for footprint categories, since a flag/skip is cheap and a hidden option would violate the same
+"picker must be truthful" rule this section is fixing.
+
 ---
 
 ## Part 2 — Plan
@@ -127,20 +154,30 @@ Three near-identical handlers + three near-identical ViewModels + four near-iden
    splittable. Multi-segment grids contribute one plane per straight segment; arc grids that
    still can't produce a plane are skip-logged **by name**.
 
-### Phase C — Universality: one engine = targets × cutters
+### Phase C — Universality: one engine = targets × cutters (required, not optional)
 
 10. **Unify the plane machinery and the cell machinery** behind a strategy registry keyed by
-    element kind, and a cutter abstraction:
+    element kind, and a cutter abstraction. This is the phase that satisfies §1.8 — it is not an
+    optional stretch goal, every cutter must reach every footprint category by the end of it:
     - Strategies: `LevelConstrained` (walls/columns), `LinearCurve` (MEP/framing),
-      `SheetSolid` (floors/ceilings/roofs/foundations/filled regions — the existing
-      boolean-intersect + recreate path, generalized from cell boxes to arbitrary half-space
-      plane sets).
+      `SheetSolid` (Floor, Ceiling, FootPrintRoof, footprint-based Structural Foundation slabs,
+      FilledRegion — the existing boolean-intersect + recreate path, generalized from cell boxes
+      to arbitrary half-space plane sets built from ANY cutter, not just the grid).
     - Cutters: Levels, Grids, Reference Planes, Cell grid — and cheaply extensible to
       "every N feet along the element" (stick-length/spool splitting) and "picked points" later.
+    - Required matrix — every cell must resolve to either a working split or a clear per-element
+      skip reason, never a hidden/missing option:
+
+      | Cutter → / Target ↓ | Levels | Grids | Ref Planes | Cell grid |
+      |---|---|---|---|---|
+      | Wall | ✓ (existing) | ✓ (existing) | ✓ (existing) | new — SheetSolid path on wall's vertical solid |
+      | Column | ✓ (existing) | — (not a footprint/sheet target) | — | — |
+      | MEP curve / framing | ✓ (existing) | ✓ (existing) | ✓ (existing) | not applicable (linear, not sheet) |
+      | Floor / Ceiling / FootPrintRoof / Foundation slab / FilledRegion | new — SheetSolid, skip-logged where the solid doesn't cross the level elevation (§1.8) | new — SheetSolid | new — SheetSolid | ✓ (existing) |
+
     - Each tool window = one cutter + the shared target picker, which lists **only** categories
-      that have a strategy compatible with that cutter.
-    - Immediate wins: split floors/roofs at grid lines, split filled regions at ref planes,
-      split walls by cell — no new geometry code, just the cross-wiring.
+      that have a strategy compatible with that cutter (walls gain a Cell option; footprint
+      categories gain Level/Grid/RefPlane options).
 11. **Recreation fidelity** (`SheetSolid` path): copy all writable non-geometry instance
     parameters + phases + workset to the new cells; carry **all** loops for roofs (holes);
     detect shape-edited/sloped sources and skip-and-log rather than silently flattening.
@@ -151,7 +188,8 @@ Three near-identical handlers + three near-identical ViewModels + four near-iden
   behavior change for currently-working cases.
 - Phase B is one branch (`split-engine-fixes`) — behavior changes need a Windows/Revit smoke
   test (BreakCurve, unions, unpin).
-- Phase C is one branch (`split-universal-engine`) after A+B land.
+- Phase C is one branch (`split-universal-engine`) after A+B land — required to close §1.8, not
+  deferrable.
 
 ### Files touched (A+B)
 
