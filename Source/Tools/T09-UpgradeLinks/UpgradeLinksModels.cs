@@ -18,7 +18,6 @@ namespace LemoineTools.Tools.UpgradeLinks
     public sealed class UpgradeFileRow
     {
         public string Path { get; set; } = "";
-        public string FileName => System.IO.Path.GetFileName(Path);
         public string Folder   => System.IO.Path.GetDirectoryName(Path) ?? "";
         public string Version  { get; set; } = "?";
         public bool   IsWorkshared { get; set; }
@@ -26,6 +25,10 @@ namespace LemoineTools.Tools.UpgradeLinks
         public bool   Readable  { get; set; } = true;
         public bool   Scanned   { get; set; }
         public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+
+        // Editable "save as" base name (no extension). Defaults to the source file's own name.
+        // Ignored in Overwrite mode, which always saves back to the file's own original path.
+        public string SaveAsName { get; set; } = "";
     }
 
     /// <summary>Result of the read-only <see cref="BasicFileInfo"/> scan for one path.</summary>
@@ -44,6 +47,7 @@ namespace LemoineTools.Tools.UpgradeLinks
     {
         public string Path { get; set; } = "";
         public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+        public string SaveAsName { get; set; } = "";
     }
 
     /// <summary>Everything the run handler needs — the ordered files, the destination choice and
@@ -56,9 +60,9 @@ namespace LemoineTools.Tools.UpgradeLinks
         public bool AuditOnOpen    { get; set; }
         public bool ReloadExisting { get; set; } = true;
 
-        // Cloud (phase 2) — the run handler's cloud branch only fires when CloudReady is true.
-        // The Revit API exposes no way to browse ACC folders or read the host's containing folder
-        // id, so the command leaves this false until an APS/Forge integration supplies the ids.
+        // Cloud — the run handler's cloud branch only fires when CloudReady is true, which the
+        // command sets once it has harvested the host's own hub/project/folder ids (see
+        // UpgradeLinksCommand.BuildTool / plan-cloud-host-link-path.md).
         public bool CloudReady     { get; set; }
         public Guid CloudAccountId { get; set; }
         public Guid CloudProjectId { get; set; }

@@ -90,6 +90,27 @@ namespace LemoineTools.Tools.UpgradeLinks
                         continue;
                     }
 
+                    // Overwrite always saves back to the file's own original path, so a rename
+                    // would leave the original untouched at a name it no longer matches — ignored
+                    // there (per the note on the Overwrite destination card).
+                    string effectiveBaseName = baseName;
+                    if (Spec.Destination != UpgradeDestination.Overwrite)
+                    {
+                        string requested = string.IsNullOrWhiteSpace(item.SaveAsName) ? baseName : item.SaveAsName.Trim();
+                        string sanitized = SanitizeBaseName(requested);
+                        if (sanitized.Length == 0 || !sanitized.Any(char.IsLetterOrDigit))
+                        {
+                            // A resolved name with no alphanumeric character is a failure, not a
+                            // silent fallback — report it before substituting the original name.
+                            Log(LemoineStrings.T("upgradeLinks.log.renameInvalid", fileName), "warn");
+                            LemoineLog.Warn("UpgradeLinks: rename resolved to an unusable name", $"{fileName} -> '{requested}'");
+                        }
+                        else
+                        {
+                            effectiveBaseName = sanitized;
+                        }
+                    }
+
                     Document? linkDoc = null;
                     try
                     {
@@ -123,7 +144,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                         ModelPath savedMp;
                         if (Spec.Destination == UpgradeDestination.Cloud)
                         {
-                            string cloudName = UniqueName(baseName, usedNames);
+                            string cloudName = UniqueName(effectiveBaseName, usedNames);
                             // SaveAsCloudModel returns void — the resulting cloud ModelPath is read back
                             // from the document itself once the save has re-pointed it at the cloud.
                             linkDoc.SaveAsCloudModel(Spec.CloudAccountId, Spec.CloudProjectId, Spec.CloudFolderId, cloudName);
@@ -133,7 +154,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                         {
                             string destPath = Spec.Destination == UpgradeDestination.Overwrite
                                 ? srcPath
-                                : Path.Combine(destFolder!, UniqueFileName(fileName, usedNames));
+                                : Path.Combine(destFolder!, UniqueFileName(effectiveBaseName + Path.GetExtension(srcPath), usedNames));
                             SaveLocal(linkDoc, destPath, isWs);
                             savedMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(destPath);
                         }
@@ -143,10 +164,13 @@ namespace LemoineTools.Tools.UpgradeLinks
                         catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: close", ex); }
                         linkDoc = null;
 
-                        if (LinkIntoHost(hostDoc, savedMp, baseName, item.Placement))
+                        if (LinkIntoHost(hostDoc, savedMp, effectiveBaseName, item.Placement))
                         {
                             pass++;
-                            Log(LemoineStrings.T("upgradeLinks.log.linked", done, total, fileName), "info");
+                            if (!string.Equals(effectiveBaseName, baseName, StringComparison.Ordinal))
+                                Log(LemoineStrings.T("upgradeLinks.log.linkedRenamed", done, total, fileName, effectiveBaseName), "info");
+                            else
+                                Log(LemoineStrings.T("upgradeLinks.log.linked", done, total, fileName), "info");
                         }
                         else
                         {
@@ -329,6 +353,15 @@ namespace LemoineTools.Tools.UpgradeLinks
             if (string.IsNullOrWhiteSpace(name)) return "Upgraded Links";
             var cleaned = new string(name.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray()).Trim();
             return cleaned.Length == 0 ? "Upgraded Links" : cleaned;
+        }
+
+        // Strips characters Windows can't have in a file name from a user-typed "save as" value.
+        // Returns "" (rather than a fallback name) when nothing usable survives — the caller
+        // decides and reports the fallback, per the "empty resolved name is a failure" rule.
+        private static string SanitizeBaseName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            return new string(name.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray()).Trim();
         }
 
         // Two queued sources can share a file name (same name, different folders); disambiguate so the

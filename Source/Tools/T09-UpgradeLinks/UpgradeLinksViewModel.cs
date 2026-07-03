@@ -214,18 +214,28 @@ namespace LemoineTools.Tools.UpgradeLinks
         {
             var g = FileRowGrid();
 
-            // Column 1 — name + path
+            // Column 1 — editable "save as" name + source path
             var names = new StackPanel();
             Grid.SetColumn(names, 1);
-            var name = new TextBlock { Text = row.FileName, TextTrimming = TextTrimming.CharacterEllipsis };
-            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            name.SetResourceReference(TextBlock.ForegroundProperty, row.Readable ? "LemoineText" : "LemoineTextDim");
-            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            var path = new TextBlock { Text = row.Folder, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 1, 0, 0) };
+
+            var nameGrid = new Grid();
+            nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var nameBox = BuildInlineNameBox(row);
+            Grid.SetColumn(nameBox, 0);
+            var ext = new TextBlock { Text = ".rvt", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+            ext.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            ext.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            ext.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            Grid.SetColumn(ext, 1);
+            nameGrid.Children.Add(nameBox);
+            nameGrid.Children.Add(ext);
+
+            var path = new TextBlock { Text = row.Folder, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 4, 0, 0) };
             path.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             path.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             path.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            names.Children.Add(name); names.Children.Add(path);
+            names.Children.Add(nameGrid); names.Children.Add(path);
             g.Children.Add(names);
 
             // Column 2 — version badge
@@ -253,6 +263,26 @@ namespace LemoineTools.Tools.UpgradeLinks
             g.Children.Add(rm);
 
             return g;
+        }
+
+        private TextBox BuildInlineNameBox(UpgradeFileRow row)
+        {
+            var tb = new TextBox
+            {
+                Text = row.SaveAsName,
+                IsEnabled = row.Readable,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Padding = new Thickness(4, 2, 4, 2),
+            };
+            tb.SetResourceReference(TextBox.BackgroundProperty,     "LemoineSelectBg");
+            tb.SetResourceReference(TextBox.ForegroundProperty,     "LemoineText");
+            tb.SetResourceReference(TextBox.BorderBrushProperty,    "LemoineBorderMid");
+            tb.SetResourceReference(TextBox.CaretBrushProperty,     "LemoineText");
+            tb.SetResourceReference(TextBox.FontFamilyProperty,     "LemoineMonoFont");
+            tb.SetResourceReference(TextBox.FontSizeProperty,       "LemoineFS_SM");
+            tb.SetResourceReference(TextBox.SelectionBrushProperty, "LemoineAccent");
+            tb.TextChanged += (s, e) => { row.SaveAsName = tb.Text; Changed(); };
+            return tb;
         }
 
         private static Grid FileRowGrid()
@@ -302,7 +332,12 @@ namespace LemoineTools.Tools.UpgradeLinks
             foreach (var p in dlg.FileNames)
             {
                 if (string.IsNullOrWhiteSpace(p) || !existing.Add(p)) continue;
-                var row = new UpgradeFileRow { Path = p, Placement = _defaultPlacement };
+                var row = new UpgradeFileRow
+                {
+                    Path = p,
+                    Placement = _defaultPlacement,
+                    SaveAsName = System.IO.Path.GetFileNameWithoutExtension(p),
+                };
                 _rows.Add(row); added.Add(row);
             }
             if (added.Count == 0) return;
@@ -374,7 +409,7 @@ namespace LemoineTools.Tools.UpgradeLinks
             _destContainer.Children.Add(BuildDestCard(UpgradeDestination.Overwrite,
                 LemoineStrings.T("upgradeLinks.labels.optOverwriteTitle"),
                 LemoineStrings.T("upgradeLinks.labels.optOverwriteDesc"),
-                extra: Warn(LemoineStrings.T("upgradeLinks.labels.optOverwriteWarn"))));
+                extra: BuildOverwriteExtra()));
 
             // ── Cloud (only when the host can resolve a cloud target) ──
             if (_hostCanCloud)
@@ -382,6 +417,14 @@ namespace LemoineTools.Tools.UpgradeLinks
                     LemoineStrings.T("upgradeLinks.labels.optCloudTitle"),
                     LemoineStrings.T("upgradeLinks.labels.optCloudDesc"),
                     extra: null));
+        }
+
+        private FrameworkElement BuildOverwriteExtra()
+        {
+            var panel = new StackPanel();
+            panel.Children.Add(Warn(LemoineStrings.T("upgradeLinks.labels.optOverwriteWarn")));
+            panel.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.optOverwriteRenameNote")));
+            return panel;
         }
 
         private FrameworkElement BuildSubfolderExtra()
@@ -570,7 +613,7 @@ namespace LemoineTools.Tools.UpgradeLinks
 
             var spec = new UpgradeLinksSpec
             {
-                Files          = _rows.Where(r => r.Readable).Select(r => new UpgradeFileItem { Path = r.Path, Placement = r.Placement }).ToList(),
+                Files          = _rows.Where(r => r.Readable).Select(r => new UpgradeFileItem { Path = r.Path, Placement = r.Placement, SaveAsName = r.SaveAsName }).ToList(),
                 Destination    = _dest,
                 SubfolderName  = string.IsNullOrWhiteSpace(_subfolder) ? "Upgraded Links" : _subfolder.Trim(),
                 AuditOnOpen    = _audit,
