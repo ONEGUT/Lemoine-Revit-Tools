@@ -94,16 +94,17 @@ to null parked callbacks. Zero-result guard: "No files selected" / "0 of N linke
 
 UI work follows the `/revit-navisworks-ui` skill, mockup-first, before any code.
 
-## Phase 2 — cloud model save (deferred)
+## Phase 2 — cloud model save (implemented — see `plan-cloud-host-link-path.md`)
 
-- `Document.SaveAsCloudModel(accountGuid, projectGuid, folderId, modelName)` — requires the
-  user signed in with ACC entitlement.
-- No Revit API exists to browse ACC folders (that needs the APS/Forge REST API + OAuth — out
-  of scope). Scope instead: when the host is a cloud model, harvest its
-  `GetCloudModelPath()` / `GetCloudFolderId()` GUIDs and save the upgraded links into the
-  **same ACC folder as the host**; link back via `ModelPathUtils.ConvertCloudGUIDsToCloudPath`.
-- Destination step gains the third option (cloud-host only) and becomes the point where
-  `ILemoineConditionalSteps` may be needed if a cloud-specific step is added.
+Originally deferred here on the assumption that the Revit API couldn't read the host's
+containing folder id. That assumption was wrong: `Document.GetHubId()` +
+`Document.GetCloudFolderId()` + `ModelPath.GetProjectGUID()` (verified present in the
+Revit 2024 `RevitAPI.dll`) give exactly the three ids `Document.SaveAsCloudModel(accountGuid,
+projectGuid, folderId, modelName)` needs, harvested straight off the host document — no ACC
+folder browsing UI needed for the "same folder as host" case this tool offers. See
+`plan-cloud-host-link-path.md` for the implementation (also fixes the related bug where a
+cloud host's `Document.PathName` — Revit's local Collaboration Cache path — was being treated
+as a real folder for the Subfolder destination).
 
 ## Known risks / accepted limits
 

@@ -37,8 +37,14 @@ namespace LemoineTools.Tools.UpgradeLinks
         private readonly ExternalEvent?           _scanEvent;
         private readonly UpgradeLinksRunHandler?  _runHandler;
         private readonly ExternalEvent?           _runEvent;
-        private readonly string?                  _hostFolder;   // null when the host has no local folder
-        private readonly bool                     _hostCanCloud; // see command — false until APS ids exist
+        private readonly string?                  _hostFolder;     // null when the host has no local folder
+        private readonly bool                     _hostCanCloud;   // true when the host's cloud ids resolved
+        private readonly bool                     _hostIsCloud;    // host is a cloud model (PathName is unusable)
+        private readonly string?                  _cloudModelGuid; // host's cloud model GUID — key for remembered folder
+        private readonly Guid                     _cloudHubId;
+        private readonly Guid                     _cloudProjectId;
+        private readonly string                   _cloudFolderId = "";
+        private string                             _manualFolder = ""; // user-picked folder when _hostFolder is empty
 
         // ── State ────────────────────────────────────────────────────────────────
         private readonly List<UpgradeFileRow> _rows = new List<UpgradeFileRow>();
@@ -60,14 +66,28 @@ namespace LemoineTools.Tools.UpgradeLinks
         public UpgradeLinksViewModel(
             UpgradeLinksScanHandler? scanHandler, ExternalEvent? scanEvent,
             UpgradeLinksRunHandler?  runHandler,  ExternalEvent?  runEvent,
-            string? hostFolder, bool hostCanCloud)
+            string? hostFolder, bool hostCanCloud, bool hostIsCloud, string? cloudModelGuid,
+            Guid cloudHubId, Guid cloudProjectId, string cloudFolderId)
         {
             _scanHandler = scanHandler; _scanEvent = scanEvent;
             _runHandler  = runHandler;  _runEvent  = runEvent;
             _hostFolder  = hostFolder;  _hostCanCloud = hostCanCloud;
+            _hostIsCloud = hostIsCloud; _cloudModelGuid = cloudModelGuid;
+            _cloudHubId  = cloudHubId;  _cloudProjectId = cloudProjectId; _cloudFolderId = cloudFolderId;
+
+            if (string.IsNullOrEmpty(_hostFolder) && !string.IsNullOrEmpty(_cloudModelGuid))
+            {
+                var remembered = UpgradeLinksSettings.Instance.GetCloudHostFolder(_cloudModelGuid!);
+                if (!string.IsNullOrEmpty(remembered)) _manualFolder = remembered!;
+            }
+
             if (_dest == UpgradeDestination.Cloud && !_hostCanCloud) _dest = UpgradeDestination.Subfolder;
-            if (_dest == UpgradeDestination.Subfolder && string.IsNullOrEmpty(_hostFolder)) _dest = UpgradeDestination.Overwrite;
+            if (_dest == UpgradeDestination.Subfolder && string.IsNullOrEmpty(EffectiveHostFolder)) _dest = UpgradeDestination.Overwrite;
         }
+
+        // The folder subfolder-mode actually saves into: the auto-detected host folder when there
+        // is one, otherwise whatever the user picked in the fallback folder browser (BuildSubfolderExtra).
+        private string EffectiveHostFolder => string.IsNullOrEmpty(_hostFolder) ? _manualFolder : _hostFolder!;
 
         public void OnWindowClosed()
         {
@@ -364,18 +384,40 @@ namespace LemoineTools.Tools.UpgradeLinks
                     extra: null));
         }
 
-        private FrameworkElement? BuildSubfolderExtra()
+        private FrameworkElement BuildSubfolderExtra()
         {
-            if (string.IsNullOrEmpty(_hostFolder))
-                return Warn(LemoineStrings.T("upgradeLinks.labels.noHostFolder"));
-
             var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            var preview = Dim(PreviewPath());
+
+            if (string.IsNullOrEmpty(_hostFolder))
+            {
+                string explainKey = _hostIsCloud
+                    ? "upgradeLinks.labels.noHostFolderCloud"
+                    : "upgradeLinks.labels.noHostFolderUnsaved";
+                panel.Children.Add(Warn(LemoineStrings.T(explainKey)));
+
+                var folderPicker = new LemoineFolderBrowser
+                {
+                    Label       = LemoineStrings.T("upgradeLinks.labels.saveLocationLabel"),
+                    Path        = _manualFolder,
+                    DialogTitle = LemoineStrings.T("upgradeLinks.labels.saveLocationDialogTitle"),
+                };
+                folderPicker.PathChanged += p =>
+                {
+                    _manualFolder = p ?? "";
+                    if (!string.IsNullOrEmpty(_manualFolder) && !string.IsNullOrEmpty(_cloudModelGuid))
+                        UpgradeLinksSettings.Instance.SetCloudHostFolder(_cloudModelGuid!, _manualFolder);
+                    preview.Text = PreviewPath();
+                    Changed();
+                };
+                panel.Children.Add(folderPicker);
+            }
+
             var field = new LemoineTextField
             {
                 Label = LemoineStrings.T("upgradeLinks.labels.subfolderName"),
                 Text  = _subfolder,
             };
-            var preview = Dim(PreviewPath());
             field.TextChanged += t => { _subfolder = t ?? ""; preview.Text = PreviewPath(); Changed(); };
             panel.Children.Add(field);
             panel.Children.Add(preview);
@@ -384,7 +426,7 @@ namespace LemoineTools.Tools.UpgradeLinks
 
         private string PreviewPath()
         {
-            string folder = string.IsNullOrEmpty(_hostFolder) ? "" : _hostFolder!;
+            string folder = string.IsNullOrEmpty(EffectiveHostFolder) ? "" : EffectiveHostFolder;
             string sub = string.IsNullOrWhiteSpace(_subfolder) ? "Upgraded Links" : _subfolder.Trim();
             string full = string.IsNullOrEmpty(folder) ? sub : System.IO.Path.Combine(folder, sub);
             return LemoineStrings.T("upgradeLinks.labels.subfolderPreview", full);
@@ -479,7 +521,7 @@ namespace LemoineTools.Tools.UpgradeLinks
         {
             switch (_dest)
             {
-                case UpgradeDestination.Subfolder: return !string.IsNullOrEmpty(_hostFolder) && !string.IsNullOrWhiteSpace(_subfolder);
+                case UpgradeDestination.Subfolder: return !string.IsNullOrEmpty(EffectiveHostFolder) && !string.IsNullOrWhiteSpace(_subfolder);
                 case UpgradeDestination.Cloud:     return _hostCanCloud;
                 default:                           return true;   // Overwrite
             }
@@ -534,10 +576,13 @@ namespace LemoineTools.Tools.UpgradeLinks
                 AuditOnOpen    = _audit,
                 ReloadExisting = _reload,
                 CloudReady     = _hostCanCloud && _dest == UpgradeDestination.Cloud,
+                CloudAccountId = _cloudHubId,
+                CloudProjectId = _cloudProjectId,
+                CloudFolderId  = _cloudFolderId,
             };
 
             _runHandler.Spec       = spec;
-            _runHandler.HostFolder = _hostFolder;
+            _runHandler.HostFolder = EffectiveHostFolder;
             _runHandler.PushLog    = pushLog;
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;

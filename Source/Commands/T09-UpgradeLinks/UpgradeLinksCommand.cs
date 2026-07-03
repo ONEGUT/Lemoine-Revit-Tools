@@ -37,23 +37,57 @@ namespace LemoineTools.Commands
             {
                 var doc = uiApp.ActiveUIDocument?.Document;
 
-                string? hostFolder = null;
+                string? hostFolder     = null;
+                bool    hostIsCloud    = false;
+                bool    hostCanCloud   = false;
+                string? cloudModelGuid = null;
+                Guid    cloudHubId     = Guid.Empty;
+                Guid    cloudProjectId = Guid.Empty;
+                string  cloudFolderId  = "";
+
                 try
                 {
-                    if (doc != null && !string.IsNullOrEmpty(doc.PathName))
-                        hostFolder = Path.GetDirectoryName(doc.PathName);
+                    if (doc != null)
+                    {
+                        hostIsCloud = doc.IsModelInCloud;
+                        if (hostIsCloud)
+                        {
+                            // Document.PathName for a cloud-hosted model reports Revit's own local
+                            // Collaboration Cache path — an internal sync cache, not a real folder
+                            // anything should be saved into. Never derive hostFolder from it here.
+                            try
+                            {
+                                var cloudMp = doc.GetCloudModelPath();
+                                cloudModelGuid = cloudMp.GetModelGUID().ToString();
+                                cloudHubId     = doc.GetHubId();
+                                cloudProjectId = cloudMp.GetProjectGUID();
+                                cloudFolderId  = doc.GetCloudFolderId();
+                                hostCanCloud   = cloudHubId != Guid.Empty
+                                               && cloudProjectId != Guid.Empty
+                                               && !string.IsNullOrEmpty(cloudFolderId);
+                            }
+                            catch (Exception ex)
+                            {
+                                // Cloud model not fully synced, or the user isn't signed in — fail
+                                // closed. The Cloud destination card stays hidden (hostCanCloud=false)
+                                // rather than offering a target we can't actually resolve.
+                                LemoineLog.Swallowed("UpgradeLinksCommand: harvest cloud host ids", ex);
+                                hostCanCloud = false;
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(doc.PathName))
+                        {
+                            hostFolder = Path.GetDirectoryName(doc.PathName);
+                        }
+                    }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksCommand: read host folder", ex); }
-
-                // Cloud destination stays off until an APS/Forge integration can supply the host's
-                // account id + containing folder id — the Revit API exposes neither, so we cannot
-                // resolve a valid SaveAsCloudModel target from the document alone (see plan phase 2).
-                bool hostCanCloud = false;
 
                 return new UpgradeLinksViewModel(
                     App.UpgradeLinksScanHandler, App.UpgradeLinksScanEvent,
                     App.UpgradeLinksRunHandler,  App.UpgradeLinksRunEvent,
-                    hostFolder, hostCanCloud);
+                    hostFolder, hostCanCloud, hostIsCloud, cloudModelGuid,
+                    cloudHubId, cloudProjectId, cloudFolderId);
             }
 
             var vm = BuildTool();
