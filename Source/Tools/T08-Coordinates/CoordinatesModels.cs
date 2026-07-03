@@ -3,15 +3,57 @@ using System.Collections.Generic;
 namespace LemoineTools.Tools.Coordinates
 {
     /// <summary>
-    /// A loaded Revit link, with the set of grid names it contains. Used by Align Coordinates
-    /// to decide which links carry both of the host grids the user picked (only those can be
-    /// aligned by matched grid intersection).
+    /// How a document's (host or a link's) alignment anchor point + direction is resolved.
+    /// <see cref="InternalOrigin"/> is the default — it reproduces Revit's native "Auto – Origin
+    /// to Origin" link positioning, which matches how these projects are normally set up (every
+    /// discipline modeled off its own Internal Origin). <see cref="GridIntersection"/> is the
+    /// legacy named-grid-pair mechanism, kept as an override for the exceptional link that
+    /// wasn't modeled on-origin.
+    /// </summary>
+    public enum AnchorSource
+    {
+        InternalOrigin,
+        GridIntersection,
+    }
+
+    /// <summary>
+    /// How a document's Z (elevation) anchor is resolved. Independent of <see cref="AnchorSource"/>
+    /// — a link can use Grid Intersection for its XY anchor while Z still targets the host's
+    /// Internal Origin (Z = 0), or vice versa.
+    /// </summary>
+    public enum ZSource
+    {
+        InternalOriginZ,
+        MatchedLevel,
+    }
+
+    /// <summary>
+    /// A loaded Revit link, with the set of grid names it contains (offered for that link's own
+    /// Grid Intersection override — no longer required to match the host's grid names, and no
+    /// longer used to filter which links are selectable).
     /// </summary>
     public sealed class AlignLinkInfo
     {
         public string          Name       { get; set; } = "";
         public long            LinkInstId { get; set; }
         public HashSet<string> GridNames  { get; set; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Per-link alignment method for a run. Defaults to the run-level <see cref="AnchorSource.InternalOrigin"/>
+    /// (that link's own Internal Origin is the point moved onto the resolved host anchor); when
+    /// <see cref="Overridden"/> the link uses its own named grid pair instead.
+    /// </summary>
+    public sealed class LinkAlignSpec
+    {
+        public long   LinkInstId { get; set; }
+        public string LinkName   { get; set; } = "";
+        public bool   Selected   { get; set; } = true;
+
+        public bool          Overridden   { get; set; }
+        public AnchorSource  AnchorSource { get; set; } = AnchorSource.InternalOrigin;
+        public string        Grid1Name    { get; set; } = "";
+        public string        Grid2Name    { get; set; } = "";
     }
 
     /// <summary>

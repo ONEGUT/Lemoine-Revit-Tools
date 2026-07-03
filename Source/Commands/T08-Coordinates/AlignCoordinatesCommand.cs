@@ -100,7 +100,9 @@ namespace LemoineTools.Commands
                 }
                 catch (Exception ex) { LemoineLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
 
-                if (info.GridNames.Count > 0) data.Links.Add(info);
+                // Every loaded link is selectable — grids are optional metadata for that link's own
+                // Grid Intersection override, never a filter on whether the link can be aligned.
+                data.Links.Add(info);
             }
             return data;
         }

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
@@ -10,39 +12,49 @@ using LemoineTools.Lemoine.Controls;
 namespace LemoineTools.Tools.Coordinates
 {
     /// <summary>
-    /// Align Coordinates — move the host Survey Point and/or Project Base Point to a picked
-    /// grid intersection + level, then rotate/translate every selected link so its same-named
-    /// grid intersection coincides, and publish the host's shared coordinates to those links.
+    /// Align Coordinates — move the host Survey Point and/or Project Base Point to a resolved
+    /// anchor (Internal Origin by default, or a picked grid intersection + level), then
+    /// rotate/translate every selected link so its own resolved reference point coincides
+    /// (that link's own Internal Origin by default, or its own named grid intersection when
+    /// overridden per link), and publish the host's shared coordinates to those links.
     /// </summary>
-    public class AlignCoordinatesViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup, IStepAware
+    public class AlignCoordinatesViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
+        private const string AnchorInternalOriginLabel   = "Internal Origin (default)";
+        private const string AnchorGridIntersectionLabel = "Grid Intersection";
+        private const string ZInternalOriginLabel        = "Internal Origin (Z = 0)";
+        private const string ZMatchedLevelLabel           = "Matched Level";
+
         public string Title    => "Align Coordinates";
         public string RunLabel => "Align in Revit →";
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("host",  "Host Reference",  required: true),
-            new StepDefinition("links", "Links to Align",  required: false),
-            new StepDefinition("run",   "Review & Run",    required: false),
+            new StepDefinition("host",  "Alignment Method", required: true),
+            new StepDefinition("links", "Links to Align",   required: false),
+            new StepDefinition("run",   "Review & Run",     required: false),
         };
 
         private readonly AlignCoordinatesRunHandler? _runHandler;
         private readonly ExternalEvent?              _runEvent;
         private readonly AlignCoordinatesData        _data;
 
-        // selection state
-        private string? _grid1;
-        private string? _grid2;
-        private string? _level;
+        // ── host anchor state ──────────────────────────────────────────────────
+        private AnchorSource _hostAnchorSource = AnchorSource.InternalOrigin;
+        private string? _hostGrid1;
+        private string? _hostGrid2;
+        private ZSource _hostZSource = ZSource.InternalOriginZ;
+        private string? _hostLevel;
         private bool _moveSurvey = true;
         private bool _movePbp    = true;
         private bool _rotate     = true;
         private bool _publish    = true;
-        private readonly Dictionary<string, long> _linkByName = new Dictionary<string, long>();
-        private HashSet<long> _selectedLinkIds = new HashSet<long>();
 
-        private StackPanel? _linksContainer;
-        private Action<string>? _refresh;
+        // ── per-link state, keyed by link instance id ──────────────────────────
+        private readonly Dictionary<long, LinkAlignSpec> _linkSpecs = new Dictionary<long, LinkAlignSpec>();
+
+        private StackPanel? _hostGridFieldsPanel;
+        private StackPanel? _hostLevelFieldsPanel;
 
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -53,16 +65,12 @@ namespace LemoineTools.Tools.Coordinates
             _runEvent   = runEvent;
             _data       = data ?? new AlignCoordinatesData();
 
-            if (_data.HostGridNames.Count >= 1) _grid1 = _data.HostGridNames[0];
-            if (_data.HostGridNames.Count >= 2) _grid2 = _data.HostGridNames[1];
-            if (_data.HostLevelNames.Count >= 1) _level = _data.HostLevelNames[0];
-        }
+            if (_data.HostGridNames.Count >= 1) _hostGrid1 = _data.HostGridNames[0];
+            if (_data.HostGridNames.Count >= 2) _hostGrid2 = _data.HostGridNames[1];
+            if (_data.HostLevelNames.Count >= 1) _hostLevel = _data.HostLevelNames[0];
 
-        // ── IStepAware: rebuild the link list when the step opens (matches the chosen grids) ──
-        public void SetContentRefreshCallback(Action<string> rebuild) => _refresh = rebuild;
-        public void OnStepActivated(string stepId)
-        {
-            if (stepId == "links") RebuildLinks();
+            foreach (var l in _data.Links)
+                _linkSpecs[l.LinkInstId] = new LinkAlignSpec { LinkInstId = l.LinkInstId, LinkName = l.Name };
         }
 
         public void OnWindowClosed()
@@ -83,31 +91,48 @@ namespace LemoineTools.Tools.Coordinates
             }
         }
 
-        // ── Step 1: host reference ────────────────────────────────────────────────
+        // ── Step 1: alignment method ────────────────────────────────────────────
         private FrameworkElement BuildHostStep()
         {
             var outer = new StackPanel();
-            if (_data.HostGridNames.Count < 2)
+
+            outer.Children.Add(Label("Alignment method"));
+            var anchorSel = new LemoineSingleSelect
             {
-                outer.Children.Add(Dim("This document needs at least two grids to define an intersection."));
-                return outer;
-            }
-
-            outer.Children.Add(Label("Grid 1"));
-            outer.Children.Add(GridSelect(_grid1, v => { _grid1 = v; Changed(); }));
-
-            outer.Children.Add(Label("Grid 2"));
-            outer.Children.Add(GridSelect(_grid2, v => { _grid2 = v; Changed(); }));
-
-            outer.Children.Add(Label("Level"));
-            var levels = new LemoineSingleSelect
-            {
-                Items        = _data.HostLevelNames,
-                SelectedItem = _level ?? _data.HostLevelNames.FirstOrDefault(),
-                AccessibleName = "Level",
+                Items          = new List<string> { AnchorInternalOriginLabel, AnchorGridIntersectionLabel },
+                SelectedItem   = _hostAnchorSource == AnchorSource.GridIntersection ? AnchorGridIntersectionLabel : AnchorInternalOriginLabel,
+                AccessibleName = "Alignment method",
             };
-            levels.SelectionChanged += v => { _level = v; Changed(); };
-            outer.Children.Add(levels);
+            outer.Children.Add(anchorSel);
+            outer.Children.Add(Dim("Anchors the host and every link to their own Internal Origin — no picking needed when the project was modeled the normal way."));
+
+            _hostGridFieldsPanel = new StackPanel();
+            outer.Children.Add(_hostGridFieldsPanel);
+
+            outer.Children.Add(Label("Elevation (Z) method"));
+            var zSel = new LemoineSingleSelect
+            {
+                Items          = new List<string> { ZInternalOriginLabel, ZMatchedLevelLabel },
+                SelectedItem   = _hostZSource == ZSource.MatchedLevel ? ZMatchedLevelLabel : ZInternalOriginLabel,
+                AccessibleName = "Elevation method",
+            };
+            outer.Children.Add(zSel);
+
+            _hostLevelFieldsPanel = new StackPanel();
+            outer.Children.Add(_hostLevelFieldsPanel);
+
+            anchorSel.SelectionChanged += v =>
+            {
+                _hostAnchorSource = v == AnchorGridIntersectionLabel ? AnchorSource.GridIntersection : AnchorSource.InternalOrigin;
+                RebuildHostGridFields();
+                Changed();
+            };
+            zSel.SelectionChanged += v =>
+            {
+                _hostZSource = v == ZMatchedLevelLabel ? ZSource.MatchedLevel : ZSource.InternalOriginZ;
+                RebuildHostLevelFields();
+                Changed();
+            };
 
             Divider(outer);
             outer.Children.Add(Label("Move which host point(s)"));
@@ -124,36 +149,110 @@ namespace LemoineTools.Tools.Coordinates
                 Changed();
             };
             outer.Children.Add(toggles);
+            outer.Children.Add(Dim("Moves the chosen point(s) to the resolved host anchor."));
 
-            outer.Children.Add(Dim("Moves the chosen point(s) to the grid intersection at the level's elevation."));
+            RebuildHostGridFields();
+            RebuildHostLevelFields();
+
             return outer;
         }
 
-        private LemoineSingleSelect GridSelect(string? selected, Action<string?> onChange)
+        private void RebuildHostGridFields()
         {
-            var sel = new LemoineSingleSelect
+            if (_hostGridFieldsPanel == null) return;
+            _hostGridFieldsPanel.Children.Clear();
+            if (_hostAnchorSource != AnchorSource.GridIntersection) return;
+
+            if (_data.HostGridNames.Count < 2)
             {
-                Items          = _data.HostGridNames,
-                SelectedItem   = selected ?? _data.HostGridNames.FirstOrDefault(),
-                AccessibleName = "Grid",
-            };
-            sel.SelectionChanged += onChange;
-            return sel;
+                _hostGridFieldsPanel.Children.Add(Dim("This document needs at least two grids to define an intersection."));
+                return;
+            }
+
+            if (_hostGrid1 == null) _hostGrid1 = _data.HostGridNames[0];
+            if (_hostGrid2 == null) _hostGrid2 = _data.HostGridNames.Count > 1 ? _data.HostGridNames[1] : _data.HostGridNames[0];
+
+            var wrap = SubFieldsBox();
+            var inner = (StackPanel)wrap.Child;
+
+            inner.Children.Add(Label("Grid 1"));
+            var g1 = new LemoineSingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid1, AccessibleName = "Grid 1" };
+            g1.SelectionChanged += v => { _hostGrid1 = v; Changed(); };
+            inner.Children.Add(g1);
+
+            inner.Children.Add(Label("Grid 2"));
+            var g2 = new LemoineSingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid2, AccessibleName = "Grid 2" };
+            g2.SelectionChanged += v => { _hostGrid2 = v; Changed(); };
+            inner.Children.Add(g2);
+
+            _hostGridFieldsPanel.Children.Add(wrap);
+        }
+
+        private void RebuildHostLevelFields()
+        {
+            if (_hostLevelFieldsPanel == null) return;
+            _hostLevelFieldsPanel.Children.Clear();
+            if (_hostZSource != ZSource.MatchedLevel) return;
+
+            if (_data.HostLevelNames.Count == 0)
+            {
+                _hostLevelFieldsPanel.Children.Add(Dim("This document has no levels."));
+                return;
+            }
+
+            if (_hostLevel == null) _hostLevel = _data.HostLevelNames[0];
+
+            var wrap = SubFieldsBox();
+            var inner = (StackPanel)wrap.Child;
+
+            inner.Children.Add(Label("Level"));
+            var lvl = new LemoineSingleSelect { Items = _data.HostLevelNames, SelectedItem = _hostLevel, AccessibleName = "Level" };
+            lvl.SelectionChanged += v => { _hostLevel = v; Changed(); };
+            inner.Children.Add(lvl);
+
+            _hostLevelFieldsPanel.Children.Add(wrap);
+        }
+
+        private static Border SubFieldsBox()
+        {
+            var wrap = new Border { Padding = new Thickness(10), Margin = new Thickness(0, 4, 0, 4) };
+            wrap.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+            wrap.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
+            wrap.Child = new StackPanel();
+            return wrap;
         }
 
         // ── Step 2: links ─────────────────────────────────────────────────────────
         private FrameworkElement BuildLinksStep()
         {
             var outer = new StackPanel();
-            _linksContainer = new StackPanel();
-            outer.Children.Add(_linksContainer);
+
+            outer.Children.Add(Label($"Links ({_data.Links.Count} loaded)"));
+
+            if (_data.Links.Count == 0)
+            {
+                outer.Children.Add(Dim("No loaded links found."));
+            }
+            else
+            {
+                var listBorder = new Border { BorderThickness = new Thickness(1) };
+                listBorder.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorderMid");
+                listBorder.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
+
+                var list = new StackPanel();
+                foreach (var info in _data.Links) list.Children.Add(BuildLinkRow(info));
+                listBorder.Child = list;
+
+                outer.Children.Add(listBorder);
+                outer.Children.Add(Dim("Every loaded link is listed — uncheck a link to leave it out of this run."));
+            }
 
             Divider(outer);
             var toggles = new LemoineToggleSwitches { AccessibleName = "Alignment options" };
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "rotate",  Label = "Rotate to align orientation",
-                    Desc = "Turn each link so its grid lines run parallel to the host's.", DefaultOn = _rotate },
+                    Desc = "Turn each link so its reference direction matches the host's.", DefaultOn = _rotate },
                 new ToggleItem { Id = "publish", Label = "Publish shared coordinates",
                     Desc = "Write the host coordinate system into each aligned link (saved with the host).", DefaultOn = _publish },
             });
@@ -165,61 +264,157 @@ namespace LemoineTools.Tools.Coordinates
             };
             outer.Children.Add(toggles);
 
-            RebuildLinks();
             return outer;
         }
 
-        private void RebuildLinks()
+        private FrameworkElement BuildLinkRow(AlignLinkInfo info)
         {
-            if (_linksContainer == null) return;
-            _linksContainer.Children.Clear();
-            _linkByName.Clear();
+            var spec = _linkSpecs[info.LinkInstId];
 
-            var matched = _data.Links
-                .Where(l => _grid1 != null && _grid2 != null
-                            && l.GridNames.Contains(_grid1) && l.GridNames.Contains(_grid2))
-                .ToList();
+            var row = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(10, 8, 10, 8) };
+            row.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            int unmatched = _data.Links.Count - matched.Count;
+            var rowStack = new StackPanel();
+            row.Child = rowStack;
 
-            if (matched.Count == 0)
+            var header = new DockPanel();
+            rowStack.Children.Add(header);
+
+            var overridePanel = new StackPanel { Margin = new Thickness(25, 8, 0, 0) };
+            rowStack.Children.Add(overridePanel);
+
+            var cb = new CheckBox { IsChecked = spec.Selected, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+            DockPanel.SetDock(cb, Dock.Left);
+            header.Children.Add(cb);
+
+            var actionLink = new TextBlock
             {
-                _linksContainer.Children.Add(Dim(_data.Links.Count == 0
-                    ? "No loaded links contain grids."
-                    : $"No loaded link contains both grid '{_grid1}' and '{_grid2}'."));
-                _selectedLinkIds.Clear();
-                return;
+                Cursor              = Cursors.Hand,
+                VerticalAlignment   = VerticalAlignment.Center,
+                TextDecorations     = TextDecorations.Underline,
+                Background          = Brushes.Transparent,
+                Margin              = new Thickness(10, 0, 0, 0),
+            };
+            actionLink.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            actionLink.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            actionLink.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            DockPanel.SetDock(actionLink, Dock.Right);
+            header.Children.Add(actionLink);
+
+            var badgeText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+            badgeText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            badgeText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var badge = new Border
+            {
+                BorderThickness    = new Thickness(1),
+                Padding            = new Thickness(8, 2, 8, 2),
+                VerticalAlignment  = VerticalAlignment.Center,
+                Child              = badgeText,
+            };
+            badge.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            DockPanel.SetDock(badge, Dock.Right);
+            header.Children.Add(badge);
+
+            var name = new TextBlock
+            {
+                Text                = info.Name,
+                VerticalAlignment   = VerticalAlignment.Center,
+                TextTrimming        = TextTrimming.CharacterEllipsis,
+            };
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            header.Children.Add(name);   // last child — fills remaining space (DockPanel.LastChildFill)
+
+            void UpdateBadge()
+            {
+                if (spec.Overridden)
+                {
+                    badge.SetResourceReference(Border.BackgroundProperty,   "LemoineAccentDim");
+                    badge.SetResourceReference(Border.BorderBrushProperty,  "LemoineAccent");
+                    badgeText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+                    badgeText.Text  = "Grid Intersection";
+                    actionLink.Text = "Use default";
+                }
+                else
+                {
+                    badge.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+                    badge.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+                    badgeText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
+                    badgeText.Text  = "Internal Origin";
+                    actionLink.Text = "Override…";
+                }
             }
 
-            _linksContainer.Children.Add(Label("Links containing both grids"));
-            foreach (var l in matched) _linkByName[l.Name] = l.LinkInstId;
-
-            var tabs = new LemoineMultiSelectTabs();
-            tabs.SelectionChanged += sel =>
+            void RebuildOverridePanel()
             {
-                _selectedLinkIds = new HashSet<long>(
-                    sel.Where(_linkByName.ContainsKey).Select(n => _linkByName[n]));
+                overridePanel.Children.Clear();
+                overridePanel.Visibility = spec.Overridden ? Visibility.Visible : Visibility.Collapsed;
+                if (!spec.Overridden) return;
+
+                var grids = info.GridNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                if (grids.Count < 2)
+                {
+                    overridePanel.Children.Add(Dim($"{info.Name} needs at least two grids for a Grid Intersection override."));
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(spec.Grid1Name)) spec.Grid1Name = grids[0];
+                if (string.IsNullOrEmpty(spec.Grid2Name)) spec.Grid2Name = grids.Count > 1 ? grids[1] : grids[0];
+
+                var fieldsGrid = new Grid();
+                fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+                fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var col1 = new StackPanel();
+                Grid.SetColumn(col1, 0);
+                col1.Children.Add(Label("Grid 1"));
+                var g1Sel = new LemoineSingleSelect { Items = grids, SelectedItem = spec.Grid1Name, AccessibleName = $"{info.Name} Grid 1" };
+                g1Sel.SelectionChanged += v => { spec.Grid1Name = v ?? ""; Changed(); };
+                col1.Children.Add(g1Sel);
+                fieldsGrid.Children.Add(col1);
+
+                var col2 = new StackPanel();
+                Grid.SetColumn(col2, 2);
+                col2.Children.Add(Label("Grid 2"));
+                var g2Sel = new LemoineSingleSelect { Items = grids, SelectedItem = spec.Grid2Name, AccessibleName = $"{info.Name} Grid 2" };
+                g2Sel.SelectionChanged += v => { spec.Grid2Name = v ?? ""; Changed(); };
+                col2.Children.Add(g2Sel);
+                fieldsGrid.Children.Add(col2);
+
+                overridePanel.Children.Add(fieldsGrid);
+            }
+
+            cb.Checked   += (s, e) => { spec.Selected = true;  Changed(); };
+            cb.Unchecked += (s, e) => { spec.Selected = false; Changed(); };
+
+            actionLink.MouseLeftButtonDown += (s, e) =>
+            {
+                spec.Overridden   = !spec.Overridden;
+                spec.AnchorSource = spec.Overridden ? AnchorSource.GridIntersection : AnchorSource.InternalOrigin;
+                UpdateBadge();
+                RebuildOverridePanel();
                 Changed();
             };
-            var all = matched.Select(l => l.Name).ToList();
-            tabs.SetGroups(new Dictionary<string, List<string>> { { "Links", all } }, all);  // default: all
-            _linksContainer.Children.Add(tabs);
 
-            if (unmatched > 0)
-                _linksContainer.Children.Add(Dim($"{unmatched} link(s) are missing one of the grids and were hidden."));
+            UpdateBadge();
+            RebuildOverridePanel();
+
+            return row;
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("ref", "Host Reference"), ("points", "Host Points"), ("links", "Links"),
+            ("anchor", "Alignment Method"), ("points", "Host Points"), ("links", "Links"),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["ref"]    = (_grid1 != null && _grid2 != null) ? $"{_grid1} × {_grid2} @ {_level ?? "—"}" : "—",
+            ["anchor"] = AnchorSummary(),
             ["points"] = PointsSummary(),
-            ["links"]  = _selectedLinkIds.Count == 0 ? "None" : $"{_selectedLinkIds.Count} link(s)",
+            ["links"]  = LinksSummary(),
         };
 
         public IList<string>? ReviewChips => new[]
@@ -227,9 +422,33 @@ namespace LemoineTools.Tools.Coordinates
             _rotate  ? "rotate ✓"  : "rotate ✗",
             _publish ? "publish ✓" : "publish ✗",
         };
-        public string? ReviewNote    => "Links are repositioned, then host shared coordinates are published to them.";
-        public string? ReviewWarning => (_grid1 != null && _grid1 == _grid2)
-            ? "Grid 1 and Grid 2 are the same — pick two different grids." : null;
+        public string? ReviewNote => "Links are repositioned, then host shared coordinates are published to them.";
+
+        public string? ReviewWarning
+        {
+            get
+            {
+                if (_hostAnchorSource == AnchorSource.GridIntersection && _hostGrid1 != null && _hostGrid1 == _hostGrid2)
+                    return "Host Grid 1 and Grid 2 are the same — pick two different grids.";
+
+                foreach (var spec in _linkSpecs.Values)
+                    if (spec.Selected && spec.Overridden && !string.IsNullOrEmpty(spec.Grid1Name) && spec.Grid1Name == spec.Grid2Name)
+                        return $"{spec.LinkName}: Grid 1 and Grid 2 are the same — pick two different grids.";
+
+                return null;
+            }
+        }
+
+        private string AnchorSummary()
+        {
+            string xy = _hostAnchorSource == AnchorSource.GridIntersection
+                ? $"{_hostGrid1 ?? "—"} × {_hostGrid2 ?? "—"}"
+                : "Internal Origin";
+            string z = _hostZSource == ZSource.MatchedLevel
+                ? $"Level '{_hostLevel ?? "—"}'"
+                : "Internal Origin (Z = 0)";
+            return $"{xy} · Z: {z}";
+        }
 
         private string PointsSummary()
         {
@@ -239,15 +458,39 @@ namespace LemoineTools.Tools.Coordinates
             return "None";
         }
 
+        private string LinksSummary()
+        {
+            var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
+            if (selected.Count == 0) return "None";
+            int overridden = selected.Count(s => s.Overridden);
+            return overridden == 0
+                ? $"{selected.Count} link(s) · Internal Origin"
+                : $"{selected.Count} link(s) · {overridden} overridden to Grid Intersection";
+        }
+
         public bool IsValid(string stepId)
         {
             switch (stepId)
             {
                 case "host":
-                    return _grid1 != null && _grid2 != null && _grid1 != _grid2
-                           && !string.IsNullOrEmpty(_level) && (_moveSurvey || _movePbp);
+                    if (!(_moveSurvey || _movePbp)) return false;
+                    if (_hostAnchorSource == AnchorSource.GridIntersection &&
+                        (_hostGrid1 == null || _hostGrid2 == null || _hostGrid1 == _hostGrid2))
+                        return false;
+                    if (_hostZSource == ZSource.MatchedLevel && string.IsNullOrEmpty(_hostLevel))
+                        return false;
+                    return true;
+
                 case "links":
-                    return _selectedLinkIds.Count > 0;
+                    var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
+                    if (selected.Count == 0) return false;
+                    foreach (var s in selected)
+                    {
+                        if (s.Overridden && (string.IsNullOrEmpty(s.Grid1Name) || string.IsNullOrEmpty(s.Grid2Name) || s.Grid1Name == s.Grid2Name))
+                            return false;
+                    }
+                    return true;
+
                 default:
                     return true;
             }
@@ -258,11 +501,11 @@ namespace LemoineTools.Tools.Coordinates
             switch (stepId)
             {
                 case "host":
-                    return (_grid1 != null && _grid2 != null)
-                        ? $"{_grid1} × {_grid2} @ {_level ?? "—"} · {PointsSummary()}" : "—";
+                    return $"{AnchorSummary()} · {PointsSummary()}";
                 case "links":
-                    return _selectedLinkIds.Count == 0 ? "—"
-                        : $"{_selectedLinkIds.Count} link(s) · rotate {(_rotate ? "✓" : "✗")} · publish {(_publish ? "✓" : "✗")}";
+                    var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
+                    return selected.Count == 0 ? "—"
+                        : $"{LinksSummary()} · rotate {(_rotate ? "✓" : "✗")} · publish {(_publish ? "✓" : "✗")}";
                 case "run": return "Ready to run";
                 default:    return "—";
             }
@@ -272,14 +515,25 @@ namespace LemoineTools.Tools.Coordinates
         {
             if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
 
-            _runHandler.Grid1Name   = _grid1 ?? "";
-            _runHandler.Grid2Name   = _grid2 ?? "";
-            _runHandler.LevelName   = _level ?? "";
-            _runHandler.MoveSurvey  = _moveSurvey;
-            _runHandler.MovePbp     = _movePbp;
-            _runHandler.Rotate      = _rotate;
-            _runHandler.Publish     = _publish;
-            _runHandler.LinkInstIds = _selectedLinkIds.ToList();
+            _runHandler.HostAnchorSource = _hostAnchorSource;
+            _runHandler.HostGrid1Name    = _hostGrid1 ?? "";
+            _runHandler.HostGrid2Name    = _hostGrid2 ?? "";
+            _runHandler.HostZSource      = _hostZSource;
+            _runHandler.HostLevelName    = _hostLevel ?? "";
+            _runHandler.MoveSurvey       = _moveSurvey;
+            _runHandler.MovePbp          = _movePbp;
+            _runHandler.Rotate           = _rotate;
+            _runHandler.Publish          = _publish;
+            _runHandler.LinkSpecs        = _linkSpecs.Values.Select(s => new LinkAlignSpec
+            {
+                LinkInstId   = s.LinkInstId,
+                LinkName     = s.LinkName,
+                Selected     = s.Selected,
+                Overridden   = s.Overridden,
+                AnchorSource = s.AnchorSource,
+                Grid1Name    = s.Grid1Name,
+                Grid2Name    = s.Grid2Name,
+            }).ToList();
             _runHandler.PushLog     = pushLog;
             _runHandler.OnProgress  = onProgress;
             _runHandler.OnComplete  = onComplete;
