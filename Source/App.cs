@@ -565,6 +565,16 @@ namespace LemoineTools
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
 
+            // ── Developer ─────────────────────────────────────────────────────
+            // Reserved panel for debug harnesses. Remove/repoint buttons once their
+            // investigation is resolved.
+            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
+
+            devPanel.AddItem(Btn(
+                "LT_ScopeBoxProbe", "Scope Box\nProbe", "ScopeBoxProbeCommand",
+                "DEBUG: probe the Revit API for scope-box copy/rename/move/rotate/resize capability on this Revit year (all mutations rolled back), and write a report to %AppData%\\LemoineTools\\ScopeBoxProbe.txt.",
+                char.ConvertFromUtf32(0xE7B3)));  // Diagnostic / Bug
+
             return Result.Succeeded;
         }
 
