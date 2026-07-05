@@ -62,8 +62,6 @@ namespace LemoineTools
         internal static ExternalEvent?                        OpenDeleteFromProjectEvent      { get; private set; }
 
         // ── Link Views — Level ──────────────────────────────────────────────────────
-        internal static LinkViewsLevelPhase1Handler? LinkViewsLevelPhase1Handler { get; private set; }
-        internal static ExternalEvent?               LinkViewsLevelPhase1Event   { get; private set; }
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
 
@@ -219,8 +217,6 @@ namespace LemoineTools
             OpenDeleteFromProjectEvent      = ExternalEvent.Create(OpenDeleteFromProjectHandler);
 
             // ── Link Views — Level ────────────────────────────────────────────
-            LinkViewsLevelPhase1Handler = new LinkViewsLevelPhase1Handler();
-            LinkViewsLevelPhase1Event   = ExternalEvent.Create(LinkViewsLevelPhase1Handler);
             LinkViewsLevelRunHandler    = new LinkViewsLevelRunHandler();
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
             ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();

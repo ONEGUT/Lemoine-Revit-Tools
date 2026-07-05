@@ -4,7 +4,6 @@ using System.Windows;
 using System.Windows.Controls;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.Ceilings;
-using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.BulkExport;
 using LemoineTools.Tools.CopyLinear;
 using LemoineTools.Tools.CopyFromLink;
@@ -144,23 +143,27 @@ namespace LemoineTools.Lemoine
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Views — Bulk Views by Level
+        // Views — Scope Box Creator geometry (Bulk Views by Level no longer runs a
+        // room search; the crop-buffer / cluster-threshold settings moved with the
+        // search into the Scope Box Creator)
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildViewsGroupContent()
         {
             var scroll = NewGroupPanel(LemoineStrings.T("globalSettings.groups.hdrViews"), out var panel);
 
-            var lv = LinkViewsLevelSettings.Instance;
-            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.byLevelSub")));
+            var sb = LemoineTools.Tools.ScopeBoxes.ScopeBoxSettings.Instance;
+            panel.Children.Add(SubLabel(LemoineStrings.T("globalSettings.groups.scopeBoxSub")));
             AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.cropBuffer"),
                 LemoineStrings.T("globalSettings.groups.cropBufferDesc"),
-                lv.BufferXY, 0, 100, 1, 1, v => { lv.BufferXY = v; lv.Save(); });
+                sb.BufferXY, 0, 100, 1, 1, v => { sb.BufferXY = v; sb.Save(); });
             AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.clusterThreshold"),
                 LemoineStrings.T("globalSettings.groups.clusterThresholdDesc"),
-                lv.ClusterThreshold, 0, 500, 1, 1, v => { lv.ClusterThreshold = v; lv.Save(); });
-            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.cutPlane"),
-                LemoineStrings.T("globalSettings.groups.cutPlaneDesc"),
-                lv.CutOffset, 0, 50, 0.5, 1, v => { lv.CutOffset = v; lv.Save(); });
+                sb.ClusterThreshold, 0, 500, 1, 1, v => { sb.ClusterThreshold = v; sb.Save(); });
+            AddCfgStepper(panel, LemoineStrings.T("globalSettings.groups.topLevelHeight"),
+                LemoineStrings.T("globalSettings.groups.topLevelHeightDesc"),
+                sb.TopLevelHeight, 1, 100, 1, 1, v => { sb.TopLevelHeight = v; sb.Save(); });
+
+            AddGroupNote(panel, LemoineStrings.T("globalSettings.groups.noteViews"));
 
             return scroll;
         }

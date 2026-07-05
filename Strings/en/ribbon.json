@@ -49,7 +49,7 @@
 
     "linkViewsLevel": {
       "label": "Bulk Views\nby Level",
-      "tip":   "Create cropped 3D, floor plan, and ceiling plan views per level and building cluster."
+      "tip":   "Create 3D, floor plan, and ceiling plan views per level — uncropped, or bounded by scope boxes (plans get the Scope Box parameter; 3D gets the box bounds as its section box)."
     },
     "duplicateViews": {
       "label": "Duplicate\nViews",

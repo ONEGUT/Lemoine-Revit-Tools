@@ -7,9 +7,16 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.LinkViews;
+using LemoineTools.Tools.ScopeBoxes;
 
 namespace LemoineTools.Commands
 {
+    /// <summary>
+    /// Opens the Bulk Views by Level window on a dedicated STA thread. Levels, scope
+    /// boxes, and view templates are captured on Revit's main thread and handed to the
+    /// ViewModel — the tool has no scan phase (room searching lives in the Scope Box
+    /// Creator now).
+    /// </summary>
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
     public class LinkViewsLevelCommand : IExternalCommand
@@ -37,52 +44,32 @@ namespace LemoineTools.Commands
             var uiApp = commandData.Application;
             LinkViewsLevelViewModel BuildTool()
             {
-                var uiDoc = uiApp.ActiveUIDocument;
-                var doc   = uiDoc.Document;
+                var doc = uiApp.ActiveUIDocument.Document;
 
-                // ── Capture available documents on the main thread ─────────
-                var availableDocs = new List<LinkViewsLevelViewModel.DocEntry>
-                {
-                    new LinkViewsLevelViewModel.DocEntry
+                // ── Capture host levels on the main thread ─────────────
+                var levels = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Level)).Cast<Level>()
+                    .OrderBy(l => l.Elevation)
+                    .Select(l => new LinkViewsLevelViewModel.LevelEntry
                     {
-                        Label     = "(Host document)",
-                        IsHost    = true,
-                        LinkInstId = ElementId.InvalidElementId,
-                    }
-                };
+                        Id          = l.Id,
+                        Name        = l.Name,
+                        ElevationFt = System.Math.Round(UnitUtils.ConvertFromInternalUnits(
+                                          l.Elevation, UnitTypeId.Feet), 2),
+                    })
+                    .ToList();
 
-                var seenDocIds = new System.Collections.Generic.HashSet<string>
-                    { doc.PathName ?? doc.Title };
+                // ── Capture scope boxes on the main thread ─────────────
+                var scopeBoxes = ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc);
 
-                foreach (var li in new FilteredElementCollector(doc)
-                    .OfClass(typeof(RevitLinkInstance))
-                    .Cast<RevitLinkInstance>()
-                    .Where(l => l.GetLinkDocument() != null))
-                {
-                    var ld = li.GetLinkDocument();
-                    string key = ld.PathName ?? ld.Title;
-                    if (!seenDocIds.Add(key)) continue;
-
-                    availableDocs.Add(new LinkViewsLevelViewModel.DocEntry
-                    {
-                        Label      = ld.Title ?? li.Name,
-                        IsHost     = false,
-                        LinkInstId = li.Id,
-                    });
-                }
-
-                // ── Collect view templates on main thread ─────────────────
+                // ── Collect view templates on main thread ──────────────
                 var templates3D  = CollectViewTemplates(doc, ViewType.ThreeD);
                 var templatesFP  = CollectViewTemplates(doc, ViewType.FloorPlan);
                 var templatesRCP = CollectViewTemplates(doc, ViewType.CeilingPlan);
 
-                // ── Create ViewModel and open window on STA thread ────────
-                var vm    = new LinkViewsLevelViewModel(
-                    App.LinkViewsLevelPhase1Handler!, App.LinkViewsLevelPhase1Event!,
-                    App.LinkViewsLevelRunHandler!,    App.LinkViewsLevelRunEvent!,
-                    availableDocs, templates3D, templatesFP, templatesRCP);
-
-                return vm;
+                return new LinkViewsLevelViewModel(
+                    App.LinkViewsLevelRunHandler!, App.LinkViewsLevelRunEvent!,
+                    levels, scopeBoxes, templates3D, templatesFP, templatesRCP);
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

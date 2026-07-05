@@ -7,9 +7,8 @@ using LemoineTools.Lemoine;
 namespace LemoineTools.Tools.LinkViews
 {
     /// <summary>
-    /// View-specific static helpers shared between <see cref="LinkViewsLevelPhase1Handler"/>
-    /// and <see cref="LinkViewsLevelRunHandler"/>.  No Revit transactions here except the
-    /// print-set helper (which documents its own transaction requirement).
+    /// View-specific static helpers for <see cref="LinkViewsLevelRunHandler"/>.
+    /// Read-only queries and creation helpers only.
     ///
     /// The room search + building clustering that used to live here moved to
     /// <see cref="LemoineTools.Tools.ScopeBoxes.RoomClusterSearch"/> so the scope-box
@@ -51,46 +50,5 @@ namespace LemoineTools.Tools.LinkViews
             return v;
         }
 
-        // ── Print set helper ──────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Gets or creates a <see cref="ViewSheetSet"/> named <paramref name="setName"/>
-        /// and adds all <paramref name="views"/> to it.  Must be called inside an open
-        /// transaction.
-        /// </summary>
-        public static void GetOrCreateViewSheetSet(
-            Document doc, string setName, List<View> views, List<string> log)
-        {
-            if (views.Count == 0) return;
-            try
-            {
-                var pm = doc.PrintManager;
-                pm.PrintRange = Autodesk.Revit.DB.PrintRange.Select;
-
-                ViewSheetSetting vss = pm.ViewSheetSetting;
-
-                // Find existing set
-                ViewSheetSet existing = new FilteredElementCollector(doc)
-                    .OfClass(typeof(ViewSheetSet)).Cast<ViewSheetSet>()
-                    .FirstOrDefault(s => s.Name == setName);
-
-                var viewSet = new ViewSet();
-                if (existing != null)
-                {
-                    // Merge existing views into the set before saving
-                    foreach (View v in existing.Views) viewSet.Insert(v);
-                }
-                foreach (var v in views) viewSet.Insert(v);
-
-                vss.CurrentViewSheetSet.Views = viewSet;
-                vss.SaveAs(setName);
-
-                log.Add($"Print set '{setName}' updated ({viewSet.Size} view(s)).");
-            }
-            catch (Exception e)
-            {
-                log.Add($"[PrintSet] '{setName}': {e.Message}");
-            }
-        }
     }
 }

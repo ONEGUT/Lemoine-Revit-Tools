@@ -3,242 +3,150 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Tools.ScopeBoxes;
-using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
-using static LemoineTools.Tools.ScopeBoxes.RoomClusterSearch;
 using LemoineTools.Lemoine;
+using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
 
 namespace LemoineTools.Tools.LinkViews
 {
     /// <summary>
-    /// <see cref="IExternalEventHandler"/> that executes the Level-based Link Views
-    /// operation inside a Revit external-event context.  The ViewModel populates all
-    /// public input properties before calling <c>Raise()</c>, then monitors progress
-    /// and completion via the callback delegates.
+    /// Creates 3D / floor-plan / ceiling-plan views per selected level — either uncropped
+    /// ("ByLevel" mode) or bounded by selected scope boxes ("ByScopeBox" mode: one view set
+    /// per box × level; plans get the box assigned to their Scope Box parameter so the crop
+    /// stays live, 3D views get the box bounds copied into their section box since 3D views
+    /// cannot carry the parameter).
+    ///
+    /// The room search / building clustering this tool used to run moved to the Scope Box
+    /// Creator (Tools/T10-ScopeBoxes) — view extents now come from levels or scope boxes only.
     /// </summary>
     public sealed class LinkViewsLevelRunHandler : IExternalEventHandler
     {
         // ── Inputs set before Raise() ─────────────────────────────────
 
-        /// <summary>
-        /// When <see langword="true"/>, the host document is included as a source
-        /// when collecting rooms for view creation.
-        /// </summary>
-        public bool            IncludeHost      { get; set; } = true;
+        /// <summary>Extents mode token: "ByLevel" (uncropped) or "ByScopeBox".</summary>
+        public string          Mode              { get; set; } = "ByLevel";
+        /// <summary>Host levels views are created for.</summary>
+        public List<ElementId> SelectedLevelIds  { get; set; } = new List<ElementId>();
+        /// <summary>Scope boxes used in "ByScopeBox" mode (ignored otherwise).</summary>
+        public List<ElementId> SelectedBoxIds    { get; set; } = new List<ElementId>();
 
-        /// <summary>
-        /// Element IDs of the <see cref="RevitLinkInstance"/> elements whose linked
-        /// documents should also be searched for rooms.
-        /// </summary>
-        public List<ElementId> LinkInstIds      { get; set; } = new List<ElementId>();
+        public bool Create3D  { get; set; } = true;
+        public bool CreateFP  { get; set; } = true;
+        public bool CreateRCP { get; set; } = true;
 
-        /// <summary>
-        /// Element IDs of the host <see cref="Level"/> elements for which views
-        /// should be created.  Only levels whose IDs are in this list are processed.
-        /// </summary>
-        public List<ElementId> SelectedLevelIds { get; set; } = new List<ElementId>();
-
-        /// <summary>
-        /// When <see langword="true"/>, a section-box 3D view is created for each
-        /// room cluster at each selected level.
-        /// </summary>
-        public bool            Create3D         { get; set; } = true;
-
-        /// <summary>
-        /// When <see langword="true"/>, a cropped floor-plan view is created for each
-        /// room cluster at each selected level.
-        /// </summary>
-        public bool            CreateFP         { get; set; } = true;
-
-        /// <summary>
-        /// When <see langword="true"/>, a cropped reflected ceiling plan is created for
-        /// each room cluster at each selected level.
-        /// </summary>
-        public bool            CreateRCP        { get; set; } = true;
-
-        // ── Naming options set before Raise() ─────────────────────────
-
-        /// <summary>
-        /// Slot selector for the first (leading) segment of the generated view name.
-        /// Accepted values: <c>"Host Level"</c>, <c>"Model Name"</c>, <c>"View Type"</c>,
-        /// <c>"Custom"</c>, or <c>"None"</c>.
-        /// </summary>
-        public string NamingFront        { get; set; } = "Host Level";
-
-        /// <summary>
-        /// Custom text used for the front slot when <see cref="NamingFront"/> is
-        /// <c>"Custom"</c>.  Ignored for all other slot values.
-        /// </summary>
+        // Naming slots. Token values are logic identifiers:
+        // "Level" | "Scope Box" | "View Type" | "Custom" | "None".
+        public string NamingFront        { get; set; } = "Level";
         public string NamingFrontCustom  { get; set; } = "";
-
-        /// <summary>
-        /// Slot selector for the middle segment of the generated view name.
-        /// Accepted values: <c>"Host Level"</c>, <c>"Model Name"</c>, <c>"View Type"</c>,
-        /// <c>"Custom"</c>, or <c>"None"</c>.
-        /// </summary>
-        public string NamingCenter       { get; set; } = "Model Name";
-
-        /// <summary>
-        /// Custom text used for the center slot when <see cref="NamingCenter"/> is
-        /// <c>"Custom"</c>.  Ignored for all other slot values.
-        /// </summary>
+        public string NamingCenter       { get; set; } = "Scope Box";
         public string NamingCenterCustom { get; set; } = "";
-
-        /// <summary>
-        /// Slot selector for the trailing segment of the generated view name.
-        /// Accepted values: <c>"Host Level"</c>, <c>"Model Name"</c>, <c>"View Type"</c>,
-        /// <c>"Custom"</c>, or <c>"None"</c>.
-        /// </summary>
         public string NamingEnd          { get; set; } = "None";
-
-        /// <summary>
-        /// Custom text used for the end slot when <see cref="NamingEnd"/> is
-        /// <c>"Custom"</c>.  Ignored for all other slot values.
-        /// </summary>
         public string NamingEndCustom    { get; set; } = "";
-        /// <summary>levelId.Value → dominant model name, populated from Phase1 scan.</summary>
-        public Dictionary<long, string>  LevelModelNames { get; set; } = new Dictionary<long, string>();
+        /// <summary>When true, the view-type token (3D/FP/RCP) is appended as the final name segment.</summary>
+        public bool   AppendViewType     { get; set; } = true;
 
-        /// <summary>Sub Discipline parameter value applied to created 3D views. Empty = skip.</summary>
+        /// <summary>Sub Discipline parameter values per view type. Empty = skip.</summary>
         public string SubDisc3D  { get; set; } = "";
-        /// <summary>Sub Discipline parameter value applied to created floor plans. Empty = skip.</summary>
         public string SubDiscFP  { get; set; } = "";
-        /// <summary>Sub Discipline parameter value applied to created ceiling plans. Empty = skip.</summary>
         public string SubDiscRCP { get; set; } = "";
 
-        /// <summary>View template applied to 3D views before geometry is set. InvalidElementId = none.</summary>
+        /// <summary>View templates per view type. InvalidElementId = none.
+        /// Assigned BEFORE geometry (template assignment can reset view geometry).</summary>
         public ElementId Template3D  { get; set; } = ElementId.InvalidElementId;
-        /// <summary>View template applied to floor plans before crop is set. InvalidElementId = none.</summary>
         public ElementId TemplateFP  { get; set; } = ElementId.InvalidElementId;
-        /// <summary>View template applied to ceiling plans before crop is set. InvalidElementId = none.</summary>
         public ElementId TemplateRCP { get; set; } = ElementId.InvalidElementId;
 
-        /// <summary>When true, adds created views to named print sets. Default false (opt-in per run).</summary>
-        public bool   CreatePrintSets { get; set; } = false;
-        /// <summary>Label prefix for multi-cluster building names (e.g. "Bldg" → "Bldg A"). Default "Bldg".</summary>
-        public string BuildingLabel   { get; set; } = "Bldg";
-        /// <summary>When true, the view-type token (3D/FP/RCP) is appended as the final name segment.</summary>
-        public bool   AppendViewType  { get; set; } = true;
-
         // ── Callbacks ─────────────────────────────────────────────────
-
-        /// <summary>
-        /// Optional callback invoked for each log message produced during execution.
-        /// Parameters are <c>(message, severity)</c> where severity is one of
-        /// <c>"pass"</c>, <c>"fail"</c>, or <c>"info"</c>.
-        /// </summary>
         public Action<string, string>?     PushLog    { get; set; }
-
-        /// <summary>
-        /// Optional callback invoked as views are created, reporting incremental progress.
-        /// Parameters are <c>(percentComplete, passCount, failCount, skipCount)</c>.
-        /// </summary>
         public Action<int, int, int, int>? OnProgress { get; set; }
-
-        /// <summary>
-        /// Optional callback invoked once after the transaction commits, reporting final
-        /// totals.  Parameters are <c>(passCount, failCount, skipCount)</c>.
-        /// </summary>
         public Action<int, int, int>?      OnComplete { get; set; }
 
-        /// <summary>
-        /// Returns the unique handler name required by the Revit <see cref="IExternalEventHandler"/>
-        /// contract, used for event identification and logging.
-        /// </summary>
         public string GetName() => "LemoineTools.Tools.LinkViews.LinkViewsLevelRunHandler";
 
-        /// <summary>
-        /// Entry point called by the Revit external-event mechanism on the main thread.
-        /// Delegates to <c>RunViews</c> inside a try/catch so that any unhandled exception
-        /// is logged as a failure rather than propagating to Revit.
-        /// </summary>
-        /// <param name="app">The active <see cref="UIApplication"/> provided by Revit.</param>
         public void Execute(UIApplication app)
         {
-            var doc  = app.ActiveUIDocument.Document;
-            long __issues0 = LemoineLog.IssueCount;
+            var doc = app.ActiveUIDocument.Document;
+            long issues0 = LemoineLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try
             {
                 try { RunViews(doc, ref pass, ref fail, ref skip); }
                 catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log(LemoineStrings.T("linkviews.level.log.error", ex.Message), "fail"); fail++; }
                 Progress(100, pass, fail, skip);
-                long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log(LemoineStrings.T("linkviews.level.log.nonFatalIssues", __issues), "warn");
+                long issues = LemoineLog.IssuesSince(issues0);
+                if (issues > 0) Log(LemoineStrings.T("linkviews.level.log.nonFatalIssues", issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
             {
-                // This handler is a session-long static (App.LinkViewsLevelRunHandler) —
-                // drop the run's payload so it doesn't outlive the run.
-                LinkInstIds      = new List<ElementId>();
+                // Session-long static handler — drop the run's payload.
                 SelectedLevelIds = new List<ElementId>();
-                LevelModelNames  = new Dictionary<long, string>();
+                SelectedBoxIds   = new List<ElementId>();
             }
+        }
+
+        // ── One scope-box target ──────────────────────────────────────
+        private sealed class BoxTarget
+        {
+            public ElementId Id = ElementId.InvalidElementId;
+            public string    Name = "";
+            public BoundingBoxXYZ? Bounds;
         }
 
         // ── Main logic ─────────────────────────────────────────────────
         private void RunViews(Document doc, ref int pass, ref int fail, ref int skip)
         {
-            var s = LinkViewsLevelSettings.Instance;
+            bool byBox = Mode == "ByScopeBox";
 
-            // Rebuild source document list
-            var sourceDocs = new List<Document>();
-            if (IncludeHost) sourceDocs.Add(doc);
-            foreach (var id in LinkInstIds)
-            {
-                var li = doc.GetElement(id) as RevitLinkInstance;
-                var ld = li?.GetLinkDocument();
-                if (ld != null && !sourceDocs.Any(d => d.Equals(ld)))
-                    sourceDocs.Add(ld);
-            }
-
-            // All host levels in elevation order
+            // All host levels in elevation order (Z ranges come from neighbours)
             var allLevels = new FilteredElementCollector(doc)
                 .OfClass(typeof(Level)).Cast<Level>()
                 .OrderBy(l => l.Elevation).ToList();
 
-            // Collect rooms, then reconcile link rooms to host levels by elevation so
-            // differently-named link levels still group under the correct host level.
-            var rooms = CollectRooms(doc, sourceDocs);
-            AssignHostLevelsByElevation(rooms, allLevels, LevelMatchToleranceFt);
-
-            var roomsByLevel = new Dictionary<string, List<RoomInfo>>(StringComparer.Ordinal);
-            foreach (var r in rooms)
-            {
-                if (!roomsByLevel.ContainsKey(r.LevelName))
-                    roomsByLevel[r.LevelName] = new List<RoomInfo>();
-                roomsByLevel[r.LevelName].Add(r);
-            }
-
             var selectedIdSet = new HashSet<long>(SelectedLevelIds.Select(id => id.Value));
             var keptLevels    = allLevels.Where(l => selectedIdSet.Contains(l.Id.Value)).ToList();
+            if (keptLevels.Count == 0)
+            {
+                Log(LemoineStrings.T("linkviews.level.log.noLevels"), "fail");
+                fail++;
+                return;
+            }
+
+            // Resolve scope-box targets ("ByScopeBox" mode)
+            var boxTargets = new List<BoxTarget>();
+            if (byBox)
+            {
+                foreach (var id in SelectedBoxIds)
+                {
+                    var el = doc.GetElement(id);
+                    if (el == null)
+                    {
+                        Log(LemoineStrings.T("linkviews.level.log.boxMissing", id.Value), "warn");
+                        continue;
+                    }
+                    boxTargets.Add(new BoxTarget { Id = el.Id, Name = el.Name, Bounds = el.get_BoundingBox(null) });
+                }
+                if (boxTargets.Count == 0)
+                {
+                    Log(LemoineStrings.T("linkviews.level.log.noBoxes"), "fail");
+                    fail++;
+                    return;
+                }
+            }
 
             // Locate ViewFamilyTypes — warn explicitly when missing so skipped types are visible
             var vft3d  = Create3D  ? FindVFT(doc, ViewFamily.ThreeDimensional) : null;
             var vftFP  = CreateFP  ? FindVFT(doc, ViewFamily.FloorPlan)        : null;
             var vftRCP = CreateRCP ? FindVFT(doc, ViewFamily.CeilingPlan)      : null;
 
-            if (Create3D  && vft3d  == null) Log(LemoineStrings.T("linkviews.level.log.no3dType"), "info");
-            if (CreateFP  && vftFP  == null) Log(LemoineStrings.T("linkviews.level.log.noFpType"), "info");
+            if (Create3D  && vft3d  == null) Log(LemoineStrings.T("linkviews.level.log.no3dType"),  "info");
+            if (CreateFP  && vftFP  == null) Log(LemoineStrings.T("linkviews.level.log.noFpType"),  "info");
             if (CreateRCP && vftRCP == null) Log(LemoineStrings.T("linkviews.level.log.noRcpType"), "info");
 
-            // Estimate total for progress
-            int totalEst = 0;
-            foreach (var lvl in keptLevels)
-            {
-                if (!roomsByLevel.TryGetValue(lvl.Name, out var lr)) continue;
-                totalEst += ClusterRooms(lr, s.ClusterThreshold).Count
-                            * ((Create3D ? 1 : 0) + (CreateFP ? 1 : 0) + (CreateRCP ? 1 : 0));
-            }
+            // Progress is tracked per view SET (one level × one target).
+            int totalSets = Math.Max(keptLevels.Count * (byBox ? boxTargets.Count : 1), 1);
+            int done      = 0;
 
-            int done = 0;
-            var created3d  = new List<View>();
-            var createdFP  = new List<View>();
-            var createdRCP = new List<View>();
-            var txLog      = new List<string>();
-
-            using (var tx = new Transaction(doc, "Link Views — Level"))
+            using (var tx = new Transaction(doc, "Bulk Views by Level"))
             {
                 ConfigureFailures(tx);
                 tx.Start();
@@ -251,238 +159,150 @@ namespace LemoineTools.Tools.LinkViews
                         break;   // falls through to the existing tx.Commit() below
                     }
 
-                    Level  lvl      = keptLevels[idx];
-                    string lname    = lvl.Name;
-                    bool   hasRooms = roomsByLevel.TryGetValue(lname, out var levelRooms);
+                    Level lvl = keptLevels[idx];
 
-                    // Z range — use position in the global ordered list
+                    // Z range for 3D section boxes — position in the global ordered list
                     int ord     = allLevels.IndexOf(lvl);
-                    double zBot = (ord == 0)                   ? lvl.Elevation - UnlimitedZ : lvl.Elevation;
-                    double zTop = (ord == allLevels.Count - 1) ? lvl.Elevation + UnlimitedZ : allLevels[ord + 1].Elevation;
+                    double zBot = lvl.Elevation;
+                    double zTop = (ord == allLevels.Count - 1)
+                        ? lvl.Elevation + UnlimitedZ
+                        : allLevels[ord + 1].Elevation;
 
-                    if (hasRooms)
+                    if (byBox)
                     {
-                        var clusters = ClusterRooms(levelRooms, s.ClusterThreshold);
-                        clusters.Sort((a, b) =>
-                            b.Average(r => r.CentroidY).CompareTo(a.Average(r => r.CentroidY)));
-
-                        for (int bi = 0; bi < clusters.Count; bi++)
+                        foreach (var box in boxTargets)
                         {
-                            string baseName = clusters.Count > 1
-                                ? $"L{lname} - {BuildingLabel} {BldgLetter(bi)}"
-                                : $"L{lname}";
-
-                            (double x0, double y0, double x1, double y1) =
-                                ClusterBoundsXY(clusters[bi], s.BufferXY);
-
-                            // ── 3D ───────────────────────────────────────────────
-                            if (Create3D && vft3d != null)
-                            {
-                                string n = BuildViewName(baseName, "3D", lvl.Id);
-                                if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                                else
-                                {
-                                    try
-                                    {
-                                        View3D v = Create3d(doc, n, vft3d.Id);
-                                        ApplyTemplate(v, Template3D);
-                                        v.SetSectionBox(new BoundingBoxXYZ
-                                        {
-                                            Min = new XYZ(x0, y0, zBot),
-                                            Max = new XYZ(x1, y1, zTop),
-                                        });
-                                        SetSubDisc(v, SubDisc3D);
-                                        created3d.Add(v);
-                                        Log(LemoineStrings.T("linkviews.level.log.created3d", n), "pass"); pass++;
-                                    }
-                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
-                                }
-                            }
-
-                            // ── Floor Plan ────────────────────────────────────────
-                            if (CreateFP && vftFP != null)
-                            {
-                                string n = BuildViewName(baseName, "FP", lvl.Id);
-                                if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                                else
-                                {
-                                    try
-                                    {
-                                        ViewPlan fp = ViewPlan.Create(doc, vftFP.Id, lvl.Id);
-                                        fp.Name = n;
-                                        ApplyTemplate(fp, TemplateFP);
-                                        SetPlanCrop(fp, x0, y0, x1, y1, zBot, zTop, lvl.Elevation, s.CutOffset);
-                                        SetSubDisc(fp, SubDiscFP);
-                                        createdFP.Add(fp);
-                                        Log(LemoineStrings.T("linkviews.level.log.createdFp", n), "pass"); pass++;
-                                    }
-                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failFp", n, e.Message), "fail"); fail++; }
-                                }
-                            }
-
-                            // ── Ceiling Plan ──────────────────────────────────────
-                            if (CreateRCP && vftRCP != null)
-                            {
-                                string n = BuildViewName(baseName, "RCP", lvl.Id);
-                                if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                                else
-                                {
-                                    try
-                                    {
-                                        ViewPlan rcp = ViewPlan.Create(doc, vftRCP.Id, lvl.Id);
-                                        rcp.Name = n;
-                                        ApplyTemplate(rcp, TemplateRCP);
-                                        SetPlanCrop(rcp, x0, y0, x1, y1, zBot, zTop, lvl.Elevation, s.CutOffset);
-                                        SetSubDisc(rcp, SubDiscRCP);
-                                        createdRCP.Add(rcp);
-                                        Log(LemoineStrings.T("linkviews.level.log.createdRcp", n), "pass"); pass++;
-                                    }
-                                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failRcp", n, e.Message), "fail"); fail++; }
-                                }
-                            }
-
+                            CreateViewSet(doc, lvl, box, zBot, zTop,
+                                          vft3d, vftFP, vftRCP, ref pass, ref fail, ref skip);
                             done++;
-                            Progress((int)(done * 90.0 / Math.Max(totalEst, 1)), pass, fail, skip);
+                            Progress((int)(done * 90.0 / totalSets), pass, fail, skip);
                         }
                     }
                     else
                     {
-                        // Fallback: level has no rooms — create uncropped views
-                        string baseName = $"L{lname}";
-
-                        if (Create3D && vft3d != null)
-                        {
-                            string n = BuildViewName(baseName, "3D", lvl.Id);
-                            if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                            else
-                            {
-                                try
-                                {
-                                    View3D v = Create3d(doc, n, vft3d.Id);
-                                    ApplyTemplate(v, Template3D);
-                                    SetSubDisc(v, SubDisc3D);
-                                    created3d.Add(v);
-                                    Log(LemoineStrings.T("linkviews.level.log.created3dNoRooms", n), "pass"); pass++;
-                                }
-                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
-                            }
-                        }
-
-                        if (CreateFP && vftFP != null)
-                        {
-                            string n = BuildViewName(baseName, "FP", lvl.Id);
-                            if (PlanExists(doc, n, ViewFamily.FloorPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                            else
-                            {
-                                try
-                                {
-                                    ViewPlan fp = ViewPlan.Create(doc, vftFP.Id, lvl.Id);
-                                    fp.Name = n;
-                                    ApplyTemplate(fp, TemplateFP);
-                                    SetSubDisc(fp, SubDiscFP);
-                                    createdFP.Add(fp);
-                                    Log(LemoineStrings.T("linkviews.level.log.createdFpNoRooms", n), "pass"); pass++;
-                                }
-                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failFp", n, e.Message), "fail"); fail++; }
-                            }
-                        }
-
-                        if (CreateRCP && vftRCP != null)
-                        {
-                            string n = BuildViewName(baseName, "RCP", lvl.Id);
-                            if (PlanExists(doc, n, ViewFamily.CeilingPlan)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
-                            else
-                            {
-                                try
-                                {
-                                    ViewPlan rcp = ViewPlan.Create(doc, vftRCP.Id, lvl.Id);
-                                    rcp.Name = n;
-                                    ApplyTemplate(rcp, TemplateRCP);
-                                    SetSubDisc(rcp, SubDiscRCP);
-                                    createdRCP.Add(rcp);
-                                    Log(LemoineStrings.T("linkviews.level.log.createdRcpNoRooms", n), "pass"); pass++;
-                                }
-                                catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.failRcp", n, e.Message), "fail"); fail++; }
-                            }
-                        }
-
+                        CreateViewSet(doc, lvl, null, zBot, zTop,
+                                      vft3d, vftFP, vftRCP, ref pass, ref fail, ref skip);
                         done++;
-                        Progress((int)(done * 90.0 / Math.Max(totalEst, 1)), pass, fail, skip);
+                        Progress((int)(done * 90.0 / totalSets), pass, fail, skip);
                     }
-                }
-
-                if (CreatePrintSets)
-                {
-                    if (created3d.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - 3D Views",     created3d,  txLog);
-                    if (createdFP.Count  > 0) GetOrCreateViewSheetSet(doc, "Coordination - Floor Plans",   createdFP,  txLog);
-                    if (createdRCP.Count > 0) GetOrCreateViewSheetSet(doc, "Coordination - Ceiling Plans", createdRCP, txLog);
                 }
 
                 tx.Commit();
             }
 
-            foreach (var line in txLog) Log(line, "info");
             Log(LemoineStrings.T("linkviews.level.log.complete", pass, skip, fail), "pass");
         }
 
-        /// <summary>
-        /// Local equivalent of <c>LinkViewsLevelShared.SetPlanCropAndRange</c> that
-        /// accepts <paramref name="cutOffset"/> as a parameter instead of reading
-        /// from PluginSettings.
-        /// </summary>
-        // log parameter removed — view range exceptions now propagate to the per-view
-        // try/catch in RunViews where fail++ and "fail" logging live, so range errors
-        // are no longer silently counted as pass.
-        private static void SetPlanCrop(
-            ViewPlan plan,
-            double x0, double y0, double x1, double y1,
-            double zBot, double zTop, double levelElev,
-            double cutOffset)
+        /// <summary>Creates the enabled view types for one (level, scope-box?) pair.</summary>
+        private void CreateViewSet(
+            Document doc, Level lvl, BoxTarget? box,
+            double zBot, double zTop,
+            ViewFamilyType? vft3d, ViewFamilyType? vftFP, ViewFamilyType? vftRCP,
+            ref int pass, ref int fail, ref int skip)
         {
-            plan.CropBoxActive  = true;
-            plan.CropBoxVisible = true;
-            var cb = plan.CropBox;
-            cb.Min = new XYZ(x0, y0, -1.0);
-            cb.Max = new XYZ(x1, y1,  1.0);
-            plan.CropBox = cb;
+            // ── 3D ────────────────────────────────────────────────────
+            if (vft3d != null)
+            {
+                string n = BuildViewName(lvl.Name, box?.Name, "3D");
+                if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
+                else
+                {
+                    try
+                    {
+                        View3D v = Create3d(doc, n, vft3d.Id);
+                        ApplyTemplate(v, Template3D);
+                        if (box?.Bounds != null)
+                        {
+                            // 3D views cannot carry the Scope Box parameter — copy the box's
+                            // XY bounds and slice Z to this level's range instead.
+                            v.SetSectionBox(new BoundingBoxXYZ
+                            {
+                                Min = new XYZ(box.Bounds.Min.X, box.Bounds.Min.Y, zBot),
+                                Max = new XYZ(box.Bounds.Max.X, box.Bounds.Max.Y, zTop),
+                            });
+                        }
+                        SetSubDisc(v, SubDisc3D);
+                        Log(LemoineStrings.T("linkviews.level.log.created3d", n), "pass"); pass++;
+                    }
+                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
+                }
+            }
 
-            PlanViewRange vr    = plan.GetViewRange();
-            ElementId     lvlId = plan.GenLevel?.Id ?? ElementId.InvalidElementId;
-            if (lvlId == ElementId.InvalidElementId) return;
+            // ── Floor Plan ────────────────────────────────────────────
+            if (vftFP != null)
+                CreatePlan(doc, lvl, box, ViewFamily.FloorPlan, vftFP, TemplateFP, SubDiscFP,
+                           "FP", ref pass, ref fail, ref skip);
 
-            double topOff = zTop  - levelElev;
-            double botOff = zBot  - levelElev;
-            double cutOff = Math.Min(cutOffset, topOff - 0.1);
+            // ── Ceiling Plan ──────────────────────────────────────────
+            if (vftRCP != null)
+                CreatePlan(doc, lvl, box, ViewFamily.CeilingPlan, vftRCP, TemplateRCP, SubDiscRCP,
+                           "RCP", ref pass, ref fail, ref skip);
+        }
 
-            vr.SetLevelId(PlanViewPlane.TopClipPlane,    lvlId);
-            vr.SetOffset(PlanViewPlane.TopClipPlane,     topOff);
-            vr.SetLevelId(PlanViewPlane.CutPlane,        lvlId);
-            vr.SetOffset(PlanViewPlane.CutPlane,         cutOff);
-            vr.SetLevelId(PlanViewPlane.BottomClipPlane, lvlId);
-            vr.SetOffset(PlanViewPlane.BottomClipPlane,  botOff);
-            vr.SetLevelId(PlanViewPlane.ViewDepthPlane,  lvlId);
-            vr.SetOffset(PlanViewPlane.ViewDepthPlane,   botOff);
-            plan.SetViewRange(vr);
+        private void CreatePlan(
+            Document doc, Level lvl, BoxTarget? box,
+            ViewFamily family, ViewFamilyType vft, ElementId templateId, string subDisc,
+            string typeLabel, ref int pass, ref int fail, ref int skip)
+        {
+            string n = BuildViewName(lvl.Name, box?.Name, typeLabel);
+            if (PlanExists(doc, n, family)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; return; }
+
+            try
+            {
+                ViewPlan plan = ViewPlan.Create(doc, vft.Id, lvl.Id);
+                plan.Name = n;
+                ApplyTemplate(plan, templateId);   // template BEFORE geometry / scope box
+
+                if (box != null)
+                {
+                    // Live extents: assign the scope box to the view's Scope Box parameter.
+                    // A failure here (template locks it, view type refuses it) leaves a valid
+                    // uncropped view — report it rather than failing the whole view.
+                    try
+                    {
+                        var p = plan.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
+                        if (p == null || p.IsReadOnly)
+                            Log(LemoineStrings.T("linkviews.level.log.boxAssignRefused", n,
+                                LemoineStrings.T("linkviews.level.log.boxParamUnavailable")), "warn");
+                        else
+                            p.Set(box.Id);
+                    }
+                    catch (Exception aex)
+                    {
+                        Log(LemoineStrings.T("linkviews.level.log.boxAssignRefused", n, aex.Message), "warn");
+                    }
+                }
+
+                SetSubDisc(plan, subDisc);
+                Log(LemoineStrings.T(typeLabel == "FP"
+                    ? "linkviews.level.log.createdFp"
+                    : "linkviews.level.log.createdRcp", n), "pass");
+                pass++;
+            }
+            catch (Exception e)
+            {
+                Log(LemoineStrings.T(typeLabel == "FP"
+                    ? "linkviews.level.log.failFp"
+                    : "linkviews.level.log.failRcp", n, e.Message), "fail");
+                fail++;
+            }
         }
 
         /// <summary>
         /// Assembles the final view name from the three naming slots.
-        /// baseName is the cluster descriptor (e.g. "L2 - Bldg A").
         /// typeLabel (3D/FP/RCP) is appended only when <see cref="AppendViewType"/> is true.
         /// </summary>
-        private string BuildViewName(string baseName, string typeLabel, ElementId levelId)
+        private string BuildViewName(string levelName, string? boxName, string typeLabel)
         {
-            string modelName = LevelModelNames.TryGetValue(levelId.Value, out var m) ? m : "";
-
             string ResolveSlot(string slot, string custom)
             {
                 switch (slot)
                 {
-                    case "Host Level":  return baseName;
-                    case "Model Name":  return modelName;
-                    case "View Type":   return typeLabel;
-                    case "Custom":      return string.IsNullOrWhiteSpace(custom) ? "" : custom.Trim();
-                    default:            return "";
+                    case "Level":     return $"L{levelName}";
+                    case "Scope Box": return boxName ?? "";
+                    case "View Type": return typeLabel;
+                    case "Custom":    return string.IsNullOrWhiteSpace(custom) ? "" : custom.Trim();
+                    default:          return "";
                 }
             }
 
@@ -493,12 +313,17 @@ namespace LemoineTools.Tools.LinkViews
                           ResolveSlot(NamingCenter, NamingCenterCustom),
                           ResolveSlot(NamingEnd,    NamingEndCustom) }
                   .Where(s => !string.IsNullOrEmpty(s)).ToList()
-                : new List<string> { baseName };
+                : new List<string>();
+
+            if (parts.Count == 0)
+            {
+                // Nothing resolved — fall back to level (+ box) so names stay meaningful.
+                parts.Add($"L{levelName}");
+                if (!string.IsNullOrEmpty(boxName)) parts.Add(boxName!);
+            }
 
             if (AppendViewType) parts.Add(typeLabel);
-
-            // Safety: nothing resolved (all Custom slots blank, type off) → baseName + typeLabel
-            if (parts.Count == 0) { parts.Add(baseName); parts.Add(typeLabel); }
+            if (parts.Count == 0) parts.Add(typeLabel);
 
             return string.Join(" - ", parts);
         }
