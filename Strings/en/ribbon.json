@@ -4,6 +4,7 @@
 {
   // panels — the grey panel titles along the Lemoine Tools ribbon tab
   "panels": {
+    "pdfTools": "PDF Tools",
     "filtersLegends": "Filters & Legends",
     "ceilings":       "Ceilings",
     "views":          "Views",
@@ -147,6 +148,11 @@
     "copyFromLink": {
       "label": "Copy\nElements",
       "tip":   "Copy elements from a linked model into the host: pick categories, then choose which family types within them to copy. Re-runs can process only changed elements."
+    },
+
+    "pdfRegionWand": {
+      "label": "PDF Region\nWand",
+      "tip":   "Magic-wand closed regions from a placed PDF underlay and create floors from them, one undo step per region."
     },
 
     "openSettings": {

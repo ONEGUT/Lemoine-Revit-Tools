@@ -135,6 +135,10 @@ namespace LemoineTools
         internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
+        // ── PDF Tools — PDF Region Wand ──────────────────────────────────────────────
+        internal static LemoineTools.Tools.Testing.PdfRegionWand.PdfRegionWandEventHandler? PdfRegionWandHandler { get; private set; }
+        internal static ExternalEvent?             PdfRegionWandEvent { get; private set; }
+
         // ── Coordination — Align Coordinates / Compare Grids ─────────────────────────
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
@@ -267,6 +271,9 @@ namespace LemoineTools
             UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
             UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
+
+            PdfRegionWandHandler = new LemoineTools.Tools.Testing.PdfRegionWand.PdfRegionWandEventHandler();
+            PdfRegionWandEvent   = ExternalEvent.Create(PdfRegionWandHandler);
 
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
@@ -547,6 +554,14 @@ namespace LemoineTools
                 "LT_UpgradeLinks", "Upgrade &\nLink Models", "UpgradeLinksCommand",
                 "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat.",
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+
+            // ── PDF Tools ─────────────────────────────────────────────────────
+            var pdfPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.pdfTools"));
+
+            pdfPanel.AddItem(Btn(
+                "LT_PdfRegionWand", L.T("ribbon.buttons.pdfRegionWand.label"), "PdfRegionWandCommand",
+                L.T("ribbon.buttons.pdfRegionWand.tip"),
+                char.ConvertFromUtf32(0xE790)));  // Color (wand)
 
             // ── Settings ──────────────────────────────────────────────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.settings"));

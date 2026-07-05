@@ -1,0 +1,176 @@
+{
+  // PDF Region Wand — persistent modeless palette that traces closed regions
+  // from a placed PDF underlay and creates floors from them.
+
+  "window": {
+    "title": "PDF Region Wand"          // title bar + taskbar + TaskDialog title
+  },
+
+  "source": {
+    "header":       "Source",
+    "selectButton": "Select PDF underlay",
+    "noneSelected": "No underlay selected.",
+    "notFound":     "  (source PDF not found)",   // suffix after the underlay name
+    "fileLabel":    "Source PDF",
+    "dialogTitle":  "Locate the source PDF",
+    "placeholder":  "Browse to the PDF on disk…",
+    "pathAccessible": "Source PDF path",
+    "pageLabel":    "Page",
+    "scaleLabel":   "Drawing scale",              // label + accessible name
+    "modeLabel":    "Extraction mode",            // label + accessible name
+    "modeUnknown":  "Mode: —",                    // before a PDF is probed
+    "modeText":     "Mode: {0}  (detected {1}, {2} path ops)"
+  },
+
+  "actions": {
+    "header":         "Actions",
+    "pickPoint":      "Pick point",
+    "drawSplitLines": "Draw split lines",         // idle button text
+    "doneDrawing":    "Done drawing",             // button text while line tool active
+    "hint":           "Split lines act as barriers for the wand. Press Esc to leave the line tool, then click Done."
+  },
+
+  "preview": {
+    "header":          "Preview",
+    "discard":         "Discard",
+    "confirm":         "Confirm region",
+    "createOnConfirm": "Create floor on confirm",
+    // {0} face id, {1} area text, {2} vertex count, {3} hole count, {4} extraction mode
+    "info":            "Region {0} — {1}, {2} vertices, {3} hole(s), {4}"
+  },
+
+  "regions": {
+    "header":    "Regions",
+    "empty":     "No regions traced yet.",
+    "createAll": "Create all traced ({0})",
+    "create":    "Create",
+    "removeTip": "Remove this region from the session",
+    "status": {
+      "created":     "Created",
+      "available":   "Available (deleted)",       // created element deleted — re-creatable
+      "invalidated": "Invalidated — re-wand",     // cut by a later split line
+      "traced":      "Traced"
+    }
+  },
+
+  "output": {
+    "header":     "Output — Floor",
+    "floorType":  "Floor type",                   // label + accessible name
+    "level":      "Level",                        // label + accessible name
+    "structural": "Structural"
+  },
+
+  "tuning": {
+    "header":            "Tuning",
+    "rasterDpi":         "Raster DPI",
+    "binarizeThreshold": "Binarize threshold",
+    "simplify":          "Simplify (model in.)",
+    "orthoSnap":         "Ortho snap (deg)",
+    "maxRegion":         "Max region (ft²)",
+    "keepSplitLines":    "Keep drawn split lines in the model",
+    "modelLines":        "Draw split lines as model lines"
+  },
+
+  // Footer status strip (single line, italic mono).
+  "status": {
+    "selectToBegin":      "Select a placed PDF underlay to begin.",
+    "pickUnderlay":       "Pick the PDF underlay in the active view…",
+    "selectionCancelled": "Underlay selection cancelled.",
+    "browseToContinue":   "Browse to the source PDF to continue.",
+    "readingPdf":         "Reading PDF…",
+    "transformFailed":    "Could not build the PDF→model transform.",
+    "rasterizing":        "Rasterizing page {0} at {1} dpi…",
+    "extractingVector":   "Extracting vector linework…",
+    "ready":              "Ready — pick a point inside a region.",
+    "pdfNotPrepared":     "PDF could not be prepared.",
+    "pickPoint":          "Pick a point inside a region in Revit…",
+    "pickCancelled":      "Pick cancelled.",
+    "tracing":            "Tracing region…",
+    "traceFailed":        "Trace failed.",
+    "review":             "Review the traced region.",
+    "alreadyTraced":      "Region already traced.",
+    "noRegion":           "No region traced.",
+    "startingLineTool":   "Starting the line tool…",
+    "collectingLines":    "Collecting drawn lines…",
+    "drawLines":          "Draw split lines in Revit; Esc to exit the tool, then click Done.",
+    "lineToolFailed":     "Line tool could not be started.",
+    "creatingFloor":      "Creating floor for region {0}…"
+  },
+
+  // Output log lines (in-palette scrolling log).
+  "log": {
+    "raiseRejected":     "Revit did not accept the {0} request ({1}) — try again.",
+    "pageSet":           "Page set to {0} — session reset.",
+    "detected":          "Detected {0} content ({1} path commands); using {2}.",
+    "rasterized":        "Rasterized {0}×{1} px.",
+    "vectorLoaded":      "Vector linework loaded.",
+    "pdfReadFailed":     "Failed to read the PDF: {0}",
+    "scaleMismatch":     "Placement implies {0:0.###}\" per foot but the declared scale is {1:0.###}\" — check that the underlay is placed at print size.",
+    "confirmFirst":      "Confirm or discard the pending preview first.",
+    "traceFailedMsg":    "Trace failed: {0}",
+    "alreadyTracedAs":   "That region is already traced as region {0}.",
+    "traceFailedStatus": "Trace failed ({0}).",
+    "confirmed":         "Region {0} confirmed ({1}).",
+    "discarded":         "Region {0} discarded.",
+    "noSplitLines":      "No split lines captured.",
+    "splitCaptured":     "Captured {0} split line(s) as barriers.",
+    "splitInvalidated":  " {0} traced region(s) invalidated — re-wand them.",  // appended to splitCaptured
+    "splitCaptureFailed":"Split-line capture failed: {0}",
+    "queued":            "Region {0} queued for creation.",
+    "planFailed":        "Region {0}: could not build the boundary plan.",
+    "selectTypeLevel":   "Select a floor type and level first.",
+    "creatingCount":     "Creating {0} floor(s) — one undo step each.",
+    "floorCreated":      "Region {0}: floor created (id {1}).",
+    "floorDeleted":      "Region {0}: floor deleted in the model (undo?) — region released for re-create.",
+    "removed":           "Region {0} removed from the session."
+  },
+
+  // Area display formats (region rows, preview, confirm log).
+  "area": {
+    "pts": "{0:0} pt²",       // fallback before the transform exists
+    "ft2": "{0:0.#} ft²"
+  },
+
+  // PdfRegionWandEventHandler — pick prompts, transaction names, failures.
+  "handler": {
+    "opFailed":            "{0} failed: {1}",
+    "pickUnderlayPrompt":  "Pick the placed PDF underlay.",
+    "notImage":            "Selected element is not an image/PDF underlay.",
+    "noBoundingBox":       "Selected image has no bounding box in the active view.",
+    "pdfUnresolved":       "Could not resolve the source PDF on disk — browse to the file manually.",
+    "pdfMissing":          "Source PDF missing on disk: {0} — browse to the file manually.",
+    "pickSeedPrompt":      "Pick a point inside the region to trace.",
+    "noWorkPlane":         "The active view has no work plane to pick on — open a plan view.",
+    "lineToolUnavailable": "The line tool cannot be started in the current context.",
+    "txRemoveSplitLines":  "PDF Wand — Remove split lines",      // undo-menu entry
+    "removeLinesFailed":   "Could not remove the drawn split lines — they remain in the model.",
+    "txCreate":            "PDF Wand {0} — Region {1}",          // undo-menu entry
+    "noElements":          "Adapter returned no elements.",
+    "createFailed":        "Region {0}: {1} creation failed — {2}",
+    "unreadableWarning":   "(unreadable warning)",
+    "warningPrefix":       "[warning] {0}"
+  },
+
+  // FloorAdapter — output creation.
+  "adapter": {
+    "floorName":      "Floor",                    // display name; also composed into txCreate
+    "noFloorType":    "No floor type selected.",
+    "noLevel":        "No level selected.",
+    "holeSkipped":    "Region {0}: hole of {1:0.##} ft² below threshold — skipped.",
+    "openLoopFailed": "Region boundary did not form a closed loop after unit conversion."
+  },
+
+  // PdfToModelTransform — placement diagnostics.
+  "transform": {
+    "noSize":          "Could not determine the placed image size or PDF page size.",
+    "rotatedInstance": "Image size was read from the view bounding box of a rotated instance — traced geometry may be offset.",
+    "stretched":       "Image placement is stretched non-uniformly ({0:P1} width/height disagreement) — traced geometry will be distorted."
+  },
+
+  // PdfRegionWandCommand — launch validation.
+  "command": {
+    "openDocFirst":    "Open a document first.",
+    "openPlanView":    "Open a plan view with the placed PDF underlay, then run the tool.",
+    "noTypesOrLevels": "The document has no floor types or no levels."
+  }
+}

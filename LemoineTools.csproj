@@ -113,6 +113,24 @@
     <Page             Remove="LemoineNavisworks\**\*" />
     <None             Remove="LemoineNavisworks\**\*" />
     <EmbeddedResource Remove="LemoineNavisworks\**\*" />
+
+    <Compile          Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <Page             Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <None             Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+    <EmbeddedResource Remove="LemoineTools.PdfGeometry\**\*;LemoineTools.PdfGeometry.Tests\**\*" />
+  </ItemGroup>
+
+  <!-- PDF Region Wand: the Revit-free geometry core is consumed via ProjectReference;
+       PdfiumViewer supplies the raster-mode page renderer. The native pdfium.dll is
+       copied beside the addin and loaded explicitly with LoadLibrary from the addin
+       folder (see PdfiumNativeLoader) because Revit's process working directory is
+       not the addin directory. PdfiumViewer is a net4x package — verified on net48
+       (Revit 2024); the net8 years restore it via framework compat and can't build
+       yet anyway (placeholder libsYYYY folders). -->
+  <ItemGroup>
+    <ProjectReference Include="LemoineTools.PdfGeometry\LemoineTools.PdfGeometry.csproj" />
+    <PackageReference Include="PdfiumViewer" Version="2.13.0" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
   </ItemGroup>
 
   <ItemGroup>
