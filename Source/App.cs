@@ -67,6 +67,12 @@ namespace LemoineTools
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
 
+        // ── T10 — Scope Boxes ───────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler? ScopeBoxCreatorScanHandler { get; private set; }
+        internal static ExternalEvent?               ScopeBoxCreatorScanEvent    { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler?  ScopeBoxCreatorRunHandler  { get; private set; }
+        internal static ExternalEvent?               ScopeBoxCreatorRunEvent     { get; private set; }
+
         // ── Bulk Views by Template ──────────────────────────────────────────────────
         internal static ViewsByTemplateRunHandler?   ViewsByTemplateRunHandler   { get; private set; }
         internal static ExternalEvent?               ViewsByTemplateRunEvent     { get; private set; }
@@ -227,6 +233,12 @@ namespace LemoineTools
             // ── Replicate Dependent Views ─────────────────────────────────────
             ReplicateDependentViewsRunHandler = new ReplicateDependentViewsRunHandler();
             ReplicateDependentViewsRunEvent   = ExternalEvent.Create(ReplicateDependentViewsRunHandler);
+
+            // ── T10 — Scope Boxes ─────────────────────────────────────────────
+            ScopeBoxCreatorScanHandler = new LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler();
+            ScopeBoxCreatorScanEvent   = ExternalEvent.Create(ScopeBoxCreatorScanHandler);
+            ScopeBoxCreatorRunHandler  = new LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler();
+            ScopeBoxCreatorRunEvent    = ExternalEvent.Create(ScopeBoxCreatorRunHandler);
 
             // ── Testing — new tools ───────────────────────────────────────────
             BulkExportHandler   = new BulkExportEventHandler();
@@ -399,6 +411,23 @@ namespace LemoineTools
                 ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
                 LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
+            });
+
+            // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
+            var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxes.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),  // CubeShape
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            };
+            var scopeBoxBtn = viewsPanel.AddItem(scopeBoxPulldown) as PulldownButton;
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxCreator", L.T("ribbon.buttons.scopeBoxCreator.label"), dll, "LemoineTools.Commands.ScopeBoxCreatorCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxCreator.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
             });
 
             viewsPanel.AddItem(Btn(

@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using LemoineTools.Tools.ScopeBoxes;
 using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
+using static LemoineTools.Tools.ScopeBoxes.RoomClusterSearch;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.LinkViews
