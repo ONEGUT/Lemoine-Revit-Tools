@@ -175,7 +175,12 @@ namespace LemoineTools.Tools.Coordinates
                         {
                             try
                             {
-                                doc.PublishCoordinates(new LinkElementId(new ElementId(linkId)));
+                                // LinkElementId's single-ElementId constructor sets HostElementId, not
+                                // LinkInstanceId — PublishCoordinates then throws "locationId does not
+                                // contain a valid linkInstanceId" (confirmed on a Windows/Revit run).
+                                // The two-arg constructor with an invalid linked-element id identifies
+                                // the RevitLinkInstance itself, which is what Publish/AcquireCoordinates need.
+                                doc.PublishCoordinates(new LinkElementId(new ElementId(linkId), ElementId.InvalidElementId));
                                 published++;
                             }
                             catch (Exception ex)
