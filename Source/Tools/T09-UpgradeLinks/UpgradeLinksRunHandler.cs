@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                     Log(LemoineStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
                     int p = _cloudPass, f = _cloudFail + 1, s = _cloudSkip;
                     _cloudActive = false;
-                    CloseCloudWaitDoc();
+                    CloseCloudWaitDoc(app);
                     OnAwaitingUser?.Invoke(false, null, null);
                     Spec = new UpgradeLinksSpec();
                     HostFolder = null;
@@ -270,10 +270,10 @@ namespace LemoineTools.Tools.UpgradeLinks
             if (LemoineRun.CancelRequested)
             {
                 Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
-                FinishCloudRun();
+                FinishCloudRun(app);
                 return;
             }
-            if (_cloudIndex >= _cloudFiles.Count) { FinishCloudRun(); return; }
+            if (_cloudIndex >= _cloudFiles.Count) { FinishCloudRun(app); return; }
 
             var item = _cloudFiles[_cloudIndex];
             _cloudIndex++;
@@ -383,12 +383,12 @@ namespace LemoineTools.Tools.UpgradeLinks
             {
                 _cloudSkip++;
                 Log(LemoineStrings.T("upgradeLinks.log.cloudSkipped", _cloudWaitFileName), "warn");
-                CloseCloudWaitDoc();
+                CloseCloudWaitDoc(app);
                 Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
                 if (LemoineRun.CancelRequested)
                 {
                     Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
-                    FinishCloudRun();
+                    FinishCloudRun(app);
                 }
                 else ProcessNextCloudFile(app);
                 return;
@@ -411,7 +411,7 @@ namespace LemoineTools.Tools.UpgradeLinks
             try
             {
                 var savedMp = doc.GetCloudModelPath();
-                CloseCloudWaitDoc();
+                CloseCloudWaitDoc(app);
                 if (_cloudHostDoc != null && LinkIntoHost(_cloudHostDoc, savedMp, _cloudWaitBaseName, _cloudWaitPlacement))
                 {
                     _cloudPass++;
@@ -433,20 +433,60 @@ namespace LemoineTools.Tools.UpgradeLinks
             if (LemoineRun.CancelRequested)
             {
                 Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
-                FinishCloudRun();
+                FinishCloudRun(app);
             }
             else ProcessNextCloudFile(app);
         }
 
-        private void CloseCloudWaitDoc()
+        // Revit will not let the API close a document while it is the ACTIVE document — the file
+        // we just posted the native Save-As-Cloud command to is still active at this point, so
+        // reactivate the host first (best effort: OpenAndActivateDocument on an already-open path
+        // just switches focus to it, it does not duplicate-open it), then close. If closing still
+        // fails, report it to the user instead of hiding it — the file was already saved+linked
+        // successfully, so this is a "you may need to close this tab yourself" note, not a failure
+        // of the run.
+        private void CloseCloudWaitDoc(UIApplication app)
         {
             if (_cloudWaitDoc == null) return;
-            try { _cloudWaitDoc.Close(false); }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: close cloud wait doc", ex); }
+            var waitDoc  = _cloudWaitDoc;
+            var fileName = _cloudWaitFileName;
             _cloudWaitDoc = null;
+
+            if (_cloudHostDoc != null)
+            {
+                try
+                {
+                    var hostMp = GetModelPath(_cloudHostDoc);
+                    if (hostMp != null) app.OpenAndActivateDocument(hostMp, new OpenOptions(), false);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: reactivate host before close", ex); }
+            }
+
+            try
+            {
+                waitDoc.Close(false);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Warn("UpgradeLinks: close cloud wait doc", ex.Message);
+                Log(LemoineStrings.T("upgradeLinks.log.cloudCloseFail", fileName), "warn");
+            }
         }
 
-        private void FinishCloudRun()
+        // Resolves a Document's own ModelPath, for reactivating it via OpenAndActivateDocument.
+        private static ModelPath? GetModelPath(Document doc)
+        {
+            try
+            {
+                if (doc.IsModelInCloud) return doc.GetCloudModelPath();
+                if (doc.IsWorkshared)   return doc.GetWorksharingCentralModelPath();
+                if (!string.IsNullOrEmpty(doc.PathName)) return ModelPathUtils.ConvertUserVisiblePathToModelPath(doc.PathName);
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: resolve document model path", ex); }
+            return null;
+        }
+
+        private void FinishCloudRun(UIApplication app)
         {
             long issues = LemoineLog.IssuesSince(_cloudIssues0);
             if (issues > 0) Log(LemoineStrings.T("upgradeLinks.log.nonFatal", issues), "warn");
@@ -456,8 +496,10 @@ namespace LemoineTools.Tools.UpgradeLinks
 
             _cloudActive  = false;
             _cloudFiles   = new List<UpgradeFileItem>();
+            // Close before dropping the host reference — CloseCloudWaitDoc needs it to reactivate
+            // the host and switch focus away from the wait doc before Revit will let it close.
+            CloseCloudWaitDoc(app);
             _cloudHostDoc = null;
-            CloseCloudWaitDoc();
             Spec = new UpgradeLinksSpec();
             HostFolder = null;
 

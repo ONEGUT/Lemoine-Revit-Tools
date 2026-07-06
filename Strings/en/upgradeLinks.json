@@ -102,6 +102,7 @@
     "cloudContinueLabel": "I've saved it — Continue",
     "cloudSkipLabel":     "Skip this file",
     "cloudSkipped":       "Skipped {0} by request.",
-    "cloudNotSavedYet":   "{0} doesn't look like it's been saved to the cloud yet — finish in Revit, then click Continue again (or Skip)."
+    "cloudNotSavedYet":   "{0} doesn't look like it's been saved to the cloud yet — finish in Revit, then click Continue again (or Skip).",
+    "cloudCloseFail":     "{0} was saved and linked successfully, but couldn't be closed automatically — you can close that tab in Revit yourself."
   }
 }
