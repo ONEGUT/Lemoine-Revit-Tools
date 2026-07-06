@@ -5,9 +5,11 @@
 {
   // footer — labels on the single footer button as its role changes during a run
   "footer": {
-    "reset":  "Reset",   // idle, not on the first step
-    "reload": "Reload",  // first step, when the tool can re-read the model
-    "cancel": "Cancel"   // shown (in red) while a run is in progress
+    "reset":    "Reset",   // idle, not on the first step
+    "reload":   "Reload",  // first step, when the tool can re-read the model
+    "cancel":   "Cancel",  // shown (in red) while a run is in progress
+    "continue": "Continue →",  // ILemoineRunPausable: user finished the manual step, resume
+    "skip":     "Skip"         // ILemoineRunPausable: abandon the current item, resume
   },
 
   // status — the line under the step list / progress strip

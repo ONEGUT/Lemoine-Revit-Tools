@@ -10,15 +10,16 @@ namespace LemoineTools.Tools.UpgradeLinks
     /// get externalized; only the display labels live in <c>upgradeLinks.json</c>.</summary>
     public enum UpgradePlacement { OriginToOrigin, CenterToCenter, SharedCoordinates, Site }
 
-    /// <summary>Where the upgraded copy is written before it is linked.</summary>
-    public enum UpgradeDestination { Subfolder, Overwrite, Cloud }
+    /// <summary>Where the upgraded copy is written before it is linked. The UI groups the first
+    /// two under a "Local" top-level choice and the third under "Cloud" (shown only when the
+    /// host is itself a cloud model). Enum tokens are persisted/compared — never externalized.</summary>
+    public enum UpgradeDestination { CurrentLocation, SelectedFolder, Cloud }
 
     /// <summary>One queued file, UI-side. <see cref="Version"/> stays "?" until the read-only
     /// scan fills it in; <see cref="Readable"/> false rows are shown greyed and skipped at run.</summary>
     public sealed class UpgradeFileRow
     {
         public string Path { get; set; } = "";
-        public string FileName => System.IO.Path.GetFileName(Path);
         public string Folder   => System.IO.Path.GetDirectoryName(Path) ?? "";
         public string Version  { get; set; } = "?";
         public bool   IsWorkshared { get; set; }
@@ -26,6 +27,10 @@ namespace LemoineTools.Tools.UpgradeLinks
         public bool   Readable  { get; set; } = true;
         public bool   Scanned   { get; set; }
         public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+
+        // Editable "save as" base name (no extension). Defaults to the source file's own name.
+        // Ignored in CurrentLocation mode, which always saves back to the file's own original path.
+        public string SaveAsName { get; set; } = "";
     }
 
     /// <summary>Result of the read-only <see cref="BasicFileInfo"/> scan for one path.</summary>
@@ -44,6 +49,7 @@ namespace LemoineTools.Tools.UpgradeLinks
     {
         public string Path { get; set; } = "";
         public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+        public string SaveAsName { get; set; } = "";
     }
 
     /// <summary>Everything the run handler needs — the ordered files, the destination choice and
@@ -51,18 +57,19 @@ namespace LemoineTools.Tools.UpgradeLinks
     public sealed class UpgradeLinksSpec
     {
         public List<UpgradeFileItem> Files { get; set; } = new List<UpgradeFileItem>();
-        public UpgradeDestination Destination { get; set; } = UpgradeDestination.Subfolder;
-        public string SubfolderName { get; set; } = "Upgraded Links";
+        public UpgradeDestination Destination { get; set; } = UpgradeDestination.CurrentLocation;
+        // Absolute folder path — SelectedFolder mode only. Files save directly into it (no
+        // auto-created subfolder name); the folder is created if it doesn't already exist.
+        public string SelectedFolder { get; set; } = "";
         public bool AuditOnOpen    { get; set; }
         public bool ReloadExisting { get; set; } = true;
 
-        // Cloud (phase 2) — the run handler's cloud branch only fires when CloudReady is true.
-        // The Revit API exposes no way to browse ACC folders or read the host's containing folder
-        // id, so the command leaves this false until an APS/Forge integration supplies the ids.
-        public bool CloudReady     { get; set; }
-        public Guid CloudAccountId { get; set; }
-        public Guid CloudProjectId { get; set; }
-        public string CloudFolderId { get; set; } = "";
+        // Cloud — only offered when the host itself is a cloud model (Document.IsModelInCloud).
+        // No hub/project/folder ids are harvested or guessed: each file's cloud save goes through
+        // Revit's own native "Save As Cloud Model" command (UIApplication.PostCommand), which
+        // handles ACC sign-in/browsing/folder-picking itself. See UpgradeLinksRunHandler for the
+        // per-file open → activate → post native command → wait-for-user flow.
+        public bool CloudReady { get; set; }
     }
 
     public static class UpgradePlacementMap

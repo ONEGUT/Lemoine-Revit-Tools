@@ -37,23 +37,30 @@ namespace LemoineTools.Commands
             {
                 var doc = uiApp.ActiveUIDocument?.Document;
 
-                string? hostFolder = null;
+                string? hostFolder  = null;
+                bool    hostIsCloud = false;
+
                 try
                 {
-                    if (doc != null && !string.IsNullOrEmpty(doc.PathName))
-                        hostFolder = Path.GetDirectoryName(doc.PathName);
+                    if (doc != null)
+                    {
+                        hostIsCloud = doc.IsModelInCloud;
+                        // Document.PathName for a cloud-hosted model reports Revit's own local
+                        // Collaboration Cache path — an internal sync cache, not a real folder
+                        // anything should be saved into. Never derive hostFolder from it there;
+                        // the Cloud destination doesn't need a local folder at all — every file's
+                        // cloud save goes through Revit's own native "Save As Cloud Model" dialog
+                        // (see UpgradeLinksRunHandler), which handles ACC folder picking itself.
+                        if (!hostIsCloud && !string.IsNullOrEmpty(doc.PathName))
+                            hostFolder = Path.GetDirectoryName(doc.PathName);
+                    }
                 }
                 catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksCommand: read host folder", ex); }
-
-                // Cloud destination stays off until an APS/Forge integration can supply the host's
-                // account id + containing folder id — the Revit API exposes neither, so we cannot
-                // resolve a valid SaveAsCloudModel target from the document alone (see plan phase 2).
-                bool hostCanCloud = false;
 
                 return new UpgradeLinksViewModel(
                     App.UpgradeLinksScanHandler, App.UpgradeLinksScanEvent,
                     App.UpgradeLinksRunHandler,  App.UpgradeLinksRunEvent,
-                    hostFolder, hostCanCloud);
+                    hostFolder, hostIsCloud);
             }
 
             var vm = BuildTool();

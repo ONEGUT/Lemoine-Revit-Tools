@@ -18,9 +18,11 @@ namespace LemoineTools.Tools.UpgradeLinks
 
         public UpgradeLinksSettings() { }
 
-        public string             SubfolderName    { get; set; } = "Upgraded Links";
+        // Last folder picked for the "Selected folder" destination — remembered generally
+        // (not per-project), same convention as other tools' remembered output folders.
+        public string             LastSelectedFolder { get; set; } = "";
         public UpgradePlacement   DefaultPlacement { get; set; } = UpgradePlacement.OriginToOrigin;
-        public UpgradeDestination Destination      { get; set; } = UpgradeDestination.Subfolder;
+        public UpgradeDestination Destination      { get; set; } = UpgradeDestination.CurrentLocation;
         public bool               AuditOnOpen      { get; set; } = false;
         public bool               ReloadExisting   { get; set; } = true;
 

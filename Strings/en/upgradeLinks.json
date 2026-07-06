@@ -1,6 +1,6 @@
 // upgradeLinks.json — Upgrade & Link Models tool + scan/run-handler logs.
-// Command: UpgradeLinksCommand. NOTE: placement tokens (origin/center/shared/site)
-// and destination tokens stay in code as enum values; only their DISPLAY labels live here.
+// Command: UpgradeLinksCommand. NOTE: placement/destination tokens stay in code as enum
+// values; only their DISPLAY labels live here.
 {
   "title": "Upgrade & Link Models",
   "runLabel": "Upgrade & link in Revit →",
@@ -11,12 +11,12 @@
     "run":   "Review & Run"
   },
   "summaries": {
-    "filesEmpty":   "No files added",
-    "files":        "{0} file(s) · {1} need upgrade",
-    "destSubfolder":"Subfolder “{0}”",
-    "destOverwrite":"Overwrite originals",
-    "destCloud":    "Cloud model",
-    "run":          "Ready to run"
+    "filesEmpty":          "No files added",
+    "files":               "{0} file(s) · {1} need upgrade",
+    "destSelectedFolder":  "Folder “{0}”",
+    "destCurrentLocation": "Current location (overwrite)",
+    "destCloud":           "Cloud model",
+    "run":                 "Ready to run"
   },
   "labels": {
     "filesHint":     "Add Revit files from any folder — they accumulate into one list. Each is upgraded to the current version on save, then linked into this model. The saved version is read from the file; nothing is opened yet.",
@@ -24,7 +24,7 @@
     "addFiles":      "＋ Add files…",
     "clearList":     "Clear list",
     "setAll":        "Set all placement",
-    "colFile":       "File",
+    "colFile":       "Save as",
     "colVersion":    "Version",
     "colPlacement":  "Placement",
     "verUnknown":    "?",
@@ -39,16 +39,23 @@
     "unreadableNote":"{0} file(s) could not be read and will be skipped.",
     "destQuestion":  "Where should the upgraded files be saved?",
     "destHint":      "The link always points at the saved copy — choose where that copy lives.",
-    "optSubfolderTitle":"New subfolder next to this model",
-    "optSubfolderDesc": "Creates a folder beside the current model and saves every upgraded copy inside it. Originals are untouched.",
-    "subfolderName":    "Subfolder name",
-    "subfolderPreview": "→ {0}",
-    "noHostFolder":     "This model has no local folder (unsaved or cloud), so a subfolder can't be created next to it. Choose another destination.",
-    "optOverwriteTitle":"Overwrite the original files",
-    "optOverwriteDesc": "Saves each upgraded model back over its source path.",
+
+    "optLocalTitle": "Local",
+    "optLocalDesc":  "Save the upgraded copies on disk.",
+
+    "optSelectedFolderTitle": "Selected folder",
+    "optSelectedFolderDesc":  "Save every upgraded copy directly into a folder you choose.",
+    "saveLocationLabel":       "Save location",
+    "saveLocationDialogTitle": "Choose a folder for the upgraded copies",
+
+    "optCurrentLocationTitle": "Current location",
+    "optCurrentLocationDesc":  "Saves each upgraded model back over its own source path.",
     "optOverwriteWarn": "⚠ Destructive — originals become current-version files and can no longer open in older Revit.",
-    "optCloudTitle":    "Cloud model — same folder as this model",
-    "optCloudDesc":     "Saves upgraded copies into the host's Autodesk Construction Cloud folder and links them from the cloud."
+    "optOverwriteRenameNote": "\"Save as\" names from the Files step are ignored here — this always saves back to each file's own original name and path.",
+
+    "optCloudTitle": "Cloud",
+    "optCloudDesc":  "Save each upgraded copy as its own cloud model, in the same Autodesk Construction Cloud project as this model.",
+    "optCloudNote":  "Each file will open Revit's own Save As → Cloud Model dialog, one at a time — pick the ACC folder and name yourself, same as saving any cloud model normally. \"Save as\" names from the Files step don't apply here. The tool waits for you to finish (or click Skip) before moving to the next file."
   },
   "placement": {
     "origin": "Origin to Origin",
@@ -64,7 +71,7 @@
     "filesNone": "None",
     "placementMixed": "Mixed",
     "warnNoFiles": "Add at least one readable Revit file.",
-    "warnOverwrite": "Overwrite mode is destructive — the original files will be replaced with current-version copies.",
+    "warnOverwrite": "Current location is destructive — the original files will be replaced with current-version copies.",
     "warnUnreadable": "{0} unreadable file(s) will be skipped."
   },
   "log": {
@@ -72,21 +79,30 @@
     "raising":        "Starting upgrade & link…",
     "noDoc":          "No active document.",
     "noFiles":        "No files to process.",
-    "noHostFolder":   "The active model has no local folder — cannot create a subfolder next to it.",
-    "subfolderFail":  "Could not create subfolder {0}: {1}",
-    "cloudNotReady":  "Cloud destination is not available — no cloud target could be resolved for this model.",
+    "noSelectedFolder": "No folder selected — choose a folder on the Destination step.",
+    "subfolderFail":  "Could not create folder {0}: {1}",
+    "cloudNotReady":  "Cloud destination is not available for this model.",
     "start":          "Processing {0} file(s) · destination: {1}",
     "missing":        "Skipped — file not found: {0}",
     "openFail":       "Failed to open (upgrade) {0}.",
     "linked":         "{0}/{1}: upgraded and linked {2}",
+    "linkedRenamed":  "{0}/{1}: upgraded and linked {2} — saved as {3}.rvt",
+    "renameInvalid":  "{0}: the \"save as\" name had no usable characters — kept the original name instead.",
     "linkExistsSkip": "Skipped {0} — a link with that name already exists (reload is off).",
     "linkReloaded":   "Reloaded existing link {0} from the upgraded copy.",
     "sharedFallback": "{0}: no shared coordinates — placed at Origin instead.",
     "fileFail":       "Failed on {0}: {1} — {2}",
     "progress":       "{0}% · {1}/{2} processed · {3} linked",
-    "revitFailure":   "Revit reported: {0}",
     "nonFatal":       "{0} non-fatal issue(s) logged during the run — see diagnostics.",
     "done":           "Done — {0} linked, {1} skipped, {2} failed.",
-    "aborted":        "Run aborted: {0}"
+    "aborted":        "Run aborted: {0}",
+
+    "cloudPostFail":      "Could not open Revit's Save As Cloud Model dialog for {0} — skipping.",
+    "cloudWaiting":       "{0}/{1}: waiting for you to finish Save As Cloud Model for {2} in Revit…",
+    "cloudContinueLabel": "I've saved it — Continue",
+    "cloudSkipLabel":     "Skip this file",
+    "cloudSkipped":       "Skipped {0} by request.",
+    "cloudNotSavedYet":   "{0} doesn't look like it's been saved to the cloud yet — finish in Revit, then click Continue again (or Skip).",
+    "cloudCloseFail":     "{0} was saved and linked successfully, but couldn't be closed automatically — you can close that tab in Revit yourself."
   }
 }
