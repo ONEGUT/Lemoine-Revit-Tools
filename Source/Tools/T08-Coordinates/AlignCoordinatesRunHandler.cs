@@ -19,8 +19,10 @@ namespace LemoineTools.Tools.Coordinates
     ///      that link — see <see cref="AlignOneLink"/>).
     ///   3. PublishCoordinates() each aligned link so the alignment is recorded as shared coordinates.
     ///
-    /// PublishCoordinates must be called OUTSIDE a transaction, so the instance moves commit first,
-    /// then publishing runs on the committed positions. Shared coordinates are written back to each
+    /// PublishCoordinates requires an OPEN transaction — calling it with none throws "Modifying X is
+    /// forbidden because the document has no open transaction" (confirmed on a Windows/Revit run,
+    /// contradicting this handler's original assumption). It runs in its own transaction, after the
+    /// instance moves have already committed in theirs. Shared coordinates are written back to each
     /// link file when the host is saved.
     /// </summary>
     public sealed class AlignCoordinatesRunHandler : IExternalEventHandler
@@ -157,22 +159,32 @@ namespace LemoineTools.Tools.Coordinates
                     tx.Commit();
                 }
 
-                // ── Publish shared coordinates (must be OUTSIDE any transaction) ──
+                // ── Publish shared coordinates ──
+                // Contrary to this handler's original assumption, PublishCoordinates requires an
+                // OPEN transaction — calling it with none throws "Modifying X is forbidden because
+                // the document has no open transaction" (confirmed on a Windows/Revit run). Give it
+                // its own transaction, committed after every link has been attempted.
                 if (Publish && aligned.Count > 0)
                 {
                     int published = 0;
-                    foreach (long linkId in aligned)
+                    using (var tx = new Transaction(doc, "Publish Shared Coordinates"))
                     {
-                        try
+                        tx.Start();
+                        ConfigureFailures(tx);
+                        foreach (long linkId in aligned)
                         {
-                            doc.PublishCoordinates(new LinkElementId(new ElementId(linkId)));
-                            published++;
+                            try
+                            {
+                                doc.PublishCoordinates(new LinkElementId(new ElementId(linkId)));
+                                published++;
+                            }
+                            catch (Exception ex)
+                            {
+                                LemoineLog.Swallowed($"AlignCoordinates: publish coordinates to link {linkId}", ex);
+                                Log($"⚠ Could not publish shared coordinates to link {linkId}: {ex.Message}", "warn");
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            LemoineLog.Swallowed($"AlignCoordinates: publish coordinates to link {linkId}", ex);
-                            Log($"⚠ Could not publish shared coordinates to link {linkId}: {ex.Message}", "warn");
-                        }
+                        tx.Commit();
                     }
                     if (published > 0)
                         Log($"Published host shared coordinates to {published} link(s). Save the host to write them into the link files.", "info");
