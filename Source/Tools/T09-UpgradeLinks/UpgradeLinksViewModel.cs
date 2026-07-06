@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 using LemoineTools.Lemoine.Controls;
+using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.UpgradeLinks
 {
@@ -265,22 +266,22 @@ namespace LemoineTools.Tools.UpgradeLinks
             return g;
         }
 
-        private TextBox BuildInlineNameBox(UpgradeFileRow row)
+        private WpfTextBox BuildInlineNameBox(UpgradeFileRow row)
         {
-            var tb = new TextBox
+            var tb = new WpfTextBox
             {
                 Text = row.SaveAsName,
                 IsEnabled = row.Readable,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(4, 2, 4, 2),
             };
-            tb.SetResourceReference(TextBox.BackgroundProperty,     "LemoineSelectBg");
-            tb.SetResourceReference(TextBox.ForegroundProperty,     "LemoineText");
-            tb.SetResourceReference(TextBox.BorderBrushProperty,    "LemoineBorderMid");
-            tb.SetResourceReference(TextBox.CaretBrushProperty,     "LemoineText");
-            tb.SetResourceReference(TextBox.FontFamilyProperty,     "LemoineMonoFont");
-            tb.SetResourceReference(TextBox.FontSizeProperty,       "LemoineFS_SM");
-            tb.SetResourceReference(TextBox.SelectionBrushProperty, "LemoineAccent");
+            tb.SetResourceReference(WpfTextBox.BackgroundProperty,     "LemoineSelectBg");
+            tb.SetResourceReference(WpfTextBox.ForegroundProperty,     "LemoineText");
+            tb.SetResourceReference(WpfTextBox.BorderBrushProperty,    "LemoineBorderMid");
+            tb.SetResourceReference(WpfTextBox.CaretBrushProperty,     "LemoineText");
+            tb.SetResourceReference(WpfTextBox.FontFamilyProperty,     "LemoineMonoFont");
+            tb.SetResourceReference(WpfTextBox.FontSizeProperty,       "LemoineFS_SM");
+            tb.SetResourceReference(WpfTextBox.SelectionBrushProperty, "LemoineAccent");
             tb.TextChanged += (s, e) => { row.SaveAsName = tb.Text; Changed(); };
             return tb;
         }
