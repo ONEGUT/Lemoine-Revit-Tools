@@ -10,8 +10,10 @@ namespace LemoineTools.Tools.UpgradeLinks
     /// get externalized; only the display labels live in <c>upgradeLinks.json</c>.</summary>
     public enum UpgradePlacement { OriginToOrigin, CenterToCenter, SharedCoordinates, Site }
 
-    /// <summary>Where the upgraded copy is written before it is linked.</summary>
-    public enum UpgradeDestination { Subfolder, Overwrite, Cloud }
+    /// <summary>Where the upgraded copy is written before it is linked. The UI groups the first
+    /// two under a "Local" top-level choice and the third under "Cloud" (shown only when the
+    /// host is itself a cloud model). Enum tokens are persisted/compared — never externalized.</summary>
+    public enum UpgradeDestination { CurrentLocation, SelectedFolder, Cloud }
 
     /// <summary>One queued file, UI-side. <see cref="Version"/> stays "?" until the read-only
     /// scan fills it in; <see cref="Readable"/> false rows are shown greyed and skipped at run.</summary>
@@ -27,7 +29,7 @@ namespace LemoineTools.Tools.UpgradeLinks
         public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
 
         // Editable "save as" base name (no extension). Defaults to the source file's own name.
-        // Ignored in Overwrite mode, which always saves back to the file's own original path.
+        // Ignored in CurrentLocation mode, which always saves back to the file's own original path.
         public string SaveAsName { get; set; } = "";
     }
 
@@ -55,24 +57,19 @@ namespace LemoineTools.Tools.UpgradeLinks
     public sealed class UpgradeLinksSpec
     {
         public List<UpgradeFileItem> Files { get; set; } = new List<UpgradeFileItem>();
-        public UpgradeDestination Destination { get; set; } = UpgradeDestination.Subfolder;
-        public string SubfolderName { get; set; } = "Upgraded Links";
+        public UpgradeDestination Destination { get; set; } = UpgradeDestination.CurrentLocation;
+        // Absolute folder path — SelectedFolder mode only. Files save directly into it (no
+        // auto-created subfolder name); the folder is created if it doesn't already exist.
+        public string SelectedFolder { get; set; } = "";
         public bool AuditOnOpen    { get; set; }
         public bool ReloadExisting { get; set; } = true;
 
-        // Cloud — the run handler's cloud branch only fires when CloudReady is true, which the
-        // command sets once it has harvested the host's own hub/project/folder ids (see
-        // UpgradeLinksCommand.BuildTool / plan-cloud-host-link-path.md) for the
-        // Document.SaveAsCloudModel(Guid accountId, Guid projectId, string folderId, string modelName)
-        // overload — the only SaveAsCloudModel overload usable from a third-party plugin (the
-        // CloudFolder-object overload takes an Autodesk.Revit.DB.ForgeDM.CloudFolder, which is an
-        // internal (NotPublic) type — CS0122 if referenced directly, confirmed against the real
-        // RevitAPI.dll). CloudAccountId is parsed out of Document.GetHubId()'s string (there is no
-        // Guid-typed hub/account accessor in the API) — see UpgradeLinksCommand.TryParseHubGuid.
-        public bool   CloudReady     { get; set; }
-        public Guid   CloudAccountId { get; set; }
-        public Guid   CloudProjectId { get; set; }
-        public string CloudFolderId  { get; set; } = "";
+        // Cloud — only offered when the host itself is a cloud model (Document.IsModelInCloud).
+        // No hub/project/folder ids are harvested or guessed: each file's cloud save goes through
+        // Revit's own native "Save As Cloud Model" command (UIApplication.PostCommand), which
+        // handles ACC sign-in/browsing/folder-picking itself. See UpgradeLinksRunHandler for the
+        // per-file open → activate → post native command → wait-for-user flow.
+        public bool CloudReady { get; set; }
     }
 
     public static class UpgradePlacementMap

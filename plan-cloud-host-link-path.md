@@ -1,5 +1,21 @@
 # Plan — Fix cloud host file-path handling in Upgrade & Link Models
 
+> **Superseded (see below).** The design here (harvest hub/project/folder ids, build a
+> Guid and call `SaveAsCloudModel(Guid, Guid, string, string)`) hit two hard blockers on
+> a real build: `Document.GetHubId()` returns a string with no Guid-typed hub/account
+> accessor anywhere in the API (CS0029), and the `CloudFolder`-object overload of
+> `SaveAsCloudModel` takes an `Autodesk.Revit.DB.ForgeDM.CloudFolder`, which turned out to
+> be an internal (`NotPublic`) type — unusable from a third-party plugin (CS0122).
+>
+> The Cloud destination now instead posts Revit's own native **Save As → Cloud Model**
+> command (`UIApplication.PostCommand` + `RevitCommandId.LookupPostableCommandId
+> (PostableCommand.SaveAsCloudModel)`) per file, and pauses the run (via a new
+> `ILemoineRunPausable` Continue/Skip footer extension) until the user finishes in
+> Revit's own dialog. No hub/project/folder ids are harvested or guessed at all —
+> `Document.IsModelInCloud` is the only check left. Sections 1–2 below (stop trusting
+> the Collaboration Cache path; prompt instead of guessing for the local "selected
+> folder" destination) are unaffected and still describe the shipped behavior.
+
 ## Problem
 
 `T09-UpgradeLinks` ("Upgrade & Link Models") resolves where upgraded linked files get

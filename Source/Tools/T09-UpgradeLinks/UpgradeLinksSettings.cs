@@ -1,21 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Xml.Serialization;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.UpgradeLinks
 {
-    /// <summary>One remembered "save subfolder files here" folder for a cloud-hosted project,
-    /// keyed by the host's cloud model GUID (<see cref="ModelPath.GetModelGUID"/>) so the user
-    /// isn't asked again next time they open the tool on the same cloud model.</summary>
-    public sealed class CloudHostFolderEntry
-    {
-        [XmlAttribute] public string ModelGuid { get; set; } = "";
-        [XmlAttribute] public string Folder    { get; set; } = "";
-    }
-
     /// <summary>
     /// Persisted defaults for the Upgrade &amp; Link Models tool. Public + parameterless so
     /// <see cref="XmlSerializer"/> accepts it (an internal root throws "only public types can be
@@ -29,34 +18,13 @@ namespace LemoineTools.Tools.UpgradeLinks
 
         public UpgradeLinksSettings() { }
 
-        public string             SubfolderName    { get; set; } = "Upgraded Links";
+        // Last folder picked for the "Selected folder" destination — remembered generally
+        // (not per-project), same convention as other tools' remembered output folders.
+        public string             LastSelectedFolder { get; set; } = "";
         public UpgradePlacement   DefaultPlacement { get; set; } = UpgradePlacement.OriginToOrigin;
-        public UpgradeDestination Destination      { get; set; } = UpgradeDestination.Subfolder;
+        public UpgradeDestination Destination      { get; set; } = UpgradeDestination.CurrentLocation;
         public bool               AuditOnOpen      { get; set; } = false;
         public bool               ReloadExisting   { get; set; } = true;
-
-        [XmlArray("CloudHostFolders"), XmlArrayItem("Entry")]
-        public List<CloudHostFolderEntry> CloudHostFolders { get; set; } = new List<CloudHostFolderEntry>();
-
-        /// <summary>The folder the user previously picked for this cloud model's host, or null.</summary>
-        public string? GetCloudHostFolder(string modelGuid)
-        {
-            if (string.IsNullOrEmpty(modelGuid)) return null;
-            return CloudHostFolders
-                .FirstOrDefault(e => string.Equals(e.ModelGuid, modelGuid, StringComparison.OrdinalIgnoreCase))
-                ?.Folder;
-        }
-
-        /// <summary>Remembers <paramref name="folder"/> for this cloud model's host and saves immediately.</summary>
-        public void SetCloudHostFolder(string modelGuid, string folder)
-        {
-            if (string.IsNullOrEmpty(modelGuid) || string.IsNullOrEmpty(folder)) return;
-            var existing = CloudHostFolders
-                .FirstOrDefault(e => string.Equals(e.ModelGuid, modelGuid, StringComparison.OrdinalIgnoreCase));
-            if (existing != null) existing.Folder = folder;
-            else CloudHostFolders.Add(new CloudHostFolderEntry { ModelGuid = modelGuid, Folder = folder });
-            Save();
-        }
 
         private static string FilePath
         {

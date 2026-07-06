@@ -19,7 +19,7 @@ namespace LemoineTools.Tools.UpgradeLinks
     /// saved to the destination, closed, and linked into the host. Files are processed serially on the
     /// Revit thread for RAM control (see <see cref="UpgradeLinksRunHandler"/>).
     /// </summary>
-    public sealed class UpgradeLinksViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware, ILemoineToolCleanup
+    public sealed class UpgradeLinksViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware, ILemoineToolCleanup, ILemoineRunPausable
     {
         public string Title       => LemoineStrings.T("upgradeLinks.title");
         public string RunLabel    => LemoineStrings.T("upgradeLinks.runLabel");
@@ -38,19 +38,15 @@ namespace LemoineTools.Tools.UpgradeLinks
         private readonly ExternalEvent?           _scanEvent;
         private readonly UpgradeLinksRunHandler?  _runHandler;
         private readonly ExternalEvent?           _runEvent;
-        private readonly string?                  _hostFolder;     // null when the host has no local folder
-        private readonly bool                     _hostCanCloud;   // true when the host's cloud ids resolved
-        private readonly bool                     _hostIsCloud;    // host is a cloud model (PathName is unusable)
-        private readonly string?                  _cloudModelGuid; // host's cloud model GUID — key for remembered folder
-        private readonly Guid                      _cloudHubId;     // parsed from Document.GetHubId() (see UpgradeLinksCommand)
-        private readonly Guid                      _cloudProjectId; // ModelPath.GetProjectGUID()
-        private readonly string                    _cloudFolderId = ""; // Document.GetCloudFolderId(false)
-        private string                             _manualFolder = ""; // user-picked folder when _hostFolder is empty
+        private readonly string?                  _hostFolder;   // null when the host has no local folder (or is cloud)
+        private readonly bool                     _hostIsCloud;  // host is a cloud model — offers the Cloud destination
 
         // ── State ────────────────────────────────────────────────────────────────
         private readonly List<UpgradeFileRow> _rows = new List<UpgradeFileRow>();
-        private UpgradeDestination _dest    = UpgradeLinksSettings.Instance.Destination;
-        private string             _subfolder = UpgradeLinksSettings.Instance.SubfolderName;
+        private UpgradeDestination _dest = UpgradeLinksSettings.Instance.Destination;
+        // Absolute folder path for the SelectedFolder destination. Defaults to the host's own
+        // folder when there is one, else the last folder the user picked (settings), else empty.
+        private string             _selectedFolder = "";
         private bool               _audit   = UpgradeLinksSettings.Instance.AuditOnOpen;
         private bool               _reload  = UpgradeLinksSettings.Instance.ReloadExisting;
         private readonly UpgradePlacement _defaultPlacement = UpgradeLinksSettings.Instance.DefaultPlacement;
@@ -64,36 +60,43 @@ namespace LemoineTools.Tools.UpgradeLinks
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
+        // ── ILemoineRunPausable — Cloud mode pauses per file on Revit's native Save dialog ──────
+        public event Action<bool, string?, string?>? AwaitingUserChanged;
+        public void ContinueRun()
+        {
+            if (_runHandler == null || _runEvent == null) return;
+            _runHandler.CloudContinueRequested = true;
+            _runEvent.Raise();
+        }
+        public void SkipCurrentItem()
+        {
+            if (_runHandler == null || _runEvent == null) return;
+            _runHandler.CloudSkipRequested = true;
+            _runEvent.Raise();
+        }
+
         public UpgradeLinksViewModel(
             UpgradeLinksScanHandler? scanHandler, ExternalEvent? scanEvent,
             UpgradeLinksRunHandler?  runHandler,  ExternalEvent?  runEvent,
-            string? hostFolder, bool hostCanCloud, bool hostIsCloud, string? cloudModelGuid,
-            Guid cloudHubId, Guid cloudProjectId, string cloudFolderId)
+            string? hostFolder, bool hostIsCloud)
         {
             _scanHandler = scanHandler; _scanEvent = scanEvent;
             _runHandler  = runHandler;  _runEvent  = runEvent;
-            _hostFolder  = hostFolder;  _hostCanCloud = hostCanCloud;
-            _hostIsCloud = hostIsCloud; _cloudModelGuid = cloudModelGuid;
-            _cloudHubId  = cloudHubId;  _cloudProjectId = cloudProjectId; _cloudFolderId = cloudFolderId;
+            _hostFolder  = hostFolder;  _hostIsCloud = hostIsCloud;
 
-            if (string.IsNullOrEmpty(_hostFolder) && !string.IsNullOrEmpty(_cloudModelGuid))
-            {
-                var remembered = UpgradeLinksSettings.Instance.GetCloudHostFolder(_cloudModelGuid!);
-                if (!string.IsNullOrEmpty(remembered)) _manualFolder = remembered!;
-            }
+            _selectedFolder = !string.IsNullOrEmpty(_hostFolder) ? _hostFolder! : UpgradeLinksSettings.Instance.LastSelectedFolder;
 
-            if (_dest == UpgradeDestination.Cloud && !_hostCanCloud) _dest = UpgradeDestination.Subfolder;
-            if (_dest == UpgradeDestination.Subfolder && string.IsNullOrEmpty(EffectiveHostFolder)) _dest = UpgradeDestination.Overwrite;
+            if (_dest == UpgradeDestination.Cloud && !_hostIsCloud) _dest = UpgradeDestination.SelectedFolder;
         }
-
-        // The folder subfolder-mode actually saves into: the auto-detected host folder when there
-        // is one, otherwise whatever the user picked in the fallback folder browser (BuildSubfolderExtra).
-        private string EffectiveHostFolder => string.IsNullOrEmpty(_hostFolder) ? _manualFolder : _hostFolder!;
 
         public void OnWindowClosed()
         {
             if (_scanHandler != null) { _scanHandler.OnScanned = null; _scanHandler.OnError = null; }
-            if (_runHandler  != null) { _runHandler.PushLog = null; _runHandler.OnProgress = null; _runHandler.OnComplete = null; }
+            if (_runHandler  != null)
+            {
+                _runHandler.PushLog = null; _runHandler.OnProgress = null; _runHandler.OnComplete = null;
+                _runHandler.OnAwaitingUser = null;
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -395,32 +398,57 @@ namespace LemoineTools.Tools.UpgradeLinks
             return outer;
         }
 
+        // Top level: Local vs Cloud (Cloud hidden unless the host is itself a cloud model).
+        // Local reveals two sub-choices: Selected folder / Current location.
         private void RebuildDestCards()
         {
             if (_destContainer == null) return;
             _destContainer.Children.Clear();
 
-            // ── Subfolder ──
-            _destContainer.Children.Add(BuildDestCard(UpgradeDestination.Subfolder,
-                LemoineStrings.T("upgradeLinks.labels.optSubfolderTitle"),
-                LemoineStrings.T("upgradeLinks.labels.optSubfolderDesc"),
-                extra: BuildSubfolderExtra()));
+            bool localSelected = _dest != UpgradeDestination.Cloud;
+            _destContainer.Children.Add(BuildCard(
+                selected: localSelected, sub: false,
+                title: LemoineStrings.T("upgradeLinks.labels.optLocalTitle"),
+                desc:  LemoineStrings.T("upgradeLinks.labels.optLocalDesc"),
+                onClick: () => { if (_dest == UpgradeDestination.Cloud) { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); } },
+                extra: localSelected ? BuildLocalSubCards() : null));
 
-            // ── Overwrite ──
-            _destContainer.Children.Add(BuildDestCard(UpgradeDestination.Overwrite,
-                LemoineStrings.T("upgradeLinks.labels.optOverwriteTitle"),
-                LemoineStrings.T("upgradeLinks.labels.optOverwriteDesc"),
-                extra: BuildOverwriteExtra()));
-
-            // ── Cloud (only when the host can resolve a cloud target) ──
-            if (_hostCanCloud)
-                _destContainer.Children.Add(BuildDestCard(UpgradeDestination.Cloud,
-                    LemoineStrings.T("upgradeLinks.labels.optCloudTitle"),
-                    LemoineStrings.T("upgradeLinks.labels.optCloudDesc"),
-                    extra: null));
+            if (_hostIsCloud)
+            {
+                bool cloudSelected = _dest == UpgradeDestination.Cloud;
+                _destContainer.Children.Add(BuildCard(
+                    selected: cloudSelected, sub: false,
+                    title: LemoineStrings.T("upgradeLinks.labels.optCloudTitle"),
+                    desc:  LemoineStrings.T("upgradeLinks.labels.optCloudDesc"),
+                    onClick: () => { if (_dest != UpgradeDestination.Cloud) { _dest = UpgradeDestination.Cloud; RebuildDestCards(); Changed(); } },
+                    extra: cloudSelected ? Dim(LemoineStrings.T("upgradeLinks.labels.optCloudNote")) : null));
+            }
         }
 
-        private FrameworkElement BuildOverwriteExtra()
+        private FrameworkElement BuildLocalSubCards()
+        {
+            var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+
+            bool selFolder = _dest == UpgradeDestination.SelectedFolder;
+            panel.Children.Add(BuildCard(
+                selected: selFolder, sub: true,
+                title: LemoineStrings.T("upgradeLinks.labels.optSelectedFolderTitle"),
+                desc:  LemoineStrings.T("upgradeLinks.labels.optSelectedFolderDesc"),
+                onClick: () => { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); },
+                extra: selFolder ? BuildSelectedFolderExtra() : null));
+
+            bool curLoc = _dest == UpgradeDestination.CurrentLocation;
+            panel.Children.Add(BuildCard(
+                selected: curLoc, sub: true,
+                title: LemoineStrings.T("upgradeLinks.labels.optCurrentLocationTitle"),
+                desc:  LemoineStrings.T("upgradeLinks.labels.optCurrentLocationDesc"),
+                onClick: () => { _dest = UpgradeDestination.CurrentLocation; RebuildDestCards(); Changed(); },
+                extra: curLoc ? BuildCurrentLocationExtra() : null));
+
+            return panel;
+        }
+
+        private FrameworkElement BuildCurrentLocationExtra()
         {
             var panel = new StackPanel();
             panel.Children.Add(Warn(LemoineStrings.T("upgradeLinks.labels.optOverwriteWarn")));
@@ -428,61 +456,25 @@ namespace LemoineTools.Tools.UpgradeLinks
             return panel;
         }
 
-        private FrameworkElement BuildSubfolderExtra()
+        private FrameworkElement BuildSelectedFolderExtra()
         {
             var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var preview = Dim(PreviewPath());
-
-            if (string.IsNullOrEmpty(_hostFolder))
+            var folderPicker = new LemoineFolderBrowser
             {
-                string explainKey = _hostIsCloud
-                    ? "upgradeLinks.labels.noHostFolderCloud"
-                    : "upgradeLinks.labels.noHostFolderUnsaved";
-                panel.Children.Add(Warn(LemoineStrings.T(explainKey)));
-
-                var folderPicker = new LemoineFolderBrowser
-                {
-                    Label       = LemoineStrings.T("upgradeLinks.labels.saveLocationLabel"),
-                    Path        = _manualFolder,
-                    DialogTitle = LemoineStrings.T("upgradeLinks.labels.saveLocationDialogTitle"),
-                };
-                folderPicker.PathChanged += p =>
-                {
-                    _manualFolder = p ?? "";
-                    if (!string.IsNullOrEmpty(_manualFolder) && !string.IsNullOrEmpty(_cloudModelGuid))
-                        UpgradeLinksSettings.Instance.SetCloudHostFolder(_cloudModelGuid!, _manualFolder);
-                    preview.Text = PreviewPath();
-                    Changed();
-                };
-                panel.Children.Add(folderPicker);
-            }
-
-            var field = new LemoineTextField
-            {
-                Label = LemoineStrings.T("upgradeLinks.labels.subfolderName"),
-                Text  = _subfolder,
+                Label       = LemoineStrings.T("upgradeLinks.labels.saveLocationLabel"),
+                Path        = _selectedFolder,
+                DialogTitle = LemoineStrings.T("upgradeLinks.labels.saveLocationDialogTitle"),
             };
-            field.TextChanged += t => { _subfolder = t ?? ""; preview.Text = PreviewPath(); Changed(); };
-            panel.Children.Add(field);
-            panel.Children.Add(preview);
+            folderPicker.PathChanged += p => { _selectedFolder = p ?? ""; Changed(); };
+            panel.Children.Add(folderPicker);
             return panel;
         }
 
-        private string PreviewPath()
+        private FrameworkElement BuildCard(bool selected, bool sub, string title, string desc, Action onClick, FrameworkElement? extra)
         {
-            string folder = string.IsNullOrEmpty(EffectiveHostFolder) ? "" : EffectiveHostFolder;
-            string sub = string.IsNullOrWhiteSpace(_subfolder) ? "Upgraded Links" : _subfolder.Trim();
-            string full = string.IsNullOrEmpty(folder) ? sub : System.IO.Path.Combine(folder, sub);
-            return LemoineStrings.T("upgradeLinks.labels.subfolderPreview", full);
-        }
-
-        private FrameworkElement BuildDestCard(UpgradeDestination mode, string title, string desc, FrameworkElement? extra)
-        {
-            bool selected = _dest == mode;
-
             var content = new StackPanel();
             var titleTb = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold };
-            titleTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            titleTb.SetResourceReference(TextBlock.FontSizeProperty,   sub ? "LemoineFS_SM" : "LemoineFS_MD");
             titleTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             titleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             content.Children.Add(titleTb);
@@ -493,8 +485,8 @@ namespace LemoineTools.Tools.UpgradeLinks
             {
                 BorderThickness = new Thickness(1),
                 CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(14, 12, 14, 12),
-                Margin          = new Thickness(0, 0, 0, 10),
+                Padding         = sub ? new Thickness(12, 10, 12, 10) : new Thickness(14, 12, 14, 12),
+                Margin          = sub ? new Thickness(0, 0, 0, 8) : new Thickness(0, 0, 0, 10),
                 Cursor          = Cursors.Hand,
                 Child           = content,
             };
@@ -510,13 +502,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                 card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 card.Background = Brushes.Transparent;
             }
-            card.MouseLeftButtonUp += (s, e) =>
-            {
-                if (_dest == mode) return;
-                _dest = mode;
-                RebuildDestCards();
-                Changed();
-            };
+            card.MouseLeftButtonUp += (s, e) => onClick();
             return card;
         }
 
@@ -545,7 +531,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                 if (ReadableCount() == 0) return LemoineStrings.T("upgradeLinks.review.warnNoFiles");
                 int unreadable = _rows.Count(r => !r.Readable);
                 if (unreadable > 0) return LemoineStrings.T("upgradeLinks.review.warnUnreadable", unreadable);
-                if (_dest == UpgradeDestination.Overwrite) return LemoineStrings.T("upgradeLinks.review.warnOverwrite");
+                if (_dest == UpgradeDestination.CurrentLocation) return LemoineStrings.T("upgradeLinks.review.warnOverwrite");
                 return null;
             }
         }
@@ -565,9 +551,9 @@ namespace LemoineTools.Tools.UpgradeLinks
         {
             switch (_dest)
             {
-                case UpgradeDestination.Subfolder: return !string.IsNullOrEmpty(EffectiveHostFolder) && !string.IsNullOrWhiteSpace(_subfolder);
-                case UpgradeDestination.Cloud:     return _hostCanCloud;
-                default:                           return true;   // Overwrite
+                case UpgradeDestination.SelectedFolder: return !string.IsNullOrWhiteSpace(_selectedFolder);
+                case UpgradeDestination.Cloud:          return _hostIsCloud;
+                default:                                return true;   // CurrentLocation
             }
         }
 
@@ -588,9 +574,9 @@ namespace LemoineTools.Tools.UpgradeLinks
         {
             switch (_dest)
             {
-                case UpgradeDestination.Overwrite: return LemoineStrings.T("upgradeLinks.summaries.destOverwrite");
-                case UpgradeDestination.Cloud:     return LemoineStrings.T("upgradeLinks.summaries.destCloud");
-                default:                           return LemoineStrings.T("upgradeLinks.summaries.destSubfolder", _subfolder);
+                case UpgradeDestination.CurrentLocation: return LemoineStrings.T("upgradeLinks.summaries.destCurrentLocation");
+                case UpgradeDestination.Cloud:            return LemoineStrings.T("upgradeLinks.summaries.destCloud");
+                default:                                  return LemoineStrings.T("upgradeLinks.summaries.destSelectedFolder", _selectedFolder);
             }
         }
 
@@ -616,20 +602,18 @@ namespace LemoineTools.Tools.UpgradeLinks
             {
                 Files          = _rows.Where(r => r.Readable).Select(r => new UpgradeFileItem { Path = r.Path, Placement = r.Placement, SaveAsName = r.SaveAsName }).ToList(),
                 Destination    = _dest,
-                SubfolderName  = string.IsNullOrWhiteSpace(_subfolder) ? "Upgraded Links" : _subfolder.Trim(),
+                SelectedFolder = _selectedFolder,
                 AuditOnOpen    = _audit,
                 ReloadExisting = _reload,
-                CloudReady     = _hostCanCloud && _dest == UpgradeDestination.Cloud,
-                CloudAccountId = _cloudHubId,
-                CloudProjectId = _cloudProjectId,
-                CloudFolderId  = _cloudFolderId,
+                CloudReady     = _hostIsCloud && _dest == UpgradeDestination.Cloud,
             };
 
-            _runHandler.Spec       = spec;
-            _runHandler.HostFolder = EffectiveHostFolder;
-            _runHandler.PushLog    = pushLog;
-            _runHandler.OnProgress = onProgress;
-            _runHandler.OnComplete = onComplete;
+            _runHandler.Spec           = spec;
+            _runHandler.HostFolder     = _hostFolder;
+            _runHandler.PushLog        = pushLog;
+            _runHandler.OnProgress     = onProgress;
+            _runHandler.OnComplete     = onComplete;
+            _runHandler.OnAwaitingUser = (awaiting, cLabel, sLabel) => AwaitingUserChanged?.Invoke(awaiting, cLabel, sLabel);
 
             pushLog(LemoineStrings.T("upgradeLinks.log.raising"), "info");
             _runEvent.Raise();
@@ -638,7 +622,8 @@ namespace LemoineTools.Tools.UpgradeLinks
         private void SaveSettings()
         {
             var s = UpgradeLinksSettings.Instance;
-            s.SubfolderName  = string.IsNullOrWhiteSpace(_subfolder) ? "Upgraded Links" : _subfolder.Trim();
+            if (_dest == UpgradeDestination.SelectedFolder && !string.IsNullOrWhiteSpace(_selectedFolder))
+                s.LastSelectedFolder = _selectedFolder;
             s.Destination    = _dest;
             s.AuditOnOpen    = _audit;
             s.ReloadExisting = _reload;

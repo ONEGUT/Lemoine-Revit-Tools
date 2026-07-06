@@ -74,6 +74,8 @@ namespace LemoineTools.Lemoine
         private StackPanel   _logStack  = null!;
         private ScrollViewer _logScroll = null!;
         private Button       _resetBtn  = null!;
+        private Button?      _continueBtn;
+        private Button?      _skipBtn;
 
         // Log resize drag state
         private bool   _isResizingLog   = false;
@@ -133,6 +135,8 @@ namespace LemoineTools.Lemoine
             _tool.ValidationChanged += OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested += OnToolNavigateRequested;
+            if (_tool is ILemoineRunPausable pausable)
+                pausable.AwaitingUserChanged += OnAwaitingUserChanged;
         }
 
         private void UnwireTool()
@@ -140,9 +144,30 @@ namespace LemoineTools.Lemoine
             _tool.ValidationChanged -= OnToolValidationChanged;
             if (_tool is ILemoineNavigable nav)
                 nav.NavigateRequested -= OnToolNavigateRequested;
+            if (_tool is ILemoineRunPausable pausable)
+                pausable.AwaitingUserChanged -= OnAwaitingUserChanged;
             // Let the outgoing tool null any callbacks it parked on its static ExternalEvent
             // handler so the discarded ViewModel (and its step content) can be GC'd.
             (_tool as ILemoineToolCleanup)?.OnWindowClosed();
+        }
+
+        // A tool implementing ILemoineRunPausable raises this (from whatever thread its run is
+        // on) to show/hide the extra Continue/Skip footer buttons. Marshal to this window's
+        // dispatcher — see SafeBeginInvoke.
+        private void OnAwaitingUserChanged(bool awaiting, string? continueLabel, string? skipLabel)
+        {
+            var w = _sink.Win; if (w == null) return;
+            w.SafeBeginInvoke(() =>
+            {
+                if (_continueBtn == null || _skipBtn == null) return;
+                _continueBtn.Visibility = awaiting ? Visibility.Visible : Visibility.Collapsed;
+                _skipBtn.Visibility     = awaiting ? Visibility.Visible : Visibility.Collapsed;
+                if (awaiting)
+                {
+                    _continueBtn.Content = string.IsNullOrEmpty(continueLabel) ? L.T("common.footer.continue") : continueLabel;
+                    _skipBtn.Content     = string.IsNullOrEmpty(skipLabel)     ? L.T("common.footer.skip")     : skipLabel;
+                }
+            });
         }
 
         private void OnToolNavigateRequested(object? sender, int idx)
@@ -910,8 +935,29 @@ namespace LemoineTools.Lemoine
             _resetBtn.VerticalAlignment   = VerticalAlignment.Center;
             _resetBtn.Click += (s, e) => OnResetButtonClick();
 
+            // Extra pair of buttons for ILemoineRunPausable tools — hidden unless the tool
+            // signals it's paused on a manual step (see OnAwaitingUserChanged). Sit to the left
+            // of the Reset/Cancel button; collapsed buttons take no space, so the group still
+            // centres on just _resetBtn for every tool that doesn't use this.
+            _skipBtn = BuildButton(L.T("common.footer.skip"), false);
+            _skipBtn.Visibility = Visibility.Collapsed;
+            _skipBtn.VerticalAlignment = VerticalAlignment.Center;
+            _skipBtn.Margin = new Thickness(0, 0, 8, 0);
+            _skipBtn.Click += (s, e) => (_tool as ILemoineRunPausable)?.SkipCurrentItem();
+
+            _continueBtn = BuildButton(L.T("common.footer.continue"), true);
+            _continueBtn.Visibility = Visibility.Collapsed;
+            _continueBtn.VerticalAlignment = VerticalAlignment.Center;
+            _continueBtn.Margin = new Thickness(0, 0, 8, 0);
+            _continueBtn.Click += (s, e) => (_tool as ILemoineRunPausable)?.ContinueRun();
+
+            var bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            bar.Children.Add(_skipBtn);
+            bar.Children.Add(_continueBtn);
+            bar.Children.Add(_resetBtn);
+
             var host = new Grid { VerticalAlignment = VerticalAlignment.Center };
-            host.Children.Add(_resetBtn);
+            host.Children.Add(bar);
             _footerBorder.Child = host;
 
             UpdateResetButton();
@@ -1095,6 +1141,8 @@ namespace LemoineTools.Lemoine
         private void StartRun()
         {
             _isRunning = true; SetStatus("● Running…"); SetCounts(0, 0, 0);
+            if (_continueBtn != null) _continueBtn.Visibility = Visibility.Collapsed;
+            if (_skipBtn     != null) _skipBtn.Visibility     = Visibility.Collapsed;
             StartRunClock();   // top-bar chip becomes an elapsed-time clock for the duration
             _runningTexts[_tool.Steps.Length - 1].Visibility = Visibility.Visible;
             foreach (var b in _confirmBtns) if (b != null) b.IsEnabled = false;
@@ -1125,6 +1173,8 @@ namespace LemoineTools.Lemoine
         private void CompleteRun(int pass, int fail, int skip)
         {
             _isRunning = false; _isDone = true;
+            if (_continueBtn != null) _continueBtn.Visibility = Visibility.Collapsed;
+            if (_skipBtn     != null) _skipBtn.Visibility     = Visibility.Collapsed;
             StopRunClock();   // freeze the chip on the final elapsed time
             bool wasCancelled = LemoineRun.CancelRequested;
             LemoineRun.End();
@@ -1464,6 +1514,10 @@ namespace LemoineTools.Lemoine
             _resetBtn.IsEnabled = false;
             _resetBtn.Content   = "Cancelling…";
             PushLog("Cancelling — will stop at the next checkpoint…", "warn");
+            // If paused on a manual step (Continue/Skip visible), there's no running loop left to
+            // observe the cancel flag — nudge it via Skip so the run can actually stop.
+            if (_continueBtn?.Visibility == Visibility.Visible)
+                (_tool as ILemoineRunPausable)?.SkipCurrentItem();
         }
 
         // Footer button → red "Cancel" affordance for the duration of a run.

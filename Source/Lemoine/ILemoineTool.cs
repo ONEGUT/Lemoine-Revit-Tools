@@ -159,4 +159,28 @@ namespace LemoineTools.Lemoine
         /// <summary>Called by StepFlowWindow when the user clicks Confirm on the given step, before navigation occurs.</summary>
         void OnStepConfirm(string stepId);
     }
+
+    /// <summary>
+    /// Optional interface for a run that must pause on a manual step it cannot detect the
+    /// completion of automatically (e.g. a native Revit dialog posted via
+    /// <c>UIApplication.PostCommand</c>, which Revit does not report cancellation of). While
+    /// paused, StepFlowWindow shows two extra footer buttons — "Continue" and "Skip" — next to
+    /// the normal Reset/Cancel button, calling <see cref="ContinueRun"/> / <see cref="SkipCurrentItem"/>
+    /// on click. The existing Cancel button also calls <see cref="SkipCurrentItem"/> first when a
+    /// pause is active, since no running loop is left to observe <see cref="LemoineRun.CancelRequested"/>
+    /// while paused. Tools that don't implement this interface are unaffected (buttons never shown).
+    /// </summary>
+    public interface ILemoineRunPausable
+    {
+        /// <summary>Raised when the tool starts/stops waiting on a manual step. Args: is-awaiting,
+        /// the Continue button label (or null for the default), the Skip button label (or null
+        /// for the default). Raised from whatever thread the run is on — StepFlowWindow marshals.</summary>
+        event Action<bool, string?, string?>? AwaitingUserChanged;
+
+        /// <summary>User clicked "Continue" — the manual step is done; resume the run.</summary>
+        void ContinueRun();
+
+        /// <summary>User clicked "Skip" (or Cancel, mid-pause) — abandon the current item and resume.</summary>
+        void SkipCurrentItem();
+    }
 }
