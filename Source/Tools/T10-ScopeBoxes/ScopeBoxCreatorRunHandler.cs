@@ -227,7 +227,14 @@ namespace LemoineTools.Tools.ScopeBoxes
                     {
                         try
                         {
-                            XYZ translation = spec.Center - seedCenter;
+                            // Bottom-align in Z: the Height parameter grows from the box's
+                            // minimum Z (confirmed on Revit 2026 via the probe), so landing the
+                            // seed's bottom on zBot and then setting Height gives an exact
+                            // [zBot, zTop] span. XY is centred on the cluster (W/D aren't settable).
+                            XYZ translation = new XYZ(
+                                spec.Center.X - seedCenter.X,
+                                spec.Center.Y - seedCenter.Y,
+                                spec.ZBot      - seedBb.Min.Z);
                             var copyIds = ElementTransformUtils.CopyElement(doc, seed.Id, translation);
                             var copyId  = copyIds.FirstOrDefault() ?? ElementId.InvalidElementId;
                             var copy    = copyId != ElementId.InvalidElementId ? doc.GetElement(copyId) : null;
@@ -252,16 +259,31 @@ namespace LemoineTools.Tools.ScopeBoxes
                                 pass++;
                                 Log(LemoineStrings.T("scopeBoxes.creator.log.created", spec.Name), "pass");
 
-                                // Size mismatch → the user must drag the handles once. Report the
-                                // exact required size (position and name are already correct).
+                                // Height IS settable via VOLUME_OF_INTEREST_HEIGHT (grows from the
+                                // bottom, which we bottom-aligned above) — set it so Z fits exactly.
+                                bool heightSet = false;
+                                try
+                                {
+                                    var hp = copy.get_Parameter(BuiltInParameter.VOLUME_OF_INTEREST_HEIGHT);
+                                    if (hp != null && !hp.IsReadOnly) { hp.Set(spec.Height); heightSet = true; }
+                                }
+                                catch (Exception hex)
+                                { LemoineLog.Swallowed($"ScopeBoxCreator: set height on '{spec.Name}'", hex); }
+
+                                // Width/Depth are NOT exposed by the API — report the required
+                                // footprint so the user drags the handles once (name, position and
+                                // height are already correct).
                                 const double tol = 0.5; // ft
-                                if (Math.Abs(spec.Width - seedW) > tol ||
-                                    Math.Abs(spec.Depth - seedD) > tol ||
-                                    Math.Abs(spec.Height - seedH) > tol)
+                                if (Math.Abs(spec.Width - seedW) > tol || Math.Abs(spec.Depth - seedD) > tol)
                                 {
                                     Log(LemoineStrings.T("scopeBoxes.creator.log.resizeNeeded",
                                         spec.Name, spec.Width.ToString("0.#"),
-                                        spec.Depth.ToString("0.#"), spec.Height.ToString("0.#")), "warn");
+                                        spec.Depth.ToString("0.#")), "warn");
+                                }
+                                if (!heightSet && Math.Abs(spec.Height - seedH) > tol)
+                                {
+                                    Log(LemoineStrings.T("scopeBoxes.creator.log.heightManual",
+                                        spec.Name, spec.Height.ToString("0.#")), "warn");
                                 }
                             }
                         }

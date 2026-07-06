@@ -36,6 +36,7 @@
     "datumsHeader": "Grids, levels & ref planes following this box  ({0})",  // {0}=count
     "assignDatums": "Assign datums…",
     "datumsEmpty":  "No datums follow this scope box.",
+    "datumsHint":   "A scope box on a grid/level makes its 2D extents (bubble/line) follow the box in every view. Host model only; each datum uses one box.",
 
     "kindGrid":     "Grid",
     "kindLevel":    "Level",
@@ -46,6 +47,8 @@
     "cancel":            "Cancel",
     "assignViewsTitle":  "Assign views to ‘{0}’",        // {0}=box name
     "assignDatumsTitle": "Assign datums to ‘{0}’",       // {0}=box name
+    "assignDatumsHelp":  "Pick the host grids, levels and reference planes whose 2D extents should follow this box across all views. Only datums whose plane crosses the box are listed (Revit requires the datum to intersect it). Linked datums are managed in their own model. Check as many as you like; each datum can follow one box.",
+    "assignDatumsNone":  "No host datums cross this scope box, so none can follow it. Widen the box (or move it) so it overlaps the grids/levels you want, then try again.",
     "applyAssign":       "Apply",
     "renameTitle":       "Rename {0} scope box(es)",      // {0}=count
     "renamePreviewTwo":  "{0}\n{1}",                      // {0}/{1}=first two new names

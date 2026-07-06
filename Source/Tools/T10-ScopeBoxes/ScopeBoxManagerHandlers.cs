@@ -25,6 +25,23 @@ namespace LemoineTools.Tools.ScopeBoxes
         public string Kind = "Grid";
         /// <summary>Scope box currently governing this datum's extents (InvalidElementId = none).</summary>
         public ElementId CurrentBoxId = ElementId.InvalidElementId;
+        // Geometry for intersection testing (Revit only allows a scope box on a datum whose
+        // plane crosses the box). Levels use Elevation; grids/ref planes use the XY bbox.
+        public bool   IsLevel;
+        public double Elevation;
+        public double MinX, MinY, MaxX, MaxY;
+        public bool   HasBounds;
+
+        /// <summary>True when this datum's plane intersects the given box bounds — mirrors
+        /// Revit's own "datum plane must intersect the scope box" rule closely enough to keep
+        /// non-intersecting datums out of the picker (so the assignment never errors).</summary>
+        public bool IntersectsBox(ScopeBoxUsage box)
+        {
+            if (IsLevel)
+                return Elevation >= box.MinZ - 0.01 && Elevation <= box.MaxZ + 0.01;
+            if (!HasBounds) return true; // unknown extent — don't hide it
+            return !(MaxX < box.MinX || MinX > box.MaxX || MaxY < box.MinY || MinY > box.MaxY);
+        }
     }
 
     public sealed class ScopeBoxUsage
@@ -32,6 +49,7 @@ namespace LemoineTools.Tools.ScopeBoxes
         public ElementId Id = ElementId.InvalidElementId;
         public string Name = "";
         public double WidthFt, DepthFt, HeightFt;
+        public double MinX, MinY, MinZ, MaxX, MaxY, MaxZ;
         public List<ManagerViewRef>  Views  = new List<ManagerViewRef>();
         public List<ManagerDatumRef> Datums = new List<ManagerDatumRef>();
         public bool IsUnused => Views.Count == 0 && Datums.Count == 0;
@@ -80,6 +98,8 @@ namespace LemoineTools.Tools.ScopeBoxes
                 {
                     Id = b.Id, Name = b.Name,
                     WidthFt = b.WidthFt, DepthFt = b.DepthFt, HeightFt = b.HeightFt,
+                    MinX = b.MinX, MinY = b.MinY, MinZ = b.MinZ,
+                    MaxX = b.MaxX, MaxY = b.MaxY, MaxZ = b.MaxZ,
                 };
                 result.Boxes.Add(u);
                 usageById[b.Id.Value] = u;
@@ -123,6 +143,21 @@ namespace LemoineTools.Tools.ScopeBoxes
                     {
                         Id = e.Id, Name = e.Name, Kind = kind, CurrentBoxId = boxId,
                     };
+
+                    // Geometry for the intersection filter.
+                    if (e is Level lvl) { dref.IsLevel = true; dref.Elevation = lvl.Elevation; }
+                    else
+                    {
+                        var bb = e.get_BoundingBox(null);
+                        if (bb != null)
+                        {
+                            dref.HasBounds = true;
+                            dref.MinX = Math.Min(bb.Min.X, bb.Max.X);
+                            dref.MinY = Math.Min(bb.Min.Y, bb.Max.Y);
+                            dref.MaxX = Math.Max(bb.Min.X, bb.Max.X);
+                            dref.MaxY = Math.Max(bb.Min.Y, bb.Max.Y);
+                        }
+                    }
                     result.Datums.Add(dref);
 
                     if (usageById.TryGetValue(boxId.Value, out var usage))
@@ -232,7 +267,9 @@ namespace LemoineTools.Tools.ScopeBoxes
 
             using (var tx = new Transaction(doc, "Scope Box Manager — assign"))
             {
-                ConfigureFailures(tx);
+                // Swallow warning modals on datum assignment (the overlay already filters to
+                // intersecting datums, so this only guards edge cases).
+                ConfigureFailures(tx, swallowWarnings: !isView);
                 tx.Start();
 
                 // Current carriers (so unselected ones get cleared)
@@ -348,12 +385,28 @@ namespace LemoineTools.Tools.ScopeBoxes
                 : LemoineStrings.T("scopeBoxes.manager.status.deletedNone");
         }
 
-        private static void ConfigureFailures(Transaction tx)
+        private static void ConfigureFailures(Transaction tx, bool swallowWarnings = false)
         {
             var opts = tx.GetFailureHandlingOptions();
             opts.SetClearAfterRollback(true);
             opts.SetDelayedMiniWarnings(true);
+            if (swallowWarnings)
+                opts.SetFailuresPreprocessor(new SwallowWarningsPreprocessor());
             tx.SetFailureHandlingOptions(opts);
+        }
+
+        /// <summary>
+        /// Dismisses warning-level failures so no modal appears during a datum-assign pass.
+        /// The overlay already filters to datums that intersect the box, so this is only a
+        /// belt-and-suspenders guard; errors are left for Revit to roll back normally.
+        /// </summary>
+        private sealed class SwallowWarningsPreprocessor : IFailuresPreprocessor
+        {
+            public FailureProcessingResult PreprocessFailures(FailuresAccessor a)
+            {
+                a.DeleteAllWarnings();
+                return FailureProcessingResult.Continue;
+            }
         }
     }
 }

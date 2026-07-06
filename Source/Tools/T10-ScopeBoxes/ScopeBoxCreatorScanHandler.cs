@@ -26,6 +26,13 @@ namespace LemoineTools.Tools.ScopeBoxes
         public double    WidthFt  { get; set; }
         public double    DepthFt  { get; set; }
         public double    HeightFt { get; set; }
+        // World-space bounds (feet) — used by the Manager to test which datums intersect.
+        public double    MinX { get; set; }
+        public double    MinY { get; set; }
+        public double    MinZ { get; set; }
+        public double    MaxX { get; set; }
+        public double    MaxY { get; set; }
+        public double    MaxZ { get; set; }
     }
 
     /// <summary>
@@ -128,6 +135,8 @@ namespace LemoineTools.Tools.ScopeBoxes
                     WidthFt  = bb != null ? bb.Max.X - bb.Min.X : 0,
                     DepthFt  = bb != null ? bb.Max.Y - bb.Min.Y : 0,
                     HeightFt = bb != null ? bb.Max.Z - bb.Min.Z : 0,
+                    MinX = bb?.Min.X ?? 0, MinY = bb?.Min.Y ?? 0, MinZ = bb?.Min.Z ?? 0,
+                    MaxX = bb?.Max.X ?? 0, MaxY = bb?.Max.Y ?? 0, MaxZ = bb?.Max.Z ?? 0,
                 });
             }
             return result.OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();

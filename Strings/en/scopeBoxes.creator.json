@@ -47,7 +47,7 @@
     "seedHeader": "SEED SCOPE BOX",
     "seedNone":   "(no scope boxes in project)",
     "seedSize":   "Seed size: W {0} · D {1} · H {2} ft",  // {0}/{1}/{2} = dims
-    "seedHint":   "The Revit API cannot create a scope box from scratch, so every created box is a duplicate of this seed — renamed and moved into place. The seed itself is left untouched. If the list is empty, draw one scope box (View ▸ Scope Box) and re-enter this step.",
+    "seedHint":   "The Revit API cannot create a scope box from scratch, so every created box is a duplicate of this seed — renamed, moved, and height-set into place. Width/depth are copied from the seed (the API can't change them), so draw the seed at least as wide/deep as your largest building to avoid any manual resizing. The seed itself is left untouched. If the list is empty, draw one scope box (View ▸ Scope Box) and re-enter this step.",
 
     "namingHeader":  "NAME SLOTS",
     "previewHeader": "PREVIEW",
@@ -67,7 +67,7 @@
     "docsValue":     "{0} selected",   // {0} = count
     "levelsValue":   "{0} selected",   // {0} = count
     "countDeferred": "Computed at run",
-    "note":          "Existing scope boxes with the same name are skipped, never overwritten. Boxes whose required size differs from the seed are reported with the exact W × D × H so they can be resized by hand.",
+    "note":          "Existing scope boxes with the same name are skipped, never overwritten. Height is set automatically; width/depth can't be set through the API, so any box wider/deeper than the seed is reported with the exact footprint to drag by hand.",
     "warnNoSeed":    "No seed scope box selected — draw one in Revit (View ▸ Scope Box), then re-enter Seed & Naming."
   },
 
@@ -84,7 +84,8 @@
     "copyFailed":     "Copy failed for '{0}' — the seed could not be duplicated.",   // {0} = name
     "renameRefused":  "Revit refused the rename: {0}",          // {0} = Revit's message
     "created":        "Created scope box '{0}'.",               // {0} = name
-    "resizeNeeded":   "'{0}' needs a manual resize: required W {1} × D {2} × H {3} ft (drag its handles once — name and position are already correct).",  // {0}=name {1}-{3}=dims
+    "resizeNeeded":   "'{0}' needs a manual footprint resize: required W {1} × D {2} ft (drag its handles once — name, position and height are already set; the API can't set width/depth).",  // {0}=name {1}=width {2}=depth
+    "heightManual":   "'{0}' height could not be set automatically — set it to {1} ft by hand.",  // {0}=name {1}=height
     "failBox":        "'{0}' failed: {1}",                      // {0}=name {1}=message
     "complete":       "Done — {0} created, {1} skipped, {2} failed."  // counts
   }

@@ -598,6 +598,7 @@ namespace LemoineTools.Lemoine
                 datumsPanel.Children.Add(BuildRefList(
                     box.Datums.Select(d => (d.Id.Value, d.Name, KindLabel(d.Kind))), _checkedDatums));
 
+            datumsPanel.Children.Add(EmptyNote(LemoineStrings.T("scopeBoxes.manager.main.datumsHint")));
             datumsCard.Child = datumsPanel;
             _mainPanel.Children.Add(datumsCard);
         }
@@ -902,10 +903,49 @@ namespace LemoineTools.Lemoine
                 LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsTitle", box.Name), 460);
             var host = (DockPanel)card.Child;
 
-            // Group datums by kind; keys carry the element id so duplicates are safe.
+            // Explanatory help — this is the confusing part, so spell it out.
+            var help = new TextBlock
+            {
+                Text = LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsHelp"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+            help.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            help.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            help.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            DockPanel.SetDock(help, Dock.Top);
+            host.Children.Add(help);
+
+            // Only offer datums whose plane actually crosses this box — Revit rejects any
+            // that don't ("Datum plane does not intersect the Scope Box"), so filtering here
+            // makes the assignment always valid. Host model only (linked datums live in the link).
+            var eligible = _scan.Datums.Where(d => d.IntersectsBox(box)).ToList();
+
+            if (eligible.Count == 0)
+            {
+                var none = new TextBlock
+                {
+                    Text = LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsNone"),
+                    TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
+                };
+                none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+                var closeFooter = OverlayFooter(
+                    LemoineStrings.T("scopeBoxes.manager.overlay.cancel"), HideOverlay,
+                    LemoineControlStyles.LemoineButtonVariant.Ghost);
+                DockPanel.SetDock(closeFooter, Dock.Bottom);
+                host.Children.Add(closeFooter);
+                host.Children.Add(none);
+                ShowOverlay(card);
+                return;
+            }
+
+            // Group eligible datums by kind; keys carry the element id so duplicate names are safe.
             var keyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
             var groups  = new Dictionary<string, List<string>>();
-            foreach (var d in _scan.Datums)
+            foreach (var d in eligible)
             {
                 string grp = KindLabel(d.Kind);
                 string key = $"{d.Name}  [{d.Id.Value}]";
@@ -929,7 +969,7 @@ namespace LemoineTools.Lemoine
             {
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                MaxHeight = 360,
+                MaxHeight = 320,
                 Content   = tabs,
             };
             LemoineControlStyles.SetSelfContainedScroll(scroll, true);
