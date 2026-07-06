@@ -113,6 +113,11 @@
     <Page             Remove="LemoineNavisworks\**\*" />
     <None             Remove="LemoineNavisworks\**\*" />
     <EmbeddedResource Remove="LemoineNavisworks\**\*" />
+
+    <Compile          Remove="LemoineTools.PdfGeometry\**\*" />
+    <Page             Remove="LemoineTools.PdfGeometry\**\*" />
+    <None             Remove="LemoineTools.PdfGeometry\**\*" />
+    <EmbeddedResource Remove="LemoineTools.PdfGeometry\**\*" />
   </ItemGroup>
 
   <ItemGroup>
