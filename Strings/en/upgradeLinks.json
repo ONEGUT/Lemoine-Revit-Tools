@@ -79,6 +79,7 @@
     "noHostFolder":   "The active model has no local folder — cannot create a subfolder next to it.",
     "subfolderFail":  "Could not create subfolder {0}: {1}",
     "cloudNotReady":  "Cloud destination is not available — no cloud target could be resolved for this model.",
+    "cloudFolderNotFound": "Could not find this model's Autodesk Construction Cloud folder — check your connection and permissions, then try again.",
     "start":          "Processing {0} file(s) · destination: {1}",
     "missing":        "Skipped — file not found: {0}",
     "openFail":       "Failed to open (upgrade) {0}.",

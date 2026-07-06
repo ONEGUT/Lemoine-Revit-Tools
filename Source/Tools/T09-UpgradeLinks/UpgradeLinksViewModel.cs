@@ -42,9 +42,9 @@ namespace LemoineTools.Tools.UpgradeLinks
         private readonly bool                     _hostCanCloud;   // true when the host's cloud ids resolved
         private readonly bool                     _hostIsCloud;    // host is a cloud model (PathName is unusable)
         private readonly string?                  _cloudModelGuid; // host's cloud model GUID — key for remembered folder
-        private readonly Guid                     _cloudHubId;
-        private readonly Guid                     _cloudProjectId;
-        private readonly string                   _cloudFolderId = "";
+        private readonly string                   _cloudHubId = "";     // Document.GetHubId() — a string, not a Guid
+        private readonly string                   _cloudProjectId = ""; // Document.GetProjectId()
+        private readonly string                   _cloudFolderId = "";  // Document.GetCloudFolderId(false)
         private string                             _manualFolder = ""; // user-picked folder when _hostFolder is empty
 
         // ── State ────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ namespace LemoineTools.Tools.UpgradeLinks
             UpgradeLinksScanHandler? scanHandler, ExternalEvent? scanEvent,
             UpgradeLinksRunHandler?  runHandler,  ExternalEvent?  runEvent,
             string? hostFolder, bool hostCanCloud, bool hostIsCloud, string? cloudModelGuid,
-            Guid cloudHubId, Guid cloudProjectId, string cloudFolderId)
+            string cloudHubId, string cloudProjectId, string cloudFolderId)
         {
             _scanHandler = scanHandler; _scanEvent = scanEvent;
             _runHandler  = runHandler;  _runEvent  = runEvent;
@@ -620,7 +620,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                 AuditOnOpen    = _audit,
                 ReloadExisting = _reload,
                 CloudReady     = _hostCanCloud && _dest == UpgradeDestination.Cloud,
-                CloudAccountId = _cloudHubId,
+                CloudHubId     = _cloudHubId,
                 CloudProjectId = _cloudProjectId,
                 CloudFolderId  = _cloudFolderId,
             };

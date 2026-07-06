@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.ForgeDM;
 using Autodesk.Revit.UI;
 using LemoineTools.Lemoine;
 
@@ -57,10 +58,22 @@ namespace LemoineTools.Tools.UpgradeLinks
                         OnComplete?.Invoke(0, 1, 0); return;
                     }
                 }
-                if (Spec.Destination == UpgradeDestination.Cloud && !Spec.CloudReady)
+                CloudFolder? cloudFolder = null;
+                if (Spec.Destination == UpgradeDestination.Cloud)
                 {
-                    Log(LemoineStrings.T("upgradeLinks.log.cloudNotReady"), "fail");
-                    OnComplete?.Invoke(0, 1, 0); return;
+                    if (!Spec.CloudReady)
+                    {
+                        Log(LemoineStrings.T("upgradeLinks.log.cloudNotReady"), "fail");
+                        OnComplete?.Invoke(0, 1, 0); return;
+                    }
+                    // Resolved once up front (not per-file) — the ForgeDM browsing calls hit ACC,
+                    // and every file in this run saves into the same host folder.
+                    cloudFolder = ResolveCloudFolder(Spec.CloudHubId, Spec.CloudProjectId, Spec.CloudFolderId);
+                    if (cloudFolder == null)
+                    {
+                        Log(LemoineStrings.T("upgradeLinks.log.cloudFolderNotFound"), "fail");
+                        OnComplete?.Invoke(0, 1, 0); return;
+                    }
                 }
 
                 Log(LemoineStrings.T("upgradeLinks.log.start", files.Count, DestLabel(destFolder)), "info");
@@ -147,7 +160,7 @@ namespace LemoineTools.Tools.UpgradeLinks
                             string cloudName = UniqueName(effectiveBaseName, usedNames);
                             // SaveAsCloudModel returns void — the resulting cloud ModelPath is read back
                             // from the document itself once the save has re-pointed it at the cloud.
-                            linkDoc.SaveAsCloudModel(Spec.CloudAccountId, Spec.CloudProjectId, Spec.CloudFolderId, cloudName);
+                            linkDoc.SaveAsCloudModel(cloudFolder!, cloudName);
                             savedMp = linkDoc.GetCloudModelPath();
                         }
                         else
@@ -346,6 +359,44 @@ namespace LemoineTools.Tools.UpgradeLinks
                 case UpgradeDestination.Cloud:     return LemoineStrings.T("upgradeLinks.summaries.destCloud");
                 default:                           return LemoineStrings.T("upgradeLinks.summaries.destSubfolder", Spec.SubfolderName);
             }
+        }
+
+        // Resolves the host's own ACC folder by matching Document.GetHubId()/GetProjectId()/
+        // GetCloudFolderId() (all strings — see UpgradeLinksModels.UpgradeLinksSpec) against the
+        // real CloudHub/CloudProject/CloudFolder browsing API, so SaveAsCloudModel can be called
+        // with an actual CloudFolder object rather than a guessed-at Guid. Folders can nest, so the
+        // search walks the project's folder tree (capped — real ACC folder trees are shallow).
+        private static CloudFolder? ResolveCloudFolder(string hubId, string projectId, string folderId)
+        {
+            if (string.IsNullOrEmpty(hubId) || string.IsNullOrEmpty(projectId) || string.IsNullOrEmpty(folderId))
+                return null;
+            try
+            {
+                var hub = CloudHub.GetAllHubs()
+                    ?.FirstOrDefault(h => string.Equals(h.Id, hubId, StringComparison.Ordinal));
+                var project = hub?.GetProjects()
+                    ?.FirstOrDefault(p => string.Equals(p.Id, projectId, StringComparison.Ordinal));
+                if (project == null) return null;
+                return FindCloudFolder(project.GetFolders(), folderId, 0);
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Swallowed("UpgradeLinks: resolve cloud folder", ex);
+                return null;
+            }
+        }
+
+        private static CloudFolder? FindCloudFolder(IList<CloudFolder>? folders, string folderId, int depth)
+        {
+            if (folders == null || depth > 8) return null;
+            foreach (var f in folders)
+                if (string.Equals(f.Id, folderId, StringComparison.Ordinal)) return f;
+            foreach (var f in folders)
+            {
+                var found = FindCloudFolder(f.GetFolders(), folderId, depth + 1);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private static string SanitizeFolder(string name)

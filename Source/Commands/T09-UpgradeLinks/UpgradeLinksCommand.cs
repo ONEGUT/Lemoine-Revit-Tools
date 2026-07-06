@@ -41,8 +41,8 @@ namespace LemoineTools.Commands
                 bool    hostIsCloud    = false;
                 bool    hostCanCloud   = false;
                 string? cloudModelGuid = null;
-                Guid    cloudHubId     = Guid.Empty;
-                Guid    cloudProjectId = Guid.Empty;
+                string  cloudHubId     = "";
+                string  cloudProjectId = "";
                 string  cloudFolderId  = "";
 
                 try
@@ -59,11 +59,15 @@ namespace LemoineTools.Commands
                             {
                                 var cloudMp = doc.GetCloudModelPath();
                                 cloudModelGuid = cloudMp.GetModelGUID().ToString();
+                                // GetHubId()/GetProjectId()/GetCloudFolderId() all return strings —
+                                // there is no Guid-typed hub/account accessor in the Revit 2024 API.
+                                // The run handler resolves these to a real CloudFolder via the
+                                // CloudHub/CloudProject/CloudFolder browsing API at run time.
                                 cloudHubId     = doc.GetHubId();
-                                cloudProjectId = cloudMp.GetProjectGUID();
-                                cloudFolderId  = doc.GetCloudFolderId();
-                                hostCanCloud   = cloudHubId != Guid.Empty
-                                               && cloudProjectId != Guid.Empty
+                                cloudProjectId = doc.GetProjectId();
+                                cloudFolderId  = doc.GetCloudFolderId(false);
+                                hostCanCloud   = !string.IsNullOrEmpty(cloudHubId)
+                                               && !string.IsNullOrEmpty(cloudProjectId)
                                                && !string.IsNullOrEmpty(cloudFolderId);
                             }
                             catch (Exception ex)
