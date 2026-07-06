@@ -74,5 +74,13 @@
   // categoryChip — LemoineCategoryChip default label (design-time/no-Label fallback)
   "categoryChip": {
     "defaultLabel": "Chip"
+  },
+
+  // namingSlots — LemoineNamingSlots row labels (token VALUES like "None"/"Custom" are
+  // logic identifiers compared with == in callers — they stay hardcoded per CLAUDE.md)
+  "namingSlots": {
+    "front": "Front",
+    "center": "Center",
+    "end": "End"
   }
 }

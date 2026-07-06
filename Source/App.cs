@@ -62,10 +62,18 @@ namespace LemoineTools
         internal static ExternalEvent?                        OpenDeleteFromProjectEvent      { get; private set; }
 
         // ── Link Views — Level ──────────────────────────────────────────────────────
-        internal static LinkViewsLevelPhase1Handler? LinkViewsLevelPhase1Handler { get; private set; }
-        internal static ExternalEvent?               LinkViewsLevelPhase1Event   { get; private set; }
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
+
+        // ── T10 — Scope Boxes ───────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler? ScopeBoxCreatorScanHandler { get; private set; }
+        internal static ExternalEvent?               ScopeBoxCreatorScanEvent    { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler?  ScopeBoxCreatorRunHandler  { get; private set; }
+        internal static ExternalEvent?               ScopeBoxCreatorRunEvent     { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerScanHandler? ScopeBoxManagerScanHandler { get; private set; }
+        internal static ExternalEvent?               ScopeBoxManagerScanEvent    { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerRunHandler?  ScopeBoxManagerRunHandler  { get; private set; }
+        internal static ExternalEvent?               ScopeBoxManagerRunEvent     { get; private set; }
 
         // ── Bulk Views by Template ──────────────────────────────────────────────────
         internal static ViewsByTemplateRunHandler?   ViewsByTemplateRunHandler   { get; private set; }
@@ -135,11 +143,13 @@ namespace LemoineTools
         internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
-        // ── Coordination — Align Coordinates / Compare Grids ─────────────────────────
+        // ── Coordination — Align Coordinates / Compare Grids / Push Coordinates to Links ─
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
         internal static LemoineTools.Tools.Coordinates.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
         internal static ExternalEvent?             CompareGridsRunEvent     { get; private set; }
+        internal static LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
+        internal static ExternalEvent?             PushCoordinatesRunEvent  { get; private set; }
 
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
@@ -213,8 +223,6 @@ namespace LemoineTools
             OpenDeleteFromProjectEvent      = ExternalEvent.Create(OpenDeleteFromProjectHandler);
 
             // ── Link Views — Level ────────────────────────────────────────────
-            LinkViewsLevelPhase1Handler = new LinkViewsLevelPhase1Handler();
-            LinkViewsLevelPhase1Event   = ExternalEvent.Create(LinkViewsLevelPhase1Handler);
             LinkViewsLevelRunHandler    = new LinkViewsLevelRunHandler();
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
             ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();
@@ -227,6 +235,16 @@ namespace LemoineTools
             // ── Replicate Dependent Views ─────────────────────────────────────
             ReplicateDependentViewsRunHandler = new ReplicateDependentViewsRunHandler();
             ReplicateDependentViewsRunEvent   = ExternalEvent.Create(ReplicateDependentViewsRunHandler);
+
+            // ── T10 — Scope Boxes ─────────────────────────────────────────────
+            ScopeBoxCreatorScanHandler = new LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler();
+            ScopeBoxCreatorScanEvent   = ExternalEvent.Create(ScopeBoxCreatorScanHandler);
+            ScopeBoxCreatorRunHandler  = new LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler();
+            ScopeBoxCreatorRunEvent    = ExternalEvent.Create(ScopeBoxCreatorRunHandler);
+            ScopeBoxManagerScanHandler = new LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerScanHandler();
+            ScopeBoxManagerScanEvent   = ExternalEvent.Create(ScopeBoxManagerScanHandler);
+            ScopeBoxManagerRunHandler  = new LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerRunHandler();
+            ScopeBoxManagerRunEvent    = ExternalEvent.Create(ScopeBoxManagerRunHandler);
 
             // ── Testing — new tools ───────────────────────────────────────────
             BulkExportHandler   = new BulkExportEventHandler();
@@ -272,6 +290,8 @@ namespace LemoineTools
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
             CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
             CompareGridsRunEvent       = ExternalEvent.Create(CompareGridsRunHandler);
+            PushCoordinatesRunHandler  = new LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler();
+            PushCoordinatesRunEvent    = ExternalEvent.Create(PushCoordinatesRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -399,6 +419,31 @@ namespace LemoineTools
                 ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
                 LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
+            });
+
+            // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
+            var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxes.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),  // CubeShape
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            };
+            var scopeBoxBtn = viewsPanel.AddItem(scopeBoxPulldown) as PulldownButton;
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxCreator", L.T("ribbon.buttons.scopeBoxCreator.label"), dll, "LemoineTools.Commands.ScopeBoxCreatorCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxCreator.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            });
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxManager", L.T("ribbon.buttons.scopeBoxManager.label"), dll, "LemoineTools.Commands.ScopeBoxManagerCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxManager.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8FD)),  // ListView / manage
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8FD)),
             });
 
             viewsPanel.AddItem(Btn(
@@ -535,13 +580,18 @@ namespace LemoineTools
 
             coordPanel.AddItem(Btn(
                 "LT_AlignCoordinates", "Align\nCoordinates", "AlignCoordinatesCommand",
-                "Move the host Survey Point and/or Project Base Point to a picked grid intersection + level, then rotate/translate every selected link so its same-named grid intersection coincides, and publish the host's shared coordinates to those links.",
+                "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files.",
                 char.ConvertFromUtf32(0xE809)));  // MapPin
 
             coordPanel.AddItem(Btn(
                 "LT_CompareGrids", "Compare\nGrids", "CompareGridsCommand",
                 "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file.",
                 char.ConvertFromUtf32(0xE80A)));  // GridView
+
+            coordPanel.AddItem(Btn(
+                "LT_PushCoordinates", "Push Coordinates\nto Links", "PushCoordinatesToLinksCommand",
+                "Commit an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, and saves in place — Synchronizing With Central for a workshared source — then publishes coordinates and re-places the link via Shared Coordinates.",
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
             coordPanel.AddItem(Btn(
                 "LT_UpgradeLinks", "Upgrade &\nLink Models", "UpgradeLinksCommand",
@@ -564,6 +614,16 @@ namespace LemoineTools
                 "LT_Overview", L.T("ribbon.buttons.overview.label"), "OpenOverviewCommand",
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
+
+            // ── Developer ─────────────────────────────────────────────────────
+            // Reserved panel for debug harnesses. Remove/repoint buttons once their
+            // investigation is resolved.
+            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
+
+            devPanel.AddItem(Btn(
+                "LT_ScopeBoxProbe", "Scope Box\nProbe", "ScopeBoxProbeCommand",
+                "DEBUG: probe the Revit API for scope-box copy/rename/move/rotate/resize capability on this Revit year (all mutations rolled back), and write a report to %AppData%\\LemoineTools\\ScopeBoxProbe.txt.",
+                char.ConvertFromUtf32(0xE7B3)));  // Diagnostic / Bug
 
             return Result.Succeeded;
         }

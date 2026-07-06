@@ -1,0 +1,78 @@
+// scopeBoxes.manager.json — Scope Box Manager window (Filters-style management surface).
+// Command: ScopeBoxManagerCommand. NOTE: action tokens (SetViews/SetDatums/Rename/Delete),
+// filter tokens (All/Used/Unused), datum-kind tokens (Grid/Level/RefPlane), and rename
+// slot tokens (None/Current Name/Number/Custom) stay as code identifiers.
+{
+  "toolbar": {
+    "title":           "Scope Box Manager",
+    "refresh":         "↺ Refresh",
+    "refreshTooltip":  "Re-scan the model for scope boxes and their usage."
+  },
+
+  "side": {
+    "header":        "SCOPE BOXES — {0} · {1} unused",   // {0}=count {1}=unused
+    "filterAll":     "All",
+    "filterUsed":    "Used",
+    "filterUnused":  "Unused",
+    "usage":         "{0} views · {1} datums",           // {0}=views {1}=datums
+    "unusedBadge":   "unused",
+    "empty":         "No scope boxes in this project. Use the Scope Box Creator (or draw one via View ▸ Scope Box), then Refresh.",
+    "renameChecked": "Rename checked…",
+    "deleteUnused":  "Delete unused boxes…",
+    "footNote":      "Check boxes for bulk rename/delete. Deletes ask for confirmation and report what was removed."
+  },
+
+  "main": {
+    "noSelection":  "Select a scope box on the left to manage it.",
+    "size":         "W {0} · D {1} · H {2} ft",          // {0}/{1}/{2}=dims
+    "deleteBox":    "Delete box",
+
+    "viewsHeader":  "Views using this box  ({0})",       // {0}=count
+    "assignViews":  "Assign to views…",
+    "clearChecked": "Clear from checked",
+    "viewsEmpty":   "No views use this scope box.",
+    "viewsHint":    "“Assign to views…” opens the project-browser tree; only croppable plan/section views are offered.",
+
+    "datumsHeader": "Grids, levels & ref planes following this box  ({0})",  // {0}=count
+    "assignDatums": "Assign datums…",
+    "datumsEmpty":  "No datums follow this scope box.",
+    "datumsHint":   "A scope box on a grid/level makes its 2D extents (bubble/line) follow the box in every view. Host model only; each datum uses one box.",
+
+    "kindGrid":     "Grid",
+    "kindLevel":    "Level",
+    "kindRefPlane": "Ref Plane"
+  },
+
+  "overlay": {
+    "cancel":            "Cancel",
+    "assignViewsTitle":  "Assign views to ‘{0}’",        // {0}=box name
+    "assignDatumsTitle": "Assign datums to ‘{0}’",       // {0}=box name
+    "assignDatumsHelp":  "Pick the host grids, levels and reference planes whose 2D extents should follow this box across all views. Only datums whose plane crosses the box are listed (Revit requires the datum to intersect it). Linked datums are managed in their own model. Check as many as you like; each datum can follow one box.",
+    "assignDatumsNone":  "No host datums cross this scope box, so none can follow it. Widen the box (or move it) so it overlaps the grids/levels you want, then try again.",
+    "applyAssign":       "Apply",
+    "renameTitle":       "Rename {0} scope box(es)",      // {0}=count
+    "renamePreviewTwo":  "{0}\n{1}",                      // {0}/{1}=first two new names
+    "applyRename":       "Rename",
+    "deleteUnusedTitle": "Delete {0} unused scope box(es)?",  // {0}=count
+    "deleteBoxTitle":    "Delete ‘{0}’?",                // {0}=box name
+    "deleteBoxUnused":   "This box is not used by any view or datum.",
+    "deleteBoxInUse":    "This box is used by {0} view(s) and {1} datum(s) — they will lose their scope box.",  // counts
+    "applyDelete":       "Delete"
+  },
+
+  "status": {
+    "noHandler":      "Tool event handler unavailable — reopen the window.",
+    "busy":           "An action is still running — please wait.",
+    "nothingChecked": "Nothing is checked.",
+    "noUnused":       "There are no unused scope boxes.",
+    "scanFailed":     "Scan failed: {0}",                // {0}=message
+    "aborted":        "Action aborted: {0}",             // {0}=message
+    "unknownAction":  "Unknown action '{0}'.",           // {0}=token
+    "boxGone":        "That scope box no longer exists — refresh.",
+    "viewsSet":       "‘{0}’ — {1} view(s) assigned, {2} cleared, {3} failed.",  // name, assigned, cleared, failed
+    "datumsSet":      "‘{0}’ — {1} datum(s) assigned, {2} cleared, {3} failed.", // name, assigned, cleared, failed
+    "renamed":        "Renamed {0} box(es), {1} skipped, {2} failed.",  // counts
+    "deleted":        "Deleted {0} box(es): {1}. ({2} failed.)",        // count, names, failed
+    "deletedNone":    "No boxes were deleted."
+  }
+}

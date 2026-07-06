@@ -101,9 +101,9 @@
        otherwise sweep these sub-projects' obj\ folders and pick up their XAML-generated
        *.g.cs / *.g.i.cs and *.AssemblyAttributes.cs files, causing CS0102/CS0111/CS0579/
        CS8646 duplicate definitions. LemoineNavisworks and LemoineTools.PdfGeometry each
-       live on their own branch/checkout with their own .csproj; their obj\ output can
-       linger here after a branch switch or a local checkout that has the folder on disk
-       (untracked obj\ folders survive checkout), so the exclusion is kept unconditionally. -->
+       live on their own branch with their own .csproj; their obj\ output can linger here
+       after a branch switch (untracked obj\ folders survive checkout), so every sibling's
+       exclusion is kept unconditionally — even for a sibling not present in this checkout. -->
   <ItemGroup>
     <Compile          Remove="LemoinePreview\**\*" />
     <Page             Remove="LemoinePreview\**\*" />
