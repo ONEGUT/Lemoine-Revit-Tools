@@ -100,9 +100,10 @@
        LemoineTools.csproj sits at the repo root, so its default '**\*' globs would
        otherwise sweep these sub-projects' obj\ folders and pick up their XAML-generated
        *.g.cs / *.g.i.cs and *.AssemblyAttributes.cs files, causing CS0102/CS0111/CS0579/
-       CS8646 duplicate definitions. LemoineNavisworks lives on its own branch with its own
-       .csproj; its obj\ output can linger here after a branch switch (untracked obj\ folders
-       survive checkout), so the exclusion is kept unconditionally. -->
+       CS8646 duplicate definitions. LemoineNavisworks and LemoineTools.PdfGeometry each
+       live on their own branch with their own .csproj; their obj\ output can linger here
+       after a branch switch (untracked obj\ folders survive checkout), so every sibling's
+       exclusion is kept unconditionally — even for a sibling not present in this checkout. -->
   <ItemGroup>
     <Compile          Remove="LemoinePreview\**\*" />
     <Page             Remove="LemoinePreview\**\*" />
@@ -113,6 +114,11 @@
     <Page             Remove="LemoineNavisworks\**\*" />
     <None             Remove="LemoineNavisworks\**\*" />
     <EmbeddedResource Remove="LemoineNavisworks\**\*" />
+
+    <Compile          Remove="LemoineTools.PdfGeometry\**\*" />
+    <Page             Remove="LemoineTools.PdfGeometry\**\*" />
+    <None             Remove="LemoineTools.PdfGeometry\**\*" />
+    <EmbeddedResource Remove="LemoineTools.PdfGeometry\**\*" />
   </ItemGroup>
 
   <ItemGroup>

@@ -340,14 +340,11 @@
     "bulkViewsByLevel": {
       "steps": {
         "s1": {
-          "title": "Source Documents",
-          "hint": "Models to create per-level views from."
+          "title": "Mode & Levels",
+          "hint": "View extents (By Level or By Scope Box), scope boxes, and levels."
         },
         "s2": {
           "groups": {
-            "levels": {
-              "label": "Levels"
-            },
             "viewTypes": {
               "label": "View Types",
               "items": {
@@ -357,8 +354,8 @@
               }
             }
           },
-          "title": "Levels & View Types",
-          "hint": "Levels and the view types to create for each."
+          "title": "View Types & Templates",
+          "hint": "View types to create, with per-type view template and sub-discipline."
         },
         "s3": {
           "title": "View Naming",
@@ -368,14 +365,14 @@
         },
         "s4": {
           "title": "Review & Run",
-          "info": "Creates cropped views per level and building cluster."
+          "info": "Creates views per level — uncropped, or bounded by the selected scope boxes."
         }
       },
       "title": "Bulk Views by Level",
       "runLabel": "Create Views →",
       "runLog": {
         "1": "Creating views for 5 levels…",
-        "2": "30 cropped views created"
+        "2": "30 views created"
       }
     },
     "bulkDuplicate": {

@@ -1,0 +1,92 @@
+// scopeBoxes.creator.json — Scope Box Creator tool + run-handler logs.
+// Command: ScopeBoxCreatorCommand. NOTE: naming-slot tokens (None/Building Letter/
+// Level/Level Range/Model Name/Custom) and mode tokens (FullHeight/PerLevel) stay as
+// code identifiers — they drive switch/equality logic, not just display.
+{
+  "title": "Scope Box Creator",
+  "runLabel": "Create Scope Boxes in Revit →",
+
+  "steps": {
+    "S1": "Source Documents",
+    "S2": "Scan & Layout",
+    "S3": "Seed & Naming",
+    "S4": "Review & Run"
+  },
+
+  "summaries": {
+    "S4":        "Ready to run",
+    "docsCount": "{0} document(s)",     // {0} = document count
+    "s2":        "{0} level(s) · {1}",  // {0}=level count {1}=mode label
+    "s3NoSeed":  "No seed box"
+  },
+
+  "labels": {
+    "geoHeader":            "BOX GEOMETRY",
+    "bufferXY":             "XY buffer (ft)",
+    "bufferXYHint":         "Margin added around each building cluster footprint.",
+    "clusterThreshold":     "Cluster threshold (ft)",
+    "clusterThresholdHint": "Maximum room-edge gap for union-find building cluster merging.",
+    "topLevelHeight":       "Top level height (ft)",
+    "topLevelHeightHint":   "Box height above the topmost level when no level exists above it.",
+
+    "scanning":  "Scanning rooms in the selected documents…",
+    "scanError": "Scan failed: {0}",            // {0} = error message
+    "noLevels":  "No levels found in the host document.",
+
+    "modeHeader":     "LAYOUT",
+    "modeFullHeight": "Full building height",
+    "modePerLevel":   "One box per level",
+    "modeHint":       "Full building height creates one box per building cluster spanning every selected level. One box per level creates a box per cluster at each selected level.",
+
+    "levelWithRooms": "{0}  ({1} ft · {2} rooms)",  // {0}=name {1}=elevation {2}=count
+    "levelNoRooms":   "{0}  ({1} ft · no rooms)",   // {0}=name {1}=elevation
+
+    "plannedCount":         "{0} scope box(es) will be created.",  // {0} = count
+    "plannedCountDeferred": "Box count will be computed at run (large model).",
+
+    "seedHeader": "SEED SCOPE BOX",
+    "seedNone":   "(no scope boxes in project)",
+    "seedSize":   "Seed size: W {0} · D {1} · H {2} ft",  // {0}/{1}/{2} = dims
+    "seedHint":   "The Revit API cannot create a scope box from scratch, so every created box is a duplicate of this seed — renamed, moved, and height-set into place. Width/depth are copied from the seed (the API can't change them), so draw the seed at least as wide/deep as your largest building to avoid any manual resizing. The seed itself is left untouched. If the list is empty, draw one scope box (View ▸ Scope Box) and re-enter this step.",
+
+    "namingHeader":  "NAME SLOTS",
+    "previewHeader": "PREVIEW",
+    "previewTwo":    "{0}\n{1}"    // {0}=first cluster example {1}=second
+  },
+
+  "tokens": {
+    "levelRange": "{0}–{1}"        // {0}=lowest level name {1}=highest level name
+  },
+
+  "review": {
+    "itemDocs":      "Documents",
+    "itemLevels":    "Levels",
+    "itemMode":      "Layout",
+    "itemSeed":      "Seed box",
+    "itemCount":     "Boxes to create",
+    "docsValue":     "{0} selected",   // {0} = count
+    "levelsValue":   "{0} selected",   // {0} = count
+    "countDeferred": "Computed at run",
+    "note":          "Existing scope boxes with the same name are skipped, never overwritten. Height is set automatically; width/depth can't be set through the API, so any box wider/deeper than the seed is reported with the exact footprint to drag by hand.",
+    "warnNoSeed":    "No seed scope box selected — draw one in Revit (View ▸ Scope Box), then re-enter Seed & Naming."
+  },
+
+  "log": {
+    "raising":        "Requesting scope box creation from Revit…",
+    "error":          "Run aborted: {0}",                       // {0} = message
+    "nonFatalIssues": "{0} non-fatal issue(s) logged to diagnostics.log during this run.",
+    "noSeed":         "Seed scope box not found — pick a seed in Seed & Naming before running.",
+    "noLevels":       "No selected levels resolved in the host document.",
+    "roomsFound":     "Found {0} room(s) across {1} document(s).",   // {0}=rooms {1}=docs
+    "noClusters":     "No room clusters found on the selected levels — no scope boxes to create.",
+    "planned":        "Planned {0} scope box(es).",             // {0} = count
+    "skipExists":     "Skipped '{0}' — a scope box with this name already exists.",  // {0} = name
+    "copyFailed":     "Copy failed for '{0}' — the seed could not be duplicated.",   // {0} = name
+    "renameRefused":  "Revit refused the rename: {0}",          // {0} = Revit's message
+    "created":        "Created scope box '{0}'.",               // {0} = name
+    "resizeNeeded":   "'{0}' needs a manual footprint resize: required W {1} × D {2} ft (drag its handles once — name, position and height are already set; the API can't set width/depth).",  // {0}=name {1}=width {2}=depth
+    "heightManual":   "'{0}' height could not be set automatically — set it to {1} ft by hand.",  // {0}=name {1}=height
+    "failBox":        "'{0}' failed: {1}",                      // {0}=name {1}=message
+    "complete":       "Done — {0} created, {1} skipped, {2} failed."  // counts
+  }
+}
