@@ -16,7 +16,8 @@ namespace LemoineTools.Tools.Coordinates
     /// anchor (Internal Origin by default, or a picked grid intersection + level), then
     /// rotate/translate every selected link so its own resolved reference point coincides
     /// (that link's own Internal Origin by default, or its own named grid intersection when
-    /// overridden per link), and publish the host's shared coordinates to those links.
+    /// overridden per link). Repositions the host's copy of each link only — use the separate
+    /// "Push Coordinates to Links" tool to commit the correction into the linked files.
     /// </summary>
     public class AlignCoordinatesViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
@@ -48,7 +49,6 @@ namespace LemoineTools.Tools.Coordinates
         private bool _moveSurvey = true;
         private bool _movePbp    = true;
         private bool _rotate     = true;
-        private bool _publish    = true;
 
         // ── per-link state, keyed by link instance id ──────────────────────────
         private readonly Dictionary<long, LinkAlignSpec> _linkSpecs = new Dictionary<long, LinkAlignSpec>();
@@ -253,16 +253,14 @@ namespace LemoineTools.Tools.Coordinates
             {
                 new ToggleItem { Id = "rotate",  Label = "Rotate to align orientation",
                     Desc = "Turn each link so its reference direction matches the host's.", DefaultOn = _rotate },
-                new ToggleItem { Id = "publish", Label = "Publish shared coordinates",
-                    Desc = "Write the host coordinate system into each aligned link (saved with the host).", DefaultOn = _publish },
             });
             toggles.StateChanged += st =>
             {
-                _rotate  = st.TryGetValue("rotate",  out var r) && r;
-                _publish = st.TryGetValue("publish", out var p) && p;
+                _rotate = st.TryGetValue("rotate", out var r) && r;
                 Changed();
             };
             outer.Children.Add(toggles);
+            outer.Children.Add(Dim("Use the separate \"Push Coordinates to Links\" tool to commit this into the linked files."));
 
             return outer;
         }
@@ -419,10 +417,9 @@ namespace LemoineTools.Tools.Coordinates
 
         public IList<string>? ReviewChips => new[]
         {
-            _rotate  ? "rotate ✓"  : "rotate ✗",
-            _publish ? "publish ✓" : "publish ✗",
+            _rotate ? "rotate ✓" : "rotate ✗",
         };
-        public string? ReviewNote => "Links are repositioned, then host shared coordinates are published to them.";
+        public string? ReviewNote => "Links are repositioned in the host only — use \"Push Coordinates to Links\" to commit this into the linked files.";
 
         public string? ReviewWarning
         {
@@ -505,7 +502,7 @@ namespace LemoineTools.Tools.Coordinates
                 case "links":
                     var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
                     return selected.Count == 0 ? "—"
-                        : $"{LinksSummary()} · rotate {(_rotate ? "✓" : "✗")} · publish {(_publish ? "✓" : "✗")}";
+                        : $"{LinksSummary()} · rotate {(_rotate ? "✓" : "✗")}";
                 case "run": return "Ready to run";
                 default:    return "—";
             }
@@ -523,7 +520,6 @@ namespace LemoineTools.Tools.Coordinates
             _runHandler.MoveSurvey       = _moveSurvey;
             _runHandler.MovePbp          = _movePbp;
             _runHandler.Rotate           = _rotate;
-            _runHandler.Publish          = _publish;
             _runHandler.LinkSpecs        = _linkSpecs.Values.Select(s => new LinkAlignSpec
             {
                 LinkInstId   = s.LinkInstId,

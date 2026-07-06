@@ -80,4 +80,33 @@ namespace LemoineTools.Tools.Coordinates
     {
         public List<CompareFileInfo> Files { get; set; } = new List<CompareFileInfo>();
     }
+
+    /// <summary>
+    /// A loaded Revit link eligible for Push Coordinates to Links. No grid/anchor concept is
+    /// needed here — this tool reads whatever position the link instance is already at (however
+    /// it got there) and commits that into the link's own file.
+    /// </summary>
+    public sealed class PushLinkInfo
+    {
+        public string Name       { get; set; } = "";
+        public long   LinkInstId { get; set; }
+    }
+
+    /// <summary>
+    /// Revit-thread snapshot handed to <see cref="PushCoordinatesToLinksViewModel"/>: every loaded
+    /// link plus the host document's folder (used to resolve the workshared-copy subfolder).
+    /// </summary>
+    public sealed class PushCoordinatesData
+    {
+        public List<PushLinkInfo> Links      { get; set; } = new List<PushLinkInfo>();
+        public string?            HostFolder { get; set; }
+    }
+
+    /// <summary>Per-link selection for a Push Coordinates to Links run.</summary>
+    public sealed class PushLinkSpec
+    {
+        public long   LinkInstId { get; set; }
+        public string LinkName   { get; set; } = "";
+        public bool   Selected   { get; set; } = true;
+    }
 }

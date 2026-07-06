@@ -9,21 +9,16 @@ namespace LemoineTools.Tools.Coordinates
 {
     /// <summary>
     /// Aligns the host project to a resolved anchor (Internal Origin by default, or a picked grid
-    /// intersection), then aligns every selected link to that same anchor — the "move-then-publish"
-    /// workflow:
+    /// intersection), then aligns every selected link to that same anchor:
     ///   1. Move the Survey Point and/or Project Base Point to the resolved host anchor.
     ///   2. For each selected link: resolve that link's own point + direction (its own Internal
     ///      Origin by default, or its own named grid intersection when overridden), rotate
     ///      (vertical axis) so it runs parallel to the host's anchor direction, then translate so
     ///      it coincides with the host anchor (Z only when the vertical target is meaningful for
     ///      that link — see <see cref="AlignOneLink"/>).
-    ///   3. PublishCoordinates() each aligned link so the alignment is recorded as shared coordinates.
     ///
-    /// PublishCoordinates requires an OPEN transaction — calling it with none throws "Modifying X is
-    /// forbidden because the document has no open transaction" (confirmed on a Windows/Revit run,
-    /// contradicting this handler's original assumption). It runs in its own transaction, after the
-    /// instance moves have already committed in theirs. Shared coordinates are written back to each
-    /// link file when the host is saved.
+    /// This only repositions the host's copy of each link instance. Use the separate "Push
+    /// Coordinates to Links" tool to commit the correction into the linked files themselves.
     /// </summary>
     public sealed class AlignCoordinatesRunHandler : IExternalEventHandler
     {
@@ -37,7 +32,6 @@ namespace LemoineTools.Tools.Coordinates
         public bool MoveSurvey { get; set; } = true;
         public bool MovePbp    { get; set; } = true;
         public bool Rotate     { get; set; } = true;
-        public bool Publish    { get; set; } = true;
 
         public List<LinkAlignSpec> LinkSpecs { get; set; } = new List<LinkAlignSpec>();
 
@@ -121,7 +115,6 @@ namespace LemoineTools.Tools.Coordinates
                 }
 
                 // ── Transaction 2: rotate + translate each selected link ─────────
-                var aligned = new List<long>();
                 var toRun = (LinkSpecs ?? new List<LinkAlignSpec>()).Where(s => s.Selected).ToList();
                 using (var tx = new Transaction(doc, "Align Linked Models"))
                 {
@@ -142,7 +135,7 @@ namespace LemoineTools.Tools.Coordinates
                         try
                         {
                             var res = AlignOneLink(doc, spec, pHost, hostBearing);
-                            if (res == AlignResult.Aligned) { pass++; aligned.Add(spec.LinkInstId); }
+                            if (res == AlignResult.Aligned) pass++;
                             else if (res == AlignResult.Skipped) skip++;
                             else fail++;
                         }
@@ -157,46 +150,6 @@ namespace LemoineTools.Tools.Coordinates
                     }
 
                     tx.Commit();
-                }
-
-                // ── Publish shared coordinates ──
-                // Contrary to this handler's original assumption, PublishCoordinates requires an
-                // OPEN transaction — calling it with none throws "Modifying X is forbidden because
-                // the document has no open transaction" (confirmed on a Windows/Revit run). Give it
-                // its own transaction, committed after every link has been attempted.
-                if (Publish && aligned.Count > 0)
-                {
-                    int published = 0;
-                    using (var tx = new Transaction(doc, "Publish Shared Coordinates"))
-                    {
-                        tx.Start();
-                        ConfigureFailures(tx);
-                        foreach (long linkId in aligned)
-                        {
-                            try
-                            {
-                                // LinkElementId's single-ElementId constructor sets HostElementId, not
-                                // LinkInstanceId — PublishCoordinates then throws "locationId does not
-                                // contain a valid linkInstanceId" (confirmed on a Windows/Revit run).
-                                // The two-arg constructor with an invalid linked-element id identifies
-                                // the RevitLinkInstance itself, which is what Publish/AcquireCoordinates need.
-                                doc.PublishCoordinates(new LinkElementId(new ElementId(linkId), ElementId.InvalidElementId));
-                                published++;
-                            }
-                            catch (Exception ex)
-                            {
-                                LemoineLog.Swallowed($"AlignCoordinates: publish coordinates to link {linkId}", ex);
-                                Log($"⚠ Could not publish shared coordinates to link {linkId}: {ex.Message}", "warn");
-                            }
-                        }
-                        tx.Commit();
-                    }
-                    if (published > 0)
-                        Log($"Published host shared coordinates to {published} link(s). Save the host to write them into the link files.", "info");
-                }
-                else if (!Publish)
-                {
-                    Log("Shared coordinates not published (toggle off) — links were repositioned only.", "info");
                 }
 
                 long issues = LemoineLog.IssuesSince(issues0);
