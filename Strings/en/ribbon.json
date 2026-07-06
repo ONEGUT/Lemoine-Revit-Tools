@@ -75,6 +75,10 @@
       "label": "Scope Box Creator",
       "tip":   "Create scope boxes from room clusters by duplicating a seed scope box — one per building (full height) or one per cluster per level — with slot-based naming."
     },
+    "scopeBoxManager": {
+      "label": "Scope Box Manager",
+      "tip":   "Manage scope boxes: see which views and datums use each, assign to views or grids/levels/reference planes, bulk rename, and delete unused boxes."
+    },
     "explodeViewByTrade": {
       "label": "Explode View\nby Trade",
       "tip":   "Duplicate a 3D view once per Auto Filters trade at the same camera angle and section box, isolating each trade by its view filters and stacking the views by element elevation."

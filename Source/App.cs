@@ -70,6 +70,10 @@ namespace LemoineTools
         internal static ExternalEvent?               ScopeBoxCreatorScanEvent    { get; private set; }
         internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler?  ScopeBoxCreatorRunHandler  { get; private set; }
         internal static ExternalEvent?               ScopeBoxCreatorRunEvent     { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerScanHandler? ScopeBoxManagerScanHandler { get; private set; }
+        internal static ExternalEvent?               ScopeBoxManagerScanEvent    { get; private set; }
+        internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerRunHandler?  ScopeBoxManagerRunHandler  { get; private set; }
+        internal static ExternalEvent?               ScopeBoxManagerRunEvent     { get; private set; }
 
         // ── Bulk Views by Template ──────────────────────────────────────────────────
         internal static ViewsByTemplateRunHandler?   ViewsByTemplateRunHandler   { get; private set; }
@@ -235,6 +239,10 @@ namespace LemoineTools
             ScopeBoxCreatorScanEvent   = ExternalEvent.Create(ScopeBoxCreatorScanHandler);
             ScopeBoxCreatorRunHandler  = new LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorRunHandler();
             ScopeBoxCreatorRunEvent    = ExternalEvent.Create(ScopeBoxCreatorRunHandler);
+            ScopeBoxManagerScanHandler = new LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerScanHandler();
+            ScopeBoxManagerScanEvent   = ExternalEvent.Create(ScopeBoxManagerScanHandler);
+            ScopeBoxManagerRunHandler  = new LemoineTools.Tools.ScopeBoxes.ScopeBoxManagerRunHandler();
+            ScopeBoxManagerRunEvent    = ExternalEvent.Create(ScopeBoxManagerRunHandler);
 
             // ── Testing — new tools ───────────────────────────────────────────
             BulkExportHandler   = new BulkExportEventHandler();
@@ -424,6 +432,14 @@ namespace LemoineTools
                 ToolTip    = L.T("ribbon.buttons.scopeBoxCreator.tip"),
                 LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),
                 Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            });
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxManager", L.T("ribbon.buttons.scopeBoxManager.label"), dll, "LemoineTools.Commands.ScopeBoxManagerCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxManager.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8FD)),  // ListView / manage
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8FD)),
             });
 
             viewsPanel.AddItem(Btn(
