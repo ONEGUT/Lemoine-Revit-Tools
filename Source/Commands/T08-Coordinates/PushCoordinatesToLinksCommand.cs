@@ -68,13 +68,6 @@ namespace LemoineTools.Commands
 
             try
             {
-                if (!string.IsNullOrEmpty(doc.PathName))
-                    data.HostFolder = Path.GetDirectoryName(doc.PathName);
-            }
-            catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinksCommand: read host folder", ex); }
-
-            try
-            {
                 foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
                 {
                     var ld = li.GetLinkDocument();

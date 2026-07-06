@@ -11,10 +11,11 @@ namespace LemoineTools.Tools.Coordinates
 {
     /// <summary>
     /// Push Coordinates to Links — commits an already-aligned link's position into the link FILE
-    /// itself: opens it (detached, if workshared — the live central model is never touched or
-    /// synced), moves its own Project Base Point and/or Survey Point to match, saves, then
-    /// re-publishes coordinates and re-places the link instance so it self-corrects going forward.
-    /// This is the companion to Align Coordinates, which only repositions the host's copy.
+    /// itself: unloads it, opens it standalone, moves its own Project Base Point and/or Survey
+    /// Point to match, saves in place (Synchronizes With Central for a workshared source — the
+    /// team's actual central model is corrected, not a copy), then re-publishes coordinates and
+    /// re-places the link instance so it self-corrects going forward. This is the companion to
+    /// Align Coordinates, which only repositions the host's copy.
     /// </summary>
     public class PushCoordinatesToLinksViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
     {
@@ -36,7 +37,6 @@ namespace LemoineTools.Tools.Coordinates
 
         private bool _movePbp    = true;
         private bool _moveSurvey = true;
-        private string _subfolder = "Coordinated Links";
 
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -140,41 +140,21 @@ namespace LemoineTools.Tools.Coordinates
             };
             outer.Children.Add(toggles);
 
-            Divider(outer);
-
-            var field = new LemoineTextField
-            {
-                Label = "Workshared-link subfolder name",
-                Text  = _subfolder,
-            };
-            var preview = Dim(PreviewPath());
-            field.TextChanged += t => { _subfolder = t ?? ""; preview.Text = PreviewPath(); Changed(); };
-            outer.Children.Add(field);
-            outer.Children.Add(preview);
-
-            outer.Children.Add(Dim("A workshared link source is opened detached and saved as a new file in this subfolder — the live central model is never opened with worksharing enabled and never synced. A non-workshared source is corrected and saved in place."));
+            outer.Children.Add(Dim("Every source is corrected and saved in place. A workshared source is Synchronized With Central so the team's actual central model is corrected — never a copy."));
 
             return outer;
-        }
-
-        private string PreviewPath()
-        {
-            string sub = string.IsNullOrWhiteSpace(_subfolder) ? "Coordinated Links" : _subfolder.Trim();
-            if (string.IsNullOrEmpty(_data.HostFolder)) return $"Will save workshared copies to: <host folder>\\{sub}\\";
-            return $"Will save workshared copies to: {System.IO.Path.Combine(_data.HostFolder, sub)}\\";
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("links", "Links"), ("points", "Points"), ("dest", "Workshared Copies"),
+            ("links", "Links"), ("points", "Points"),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["links"]  = LinksSummary(),
             ["points"] = PointsSummary(),
-            ["dest"]   = string.IsNullOrWhiteSpace(_subfolder) ? "Coordinated Links" : _subfolder.Trim(),
         };
 
         public IList<string>? ReviewChips => null;
@@ -212,7 +192,7 @@ namespace LemoineTools.Tools.Coordinates
             switch (stepId)
             {
                 case "links":    return LinksSummary() == "None" ? "—" : LinksSummary();
-                case "settings": return $"{PointsSummary()} · subfolder \"{(string.IsNullOrWhiteSpace(_subfolder) ? "Coordinated Links" : _subfolder.Trim())}\"";
+                case "settings": return PointsSummary();
                 case "run":      return "Ready to run";
                 default:         return "—";
             }
@@ -222,11 +202,9 @@ namespace LemoineTools.Tools.Coordinates
         {
             if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
 
-            _runHandler.MovePbp       = _movePbp;
-            _runHandler.MoveSurvey    = _moveSurvey;
-            _runHandler.SubfolderName = string.IsNullOrWhiteSpace(_subfolder) ? "Coordinated Links" : _subfolder.Trim();
-            _runHandler.HostFolder    = _data.HostFolder;
-            _runHandler.LinkSpecs     = _linkSpecs.Values.Select(s => new PushLinkSpec
+            _runHandler.MovePbp    = _movePbp;
+            _runHandler.MoveSurvey = _moveSurvey;
+            _runHandler.LinkSpecs  = _linkSpecs.Values.Select(s => new PushLinkSpec
             {
                 LinkInstId = s.LinkInstId,
                 LinkName   = s.LinkName,
@@ -257,13 +235,6 @@ namespace LemoineTools.Tools.Coordinates
             tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             return tb;
-        }
-
-        private static void Divider(StackPanel parent)
-        {
-            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 8, 0, 8) };
-            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            parent.Children.Add(sep);
         }
     }
 }

@@ -15,28 +15,32 @@ namespace LemoineTools.Tools.Coordinates
     ///   1. Compute what the link's own Project Base Point / Survey Point need to become (in the
     ///      link's own internal coordinates) so they match the host's, given the link's current
     ///      total transform.
-    ///   2. Open the link file in the background (never an activated view). A workshared source
-    ///      opens DETACHED with all worksets closed and is saved as a NEW file in a subfolder next
-    ///      to the host — the live central model is never opened with worksharing enabled and
-    ///      never synced. A non-workshared source is corrected and saved in place.
-    ///   3. Move the base point(s) in that opened document, save, close.
-    ///   4. Back in the host: reload the link type from the (possibly relocated) saved file,
-    ///      publish the host's shared coordinates to it, then delete and recreate the link
-    ///      instance with Shared Coordinates positioning — this is what makes the correction
-    ///      actually take visual effect, since these links use Origin-to-Origin positioning
-    ///      (a fixed per-instance transform that ignores base points and would not move on a
-    ///      plain reload).
+    ///   2. Unload the link from the host first. A file that is currently loaded as a link in this
+    ///      session cannot be opened as an independent, transactable document — Application.OpenDocumentFile
+    ///      on that same path just hands back the existing linked Document object, which throws
+    ///      "Document is a linked file. Transactions can only be used in primary documents" on any
+    ///      Transaction (confirmed on a real project run). Unloading first releases it so the
+    ///      background open (never an activated view) returns a genuine standalone document.
+    ///   3. Move the base point(s) in that opened document. A workshared source is corrected and
+    ///      Synchronized With Central in place (never detached, never saved to a copy — the whole
+    ///      point is to correct the team's actual central model); a non-workshared source is
+    ///      corrected and saved in place. Close.
+    ///   4. Back in the host: reload the link type from the corrected file, publish the host's
+    ///      shared coordinates to it, then delete and recreate the link instance with Shared
+    ///      Coordinates positioning — this is what makes the correction actually take visual
+    ///      effect, since these links use Origin-to-Origin positioning (a fixed per-instance
+    ///      transform that ignores base points and would not move on a plain reload).
     ///
-    /// If publishing fails, the recreate step is skipped and the original instance is left intact
-    /// (never delete-then-fail-to-recreate — that would leave the link missing entirely).
+    /// If the link fails after being unloaded (for any reason), a best-effort reload is attempted
+    /// so the host is never left with a link silently missing. If publishing fails, the recreate
+    /// step is skipped and the original instance is left intact (never delete-then-fail-to-recreate
+    /// — that would leave the link missing entirely).
     /// </summary>
     public sealed class PushCoordinatesToLinksRunHandler : IExternalEventHandler
     {
         // ── Run payload (set by the ViewModel before Raise) ──────────────────────
-        public bool   MovePbp       { get; set; } = true;
-        public bool   MoveSurvey    { get; set; } = true;
-        public string SubfolderName { get; set; } = "Coordinated Links";
-        public string? HostFolder   { get; set; }
+        public bool MovePbp    { get; set; } = true;
+        public bool MoveSurvey { get; set; } = true;
 
         public List<PushLinkSpec> LinkSpecs { get; set; } = new List<PushLinkSpec>();
 
@@ -82,7 +86,6 @@ namespace LemoineTools.Tools.Coordinates
                 }
 
                 var appApp = app.Application;
-                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 int total = toRun.Count, done = 0;
 
                 foreach (var spec in toRun)
@@ -96,7 +99,7 @@ namespace LemoineTools.Tools.Coordinates
 
                     try
                     {
-                        var result = PushOneLink(hostDoc, appApp, spec, movePbp ? hostPbp : null, moveSurvey ? hostSurvey : null, usedNames);
+                        var result = PushOneLink(hostDoc, appApp, spec, movePbp ? hostPbp : null, moveSurvey ? hostSurvey : null);
                         if (result == PushResult.Pushed) pass++;
                         else if (result == PushResult.Skipped) skip++;
                         else fail++;
@@ -133,26 +136,26 @@ namespace LemoineTools.Tools.Coordinates
         private enum PushResult { Pushed, Skipped, Failed }
 
         private PushResult PushOneLink(Document hostDoc, Autodesk.Revit.ApplicationServices.Application appApp,
-            PushLinkSpec spec, BasePoint? hostPbp, BasePoint? hostSurvey, HashSet<string> usedNames)
+            PushLinkSpec spec, BasePoint? hostPbp, BasePoint? hostSurvey)
         {
             var li = hostDoc.GetElement(new ElementId(spec.LinkInstId)) as RevitLinkInstance;
             if (li == null) { Log($"⚠ {spec.LinkName}: link instance no longer exists — skipped.", "warn"); return PushResult.Skipped; }
 
             var typeId = li.GetTypeId();
             var linkType = hostDoc.GetElement(typeId) as RevitLinkType;
-            var extRef = linkType?.GetExternalFileReference();
-            if (linkType == null || extRef == null)
-            {
-                Log($"⚠ {spec.LinkName}: could not resolve its source file — skipped.", "warn");
-                return PushResult.Skipped;
-            }
+            if (linkType == null) { Log($"⚠ {spec.LinkName}: could not resolve its link type — skipped.", "warn"); return PushResult.Skipped; }
 
             string srcPath;
-            try { srcPath = ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath()); }
+            try
+            {
+                var extRef = linkType.GetExternalFileReference();
+                if (extRef == null) { Log($"⚠ {spec.LinkName}: has no external file reference — skipped.", "warn"); return PushResult.Skipped; }
+                srcPath = ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath());
+            }
             catch (Exception ex)
             {
                 LemoineLog.Swallowed($"PushCoordinatesToLinks: resolve path for {spec.LinkName}", ex);
-                Log($"⚠ {spec.LinkName}: could not resolve its source file path — skipped.", "warn");
+                Log($"⚠ {spec.LinkName}: could not resolve its source file ({ex.Message}) — skipped.", "warn");
                 return PushResult.Skipped;
             }
             if (string.IsNullOrEmpty(srcPath) || !File.Exists(srcPath))
@@ -161,7 +164,8 @@ namespace LemoineTools.Tools.Coordinates
                 return PushResult.Skipped;
             }
 
-            // ── Compute the link-internal target(s) from its CURRENT host position ──
+            // ── Compute the link-internal target(s) from its CURRENT host position, before
+            //    touching anything — this is ground truth regardless of how it got here.
             var t = li.GetTotalTransform();
             XYZ? pbpTargetInternal    = hostPbp    != null ? t.Inverse.OfPoint(hostPbp.Position)    : null;
             XYZ? surveyTargetInternal = hostSurvey != null ? t.Inverse.OfPoint(hostSurvey.Position) : null;
@@ -170,76 +174,89 @@ namespace LemoineTools.Tools.Coordinates
             try { var bfi = BasicFileInfo.Extract(srcPath); isWs = bfi != null && bfi.IsWorkshared; }
             catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: BasicFileInfo", ex); }
 
-            string fileName = Path.GetFileName(srcPath);
-
-            var oo = new OpenOptions { Audit = false };
-            if (isWs)
-            {
-                oo.DetachFromCentralOption = DetachFromCentralOption.DetachAndPreserveWorksets;
-                oo.SetOpenWorksetsConfiguration(new WorksetConfiguration(WorksetConfigurationOption.CloseAllWorksets));
-            }
-
-            Document? linkedOpen = null;
+            // ── Unload the link so the file is no longer "in use" as a link in this session ──
+            // ⚠ Unverified on Windows: assumes Unload() releases the in-memory link document so a
+            // subsequent OpenDocumentFile on the same path returns a genuine standalone, transactable
+            // Document rather than the same "this is a linked file" object.
+            bool unloaded = false;
             try
             {
-                var srcMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath);
-                linkedOpen = appApp.OpenDocumentFile(srcMp, oo);
-                if (linkedOpen == null)
-                {
-                    Log($"✗ {spec.LinkName}: could not open its source file — skipped.", "fail");
-                    return PushResult.Failed;
-                }
-
-                using (var tx = new Transaction(linkedOpen, "Correct Base Points"))
+                using (var tx = new Transaction(hostDoc, "Unload Link"))
                 {
                     tx.Start();
                     ConfigureFailures(tx);
-                    if (pbpTargetInternal != null)
-                        MoveBasePoint(linkedOpen, BasePoint.GetProjectBasePoint(linkedOpen), pbpTargetInternal, "Project Base Point");
-                    if (surveyTargetInternal != null)
-                        MoveBasePoint(linkedOpen, BasePoint.GetSurveyPoint(linkedOpen), surveyTargetInternal, "Survey Point");
+                    linkType.Unload(null);
                     tx.Commit();
                 }
+                unloaded = true;
+            }
+            catch (Exception ex)
+            {
+                LemoineLog.Error($"PushCoordinatesToLinks: unload {spec.LinkName}", ex);
+                Log($"✗ {spec.LinkName}: could not unload the link ({ex.Message}) — skipped.", "fail");
+                return PushResult.Failed;
+            }
 
-                string savedPath;
-                if (isWs)
+            try
+            {
+                Document? linkedOpen = null;
+                try
                 {
-                    if (string.IsNullOrWhiteSpace(HostFolder))
+                    var srcMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath);
+                    var oo = new OpenOptions { Audit = false };
+                    linkedOpen = appApp.OpenDocumentFile(srcMp, oo);
+                    if (linkedOpen == null)
                     {
-                        Log($"✗ {spec.LinkName}: host is not saved to disk — no folder to save the workshared copy into.", "fail");
+                        Log($"✗ {spec.LinkName}: could not open its source file — skipped.", "fail");
                         return PushResult.Failed;
                     }
-                    string destFolder = Path.Combine(HostFolder, SanitizeFolder(SubfolderName));
-                    Directory.CreateDirectory(destFolder);
-                    savedPath = Path.Combine(destFolder, UniqueFileName(fileName, usedNames));
 
-                    var so = new SaveAsOptions { OverwriteExistingFile = true };
-                    so.SetWorksharingOptions(new WorksharingSaveAsOptions { SaveAsCentral = true });
-                    linkedOpen.SaveAs(savedPath, so);
+                    using (var tx = new Transaction(linkedOpen, "Correct Base Points"))
+                    {
+                        tx.Start();
+                        ConfigureFailures(tx);
+                        if (pbpTargetInternal != null)
+                            MoveBasePoint(linkedOpen, BasePoint.GetProjectBasePoint(linkedOpen), pbpTargetInternal, "Project Base Point");
+                        if (surveyTargetInternal != null)
+                            MoveBasePoint(linkedOpen, BasePoint.GetSurveyPoint(linkedOpen), surveyTargetInternal, "Survey Point");
+                        tx.Commit();
+                    }
+
+                    if (isWs)
+                    {
+                        // ⚠ Unverified on Windows: SynchronizeWithCentral on a background-opened
+                        // (never activated) Document. If this turns out to require the document to be
+                        // the foreground/active one, switch to UIApplication.OpenAndActivateDocument
+                        // and restore the original active document afterward.
+                        var transactOpts = new TransactWithCentralOptions();
+                        var syncOpts = new SynchronizeWithCentralOptions { Comment = "Lemoine Tools: corrected Project Base Point / Survey Point" };
+                        syncOpts.SetRelinquishOptions(new RelinquishOptions(true));
+                        linkedOpen.SynchronizeWithCentral(transactOpts, syncOpts);
+                    }
+                    else
+                    {
+                        linkedOpen.Save();
+                    }
                 }
-                else
+                finally
                 {
-                    savedPath = srcPath;
-                    linkedOpen.SaveAs(savedPath, new SaveAsOptions { OverwriteExistingFile = true });
+                    if (linkedOpen != null)
+                    {
+                        try { linkedOpen.Close(false); }
+                        catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: close linked doc", ex); }
+                    }
                 }
 
-                try { linkedOpen.Close(false); }
-                catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: close linked doc", ex); }
-                linkedOpen = null;
+                var srcMpForReload = ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath);
 
-                var savedMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(savedPath);
-
-                // ── Reload the link type from the corrected (possibly relocated) file ──
-                // ⚠ Assumes LoadFrom accepts repointing to a different path than the type's current
-                // one (same call UpgradeLinksRunHandler.ReloadExistingType uses for a same-path
-                // reload) — unverified for a changed path until tested on Windows/Revit.
                 using (var tx = new Transaction(hostDoc, "Reload Link From Corrected File"))
                 {
                     tx.Start();
                     ConfigureFailures(tx);
-                    linkType.LoadFrom(savedMp, new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
+                    linkType.LoadFrom(srcMpForReload, new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
                     tx.Commit();
                 }
+                unloaded = false;   // reloaded — no longer needs the recovery reload below
 
                 // ── Publish shared coordinates, then re-place the instance to pick them up ──
                 bool published = false;
@@ -284,10 +301,26 @@ namespace LemoineTools.Tools.Coordinates
             }
             finally
             {
-                if (linkedOpen != null)
+                // Best-effort recovery: if something above threw after the unload but before the
+                // reload succeeded, don't leave the host with this link silently missing.
+                if (unloaded)
                 {
-                    try { linkedOpen.Close(false); }
-                    catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: close linked doc (finally)", ex); }
+                    try
+                    {
+                        using (var tx = new Transaction(hostDoc, "Reload Link (recovery)"))
+                        {
+                            tx.Start();
+                            ConfigureFailures(tx);
+                            linkType.LoadFrom(ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath),
+                                new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
+                            tx.Commit();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LemoineLog.Error($"PushCoordinatesToLinks: recovery reload for {spec.LinkName}", ex);
+                        Log($"⚠ {spec.LinkName}: left unloaded after a failure — reload it manually via Manage Links.", "warn");
+                    }
                 }
             }
         }
@@ -318,23 +351,6 @@ namespace LemoineTools.Tools.Coordinates
         {
             int pct = total > 0 ? (int)(done * 100.0 / total) : 100;
             OnProgress?.Invoke(pct, pass, fail, skip);
-        }
-
-        private static string SanitizeFolder(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return "Coordinated Links";
-            var cleaned = new string(name.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray()).Trim();
-            return cleaned.Length == 0 ? "Coordinated Links" : cleaned;
-        }
-
-        private static string UniqueFileName(string fileName, HashSet<string> used)
-        {
-            string name = Path.GetFileNameWithoutExtension(fileName);
-            string ext  = Path.GetExtension(fileName);
-            string candidate = fileName;
-            int n = 2;
-            while (!used.Add(candidate)) candidate = $"{name} ({n++}){ext}";
-            return candidate;
         }
 
         private static void ConfigureFailures(Transaction tx)

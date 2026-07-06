@@ -94,12 +94,12 @@ namespace LemoineTools.Tools.Coordinates
 
     /// <summary>
     /// Revit-thread snapshot handed to <see cref="PushCoordinatesToLinksViewModel"/>: every loaded
-    /// link plus the host document's folder (used to resolve the workshared-copy subfolder).
+    /// link. Every source is corrected and saved in place — workshared or not — so no destination
+    /// folder is needed here.
     /// </summary>
     public sealed class PushCoordinatesData
     {
-        public List<PushLinkInfo> Links      { get; set; } = new List<PushLinkInfo>();
-        public string?            HostFolder { get; set; }
+        public List<PushLinkInfo> Links { get; set; } = new List<PushLinkInfo>();
     }
 
     /// <summary>Per-link selection for a Push Coordinates to Links run.</summary>

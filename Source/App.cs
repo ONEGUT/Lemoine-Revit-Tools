@@ -549,7 +549,7 @@ namespace LemoineTools
 
             coordPanel.AddItem(Btn(
                 "LT_PushCoordinates", "Push Coordinates\nto Links", "PushCoordinatesToLinksCommand",
-                "Commit an already-aligned link's position into the link file itself: opens it (detached and saved as a copy if workshared — the live central model is never touched), moves its own Project Base Point/Survey Point to match, then publishes coordinates and re-places the link via Shared Coordinates.",
+                "Commit an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, and saves in place — Synchronizing With Central for a workshared source — then publishes coordinates and re-places the link via Shared Coordinates.",
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
             coordPanel.AddItem(Btn(
