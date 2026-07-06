@@ -61,16 +61,18 @@ namespace LemoineTools.Tools.UpgradeLinks
         public bool ReloadExisting { get; set; } = true;
 
         // Cloud — the run handler's cloud branch only fires when CloudReady is true, which the
-        // command sets once it has harvested the host's own hub/project/folder string ids (see
-        // UpgradeLinksCommand.BuildTool / plan-cloud-host-link-path.md). These are the ids Revit's
-        // own Document.GetHubId()/GetProjectId()/GetCloudFolderId() return — all strings, not Guids
-        // (there is no Guid-typed hub/account accessor anywhere in the Revit 2024 API). The run
-        // handler resolves them to a real CloudFolder via the CloudHub/CloudProject/CloudFolder
-        // browsing API and calls the Document.SaveAsCloudModel(CloudFolder, string) overload.
-        public bool   CloudReady      { get; set; }
-        public string CloudHubId      { get; set; } = "";
-        public string CloudProjectId  { get; set; } = "";
-        public string CloudFolderId   { get; set; } = "";
+        // command sets once it has harvested the host's own hub/project/folder ids (see
+        // UpgradeLinksCommand.BuildTool / plan-cloud-host-link-path.md) for the
+        // Document.SaveAsCloudModel(Guid accountId, Guid projectId, string folderId, string modelName)
+        // overload — the only SaveAsCloudModel overload usable from a third-party plugin (the
+        // CloudFolder-object overload takes an Autodesk.Revit.DB.ForgeDM.CloudFolder, which is an
+        // internal (NotPublic) type — CS0122 if referenced directly, confirmed against the real
+        // RevitAPI.dll). CloudAccountId is parsed out of Document.GetHubId()'s string (there is no
+        // Guid-typed hub/account accessor in the API) — see UpgradeLinksCommand.TryParseHubGuid.
+        public bool   CloudReady     { get; set; }
+        public Guid   CloudAccountId { get; set; }
+        public Guid   CloudProjectId { get; set; }
+        public string CloudFolderId  { get; set; } = "";
     }
 
     public static class UpgradePlacementMap
