@@ -143,11 +143,13 @@ namespace LemoineTools
         internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
-        // ── Coordination — Align Coordinates / Compare Grids ─────────────────────────
+        // ── Coordination — Align Coordinates / Compare Grids / Push Coordinates to Links ─
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
         internal static LemoineTools.Tools.Coordinates.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
         internal static ExternalEvent?             CompareGridsRunEvent     { get; private set; }
+        internal static LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
+        internal static ExternalEvent?             PushCoordinatesRunEvent  { get; private set; }
 
 
         // ── Modify Elements ─────────────────────────────────────────────────────────
@@ -288,6 +290,8 @@ namespace LemoineTools
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
             CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
             CompareGridsRunEvent       = ExternalEvent.Create(CompareGridsRunHandler);
+            PushCoordinatesRunHandler  = new LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler();
+            PushCoordinatesRunEvent    = ExternalEvent.Create(PushCoordinatesRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
             SplitByLevelHandler          = new SplitByLevelEventHandler();
@@ -576,13 +580,18 @@ namespace LemoineTools
 
             coordPanel.AddItem(Btn(
                 "LT_AlignCoordinates", "Align\nCoordinates", "AlignCoordinatesCommand",
-                "Move the host Survey Point and/or Project Base Point to a picked grid intersection + level, then rotate/translate every selected link so its same-named grid intersection coincides, and publish the host's shared coordinates to those links.",
+                "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files.",
                 char.ConvertFromUtf32(0xE809)));  // MapPin
 
             coordPanel.AddItem(Btn(
                 "LT_CompareGrids", "Compare\nGrids", "CompareGridsCommand",
                 "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file.",
                 char.ConvertFromUtf32(0xE80A)));  // GridView
+
+            coordPanel.AddItem(Btn(
+                "LT_PushCoordinates", "Push Coordinates\nto Links", "PushCoordinatesToLinksCommand",
+                "Commit an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, and saves in place — Synchronizing With Central for a workshared source — then publishes coordinates and re-places the link via Shared Coordinates.",
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
             coordPanel.AddItem(Btn(
                 "LT_UpgradeLinks", "Upgrade &\nLink Models", "UpgradeLinksCommand",
