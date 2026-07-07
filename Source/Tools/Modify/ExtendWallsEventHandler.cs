@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -104,12 +104,12 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!candidates.Any())
                 {
-                    pushLog(LemoineStrings.T("modify.extendWalls.log.noQualifying", alreadyCorrect, skipped), "info");
+                    pushLog(AppStrings.T("modify.extendWalls.log.noQualifying", alreadyCorrect, skipped), "info");
                     onComplete(0, 0, skipped + alreadyCorrect);
                     return;
                 }
 
-                pushLog(LemoineStrings.T("modify.extendWalls.log.found", candidates.Count, alreadyCorrect), "info");
+                pushLog(AppStrings.T("modify.extendWalls.log.found", candidates.Count, alreadyCorrect), "info");
 
                 int changed = 0;
                 int failed  = 0;
@@ -127,9 +127,9 @@ namespace LemoineTools.Tools.ModifyElements
                     {
                         // Abandon mid-run: stop processing more walls but let tx.Commit() (below)
                         // still run so every wall already extended this run is preserved.
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            pushLog(LemoineStrings.T("common.log.stoppedByUser", progress.Done, candidates.Count), "warn");
+                            pushLog(AppStrings.T("common.log.stoppedByUser", progress.Done, candidates.Count), "warn");
                             break;
                         }
 
@@ -147,12 +147,12 @@ namespace LemoineTools.Tools.ModifyElements
                             pOff?.Set(0.0);
 
                             changed++;
-                            pushLog(LemoineStrings.T("modify.extendWalls.log.wallOk", wall.Id, wall.WallType?.Name ?? string.Empty, nextLevel.Name), "pass");
+                            pushLog(AppStrings.T("modify.extendWalls.log.wallOk", wall.Id, wall.WallType?.Name ?? string.Empty, nextLevel.Name), "pass");
                         }
                         catch (Exception ex)
                         {
                             failed++;
-                            pushLog(LemoineStrings.T("modify.extendWalls.log.wallFail", wall.Id, ex.Message), "fail");
+                            pushLog(AppStrings.T("modify.extendWalls.log.wallFail", wall.Id, ex.Message), "fail");
                         }
 
                         progress.Tick();
@@ -162,14 +162,14 @@ namespace LemoineTools.Tools.ModifyElements
                     tx.Commit();
                 }
 
-                pushLog(LemoineStrings.T("modify.extendWalls.log.done", changed, failed, skipped + alreadyCorrect),
+                pushLog(AppStrings.T("modify.extendWalls.log.done", changed, failed, skipped + alreadyCorrect),
                         failed > 0 ? "fail" : "pass");
                 onProgress(100, changed, failed, skipped + alreadyCorrect);
                 onComplete(changed, failed, skipped + alreadyCorrect);
             }
             catch (Exception ex)
             {
-                pushLog(LemoineStrings.T("modify.extendWalls.log.error", ex.Message), "fail");
+                pushLog(AppStrings.T("modify.extendWalls.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally

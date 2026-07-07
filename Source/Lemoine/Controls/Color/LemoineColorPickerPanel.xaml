@@ -1,7 +1,0 @@
-<UserControl
-    x:Class="LemoineTools.Lemoine.Controls.LemoineColorPickerPanel"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    MinWidth="320" MinHeight="280">
-    <Grid x:Name="_root" />
-</UserControl>

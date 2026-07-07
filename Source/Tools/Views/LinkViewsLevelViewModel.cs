@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.ScopeBoxes;
 
 using WpfVisibility = System.Windows.Visibility;
@@ -24,22 +24,22 @@ namespace LemoineTools.Tools.LinkViews
     /// now — everything here is driven by data captured on the main thread at open, so
     /// there is no scan phase.
     /// </summary>
-    public class LinkViewsLevelViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class LinkViewsLevelViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "views";
         public IReadOnlyList<ResultChip>? ResultChips => null;
 
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("linkviews.level.title");
-        public string RunLabel => LemoineStrings.T("linkviews.level.runLabel");
+        public string Title    => AppStrings.T("linkviews.level.title");
+        public string RunLabel => AppStrings.T("linkviews.level.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("linkviews.level.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("linkviews.level.steps.S2"), required: true),
-            new StepDefinition("S3", LemoineStrings.T("linkviews.level.steps.S3"), required: false),
-            new StepDefinition("S4", LemoineStrings.T("linkviews.level.steps.S4"), required: false),
+            new StepDefinition("S1", AppStrings.T("linkviews.level.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("linkviews.level.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("linkviews.level.steps.S3"), required: false),
+            new StepDefinition("S4", AppStrings.T("linkviews.level.steps.S4"), required: false),
         };
 
         // ── Data types passed in from Command ─────────────────────────
@@ -150,7 +150,7 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S1") return BuildS1();
             if (stepId == "S2") return BuildS2();
             if (stepId == "S3") return BuildS3Naming();
-            if (stepId == "S4") return null; // framework renders review (ILemoineReviewable)
+            if (stepId == "S4") return null; // framework renders review (IReviewableTool)
             return null;
         }
 
@@ -160,11 +160,11 @@ namespace LemoineTools.Tools.LinkViews
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
             // ── Extents mode ───────────────────────────────────────────
-            AddDimHeader(outer, LemoineStrings.T("linkviews.level.labels.modeHeader"));
+            AddDimHeader(outer, AppStrings.T("linkviews.level.labels.modeHeader"));
 
-            string byLevelLabel = LemoineStrings.T("linkviews.level.labels.modeByLevel");
-            string byBoxLabel   = LemoineStrings.T("linkviews.level.labels.modeByScopeBox");
-            var modeSelect = new LemoineSingleSelect
+            string byLevelLabel = AppStrings.T("linkviews.level.labels.modeByLevel");
+            string byBoxLabel   = AppStrings.T("linkviews.level.labels.modeByScopeBox");
+            var modeSelect = new SingleSelect
             {
                 Width = 260,
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -183,7 +183,7 @@ namespace LemoineTools.Tools.LinkViews
 
             var modeHint = new TextBlock
             {
-                Text = LemoineStrings.T("linkviews.level.labels.modeHint"),
+                Text = AppStrings.T("linkviews.level.labels.modeHint"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 10),
             };
@@ -202,7 +202,7 @@ namespace LemoineTools.Tools.LinkViews
             {
                 var none = new TextBlock
                 {
-                    Text = LemoineStrings.T("linkviews.level.labels.noBoxes"),
+                    Text = AppStrings.T("linkviews.level.labels.noBoxes"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle = FontStyles.Italic,
                     Margin = new Thickness(0, 0, 0, 10),
@@ -225,7 +225,7 @@ namespace LemoineTools.Tools.LinkViews
                     }).ToList(),
                 };
 
-                var boxTabs = new LemoineMultiSelectTabs();
+                var boxTabs = new MultiSelectTabs();
                 boxTabs.SelectionChanged += selected =>
                 {
                     _selectedBoxIds = selected
@@ -246,7 +246,7 @@ namespace LemoineTools.Tools.LinkViews
             outer.Children.Add(_boxSection);
 
             // ── Levels ─────────────────────────────────────────────────
-            AddDimHeader(outer, LemoineStrings.T("linkviews.level.labels.levelsHeader"));
+            AddDimHeader(outer, AppStrings.T("linkviews.level.labels.levelsHeader"));
 
             _levelKeyToId.Clear();
             var groups = new Dictionary<string, List<string>>
@@ -255,7 +255,7 @@ namespace LemoineTools.Tools.LinkViews
                     .OrderBy(l => l.ElevationFt)
                     .Select(l =>
                     {
-                        string key = LemoineStrings.T("linkviews.level.labels.levelRow", l.Name, l.ElevationFt);
+                        string key = AppStrings.T("linkviews.level.labels.levelRow", l.Name, l.ElevationFt);
                         _levelKeyToId[key] = l.Id;
                         return key;
                     }).ToList(),
@@ -267,7 +267,7 @@ namespace LemoineTools.Tools.LinkViews
                 .Select(kv => kv.Key)
                 .ToList();
 
-            var levelTabs = new LemoineMultiSelectTabs();
+            var levelTabs = new MultiSelectTabs();
             levelTabs.SelectionChanged += selected =>
             {
                 _selectedLevelIds = selected
@@ -316,7 +316,7 @@ namespace LemoineTools.Tools.LinkViews
         private void UpdatePlannedText()
         {
             if (_plannedText == null) return;
-            _plannedText.Text = LemoineStrings.T("linkviews.level.labels.plannedCount", PlannedViewCount());
+            _plannedText.Text = AppStrings.T("linkviews.level.labels.plannedCount", PlannedViewCount());
         }
 
         // ── S2: View Types & Templates ─────────────────────────────────
@@ -324,26 +324,26 @@ namespace LemoineTools.Tools.LinkViews
         {
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
-            var typeHeader = new TextBlock { Text = LemoineStrings.T("linkviews.level.labels.typeHeader"),
+            var typeHeader = new TextBlock { Text = AppStrings.T("linkviews.level.labels.typeHeader"),
                                              Margin = new Thickness(0, 0, 0, 6) };
             typeHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             typeHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             typeHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(typeHeader);
 
-            var toggles = new LemoineToggleSwitches();
+            var toggles = new ToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "3d",  Label = LemoineStrings.T("linkviews.level.labels.type3dLabel"),
-                                 Desc = LemoineStrings.T("linkviews.level.labels.type3dDesc"),  DefaultOn = _create3D  },
-                new ToggleItem { Id = "fp",  Label = LemoineStrings.T("linkviews.level.labels.typeFpLabel"),
-                                 Desc = LemoineStrings.T("linkviews.level.labels.typeFpDesc"),  DefaultOn = _createFP  },
-                new ToggleItem { Id = "rcp", Label = LemoineStrings.T("linkviews.level.labels.typeRcpLabel"),
-                                 Desc = LemoineStrings.T("linkviews.level.labels.typeRcpDesc"), DefaultOn = _createRCP },
+                new ToggleItem { Id = "3d",  Label = AppStrings.T("linkviews.level.labels.type3dLabel"),
+                                 Desc = AppStrings.T("linkviews.level.labels.type3dDesc"),  DefaultOn = _create3D  },
+                new ToggleItem { Id = "fp",  Label = AppStrings.T("linkviews.level.labels.typeFpLabel"),
+                                 Desc = AppStrings.T("linkviews.level.labels.typeFpDesc"),  DefaultOn = _createFP  },
+                new ToggleItem { Id = "rcp", Label = AppStrings.T("linkviews.level.labels.typeRcpLabel"),
+                                 Desc = AppStrings.T("linkviews.level.labels.typeRcpDesc"), DefaultOn = _createRCP },
             });
 
             // ── Sub Discipline / View Template section ─────────────────
-            var subDiscHeader = new TextBlock { Text = LemoineStrings.T("linkviews.level.labels.optionsHeader"),
+            var subDiscHeader = new TextBlock { Text = AppStrings.T("linkviews.level.labels.optionsHeader"),
                                                 Margin = new Thickness(0, 10, 0, 4) };
             subDiscHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             subDiscHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -352,11 +352,11 @@ namespace LemoineTools.Tools.LinkViews
             // Column header row
             var colHeader = new StackPanel { Orientation = Orientation.Horizontal,
                                              Margin = new Thickness(40, 0, 0, 4) };
-            var colSubDisc = new TextBlock { Text = LemoineStrings.T("linkviews.level.labels.colSubDiscipline"), Width = 120 };
+            var colSubDisc = new TextBlock { Text = AppStrings.T("linkviews.level.labels.colSubDiscipline"), Width = 120 };
             colSubDisc.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             colSubDisc.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             colSubDisc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            var colTemplate = new TextBlock { Text = LemoineStrings.T("linkviews.level.labels.colViewTemplate"), Width = 150,
+            var colTemplate = new TextBlock { Text = AppStrings.T("linkviews.level.labels.colViewTemplate"), Width = 150,
                                               Margin = new Thickness(8, 0, 0, 0) };
             colTemplate.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             colTemplate.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -430,12 +430,12 @@ namespace LemoineTools.Tools.LinkViews
 
             row.Children.Add(new FrameworkElement { Width = 8 });
 
-            var templateNames = new List<string>(new[] { LemoineStrings.T("linkviews.level.labels.templateNone") }
+            var templateNames = new List<string>(new[] { AppStrings.T("linkviews.level.labels.templateNone") }
                 .Concat(templates.Select(t => t.Name)));
             string selectedName = templates.FirstOrDefault(
-                t => t.Id != null && t.Id.Value == selectedTemplateId.Value)?.Name ?? LemoineStrings.T("linkviews.level.labels.templateNone");
+                t => t.Id != null && t.Id.Value == selectedTemplateId.Value)?.Name ?? AppStrings.T("linkviews.level.labels.templateNone");
 
-            var templateSelect = new LemoineSingleSelect
+            var templateSelect = new SingleSelect
             {
                 Width        = 150,
                 Items        = templateNames,
@@ -456,16 +456,16 @@ namespace LemoineTools.Tools.LinkViews
         {
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-            var slots = new LemoineNamingSlots(NamingTokens, _naming);
+            var slots = new NamingSlots(NamingTokens, _naming);
             slots.Changed += () => { UpdateNamePreview(); OnValidationChanged(); };
             outer.Children.Add(slots);
 
             // ── Append view type suffix toggle ─────────────────────────
-            var appendTypeToggle = new LemoineToggleSwitches();
+            var appendTypeToggle = new ToggleSwitches();
             appendTypeToggle.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "appendType", Label = LemoineStrings.T("linkviews.level.labels.appendTypeLabel"),
-                                 Desc = LemoineStrings.T("linkviews.level.labels.appendTypeDesc"),
+                new ToggleItem { Id = "appendType", Label = AppStrings.T("linkviews.level.labels.appendTypeLabel"),
+                                 Desc = AppStrings.T("linkviews.level.labels.appendTypeDesc"),
                                  DefaultOn = _appendViewType },
             });
             appendTypeToggle.StateChanged += state =>
@@ -480,7 +480,7 @@ namespace LemoineTools.Tools.LinkViews
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            AddDimHeader(outer, LemoineStrings.T("linkviews.level.labels.previewHeader"));
+            AddDimHeader(outer, AppStrings.T("linkviews.level.labels.previewHeader"));
 
             _namePreviewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
             _namePreviewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -535,14 +535,14 @@ namespace LemoineTools.Tools.LinkViews
             _namePreviewText.Text = string.Join(" - ", parts);
         }
 
-        // ── ILemoineReviewable (S4) ────────────────────────────────────
+        // ── IReviewableTool (S4) ────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("mode",   LemoineStrings.T("linkviews.level.review.itemMode")),
-            ("levels", LemoineStrings.T("linkviews.level.review.itemLevels")),
-            ("boxes",  LemoineStrings.T("linkviews.level.review.itemBoxes")),
-            ("types",  LemoineStrings.T("linkviews.level.review.itemTypes")),
-            ("min",    LemoineStrings.T("linkviews.level.review.itemMin")),
+            ("mode",   AppStrings.T("linkviews.level.review.itemMode")),
+            ("levels", AppStrings.T("linkviews.level.review.itemLevels")),
+            ("boxes",  AppStrings.T("linkviews.level.review.itemBoxes")),
+            ("types",  AppStrings.T("linkviews.level.review.itemTypes")),
+            ("min",    AppStrings.T("linkviews.level.review.itemMin")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -557,24 +557,24 @@ namespace LemoineTools.Tools.LinkViews
                 return new Dictionary<string, string>
                 {
                     ["mode"]   = _mode == ModeByBox
-                        ? LemoineStrings.T("linkviews.level.labels.modeByScopeBox")
-                        : LemoineStrings.T("linkviews.level.labels.modeByLevel"),
+                        ? AppStrings.T("linkviews.level.labels.modeByScopeBox")
+                        : AppStrings.T("linkviews.level.labels.modeByLevel"),
                     ["levels"] = _selectedLevelIds.Count > 0
-                        ? LemoineStrings.T("linkviews.level.review.levelsValue", _selectedLevelIds.Count) : "—",
+                        ? AppStrings.T("linkviews.level.review.levelsValue", _selectedLevelIds.Count) : "—",
                     ["boxes"]  = _mode == ModeByBox
                         ? (_selectedBoxIds.Count > 0
-                            ? LemoineStrings.T("linkviews.level.review.boxesValue", _selectedBoxIds.Count) : "—")
-                        : LemoineStrings.T("linkviews.level.review.boxesNotUsed"),
+                            ? AppStrings.T("linkviews.level.review.boxesValue", _selectedBoxIds.Count) : "—")
+                        : AppStrings.T("linkviews.level.review.boxesNotUsed"),
                     ["types"]  = types.Count > 0 ? string.Join(" · ", types) : "—",
-                    ["min"]    = planned > 0 ? LemoineStrings.T("linkviews.level.review.minValue", planned) : "—",
+                    ["min"]    = planned > 0 ? AppStrings.T("linkviews.level.review.minValue", planned) : "—",
                 };
             }
         }
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("linkviews.level.review.note");
+        public string?        ReviewNote    => AppStrings.T("linkviews.level.review.note");
         public string?        ReviewWarning => _mode == ModeByBox && _scopeBoxes.Count == 0
-            ? LemoineStrings.T("linkviews.level.review.warnNoBoxes")
+            ? AppStrings.T("linkviews.level.review.warnNoBoxes")
             : null;
 
         // ═══════════════════════════════════════════════════════════════
@@ -592,11 +592,11 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S1")
             {
                 string mode = _mode == ModeByBox
-                    ? LemoineStrings.T("linkviews.level.labels.modeByScopeBox")
-                    : LemoineStrings.T("linkviews.level.labels.modeByLevel");
+                    ? AppStrings.T("linkviews.level.labels.modeByScopeBox")
+                    : AppStrings.T("linkviews.level.labels.modeByLevel");
                 return _mode == ModeByBox
-                    ? LemoineStrings.T("linkviews.level.summaries.s1Boxes", mode, _selectedLevelIds.Count, _selectedBoxIds.Count)
-                    : LemoineStrings.T("linkviews.level.summaries.s1Levels", mode, _selectedLevelIds.Count);
+                    ? AppStrings.T("linkviews.level.summaries.s1Boxes", mode, _selectedLevelIds.Count, _selectedBoxIds.Count)
+                    : AppStrings.T("linkviews.level.summaries.s1Levels", mode, _selectedLevelIds.Count);
             }
             if (stepId == "S2")
             {
@@ -610,9 +610,9 @@ namespace LemoineTools.Tools.LinkViews
             {
                 var set = new[] { _naming.Front, _naming.Center, _naming.End }
                     .Where(s => s != "None").ToList();
-                return set.Count > 0 ? string.Join(" / ", set) : LemoineStrings.T("linkviews.level.summaries.s3Default");
+                return set.Count > 0 ? string.Join(" / ", set) : AppStrings.T("linkviews.level.summaries.s3Default");
             }
-            if (stepId == "S4") return LemoineStrings.T("linkviews.level.summaries.S4");
+            if (stepId == "S4") return AppStrings.T("linkviews.level.summaries.S4");
             return "—";
         }
 
@@ -646,7 +646,7 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog(LemoineStrings.T("linkviews.level.log.raising"), "info");
+            pushLog(AppStrings.T("linkviews.level.log.raising"), "info");
             _runEvent!.Raise();
         }
     }

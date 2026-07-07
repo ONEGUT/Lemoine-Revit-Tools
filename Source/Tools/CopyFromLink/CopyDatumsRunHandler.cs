@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -30,14 +30,14 @@ namespace LemoineTools.Tools.CopyFromLink
         public void Execute(UIApplication app)
         {
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
-                if (doc == null) { Log(LemoineStrings.T("copy.datums.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (doc == null) { Log(AppStrings.T("copy.datums.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var src = CopyLinearSource.Resolve(doc, LinkInstId);
-                if (src?.Doc == null || src.Link == null) { Log(LemoineStrings.T("copy.datums.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (src?.Doc == null || src.Link == null) { Log(AppStrings.T("copy.datums.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 // Host grid/level names — the copy must not clash with an existing datum name.
                 var hostGridNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +55,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     if (hostGridNames.Contains(g.Name))
                     {
                         skip++;
-                        Log(LemoineStrings.T("copy.datums.log.gridExists", g.Name), "info");
+                        Log(AppStrings.T("copy.datums.log.gridExists", g.Name), "info");
                         continue;
                     }
                     gridsToCopy.Add(g.Id);
@@ -69,7 +69,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     if (hostLevelNames.Contains(lvl.Name))
                     {
                         skip++;
-                        Log(LemoineStrings.T("copy.datums.log.levelExists", lvl.Name), "info");
+                        Log(AppStrings.T("copy.datums.log.levelExists", lvl.Name), "info");
                         continue;
                     }
                     levelsToCopy.Add(lvl.Id);
@@ -77,7 +77,7 @@ namespace LemoineTools.Tools.CopyFromLink
 
                 if (gridsToCopy.Count == 0 && levelsToCopy.Count == 0)
                 {
-                    Log(LemoineStrings.T("copy.datums.log.noDatumsToCopy"), "warn");
+                    Log(AppStrings.T("copy.datums.log.noDatumsToCopy"), "warn");
                     OnProgress?.Invoke(100, 0, 0, skip);
                     OnComplete?.Invoke(0, 0, skip);
                     return;
@@ -103,10 +103,10 @@ namespace LemoineTools.Tools.CopyFromLink
                         catch (Exception ex)
                         {
                             // Fall back to per-grid copy so one bad grid doesn't lose the whole batch.
-                            LemoineLog.Swallowed("CopyDatums: grid batch copy failed, retrying per grid", ex);
+                            DiagnosticsLog.Swallowed("CopyDatums: grid batch copy failed, retrying per grid", ex);
                             foreach (var id in gridsToCopy)
                             {
-                                if (LemoineRun.CancelRequested) { stopped = true; break; }
+                                if (RunState.CancelRequested) { stopped = true; break; }
                                 try
                                 {
                                     var c = ElementTransformUtils.CopyElements(src.Doc, new List<ElementId> { id }, doc, src.Transform, opts);
@@ -115,14 +115,14 @@ namespace LemoineTools.Tools.CopyFromLink
                                 catch (Exception ex2)
                                 {
                                     fail++;
-                                    LemoineLog.Error("CopyDatums: copy grid", ex2);
-                                    Log(LemoineStrings.T("copy.datums.log.gridFail", id, ex2.Message), "fail");
+                                    DiagnosticsLog.Error("CopyDatums: copy grid", ex2);
+                                    Log(AppStrings.T("copy.datums.log.gridFail", id, ex2.Message), "fail");
                                 }
                             }
                         }
                     }
 
-                    if (!stopped && LemoineRun.CancelRequested) stopped = true;
+                    if (!stopped && RunState.CancelRequested) stopped = true;
 
                     if (!stopped && levelsToCopy.Count > 0)
                     {
@@ -134,10 +134,10 @@ namespace LemoineTools.Tools.CopyFromLink
                         catch (Exception ex)
                         {
                             // Fall back to per-level copy so one bad level doesn't lose the whole batch.
-                            LemoineLog.Swallowed("CopyDatums: level batch copy failed, retrying per level", ex);
+                            DiagnosticsLog.Swallowed("CopyDatums: level batch copy failed, retrying per level", ex);
                             foreach (var id in levelsToCopy)
                             {
-                                if (LemoineRun.CancelRequested) { stopped = true; break; }
+                                if (RunState.CancelRequested) { stopped = true; break; }
                                 try
                                 {
                                     var c = ElementTransformUtils.CopyElements(src.Doc, new List<ElementId> { id }, doc, src.Transform, opts);
@@ -146,8 +146,8 @@ namespace LemoineTools.Tools.CopyFromLink
                                 catch (Exception ex2)
                                 {
                                     fail++;
-                                    LemoineLog.Error("CopyDatums: copy level", ex2);
-                                    Log(LemoineStrings.T("copy.datums.log.levelFail", id, ex2.Message), "fail");
+                                    DiagnosticsLog.Error("CopyDatums: copy level", ex2);
+                                    Log(AppStrings.T("copy.datums.log.levelFail", id, ex2.Message), "fail");
                                 }
                             }
                         }
@@ -155,22 +155,22 @@ namespace LemoineTools.Tools.CopyFromLink
 
                     // Cancellation always falls through to a single regen + commit, preserving
                     // whatever was copied before the stop request (CLAUDE.md cancellation rule).
-                    if (stopped) Log(LemoineStrings.T("copy.datums.log.stopped", pass), "warn");
+                    if (stopped) Log(AppStrings.T("copy.datums.log.stopped", pass), "warn");
 
                     doc.Regenerate();
                     tx.Commit();
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("copy.datums.log.nonFatal", issues), "warn");
-                Log(LemoineStrings.T("copy.datums.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("copy.datums.log.nonFatal", issues), "warn");
+                Log(AppStrings.T("copy.datums.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyDatumsRunHandler.Execute", ex);
-                Log(LemoineStrings.T("copy.datums.log.aborted", ex.Message), "fail");
+                DiagnosticsLog.Error("CopyDatumsRunHandler.Execute", ex);
+                Log(AppStrings.T("copy.datums.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally
@@ -190,7 +190,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 opts.SetForcedModalHandling(false);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyDatums: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyDatums: configure failure handling", ex); }
         }
 
         private sealed class UseDestinationTypes : IDuplicateTypeNamesHandler

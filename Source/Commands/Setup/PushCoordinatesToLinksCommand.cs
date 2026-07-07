@@ -6,7 +6,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -80,7 +80,7 @@ namespace LemoineTools.Commands
                     });
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinksCommand: read links", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinksCommand: read links", ex); }
 
             return data;
         }

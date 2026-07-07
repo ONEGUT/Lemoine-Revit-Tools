@@ -7,7 +7,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.LinkViews;
 
 namespace LemoineTools.Commands
@@ -77,7 +77,7 @@ namespace LemoineTools.Commands
                             var cb = depView.CropBox;
                             if (cb != null) { min = cb.Min; max = cb.Max; }
                         }
-                        catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: read source crop box", __lex); }
+                        catch (Exception __lex) { DiagnosticsLog.Swallowed("ReplicateDependentViews: read source crop box", __lex); }
 
                         // Scope box
                         ElementId scopeBoxId = ElementId.InvalidElementId;
@@ -86,7 +86,7 @@ namespace LemoineTools.Commands
                             var sp = depView.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
                             if (sp != null) scopeBoxId = sp.AsElementId() ?? ElementId.InvalidElementId;
                         }
-                        catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: read source scope box", __lex); }
+                        catch (Exception __lex) { DiagnosticsLog.Swallowed("ReplicateDependentViews: read source scope box", __lex); }
 
                         deps.Add(new DepEntry
                         {
@@ -205,7 +205,7 @@ namespace LemoineTools.Commands
                     if (!string.IsNullOrEmpty(name)) return name;
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("ReplicateDependentViews: resolve view level name", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("ReplicateDependentViews: resolve view level name", __lex); }
             return "";
         }
     }

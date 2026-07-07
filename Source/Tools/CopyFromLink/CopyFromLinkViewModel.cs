@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.CopyFromLink
@@ -17,19 +17,19 @@ namespace LemoineTools.Tools.CopyFromLink
     /// verbatim into the host (link transform applied). An optional change-detection step stamps the
     /// outputs so a re-run reconciles instead of duplicating.
     /// </summary>
-    public class CopyFromLinkViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware, ILemoineToolCleanup
+    public class CopyFromLinkViewModel : IStepFlowTool, IReviewableTool, IRunResult, IStepAware, IToolCleanup
     {
-        public string Title    => LemoineStrings.T("copy.fromLink.title");
-        public string RunLabel => LemoineStrings.T("copy.fromLink.runLabel");
+        public string Title    => AppStrings.T("copy.fromLink.title");
+        public string RunLabel => AppStrings.T("copy.fromLink.runLabel");
         public string? ResultNoun => "elements";
         public IReadOnlyList<ResultChip>? ResultChips => null;
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source",  LemoineStrings.T("copy.fromLink.steps.source"), required: true),
-            new StepDefinition("types",   LemoineStrings.T("copy.fromLink.steps.types"),         required: true),
-            new StepDefinition("changes", LemoineStrings.T("copy.fromLink.steps.changes"),         required: false),
-            new StepDefinition("run",     LemoineStrings.T("copy.fromLink.steps.run"),             required: false),
+            new StepDefinition("source",  AppStrings.T("copy.fromLink.steps.source"), required: true),
+            new StepDefinition("types",   AppStrings.T("copy.fromLink.steps.types"),         required: true),
+            new StepDefinition("changes", AppStrings.T("copy.fromLink.steps.changes"),         required: false),
+            new StepDefinition("run",     AppStrings.T("copy.fromLink.steps.run"),             required: false),
         };
 
         // ── Injected ───────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 case "source":  return BuildSourceStep();
                 case "types":   return BuildTypesStep();
                 case "changes": return BuildChangesStep();
-                default:        return null;   // "run" rendered by the framework (ILemoineReviewable)
+                default:        return null;   // "run" rendered by the framework (IReviewableTool)
             }
         }
 
@@ -101,12 +101,12 @@ namespace LemoineTools.Tools.CopyFromLink
 
             if (_links.Count == 0)
             {
-                outer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.noLinks")));
+                outer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.noLinks")));
                 return outer;
             }
 
-            outer.Children.Add(Label(LemoineStrings.T("copy.fromLink.labels.sourceLink")));
-            var linkSelect = new LemoineSingleSelect
+            outer.Children.Add(Label(AppStrings.T("copy.fromLink.labels.sourceLink")));
+            var linkSelect = new SingleSelect
             {
                 Items        = _links.Select(l => l.Name).ToList(),
                 SelectedItem = _links.FirstOrDefault(l => l.LinkInstId == _spec.LinkInstId)?.Name ?? _links[0].Name,
@@ -127,8 +127,8 @@ namespace LemoineTools.Tools.CopyFromLink
 
             Divider(outer);
 
-            outer.Children.Add(Label(LemoineStrings.T("copy.fromLink.labels.catsToCopy")));
-            var catTabs = new LemoineMultiSelectTabs();
+            outer.Children.Add(Label(AppStrings.T("copy.fromLink.labels.catsToCopy")));
+            var catTabs = new MultiSelectTabs();
             catTabs.SelectionChanged += sel =>
             {
                 var map = AutoFiltersSettings.KnownCategoryMap;
@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.CopyFromLink
 
             Divider(outer);
 
-            outer.Children.Add(Label(LemoineStrings.T("copy.fromLink.labels.worksets")));
+            outer.Children.Add(Label(AppStrings.T("copy.fromLink.labels.worksets")));
             _worksetContainer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
             outer.Children.Add(_worksetContainer);
             RebuildWorksets();
@@ -162,10 +162,10 @@ namespace LemoineTools.Tools.CopyFromLink
 
             var link = _links.FirstOrDefault(l => l.LinkInstId == _spec.LinkInstId);
             var ws   = link?.Worksets ?? new List<CopyFromLinkWorksetInfo>();
-            if (ws.Count == 0) { _worksetContainer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.noWorksets"))); return; }
+            if (ws.Count == 0) { _worksetContainer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.noWorksets"))); return; }
 
             var excluded = new HashSet<int>(_spec.ExcludedWorksetIds);
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             var byName = ws.ToDictionary(w => w.Name, w => w.Id);
             tabs.SelectionChanged += sel =>
             {
@@ -184,8 +184,8 @@ namespace LemoineTools.Tools.CopyFromLink
         {
             _disp = Dispatcher.CurrentDispatcher;
             var outer = new StackPanel();
-            outer.Children.Add(Label(LemoineStrings.T("copy.fromLink.labels.families")));
-            outer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.familiesHelp")));
+            outer.Children.Add(Label(AppStrings.T("copy.fromLink.labels.families")));
+            outer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.familiesHelp")));
 
             _typesContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             outer.Children.Add(_typesContainer);
@@ -210,18 +210,18 @@ namespace LemoineTools.Tools.CopyFromLink
             if (_typesContainer == null) return;
             _typesContainer.Children.Clear();
 
-            if (_scanning)          { _typesContainer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.scanning"))); return; }
-            if (_scanError != null) { _typesContainer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.scanError", _scanError))); return; }
+            if (_scanning)          { _typesContainer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.scanning"))); return; }
+            if (_scanError != null) { _typesContainer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.scanError", _scanError))); return; }
             if (!_scanDone)
             {
                 _typesContainer.Children.Add(Dim(_spec.Categories.Count == 0
-                    ? LemoineStrings.T("copy.fromLink.labels.pickCatFirst")
-                    : LemoineStrings.T("copy.fromLink.labels.confirmToScan")));
+                    ? AppStrings.T("copy.fromLink.labels.pickCatFirst")
+                    : AppStrings.T("copy.fromLink.labels.confirmToScan")));
                 return;
             }
             if (_scan.TypesByCategory.Count == 0)
             {
-                _typesContainer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.noTypes", _scan.ElementCount)));
+                _typesContainer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.noTypes", _scan.ElementCount)));
                 return;
             }
 
@@ -233,9 +233,9 @@ namespace LemoineTools.Tools.CopyFromLink
             else _selectedTypeKeys.IntersectWith(allKeys);
             if (_selectedTypeKeys.Count == 0) _selectedTypeKeys = new HashSet<string>(allKeys, StringComparer.Ordinal);
 
-            _typesContainer.Children.Add(Dim(LemoineStrings.T("copy.fromLink.labels.typesSummary", _scan.ElementCount, allKeys.Count, _scan.TypesByCategory.Count)));
+            _typesContainer.Children.Add(Dim(AppStrings.T("copy.fromLink.labels.typesSummary", _scan.ElementCount, allKeys.Count, _scan.TypesByCategory.Count)));
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += sel =>
             {
                 _selectedTypeKeys = new HashSet<string>(sel, StringComparer.Ordinal);
@@ -299,13 +299,13 @@ namespace LemoineTools.Tools.CopyFromLink
             {
                 reconcileHost.Children.Clear();
                 if (!_deletePrevious) return;
-                var sub = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
+                var sub = new ToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
                 sub.SetItems(new List<ToggleItem>
                 {
-                    new ToggleItem { Id = "only", Label = LemoineStrings.T("copy.fromLink.labels.onlyLabel"),
-                        Desc = LemoineStrings.T("copy.fromLink.labels.onlyDesc"), DefaultOn = _onlyChanged },
-                    new ToggleItem { Id = "orph", Label = LemoineStrings.T("copy.fromLink.labels.orphLabel"),
-                        Desc = LemoineStrings.T("copy.fromLink.labels.orphDesc"), DefaultOn = _deleteOrphans },
+                    new ToggleItem { Id = "only", Label = AppStrings.T("copy.fromLink.labels.onlyLabel"),
+                        Desc = AppStrings.T("copy.fromLink.labels.onlyDesc"), DefaultOn = _onlyChanged },
+                    new ToggleItem { Id = "orph", Label = AppStrings.T("copy.fromLink.labels.orphLabel"),
+                        Desc = AppStrings.T("copy.fromLink.labels.orphDesc"), DefaultOn = _deleteOrphans },
                 });
                 sub.StateChanged += st =>
                 {
@@ -316,11 +316,11 @@ namespace LemoineTools.Tools.CopyFromLink
                 reconcileHost.Children.Add(sub);
             }
 
-            var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
+            var toggles = new ToggleSwitches { Margin = new Thickness(0, 8, 0, 0) };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "prev", Label = LemoineStrings.T("copy.fromLink.labels.prevLabel"),
-                    Desc = LemoineStrings.T("copy.fromLink.labels.prevDesc"), DefaultOn = _deletePrevious },
+                new ToggleItem { Id = "prev", Label = AppStrings.T("copy.fromLink.labels.prevLabel"),
+                    Desc = AppStrings.T("copy.fromLink.labels.prevDesc"), DefaultOn = _deletePrevious },
             });
             toggles.StateChanged += st =>
             {
@@ -338,24 +338,24 @@ namespace LemoineTools.Tools.CopyFromLink
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("link", LemoineStrings.T("copy.fromLink.review.itemLink")), ("cats", LemoineStrings.T("copy.fromLink.review.itemCats")), ("types", LemoineStrings.T("copy.fromLink.review.itemTypes")), ("changes", LemoineStrings.T("copy.fromLink.review.itemChanges")),
+            ("link", AppStrings.T("copy.fromLink.review.itemLink")), ("cats", AppStrings.T("copy.fromLink.review.itemCats")), ("types", AppStrings.T("copy.fromLink.review.itemTypes")), ("changes", AppStrings.T("copy.fromLink.review.itemChanges")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["link"]    = _links.FirstOrDefault(l => l.LinkInstId == _spec.LinkInstId)?.Name ?? "—",
-            ["cats"]    = _spec.Categories.Count == 0 ? "—" : LemoineStrings.T("copy.fromLink.review.catsValue", _spec.Categories.Count),
-            ["types"]   = _selectedTypeKeys.Count == 0 ? LemoineStrings.T("copy.fromLink.review.typesNone") : LemoineStrings.T("copy.fromLink.review.typesValue", _selectedTypeKeys.Count),
+            ["cats"]    = _spec.Categories.Count == 0 ? "—" : AppStrings.T("copy.fromLink.review.catsValue", _spec.Categories.Count),
+            ["types"]   = _selectedTypeKeys.Count == 0 ? AppStrings.T("copy.fromLink.review.typesNone") : AppStrings.T("copy.fromLink.review.typesValue", _selectedTypeKeys.Count),
             ["changes"] = ChangesSummary(),
         };
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => null;
-        public string?        ReviewWarning => _selectedTypeKeys.Count == 0 ? LemoineStrings.T("copy.fromLink.review.warnNoTypes") : null;
+        public string?        ReviewWarning => _selectedTypeKeys.Count == 0 ? AppStrings.T("copy.fromLink.review.warnNoTypes") : null;
 
         private string ChangesSummary() => !_deletePrevious
-            ? LemoineStrings.T("copy.fromLink.review.changesKeep")
-            : _onlyChanged ? LemoineStrings.T("copy.fromLink.review.changesOnlyChanged") : LemoineStrings.T("copy.fromLink.review.changesReCopyAll");
+            ? AppStrings.T("copy.fromLink.review.changesKeep")
+            : _onlyChanged ? AppStrings.T("copy.fromLink.review.changesOnlyChanged") : AppStrings.T("copy.fromLink.review.changesReCopyAll");
 
         // ── Validation / Summary ─────────────────────────────────────────────────
         public bool IsValid(string stepId)
@@ -374,12 +374,12 @@ namespace LemoineTools.Tools.CopyFromLink
             {
                 case "source":
                     return _spec.Categories.Count == 0 ? "—"
-                        : LemoineStrings.T("copy.fromLink.summaries.source", (_links.FirstOrDefault(l => l.LinkInstId == _spec.LinkInstId)?.Name ?? "link"), _spec.Categories.Count);
+                        : AppStrings.T("copy.fromLink.summaries.source", (_links.FirstOrDefault(l => l.LinkInstId == _spec.LinkInstId)?.Name ?? "link"), _spec.Categories.Count);
                 case "types":
-                    return _selectedTypeKeys.Count == 0 ? "—" : LemoineStrings.T("copy.fromLink.summaries.typeCount", _selectedTypeKeys.Count);
+                    return _selectedTypeKeys.Count == 0 ? "—" : AppStrings.T("copy.fromLink.summaries.typeCount", _selectedTypeKeys.Count);
                 case "changes":
                     return ChangesSummary();
-                case "run": return LemoineStrings.T("copy.fromLink.summaries.run");
+                case "run": return AppStrings.T("copy.fromLink.summaries.run");
                 default:    return "—";
             }
         }
@@ -387,7 +387,7 @@ namespace LemoineTools.Tools.CopyFromLink
         // ── Run ──────────────────────────────────────────────────────────────────
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog(LemoineStrings.T("copy.fromLink.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null) { pushLog(AppStrings.T("copy.fromLink.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
 
             SaveSettings();
 
@@ -400,7 +400,7 @@ namespace LemoineTools.Tools.CopyFromLink
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog(LemoineStrings.T("copy.fromLink.log.raising"), "info");
+            pushLog(AppStrings.T("copy.fromLink.log.raising"), "info");
             _runEvent.Raise();
         }
 

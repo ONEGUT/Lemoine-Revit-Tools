@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -48,7 +48,7 @@ namespace LemoineTools.Tools.Ceilings
                 string dir = System.IO.Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmapSettings: create config directory", __lex); }
                 return System.IO.Path.Combine(dir, "CeilingHeatmapSettings.xml");
             }
         }
@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.Ceilings
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings.Save", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmapSettings.Save", __lex); }
         }
 
         private static CeilingHeatmapSettings Load()
@@ -77,7 +77,7 @@ namespace LemoineTools.Tools.Ceilings
                         return (CeilingHeatmapSettings)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmapSettings.Load", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmapSettings.Load", __lex); }
             return new CeilingHeatmapSettings();
         }
     }

@@ -4,8 +4,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.Setup
     /// re-places the link instance so it self-corrects going forward. This is the companion to
     /// Align Coordinates, which only repositions the host's copy.
     /// </summary>
-    public class PushCoordinatesToLinksViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public class PushCoordinatesToLinksViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
         public string Title    => "Push Coordinates to Links";
         public string RunLabel => "Push in Revit →";
@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.Setup
             {
                 case "links":    return BuildLinksStep();
                 case "settings": return BuildSettingsStep();
-                default:         return null;   // "run" is rendered by ILemoineReviewable
+                default:         return null;   // "run" is rendered by IReviewableTool
             }
         }
 
@@ -126,7 +126,7 @@ namespace LemoineTools.Tools.Setup
             var outer = new StackPanel();
 
             outer.Children.Add(Label("Correct which point(s) in each link"));
-            var toggles = new LemoineToggleSwitches { AccessibleName = "Points to correct" };
+            var toggles = new ToggleSwitches { AccessibleName = "Points to correct" };
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "pbp",    Label = "Project Base Point", DefaultOn = _movePbp },

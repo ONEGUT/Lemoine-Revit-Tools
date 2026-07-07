@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning
 {
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.Dimensioning
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("UserCalloutSchema: stamp adopted callout", ex);
+                DiagnosticsLog.Error("UserCalloutSchema: stamp adopted callout", ex);
                 return false;
             }
         }
@@ -111,7 +111,7 @@ namespace LemoineTools.Tools.Dimensioning
                     // A valid entity with unreadable rects means a corrupted/foreign write —
                     // surface it: the caller will treat the view as un-adopted and re-baseline
                     // its group to the current crop.
-                    LemoineLog.Warn("UserCalloutSchema: read adopted callout",
+                    DiagnosticsLog.Warn("UserCalloutSchema: read adopted callout",
                         "stamped rectangles unreadable — view treated as un-adopted (group re-baselines to its current crop)");
                     return null;
                 }
@@ -125,7 +125,7 @@ namespace LemoineTools.Tools.Dimensioning
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("UserCalloutSchema: read adopted callout", ex);
+                DiagnosticsLog.Swallowed("UserCalloutSchema: read adopted callout", ex);
                 return null;
             }
         }

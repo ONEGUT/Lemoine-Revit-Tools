@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.LinkViews.BulkRename
 {
@@ -114,11 +114,11 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                     return (cfg.Prefix ?? "") + oldValue + (cfg.Suffix ?? "");
 
                 case RenameMode.Sequential:
-                    return LemoineTokenInput.Resolve(cfg.SeqPattern,
+                    return TokenInput.Resolve(cfg.SeqPattern,
                         WithSeq(tokens, cfg, index));
 
                 case RenameMode.Token:
-                    return LemoineTokenInput.Resolve(cfg.TokenPattern,
+                    return TokenInput.Resolve(cfg.TokenPattern,
                         WithSeq(tokens, cfg, index));
             }
             return oldValue;

@@ -1,6 +1,6 @@
 using System.Reflection;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
@@ -10,7 +10,7 @@ using LemoineTools.Tools.Dimensioning;
 using LemoineTools.Tools.ExplodeViews;
 using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using System;
-using L = LemoineTools.Lemoine.LemoineStrings;
+using L = LemoineTools.Framework.AppStrings;
 
 namespace LemoineTools
 {
@@ -18,7 +18,7 @@ namespace LemoineTools
     {
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.
-        internal static Lemoine.LemoineReloadHandler? ReloadHandler { get; private set; }
+        internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
         internal static ExternalEvent?                ReloadEvent   { get; private set; }
 
         internal static CeilingGridEventHandler? ProjectHandler   { get; private set; }
@@ -163,23 +163,23 @@ namespace LemoineTools
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
         // Tools Overview window — read-only guide, singleton like GlobalSettings
-        internal static Lemoine.ToolsOverviewWindow? Overview { get; set; }
+        internal static Framework.ToolsOverviewWindow? Overview { get; set; }
 
         // Link Audit window — read-only report, singleton like GlobalSettings/Overview
-        internal static Lemoine.LinkAuditWindow? LinkAudit { get; set; }
+        internal static Framework.LinkAuditWindow? LinkAudit { get; set; }
 
         public Result OnStartup(UIControlledApplication application)
         {
             // Load user-facing text for the saved language (English fallback) before any window opens.
-            LemoineStrings.Load(LemoineSettings.Instance.Language);
+            AppStrings.Load(AppSettings.Instance.Language);
 
             // Surface Revit's transaction failures and modal dialogs into the running tool's
             // Output log (and suppress warning dialogs). Both handlers no-op unless a Lemoine
             // run is active, so non-Lemoine work is never affected.
-            application.ControlledApplication.FailuresProcessing += LemoineFailureCapture.OnFailuresProcessing;
-            application.DialogBoxShowing                         += LemoineFailureCapture.OnDialogBoxShowing;
+            application.ControlledApplication.FailuresProcessing += RevitFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         += RevitFailureCapture.OnDialogBoxShowing;
 
-            ReloadHandler = new Lemoine.LemoineReloadHandler();
+            ReloadHandler = new Framework.ReloadHandler();
             ReloadEvent   = ExternalEvent.Create(ReloadHandler);
 
             ProjectHandler   = new CeilingGridEventHandler();
@@ -299,7 +299,7 @@ namespace LemoineTools
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
 
-            try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { LemoineLog.Swallowed("App: create ribbon tab", __lex); }
+            try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { DiagnosticsLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
 
             // Local helper — avoids repeating the dll path and namespace prefix on every button.
@@ -638,8 +638,8 @@ namespace LemoineTools
 
         public Result OnShutdown(UIControlledApplication application)
         {
-            application.ControlledApplication.FailuresProcessing -= LemoineFailureCapture.OnFailuresProcessing;
-            application.DialogBoxShowing                         -= LemoineFailureCapture.OnDialogBoxShowing;
+            application.ControlledApplication.FailuresProcessing -= RevitFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         -= RevitFailureCapture.OnDialogBoxShowing;
             return Result.Succeeded;
         }
 

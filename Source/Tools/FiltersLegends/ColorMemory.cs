@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -48,7 +48,7 @@ namespace LemoineTools.Tools.AutoFilters
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("ColorMemory: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("ColorMemory: create config directory", __lex); }
                 return Path.Combine(dir, "ColorMemory.xml");
             }
         }
@@ -118,7 +118,7 @@ namespace LemoineTools.Tools.AutoFilters
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, _data);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("ColorMemory.Save", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("ColorMemory.Save", __lex); }
         }
 
         private static ColorMemoryData Load()
@@ -132,7 +132,7 @@ namespace LemoineTools.Tools.AutoFilters
                         return (ColorMemoryData)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("ColorMemory.Load", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("ColorMemory.Load", __lex); }
             return new ColorMemoryData();
         }
     }

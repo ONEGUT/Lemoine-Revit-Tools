@@ -5,27 +5,27 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class ExtendWallsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ExtendWallsViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "walls";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
-        public string Title    => LemoineStrings.T("modify.extendWalls.title");
-        public string RunLabel => LemoineStrings.T("modify.extendWalls.runLabel");
+        public string Title    => AppStrings.T("modify.extendWalls.title");
+        public string RunLabel => AppStrings.T("modify.extendWalls.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("modify.extendWalls.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("modify.extendWalls.steps.S2"),            required: false),
-            new StepDefinition("S3", LemoineStrings.T("modify.extendWalls.steps.S3"),       required: false),
+            new StepDefinition("S1", AppStrings.T("modify.extendWalls.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("modify.extendWalls.steps.S2"),            required: false),
+            new StepDefinition("S3", AppStrings.T("modify.extendWalls.steps.S3"),       required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return null; // framework renders review (ILemoineReviewable)
+                case "S3": return null; // framework renders review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -84,7 +84,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 var msg = new TextBlock
                 {
-                    Text         = LemoineStrings.T("modify.extendWalls.labels.noItems"),
+                    Text         = AppStrings.T("modify.extendWalls.labels.noItems"),
                     TextWrapping = TextWrapping.Wrap,
                 };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
@@ -98,7 +98,7 @@ namespace LemoineTools.Tools.ModifyElements
                 { "Levels", _levelsByName.Keys.ToList() }
             };
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -112,11 +112,11 @@ namespace LemoineTools.Tools.ModifyElements
         {
             var outer = new StackPanel();
 
-            // Assumed ceiling height — labeled single-value input via LemoineNumberRange
+            // Assumed ceiling height — labeled single-value input via NumberRange
             // Using MinLabel for the value, MaxLabel deliberately left empty
-            var heightRange = new LemoineNumberRange
+            var heightRange = new NumberRange
             {
-                MinLabel = LemoineStrings.T("modify.extendWalls.labels.ceilingLabel"),
+                MinLabel = AppStrings.T("modify.extendWalls.labels.ceilingLabel"),
                 MaxLabel = "",
                 AbsMin   = 1.0,
                 AbsMax   = 100.0,
@@ -130,14 +130,14 @@ namespace LemoineTools.Tools.ModifyElements
             };
             outer.Children.Add(heightRange);
 
-            var toggle = new LemoineToggleSwitches();
+            var toggle = new ToggleSwitches();
             toggle.SetItems(new List<ToggleItem>
             {
                 new ToggleItem
                 {
                     Id        = "viewOnly",
-                    Label     = LemoineStrings.T("modify.extendWalls.labels.viewOnlyLabel"),
-                    Desc      = LemoineStrings.T("modify.extendWalls.labels.viewOnlyDesc"),
+                    Label     = AppStrings.T("modify.extendWalls.labels.viewOnlyLabel"),
+                    Desc      = AppStrings.T("modify.extendWalls.labels.viewOnlyDesc"),
                     DefaultOn = true,
                 },
             });
@@ -155,25 +155,25 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("levels",  LemoineStrings.T("modify.extendWalls.review.itemLevels")),
-            ("ceiling", LemoineStrings.T("modify.extendWalls.review.itemCeiling")),
-            ("scope",   LemoineStrings.T("modify.extendWalls.review.itemScope")),
-            ("target",  LemoineStrings.T("modify.extendWalls.review.itemTarget")),
+            ("levels",  AppStrings.T("modify.extendWalls.review.itemLevels")),
+            ("ceiling", AppStrings.T("modify.extendWalls.review.itemCeiling")),
+            ("scope",   AppStrings.T("modify.extendWalls.review.itemScope")),
+            ("target",  AppStrings.T("modify.extendWalls.review.itemTarget")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["levels"]  = _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.extendWalls.review.levelsValue", _selectedLevelNames.Count),
-            ["ceiling"] = LemoineStrings.T("modify.extendWalls.review.ceilingValue", _assumedCeilingFt),
-            ["scope"]   = _activeViewOnly ? LemoineStrings.T("modify.extendWalls.review.scopeActive") : LemoineStrings.T("modify.extendWalls.review.scopeDoc"),
-            ["target"]  = LemoineStrings.T("modify.extendWalls.review.target"),
+            ["levels"]  = _selectedLevelNames.Count == 0 ? "—" : AppStrings.T("modify.extendWalls.review.levelsValue", _selectedLevelNames.Count),
+            ["ceiling"] = AppStrings.T("modify.extendWalls.review.ceilingValue", _assumedCeilingFt),
+            ["scope"]   = _activeViewOnly ? AppStrings.T("modify.extendWalls.review.scopeActive") : AppStrings.T("modify.extendWalls.review.scopeDoc"),
+            ["target"]  = AppStrings.T("modify.extendWalls.review.target"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("modify.extendWalls.review.note");
+        public string?        ReviewNote    => AppStrings.T("modify.extendWalls.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -186,11 +186,11 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
                 return _selectedLevelNames.Count == 0 ? "—"
-                    : LemoineStrings.T("modify.extendWalls.summaries.s1", _selectedLevelNames.Count);
+                    : AppStrings.T("modify.extendWalls.summaries.s1", _selectedLevelNames.Count);
             if (stepId == "S2")
-                return LemoineStrings.T("modify.extendWalls.summaries.s2", _assumedCeilingFt, _activeViewOnly ? LemoineStrings.T("modify.extendWalls.summaries.scopeActiveWord") : LemoineStrings.T("modify.extendWalls.summaries.scopeDocWord"));
+                return AppStrings.T("modify.extendWalls.summaries.s2", _assumedCeilingFt, _activeViewOnly ? AppStrings.T("modify.extendWalls.summaries.scopeActiveWord") : AppStrings.T("modify.extendWalls.summaries.scopeDocWord"));
             if (stepId == "S3")
-                return LemoineStrings.T("modify.extendWalls.summaries.S3");
+                return AppStrings.T("modify.extendWalls.summaries.S3");
             return "—";
         }
 

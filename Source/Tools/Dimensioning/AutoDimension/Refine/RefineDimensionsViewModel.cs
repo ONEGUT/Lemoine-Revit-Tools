@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
 {
@@ -17,7 +17,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
     /// and other annotations alone. Three steps: views · destination · review &amp; run. The actual work
     /// happens in <see cref="RefineDimensionsEventHandler"/>.
     /// </summary>
-    public class RefineDimensionsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class RefineDimensionsViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
         // Run strip: live "dimensions" label during the run, full chip breakdown on completion.
         public string? ResultNoun => "dimensions";
@@ -34,14 +34,14 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
             _handler.OnResultChips = null;
         }
 
-        public string Title    => LemoineStrings.T("clash.refineDimensions.title");
-        public string RunLabel => LemoineStrings.T("clash.refineDimensions.runLabel");
+        public string Title    => AppStrings.T("clash.refineDimensions.title");
+        public string RunLabel => AppStrings.T("clash.refineDimensions.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("clash.refineDimensions.steps.S1"),   required: true),
-            new StepDefinition("S2", LemoineStrings.T("clash.refineDimensions.steps.S2"),    required: false),
-            new StepDefinition("S3", LemoineStrings.T("clash.refineDimensions.steps.S3"),   required: false),
+            new StepDefinition("S1", AppStrings.T("clash.refineDimensions.steps.S1"),   required: true),
+            new StepDefinition("S2", AppStrings.T("clash.refineDimensions.steps.S2"),    required: false),
+            new StepDefinition("S3", AppStrings.T("clash.refineDimensions.steps.S3"),   required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -53,13 +53,13 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
 
         // ── Data ──────────────────────────────────────────────────────────────
         private readonly List<View>         _allViews;
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
 
         // ── State ─────────────────────────────────────────────────────────────
         private List<long> _selectedViewIds = new List<long>();
 
-        private static readonly string GridDisplay = LemoineStrings.T("clash.refineDimensions.labels.destGrid");
-        private static readonly string SlabDisplay = LemoineStrings.T("clash.refineDimensions.labels.destSlab");
+        private static readonly string GridDisplay = AppStrings.T("clash.refineDimensions.labels.destGrid");
+        private static readonly string SlabDisplay = AppStrings.T("clash.refineDimensions.labels.destSlab");
         private string _dimTargetType =
             string.Equals(AutoDimensionConfig.Instance.TargetType, "Grid", StringComparison.OrdinalIgnoreCase)
               ? "Grid" : "SlabEdge";
@@ -68,12 +68,12 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
             RefineDimensionsEventHandler? handler,
             ExternalEvent?                externalEvent,
             List<View>                    allViews,
-            LemoineBrowserTree?           browserTree = null)
+            BrowserTree?           browserTree = null)
         {
             _handler     = handler;
             _event       = externalEvent;
             _allViews    = allViews ?? new List<View>();
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
             {
                 case "S1": return BuildViewsStep();
                 case "S2": return BuildDestinationStep();
-                case "S3": return null;   // framework renders the review (ILemoineReviewable)
+                case "S3": return null;   // framework renders the review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -97,7 +97,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight                     = maxHeight,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
             return sv;
         }
 
@@ -105,12 +105,12 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
         private FrameworkElement BuildViewsStep()
         {
             var outer = new StackPanel();
-            AddDim(outer, LemoineStrings.T("clash.refineDimensions.labels.s1Help"));
+            AddDim(outer, AppStrings.T("clash.refineDimensions.labels.s1Help"));
 
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("clash.refineDimensions.labels.pickerName"),
+                AccessibleName = AppStrings.T("clash.refineDimensions.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -130,8 +130,8 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
         {
             var outer = new StackPanel();
 
-            AddLabel(outer, LemoineStrings.T("clash.refineDimensions.labels.destLabel2"));
-            var destPicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.refineDimensions.labels.destLabel") };
+            AddLabel(outer, AppStrings.T("clash.refineDimensions.labels.destLabel2"));
+            var destPicker = new SingleSelect { Label = AppStrings.T("clash.refineDimensions.labels.destLabel") };
             destPicker.Items        = new List<string> { SlabDisplay, GridDisplay };
             destPicker.SelectedItem = _dimTargetType == "Grid" ? GridDisplay : SlabDisplay;
             destPicker.SelectionChanged += sel =>
@@ -142,7 +142,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
             outer.Children.Add(destPicker);
 
             AddDivider(outer);
-            AddDim(outer, LemoineStrings.T("clash.refineDimensions.labels.s2Help"));
+            AddDim(outer, AppStrings.T("clash.refineDimensions.labels.s2Help"));
             return WrapInScroll(outer);
         }
 
@@ -160,29 +160,29 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
         {
             switch (stepId)
             {
-                case "S1": return _selectedViewIds.Count == 0 ? "—" : LemoineStrings.T("clash.refineDimensions.summaries.viewCount", _selectedViewIds.Count);
-                case "S2": return _dimTargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.summaries.destGrid") : LemoineStrings.T("clash.refineDimensions.summaries.destSlab");
-                case "S3": return LemoineStrings.T("clash.refineDimensions.summaries.S3");
+                case "S1": return _selectedViewIds.Count == 0 ? "—" : AppStrings.T("clash.refineDimensions.summaries.viewCount", _selectedViewIds.Count);
+                case "S2": return _dimTargetType == "Grid" ? AppStrings.T("clash.refineDimensions.summaries.destGrid") : AppStrings.T("clash.refineDimensions.summaries.destSlab");
+                case "S3": return AppStrings.T("clash.refineDimensions.summaries.S3");
                 default:   return "—";
             }
         }
 
-        // ── ILemoineReviewable — framework renders the review step ────────────
+        // ── IReviewableTool — framework renders the review step ────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views", LemoineStrings.T("clash.refineDimensions.review.itemViews")),
-            ("dest",  LemoineStrings.T("clash.refineDimensions.review.itemDest")),
+            ("views", AppStrings.T("clash.refineDimensions.review.itemViews")),
+            ("dest",  AppStrings.T("clash.refineDimensions.review.itemDest")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"] = _selectedViewIds.Count > 0 ? LemoineStrings.T("clash.refineDimensions.review.viewsValue", _selectedViewIds.Count) : "—",
-            ["dest"]  = _dimTargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.review.destGrid") : LemoineStrings.T("clash.refineDimensions.review.destSlab"),
+            ["views"] = _selectedViewIds.Count > 0 ? AppStrings.T("clash.refineDimensions.review.viewsValue", _selectedViewIds.Count) : "—",
+            ["dest"]  = _dimTargetType == "Grid" ? AppStrings.T("clash.refineDimensions.review.destGrid") : AppStrings.T("clash.refineDimensions.review.destSlab"),
         };
 
-        public IList<string>? ReviewChips => new List<string> { LemoineStrings.T("clash.refineDimensions.review.chipNoCallouts"), LemoineStrings.T("clash.refineDimensions.review.chipScaleUnchanged") };
+        public IList<string>? ReviewChips => new List<string> { AppStrings.T("clash.refineDimensions.review.chipNoCallouts"), AppStrings.T("clash.refineDimensions.review.chipScaleUnchanged") };
 
-        public string? ReviewNote => LemoineStrings.T("clash.refineDimensions.review.note");
+        public string? ReviewNote => AppStrings.T("clash.refineDimensions.review.note");
 
         public string? ReviewWarning => null;
 

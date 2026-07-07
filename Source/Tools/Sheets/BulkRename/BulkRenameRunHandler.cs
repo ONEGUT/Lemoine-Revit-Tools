@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.LinkViews.BulkRename
 {
@@ -32,14 +32,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument?.Document;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
 
             try
             {
                 if (doc == null)
                 {
-                    Log(LemoineStrings.T("linkviews.bulkRename.log.noDoc"), "fail");
+                    Log(AppStrings.T("linkviews.bulkRename.log.noDoc"), "fail");
                     Complete(0, 1, 0);
                     return;
                 }
@@ -47,14 +47,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 try { RunRename(doc, ref pass, ref fail, ref skip); }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error("Bulk rename: run aborted", ex);
-                    Log(LemoineStrings.T("linkviews.bulkRename.log.error", ex.Message), "fail");
+                    DiagnosticsLog.Error("Bulk rename: run aborted", ex);
+                    Log(AppStrings.T("linkviews.bulkRename.log.error", ex.Message), "fail");
                     fail++;
                 }
 
                 Progress(100, pass, fail, skip);
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("linkviews.bulkRename.log.nonFatal", issues), "warn");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("linkviews.bulkRename.log.nonFatal", issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 var elem = doc.GetElement(id);
                 if (elem == null)
                 {
-                    Log(LemoineStrings.T("linkviews.bulkRename.log.skipGone", id.Value), "info");
+                    Log(AppStrings.T("linkviews.bulkRename.log.skipGone", id.Value), "info");
                     skip++;
                     continue;
                 }
@@ -102,14 +102,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 }
                 else
                 {
-                    Log(LemoineStrings.T("linkviews.bulkRename.log.skipWrongType", id.Value, Target == RenameTarget.Sheets ? LemoineStrings.T("linkviews.bulkRename.log.wordSheet") : LemoineStrings.T("linkviews.bulkRename.log.wordView")), "info");
+                    Log(AppStrings.T("linkviews.bulkRename.log.skipWrongType", id.Value, Target == RenameTarget.Sheets ? AppStrings.T("linkviews.bulkRename.log.wordSheet") : AppStrings.T("linkviews.bulkRename.log.wordView")), "info");
                     skip++;
                 }
             }
 
             if (entries.Count == 0)
             {
-                Log(LemoineStrings.T("linkviews.bulkRename.log.nothingToDo"), "info");
+                Log(AppStrings.T("linkviews.bulkRename.log.nothingToDo"), "info");
                 return;
             }
 
@@ -126,9 +126,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 foreach (var item in plan)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;   // per-item boundary: each applied rename is a final plan value, so committed state stays consistent; falls through to tx.Commit()
                     }
 
@@ -141,15 +141,15 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                     switch (item.Status)
                     {
                         case RenameStatus.Unchanged:
-                            Log(LemoineStrings.T("linkviews.bulkRename.log.skipNoChange", item.OldValue), "info");
+                            Log(AppStrings.T("linkviews.bulkRename.log.skipNoChange", item.OldValue), "info");
                             skip++;
                             continue;
                         case RenameStatus.Empty:
-                            Log(LemoineStrings.T("linkviews.bulkRename.log.skipEmpty", item.OldValue), "info");
+                            Log(AppStrings.T("linkviews.bulkRename.log.skipEmpty", item.OldValue), "info");
                             skip++;
                             continue;
                         case RenameStatus.Collision:
-                            Log(LemoineStrings.T("linkviews.bulkRename.log.skipInUse", item.OldValue, item.NewValue), "info");
+                            Log(AppStrings.T("linkviews.bulkRename.log.skipInUse", item.OldValue, item.NewValue), "info");
                             skip++;
                             continue;
                     }
@@ -157,13 +157,13 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                     try
                     {
                         ApplyRename(doc, id, item.NewValue);
-                        Log(LemoineStrings.T("linkviews.bulkRename.log.renamed", item.OldValue, item.NewValue), "pass");
+                        Log(AppStrings.T("linkviews.bulkRename.log.renamed", item.OldValue, item.NewValue), "pass");
                         pass++;
                     }
                     catch (Exception e)
                     {
-                        LemoineLog.Swallowed($"Bulk rename: set value on {id.Value}", e);
-                        Log(LemoineStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
+                        DiagnosticsLog.Swallowed($"Bulk rename: set value on {id.Value}", e);
+                        Log(AppStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
                         fail++;
                     }
                 }
@@ -171,7 +171,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("linkviews.bulkRename.log.complete", pass, skip, fail), "pass");
+            Log(AppStrings.T("linkviews.bulkRename.log.complete", pass, skip, fail), "pass");
         }
 
         private void ApplyRename(Document doc, ElementId id, string newValue)

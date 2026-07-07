@@ -2,7 +2,7 @@ using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -46,7 +46,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     var r = uidoc.Selection.PickObject(ot,
                         new SlabScopePicker.FloorFilter(uidoc.Document), prompt);
                     scope = SlabScopePicker.ResolveScope(uidoc.Document, r, out name);
-                    if (scope == null) PushLog?.Invoke(LemoineStrings.T("clash.finder.log.pickedNotFloor"), "info");
+                    if (scope == null) PushLog?.Invoke(AppStrings.T("clash.finder.log.pickedNotFloor"), "info");
                 }
             }
             catch (Autodesk.Revit.Exceptions.OperationCanceledException)
@@ -55,7 +55,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("SlabPickEventHandler: pick", ex);
+                DiagnosticsLog.Error("SlabPickEventHandler: pick", ex);
                 PushLog?.Invoke($"Slab pick failed: {ex.Message}", "fail");
             }
 

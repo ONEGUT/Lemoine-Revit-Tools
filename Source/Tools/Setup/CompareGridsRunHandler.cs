@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -141,7 +141,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CompareGridsRunHandler.Execute", ex);
+                DiagnosticsLog.Error("CompareGridsRunHandler.Execute", ex);
                 Log($"Run aborted: {ex.Message}", "fail");
                 OnComplete?.Invoke(consistent, discrepancies + 1, 0);
             }
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.Setup
                     });
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed($"CompareGrids: collect grids in {fileName}", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"CompareGrids: collect grids in {fileName}", ex); }
         }
 
         private static XYZ NormalizeXY(XYZ v)

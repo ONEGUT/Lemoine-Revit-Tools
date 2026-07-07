@@ -7,14 +7,14 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.ScopeBoxes;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfVisibility = System.Windows.Visibility;
 using WpfColor      = System.Windows.Media.Color;
 
-namespace LemoineTools.Lemoine
+namespace LemoineTools.Framework
 {
     /// <summary>
     /// Scope Box Manager — Filters-window-style management surface (not a step flow):
@@ -52,36 +52,36 @@ namespace LemoineTools.Lemoine
             // Named handlers (not lambdas) so they can be detached in OnClosed — a leaked
             // subscription to this STA window after its dispatcher has shut down crashes/
             // hangs Revit on the next theme change (see CLAUDE.md).
-            LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
-            LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+            AppSettings.Instance.ThemeChanged  += OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
         }
 
-        private void OnThemeChanged(LemoineTheme t)
+        private void OnThemeChanged(ThemePalette t)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyTo(Resources);
+                AppSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             }));
         }
 
-        private void OnUiSizeChanged(LemoineUiSize _)
+        private void OnUiSizeChanged(UiSize _)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyScaleTo(Resources);
-                LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                AppSettings.Instance.ApplyScaleTo(Resources);
+                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 UpdateRowHeights();
             }));
         }
 
         protected override void OnClosed(EventArgs e)
         {
-            LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
-            LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             _statusTimer?.Stop();
             _statusTimer = null;
 
@@ -97,9 +97,9 @@ namespace LemoineTools.Lemoine
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            LemoineSettings.Instance.ApplyTo(Resources);
-            LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
-            Background = LemoineSettings.Instance.ActiveTheme.PageBg;
+            AppSettings.Instance.ApplyTo(Resources);
+            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+            Background = AppSettings.Instance.ActiveTheme.PageBg;
             _root.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _outerBorder.CornerRadius = new CornerRadius(8);
@@ -114,7 +114,7 @@ namespace LemoineTools.Lemoine
         private void UpdateRowHeights()
         {
             if (_root == null) return;
-            _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
+            _root.RowDefinitions[0].Height = new GridLength(AppSettings.Instance.ToolbarHeight);
         }
 
         // ── Toolbar ───────────────────────────────────────────────────────────
@@ -122,14 +122,14 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            var refreshBtn = LemoineControlStyles.BuildSmallButton(
-                LemoineStrings.T("scopeBoxes.manager.toolbar.refresh"));
+            var refreshBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.toolbar.refresh"));
             refreshBtn.VerticalAlignment = VerticalAlignment.Center;
             refreshBtn.Margin            = new Thickness(0, 0, 12, 0);
-            refreshBtn.ToolTip           = LemoineStrings.T("scopeBoxes.manager.toolbar.refreshTooltip");
+            refreshBtn.ToolTip           = AppStrings.T("scopeBoxes.manager.toolbar.refreshTooltip");
             refreshBtn.Click += (s, e) => RaiseScan();
 
-            var closeBtn = LemoineControlStyles.BuildButton("×");
+            var closeBtn = ControlStyles.BuildButton("×");
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
 
@@ -141,9 +141,9 @@ namespace LemoineTools.Lemoine
             rightPanel.Children.Add(refreshBtn);
             rightPanel.Children.Add(closeBtn);
 
-            _toolbarBorder.Child = new LemoineTitleBar
+            _toolbarBorder.Child = new TitleBar
             {
-                Title        = LemoineStrings.T("scopeBoxes.manager.toolbar.title"),
+                Title        = AppStrings.T("scopeBoxes.manager.toolbar.title"),
                 IconGlyph    = char.ConvertFromUtf32(0xE7B8),  // Segoe MDL2: CubeShape
                 RightContent = rightPanel,
             };
@@ -179,26 +179,26 @@ namespace LemoineTools.Lemoine
             };
             void AddFilterChip(string token, string label)
             {
-                var b = LemoineControlStyles.BuildSmallButton(label,
+                var b = ControlStyles.BuildSmallButton(label,
                     _filterMode == token
-                        ? LemoineControlStyles.LemoineButtonVariant.Primary
-                        : LemoineControlStyles.LemoineButtonVariant.Ghost);
+                        ? ControlStyles.ButtonVariant.Primary
+                        : ControlStyles.ButtonVariant.Ghost);
                 b.Margin = new Thickness(0, 0, 6, 0);
                 b.Click += (s, e) =>
                 {
                     _filterMode = token;
                     // Rebuild the chip row highlight + list
                     chipRow.Children.Clear();
-                    AddFilterChip("All",    LemoineStrings.T("scopeBoxes.manager.side.filterAll"));
-                    AddFilterChip("Used",   LemoineStrings.T("scopeBoxes.manager.side.filterUsed"));
-                    AddFilterChip("Unused", LemoineStrings.T("scopeBoxes.manager.side.filterUnused"));
+                    AddFilterChip("All",    AppStrings.T("scopeBoxes.manager.side.filterAll"));
+                    AddFilterChip("Used",   AppStrings.T("scopeBoxes.manager.side.filterUsed"));
+                    AddFilterChip("Unused", AppStrings.T("scopeBoxes.manager.side.filterUnused"));
                     RefreshSidebar();
                 };
                 chipRow.Children.Add(b);
             }
-            AddFilterChip("All",    LemoineStrings.T("scopeBoxes.manager.side.filterAll"));
-            AddFilterChip("Used",   LemoineStrings.T("scopeBoxes.manager.side.filterUsed"));
-            AddFilterChip("Unused", LemoineStrings.T("scopeBoxes.manager.side.filterUnused"));
+            AddFilterChip("All",    AppStrings.T("scopeBoxes.manager.side.filterAll"));
+            AddFilterChip("Used",   AppStrings.T("scopeBoxes.manager.side.filterUsed"));
+            AddFilterChip("Unused", AppStrings.T("scopeBoxes.manager.side.filterUnused"));
             top.Children.Add(chipRow);
 
             DockPanel.SetDock(top, Dock.Top);
@@ -206,23 +206,23 @@ namespace LemoineTools.Lemoine
 
             // Footer bulk actions
             var foot = new StackPanel { Margin = new Thickness(12, 8, 12, 12) };
-            var renameBtn = LemoineControlStyles.BuildSmallButton(
-                LemoineStrings.T("scopeBoxes.manager.side.renameChecked"));
+            var renameBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.side.renameChecked"));
             renameBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
             renameBtn.Margin = new Thickness(0, 0, 0, 6);
             renameBtn.Click += (s, e) => ShowRenameOverlay();
             foot.Children.Add(renameBtn);
 
-            var delUnusedBtn = LemoineControlStyles.BuildSmallButton(
-                LemoineStrings.T("scopeBoxes.manager.side.deleteUnused"),
-                LemoineControlStyles.LemoineButtonVariant.Danger);
+            var delUnusedBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.side.deleteUnused"),
+                ControlStyles.ButtonVariant.Danger);
             delUnusedBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
             delUnusedBtn.Click += (s, e) => ShowDeleteUnusedOverlay();
             foot.Children.Add(delUnusedBtn);
 
             var footNote = new TextBlock
             {
-                Text = LemoineStrings.T("scopeBoxes.manager.side.footNote"),
+                Text = AppStrings.T("scopeBoxes.manager.side.footNote"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
             };
@@ -265,7 +265,7 @@ namespace LemoineTools.Lemoine
         // ── Floating status chip ──────────────────────────────────────────────
         private void BuildFloatingStatus()
         {
-            _statusChip = LemoineControlStyles.BuildStatusChip(out _statusText);
+            _statusChip = ControlStyles.BuildStatusChip(out _statusText);
             _statusChip.HorizontalAlignment = HorizontalAlignment.Right;
             _statusChip.VerticalAlignment   = VerticalAlignment.Bottom;
             _statusChip.Visibility          = WpfVisibility.Collapsed;
@@ -288,7 +288,7 @@ namespace LemoineTools.Lemoine
                     _statusChip.Visibility = WpfVisibility.Collapsed;
                     _statusTimer?.Stop();
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ScopeBoxManager: status chip tick", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ScopeBoxManager: status chip tick", ex); }
             };
             _statusTimer.Start();
         }
@@ -300,7 +300,7 @@ namespace LemoineTools.Lemoine
             var evt     = App.ScopeBoxManagerScanEvent;
             if (handler == null || evt == null)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.noHandler"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.noHandler"));
                 return;
             }
 
@@ -310,14 +310,14 @@ namespace LemoineTools.Lemoine
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     try { ApplyScan(result); }
-                    catch (Exception ex) { LemoineLog.Error("ScopeBoxManager: apply scan", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Error("ScopeBoxManager: apply scan", ex); }
                 }));
             };
             handler.OnError = msg =>
             {
                 if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
                 Dispatcher.BeginInvoke(new Action(() =>
-                    FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.scanFailed", msg))));
+                    FlashStatus(AppStrings.T("scopeBoxes.manager.status.scanFailed", msg))));
             };
             evt.Raise();
         }
@@ -357,14 +357,14 @@ namespace LemoineTools.Lemoine
 
             int unused = _scan.Boxes.Count(b => b.IsUnused);
             if (_sideHeader != null)
-                _sideHeader.Text = LemoineStrings.T("scopeBoxes.manager.side.header",
+                _sideHeader.Text = AppStrings.T("scopeBoxes.manager.side.header",
                     _scan.Boxes.Count, unused);
 
             if (_scan.Boxes.Count == 0)
             {
                 var none = new TextBlock
                 {
-                    Text = LemoineStrings.T("scopeBoxes.manager.side.empty"),
+                    Text = AppStrings.T("scopeBoxes.manager.side.empty"),
                     TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
                     Margin = new Thickness(12, 8, 12, 8),
                 };
@@ -435,7 +435,7 @@ namespace LemoineTools.Lemoine
                         VerticalAlignment = VerticalAlignment.Center,
                     };
                     badge.SetResourceReference(Border.BackgroundProperty, "LemoineRedDim");
-                    var bt = new TextBlock { Text = LemoineStrings.T("scopeBoxes.manager.side.unusedBadge") };
+                    var bt = new TextBlock { Text = AppStrings.T("scopeBoxes.manager.side.unusedBadge") };
                     bt.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
                     bt.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
                     bt.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -446,7 +446,7 @@ namespace LemoineTools.Lemoine
                 {
                     var use = new TextBlock
                     {
-                        Text = LemoineStrings.T("scopeBoxes.manager.side.usage",
+                        Text = AppStrings.T("scopeBoxes.manager.side.usage",
                             box.Views.Count, box.Datums.Count),
                         VerticalAlignment = VerticalAlignment.Center,
                     };
@@ -493,7 +493,7 @@ namespace LemoineTools.Lemoine
             {
                 var none = new TextBlock
                 {
-                    Text = LemoineStrings.T("scopeBoxes.manager.main.noSelection"),
+                    Text = AppStrings.T("scopeBoxes.manager.main.noSelection"),
                     TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
                 };
                 none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
@@ -510,7 +510,7 @@ namespace LemoineTools.Lemoine
             nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var nameEdit = new LemoineInlineEdit
+            var nameEdit = new InlineEdit
             {
                 Text = box.Name,
                 Bold = true,
@@ -534,7 +534,7 @@ namespace LemoineTools.Lemoine
 
             var size = new TextBlock
             {
-                Text = LemoineStrings.T("scopeBoxes.manager.main.size",
+                Text = AppStrings.T("scopeBoxes.manager.main.size",
                     box.WidthFt.ToString("0.#"), box.DepthFt.ToString("0.#"), box.HeightFt.ToString("0.#")),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(14, 0, 0, 0),
@@ -545,9 +545,9 @@ namespace LemoineTools.Lemoine
             WpfGrid.SetColumn(size, 1);
             nameGrid.Children.Add(size);
 
-            var delBtn = LemoineControlStyles.BuildSmallButton(
-                LemoineStrings.T("scopeBoxes.manager.main.deleteBox"),
-                LemoineControlStyles.LemoineButtonVariant.Danger);
+            var delBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.main.deleteBox"),
+                ControlStyles.ButtonVariant.Danger);
             delBtn.Click += (s, e) => ShowDeleteBoxOverlay(box);
             WpfGrid.SetColumn(delBtn, 2);
             nameGrid.Children.Add(delBtn);
@@ -560,21 +560,21 @@ namespace LemoineTools.Lemoine
             var viewsPanel = new StackPanel();
 
             viewsPanel.Children.Add(SectionHeader(
-                LemoineStrings.T("scopeBoxes.manager.main.viewsHeader", box.Views.Count),
-                (LemoineStrings.T("scopeBoxes.manager.main.assignViews"),
-                 LemoineControlStyles.LemoineButtonVariant.Primary,
+                AppStrings.T("scopeBoxes.manager.main.viewsHeader", box.Views.Count),
+                (AppStrings.T("scopeBoxes.manager.main.assignViews"),
+                 ControlStyles.ButtonVariant.Primary,
                  () => ShowAssignViewsOverlay(box)),
-                (LemoineStrings.T("scopeBoxes.manager.main.clearChecked"),
-                 LemoineControlStyles.LemoineButtonVariant.Ghost,
+                (AppStrings.T("scopeBoxes.manager.main.clearChecked"),
+                 ControlStyles.ButtonVariant.Ghost,
                  () => ClearCheckedViews(box))));
 
             if (box.Views.Count == 0)
-                viewsPanel.Children.Add(EmptyNote(LemoineStrings.T("scopeBoxes.manager.main.viewsEmpty")));
+                viewsPanel.Children.Add(EmptyNote(AppStrings.T("scopeBoxes.manager.main.viewsEmpty")));
             else
                 viewsPanel.Children.Add(BuildRefList(
                     box.Views.Select(v => (v.Id.Value, v.Name, v.TypeLabel)), _checkedViews));
 
-            viewsPanel.Children.Add(EmptyNote(LemoineStrings.T("scopeBoxes.manager.main.viewsHint")));
+            viewsPanel.Children.Add(EmptyNote(AppStrings.T("scopeBoxes.manager.main.viewsHint")));
             viewsCard.Child = viewsPanel;
             _mainPanel.Children.Add(viewsCard);
 
@@ -584,21 +584,21 @@ namespace LemoineTools.Lemoine
 
             viewsCard.Margin = new Thickness(0, 0, 0, 12);
             datumsPanel.Children.Add(SectionHeader(
-                LemoineStrings.T("scopeBoxes.manager.main.datumsHeader", box.Datums.Count),
-                (LemoineStrings.T("scopeBoxes.manager.main.assignDatums"),
-                 LemoineControlStyles.LemoineButtonVariant.Primary,
+                AppStrings.T("scopeBoxes.manager.main.datumsHeader", box.Datums.Count),
+                (AppStrings.T("scopeBoxes.manager.main.assignDatums"),
+                 ControlStyles.ButtonVariant.Primary,
                  () => ShowAssignDatumsOverlay(box)),
-                (LemoineStrings.T("scopeBoxes.manager.main.clearChecked"),
-                 LemoineControlStyles.LemoineButtonVariant.Ghost,
+                (AppStrings.T("scopeBoxes.manager.main.clearChecked"),
+                 ControlStyles.ButtonVariant.Ghost,
                  () => ClearCheckedDatums(box))));
 
             if (box.Datums.Count == 0)
-                datumsPanel.Children.Add(EmptyNote(LemoineStrings.T("scopeBoxes.manager.main.datumsEmpty")));
+                datumsPanel.Children.Add(EmptyNote(AppStrings.T("scopeBoxes.manager.main.datumsEmpty")));
             else
                 datumsPanel.Children.Add(BuildRefList(
                     box.Datums.Select(d => (d.Id.Value, d.Name, KindLabel(d.Kind))), _checkedDatums));
 
-            datumsPanel.Children.Add(EmptyNote(LemoineStrings.T("scopeBoxes.manager.main.datumsHint")));
+            datumsPanel.Children.Add(EmptyNote(AppStrings.T("scopeBoxes.manager.main.datumsHint")));
             datumsCard.Child = datumsPanel;
             _mainPanel.Children.Add(datumsCard);
         }
@@ -607,9 +607,9 @@ namespace LemoineTools.Lemoine
         {
             switch (kind)
             {
-                case "Level":    return LemoineStrings.T("scopeBoxes.manager.main.kindLevel");
-                case "RefPlane": return LemoineStrings.T("scopeBoxes.manager.main.kindRefPlane");
-                default:         return LemoineStrings.T("scopeBoxes.manager.main.kindGrid");
+                case "Level":    return AppStrings.T("scopeBoxes.manager.main.kindLevel");
+                case "RefPlane": return AppStrings.T("scopeBoxes.manager.main.kindRefPlane");
+                default:         return AppStrings.T("scopeBoxes.manager.main.kindGrid");
             }
         }
 
@@ -629,7 +629,7 @@ namespace LemoineTools.Lemoine
 
         private FrameworkElement SectionHeader(
             string title,
-            params (string Label, LemoineControlStyles.LemoineButtonVariant Variant, Action OnClick)[] actions)
+            params (string Label, ControlStyles.ButtonVariant Variant, Action OnClick)[] actions)
         {
             var g = new WpfGrid { Margin = new Thickness(0, 0, 0, 8) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -646,7 +646,7 @@ namespace LemoineTools.Lemoine
             var btns = new StackPanel { Orientation = Orientation.Horizontal };
             foreach (var (label, variant, onClick) in actions)
             {
-                var b = LemoineControlStyles.BuildSmallButton(label, variant);
+                var b = ControlStyles.BuildSmallButton(label, variant);
                 b.Margin = new Thickness(6, 0, 0, 0);
                 b.Click += (s, e) => onClick();
                 btns.Children.Add(b);
@@ -740,13 +740,13 @@ namespace LemoineTools.Lemoine
         // ── Actions ───────────────────────────────────────────────────────────
         private void RaiseAction(Action<ScopeBoxManagerRunHandler> configure)
         {
-            if (_busy) { FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.busy")); return; }
+            if (_busy) { FlashStatus(AppStrings.T("scopeBoxes.manager.status.busy")); return; }
 
             var handler = App.ScopeBoxManagerRunHandler;
             var evt     = App.ScopeBoxManagerRunEvent;
             if (handler == null || evt == null)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.noHandler"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.noHandler"));
                 return;
             }
 
@@ -763,7 +763,7 @@ namespace LemoineTools.Lemoine
                         FlashStatus(summary);
                         if (refreshed != null) ApplyScan(refreshed);
                     }
-                    catch (Exception ex) { LemoineLog.Error("ScopeBoxManager: apply action result", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Error("ScopeBoxManager: apply action result", ex); }
                 }));
             };
             evt.Raise();
@@ -773,7 +773,7 @@ namespace LemoineTools.Lemoine
         {
             if (_checkedViews.Count == 0)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.nothingChecked"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.nothingChecked"));
                 return;
             }
             var keep = box.Views.Where(v => !_checkedViews.Contains(v.Id.Value))
@@ -785,7 +785,7 @@ namespace LemoineTools.Lemoine
         {
             if (_checkedDatums.Count == 0)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.nothingChecked"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.nothingChecked"));
                 return;
             }
             var keep = box.Datums.Where(d => !_checkedDatums.Contains(d.Id.Value))
@@ -845,20 +845,20 @@ namespace LemoineTools.Lemoine
         }
 
         private FrameworkElement OverlayFooter(string applyLabel, Action onApply,
-            LemoineControlStyles.LemoineButtonVariant applyVariant = LemoineControlStyles.LemoineButtonVariant.Primary)
+            ControlStyles.ButtonVariant applyVariant = ControlStyles.ButtonVariant.Primary)
         {
             var g = new WpfGrid { Margin = new Thickness(0, 12, 0, 0) };
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var cancel = LemoineControlStyles.BuildSmallButton(
-                LemoineStrings.T("scopeBoxes.manager.overlay.cancel"));
+            var cancel = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.overlay.cancel"));
             cancel.Click += (s, e) => HideOverlay();
             WpfGrid.SetColumn(cancel, 0);
             g.Children.Add(cancel);
 
-            var apply = LemoineControlStyles.BuildSmallButton(applyLabel, applyVariant);
+            var apply = ControlStyles.BuildSmallButton(applyLabel, applyVariant);
             apply.Click += (s, e) => { HideOverlay(); onApply(); };
             WpfGrid.SetColumn(apply, 2);
             g.Children.Add(apply);
@@ -872,16 +872,16 @@ namespace LemoineTools.Lemoine
             if (_scan?.Tree == null) return;
 
             var card = NewOverlayCard(
-                LemoineStrings.T("scopeBoxes.manager.overlay.assignViewsTitle", box.Name), 520);
+                AppStrings.T("scopeBoxes.manager.overlay.assignViewsTitle", box.Name), 520);
             var host = (DockPanel)card.Child;
 
-            var picker = new LemoineBrowserTreePicker { MinHeight = 320 };
+            var picker = new BrowserTreePicker { MinHeight = 320 };
             picker.SetTree(_scan.Tree,
                 eligibleIds:     _scan.EligibleViews.Select(v => v.Id.Value),
                 initialSelected: box.Views.Select(v => v.Id.Value));
 
             var footer = OverlayFooter(
-                LemoineStrings.T("scopeBoxes.manager.overlay.applyAssign"),
+                AppStrings.T("scopeBoxes.manager.overlay.applyAssign"),
                 () =>
                 {
                     var ids = picker.SelectedIds.Select(v => new ElementId(v)).ToList();
@@ -900,13 +900,13 @@ namespace LemoineTools.Lemoine
             if (_scan == null) return;
 
             var card = NewOverlayCard(
-                LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsTitle", box.Name), 460);
+                AppStrings.T("scopeBoxes.manager.overlay.assignDatumsTitle", box.Name), 460);
             var host = (DockPanel)card.Child;
 
             // Explanatory help — this is the confusing part, so spell it out.
             var help = new TextBlock
             {
-                Text = LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsHelp"),
+                Text = AppStrings.T("scopeBoxes.manager.overlay.assignDatumsHelp"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 10),
             };
@@ -925,7 +925,7 @@ namespace LemoineTools.Lemoine
             {
                 var none = new TextBlock
                 {
-                    Text = LemoineStrings.T("scopeBoxes.manager.overlay.assignDatumsNone"),
+                    Text = AppStrings.T("scopeBoxes.manager.overlay.assignDatumsNone"),
                     TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
                 };
                 none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -933,8 +933,8 @@ namespace LemoineTools.Lemoine
                 none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
                 var closeFooter = OverlayFooter(
-                    LemoineStrings.T("scopeBoxes.manager.overlay.cancel"), HideOverlay,
-                    LemoineControlStyles.LemoineButtonVariant.Ghost);
+                    AppStrings.T("scopeBoxes.manager.overlay.cancel"), HideOverlay,
+                    ControlStyles.ButtonVariant.Ghost);
                 DockPanel.SetDock(closeFooter, Dock.Bottom);
                 host.Children.Add(closeFooter);
                 host.Children.Add(none);
@@ -955,7 +955,7 @@ namespace LemoineTools.Lemoine
             }
 
             var selected = new HashSet<long>(box.Datums.Select(d => d.Id.Value));
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += sel =>
             {
                 selected.Clear();
@@ -972,10 +972,10 @@ namespace LemoineTools.Lemoine
                 MaxHeight = 320,
                 Content   = tabs,
             };
-            LemoineControlStyles.SetSelfContainedScroll(scroll, true);
+            ControlStyles.SetSelfContainedScroll(scroll, true);
 
             var footer = OverlayFooter(
-                LemoineStrings.T("scopeBoxes.manager.overlay.applyAssign"),
+                AppStrings.T("scopeBoxes.manager.overlay.applyAssign"),
                 () =>
                 {
                     var ids = selected.Select(v => new ElementId(v)).ToList();
@@ -1000,12 +1000,12 @@ namespace LemoineTools.Lemoine
             var targets = _scan.Boxes.Where(b => _checkedBoxes.Contains(b.Id.Value)).ToList();
             if (targets.Count == 0)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.nothingChecked"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.nothingChecked"));
                 return;
             }
 
             var card = NewOverlayCard(
-                LemoineStrings.T("scopeBoxes.manager.overlay.renameTitle", targets.Count), 460);
+                AppStrings.T("scopeBoxes.manager.overlay.renameTitle", targets.Count), 460);
             var host = (DockPanel)card.Child;
 
             var body = new StackPanel();
@@ -1036,18 +1036,18 @@ namespace LemoineTools.Lemoine
                 var names = NewNames();
                 preview.Text = names.Count == 1
                     ? names[0]
-                    : LemoineStrings.T("scopeBoxes.manager.overlay.renamePreviewTwo",
+                    : AppStrings.T("scopeBoxes.manager.overlay.renamePreviewTwo",
                         names[0], names[1]);
             }
 
-            var slots = new LemoineNamingSlots(RenameTokens, state);
+            var slots = new NamingSlots(RenameTokens, state);
             slots.Changed += UpdatePreview;
             body.Children.Add(slots);
             body.Children.Add(preview);
             UpdatePreview();
 
             var footer = OverlayFooter(
-                LemoineStrings.T("scopeBoxes.manager.overlay.applyRename"),
+                AppStrings.T("scopeBoxes.manager.overlay.applyRename"),
                 () =>
                 {
                     var names = NewNames();
@@ -1068,11 +1068,11 @@ namespace LemoineTools.Lemoine
             var unused = _scan.Boxes.Where(b => b.IsUnused).ToList();
             if (unused.Count == 0)
             {
-                FlashStatus(LemoineStrings.T("scopeBoxes.manager.status.noUnused"));
+                FlashStatus(AppStrings.T("scopeBoxes.manager.status.noUnused"));
                 return;
             }
             ShowDeleteConfirm(
-                LemoineStrings.T("scopeBoxes.manager.overlay.deleteUnusedTitle", unused.Count),
+                AppStrings.T("scopeBoxes.manager.overlay.deleteUnusedTitle", unused.Count),
                 unused.Select(b => b.Name),
                 unused.Select(b => b.Id).ToList());
         }
@@ -1080,10 +1080,10 @@ namespace LemoineTools.Lemoine
         private void ShowDeleteBoxOverlay(ScopeBoxUsage box)
         {
             ShowDeleteConfirm(
-                LemoineStrings.T("scopeBoxes.manager.overlay.deleteBoxTitle", box.Name),
+                AppStrings.T("scopeBoxes.manager.overlay.deleteBoxTitle", box.Name),
                 box.IsUnused
-                    ? new[] { LemoineStrings.T("scopeBoxes.manager.overlay.deleteBoxUnused") }
-                    : new[] { LemoineStrings.T("scopeBoxes.manager.overlay.deleteBoxInUse",
+                    ? new[] { AppStrings.T("scopeBoxes.manager.overlay.deleteBoxUnused") }
+                    : new[] { AppStrings.T("scopeBoxes.manager.overlay.deleteBoxInUse",
                                   box.Views.Count, box.Datums.Count) },
                 new List<ElementId> { box.Id });
         }
@@ -1111,12 +1111,12 @@ namespace LemoineTools.Lemoine
                 MaxHeight = 300,
                 Content   = body,
             };
-            LemoineControlStyles.SetSelfContainedScroll(scroll, true);
+            ControlStyles.SetSelfContainedScroll(scroll, true);
 
             var footer = OverlayFooter(
-                LemoineStrings.T("scopeBoxes.manager.overlay.applyDelete"),
+                AppStrings.T("scopeBoxes.manager.overlay.applyDelete"),
                 () => RaiseAction(h => { h.Action = "Delete"; h.BoxIds = ids; }),
-                LemoineControlStyles.LemoineButtonVariant.Danger);
+                ControlStyles.ButtonVariant.Danger);
             DockPanel.SetDock(footer, Dock.Bottom);
             host.Children.Add(footer);
             host.Children.Add(scroll);

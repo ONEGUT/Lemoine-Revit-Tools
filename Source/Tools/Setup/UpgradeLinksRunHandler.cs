@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -15,7 +15,7 @@ namespace LemoineTools.Tools.Setup
     /// view) → save → close → link into the host. Cloud is different: Revit's native "Save As Cloud
     /// Model" dialog is posted (<see cref="UIApplication.PostCommand"/>), which only runs after this
     /// method returns, so Cloud spans MULTIPLE Execute() calls — one per file, paused in between on
-    /// the user via <see cref="ILemoineRunPausable"/> (Continue/Skip). See <see cref="ProcessNextCloudFile"/>.
+    /// the user via <see cref="IRunPausable"/> (Continue/Skip). See <see cref="ProcessNextCloudFile"/>.
     /// </summary>
     public sealed class UpgradeLinksRunHandler : IExternalEventHandler
     {
@@ -27,10 +27,10 @@ namespace LemoineTools.Tools.Setup
         public Action<string, string>?     PushLog    { get; set; }
         public Action<int, int, int, int>? OnProgress { get; set; }
         public Action<int, int, int>?      OnComplete { get; set; }
-        // (isAwaiting, continueLabel, skipLabel) — see ILemoineRunPausable.
+        // (isAwaiting, continueLabel, skipLabel) — see IRunPausable.
         public Action<bool, string?, string?>? OnAwaitingUser { get; set; }
 
-        // Set by the ViewModel's ILemoineRunPausable.ContinueRun()/SkipCurrentItem(), then the
+        // Set by the ViewModel's IRunPausable.ContinueRun()/SkipCurrentItem(), then the
         // SAME ExternalEvent is raised again — Execute() sees _cloudActive and resumes here.
         public bool CloudContinueRequested { get; set; }
         public bool CloudSkipRequested     { get; set; }
@@ -58,8 +58,8 @@ namespace LemoineTools.Tools.Setup
                 try { ContinueCloudRun(app); }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error("UpgradeLinksRunHandler.ContinueCloudRun", ex);
-                    Log(LemoineStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
+                    DiagnosticsLog.Error("UpgradeLinksRunHandler.ContinueCloudRun", ex);
+                    Log(AppStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
                     int p = _cloudPass, f = _cloudFail + 1, s = _cloudSkip;
                     _cloudActive = false;
                     CloseCloudWaitDoc(app);
@@ -72,20 +72,20 @@ namespace LemoineTools.Tools.Setup
             }
 
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var hostDoc = app.ActiveUIDocument?.Document;
-                if (hostDoc == null) { Log(LemoineStrings.T("upgradeLinks.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (hostDoc == null) { Log(AppStrings.T("upgradeLinks.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var files = Spec.Files ?? new List<UpgradeFileItem>();
-                if (files.Count == 0) { Log(LemoineStrings.T("upgradeLinks.log.noFiles"), "warn"); OnComplete?.Invoke(0, 0, 0); return; }
+                if (files.Count == 0) { Log(AppStrings.T("upgradeLinks.log.noFiles"), "warn"); OnComplete?.Invoke(0, 0, 0); return; }
 
                 if (Spec.Destination == UpgradeDestination.Cloud)
                 {
                     if (!Spec.CloudReady)
                     {
-                        Log(LemoineStrings.T("upgradeLinks.log.cloudNotReady"), "fail");
+                        Log(AppStrings.T("upgradeLinks.log.cloudNotReady"), "fail");
                         OnComplete?.Invoke(0, 1, 0); return;
                     }
                     StartCloudRun(app, hostDoc, files);
@@ -97,18 +97,18 @@ namespace LemoineTools.Tools.Setup
                 if (Spec.Destination == UpgradeDestination.SelectedFolder)
                 {
                     string folder = string.IsNullOrWhiteSpace(Spec.SelectedFolder) ? (HostFolder ?? "") : Spec.SelectedFolder;
-                    if (string.IsNullOrWhiteSpace(folder)) { Log(LemoineStrings.T("upgradeLinks.log.noSelectedFolder"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                    if (string.IsNullOrWhiteSpace(folder)) { Log(AppStrings.T("upgradeLinks.log.noSelectedFolder"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
                     destFolder = folder;
                     try { Directory.CreateDirectory(destFolder); }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error("UpgradeLinks: create selected folder", ex);
-                        Log(LemoineStrings.T("upgradeLinks.log.subfolderFail", destFolder, ex.Message), "fail");
+                        DiagnosticsLog.Error("UpgradeLinks: create selected folder", ex);
+                        Log(AppStrings.T("upgradeLinks.log.subfolderFail", destFolder, ex.Message), "fail");
                         OnComplete?.Invoke(0, 1, 0); return;
                     }
                 }
 
-                Log(LemoineStrings.T("upgradeLinks.log.start", files.Count, DestLabel(destFolder)), "info");
+                Log(AppStrings.T("upgradeLinks.log.start", files.Count, DestLabel(destFolder)), "info");
 
                 var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var appApp    = app.Application;
@@ -116,9 +116,9 @@ namespace LemoineTools.Tools.Setup
 
                 foreach (var item in files)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;   // committed links + saved files already preserved
                     }
 
@@ -130,7 +130,7 @@ namespace LemoineTools.Tools.Setup
                     if (!File.Exists(srcPath))
                     {
                         skip++;
-                        Log(LemoineStrings.T("upgradeLinks.log.missing", fileName), "warn");
+                        Log(AppStrings.T("upgradeLinks.log.missing", fileName), "warn");
                         Progress(done, total, pass, fail, skip);
                         continue;
                     }
@@ -147,8 +147,8 @@ namespace LemoineTools.Tools.Setup
                         {
                             // A resolved name with no alphanumeric character is a failure, not a
                             // silent fallback — report it before substituting the original name.
-                            Log(LemoineStrings.T("upgradeLinks.log.renameInvalid", fileName), "warn");
-                            LemoineLog.Warn("UpgradeLinks: rename resolved to an unusable name", $"{fileName} -> '{requested}'");
+                            Log(AppStrings.T("upgradeLinks.log.renameInvalid", fileName), "warn");
+                            DiagnosticsLog.Warn("UpgradeLinks: rename resolved to an unusable name", $"{fileName} -> '{requested}'");
                         }
                         else
                         {
@@ -163,7 +163,7 @@ namespace LemoineTools.Tools.Setup
 
                         bool isWs = false;
                         try { var bfi = BasicFileInfo.Extract(srcPath); isWs = bfi != null && bfi.IsWorkshared; }
-                        catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: BasicFileInfo at run", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: BasicFileInfo at run", ex); }
 
                         var oo = new OpenOptions { Audit = Spec.AuditOnOpen };
                         if (isWs)
@@ -180,7 +180,7 @@ namespace LemoineTools.Tools.Setup
                         if (linkDoc == null)
                         {
                             fail++;
-                            Log(LemoineStrings.T("upgradeLinks.log.openFail", fileName), "fail");
+                            Log(AppStrings.T("upgradeLinks.log.openFail", fileName), "fail");
                             Progress(done, total, pass, fail, skip);
                             continue;
                         }
@@ -193,16 +193,16 @@ namespace LemoineTools.Tools.Setup
 
                         // Close before linking — keeps at most the host (+ the link type Revit loads) in RAM.
                         try { linkDoc.Close(false); }
-                        catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: close", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: close", ex); }
                         linkDoc = null;
 
                         if (LinkIntoHost(hostDoc, savedMp, effectiveBaseName, item.Placement))
                         {
                             pass++;
                             if (!string.Equals(effectiveBaseName, baseName, StringComparison.Ordinal))
-                                Log(LemoineStrings.T("upgradeLinks.log.linkedRenamed", done, total, fileName, effectiveBaseName), "info");
+                                Log(AppStrings.T("upgradeLinks.log.linkedRenamed", done, total, fileName, effectiveBaseName), "info");
                             else
-                                Log(LemoineStrings.T("upgradeLinks.log.linked", done, total, fileName), "info");
+                                Log(AppStrings.T("upgradeLinks.log.linked", done, total, fileName), "info");
                         }
                         else
                         {
@@ -212,31 +212,31 @@ namespace LemoineTools.Tools.Setup
                     catch (Exception ex)
                     {
                         fail++;
-                        LemoineLog.Error($"UpgradeLinks: process {fileName}", ex);
-                        Log(LemoineStrings.T("upgradeLinks.log.fileFail", fileName, ex.GetType().Name, ex.Message), "fail");
+                        DiagnosticsLog.Error($"UpgradeLinks: process {fileName}", ex);
+                        Log(AppStrings.T("upgradeLinks.log.fileFail", fileName, ex.GetType().Name, ex.Message), "fail");
                     }
                     finally
                     {
                         if (linkDoc != null)
                         {
                             try { linkDoc.Close(false); }
-                            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: close (finally)", ex); }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: close (finally)", ex); }
                         }
                     }
 
                     Progress(done, total, pass, fail, skip);
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("upgradeLinks.log.nonFatal", issues), "warn");
-                Log(LemoineStrings.T("upgradeLinks.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("upgradeLinks.log.nonFatal", issues), "warn");
+                Log(AppStrings.T("upgradeLinks.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("UpgradeLinksRunHandler.Execute", ex);
-                Log(LemoineStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
+                DiagnosticsLog.Error("UpgradeLinksRunHandler.Execute", ex);
+                Log(AppStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally
@@ -260,16 +260,16 @@ namespace LemoineTools.Tools.Setup
             _cloudFiles     = files;
             _cloudIndex     = 0;
             _cloudPass = _cloudFail = _cloudSkip = 0;
-            _cloudIssues0   = LemoineLog.IssueCount;
-            Log(LemoineStrings.T("upgradeLinks.log.start", files.Count, LemoineStrings.T("upgradeLinks.summaries.destCloud")), "info");
+            _cloudIssues0   = DiagnosticsLog.IssueCount;
+            Log(AppStrings.T("upgradeLinks.log.start", files.Count, AppStrings.T("upgradeLinks.summaries.destCloud")), "info");
             ProcessNextCloudFile(app);
         }
 
         private void ProcessNextCloudFile(UIApplication app)
         {
-            if (LemoineRun.CancelRequested)
+            if (RunState.CancelRequested)
             {
-                Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
+                Log(AppStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
                 FinishCloudRun(app);
                 return;
             }
@@ -284,7 +284,7 @@ namespace LemoineTools.Tools.Setup
             if (!File.Exists(srcPath))
             {
                 _cloudSkip++;
-                Log(LemoineStrings.T("upgradeLinks.log.missing", fileName), "warn");
+                Log(AppStrings.T("upgradeLinks.log.missing", fileName), "warn");
                 Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
                 ProcessNextCloudFile(app);
                 return;
@@ -298,8 +298,8 @@ namespace LemoineTools.Tools.Setup
             string sanitized = SanitizeBaseName(requested);
             if (sanitized.Length == 0 || !sanitized.Any(char.IsLetterOrDigit))
             {
-                Log(LemoineStrings.T("upgradeLinks.log.renameInvalid", fileName), "warn");
-                LemoineLog.Warn("UpgradeLinks: rename resolved to an unusable name", $"{fileName} -> '{requested}'");
+                Log(AppStrings.T("upgradeLinks.log.renameInvalid", fileName), "warn");
+                DiagnosticsLog.Warn("UpgradeLinks: rename resolved to an unusable name", $"{fileName} -> '{requested}'");
             }
             else
             {
@@ -312,7 +312,7 @@ namespace LemoineTools.Tools.Setup
 
                 bool isWs = false;
                 try { var bfi = BasicFileInfo.Extract(srcPath); isWs = bfi != null && bfi.IsWorkshared; }
-                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: BasicFileInfo at cloud run", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: BasicFileInfo at cloud run", ex); }
 
                 var oo = new OpenOptions { Audit = Spec.AuditOnOpen };
                 if (isWs)
@@ -330,7 +330,7 @@ namespace LemoineTools.Tools.Setup
                 if (linkDoc == null)
                 {
                     _cloudFail++;
-                    Log(LemoineStrings.T("upgradeLinks.log.openFail", fileName), "fail");
+                    Log(AppStrings.T("upgradeLinks.log.openFail", fileName), "fail");
                     Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
                     ProcessNextCloudFile(app);
                     return;
@@ -340,7 +340,7 @@ namespace LemoineTools.Tools.Setup
                 if (cmdId == null || !app.CanPostCommand(cmdId))
                 {
                     _cloudFail++;
-                    Log(LemoineStrings.T("upgradeLinks.log.cloudPostFail", fileName), "fail");
+                    Log(AppStrings.T("upgradeLinks.log.cloudPostFail", fileName), "fail");
                     Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
                     ProcessNextCloudFile(app);
                     return;
@@ -351,10 +351,10 @@ namespace LemoineTools.Tools.Setup
                 _cloudWaitBaseName  = effectiveBaseName;
                 _cloudWaitPlacement = item.Placement;
 
-                Log(LemoineStrings.T("upgradeLinks.log.cloudWaiting", _cloudIndex, _cloudFiles.Count, fileName), "info");
+                Log(AppStrings.T("upgradeLinks.log.cloudWaiting", _cloudIndex, _cloudFiles.Count, fileName), "info");
                 OnAwaitingUser?.Invoke(true,
-                    LemoineStrings.T("upgradeLinks.log.cloudContinueLabel"),
-                    LemoineStrings.T("upgradeLinks.log.cloudSkipLabel"));
+                    AppStrings.T("upgradeLinks.log.cloudContinueLabel"),
+                    AppStrings.T("upgradeLinks.log.cloudSkipLabel"));
 
                 // PostCommand only runs the native dialog once this Execute() call returns — do
                 // not do anything more here. ContinueCloudRun resumes on the next Continue/Skip.
@@ -363,8 +363,8 @@ namespace LemoineTools.Tools.Setup
             catch (Exception ex)
             {
                 _cloudFail++;
-                LemoineLog.Error($"UpgradeLinks: cloud open/post {fileName}", ex);
-                Log(LemoineStrings.T("upgradeLinks.log.fileFail", fileName, ex.GetType().Name, ex.Message), "fail");
+                DiagnosticsLog.Error($"UpgradeLinks: cloud open/post {fileName}", ex);
+                Log(AppStrings.T("upgradeLinks.log.fileFail", fileName, ex.GetType().Name, ex.Message), "fail");
                 Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
                 ProcessNextCloudFile(app);
             }
@@ -382,12 +382,12 @@ namespace LemoineTools.Tools.Setup
             if (doSkip)
             {
                 _cloudSkip++;
-                Log(LemoineStrings.T("upgradeLinks.log.cloudSkipped", _cloudWaitFileName), "warn");
+                Log(AppStrings.T("upgradeLinks.log.cloudSkipped", _cloudWaitFileName), "warn");
                 CloseCloudWaitDoc(app);
                 Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
+                    Log(AppStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
                     FinishCloudRun(app);
                 }
                 else ProcessNextCloudFile(app);
@@ -401,10 +401,10 @@ namespace LemoineTools.Tools.Setup
             {
                 // Not saved to the cloud yet (or the user hasn't finished) — re-show the pause and
                 // let them try again rather than guessing/forcing a close.
-                Log(LemoineStrings.T("upgradeLinks.log.cloudNotSavedYet", _cloudWaitFileName), "warn");
+                Log(AppStrings.T("upgradeLinks.log.cloudNotSavedYet", _cloudWaitFileName), "warn");
                 OnAwaitingUser?.Invoke(true,
-                    LemoineStrings.T("upgradeLinks.log.cloudContinueLabel"),
-                    LemoineStrings.T("upgradeLinks.log.cloudSkipLabel"));
+                    AppStrings.T("upgradeLinks.log.cloudContinueLabel"),
+                    AppStrings.T("upgradeLinks.log.cloudSkipLabel"));
                 return;
             }
 
@@ -415,7 +415,7 @@ namespace LemoineTools.Tools.Setup
                 if (_cloudHostDoc != null && LinkIntoHost(_cloudHostDoc, savedMp, _cloudWaitBaseName, _cloudWaitPlacement))
                 {
                     _cloudPass++;
-                    Log(LemoineStrings.T("upgradeLinks.log.linked", _cloudIndex, _cloudFiles.Count, _cloudWaitFileName), "info");
+                    Log(AppStrings.T("upgradeLinks.log.linked", _cloudIndex, _cloudFiles.Count, _cloudWaitFileName), "info");
                 }
                 else
                 {
@@ -425,14 +425,14 @@ namespace LemoineTools.Tools.Setup
             catch (Exception ex)
             {
                 _cloudFail++;
-                LemoineLog.Error($"UpgradeLinks: cloud link {_cloudWaitFileName}", ex);
-                Log(LemoineStrings.T("upgradeLinks.log.fileFail", _cloudWaitFileName, ex.GetType().Name, ex.Message), "fail");
+                DiagnosticsLog.Error($"UpgradeLinks: cloud link {_cloudWaitFileName}", ex);
+                Log(AppStrings.T("upgradeLinks.log.fileFail", _cloudWaitFileName, ex.GetType().Name, ex.Message), "fail");
             }
 
             Progress(_cloudIndex, _cloudFiles.Count, _cloudPass, _cloudFail, _cloudSkip);
-            if (LemoineRun.CancelRequested)
+            if (RunState.CancelRequested)
             {
-                Log(LemoineStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
+                Log(AppStrings.T("common.log.stoppedByUser", _cloudIndex, _cloudFiles.Count), "warn");
                 FinishCloudRun(app);
             }
             else ProcessNextCloudFile(app);
@@ -459,7 +459,7 @@ namespace LemoineTools.Tools.Setup
                     var hostMp = GetModelPath(_cloudHostDoc);
                     if (hostMp != null) app.OpenAndActivateDocument(hostMp, new OpenOptions(), false);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: reactivate host before close", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: reactivate host before close", ex); }
             }
 
             try
@@ -468,8 +468,8 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Warn("UpgradeLinks: close cloud wait doc", ex.Message);
-                Log(LemoineStrings.T("upgradeLinks.log.cloudCloseFail", fileName), "warn");
+                DiagnosticsLog.Warn("UpgradeLinks: close cloud wait doc", ex.Message);
+                Log(AppStrings.T("upgradeLinks.log.cloudCloseFail", fileName), "warn");
             }
         }
 
@@ -482,15 +482,15 @@ namespace LemoineTools.Tools.Setup
                 if (doc.IsWorkshared)   return doc.GetWorksharingCentralModelPath();
                 if (!string.IsNullOrEmpty(doc.PathName)) return ModelPathUtils.ConvertUserVisiblePathToModelPath(doc.PathName);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: resolve document model path", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: resolve document model path", ex); }
             return null;
         }
 
         private void FinishCloudRun(UIApplication app)
         {
-            long issues = LemoineLog.IssuesSince(_cloudIssues0);
-            if (issues > 0) Log(LemoineStrings.T("upgradeLinks.log.nonFatal", issues), "warn");
-            Log(LemoineStrings.T("upgradeLinks.log.done", _cloudPass, _cloudSkip, _cloudFail), _cloudFail > 0 ? "warn" : "pass");
+            long issues = DiagnosticsLog.IssuesSince(_cloudIssues0);
+            if (issues > 0) Log(AppStrings.T("upgradeLinks.log.nonFatal", issues), "warn");
+            Log(AppStrings.T("upgradeLinks.log.done", _cloudPass, _cloudSkip, _cloudFail), _cloudFail > 0 ? "warn" : "pass");
             OnProgress?.Invoke(100, _cloudPass, _cloudFail, _cloudSkip);
             int pass = _cloudPass, fail = _cloudFail, skip = _cloudSkip;
 
@@ -536,10 +536,10 @@ namespace LemoineTools.Tools.Setup
                 catch (Exception ex)
                 {
                     // Most commonly: a link with this file/name already exists in the host.
-                    LemoineLog.Swallowed("UpgradeLinks: RevitLinkType.Create", ex);
+                    DiagnosticsLog.Swallowed("UpgradeLinks: RevitLinkType.Create", ex);
                     if (!Spec.ReloadExisting)
                     {
-                        Log(LemoineStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
                         tx.RollBack();
                         return false;
                     }
@@ -547,11 +547,11 @@ namespace LemoineTools.Tools.Setup
                     typeId = ReloadExistingType(hostDoc, savedMp, baseName);
                     if (typeId == ElementId.InvalidElementId)
                     {
-                        Log(LemoineStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
                         tx.RollBack();
                         return false;
                     }
-                    Log(LemoineStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
+                    Log(AppStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
 
                     // The reloaded type already points at the upgraded copy; if it carries instances,
                     // leave them (adding another would duplicate the link on the model).
@@ -566,25 +566,25 @@ namespace LemoineTools.Tools.Setup
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Swallowed("UpgradeLinks: RevitLinkInstance.Create", ex);
+                    DiagnosticsLog.Swallowed("UpgradeLinks: RevitLinkInstance.Create", ex);
                     if (placement == UpgradePlacement.SharedCoordinates)
                     {
                         // No shared-coordinate relationship in the file — fall back to Origin, reported.
                         try
                         {
                             RevitLinkInstance.Create(hostDoc, typeId, ImportPlacement.Origin);
-                            Log(LemoineStrings.T("upgradeLinks.log.sharedFallback", baseName), "warn");
+                            Log(AppStrings.T("upgradeLinks.log.sharedFallback", baseName), "warn");
                         }
                         catch (Exception ex2)
                         {
-                            LemoineLog.Error("UpgradeLinks: instance origin fallback", ex2);
+                            DiagnosticsLog.Error("UpgradeLinks: instance origin fallback", ex2);
                             tx.RollBack();
                             return false;
                         }
                     }
                     else
                     {
-                        LemoineLog.Error("UpgradeLinks: instance placement", ex);
+                        DiagnosticsLog.Error("UpgradeLinks: instance placement", ex);
                         tx.RollBack();
                         return false;
                     }
@@ -609,7 +609,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("UpgradeLinks: reload existing type", ex);
+                DiagnosticsLog.Swallowed("UpgradeLinks: reload existing type", ex);
                 return ElementId.InvalidElementId;
             }
         }
@@ -625,7 +625,7 @@ namespace LemoineTools.Tools.Setup
         private void Progress(int done, int total, int pass, int fail, int skip)
         {
             int pct = total > 0 ? (int)(done * 100.0 / total) : 100;
-            Log(LemoineStrings.T("upgradeLinks.log.progress", pct, done, total, pass), "info");
+            Log(AppStrings.T("upgradeLinks.log.progress", pct, done, total, pass), "info");
             OnProgress?.Invoke(pct, pass, fail, skip);
         }
 
@@ -633,9 +633,9 @@ namespace LemoineTools.Tools.Setup
         {
             switch (Spec.Destination)
             {
-                case UpgradeDestination.CurrentLocation: return LemoineStrings.T("upgradeLinks.summaries.destCurrentLocation");
-                case UpgradeDestination.Cloud:            return LemoineStrings.T("upgradeLinks.summaries.destCloud");
-                default:                                  return LemoineStrings.T("upgradeLinks.summaries.destSelectedFolder", destFolder ?? "");
+                case UpgradeDestination.CurrentLocation: return AppStrings.T("upgradeLinks.summaries.destCurrentLocation");
+                case UpgradeDestination.Cloud:            return AppStrings.T("upgradeLinks.summaries.destCloud");
+                default:                                  return AppStrings.T("upgradeLinks.summaries.destSelectedFolder", destFolder ?? "");
             }
         }
 
@@ -669,7 +669,7 @@ namespace LemoineTools.Tools.Setup
                 opts.SetForcedModalHandling(false);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: configure failure handling", ex); }
         }
     }
 }

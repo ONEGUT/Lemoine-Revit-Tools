@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.Ceilings
                     if (on && prevOn && prev != null && proj != null && !prev.IsAlmostEqualTo(proj))
                     {
                         try { result.Add(Line.CreateBound(prev, proj)); }
-                        catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
+                        catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingGrids: skip degenerate detail curve", __lex); }
                     }
                     prev   = proj;
                     prevOn = on;
@@ -179,7 +179,7 @@ namespace LemoineTools.Tools.Ceilings
         private static bool IsWithinFace(PlanarFace face, XYZ pointOnPlane)
         {
             try { return face.Project(pointOnPlane) != null; }
-            catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: face containment test", __lex); return false; }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingGrids: face containment test", __lex); return false; }
         }
 
         public static void TryCreateModelCurve(Document doc, View view, Curve curve,
@@ -198,7 +198,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch
             {
-                try { doc.Create.NewDetailCurve(view, curve); } catch (Exception __lex) { LemoineLog.Swallowed("CeilingGrids: create detail curve", __lex); }
+                try { doc.Create.NewDetailCurve(view, curve); } catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingGrids: create detail curve", __lex); }
             }
         }
     }

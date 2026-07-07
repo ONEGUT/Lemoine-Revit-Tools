@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -63,7 +63,7 @@ namespace LemoineTools.Tools.ScopeBoxes
         /// <summary>Every datum (grid / level / named reference plane) with a writable scope-box parameter.</summary>
         public List<ManagerDatumRef> Datums        = new List<ManagerDatumRef>();
         /// <summary>Project-browser tree for the assign-views picker.</summary>
-        public LemoineBrowserTree?   Tree;
+        public BrowserTree?   Tree;
     }
 
     /// <summary>
@@ -112,7 +112,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             {
                 Parameter? p;
                 try { p = v.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP); }
-                catch (Exception ex) { LemoineLog.Swallowed($"ScopeBoxManager scan: read view {v.Id.Value} scope-box param", ex); continue; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager scan: read view {v.Id.Value} scope-box param", ex); continue; }
                 if (p == null || p.IsReadOnly) continue;
 
                 var vref = new ManagerViewRef
@@ -134,7 +134,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 {
                     Parameter? p;
                     try { p = e.get_Parameter(BuiltInParameter.DATUM_VOLUME_OF_INTEREST); }
-                    catch (Exception ex) { LemoineLog.Swallowed($"ScopeBoxManager scan: read datum {e.Id.Value} scope-box param", ex); continue; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager scan: read datum {e.Id.Value} scope-box param", ex); continue; }
                     if (p == null || p.IsReadOnly) continue;
                     if (kind == "RefPlane" && string.IsNullOrWhiteSpace(e.Name)) continue;
 
@@ -207,14 +207,14 @@ namespace LemoineTools.Tools.ScopeBoxes
             }
             catch (Exception ex)
             {
-                LemoineLog.Error($"ScopeBoxManager: action '{Action}' aborted", ex);
-                summary = LemoineStrings.T("scopeBoxes.manager.status.aborted", ex.Message);
+                DiagnosticsLog.Error($"ScopeBoxManager: action '{Action}' aborted", ex);
+                summary = AppStrings.T("scopeBoxes.manager.status.aborted", ex.Message);
                 failed++;
             }
 
             ManagerScanResult? refreshed = null;
             try { refreshed = ScopeBoxManagerScanHandler.Collect(doc); }
-            catch (Exception ex) { LemoineLog.Error("ScopeBoxManager: post-action rescan failed", ex); }
+            catch (Exception ex) { DiagnosticsLog.Error("ScopeBoxManager: post-action rescan failed", ex); }
 
             try { OnActionComplete?.Invoke(ok, failed, summary, refreshed); }
             finally
@@ -241,7 +241,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 case "Delete":    return Delete(doc, ref ok, ref failed);
                 default:
                     failed++;
-                    return LemoineStrings.T("scopeBoxes.manager.status.unknownAction", Action);
+                    return AppStrings.T("scopeBoxes.manager.status.unknownAction", Action);
             }
         }
 
@@ -255,7 +255,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             if (box == null)
             {
                 failed++;
-                return LemoineStrings.T("scopeBoxes.manager.status.boxGone");
+                return AppStrings.T("scopeBoxes.manager.status.boxGone");
             }
 
             var bip = isView
@@ -289,7 +289,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 {
                     Parameter? p;
                     try { p = e.get_Parameter(bip); }
-                    catch (Exception ex) { LemoineLog.Swallowed($"ScopeBoxManager assign: read param on {e.Id.Value}", ex); continue; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager assign: read param on {e.Id.Value}", ex); continue; }
                     if (p == null || p.IsReadOnly) continue;
 
                     bool carries = p.AsElementId()?.Value == BoxId.Value;
@@ -304,14 +304,14 @@ namespace LemoineTools.Tools.ScopeBoxes
                     catch (Exception ex)
                     {
                         failed++;
-                        LemoineLog.Swallowed($"ScopeBoxManager assign: set param on {e.Id.Value}", ex);
+                        DiagnosticsLog.Swallowed($"ScopeBoxManager assign: set param on {e.Id.Value}", ex);
                     }
                 }
 
                 tx.Commit();
             }
 
-            return LemoineStrings.T(
+            return AppStrings.T(
                 isView ? "scopeBoxes.manager.status.viewsSet" : "scopeBoxes.manager.status.datumsSet",
                 box.Name, assigned, cleared, failed);
         }
@@ -346,14 +346,14 @@ namespace LemoineTools.Tools.ScopeBoxes
                     catch (Exception ex)
                     {
                         failed++;
-                        LemoineLog.Swallowed($"ScopeBoxManager rename: box {boxId.Value} → '{newName}'", ex);
+                        DiagnosticsLog.Swallowed($"ScopeBoxManager rename: box {boxId.Value} → '{newName}'", ex);
                     }
                 }
 
                 tx.Commit();
             }
 
-            return LemoineStrings.T("scopeBoxes.manager.status.renamed", ok, skipped, failed);
+            return AppStrings.T("scopeBoxes.manager.status.renamed", ok, skipped, failed);
         }
 
         private string Delete(Document doc, ref int ok, ref int failed)
@@ -373,7 +373,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                     catch (Exception ex)
                     {
                         failed++;
-                        LemoineLog.Swallowed($"ScopeBoxManager delete: box {id.Value} '{name}'", ex);
+                        DiagnosticsLog.Swallowed($"ScopeBoxManager delete: box {id.Value} '{name}'", ex);
                     }
                 }
 
@@ -381,8 +381,8 @@ namespace LemoineTools.Tools.ScopeBoxes
             }
 
             return names.Count > 0
-                ? LemoineStrings.T("scopeBoxes.manager.status.deleted", ok, string.Join(", ", names), failed)
-                : LemoineStrings.T("scopeBoxes.manager.status.deletedNone");
+                ? AppStrings.T("scopeBoxes.manager.status.deleted", ok, string.Join(", ", names), failed)
+                : AppStrings.T("scopeBoxes.manager.status.deletedNone");
         }
 
         private static void ConfigureFailures(Transaction tx, bool swallowWarnings = false)

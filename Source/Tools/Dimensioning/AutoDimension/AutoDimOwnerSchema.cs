@@ -1,7 +1,7 @@
 using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
 {
@@ -70,7 +70,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoDimOwnerSchema: stamp owner entity", ex);
+                DiagnosticsLog.Error("AutoDimOwnerSchema: stamp owner entity", ex);
                 return false;
             }
         }
@@ -88,7 +88,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("AutoDimOwnerSchema: read owner entity", ex);
+                DiagnosticsLog.Swallowed("AutoDimOwnerSchema: read owner entity", ex);
                 return false;
             }
         }
@@ -107,7 +107,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("AutoDimOwnerSchema: read target key", ex);
+                DiagnosticsLog.Swallowed("AutoDimOwnerSchema: read target key", ex);
                 return "";
             }
         }

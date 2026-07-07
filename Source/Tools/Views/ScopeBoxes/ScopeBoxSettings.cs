@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("ScopeBoxSettings: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("ScopeBoxSettings: create config directory", __lex); }
                 return Path.Combine(dir, "ScopeBoxSettings.xml");
             }
         }
@@ -45,7 +45,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("ScopeBoxSettings.Save", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("ScopeBoxSettings.Save", __lex); }
         }
 
         private static ScopeBoxSettings Load()
@@ -60,7 +60,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                         return (ScopeBoxSettings)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("ScopeBoxSettings.Load", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("ScopeBoxSettings.Load", __lex); }
             return new ScopeBoxSettings();
         }
     }

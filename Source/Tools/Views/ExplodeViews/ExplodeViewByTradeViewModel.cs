@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using WpfTextBlock = System.Windows.Controls.TextBlock;
 
 namespace LemoineTools.Tools.ExplodeViews
@@ -17,18 +17,18 @@ namespace LemoineTools.Tools.ExplodeViews
     /// only that trade's filters visible. Output views are ordered by element elevation.
     /// </summary>
     public class ExplodeViewByTradeViewModel
-        : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+        : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
         // ── Identity ─────────────────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("explode.byTrade.title");
-        public string RunLabel => LemoineStrings.T("explode.byTrade.runLabel");
+        public string Title    => AppStrings.T("explode.byTrade.title");
+        public string RunLabel => AppStrings.T("explode.byTrade.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("explode.byTrade.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("explode.byTrade.steps.S2"),         required: true),
-            new StepDefinition("S3", LemoineStrings.T("explode.byTrade.steps.S3"),               required: false),
-            new StepDefinition("S4", LemoineStrings.T("explode.byTrade.steps.S4"),          required: false),
+            new StepDefinition("S1", AppStrings.T("explode.byTrade.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("explode.byTrade.steps.S2"),         required: true),
+            new StepDefinition("S3", AppStrings.T("explode.byTrade.steps.S3"),               required: false),
+            new StepDefinition("S4", AppStrings.T("explode.byTrade.steps.S4"),          required: false),
         };
 
         // ── Run result strip ───────────────────────────────────────────────────
@@ -43,7 +43,7 @@ namespace LemoineTools.Tools.ExplodeViews
         // ── Source-view selection state ────────────────────────────────────────
         private long                        _sourceViewId;
         private readonly List<long>         _eligibleViewIds = new List<long>();
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
         private readonly Dictionary<long, string> _viewNames = new Dictionary<long, string>();
 
         // ── Trade selection state ──────────────────────────────────────────────
@@ -67,13 +67,13 @@ namespace LemoineTools.Tools.ExplodeViews
             ExplodeViewByTradeEventHandler? handler,
             ExternalEvent?                  externalEvent,
             IEnumerable<long>?              eligibleViewIds,
-            LemoineBrowserTree?             browserTree,
+            BrowserTree?             browserTree,
             IEnumerable<(string Id, string Label, bool HasFilters)>? trades,
             IReadOnlyDictionary<long, string>? viewNames = null)
         {
             _handler     = handler;
             _event       = externalEvent;
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
 
             if (eligibleViewIds != null)
                 _eligibleViewIds.AddRange(eligibleViewIds);
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
                 case "S3": return BuildS3();
-                case "S4": return null; // framework renders the review (ILemoineReviewable)
+                case "S4": return null; // framework renders the review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -117,13 +117,13 @@ namespace LemoineTools.Tools.ExplodeViews
         private FrameworkElement BuildS1()
         {
             if (_eligibleViewIds.Count == 0)
-                return Hint(LemoineStrings.T("explode.byTrade.labels.noViews"));
+                return Hint(AppStrings.T("explode.byTrade.labels.noViews"));
 
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
                 SingleSelect   = true,
-                AccessibleName = LemoineStrings.T("explode.byTrade.labels.sourceView"),
+                AccessibleName = AppStrings.T("explode.byTrade.labels.sourceView"),
             };
             picker.SelectionChanged += ids =>
             {
@@ -139,11 +139,11 @@ namespace LemoineTools.Tools.ExplodeViews
         private FrameworkElement BuildS2()
         {
             if (_labelToTradeId.Count == 0)
-                return Hint(LemoineStrings.T("explode.byTrade.labels.noTrades"));
+                return Hint(AppStrings.T("explode.byTrade.labels.noTrades"));
 
             var outer = new StackPanel();
 
-            var tabs = new LemoineMultiSelectTabs { Height = 280 };
+            var tabs = new MultiSelectTabs { Height = 280 };
             // Map current trade-id selection back to display labels for re-entry.
             var initialDisplay = _labelToTradeId
                 .Where(kv => _selectedTradeIds.Contains(kv.Value))
@@ -168,7 +168,7 @@ namespace LemoineTools.Tools.ExplodeViews
             if (_tradesWithoutFilters.Count > 0)
             {
                 outer.Children.Add(new FrameworkElement { Height = 8 });
-                outer.Children.Add(Hint(LemoineStrings.T("explode.byTrade.labels.tradesHidden", _tradesWithoutFilters.Count, string.Join(", ", _tradesWithoutFilters))));
+                outer.Children.Add(Hint(AppStrings.T("explode.byTrade.labels.tradesHidden", _tradesWithoutFilters.Count, string.Join(", ", _tradesWithoutFilters))));
             }
 
             return outer;
@@ -177,35 +177,35 @@ namespace LemoineTools.Tools.ExplodeViews
         // ── S3: options ────────────────────────────────────────────────────────
         private FrameworkElement BuildS3()
         {
-            var tog = new LemoineToggleSwitches();
+            var tog = new ToggleSwitches();
             tog.SetItems(new List<ToggleItem>
             {
                 new ToggleItem
                 {
                     Id        = "order",
-                    Label     = LemoineStrings.T("explode.byTrade.labels.orderLabel"),
-                    Desc      = LemoineStrings.T("explode.byTrade.labels.orderDesc"),
+                    Label     = AppStrings.T("explode.byTrade.labels.orderLabel"),
+                    Desc      = AppStrings.T("explode.byTrade.labels.orderDesc"),
                     DefaultOn = _orderByElevation,
                 },
                 new ToggleItem
                 {
                     Id        = "number",
-                    Label     = LemoineStrings.T("explode.byTrade.labels.numberLabel"),
-                    Desc      = LemoineStrings.T("explode.byTrade.labels.numberDesc"),
+                    Label     = AppStrings.T("explode.byTrade.labels.numberLabel"),
+                    Desc      = AppStrings.T("explode.byTrade.labels.numberDesc"),
                     DefaultOn = _numberPrefix,
                 },
                 new ToggleItem
                 {
                     Id        = "color",
-                    Label     = LemoineStrings.T("explode.byTrade.labels.colorLabel"),
-                    Desc      = LemoineStrings.T("explode.byTrade.labels.colorDesc"),
+                    Label     = AppStrings.T("explode.byTrade.labels.colorLabel"),
+                    Desc      = AppStrings.T("explode.byTrade.labels.colorDesc"),
                     DefaultOn = _applyColorOverride,
                 },
                 new ToggleItem
                 {
                     Id        = "hide",
-                    Label     = LemoineStrings.T("explode.byTrade.labels.hideLabel"),
-                    Desc      = LemoineStrings.T("explode.byTrade.labels.hideDesc"),
+                    Label     = AppStrings.T("explode.byTrade.labels.hideLabel"),
+                    Desc      = AppStrings.T("explode.byTrade.labels.hideDesc"),
                     DefaultOn = _hideOthers,
                 },
             });
@@ -220,26 +220,26 @@ namespace LemoineTools.Tools.ExplodeViews
             return tog;
         }
 
-        // ── Review (ILemoineReviewable) ────────────────────────────────────────
+        // ── Review (IReviewableTool) ────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("source", LemoineStrings.T("explode.byTrade.review.itemSource")),
-            ("trades", LemoineStrings.T("explode.byTrade.review.itemTrades")),
-            ("order",  LemoineStrings.T("explode.byTrade.review.itemOrder")),
-            ("number", LemoineStrings.T("explode.byTrade.review.itemNumber")),
-            ("color",  LemoineStrings.T("explode.byTrade.review.itemColor")),
-            ("hide",   LemoineStrings.T("explode.byTrade.review.itemHide")),
+            ("source", AppStrings.T("explode.byTrade.review.itemSource")),
+            ("trades", AppStrings.T("explode.byTrade.review.itemTrades")),
+            ("order",  AppStrings.T("explode.byTrade.review.itemOrder")),
+            ("number", AppStrings.T("explode.byTrade.review.itemNumber")),
+            ("color",  AppStrings.T("explode.byTrade.review.itemColor")),
+            ("hide",   AppStrings.T("explode.byTrade.review.itemHide")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["source"] = _sourceViewId == 0 ? "—" : (SourceViewName() ?? LemoineStrings.T("explode.byTrade.review.oneView")),
+            ["source"] = _sourceViewId == 0 ? "—" : (SourceViewName() ?? AppStrings.T("explode.byTrade.review.oneView")),
             ["trades"] = _selectedTradeIds.Count == 0 ? "—"
-                : LemoineStrings.T("explode.byTrade.review.tradeCount", _selectedTradeIds.Count),
-            ["order"]  = _orderByElevation ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
-            ["number"] = _numberPrefix ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
-            ["color"]  = _applyColorOverride ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
-            ["hide"]   = _hideOthers ? LemoineStrings.T("explode.byTrade.review.yes") : LemoineStrings.T("explode.byTrade.review.no"),
+                : AppStrings.T("explode.byTrade.review.tradeCount", _selectedTradeIds.Count),
+            ["order"]  = _orderByElevation ? AppStrings.T("explode.byTrade.review.yes") : AppStrings.T("explode.byTrade.review.no"),
+            ["number"] = _numberPrefix ? AppStrings.T("explode.byTrade.review.yes") : AppStrings.T("explode.byTrade.review.no"),
+            ["color"]  = _applyColorOverride ? AppStrings.T("explode.byTrade.review.yes") : AppStrings.T("explode.byTrade.review.no"),
+            ["hide"]   = _hideOthers ? AppStrings.T("explode.byTrade.review.yes") : AppStrings.T("explode.byTrade.review.no"),
         };
 
         public IList<string>? ReviewChips => _selectedTradeIds.Count == 0 ? null
@@ -247,7 +247,7 @@ namespace LemoineTools.Tools.ExplodeViews
                              .Select(kv => kv.Key).ToList();
 
         public string? ReviewNote =>
-            LemoineStrings.T("explode.byTrade.review.note");
+            AppStrings.T("explode.byTrade.review.note");
 
         public string? ReviewWarning => null;
 
@@ -262,20 +262,20 @@ namespace LemoineTools.Tools.ExplodeViews
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1")
-                return _sourceViewId == 0 ? "—" : (SourceViewName() ?? LemoineStrings.T("explode.byTrade.summaries.oneView"));
+                return _sourceViewId == 0 ? "—" : (SourceViewName() ?? AppStrings.T("explode.byTrade.summaries.oneView"));
             if (stepId == "S2")
                 return _selectedTradeIds.Count == 0 ? "—"
-                    : LemoineStrings.T("explode.byTrade.summaries.tradeCount", _selectedTradeIds.Count);
+                    : AppStrings.T("explode.byTrade.summaries.tradeCount", _selectedTradeIds.Count);
             if (stepId == "S3")
             {
                 var parts = new List<string>();
-                parts.Add(_orderByElevation ? LemoineStrings.T("explode.byTrade.summaries.byElevation") : LemoineStrings.T("explode.byTrade.summaries.configOrder"));
-                if (_numberPrefix)       parts.Add(LemoineStrings.T("explode.byTrade.summaries.numbered"));
-                if (_applyColorOverride) parts.Add(LemoineStrings.T("explode.byTrade.summaries.colored"));
-                parts.Add(_hideOthers ? LemoineStrings.T("explode.byTrade.summaries.isolated") : LemoineStrings.T("explode.byTrade.summaries.withContext"));
+                parts.Add(_orderByElevation ? AppStrings.T("explode.byTrade.summaries.byElevation") : AppStrings.T("explode.byTrade.summaries.configOrder"));
+                if (_numberPrefix)       parts.Add(AppStrings.T("explode.byTrade.summaries.numbered"));
+                if (_applyColorOverride) parts.Add(AppStrings.T("explode.byTrade.summaries.colored"));
+                parts.Add(_hideOthers ? AppStrings.T("explode.byTrade.summaries.isolated") : AppStrings.T("explode.byTrade.summaries.withContext"));
                 return string.Join(" · ", parts);
             }
-            if (stepId == "S4") return LemoineStrings.T("explode.byTrade.summaries.S4");
+            if (stepId == "S4") return AppStrings.T("explode.byTrade.summaries.S4");
             return "—";
         }
 
@@ -298,7 +298,7 @@ namespace LemoineTools.Tools.ExplodeViews
             _handler.OnComplete          = onComplete;
             _handler.OnResultChips       = chips => _resultChips = chips;
 
-            pushLog(LemoineStrings.T("explode.byTrade.log.starting"), "info");
+            pushLog(AppStrings.T("explode.byTrade.log.starting"), "info");
             _event!.Raise();
         }
 

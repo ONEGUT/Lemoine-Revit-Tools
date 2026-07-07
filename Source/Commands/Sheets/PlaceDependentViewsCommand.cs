@@ -6,7 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Sheets.PlaceDependentViews;
 
 namespace LemoineTools.Commands
@@ -78,7 +78,7 @@ namespace LemoineTools.Commands
                 {
                     string level = "";
                     try { level = v.GenLevel?.Name ?? ""; }
-                    catch (System.Exception ex) { LemoineLog.Swallowed($"PlaceDependentViews: read GenLevel on view {v.Id.Value}", ex); }
+                    catch (System.Exception ex) { DiagnosticsLog.Swallowed($"PlaceDependentViews: read GenLevel on view {v.Id.Value}", ex); }
 
                     // Only primaries can be a dependents-mode parent.
                     if (v.GetPrimaryViewId() == ElementId.InvalidElementId)

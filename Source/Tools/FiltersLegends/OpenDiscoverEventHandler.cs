@@ -1,7 +1,7 @@
 using System;
 using Autodesk.Revit.UI;
 using LemoineTools.Commands;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -23,7 +23,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("OpenDiscover: failed to open Discover window", ex);
+                DiagnosticsLog.Error("OpenDiscover: failed to open Discover window", ex);
             }
         }
     }

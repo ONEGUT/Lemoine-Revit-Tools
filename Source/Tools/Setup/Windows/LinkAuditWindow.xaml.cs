@@ -4,10 +4,10 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.Setup;
 
-namespace LemoineTools.Lemoine
+namespace LemoineTools.Framework
 {
     /// <summary>
     /// Link Audit — a read-only report window (NOT a StepFlowWindow tool: there is nothing to
@@ -27,42 +27,42 @@ namespace LemoineTools.Lemoine
 
             // Named handlers (not lambdas) so they can be detached on close — a leaked
             // subscription to a window whose dispatcher has shut down crashes/hangs Revit.
-            LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
-            LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+            AppSettings.Instance.ThemeChanged  += OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
             Closed += (s, e) =>
             {
-                LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
-                LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+                AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
+                AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             };
         }
 
-        private void OnThemeChanged(LemoineTheme t)
+        private void OnThemeChanged(ThemePalette t)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyTo(Resources);
+                AppSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             }));
         }
 
-        private void OnUiSizeChanged(LemoineUiSize _)
+        private void OnUiSizeChanged(UiSize _)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyScaleTo(Resources);
-                LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                AppSettings.Instance.ApplyScaleTo(Resources);
+                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 UpdateRowHeights();
             }));
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            LemoineSettings.Instance.ApplyTo(Resources);
-            LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
-            Background = LemoineSettings.Instance.ActiveTheme.PageBg;
+            AppSettings.Instance.ApplyTo(Resources);
+            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+            Background = AppSettings.Instance.ActiveTheme.PageBg;
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _outerBorder.CornerRadius = new CornerRadius(8); // matches Windows 11 DWM rounding
@@ -72,14 +72,14 @@ namespace LemoineTools.Lemoine
             BuildBody();
             BuildFooter();
 
-            AutomationProperties.SetName(this, LemoineStrings.T("setup.linkAudit.window.automationName"));
+            AutomationProperties.SetName(this, AppStrings.T("setup.linkAudit.window.automationName"));
         }
 
         private void UpdateRowHeights()
         {
             if (_root == null) return;
-            _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
-            _root.RowDefinitions[2].Height = new GridLength(LemoineSettings.Instance.FooterHeight);
+            _root.RowDefinitions[0].Height = new GridLength(AppSettings.Instance.ToolbarHeight);
+            _root.RowDefinitions[2].Height = new GridLength(AppSettings.Instance.FooterHeight);
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -94,9 +94,9 @@ namespace LemoineTools.Lemoine
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
 
-            _toolbarBorder.Child = new LemoineTitleBar
+            _toolbarBorder.Child = new TitleBar
             {
-                Title          = LemoineStrings.T("setup.linkAudit.window.title"),
+                Title          = AppStrings.T("setup.linkAudit.window.title"),
                 IconGlyph      = char.ConvertFromUtf32(0xE9D9), // Diagnostic
                 AllowsMaximize = true,
                 RightContent   = closeBtn,
@@ -115,29 +115,29 @@ namespace LemoineTools.Lemoine
 
             if (_data.Rows.Count == 0)
             {
-                outer.Children.Add(Dim(LemoineStrings.T("setup.linkAudit.labels.noneFound")));
+                outer.Children.Add(Dim(AppStrings.T("setup.linkAudit.labels.noneFound")));
             }
             else
             {
                 int flagged = _data.Rows.Count(r => r.IsWarning);
-                outer.Children.Add(Label(LemoineStrings.T("setup.linkAudit.labels.summary", _data.Rows.Count, flagged)));
+                outer.Children.Add(Label(AppStrings.T("setup.linkAudit.labels.summary", _data.Rows.Count, flagged)));
 
                 foreach (var row in _data.Rows)
                 {
                     var content = new StackPanel();
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldStatus"), row.LoadStatus,
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldStatus"), row.LoadStatus,
                         !row.LoadStatus.Equals("Loaded", StringComparison.OrdinalIgnoreCase)));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldPositioning"), row.Positioning, false));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldDisplay"), row.DisplayMode,
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldPositioning"), row.Positioning, false));
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldDisplay"), row.DisplayMode,
                         !(row.DisplayMode.Equals("By Host View", StringComparison.OrdinalIgnoreCase)
                           || row.DisplayMode.Equals("n/a", StringComparison.OrdinalIgnoreCase))));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldPinned"),
-                        row.Pinned ? LemoineStrings.T("setup.linkAudit.labels.yes") : LemoineStrings.T("setup.linkAudit.labels.no"), false));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldWorkset"), row.WorksetName, false));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldAttachment"), row.AttachmentType, false));
-                    content.Children.Add(FieldRow(LemoineStrings.T("setup.linkAudit.labels.fieldLastSaved"), row.LastSaved, false));
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldPinned"),
+                        row.Pinned ? AppStrings.T("setup.linkAudit.labels.yes") : AppStrings.T("setup.linkAudit.labels.no"), false));
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldWorkset"), row.WorksetName, false));
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldAttachment"), row.AttachmentType, false));
+                    content.Children.Add(FieldRow(AppStrings.T("setup.linkAudit.labels.fieldLastSaved"), row.LastSaved, false));
 
-                    var card = new LemoineSectionCard { Header = row.Name, CardContent = content, Margin = new Thickness(0, 0, 0, 10) };
+                    var card = new SectionCard { Header = row.Name, CardContent = content, Margin = new Thickness(0, 0, 0, 10) };
                     outer.Children.Add(card);
                 }
             }
@@ -157,7 +157,7 @@ namespace LemoineTools.Lemoine
 
             var hint = new TextBlock
             {
-                Text              = LemoineStrings.T("setup.linkAudit.window.footerHint"),
+                Text              = AppStrings.T("setup.linkAudit.window.footerHint"),
                 VerticalAlignment = VerticalAlignment.Center,
                 FontStyle         = FontStyles.Italic,
             };
@@ -165,7 +165,7 @@ namespace LemoineTools.Lemoine
             hint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
-            var closeBtn = BuildGhostButton(LemoineStrings.T("setup.linkAudit.window.close"));
+            var closeBtn = BuildGhostButton(AppStrings.T("setup.linkAudit.window.close"));
             closeBtn.Click += (s, e) => Close();
 
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
@@ -176,7 +176,7 @@ namespace LemoineTools.Lemoine
         }
 
         private static Button BuildGhostButton(string label) =>
-            LemoineControlStyles.BuildButton(label, LemoineControlStyles.LemoineButtonVariant.Ghost);
+            ControlStyles.BuildButton(label, ControlStyles.ButtonVariant.Ghost);
 
         // ── helpers ──────────────────────────────────────────────────────────────
         private static TextBlock Label(string text)

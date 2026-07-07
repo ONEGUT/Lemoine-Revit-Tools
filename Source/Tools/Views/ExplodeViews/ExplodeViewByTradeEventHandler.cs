@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.ExplodeViews
@@ -67,8 +67,8 @@ namespace LemoineTools.Tools.ExplodeViews
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("ExplodeViewByTrade: run aborted", ex);
-                Log(LemoineStrings.T("explode.byTrade.log.error", ex.Message), "fail");
+                DiagnosticsLog.Error("ExplodeViewByTrade: run aborted", ex);
+                Log(AppStrings.T("explode.byTrade.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -86,7 +86,7 @@ namespace LemoineTools.Tools.ExplodeViews
                     });
                     Complete(pass, fail, skip);
                 }
-                catch (Exception cbEx) { LemoineLog.Swallowed("ExplodeViewByTrade: completion callback", cbEx); }
+                catch (Exception cbEx) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: completion callback", cbEx); }
 
                 // Session-long static handler — drop the run's payload (memory discipline).
                 SourceViewId     = ElementId.InvalidElementId;
@@ -99,12 +99,12 @@ namespace LemoineTools.Tools.ExplodeViews
         {
             if (!(doc.GetElement(SourceViewId) is View3D source) || source.IsTemplate)
             {
-                Log(LemoineStrings.T("explode.byTrade.log.notView"), "fail");
+                Log(AppStrings.T("explode.byTrade.log.notView"), "fail");
                 fail++; return;
             }
             if (SelectedTradeIds == null || SelectedTradeIds.Count == 0)
             {
-                Log(LemoineStrings.T("explode.byTrade.log.noTrades"), "fail");
+                Log(AppStrings.T("explode.byTrade.log.noTrades"), "fail");
                 fail++; return;
             }
 
@@ -134,7 +134,7 @@ namespace LemoineTools.Tools.ExplodeViews
 
                 if (filters.Count == 0)
                 {
-                    Log(LemoineStrings.T("explode.byTrade.log.tradeNoFilters", trade.Label), "warn");
+                    Log(AppStrings.T("explode.byTrade.log.tradeNoFilters", trade.Label), "warn");
                     _tradesSkipped++; skip++;
                     continue;
                 }
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.ExplodeViews
 
             if (plans.Count == 0)
             {
-                Log(LemoineStrings.T("explode.byTrade.log.noneHaveFilters"), "fail");
+                Log(AppStrings.T("explode.byTrade.log.noneHaveFilters"), "fail");
                 fail++; return;
             }
 
@@ -165,13 +165,13 @@ namespace LemoineTools.Tools.ExplodeViews
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Swallowed("ExplodeViewByTrade: read section box", ex);
+                    DiagnosticsLog.Swallowed("ExplodeViewByTrade: read section box", ex);
                     hasBox = false;
                 }
             }
             else
             {
-                Log(LemoineStrings.T("explode.byTrade.log.noSectionBox"), "info");
+                Log(AppStrings.T("explode.byTrade.log.noSectionBox"), "info");
             }
 
             var links = new FilteredElementCollector(doc, source.Id)
@@ -182,9 +182,9 @@ namespace LemoineTools.Tools.ExplodeViews
 
             for (int i = 0; i < plans.Count; i++)
             {
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("explode.byTrade.log.stoppedScan", i, plans.Count), "warn");
+                    Log(AppStrings.T("explode.byTrade.log.stoppedScan", i, plans.Count), "warn");
                     break;
                 }
 
@@ -192,9 +192,9 @@ namespace LemoineTools.Tools.ExplodeViews
 
                 var p = plans[i];
                 if (p.ElemCount == 0)
-                    Log(LemoineStrings.T("explode.byTrade.log.noElementsForTrade", p.Label), "info");
+                    Log(AppStrings.T("explode.byTrade.log.noElementsForTrade", p.Label), "info");
                 else
-                    Log(LemoineStrings.T("explode.byTrade.log.foundElements", p.ElemCount, p.Label, FormatFtIn(p.MedianZ), FormatFtIn(p.MinZ), FormatFtIn(p.MaxZ)), "info");
+                    Log(AppStrings.T("explode.byTrade.log.foundElements", p.ElemCount, p.Label, FormatFtIn(p.MedianZ), FormatFtIn(p.MinZ), FormatFtIn(p.MaxZ)), "info");
 
                 Progress(15 + (int)((i + 1) * 40.0 / plans.Count), pass, fail, skip);
             }
@@ -215,7 +215,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 ordered = plans;
             }
 
-            Log(LemoineStrings.T("explode.byTrade.log.stackOrder")
+            Log(AppStrings.T("explode.byTrade.log.stackOrder")
                 + string.Join("  ›  ", ordered.Select(p => p.Label)), "info");
 
             // ── Link display diagnostic (host filters need "By Host View") ────────
@@ -268,9 +268,9 @@ namespace LemoineTools.Tools.ExplodeViews
 
                 for (int i = 0; i < ordered.Count; i++)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", i, ordered.Count), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", i, ordered.Count), "warn");
                         break;
                     }
 
@@ -280,18 +280,18 @@ namespace LemoineTools.Tools.ExplodeViews
                         ElementId dupId = source.Duplicate(ViewDuplicateOption.Duplicate);
                         if (!(doc.GetElement(dupId) is View3D dup))
                         {
-                            Log(LemoineStrings.T("explode.byTrade.log.dupFailed", plan.Label), "fail");
+                            Log(AppStrings.T("explode.byTrade.log.dupFailed", plan.Label), "fail");
                             fail++; continue;
                         }
 
                         // Belt-and-suspenders: a Duplicate already carries camera + section box,
                         // but re-assert both so the angle and crop are guaranteed identical.
                         try { dup.SetOrientation(srcOrientation); }
-                        catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: set orientation", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: set orientation", ex); }
                         if (srcSectionBox != null)
                         {
                             try { dup.SetSectionBox(srcSectionBox); dup.IsSectionBoxActive = true; }
-                            catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: set section box", ex); }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: set section box", ex); }
                         }
 
                         // Name + number prefix; enforce View.Name uniqueness (it throws on a dup).
@@ -308,8 +308,8 @@ namespace LemoineTools.Tools.ExplodeViews
                         try { dup.Name = uniqueName; }
                         catch (Exception ex)
                         {
-                            Log(LemoineStrings.T("explode.byTrade.log.renameFailed", uniqueName, ex.Message), "warn");
-                            LemoineLog.Swallowed("ExplodeViewByTrade: set view name", ex);
+                            Log(AppStrings.T("explode.byTrade.log.renameFailed", uniqueName, ex.Message), "warn");
+                            DiagnosticsLog.Swallowed("ExplodeViewByTrade: set view name", ex);
                         }
 
                         // Add every selected trade's filters; isolate this trade.
@@ -345,7 +345,7 @@ namespace LemoineTools.Tools.ExplodeViews
                             }
                             catch (Exception ex)
                             {
-                                Log(LemoineStrings.T("explode.byTrade.log.filterFailed", pfe.Name, uniqueName, ex.Message), "fail");
+                                Log(AppStrings.T("explode.byTrade.log.filterFailed", pfe.Name, uniqueName, ex.Message), "fail");
                             }
                         }
 
@@ -356,12 +356,12 @@ namespace LemoineTools.Tools.ExplodeViews
                             HideNonTradeCategories(doc, dup, plan.Filters);
 
                         _viewsCreated++; pass++;
-                        Log(LemoineStrings.T("explode.byTrade.log.created", uniqueName, plan.Label, (HideOthers ? LemoineStrings.T("explode.byTrade.log.othersHidden") : "")), "pass");
+                        Log(AppStrings.T("explode.byTrade.log.created", uniqueName, plan.Label, (HideOthers ? AppStrings.T("explode.byTrade.log.othersHidden") : "")), "pass");
                     }
                     catch (Exception ex)
                     {
-                        Log(LemoineStrings.T("explode.byTrade.log.createFailed", plan.Label, ex.Message), "fail");
-                        LemoineLog.Error("ExplodeViewByTrade: create view", ex);
+                        Log(AppStrings.T("explode.byTrade.log.createFailed", plan.Label, ex.Message), "fail");
+                        DiagnosticsLog.Error("ExplodeViewByTrade: create view", ex);
                         fail++;
                     }
 
@@ -371,7 +371,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("explode.byTrade.log.complete", _viewsCreated, srcName, _tradesSkipped), "pass");
+            Log(AppStrings.T("explode.byTrade.log.complete", _viewsCreated, srcName, _tradesSkipped), "pass");
         }
 
         /// <summary>
@@ -390,7 +390,7 @@ namespace LemoineTools.Tools.ExplodeViews
                 {
                     foreach (ElementId cid in pfe.GetCategories()) keep.Add(cid.Value);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: read filter categories", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: read filter categories", ex); }
             }
 
             long rvtLinks = new ElementId(BuiltInCategory.OST_RvtLinks).Value;
@@ -410,12 +410,12 @@ namespace LemoineTools.Tools.ExplodeViews
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Swallowed($"ExplodeViewByTrade: hide category '{cat?.Name}'", ex);
+                    DiagnosticsLog.Swallowed($"ExplodeViewByTrade: hide category '{cat?.Name}'", ex);
                 }
             }
 
             if (hidden > 0)
-                Log(LemoineStrings.T("explode.byTrade.log.hidCategories", hidden, view.Name), "info");
+                Log(AppStrings.T("explode.byTrade.log.hidCategories", hidden, view.Name), "info");
         }
 
         // ── Elevation scan ────────────────────────────────────────────────────────
@@ -439,7 +439,7 @@ namespace LemoineTools.Tools.ExplodeViews
                         if (TryWorldZ(el, Transform.Identity, out double z)) zs.Add(z);
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: host elevation scan", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: host elevation scan", ex); }
             }
 
             // Linked elements — match in each link's own document, bounded to the section box.
@@ -470,7 +470,7 @@ namespace LemoineTools.Tools.ExplodeViews
                         if (TryWorldZ(el, xform, out double z)) zs.Add(z);
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: linked elevation scan", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: linked elevation scan", ex); }
             }
 
             plan.ElemCount = zs.Count;
@@ -508,7 +508,7 @@ namespace LemoineTools.Tools.ExplodeViews
                     else if (ruleFilter != null)
                         parts.Add(ruleFilter);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: build union filter", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: build union filter", ex); }
             }
 
             if (parts.Count == 0) return null;
@@ -540,12 +540,12 @@ namespace LemoineTools.Tools.ExplodeViews
                     LinkVisibility mode = gs?.LinkVisibilityType ?? LinkVisibility.ByHostView;
                     if (mode != LinkVisibility.ByHostView)
                     {
-                        Log(LemoineStrings.T("explode.byTrade.log.linkNotByHost", link.Name, mode), "warn");
-                        LemoineLog.Warn("ExplodeViewByTrade",
+                        Log(AppStrings.T("explode.byTrade.log.linkNotByHost", link.Name, mode), "warn");
+                        DiagnosticsLog.Warn("ExplodeViewByTrade",
                             $"link '{link.Name}' display={mode}; host filters won't cascade.");
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ExplodeViewByTrade: read link display mode", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ExplodeViewByTrade: read link display mode", ex); }
             }
         }
 
@@ -605,7 +605,7 @@ namespace LemoineTools.Tools.ExplodeViews
             try { return LinePatternElement.GetSolidPatternId(); }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ExplodeViewByTrade: resolve solid line pattern id", ex);
+                DiagnosticsLog.Swallowed("ExplodeViewByTrade: resolve solid line pattern id", ex);
                 return ElementId.InvalidElementId;
             }
         }

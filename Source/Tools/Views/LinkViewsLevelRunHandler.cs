@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
 
 namespace LemoineTools.Tools.LinkViews
@@ -65,15 +65,15 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument.Document;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try
             {
                 try { RunViews(doc, ref pass, ref fail, ref skip); }
-                catch (Exception ex) { LemoineLog.Error("LinkViews level: run aborted", ex); Log(LemoineStrings.T("linkviews.level.log.error", ex.Message), "fail"); fail++; }
+                catch (Exception ex) { DiagnosticsLog.Error("LinkViews level: run aborted", ex); Log(AppStrings.T("linkviews.level.log.error", ex.Message), "fail"); fail++; }
                 Progress(100, pass, fail, skip);
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("linkviews.level.log.nonFatalIssues", issues), "warn");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("linkviews.level.log.nonFatalIssues", issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -106,7 +106,7 @@ namespace LemoineTools.Tools.LinkViews
             var keptLevels    = allLevels.Where(l => selectedIdSet.Contains(l.Id.Value)).ToList();
             if (keptLevels.Count == 0)
             {
-                Log(LemoineStrings.T("linkviews.level.log.noLevels"), "fail");
+                Log(AppStrings.T("linkviews.level.log.noLevels"), "fail");
                 fail++;
                 return;
             }
@@ -120,14 +120,14 @@ namespace LemoineTools.Tools.LinkViews
                     var el = doc.GetElement(id);
                     if (el == null)
                     {
-                        Log(LemoineStrings.T("linkviews.level.log.boxMissing", id.Value), "warn");
+                        Log(AppStrings.T("linkviews.level.log.boxMissing", id.Value), "warn");
                         continue;
                     }
                     boxTargets.Add(new BoxTarget { Id = el.Id, Name = el.Name, Bounds = el.get_BoundingBox(null) });
                 }
                 if (boxTargets.Count == 0)
                 {
-                    Log(LemoineStrings.T("linkviews.level.log.noBoxes"), "fail");
+                    Log(AppStrings.T("linkviews.level.log.noBoxes"), "fail");
                     fail++;
                     return;
                 }
@@ -138,9 +138,9 @@ namespace LemoineTools.Tools.LinkViews
             var vftFP  = CreateFP  ? FindVFT(doc, ViewFamily.FloorPlan)        : null;
             var vftRCP = CreateRCP ? FindVFT(doc, ViewFamily.CeilingPlan)      : null;
 
-            if (Create3D  && vft3d  == null) Log(LemoineStrings.T("linkviews.level.log.no3dType"),  "info");
-            if (CreateFP  && vftFP  == null) Log(LemoineStrings.T("linkviews.level.log.noFpType"),  "info");
-            if (CreateRCP && vftRCP == null) Log(LemoineStrings.T("linkviews.level.log.noRcpType"), "info");
+            if (Create3D  && vft3d  == null) Log(AppStrings.T("linkviews.level.log.no3dType"),  "info");
+            if (CreateFP  && vftFP  == null) Log(AppStrings.T("linkviews.level.log.noFpType"),  "info");
+            if (CreateRCP && vftRCP == null) Log(AppStrings.T("linkviews.level.log.noRcpType"), "info");
 
             // Progress is tracked per view SET (one level × one target).
             int totalSets = Math.Max(keptLevels.Count * (byBox ? boxTargets.Count : 1), 1);
@@ -153,9 +153,9 @@ namespace LemoineTools.Tools.LinkViews
 
                 for (int idx = 0; idx < keptLevels.Count; idx++)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", idx, keptLevels.Count), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", idx, keptLevels.Count), "warn");
                         break;   // falls through to the existing tx.Commit() below
                     }
 
@@ -190,7 +190,7 @@ namespace LemoineTools.Tools.LinkViews
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("linkviews.level.log.complete", pass, skip, fail), "pass");
+            Log(AppStrings.T("linkviews.level.log.complete", pass, skip, fail), "pass");
         }
 
         /// <summary>Creates the enabled view types for one (level, scope-box?) pair.</summary>
@@ -204,7 +204,7 @@ namespace LemoineTools.Tools.LinkViews
             if (vft3d != null)
             {
                 string n = BuildViewName(lvl.Name, box?.Name, "3D");
-                if (View3dExists(doc, n)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
+                if (View3dExists(doc, n)) { Log(AppStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; }
                 else
                 {
                     try
@@ -222,9 +222,9 @@ namespace LemoineTools.Tools.LinkViews
                             });
                         }
                         SetSubDisc(v, SubDisc3D);
-                        Log(LemoineStrings.T("linkviews.level.log.created3d", n), "pass"); pass++;
+                        Log(AppStrings.T("linkviews.level.log.created3d", n), "pass"); pass++;
                     }
-                    catch (Exception e) { Log(LemoineStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
+                    catch (Exception e) { Log(AppStrings.T("linkviews.level.log.fail3d", n, e.Message), "fail"); fail++; }
                 }
             }
 
@@ -245,7 +245,7 @@ namespace LemoineTools.Tools.LinkViews
             string typeLabel, ref int pass, ref int fail, ref int skip)
         {
             string n = BuildViewName(lvl.Name, box?.Name, typeLabel);
-            if (PlanExists(doc, n, family)) { Log(LemoineStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; return; }
+            if (PlanExists(doc, n, family)) { Log(AppStrings.T("linkviews.level.log.skipExists", n), "info"); skip++; return; }
 
             try
             {
@@ -262,26 +262,26 @@ namespace LemoineTools.Tools.LinkViews
                     {
                         var p = plan.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
                         if (p == null || p.IsReadOnly)
-                            Log(LemoineStrings.T("linkviews.level.log.boxAssignRefused", n,
-                                LemoineStrings.T("linkviews.level.log.boxParamUnavailable")), "warn");
+                            Log(AppStrings.T("linkviews.level.log.boxAssignRefused", n,
+                                AppStrings.T("linkviews.level.log.boxParamUnavailable")), "warn");
                         else
                             p.Set(box.Id);
                     }
                     catch (Exception aex)
                     {
-                        Log(LemoineStrings.T("linkviews.level.log.boxAssignRefused", n, aex.Message), "warn");
+                        Log(AppStrings.T("linkviews.level.log.boxAssignRefused", n, aex.Message), "warn");
                     }
                 }
 
                 SetSubDisc(plan, subDisc);
-                Log(LemoineStrings.T(typeLabel == "FP"
+                Log(AppStrings.T(typeLabel == "FP"
                     ? "linkviews.level.log.createdFp"
                     : "linkviews.level.log.createdRcp", n), "pass");
                 pass++;
             }
             catch (Exception e)
             {
-                Log(LemoineStrings.T(typeLabel == "FP"
+                Log(AppStrings.T(typeLabel == "FP"
                     ? "linkviews.level.log.failFp"
                     : "linkviews.level.log.failRcp", n, e.Message), "fail");
                 fail++;
@@ -331,13 +331,13 @@ namespace LemoineTools.Tools.LinkViews
         private static void ApplyTemplate(View view, ElementId templateId)
         {
             if (templateId == null || templateId.Value == ElementId.InvalidElementId.Value) return;
-            try { view.ViewTemplateId = templateId; } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews level: apply view template to view {view.Id.Value}", __lex); }
+            try { view.ViewTemplateId = templateId; } catch (Exception __lex) { DiagnosticsLog.Swallowed($"LinkViews level: apply view template to view {view.Id.Value}", __lex); }
         }
 
         private static void SetSubDisc(View view, string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return;
-            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch (Exception __lex) { LemoineLog.Swallowed($"LinkViews level: set Sub Discipline on view {view.Id.Value}", __lex); }
+            try { view.LookupParameter("Sub Discipline")?.Set(value.Trim()); } catch (Exception __lex) { DiagnosticsLog.Swallowed($"LinkViews level: set Sub Discipline on view {view.Id.Value}", __lex); }
         }
 
         private static void ConfigureFailures(Transaction tx)

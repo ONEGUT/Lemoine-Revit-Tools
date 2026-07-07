@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -48,7 +48,7 @@ namespace LemoineTools.Tools.Setup
         public void Execute(UIApplication app)
         {
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
@@ -126,7 +126,7 @@ namespace LemoineTools.Tools.Setup
                     foreach (var spec in toRun)
                     {
                         idx++;
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
                             Log($"Stopped by user — {pass} link(s) aligned so far; work preserved.", "warn");
                             break;   // fall through to commit
@@ -142,7 +142,7 @@ namespace LemoineTools.Tools.Setup
                         catch (Exception ex)
                         {
                             fail++;
-                            LemoineLog.Error("AlignCoordinates: align link", ex);
+                            DiagnosticsLog.Error("AlignCoordinates: align link", ex);
                             Log($"✗ Link {spec.LinkInstId}: {ex.Message}", "fail");
                         }
 
@@ -152,7 +152,7 @@ namespace LemoineTools.Tools.Setup
                     tx.Commit();
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
+                long issues = DiagnosticsLog.IssuesSince(issues0);
                 if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
                 Log($"Done. {pass} link(s) aligned, {skip} skipped, {fail} failed.", fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
@@ -160,7 +160,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AlignCoordinatesRunHandler.Execute", ex);
+                DiagnosticsLog.Error("AlignCoordinatesRunHandler.Execute", ex);
                 Log($"Run aborted: {ex.Message}", "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
@@ -232,7 +232,7 @@ namespace LemoineTools.Tools.Setup
 
             bool wasPinned = false;
             try { wasPinned = li.Pinned; if (wasPinned) li.Pinned = false; }
-            catch (Exception ex) { LemoineLog.Swallowed($"AlignCoordinates: unpin {linkName}", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinates: unpin {linkName}", ex); }
 
             // World pivot (current position of the reference point).
             var t0 = li.GetTotalTransform();
@@ -260,7 +260,7 @@ namespace LemoineTools.Tools.Setup
                 ElementTransformUtils.MoveElement(doc, li.Id, delta);
 
             try { if (wasPinned) li.Pinned = true; }
-            catch (Exception ex) { LemoineLog.Swallowed($"AlignCoordinates: re-pin {linkName}", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinates: re-pin {linkName}", ex); }
 
             string vnote = applyZ ? "" : ", plan only (no matching level — Z unchanged)";
             Log($"✓ {linkName}: aligned to {methodNote}{vnote}.", "pass");
@@ -289,7 +289,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error($"AlignCoordinates: move {label}", ex);
+                DiagnosticsLog.Error($"AlignCoordinates: move {label}", ex);
                 Log($"✗ Could not move {label}: {ex.Message}", "fail");
             }
         }
@@ -324,7 +324,7 @@ namespace LemoineTools.Tools.Setup
                 opts.SetForcedModalHandling(false);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AlignCoordinates: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AlignCoordinates: configure failure handling", ex); }
         }
     }
 }

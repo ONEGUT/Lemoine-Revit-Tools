@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
 {
@@ -26,7 +26,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     openIds.Add(uv.ViewId.Value);
                 activeId = uidoc.ActiveView?.Id ?? ElementId.InvalidElementId;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("PickerViewGuard: snapshot open views", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: snapshot open views", ex); }
             return (openIds, activeId);
         }
 
@@ -45,7 +45,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     && uidoc.Document.GetElement(before.ActiveId) is View original)
                 {
                     try { uidoc.ActiveView = original; }
-                    catch (Exception ex) { LemoineLog.Swallowed("PickerViewGuard: restore active view", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: restore active view", ex); }
                 }
 
                 long activeId = (uidoc.ActiveView?.Id ?? ElementId.InvalidElementId).Value;
@@ -56,12 +56,12 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (before.OpenIds.Contains(id)) continue;
                     if (id == activeId) continue;
                     try { uv.Close(); closed++; }
-                    catch (Exception ex) { LemoineLog.Swallowed("PickerViewGuard: close view", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: close view", ex); }
                 }
                 if (closed > 0)
                     log?.Invoke($"Closed {closed} view(s) the pick pass opened.", "info");
             }
-            catch (Exception ex) { LemoineLog.Swallowed("PickerViewGuard: close opened views", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: close opened views", ex); }
         }
     }
 }

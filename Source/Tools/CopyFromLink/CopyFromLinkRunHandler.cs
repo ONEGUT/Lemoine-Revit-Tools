@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Tools.CopyFromLink
@@ -42,19 +42,19 @@ namespace LemoineTools.Tools.CopyFromLink
         public void Execute(UIApplication app)
         {
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
-                if (doc == null) { Log(LemoineStrings.T("copy.fromLink.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (doc == null) { Log(AppStrings.T("copy.fromLink.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
-                if (Spec.LinkInstId == 0L) { Log(LemoineStrings.T("copy.fromLink.log.pickLink"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (Spec.LinkInstId == 0L) { Log(AppStrings.T("copy.fromLink.log.pickLink"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var src = CopyFromLinkSource.Resolve(doc, Spec.LinkInstId);
-                if (src?.Doc == null) { Log(LemoineStrings.T("copy.fromLink.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (src?.Doc == null) { Log(AppStrings.T("copy.fromLink.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var selectedKeys = new HashSet<string>(Spec.SelectedTypeKeys ?? new List<string>(), StringComparer.Ordinal);
-                if (selectedKeys.Count == 0) { Log(LemoineStrings.T("copy.fromLink.log.noTypesSelected"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (selectedKeys.Count == 0) { Log(AppStrings.T("copy.fromLink.log.noTypesSelected"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 // ── Gather current source elements matching the selected types, keyed by identity ──
                 var current = new Dictionary<string, SourceElem>(StringComparer.Ordinal);
@@ -74,17 +74,17 @@ namespace LemoineTools.Tools.CopyFromLink
                     catch (Exception ex)
                     {
                         skip++;
-                        LemoineLog.Swallowed($"CopyFromLink: read source {el?.Id}", ex);
+                        DiagnosticsLog.Swallowed($"CopyFromLink: read source {el?.Id}", ex);
                     }
                 }
 
                 if (current.Count == 0)
                 {
-                    Log(LemoineStrings.T("copy.fromLink.log.noMatching", unmatched), "warn");
+                    Log(AppStrings.T("copy.fromLink.log.noMatching", unmatched), "warn");
                     OnComplete?.Invoke(0, 0, skip);
                     return;
                 }
-                Log(LemoineStrings.T("copy.fromLink.log.found", current.Count, unmatched), "info");
+                Log(AppStrings.T("copy.fromLink.log.found", current.Count, unmatched), "info");
 
                 // ── Read existing stamps and decide what to (re)build / delete ──
                 var stampsByKey = new Dictionary<string, (List<ElementId> ids, string hash)>(StringComparer.Ordinal);
@@ -115,9 +115,9 @@ namespace LemoineTools.Tools.CopyFromLink
 
                 string runId = Guid.NewGuid().ToString("N");
                 int total = toBuild.Count, done = 0;
-                Log(LemoineStrings.T("copy.fromLink.log.copying", toBuild.Count, unchanged, (DeletePrevious
-                        ? LemoineStrings.T("copy.fromLink.log.copyingOrphans", orphanIds.Count)
-                        : LemoineStrings.T("copy.fromLink.log.copyingUntouched"))), "info");
+                Log(AppStrings.T("copy.fromLink.log.copying", toBuild.Count, unchanged, (DeletePrevious
+                        ? AppStrings.T("copy.fromLink.log.copyingOrphans", orphanIds.Count)
+                        : AppStrings.T("copy.fromLink.log.copyingUntouched"))), "info");
 
                 using (var tx = new Transaction(doc, "Copy Elements from Link"))
                 {
@@ -144,9 +144,9 @@ namespace LemoineTools.Tools.CopyFromLink
                     var attributable = new List<ElementId>();   // batch-copied outputs to stamp by hash
                     for (int i = 0; i < toBuild.Count; i += chunkSize)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                             break;   // falls through to doc.Regenerate() + tx.Commit() below
                         }
                         var slice    = toBuild.GetRange(i, Math.Min(chunkSize, toBuild.Count - i));
@@ -164,8 +164,8 @@ namespace LemoineTools.Tools.CopyFromLink
                         {
                             // Isolate the offender: re-copy this chunk one element at a time, stamping
                             // directly (the source is known here, so no hash attribution is needed).
-                            Log(LemoineStrings.T("copy.fromLink.log.batchRetry", slice.Count, ex.GetType().Name), "warn");
-                            LemoineLog.Swallowed("CopyFromLink: batch copy chunk", ex);
+                            Log(AppStrings.T("copy.fromLink.log.batchRetry", slice.Count, ex.GetType().Name), "warn");
+                            DiagnosticsLog.Swallowed("CopyFromLink: batch copy chunk", ex);
                             foreach (var s in slice)
                             {
                                 try
@@ -183,14 +183,14 @@ namespace LemoineTools.Tools.CopyFromLink
                                 catch (Exception ex2)
                                 {
                                     fail++;
-                                    LemoineLog.Error($"CopyFromLink: copy {s.Key}", ex2);
-                                    Log(LemoineStrings.T("copy.fromLink.log.copyFail", s.Id, s.TypeKey, ex2.GetType().Name, ex2.Message), "fail");
+                                    DiagnosticsLog.Error($"CopyFromLink: copy {s.Key}", ex2);
+                                    Log(AppStrings.T("copy.fromLink.log.copyFail", s.Id, s.TypeKey, ex2.GetType().Name, ex2.Message), "fail");
                                 }
                             }
                         }
                         done += slice.Count;
                         int pct = (int)(done * 100.0 / total);
-                        Log(LemoineStrings.T("copy.fromLink.log.progress", pct, done, total, pass), "info");
+                        Log(AppStrings.T("copy.fromLink.log.progress", pct, done, total, pass), "info");
                         OnProgress?.Invoke((int)(done * 90.0 / total), pass, fail, skip);
                     }
 
@@ -224,28 +224,28 @@ namespace LemoineTools.Tools.CopyFromLink
                             else unattributed++;
                         }
                         if (unattributed > 0)
-                            Log(LemoineStrings.T("copy.fromLink.log.unattributed", unattributed), "warn");
+                            Log(AppStrings.T("copy.fromLink.log.unattributed", unattributed), "warn");
                     }
 
                     tx.Commit();
 
                     foreach (var f in failureHandler.Captured.Distinct().Take(15))
                     {
-                        Log(LemoineStrings.T("copy.fromLink.log.revitFailure", f), "warn");
-                        LemoineLog.Warn("CopyFromLink: revit failure", f);
+                        Log(AppStrings.T("copy.fromLink.log.revitFailure", f), "warn");
+                        DiagnosticsLog.Warn("CopyFromLink: revit failure", f);
                     }
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("copy.fromLink.log.nonFatal", issues), "warn");
-                Log(LemoineStrings.T("copy.fromLink.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("copy.fromLink.log.nonFatal", issues), "warn");
+                Log(AppStrings.T("copy.fromLink.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyFromLinkRunHandler.Execute", ex);
-                Log(LemoineStrings.T("copy.fromLink.log.aborted", ex.Message), "fail");
+                DiagnosticsLog.Error("CopyFromLinkRunHandler.Execute", ex);
+                Log(AppStrings.T("copy.fromLink.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally
@@ -264,7 +264,7 @@ namespace LemoineTools.Tools.CopyFromLink
             {
                 if (id == null || id == ElementId.InvalidElementId) continue;
                 try { if (doc.GetElement(id) != null) doc.Delete(id); }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyFromLink: delete output", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLink: delete output", ex); }
             }
         }
 
@@ -294,7 +294,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 opts.SetFailuresPreprocessor(handler);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLink: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLink: configure failure handling", ex); }
             return handler;
         }
 
@@ -312,10 +312,10 @@ namespace LemoineTools.Tools.CopyFromLink
                     var sev = msg.GetSeverity();
                     string desc;
                     try { desc = msg.GetDescriptionText(); }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyFromLink: read failure description", ex); desc = "(no description)"; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLink: read failure description", ex); desc = "(no description)"; }
                     string ids = "";
                     try { ids = string.Join(", ", msg.GetFailingElementIds().Select(i => i.Value)); }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyFromLink: read failing ids", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLink: read failing ids", ex); }
                     _captured.Add($"[{sev}] {desc}" + (ids.Length > 0 ? $" — elements {ids}" : ""));
 
                     if (sev == FailureSeverity.Warning)

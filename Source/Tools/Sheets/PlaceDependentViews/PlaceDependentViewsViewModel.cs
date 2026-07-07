@@ -5,14 +5,14 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 {
-    public sealed class PlaceDependentViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public sealed class PlaceDependentViewsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
         private static readonly (string Label, string Token)[] NamingTokens =
         {
@@ -22,17 +22,17 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             ("Sheet Number","{SheetNumber}"),
         };
 
-        // ── ILemoineTool ──────────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("testing.placeDependentViews.title");
-        public string RunLabel => LemoineStrings.T("testing.placeDependentViews.runLabel");
+        // ── IStepFlowTool ──────────────────────────────────────────────────────
+        public string Title    => AppStrings.T("testing.placeDependentViews.title");
+        public string RunLabel => AppStrings.T("testing.placeDependentViews.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("testing.placeDependentViews.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("testing.placeDependentViews.steps.S2"),    required: true),
-            new StepDefinition("S3", LemoineStrings.T("testing.placeDependentViews.steps.S3"),   required: true),
-            new StepDefinition("S4", LemoineStrings.T("testing.placeDependentViews.steps.S4"),         required: false),
-            new StepDefinition("S5", LemoineStrings.T("testing.placeDependentViews.steps.S5"),   required: false),
+            new StepDefinition("S1", AppStrings.T("testing.placeDependentViews.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("testing.placeDependentViews.steps.S2"),    required: true),
+            new StepDefinition("S3", AppStrings.T("testing.placeDependentViews.steps.S3"),   required: true),
+            new StepDefinition("S4", AppStrings.T("testing.placeDependentViews.steps.S4"),         required: false),
+            new StepDefinition("S5", AppStrings.T("testing.placeDependentViews.steps.S5"),   required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -48,14 +48,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 
         private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        private static readonly string ModeDependents = LemoineStrings.T("testing.placeDependentViews.modeDependents");
-        private static readonly string ModeComposite  = LemoineStrings.T("testing.placeDependentViews.modeComposite");
+        private static readonly string ModeDependents = AppStrings.T("testing.placeDependentViews.modeDependents");
+        private static readonly string ModeComposite  = AppStrings.T("testing.placeDependentViews.modeComposite");
 
         // ── State ─────────────────────────────────────────────────────────────
         private bool _compositeMode = false;
 
         private readonly List<ParentViewEntry>          _parents;
-        private readonly LemoineBrowserTree             _browserTree;
+        private readonly BrowserTree             _browserTree;
         private List<ElementId>                          _selectedParentIds = new List<ElementId>();
 
         private readonly List<ParentViewEntry>          _compositeCandidates;
@@ -75,14 +75,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         private LayoutMode _layoutMode = LayoutMode.Measured;
         private bool   _trimBubbles   = true;
 
-        private static readonly string ModeAccurate = LemoineStrings.T("testing.placeDependentViews.modeAccurate");
-        private static readonly string ModeGrouped  = LemoineStrings.T("testing.placeDependentViews.modeGrouped");
-        private static readonly string ModeEstimate = LemoineStrings.T("testing.placeDependentViews.modeEstimate");
+        private static readonly string ModeAccurate = AppStrings.T("testing.placeDependentViews.modeAccurate");
+        private static readonly string ModeGrouped  = AppStrings.T("testing.placeDependentViews.modeGrouped");
+        private static readonly string ModeEstimate = AppStrings.T("testing.placeDependentViews.modeEstimate");
 
         /// <summary>Short label for the active layout mode, used in the review/summary rows.</summary>
-        private string LayoutLabel => _layoutMode == LayoutMode.Estimate ? LemoineStrings.T("testing.placeDependentViews.layoutLabel.estimate")
-                                    : _layoutMode == LayoutMode.Grouped  ? LemoineStrings.T("testing.placeDependentViews.layoutLabel.grouped")
-                                    : LemoineStrings.T("testing.placeDependentViews.layoutLabel.accurate");
+        private string LayoutLabel => _layoutMode == LayoutMode.Estimate ? AppStrings.T("testing.placeDependentViews.layoutLabel.estimate")
+                                    : _layoutMode == LayoutMode.Grouped  ? AppStrings.T("testing.placeDependentViews.layoutLabel.grouped")
+                                    : AppStrings.T("testing.placeDependentViews.layoutLabel.accurate");
         private double _trimInches    = 0.125;
         private double _marginTop     = 0.5;
         private double _marginBottom  = 0.5;
@@ -101,11 +101,11 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             List<ParentViewEntry>?           parents,
             List<ParentViewEntry>?           compositeCandidates,
             List<FamilySymbol>?              titleblocks,
-            LemoineBrowserTree?              browserTree = null)
+            BrowserTree?              browserTree = null)
         {
             _handler     = handler;
             _event       = externalEvent;
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
 
             _parents = (parents ?? new List<ParentViewEntry>())
                 .OrderBy(p => p.TypeLabel).ThenBy(p => p.Name).ToList();
@@ -139,7 +139,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 case "S2": return BuildS2();
                 case "S3": return BuildS3();
                 case "S4": return BuildS4();
-                case "S5": return null; // framework renders ILemoineReviewable
+                case "S5": return null; // framework renders IReviewableTool
                 default:   return null;
             }
         }
@@ -149,8 +149,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         {
             var outer = new StackPanel();
 
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secMode")));
-            var modeSelect = new LemoineSingleSelect();
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secMode")));
+            var modeSelect = new SingleSelect();
             modeSelect.Items = new List<string> { ModeDependents, ModeComposite };
             modeSelect.SelectedItem = _compositeMode ? ModeComposite : ModeDependents;
             outer.Children.Add(modeSelect);
@@ -175,8 +175,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         }
 
         private string ModeNoteText() => _compositeMode
-            ? LemoineStrings.T("testing.placeDependentViews.labels.modeNoteComposite")
-            : LemoineStrings.T("testing.placeDependentViews.labels.modeNoteDependents");
+            ? AppStrings.T("testing.placeDependentViews.labels.modeNoteComposite")
+            : AppStrings.T("testing.placeDependentViews.labels.modeNoteDependents");
 
         // Both modes pick views from the same Project-Browser tree; the mode only
         // changes which views are selectable and where the selection is mirrored.
@@ -185,12 +185,12 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             if (_compositeMode)
             {
                 if (_compositeCandidates.Count == 0)
-                    return Hint(LemoineStrings.T("testing.placeDependentViews.labels.hintNoComposite"));
+                    return Hint(AppStrings.T("testing.placeDependentViews.labels.hintNoComposite"));
 
-                var picker = new LemoineBrowserTreePicker
+                var picker = new BrowserTreePicker
                 {
                     Height         = 300,
-                    AccessibleName = LemoineStrings.T("testing.placeDependentViews.labels.pickerCompositeName"),
+                    AccessibleName = AppStrings.T("testing.placeDependentViews.labels.pickerCompositeName"),
                 };
                 // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
                 picker.SelectionChanged += ids =>
@@ -206,12 +206,12 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             else
             {
                 if (_parents.Count == 0)
-                    return Hint(LemoineStrings.T("testing.placeDependentViews.labels.hintNoParents"));
+                    return Hint(AppStrings.T("testing.placeDependentViews.labels.hintNoParents"));
 
-                var picker = new LemoineBrowserTreePicker
+                var picker = new BrowserTreePicker
                 {
                     Height         = 300,
-                    AccessibleName = LemoineStrings.T("testing.placeDependentViews.labels.pickerDependentsName"),
+                    AccessibleName = AppStrings.T("testing.placeDependentViews.labels.pickerDependentsName"),
                 };
                 // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
                 picker.SelectionChanged += ids =>
@@ -230,12 +230,12 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         private FrameworkElement BuildS2()
         {
             var outer = new StackPanel();
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secTitleBlock")));
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secTitleBlock")));
 
-            var sel = new LemoineSingleSelect();
+            var sel = new SingleSelect();
             sel.Items = _titleblockNames.Count > 0
                 ? _titleblockNames
-                : new List<string> { LemoineStrings.T("testing.placeDependentViews.labels.noTitleBlocks") };
+                : new List<string> { AppStrings.T("testing.placeDependentViews.labels.noTitleBlocks") };
             if (!string.IsNullOrEmpty(_selectedTitleblock)) sel.SelectedItem = _selectedTitleblock;
             sel.SelectionChanged += s => { _selectedTitleblock = s ?? ""; OnValidationChanged(); };
             outer.Children.Add(sel);
@@ -247,8 +247,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         {
             var outer = new StackPanel();
 
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secStartNumber")));
-            var numStepper = new LemoineInlineStepper
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secStartNumber")));
+            var numStepper = new InlineStepper
             {
                 Value = _startingNumber, MinValue = 1, MaxValue = 99999,
                 Step = 1, Decimals = 0, ValueWidth = 56,
@@ -258,51 +258,51 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             outer.Children.Add(numStepper);
 
             // ── Number prefix / suffix ────────────────────────────────────────
-            var prefixField = new LemoineTextField
+            var prefixField = new TextField
             {
-                Label = LemoineStrings.T("testing.placeDependentViews.labels.lblNumberPrefix"), Placeholder = LemoineStrings.T("testing.placeDependentViews.labels.phNumberPrefix"),
+                Label = AppStrings.T("testing.placeDependentViews.labels.lblNumberPrefix"), Placeholder = AppStrings.T("testing.placeDependentViews.labels.phNumberPrefix"),
                 Text = _numberPrefix, Margin = new Thickness(0, 14, 0, 0),
             };
             prefixField.TextChanged += t => { _numberPrefix = t ?? ""; OnValidationChanged(); };
             outer.Children.Add(prefixField);
 
-            var suffixField = new LemoineTextField
+            var suffixField = new TextField
             {
-                Label = LemoineStrings.T("testing.placeDependentViews.labels.lblNumberSuffix"), Placeholder = LemoineStrings.T("testing.placeDependentViews.labels.phNumberSuffix"),
+                Label = AppStrings.T("testing.placeDependentViews.labels.lblNumberSuffix"), Placeholder = AppStrings.T("testing.placeDependentViews.labels.phNumberSuffix"),
                 Text = _numberSuffix, Margin = new Thickness(0, 8, 0, 0),
             };
             suffixField.TextChanged += t => { _numberSuffix = t ?? ""; OnValidationChanged(); };
             outer.Children.Add(suffixField);
 
             // ── Naming pattern ────────────────────────────────────────────────
-            var patLabel = SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secNamingPattern"));
+            var patLabel = SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secNamingPattern"));
             patLabel.Margin = new Thickness(0, 14, 0, 4);
             outer.Children.Add(patLabel);
 
-            var tokenInput = new LemoineTokenInput(NamingTokens) { Text = _namingPattern };
+            var tokenInput = new TokenInput(NamingTokens) { Text = _namingPattern };
             tokenInput.TextChanged += (s, e) => { _namingPattern = tokenInput.Text; OnValidationChanged(); };
             outer.Children.Add(tokenInput);
 
             // ── Sheet series ──────────────────────────────────────────────────
-            var seriesField = new LemoineTextField
+            var seriesField = new TextField
             {
-                Label = LemoineStrings.T("testing.placeDependentViews.labels.lblSeriesValue"), Placeholder = LemoineStrings.T("testing.placeDependentViews.labels.phSeriesValue"),
+                Label = AppStrings.T("testing.placeDependentViews.labels.lblSeriesValue"), Placeholder = AppStrings.T("testing.placeDependentViews.labels.phSeriesValue"),
                 Text = _sheetSeries, Margin = new Thickness(0, 14, 0, 0),
             };
             seriesField.TextChanged += t => { _sheetSeries = t ?? ""; OnValidationChanged(); };
             outer.Children.Add(seriesField);
 
-            var seriesParamField = new LemoineTextField
+            var seriesParamField = new TextField
             {
-                Label = LemoineStrings.T("testing.placeDependentViews.labels.lblSeriesParam"), Placeholder = LemoineStrings.T("testing.placeDependentViews.labels.phSeriesParam"),
+                Label = AppStrings.T("testing.placeDependentViews.labels.lblSeriesParam"), Placeholder = AppStrings.T("testing.placeDependentViews.labels.phSeriesParam"),
                 Text = _seriesParamName, Margin = new Thickness(0, 8, 0, 0),
             };
             seriesParamField.TextChanged += t => { _seriesParamName = t ?? ""; OnValidationChanged(); };
             outer.Children.Add(seriesParamField);
-            outer.Children.Add(Note(LemoineStrings.T("testing.placeDependentViews.labels.noteSeries")));
+            outer.Children.Add(Note(AppStrings.T("testing.placeDependentViews.labels.noteSeries")));
 
             // ── Preview ───────────────────────────────────────────────────────
-            var prevLabel = SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secPreview"));
+            var prevLabel = SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secPreview"));
             prevLabel.Margin = new Thickness(0, 14, 0, 4);
             outer.Children.Add(prevLabel);
 
@@ -314,16 +314,16 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             var sample = _parents.FirstOrDefault();
             var placeholders = new Dictionary<string, string>
             {
-                ["ParentViewName"] = sample?.Name ?? LemoineStrings.T("testing.placeDependentViews.labels.previewSampleName"),
+                ["ParentViewName"] = sample?.Name ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleName"),
                 ["ViewType"]       = sample?.TypeLabel ?? "FloorPlan",
-                ["Level"]          = sample?.LevelName ?? LemoineStrings.T("testing.placeDependentViews.labels.previewSampleLevel"),
+                ["Level"]          = sample?.LevelName ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleLevel"),
                 ["SheetNumber"]    = _startingNumber.ToString(),
             };
             Action update = () =>
             {
                 string fullNumber = _numberPrefix + _startingNumber.ToString() + _numberSuffix;
                 placeholders["SheetNumber"] = fullNumber;
-                string name = LemoineTokenInput.Resolve(_namingPattern, placeholders);
+                string name = TokenInput.Resolve(_namingPattern, placeholders);
                 preview.Text = $"{fullNumber}   |   {name}";
             };
             update();
@@ -338,8 +338,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             var outer = new StackPanel();
 
             // ── Placement mode ────────────────────────────────────────────────
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secPlacementMode")));
-            var modeSelect = new LemoineSingleSelect();
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secPlacementMode")));
+            var modeSelect = new SingleSelect();
             modeSelect.Items = new List<string> { ModeAccurate, ModeGrouped, ModeEstimate };
             modeSelect.SelectedItem = _layoutMode == LayoutMode.Estimate ? ModeEstimate
                                     : _layoutMode == LayoutMode.Grouped  ? ModeGrouped
@@ -352,14 +352,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 OnValidationChanged();
             };
             outer.Children.Add(modeSelect);
-            outer.Children.Add(Note(LemoineStrings.T("testing.placeDependentViews.labels.notePlacement")));
+            outer.Children.Add(Note(AppStrings.T("testing.placeDependentViews.labels.notePlacement")));
 
             outer.Children.Add(Spaced(SeparatorLine(), 12));
 
             // Trim toggle
             var trim = new CheckBox
             {
-                Content   = LemoineStrings.T("testing.placeDependentViews.labels.optTrim"),
+                Content   = AppStrings.T("testing.placeDependentViews.labels.optTrim"),
                 IsChecked = _trimBubbles,
                 Margin    = new Thickness(0, 0, 0, 4),
             };
@@ -370,25 +370,25 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             trim.Unchecked += (s, e) => { _trimBubbles = false; OnValidationChanged(); };
             outer.Children.Add(trim);
 
-            outer.Children.Add(Note(LemoineStrings.T("testing.placeDependentViews.labels.noteTrim")));
+            outer.Children.Add(Note(AppStrings.T("testing.placeDependentViews.labels.noteTrim")));
 
-            outer.Children.Add(Spaced(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secTrimDistance")), 14));
+            outer.Children.Add(Spaced(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secTrimDistance")), 14));
             outer.Children.Add(Stepper(_trimInches, 0.0, 5.0, 0.0625, 3, v => _trimInches = v));
 
-            outer.Children.Add(Spaced(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secGap")), 14));
+            outer.Children.Add(Spaced(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secGap")), 14));
             outer.Children.Add(Stepper(_gapInches, 0.0, 12.0, 0.125, 3, v => _gapInches = v));
 
-            outer.Children.Add(Spaced(SectionLabel(LemoineStrings.T("testing.placeDependentViews.labels.secMargins")), 14));
+            outer.Children.Add(Spaced(SectionLabel(AppStrings.T("testing.placeDependentViews.labels.secMargins")), 14));
             var grid = new WpfGrid { Margin = new Thickness(0, 0, 0, 0) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             for (int r = 0; r < 2; r++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            AddMarginCell(grid, 0, 0, LemoineStrings.T("testing.placeDependentViews.labels.marginTop"),    _marginTop,    v => _marginTop = v);
-            AddMarginCell(grid, 0, 2, LemoineStrings.T("testing.placeDependentViews.labels.marginBottom"), _marginBottom, v => _marginBottom = v);
-            AddMarginCell(grid, 1, 0, LemoineStrings.T("testing.placeDependentViews.labels.marginLeft"),   _marginLeft,   v => _marginLeft = v);
-            AddMarginCell(grid, 1, 2, LemoineStrings.T("testing.placeDependentViews.labels.marginRight"),  _marginRight,  v => _marginRight = v);
+            AddMarginCell(grid, 0, 0, AppStrings.T("testing.placeDependentViews.labels.marginTop"),    _marginTop,    v => _marginTop = v);
+            AddMarginCell(grid, 0, 2, AppStrings.T("testing.placeDependentViews.labels.marginBottom"), _marginBottom, v => _marginBottom = v);
+            AddMarginCell(grid, 1, 0, AppStrings.T("testing.placeDependentViews.labels.marginLeft"),   _marginLeft,   v => _marginLeft = v);
+            AddMarginCell(grid, 1, 2, AppStrings.T("testing.placeDependentViews.labels.marginRight"),  _marginRight,  v => _marginRight = v);
             outer.Children.Add(grid);
 
             return outer;
@@ -408,9 +408,9 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             grid.Children.Add(sp);
         }
 
-        private LemoineInlineStepper Stepper(double value, double min, double max, double step, int decimals, Action<double> set)
+        private InlineStepper Stepper(double value, double min, double max, double step, int decimals, Action<double> set)
         {
-            var s = new LemoineInlineStepper
+            var s = new InlineStepper
             {
                 Value = value, MinValue = min, MaxValue = max, Step = step, Decimals = decimals,
                 ValueWidth = 56, HorizontalAlignment = HorizontalAlignment.Left,
@@ -419,16 +419,16 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             return s;
         }
 
-        // ── ILemoineReviewable ────────────────────────────────────────────────
+        // ── IReviewableTool ────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("mode",   LemoineStrings.T("testing.placeDependentViews.review.itemMode")),
-            ("views",  LemoineStrings.T("testing.placeDependentViews.review.itemViews")),
-            ("tb",     LemoineStrings.T("testing.placeDependentViews.review.itemTb")),
-            ("naming", LemoineStrings.T("testing.placeDependentViews.review.itemNaming")),
-            ("series", LemoineStrings.T("testing.placeDependentViews.review.itemSeries")),
-            ("trim",   LemoineStrings.T("testing.placeDependentViews.review.itemTrim")),
-            ("layout", LemoineStrings.T("testing.placeDependentViews.review.itemLayout")),
+            ("mode",   AppStrings.T("testing.placeDependentViews.review.itemMode")),
+            ("views",  AppStrings.T("testing.placeDependentViews.review.itemViews")),
+            ("tb",     AppStrings.T("testing.placeDependentViews.review.itemTb")),
+            ("naming", AppStrings.T("testing.placeDependentViews.review.itemNaming")),
+            ("series", AppStrings.T("testing.placeDependentViews.review.itemSeries")),
+            ("trim",   AppStrings.T("testing.placeDependentViews.review.itemTrim")),
+            ("layout", AppStrings.T("testing.placeDependentViews.review.itemLayout")),
         };
 
         private List<ElementId> ActiveSelection => _compositeMode ? _selectedCompositeIds : _selectedParentIds;
@@ -437,23 +437,23 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         {
             ["mode"]   = _compositeMode ? ModeComposite : ModeDependents,
             ["views"]  = ActiveSelection.Count == 0
-                ? LemoineStrings.T("testing.placeDependentViews.review.viewsNone")
-                : LemoineStrings.T("testing.placeDependentViews.review.viewsValue", ActiveSelection.Count),
+                ? AppStrings.T("testing.placeDependentViews.review.viewsNone")
+                : AppStrings.T("testing.placeDependentViews.review.viewsValue", ActiveSelection.Count),
             ["tb"]     = string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock,
-            ["naming"] = LemoineStrings.T("testing.placeDependentViews.review.namingValue", _numberPrefix, _startingNumber, _numberSuffix, _namingPattern),
+            ["naming"] = AppStrings.T("testing.placeDependentViews.review.namingValue", _numberPrefix, _startingNumber, _numberSuffix, _namingPattern),
             ["series"] = string.IsNullOrWhiteSpace(_sheetSeries)
                 ? "—"
-                : LemoineStrings.T("testing.placeDependentViews.review.seriesValue", _sheetSeries, _seriesParamName),
-            ["trim"]   = _trimBubbles ? LemoineStrings.T("testing.placeDependentViews.review.trimOn", _trimInches) : LemoineStrings.T("testing.placeDependentViews.review.trimOff"),
-            ["layout"] = LemoineStrings.T("testing.placeDependentViews.review.layoutValue", LayoutLabel, _gapInches, _marginTop, _marginBottom, _marginLeft, _marginRight),
+                : AppStrings.T("testing.placeDependentViews.review.seriesValue", _sheetSeries, _seriesParamName),
+            ["trim"]   = _trimBubbles ? AppStrings.T("testing.placeDependentViews.review.trimOn", _trimInches) : AppStrings.T("testing.placeDependentViews.review.trimOff"),
+            ["layout"] = AppStrings.T("testing.placeDependentViews.review.layoutValue", LayoutLabel, _gapInches, _marginTop, _marginBottom, _marginLeft, _marginRight),
         };
 
         public IList<string>? ReviewChips => null;
         public string?        ReviewNote  => _compositeMode
-            ? LemoineStrings.T("testing.placeDependentViews.review.noteComposite")
-            : LemoineStrings.T("testing.placeDependentViews.review.noteDependents");
+            ? AppStrings.T("testing.placeDependentViews.review.noteComposite")
+            : AppStrings.T("testing.placeDependentViews.review.noteDependents");
         public string?        ReviewWarning =>
-            _trimBubbles ? LemoineStrings.T("testing.placeDependentViews.review.warning") : null;
+            _trimBubbles ? AppStrings.T("testing.placeDependentViews.review.warning") : null;
 
         // ── Validation / summary ──────────────────────────────────────────────
         public bool IsValid(string stepId)
@@ -474,11 +474,11 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             {
                 case "S1": return ActiveSelection.Count == 0
                     ? "—"
-                    : LemoineStrings.T("testing.placeDependentViews.summaries.s1Value", ActiveSelection.Count, (_compositeMode ? LemoineStrings.T("testing.placeDependentViews.summaries.s1Composite") : LemoineStrings.T("testing.placeDependentViews.summaries.s1Dependents")));
+                    : AppStrings.T("testing.placeDependentViews.summaries.s1Value", ActiveSelection.Count, (_compositeMode ? AppStrings.T("testing.placeDependentViews.summaries.s1Composite") : AppStrings.T("testing.placeDependentViews.summaries.s1Dependents")));
                 case "S2": return string.IsNullOrEmpty(_selectedTitleblock) ? "—" : _selectedTitleblock;
-                case "S3": return LemoineStrings.T("testing.placeDependentViews.summaries.s3Value", _namingPattern, _startingNumber);
-                case "S4": return LemoineStrings.T("testing.placeDependentViews.summaries.s4Value", LayoutLabel, (_trimBubbles ? LemoineStrings.T("testing.placeDependentViews.summaries.s4Trim", _trimInches) : LemoineStrings.T("testing.placeDependentViews.summaries.s4NoTrim")), _gapInches);
-                case "S5": return LemoineStrings.T("testing.placeDependentViews.summaries.S5");
+                case "S3": return AppStrings.T("testing.placeDependentViews.summaries.s3Value", _namingPattern, _startingNumber);
+                case "S4": return AppStrings.T("testing.placeDependentViews.summaries.s4Value", LayoutLabel, (_trimBubbles ? AppStrings.T("testing.placeDependentViews.summaries.s4Trim", _trimInches) : AppStrings.T("testing.placeDependentViews.summaries.s4NoTrim")), _gapInches);
+                case "S5": return AppStrings.T("testing.placeDependentViews.summaries.S5");
                 default:   return "—";
             }
         }

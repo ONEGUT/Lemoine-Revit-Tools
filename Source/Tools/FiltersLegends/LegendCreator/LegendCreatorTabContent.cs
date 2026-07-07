@@ -1,5 +1,5 @@
 using System.Windows;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.FiltersLegends.LegendCreator
@@ -9,14 +9,14 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
     ///
     /// Lifecycle:
     ///   - BuildContent(owner): called once when the user switches to the tab.
-    ///     Constructs a LemoineLegendBuilder, hands it a deep copy of Legends[0],
+    ///     Constructs a LegendBuilder, hands it a deep copy of Legends[0],
     ///     and stashes a reference so Apply() can read the editing buffer back out.
     ///   - Apply(): the global Apply button calls this. Pushes the editing buffer
     ///     into Legends[0] and saves.
     /// </summary>
     public static class LegendCreatorTabContent
     {
-        private static LemoineLegendBuilder? _builder;
+        private static LegendBuilder? _builder;
         private static string? _entryId;
 
         public static UIElement BuildContent(Window owner)
@@ -34,7 +34,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             }
             _entryId = entry.Id;
 
-            _builder = new LemoineLegendBuilder();
+            _builder = new LegendBuilder();
             _builder.LoadFrom(entry);
             return _builder;
         }

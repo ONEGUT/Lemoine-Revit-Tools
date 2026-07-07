@@ -5,7 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -55,7 +55,7 @@ namespace LemoineTools.Commands
                             hostFolder = Path.GetDirectoryName(doc.PathName);
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksCommand: read host folder", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinksCommand: read host folder", ex); }
 
                 return new UpgradeLinksViewModel(
                     App.UpgradeLinksScanHandler, App.UpgradeLinksScanEvent,

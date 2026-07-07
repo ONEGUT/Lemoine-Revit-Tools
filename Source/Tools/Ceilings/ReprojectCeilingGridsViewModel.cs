@@ -4,18 +4,18 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ReprojectCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ReprojectCeilingGridsViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "curves";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
         // ── Ceiling plan view entry passed in from Command ────────────────────
         public sealed class CeilingPlanViewEntry
@@ -32,19 +32,19 @@ namespace LemoineTools.Tools.Ceilings
             }
         }
 
-        // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("ceilings.reprojectGrids.title");
-        public string RunLabel => LemoineStrings.T("ceilings.reprojectGrids.runLabel");
+        // ── IStepFlowTool identity ─────────────────────────────────────────────
+        public string Title    => AppStrings.T("ceilings.reprojectGrids.title");
+        public string RunLabel => AppStrings.T("ceilings.reprojectGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("ceilings.reprojectGrids.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("ceilings.reprojectGrids.steps.S2"),         required: false),
+            new StepDefinition("S1", AppStrings.T("ceilings.reprojectGrids.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("ceilings.reprojectGrids.steps.S2"),         required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
         private readonly List<CeilingPlanViewEntry>         _availableViews;
-        private readonly LemoineBrowserTree                 _browserTree;
+        private readonly BrowserTree                 _browserTree;
         private          List<ElementId>                    _selectedViewIds = new List<ElementId>();
 
         public event EventHandler? ValidationChanged;
@@ -68,12 +68,12 @@ namespace LemoineTools.Tools.Ceilings
             CeilingGridEventHandler handler,
             Autodesk.Revit.UI.ExternalEvent externalEvent,
             List<CeilingPlanViewEntry>? availableViews,
-            LemoineBrowserTree? browserTree = null)
+            BrowserTree? browserTree = null)
         {
             _handler        = handler;
             _event          = externalEvent;
             _availableViews = availableViews ?? new List<CeilingPlanViewEntry>();
-            _browserTree    = browserTree ?? new LemoineBrowserTree();
+            _browserTree    = browserTree ?? new BrowserTree();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -82,7 +82,7 @@ namespace LemoineTools.Tools.Ceilings
         public FrameworkElement? GetStepContent(string stepId)
         {
             if (stepId == "S1") return BuildS1();
-            if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
+            if (stepId == "S2") return null; // framework renders review (IReviewableTool)
             return null;
         }
 
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var none = new TextBlock
                 {
-                    Text         = LemoineStrings.T("ceilings.reprojectGrids.labels.noViews"),
+                    Text         = AppStrings.T("ceilings.reprojectGrids.labels.noViews"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                 };
@@ -105,10 +105,10 @@ namespace LemoineTools.Tools.Ceilings
                 return outer;
             }
 
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("ceilings.reprojectGrids.labels.pickerName"),
+                AccessibleName = AppStrings.T("ceilings.reprojectGrids.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -123,7 +123,7 @@ namespace LemoineTools.Tools.Ceilings
 
             var warning = new TextBlock
             {
-                Text         = LemoineStrings.T("ceilings.reprojectGrids.labels.warning"),
+                Text         = AppStrings.T("ceilings.reprojectGrids.labels.warning"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 10, 0, 0),
             };
@@ -137,25 +137,25 @@ namespace LemoineTools.Tools.Ceilings
 
         // ─────────────────────────────────────────────────────────────────────
 
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views",  LemoineStrings.T("ceilings.reprojectGrids.review.itemViews")),
-            ("target", LemoineStrings.T("ceilings.reprojectGrids.review.itemTarget")),
-            ("op",     LemoineStrings.T("ceilings.reprojectGrids.review.itemOp")),
-            ("output", LemoineStrings.T("ceilings.reprojectGrids.review.itemOutput")),
+            ("views",  AppStrings.T("ceilings.reprojectGrids.review.itemViews")),
+            ("target", AppStrings.T("ceilings.reprojectGrids.review.itemTarget")),
+            ("op",     AppStrings.T("ceilings.reprojectGrids.review.itemOp")),
+            ("output", AppStrings.T("ceilings.reprojectGrids.review.itemOutput")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]  = _selectedViewIds.Count == 0 ? LemoineStrings.T("ceilings.reprojectGrids.review.viewsNone") : LemoineStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count),
-            ["target"] = LemoineStrings.T("ceilings.reprojectGrids.review.target"),
-            ["op"]     = LemoineStrings.T("ceilings.reprojectGrids.review.op"),
-            ["output"] = LemoineStrings.T("ceilings.reprojectGrids.review.output"),
+            ["views"]  = _selectedViewIds.Count == 0 ? AppStrings.T("ceilings.reprojectGrids.review.viewsNone") : AppStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count),
+            ["target"] = AppStrings.T("ceilings.reprojectGrids.review.target"),
+            ["op"]     = AppStrings.T("ceilings.reprojectGrids.review.op"),
+            ["output"] = AppStrings.T("ceilings.reprojectGrids.review.output"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("ceilings.reprojectGrids.review.note");
+        public string?        ReviewNote    => AppStrings.T("ceilings.reprojectGrids.review.note");
         public string?        ReviewWarning => null;
 
         // ═════════════════════════════════════════════════════════════════════
@@ -174,8 +174,8 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (stepId == "S1")
                 return _selectedViewIds.Count == 0 ? "—"
-                    : LemoineStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count);
-            if (stepId == "S2") return LemoineStrings.T("ceilings.reprojectGrids.summaries.S2");
+                    : AppStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count);
+            if (stepId == "S2") return AppStrings.T("ceilings.reprojectGrids.summaries.S2");
             return "—";
         }
 
@@ -194,7 +194,7 @@ namespace LemoineTools.Tools.Ceilings
             _handler.OnProgress     = onProgress;
             _handler.OnComplete     = onComplete;
 
-            pushLog(LemoineStrings.T("ceilings.reprojectGrids.log.raising"), "info");
+            pushLog(AppStrings.T("ceilings.reprojectGrids.log.raising"), "info");
             _event.Raise();
         }
     }

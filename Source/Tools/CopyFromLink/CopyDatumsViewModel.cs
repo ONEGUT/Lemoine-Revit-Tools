@@ -4,8 +4,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -14,15 +14,15 @@ namespace LemoineTools.Tools.CopyFromLink
     /// transform applied). A grid or level whose name already exists in the host is hidden from
     /// the list and skipped at run time, because Revit enforces unique names for both.
     /// </summary>
-    public class CopyDatumsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public class CopyDatumsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
-        public string Title    => LemoineStrings.T("copy.datums.title");
-        public string RunLabel => LemoineStrings.T("copy.datums.runLabel");
+        public string Title    => AppStrings.T("copy.datums.title");
+        public string RunLabel => AppStrings.T("copy.datums.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("source", LemoineStrings.T("copy.datums.steps.source"), required: true),
-            new StepDefinition("run",    LemoineStrings.T("copy.datums.steps.run"),        required: false),
+            new StepDefinition("source", AppStrings.T("copy.datums.steps.source"), required: true),
+            new StepDefinition("run",    AppStrings.T("copy.datums.steps.run"),        required: false),
         };
 
         private readonly CopyDatumsRunHandler? _runHandler;
@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.CopyFromLink
         private long _linkId;
         // Display name → element id, kept separate per kind. A level whose name collides with a
         // grid's name in the same link is suffixed " (Level)" in the tab list — the underlying
-        // LemoineMultiSelectTabs tracks selection as one flat set of display strings across every
+        // MultiSelectTabs tracks selection as one flat set of display strings across every
         // group tab, so two different elements can never safely share one display string.
         private readonly Dictionary<string, long> _gridDisplayToId  = new Dictionary<string, long>();
         private readonly Dictionary<string, long> _levelDisplayToId = new Dictionary<string, long>();
@@ -73,12 +73,12 @@ namespace LemoineTools.Tools.CopyFromLink
             var outer = new StackPanel();
             if (_links.Count == 0)
             {
-                outer.Children.Add(Dim(LemoineStrings.T("copy.datums.labels.noLinks")));
+                outer.Children.Add(Dim(AppStrings.T("copy.datums.labels.noLinks")));
                 return outer;
             }
 
-            outer.Children.Add(Label(LemoineStrings.T("copy.datums.labels.sourceLink")));
-            var linkSelect = new LemoineSingleSelect
+            outer.Children.Add(Label(AppStrings.T("copy.datums.labels.sourceLink")));
+            var linkSelect = new SingleSelect
             {
                 Items        = _links.Select(l => l.Name).ToList(),
                 SelectedItem = _links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? _links[0].Name,
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.CopyFromLink
             outer.Children.Add(linkSelect);
 
             Divider(outer);
-            outer.Children.Add(Label(LemoineStrings.T("copy.datums.labels.datumsToCopy")));
+            outer.Children.Add(Label(AppStrings.T("copy.datums.labels.datumsToCopy")));
             _datumContainer = new StackPanel();
             outer.Children.Add(_datumContainer);
             RebuildDatums();
@@ -117,8 +117,8 @@ namespace LemoineTools.Tools.CopyFromLink
             if (copyableGrids.Count == 0 && copyableLevels.Count == 0)
             {
                 _datumContainer.Children.Add(Dim(existing > 0
-                    ? LemoineStrings.T("copy.datums.labels.allExist", existing)
-                    : LemoineStrings.T("copy.datums.labels.noDatums")));
+                    ? AppStrings.T("copy.datums.labels.allExist", existing)
+                    : AppStrings.T("copy.datums.labels.noDatums")));
                 return;
             }
 
@@ -130,12 +130,12 @@ namespace LemoineTools.Tools.CopyFromLink
             foreach (var lvl in copyableLevels)
             {
                 string display = gridNames.Contains(lvl.Name)
-                    ? LemoineStrings.T("copy.datums.labels.levelNameCollision", lvl.Name)
+                    ? AppStrings.T("copy.datums.labels.levelNameCollision", lvl.Name)
                     : lvl.Name;
                 _levelDisplayToId[display] = lvl.ElemId;
             }
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += sel =>
             {
                 _selectedGridIds  = new HashSet<long>(sel.Where(_gridDisplayToId.ContainsKey).Select(n => _gridDisplayToId[n]));
@@ -148,34 +148,34 @@ namespace LemoineTools.Tools.CopyFromLink
             if (_gridDisplayToId.Count > 0)
             {
                 var names = _gridDisplayToId.Keys.ToList();
-                groups[LemoineStrings.T("copy.datums.labels.gridsTab")] = names;
+                groups[AppStrings.T("copy.datums.labels.gridsTab")] = names;
                 allDisplay.AddRange(names);
             }
             if (_levelDisplayToId.Count > 0)
             {
                 var names = _levelDisplayToId.Keys.ToList();
-                groups[LemoineStrings.T("copy.datums.labels.levelsTab")] = names;
+                groups[AppStrings.T("copy.datums.labels.levelsTab")] = names;
                 allDisplay.AddRange(names);
             }
             tabs.SetGroups(groups, allDisplay);  // default: copy all
             _datumContainer.Children.Add(tabs);
 
             if (existing > 0)
-                _datumContainer.Children.Add(Dim(LemoineStrings.T("copy.datums.labels.someHidden", existing)));
+                _datumContainer.Children.Add(Dim(AppStrings.T("copy.datums.labels.someHidden", existing)));
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("link", LemoineStrings.T("copy.datums.review.itemLink")), ("datums", LemoineStrings.T("copy.datums.review.itemDatums")),
+            ("link", AppStrings.T("copy.datums.review.itemLink")), ("datums", AppStrings.T("copy.datums.review.itemDatums")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["link"]   = _links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "—",
             ["datums"] = _selectedGridIds.Count == 0 && _selectedLevelIds.Count == 0
-                ? LemoineStrings.T("copy.datums.review.datumsNone")
-                : LemoineStrings.T("copy.datums.review.datumsValue", _selectedGridIds.Count, _selectedLevelIds.Count),
+                ? AppStrings.T("copy.datums.review.datumsNone")
+                : AppStrings.T("copy.datums.review.datumsValue", _selectedGridIds.Count, _selectedLevelIds.Count),
         };
 
         public IList<string>? ReviewChips   => null;
@@ -191,15 +191,15 @@ namespace LemoineTools.Tools.CopyFromLink
                 case "source":
                     int total = _selectedGridIds.Count + _selectedLevelIds.Count;
                     return total == 0 ? "—"
-                        : LemoineStrings.T("copy.datums.summaries.source", (_links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "link"), total);
-                case "run": return LemoineStrings.T("copy.datums.summaries.run");
+                        : AppStrings.T("copy.datums.summaries.source", (_links.FirstOrDefault(l => l.LinkInstId == _linkId)?.Name ?? "link"), total);
+                case "run": return AppStrings.T("copy.datums.summaries.run");
                 default:    return "—";
             }
         }
 
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog(LemoineStrings.T("copy.datums.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null) { pushLog(AppStrings.T("copy.datums.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
 
             _runHandler.LinkInstId   = _linkId;
             _runHandler.GridElemIds  = _selectedGridIds.ToList();
@@ -208,7 +208,7 @@ namespace LemoineTools.Tools.CopyFromLink
             _runHandler.OnProgress   = onProgress;
             _runHandler.OnComplete   = onComplete;
 
-            pushLog(LemoineStrings.T("copy.datums.log.raising"), "info");
+            pushLog(AppStrings.T("copy.datums.log.raising"), "info");
             _runEvent.Raise();
         }
 

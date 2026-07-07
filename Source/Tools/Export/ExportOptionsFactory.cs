@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.BulkExport
             try { opts.ConvertLinkedCADFormats = n.ConvertLinkedCad; }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("Export: NWC ConvertLinkedCADFormats unsupported by this API", ex);
+                DiagnosticsLog.Swallowed("Export: NWC ConvertLinkedCADFormats unsupported by this API", ex);
                 if (n.ConvertLinkedCad)
                     pushLog?.Invoke("NWC: ConvertLinkedCADFormats is not supported by this Revit/Navisworks version — setting ignored.", "warn");
             }

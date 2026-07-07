@@ -7,15 +7,15 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfVisibility = System.Windows.Visibility;
 
 namespace LemoineTools.Tools.AutoFilters
 {
     // =========================================================================
-    // DiscoverViewModel — ILemoineTool + ILemoineNavigable + ILemoineStepConfirmable
+    // DiscoverViewModel — IStepFlowTool + IStepNavigable + IStepConfirmable
     //
     // Step flow:
     //   S1  Select which loaded Revit links to scan (one trade per link)
@@ -25,11 +25,11 @@ namespace LemoineTools.Tools.AutoFilters
     //   S5  Summary card + Confirm triggers DiscoverEventHandler (Commit)
     // =========================================================================
 
-    public class DiscoverViewModel : ILemoineTool, ILemoineNavigable, ILemoineStepConfirmable, ILemoineRunResult, ILemoineToolCleanup
+    public class DiscoverViewModel : IStepFlowTool, IStepNavigable, IStepConfirmable, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "rules";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
         // ── Nested types ──────────────────────────────────────────────────────
 
@@ -84,18 +84,18 @@ namespace LemoineTools.Tools.AutoFilters
             public List<string> BuiltInCategories { get; set; } = new List<string>();
         }
 
-        // ── ILemoineTool identity ─────────────────────────────────────────────
+        // ── IStepFlowTool identity ─────────────────────────────────────────────
 
-        public string Title    => LemoineStrings.T("autofilters.discover.title");
-        public string RunLabel => LemoineStrings.T("autofilters.discover.runLabel");
+        public string Title    => AppStrings.T("autofilters.discover.title");
+        public string RunLabel => AppStrings.T("autofilters.discover.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("autofilters.discover.steps.S1"),     required: true),
-            new StepDefinition("S2", LemoineStrings.T("autofilters.discover.steps.S2"),  required: true),
-            new StepDefinition("S3", LemoineStrings.T("autofilters.discover.steps.S3"),         required: true),
-            new StepDefinition("S4", LemoineStrings.T("autofilters.discover.steps.S4"),     required: true),
-            new StepDefinition("S5", LemoineStrings.T("autofilters.discover.steps.S5"), required: false),
+            new StepDefinition("S1", AppStrings.T("autofilters.discover.steps.S1"),     required: true),
+            new StepDefinition("S2", AppStrings.T("autofilters.discover.steps.S2"),  required: true),
+            new StepDefinition("S3", AppStrings.T("autofilters.discover.steps.S3"),         required: true),
+            new StepDefinition("S4", AppStrings.T("autofilters.discover.steps.S4"),     required: true),
+            new StepDefinition("S5", AppStrings.T("autofilters.discover.steps.S5"), required: false),
         };
 
         public event EventHandler?     ValidationChanged;
@@ -120,8 +120,8 @@ namespace LemoineTools.Tools.AutoFilters
             }
         }
 
-        // ── ILemoineStepConfirmable ────────────────────────────────────────────
-        public string? ConfirmLabelFor(string stepId) => stepId == "S2" ? LemoineStrings.T("autofilters.discover.labels.confirmS2") : null;
+        // ── IStepConfirmable ────────────────────────────────────────────
+        public string? ConfirmLabelFor(string stepId) => stepId == "S2" ? AppStrings.T("autofilters.discover.labels.confirmS2") : null;
         public void OnStepConfirm(string stepId) { if (stepId == "S2") StartScan(); }
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ namespace LemoineTools.Tools.AutoFilters
         private StackPanel? _s4Panel;
 
         // S5 confirm UI
-        private LemoineReviewSummary? _s5Review;
+        private ReviewSummary? _s5Review;
 
         // S2 single-expand accordion: one open card at a time
         private readonly List<(Action Open, Action Close)> _cardActions
@@ -229,16 +229,16 @@ namespace LemoineTools.Tools.AutoFilters
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = 320,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
 
             var sp = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
             sp.Children.Add(MakeNote(
-                LemoineStrings.T("autofilters.discover.labels.noteS1")));
+                AppStrings.T("autofilters.discover.labels.noteS1")));
 
             if (_links.Count == 0)
             {
-                sp.Children.Add(new LemoineWarnBanner(
-                    LemoineStrings.T("autofilters.discover.labels.noLinks")));
+                sp.Children.Add(new WarnBanner(
+                    AppStrings.T("autofilters.discover.labels.noLinks")));
             }
             else
             {
@@ -299,7 +299,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             var tradeLbl = new TextBlock
             {
-                Text              = LemoineStrings.T("autofilters.discover.labels.trade"),
+                Text              = AppStrings.T("autofilters.discover.labels.trade"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(8, 0, 6, 0),
             };
@@ -345,7 +345,7 @@ namespace LemoineTools.Tools.AutoFilters
         {
             var root = new StackPanel();
             root.Children.Add(MakeNote(
-                LemoineStrings.T("autofilters.discover.labels.noteS2")));
+                AppStrings.T("autofilters.discover.labels.noteS2")));
 
             var sv = new ScrollViewer
             {
@@ -354,7 +354,7 @@ namespace LemoineTools.Tools.AutoFilters
                 MaxHeight = 420,
                 Margin    = new Thickness(0, 0, 0, 8),
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
 
             _s2CardsStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
             RebuildS2Cards();
@@ -375,8 +375,8 @@ namespace LemoineTools.Tools.AutoFilters
             var selectedLinks = _links.Where(l => l.IsSelected).ToList();
             if (selectedLinks.Count == 0)
             {
-                _s2CardsStack.Children.Add(new LemoineWarnBanner(
-                    LemoineStrings.T("autofilters.discover.labels.noLinksSelected")));
+                _s2CardsStack.Children.Add(new WarnBanner(
+                    AppStrings.T("autofilters.discover.labels.noLinksSelected")));
                 return;
             }
 
@@ -453,14 +453,14 @@ namespace LemoineTools.Tools.AutoFilters
             var body      = new Border { Padding = new Thickness(10, 8, 10, 8) };
             var bodyStack = new StackPanel();
 
-            var catTabs = new LemoineMultiSelectTabs { MaxHeight = 200, Hierarchy = AutoFiltersSettings.CategorySubcategories };
+            var catTabs = new MultiSelectTabs { MaxHeight = 200, Hierarchy = AutoFiltersSettings.CategorySubcategories };
             // Scroll-wheel handling is global (OnScrollViewerWheel) and MultiSelectTabs already wires
             // its own inner scrollers — no per-call-site wiring needed here.
 
             var configPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-            configPanel.Children.Add(MakeNote(LemoineStrings.T("autofilters.discover.labels.selectCats")));
+            configPanel.Children.Add(MakeNote(AppStrings.T("autofilters.discover.labels.selectCats")));
 
-            // Subscribe BEFORE SetGroups (LemoineMultiSelectTabs contract: SetGroups fires
+            // Subscribe BEFORE SetGroups (MultiSelectTabs contract: SetGroups fires
             // SelectionChanged once at the end). Re-building S2 cards on any S1 toggle must
             // restore each link's prior selection — pass link.SelectedCategories as the
             // initial selection so configured links don't get silently cleared.
@@ -557,13 +557,13 @@ namespace LemoineTools.Tools.AutoFilters
                     // A curated S2 group label that the live document's category map doesn't
                     // expose (version-specific name, or a non-builtin category): no config row
                     // can be built, so the user's pick would silently vanish. Surface it.
-                    LemoineLog.Warn("AutoFilters.Discover",
+                    DiagnosticsLog.Warn("AutoFilters.Discover",
                         $"Category '{catLabel}' has no filterable OST mapping in this document — skipped.");
             }
 
             if (link.ConfigRows.Count == 0)
             {
-                configPanel.Children.Add(MakeNote(LemoineStrings.T("autofilters.discover.labels.selectCats")));
+                configPanel.Children.Add(MakeNote(AppStrings.T("autofilters.discover.labels.selectCats")));
             }
             else
             {
@@ -597,8 +597,8 @@ namespace LemoineTools.Tools.AutoFilters
                 WpfGrid.SetColumn(tb, col);
                 g.Children.Add(tb);
             }
-            H(LemoineStrings.T("autofilters.discover.labels.colCategory"),  0);
-            H(LemoineStrings.T("autofilters.discover.labels.colParameter"), 1);
+            H(AppStrings.T("autofilters.discover.labels.colCategory"),  0);
+            H(AppStrings.T("autofilters.discover.labels.colParameter"), 1);
             border.Child = g;
             return border;
         }
@@ -633,7 +633,7 @@ namespace LemoineTools.Tools.AutoFilters
             g.Children.Add(catLbl);
 
             // "Whole Category" pinned as first item; rest are the available params
-            var comboItems = new List<string> { LemoineStrings.T("autofilters.discover.labels.wholeCategory") };
+            var comboItems = new List<string> { AppStrings.T("autofilters.discover.labels.wholeCategory") };
             comboItems.AddRange(row.AvailableParams);
 
             int initialIndex = row.Mode == "WholeCategory"
@@ -651,7 +651,7 @@ namespace LemoineTools.Tools.AutoFilters
             paramCombo.SetResourceReference(ComboBox.FontSizeProperty,    "LemoineFS_SM");
             paramCombo.SetResourceReference(ComboBox.FontFamilyProperty,  "LemoineUiFont");
             paramCombo.SetResourceReference(ComboBox.BorderBrushProperty, "LemoineBorder");
-            LemoineControlStyles.WireComboWheelBubbling(paramCombo); // don't eat page scroll when closed
+            ControlStyles.WireComboWheelBubbling(paramCombo); // don't eat page scroll when closed
             WpfGrid.SetColumn(paramCombo, 1);
             g.Children.Add(paramCombo);
 
@@ -678,7 +678,7 @@ namespace LemoineTools.Tools.AutoFilters
                     infoTb.Visibility = WpfVisibility.Visible;
                     infoTb.Text       = row.IsKnownSafe ? "" : "ⓘ";
                     infoTb.ToolTip    = row.IsKnownSafe ? null
-                        : (object)LemoineStrings.T("autofilters.discover.labels.paramWarnTip");
+                        : (object)AppStrings.T("autofilters.discover.labels.paramWarnTip");
                 }
             }
             UpdateInfoTb();
@@ -688,7 +688,7 @@ namespace LemoineTools.Tools.AutoFilters
                 var sel = paramCombo.SelectedItem as string;
                 if (sel == null) return;
 
-                if (sel == LemoineStrings.T("autofilters.discover.labels.wholeCategory"))
+                if (sel == AppStrings.T("autofilters.discover.labels.wholeCategory"))
                 {
                     row.Mode = "WholeCategory";
                 }
@@ -719,7 +719,7 @@ namespace LemoineTools.Tools.AutoFilters
                 if (_s4Panel != null)
                 {
                     _s4Panel.Children.Clear();
-                    _s4Panel.Children.Add(MakeNote(LemoineStrings.T("autofilters.discover.labels.noRules")));
+                    _s4Panel.Children.Add(MakeNote(AppStrings.T("autofilters.discover.labels.noRules")));
                 }
                 UpdateS5Summary();
             }
@@ -748,7 +748,7 @@ namespace LemoineTools.Tools.AutoFilters
             if (_s3Progress != null) _s3Progress.Value = 0;
             if (_s3StatusTb != null)
             {
-                _s3StatusTb.Text = LemoineStrings.T("autofilters.discover.status.scanning");
+                _s3StatusTb.Text = AppStrings.T("autofilters.discover.status.scanning");
                 _s3StatusTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
             }
 
@@ -788,8 +788,8 @@ namespace LemoineTools.Tools.AutoFilters
                 if (_s3StatusTb != null)
                 {
                     _s3StatusTb.Text = _scanComplete
-                        ? LemoineStrings.T("autofilters.discover.status.scanCompleteFound", results.Count)
-                        : LemoineStrings.T("autofilters.discover.status.scanCompleteNone");
+                        ? AppStrings.T("autofilters.discover.status.scanCompleteFound", results.Count)
+                        : AppStrings.T("autofilters.discover.status.scanCompleteNone");
                     _s3StatusTb.SetResourceReference(TextBlock.ForegroundProperty,
                         _scanComplete ? "LemoineGreen" : "LemoineRed");
                 }
@@ -813,7 +813,7 @@ namespace LemoineTools.Tools.AutoFilters
 
             _s3StatusTb = new TextBlock
             {
-                Text   = LemoineStrings.T("autofilters.discover.status.waiting"),
+                Text   = AppStrings.T("autofilters.discover.status.waiting"),
                 Margin = new Thickness(0, 0, 0, 8),
             };
             _s3StatusTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
@@ -840,7 +840,7 @@ namespace LemoineTools.Tools.AutoFilters
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = 260,
             };
-            LemoineControlStyles.WireBubblingScroll(_s3LogScroll);
+            ControlStyles.WireBubblingScroll(_s3LogScroll);
             _s3LogStack          = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
             _s3LogScroll.Content = _s3LogStack;
             root.Children.Add(_s3LogScroll);
@@ -878,7 +878,7 @@ namespace LemoineTools.Tools.AutoFilters
         private void UpdateScanProgress(int pct)
         {
             if (_s3Progress != null) _s3Progress.Value = pct;
-            if (_s3StatusTb != null) _s3StatusTb.Text  = LemoineStrings.T("autofilters.discover.status.scanningPct", pct);
+            if (_s3StatusTb != null) _s3StatusTb.Text  = AppStrings.T("autofilters.discover.status.scanningPct", pct);
         }
 
         // ── S4 — Review Rules ─────────────────────────────────────────────────
@@ -886,7 +886,7 @@ namespace LemoineTools.Tools.AutoFilters
         private FrameworkElement BuildS4()
         {
             _s4Panel = new StackPanel();
-            _s4Panel.Children.Add(MakeNote(LemoineStrings.T("autofilters.discover.labels.noRules")));
+            _s4Panel.Children.Add(MakeNote(AppStrings.T("autofilters.discover.labels.noRules")));
             return _s4Panel;
         }
 
@@ -952,13 +952,13 @@ namespace LemoineTools.Tools.AutoFilters
 
             if (_discoveredRules.Count == 0)
             {
-                _s4Panel.Children.Add(new LemoineWarnBanner(
-                    LemoineStrings.T("autofilters.discover.labels.noRulesFound")));
+                _s4Panel.Children.Add(new WarnBanner(
+                    AppStrings.T("autofilters.discover.labels.noRulesFound")));
                 return;
             }
 
             _s4Panel.Children.Add(MakeNote(
-                LemoineStrings.T("autofilters.discover.labels.rulesDiscovered", _discoveredRules.Count)));
+                AppStrings.T("autofilters.discover.labels.rulesDiscovered", _discoveredRules.Count)));
 
             var byTrade = _discoveredRules
                 .GroupBy(r => r.TradeName, StringComparer.OrdinalIgnoreCase)
@@ -970,7 +970,7 @@ namespace LemoineTools.Tools.AutoFilters
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = 380,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
             var cardStack = new StackPanel { Margin = new Thickness(0, 0, 8, 0) };
 
             for (int i = 0; i < byTrade.Count; i++)
@@ -1126,9 +1126,9 @@ namespace LemoineTools.Tools.AutoFilters
             }
             H("",          0);
             H("",          1);
-            H(LemoineStrings.T("autofilters.discover.labels.colRuleName"), 2);
-            H(LemoineStrings.T("autofilters.discover.labels.colCategory"),  3);
-            H(LemoineStrings.T("autofilters.discover.labels.colCount"),     4);
+            H(AppStrings.T("autofilters.discover.labels.colRuleName"), 2);
+            H(AppStrings.T("autofilters.discover.labels.colCategory"),  3);
+            H(AppStrings.T("autofilters.discover.labels.colCount"),     4);
             border.Child = g;
             return border;
         }
@@ -1162,7 +1162,7 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(cb, 0);
             g.Children.Add(cb);
 
-            var swatchPanel = LemoineColorPickerWindow.BuildColorPickerSwatch(
+            var swatchPanel = ColorPickerWindow.BuildColorPickerSwatch(
                 getHex: () => rule.HexColor,
                 setHex: hex => { rule.HexColor = hex; },
                 showHexLabel: false);
@@ -1170,7 +1170,7 @@ namespace LemoineTools.Tools.AutoFilters
             WpfGrid.SetColumn(swatchPanel, 1);
             g.Children.Add(swatchPanel);
 
-            var nameEdit = new LemoineInlineEdit
+            var nameEdit = new InlineEdit
             {
                 Text              = rule.RuleName,
                 FontSizeKey       = "LemoineFS_SM",
@@ -1214,7 +1214,7 @@ namespace LemoineTools.Tools.AutoFilters
         private FrameworkElement BuildS5()
         {
             var sp = new StackPanel();
-            _s5Review = new LemoineReviewSummary { Margin = new Thickness(0, 0, 0, 12) };
+            _s5Review = new ReviewSummary { Margin = new Thickness(0, 0, 0, 12) };
             sp.Children.Add(_s5Review);
 
             // When a create handler is available, offer to build the filter elements
@@ -1222,14 +1222,14 @@ namespace LemoineTools.Tools.AutoFilters
             // instead of a "now go run Auto Filters" instruction.
             if (_createHandler != null && _createEvent != null)
             {
-                var toggles = new LemoineToggleSwitches();
+                var toggles = new ToggleSwitches();
                 toggles.SetItems(new List<ToggleItem>
                 {
                     new ToggleItem
                     {
                         Id        = "create",
-                        Label     = LemoineStrings.T("autofilters.discover.labels.createLabel"),
-                        Desc      = LemoineStrings.T("autofilters.discover.labels.createDesc"),
+                        Label     = AppStrings.T("autofilters.discover.labels.createLabel"),
+                        Desc      = AppStrings.T("autofilters.discover.labels.createDesc"),
                         DefaultOn = _createAfterCommit,
                     },
                 }, new Dictionary<string, bool> { ["create"] = _createAfterCommit });
@@ -1241,8 +1241,8 @@ namespace LemoineTools.Tools.AutoFilters
             }
             else
             {
-                sp.Children.Add(new LemoineWarnBanner(
-                    LemoineStrings.T("autofilters.discover.labels.noCreateWarn"),
+                sp.Children.Add(new WarnBanner(
+                    AppStrings.T("autofilters.discover.labels.noCreateWarn"),
                     bottomMargin: 0));
             }
             return sp;
@@ -1257,10 +1257,10 @@ namespace LemoineTools.Tools.AutoFilters
 
             var items = new List<(string id, string label)>
             {
-                ("total",   LemoineStrings.T("autofilters.discover.review.itemTotal")),
-                ("include", LemoineStrings.T("autofilters.discover.review.itemInclude")),
-                ("skip",    LemoineStrings.T("autofilters.discover.review.itemSkip")),
-                ("trades",  LemoineStrings.T("autofilters.discover.review.itemTrades")),
+                ("total",   AppStrings.T("autofilters.discover.review.itemTotal")),
+                ("include", AppStrings.T("autofilters.discover.review.itemInclude")),
+                ("skip",    AppStrings.T("autofilters.discover.review.itemSkip")),
+                ("trades",  AppStrings.T("autofilters.discover.review.itemTrades")),
             };
             var values = new Dictionary<string, string>
             {
@@ -1305,25 +1305,25 @@ namespace LemoineTools.Tools.AutoFilters
                 case "S1":
                 {
                     var sel = _links.Where(l => l.IsSelected).ToList();
-                    if (sel.Count == 0) return LemoineStrings.T("autofilters.discover.summaries.s1None");
+                    if (sel.Count == 0) return AppStrings.T("autofilters.discover.summaries.s1None");
                     return sel.Count == 1
                         ? sel[0].Label
-                        : LemoineStrings.T("autofilters.discover.summaries.s1Multi", sel.Count, string.Join(", ", sel.Select(l => l.TradeName)));
+                        : AppStrings.T("autofilters.discover.summaries.s1Multi", sel.Count, string.Join(", ", sel.Select(l => l.TradeName)));
                 }
                 case "S2":
                 {
                     var configured = _links.Where(l => l.IsSelected && l.ConfigRows.Count > 0).ToList();
-                    if (configured.Count == 0) return LemoineStrings.T("autofilters.discover.summaries.s2None");
-                    return LemoineStrings.T("autofilters.discover.summaries.s2Count", configured.Count);
+                    if (configured.Count == 0) return AppStrings.T("autofilters.discover.summaries.s2None");
+                    return AppStrings.T("autofilters.discover.summaries.s2Count", configured.Count);
                 }
                 case "S3":
                     return _scanComplete
-                        ? LemoineStrings.T("autofilters.discover.summaries.s3Found", _discoveredRules.Count)
-                        : LemoineStrings.T("autofilters.discover.summaries.s3NotScanned");
+                        ? AppStrings.T("autofilters.discover.summaries.s3Found", _discoveredRules.Count)
+                        : AppStrings.T("autofilters.discover.summaries.s3NotScanned");
                 case "S4":
                 {
                     int inc = _discoveredRules.Count(r => r.IsIncluded);
-                    return LemoineStrings.T("autofilters.discover.summaries.s4Selected", inc, _discoveredRules.Count);
+                    return AppStrings.T("autofilters.discover.summaries.s4Selected", inc, _discoveredRules.Count);
                 }
                 case "S5":
                     return "";
@@ -1363,7 +1363,7 @@ namespace LemoineTools.Tools.AutoFilters
                     // exist as ParameterFilterElements. Only when at least one rule
                     // committed; otherwise finish on the commit result.
                     if (p <= 0) { onComplete(p, f, s); return; }
-                    pushLog(LemoineStrings.T("autofilters.discover.log.creatingFilters"), "info");
+                    pushLog(AppStrings.T("autofilters.discover.log.creatingFilters"), "info");
                     _createHandler!.CreateOnly               = true;
                     _createHandler.OverwriteFilterDefinition = false;
                     _createHandler.ChangedFilterNames        = null; // create/refresh all owned filters

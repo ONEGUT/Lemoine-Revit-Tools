@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -69,7 +69,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyLinearStampSchema: stamp element", ex);
+                DiagnosticsLog.Error("CopyLinearStampSchema: stamp element", ex);
                 return false;
             }
         }
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.CopyFromLink
             if (doc == null) return list;
             Schema schema;
             try { schema = GetOrCreate(); }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearStampSchema: get schema", ex); return list; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearStampSchema: get schema", ex); return list; }
 
             IEnumerable<Element> stamped;
             try
@@ -104,7 +104,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinearStampSchema: collect stamped elements", ex);
+                DiagnosticsLog.Swallowed("CopyLinearStampSchema: collect stamped elements", ex);
                 return list;
             }
 
@@ -121,7 +121,7 @@ namespace LemoineTools.Tools.CopyFromLink
                         GeoHash   = entity.Get<string>(FieldHash) ?? "",
                     });
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyLinearStampSchema: read entity", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearStampSchema: read entity", ex); }
             }
             return list;
         }

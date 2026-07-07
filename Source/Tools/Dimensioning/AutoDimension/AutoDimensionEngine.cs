@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -550,7 +550,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoDimensionEngine: survey dense areas", ex);
+                DiagnosticsLog.Error("AutoDimensionEngine: survey dense areas", ex);
                 log?.Invoke($"Dense-area survey failed ({ex.Message}) — callout tier skipped this view.", "fail");
             }
             return requests;
@@ -697,7 +697,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoDimensionEngine: survey user callouts", ex);
+                DiagnosticsLog.Error("AutoDimensionEngine: survey user callouts", ex);
                 log?.Invoke($"User-callout survey failed ({ex.Message}) — user callouts skipped this view.", "fail");
             }
             return requests;
@@ -724,7 +724,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 // A view that is not a callout has no parent — GetCalloutParentId returning
                 // InvalidElementId (or throwing on view kinds that can never be callouts) is
                 // the expected probe result for most views, not a failure (deliberately not
-                // routed to LemoineLog: it would fire per view per run).
+                // routed to DiagnosticsLog: it would fire per view per run).
                 try { parentId = v.GetCalloutParentId(); }
                 catch { continue; }
                 if (parentId == parentView.Id) result.Add(v);
@@ -778,7 +778,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("AutoDimensionEngine: read crop bounds", ex);
+                DiagnosticsLog.Swallowed("AutoDimensionEngine: read crop bounds", ex);
                 return null;
             }
         }
@@ -869,12 +869,12 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 if (fo != null && !fo.UseDefault)
                     units.SetFormatOptions(SpecTypeId.Length, fo);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: read dim units format", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionEngine: read dim units format", ex); }
 
             return ft =>
             {
                 try { return UnitFormatUtils.Format(units, SpecTypeId.Length, ft, false); }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: format dim value", ex); return null; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionEngine: format dim value", ex); return null; }
             };
         }
 
@@ -893,7 +893,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (v > 1e-6) return v;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: read dim text size", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionEngine: read dim text size", ex); }
             return null;
         }
 
@@ -918,7 +918,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("AutoDimensionEngine: resolve dimension type", ex);
+                DiagnosticsLog.Swallowed("AutoDimensionEngine: resolve dimension type", ex);
                 return ElementId.InvalidElementId;
             }
         }
@@ -939,7 +939,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (keep != null && !keep(e)) continue;
                     BoundingBoxXYZ? bb = null;
                     try { bb = e.get_BoundingBox(view); }
-                    catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: obstacle bbox", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionEngine: obstacle bbox", ex); }
                     if (bb == null) continue;
                     Core.Vec2 a = projection.To2D(bb.Min);
                     Core.Vec2 b = projection.To2D(bb.Max);
@@ -964,7 +964,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     .OfCategory(BuiltInCategory.OST_Lines).WhereElementIsNotElementType(),
                     ClashTagSchema.IsOurs);                        // the source cross-lines
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionEngine: collect obstacles", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionEngine: collect obstacles", ex); }
 
             // Deterministic order.
             boxes.Sort((x, y) =>

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -28,7 +28,7 @@ namespace LemoineTools.Tools.Setup
             {
                 string current = "";
                 try { current = app.Application.VersionNumber ?? ""; }
-                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: read current version", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: read current version", ex); }
 
                 var results = new List<UpgradeFileScan>();
                 foreach (var path in Paths)
@@ -53,7 +53,7 @@ namespace LemoineTools.Tools.Setup
                     {
                         scan.Readable = false;
                         scan.Error    = ex.Message;
-                        LemoineLog.Swallowed($"UpgradeLinks: scan {path}", ex);
+                        DiagnosticsLog.Swallowed($"UpgradeLinks: scan {path}", ex);
                     }
                     results.Add(scan);
                 }
@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("UpgradeLinksScanHandler.Execute", ex);
+                DiagnosticsLog.Error("UpgradeLinksScanHandler.Execute", ex);
                 OnError?.Invoke(ex.Message);
             }
             finally
@@ -77,7 +77,7 @@ namespace LemoineTools.Tools.Setup
         {
             string raw;
             try { raw = bfi.Format ?? ""; }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: read Format", ex); return "?"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: read Format", ex); return "?"; }
 
             if (string.IsNullOrWhiteSpace(raw)) return "?";
             var m = Regex.Match(raw, @"\b(19|20)\d{2}\b");

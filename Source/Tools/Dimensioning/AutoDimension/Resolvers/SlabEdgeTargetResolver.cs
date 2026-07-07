@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 {
@@ -249,7 +249,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                     if (allowedFloors != null) q = q.Where(f => allowedFloors.Contains(f.Id.Value));
                     floors = q.OrderBy(f => f.Id.Value).ToList();
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: collect floors", ex); continue; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: collect floors", ex); continue; }
 
                 // Per-source diagnostic tallies — isolate WHERE linked faces are lost (collection,
                 // verticality, null reference, or link-reference conversion).
@@ -258,7 +258,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                 {
                     GeometryElement? ge = null;
                     try { ge = floor.get_Geometry(geomOpt); }
-                    catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: floor geometry", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: floor geometry", ex); }
                     if (ge == null) continue;
                     CollectVerticalFaces(ge, sd.Transform, sd.Link, ctx, floor.Id.Value, srcLabel, "slab:", list, stats);
                 }
@@ -315,7 +315,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 
             Element? elem = null;
             try { elem = doc.GetElement(source.TargetElementId); }
-            catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: get target element", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: get target element", ex); }
             if (elem == null)
             {
                 // Clashed element deleted since marking — surface the fallback rather than swap silently.
@@ -334,7 +334,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             };
             GeometryElement? ge = null;
             try { ge = elem.get_Geometry(geomOpt); }
-            catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: target element geometry", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: target element geometry", ex); }
 
             var stats = new FaceStats();
             if (ge != null)
@@ -370,7 +370,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                 {
                     GeometryElement? inner = null;
                     try { inner = gi.GetInstanceGeometry(); }
-                    catch (Exception ex) { LemoineLog.Swallowed("SlabEdgeTargetResolver: instance geometry", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: instance geometry", ex); }
                     if (inner != null)
                         CollectVerticalFaces(inner, xform, link, ctx, elemIdInt, srcLabel, keyPrefix, list, stats);
                     continue;
@@ -450,7 +450,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("SlabEdgeTargetResolver: project face segment", ex);
+                DiagnosticsLog.Swallowed("SlabEdgeTargetResolver: project face segment", ex);
             }
         }
 

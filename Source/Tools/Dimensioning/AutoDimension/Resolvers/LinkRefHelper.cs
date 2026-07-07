@@ -1,6 +1,6 @@
 using System;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 {
@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("LinkRefHelper: CreateLinkReference", ex);
+                DiagnosticsLog.Swallowed("LinkRefHelper: CreateLinkReference", ex);
                 reportMissing?.Invoke(
                     $"link '{SafeName(linkInstance)}': {ex.Message}");
                 return null;

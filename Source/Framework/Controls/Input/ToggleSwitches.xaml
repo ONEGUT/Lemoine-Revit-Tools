@@ -1,0 +1,7 @@
+<UserControl
+    x:Class="LemoineTools.Framework.Controls.ToggleSwitches"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Built entirely in code-behind for full theme control -->
+    <StackPanel x:Name="_stack" />
+</UserControl>

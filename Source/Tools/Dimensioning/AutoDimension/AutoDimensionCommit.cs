@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -43,7 +43,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     .OrderBy(d => d.Id.Value)
                     .ToList();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: collect prior owned dims", ex); prior = new List<Dimension>(); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: collect prior owned dims", ex); prior = new List<Dimension>(); }
 
             foreach (var d in prior)
             {
@@ -56,7 +56,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                         if (stale) result.StaleDeleted++;
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: delete prior owned dim", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: delete prior owned dim", ex); }
             }
             if (result.DeletedPrior > 0)
                 log($"Cleared {result.DeletedPrior} prior auto-dimension(s) ({result.StaleDeleted} stale).", "info");
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 catch (Exception ex)
                 {
                     result.Failures++;
-                    LemoineLog.Error("AutoDimensionCommit: place dimension", ex);
+                    DiagnosticsLog.Error("AutoDimensionCommit: place dimension", ex);
                     log($"Source {pd.SourceKey} → {pd.TargetKey} ({bundle.Ordered.Count} refs, {lenFt * 304.8:0} mm, axis {(Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y")}): {ex.Message}", "fail");
                 }
             }
@@ -203,7 +203,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 worldPerp = worldPerp.Normalize();
                 worldAxis = worldAxis.Normalize();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: tag directions", ex); return; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: tag directions", ex); return; }
 
             // Tags stack on the dimension's own side: above for a positive-side string,
             // below for a negative-side (flipped) one — matching the value text's side.
@@ -212,7 +212,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             // Multi-segment chain → per-segment text; single span → the whole-dimension text.
             DimensionSegmentArray? segs = null;
             try { segs = dim.Segments; }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: read segments", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: read segments", ex); }
 
             if (segs != null && segs.Size > 0)
             {
@@ -229,7 +229,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                         XYZ? def = null;
                         string? val = null;
                         try { seg = segs.get_Item(k); def = seg?.TextPosition; val = seg?.ValueString; }
-                        catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: read segment text", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: read segment text", ex); }
                         if (seg != null && def != null)
                         {
                             DimensionSegment captured = seg;
@@ -237,7 +237,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                             run.Add(new ColumnTag(def, pd.Segments[k], w, pos =>
                             {
                                 try { captured.TextPosition = pos; }
-                                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
+                                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: nudge segment text", ex); }
                             }));
                             continue;
                         }
@@ -262,13 +262,13 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                             new ColumnTag(def, pd.Segments[0], w, pos =>
                             {
                                 try { dim.TextPosition = pos; }
-                                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
+                                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
                             }),
                         };
                         PlaceColumn(single, worldPerp, worldAxis, sign, pd.TagColumnDir, th, cfg, projection, axis, perp, placedTags, obstacles, lines, pd);
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: nudge dimension text", ex); }
             }
         }
 

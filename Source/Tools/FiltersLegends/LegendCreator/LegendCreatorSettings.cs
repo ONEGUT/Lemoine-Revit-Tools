@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine.Templates;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework.Templates;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 {
@@ -248,7 +248,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreatorSettings: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreatorSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LegendCreatorSettings.xml");
             }
         }
@@ -264,7 +264,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("LegendCreatorSettings: save failed", ex);
+                DiagnosticsLog.Error("LegendCreatorSettings: save failed", ex);
             }
         }
 
@@ -286,7 +286,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("LegendCreatorSettings: load failed", ex);
+                DiagnosticsLog.Error("LegendCreatorSettings: load failed", ex);
             }
             return DefaultSeed();
         }
@@ -390,9 +390,9 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             catch { return null; }
         }
 
-        private static LemoineTemplateStore<LegendCreatorSettings>? _templateStore;
-        public static LemoineTemplateStore<LegendCreatorSettings> Templates =>
-            _templateStore ?? (_templateStore = new LemoineTemplateStore<LegendCreatorSettings>(
+        private static TemplateStore<LegendCreatorSettings>? _templateStore;
+        public static TemplateStore<LegendCreatorSettings> Templates =>
+            _templateStore ?? (_templateStore = new TemplateStore<LegendCreatorSettings>(
                 toolId:      "LegendCreator",
                 serialize:   (data, path) => ExportTo(path, data),
                 deserialize: path => TryLoad(path)));

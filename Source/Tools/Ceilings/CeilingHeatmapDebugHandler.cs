@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Ceilings
 {
@@ -314,7 +314,7 @@ namespace LemoineTools.Tools.Ceilings
                 File.WriteAllText(path, sb.ToString());
                 Process.Start("notepad.exe", path);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("CeilingHeatmap debug: write diagnostics line", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap debug: write diagnostics line", __lex); }
         }
     }
 }

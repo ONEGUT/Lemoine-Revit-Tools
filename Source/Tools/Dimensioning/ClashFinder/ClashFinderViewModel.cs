@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Dimensioning
 {
@@ -18,12 +18,12 @@ namespace LemoineTools.Tools.Dimensioning
     /// Distances are edited in imperial units (oversize in inches, tolerances in feet) but stored
     /// internally in millimetres — the engine divides by 304.8.
     /// </summary>
-    public class ClashFinderViewModel : ILemoineTool, ILemoineReviewable, IWindowActivatable, ILemoineRunResult, ILemoineToolCleanup
+    public class ClashFinderViewModel : IStepFlowTool, IReviewableTool, IWindowActivatable, IRunResult, IToolCleanup
     {
         // Run strip: live "markers" label during the run, full chip breakdown on completion.
         public string? ResultNoun => "markers";
-        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
         // Null the callbacks parked on the static handlers so this VM isn't retained after close
         // — and so a late slab pick can't marshal into this window's terminated dispatcher.
@@ -38,16 +38,16 @@ namespace LemoineTools.Tools.Dimensioning
             _handler.OnResultChips = null;
         }
 
-        public string Title    => LemoineStrings.T("clash.finder.title");
-        public string RunLabel => LemoineStrings.T("clash.finder.runLabel");
+        public string Title    => AppStrings.T("clash.finder.title");
+        public string RunLabel => AppStrings.T("clash.finder.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("clash.finder.steps.S1"),   required: true),
-            new StepDefinition("S2", LemoineStrings.T("clash.finder.steps.S2"),         required: true),
-            new StepDefinition("S3", LemoineStrings.T("clash.finder.steps.S3"),      required: false),
-            new StepDefinition("S4", LemoineStrings.T("clash.finder.steps.S4"),         required: false),
-            new StepDefinition("S5", LemoineStrings.T("clash.finder.steps.S5"),         required: false),
+            new StepDefinition("S1", AppStrings.T("clash.finder.steps.S1"),   required: true),
+            new StepDefinition("S2", AppStrings.T("clash.finder.steps.S2"),         required: true),
+            new StepDefinition("S3", AppStrings.T("clash.finder.steps.S3"),      required: false),
+            new StepDefinition("S4", AppStrings.T("clash.finder.steps.S4"),         required: false),
+            new StepDefinition("S5", AppStrings.T("clash.finder.steps.S5"),         required: false),
         };
 
         // ── Unit conversion (UI imperial ↔ stored mm) ─────────────────────────
@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.Dimensioning
         // ── State ─────────────────────────────────────────────────────────────
         private List<string> _selectedDefDisplays  = new List<string>();
         private List<long>   _selectedViewIds      = new List<long>();
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
 
         private bool _clearPrevious     = true;
         private bool _runDimensionPass  = true;   // dimensioning is the point — on by default
@@ -126,9 +126,9 @@ namespace LemoineTools.Tools.Dimensioning
         // Dimension-pass destination, seeded from the shared auto-dimension config. Chaining,
         // callouts, grouping tolerances, and the storey margin are settings-only (Settings →
         // Dimensions) — the run always uses the saved values.
-        private static readonly string GridDisplay   = LemoineStrings.T("clash.finder.labels.destGrid");
-        private static readonly string SlabDisplay   = LemoineStrings.T("clash.finder.labels.destSlab");
-        private static readonly string ManualDisplay = LemoineStrings.T("clash.finder.labels.destManual");
+        private static readonly string GridDisplay   = AppStrings.T("clash.finder.labels.destGrid");
+        private static readonly string SlabDisplay   = AppStrings.T("clash.finder.labels.destSlab");
+        private static readonly string ManualDisplay = AppStrings.T("clash.finder.labels.destManual");
         private string _dimTargetType =
             string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase) ? "SlabEdge"
           : string.Equals(AutoDimension.AutoDimensionConfig.Instance.TargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase) ? "ManualDatum"
@@ -141,7 +141,7 @@ namespace LemoineTools.Tools.Dimensioning
             List<ClashDefinition>    definitions,
             AutoDimension.SlabPickEventHandler? slabPickHandler = null,
             ExternalEvent?                      slabPickEvent   = null,
-            LemoineBrowserTree?                 browserTree     = null)
+            BrowserTree?                 browserTree     = null)
         {
             _handler          = handler;
             _event            = externalEvent;
@@ -149,12 +149,12 @@ namespace LemoineTools.Tools.Dimensioning
             _slabPickEvent    = slabPickEvent;
             _allViews    = allViews ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
 
             var used = new HashSet<string>();
             foreach (var def in _definitions)
             {
-                string baseName = string.IsNullOrWhiteSpace(def.Name) ? LemoineStrings.T("clash.finder.labels.unnamed") : def.Name;
+                string baseName = string.IsNullOrWhiteSpace(def.Name) ? AppStrings.T("clash.finder.labels.unnamed") : def.Name;
                 string display  = baseName;
                 int n = 2;
                 while (!used.Add(display)) display = $"{baseName} ({n++})";
@@ -171,7 +171,7 @@ namespace LemoineTools.Tools.Dimensioning
                 case "S2": return BuildViewsStep();
                 case "S3": return BuildMarkerStep();
                 case "S4": return BuildDimensioningStep();
-                case "S5": return null;   // framework renders the review (ILemoineReviewable)
+                case "S5": return null;   // framework renders the review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -185,7 +185,7 @@ namespace LemoineTools.Tools.Dimensioning
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight                     = maxHeight,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
             return sv;
         }
 
@@ -196,18 +196,18 @@ namespace LemoineTools.Tools.Dimensioning
 
             if (_defDisplayToDef.Count == 0)
             {
-                AddDim(outer, LemoineStrings.T("clash.finder.labels.noDefs"));
+                AddDim(outer, AppStrings.T("clash.finder.labels.noDefs"));
                 return WrapInScroll(outer);
             }
 
-            AddLabel(outer, LemoineStrings.T("clash.finder.labels.pickDefs"));
+            AddLabel(outer, AppStrings.T("clash.finder.labels.pickDefs"));
 
             var groups = new Dictionary<string, List<string>>
             {
-                [LemoineStrings.T("clash.finder.labels.groupSaved")] = _defDisplayToDef.Keys.ToList(),
+                [AppStrings.T("clash.finder.labels.groupSaved")] = _defDisplayToDef.Keys.ToList(),
             };
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += selected =>
             {
                 _selectedDefDisplays = new List<string>(selected);
@@ -223,10 +223,10 @@ namespace LemoineTools.Tools.Dimensioning
         private FrameworkElement BuildViewsStep()
         {
             var outer  = new StackPanel();
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("clash.finder.labels.pickerName"),
+                AccessibleName = AppStrings.T("clash.finder.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -246,11 +246,11 @@ namespace LemoineTools.Tools.Dimensioning
         {
             var outer = new StackPanel();
 
-            var toggles = new LemoineToggleSwitches();
+            var toggles = new ToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "clear", Label = LemoineStrings.T("clash.finder.labels.clearLabel"),
-                                 Desc = LemoineStrings.T("clash.finder.labels.clearDesc"), DefaultOn = _clearPrevious },
+                new ToggleItem { Id = "clear", Label = AppStrings.T("clash.finder.labels.clearLabel"),
+                                 Desc = AppStrings.T("clash.finder.labels.clearDesc"), DefaultOn = _clearPrevious },
             });
             toggles.StateChanged += state =>
             {
@@ -261,13 +261,13 @@ namespace LemoineTools.Tools.Dimensioning
 
             AddDivider(outer);
             AddStepperRow(outer,
-                LemoineStrings.T("clash.finder.labels.oversizeLabel"),
-                LemoineStrings.T("clash.finder.labels.oversizeHint"),
+                AppStrings.T("clash.finder.labels.oversizeLabel"),
+                AppStrings.T("clash.finder.labels.oversizeHint"),
                 _roundSizeMm / MmPerInch, min: 0, max: 40, step: 0.25, decimals: 2,
                 v => { _roundSizeMm = v * MmPerInch; Fire(); });
 
             AddDivider(outer);
-            AddDim(outer, LemoineStrings.T("clash.finder.labels.storeyNote"));
+            AddDim(outer, AppStrings.T("clash.finder.labels.storeyNote"));
 
             return WrapInScroll(outer);
         }
@@ -277,16 +277,16 @@ namespace LemoineTools.Tools.Dimensioning
         {
             var outer = new StackPanel();
 
-            AddDim(outer, LemoineStrings.T("clash.finder.labels.dimDefaults"));
+            AddDim(outer, AppStrings.T("clash.finder.labels.dimDefaults"));
             AddDivider(outer);
 
-            var toggles = new LemoineToggleSwitches();
+            var toggles = new ToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "dimPass", Label = LemoineStrings.T("clash.finder.labels.dimPassLabel"),
-                                 Desc = LemoineStrings.T("clash.finder.labels.dimPassDesc"), DefaultOn = _runDimensionPass },
-                new ToggleItem { Id = "userCallouts", Label = LemoineStrings.T("clash.finder.labels.userCalloutsLabel"),
-                                 Desc = LemoineStrings.T("clash.finder.labels.userCalloutsDesc"), DefaultOn = _adoptUserCallouts },
+                new ToggleItem { Id = "dimPass", Label = AppStrings.T("clash.finder.labels.dimPassLabel"),
+                                 Desc = AppStrings.T("clash.finder.labels.dimPassDesc"), DefaultOn = _runDimensionPass },
+                new ToggleItem { Id = "userCallouts", Label = AppStrings.T("clash.finder.labels.userCalloutsLabel"),
+                                 Desc = AppStrings.T("clash.finder.labels.userCalloutsDesc"), DefaultOn = _adoptUserCallouts },
             });
             toggles.StateChanged += state =>
             {
@@ -297,8 +297,8 @@ namespace LemoineTools.Tools.Dimensioning
             outer.Children.Add(toggles);
 
             AddDivider(outer);
-            AddLabel(outer, LemoineStrings.T("clash.finder.labels.calloutScaleHelp"));
-            var calloutScalePicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.finder.labels.calloutScaleLabel") };
+            AddLabel(outer, AppStrings.T("clash.finder.labels.calloutScaleHelp"));
+            var calloutScalePicker = new SingleSelect { Label = AppStrings.T("clash.finder.labels.calloutScaleLabel") };
             calloutScalePicker.Items        = RevitScales.Select(s => s.Label).ToList();
             calloutScalePicker.SelectedItem = ArchScaleLabel(_maxCalloutScale);
             calloutScalePicker.SelectionChanged += sel =>
@@ -310,8 +310,8 @@ namespace LemoineTools.Tools.Dimensioning
             outer.Children.Add(calloutScalePicker);
 
             AddDivider(outer);
-            AddLabel(outer, LemoineStrings.T("clash.finder.labels.destHelp"));
-            var destPicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.finder.labels.destLabel") };
+            AddLabel(outer, AppStrings.T("clash.finder.labels.destHelp"));
+            var destPicker = new SingleSelect { Label = AppStrings.T("clash.finder.labels.destLabel") };
             destPicker.Items = new List<string> { GridDisplay, SlabDisplay, ManualDisplay };
             destPicker.SelectedItem = _dimTargetType == "SlabEdge" ? SlabDisplay
                                     : _dimTargetType == "ManualDatum" ? ManualDisplay : GridDisplay;
@@ -319,31 +319,31 @@ namespace LemoineTools.Tools.Dimensioning
 
             // Manual-datum note — shown only for that destination.
             var manualSection = new StackPanel();
-            AddDim(manualSection, LemoineStrings.T("clash.finder.labels.manualNote"));
+            AddDim(manualSection, AppStrings.T("clash.finder.labels.manualNote"));
             outer.Children.Add(manualSection);
 
             // Slab-edge config — shown only for that destination. Default targets each clash's own
             // Group 2 element; the buttons override every clash with one specific floor.
             var slabSection = new StackPanel();
             AddDivider(slabSection);
-            AddLabel(slabSection, LemoineStrings.T("clash.finder.labels.slabHelp"));
+            AddLabel(slabSection, AppStrings.T("clash.finder.labels.slabHelp"));
             var slabStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
             slabStatus.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             slabStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             slabStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             Action refreshSlab = () => slabStatus.Text = _pickedSlab == null
-                ? LemoineStrings.T("clash.finder.labels.slabDefault")
-                : LemoineStrings.T("clash.finder.labels.slabOverride", _pickedSlabName);
+                ? AppStrings.T("clash.finder.labels.slabDefault")
+                : AppStrings.T("clash.finder.labels.slabOverride", _pickedSlabName);
             refreshSlab();
 
             var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
-            var pickBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.pickHost"), LemoineControlStyles.LemoineButtonVariant.Primary);
+            var pickBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.pickHost"), ControlStyles.ButtonVariant.Primary);
             pickBtn.Margin = new Thickness(0, 0, 8, 0);
             pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: false);
-            var pickLinkBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.pickLinked"), LemoineControlStyles.LemoineButtonVariant.Primary);
+            var pickLinkBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.pickLinked"), ControlStyles.ButtonVariant.Primary);
             pickLinkBtn.Margin = new Thickness(0, 0, 8, 0);
             pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: true);
-            var clearBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("clash.finder.labels.clear"), LemoineControlStyles.LemoineButtonVariant.Ghost);
+            var clearBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.clear"), ControlStyles.ButtonVariant.Ghost);
             clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
             slabRow.Children.Add(pickBtn);
             slabRow.Children.Add(pickLinkBtn);
@@ -388,42 +388,42 @@ namespace LemoineTools.Tools.Dimensioning
         {
             switch (stepId)
             {
-                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : LemoineStrings.T("clash.finder.summaries.defCount", _selectedDefDisplays.Count);
-                case "S2": return _selectedViewIds.Count     == 0 ? "—" : LemoineStrings.T("clash.finder.summaries.viewCount", _selectedViewIds.Count);
+                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : AppStrings.T("clash.finder.summaries.defCount", _selectedDefDisplays.Count);
+                case "S2": return _selectedViewIds.Count     == 0 ? "—" : AppStrings.T("clash.finder.summaries.viewCount", _selectedViewIds.Count);
                 case "S3":
                 {
                     var bits = new List<string>();
-                    if (_clearPrevious) bits.Add(LemoineStrings.T("clash.finder.summaries.clear"));
-                    bits.Add(_roundSizeMm > 0 ? LemoineStrings.T("clash.finder.summaries.oversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.finder.summaries.exactSize"));
+                    if (_clearPrevious) bits.Add(AppStrings.T("clash.finder.summaries.clear"));
+                    bits.Add(_roundSizeMm > 0 ? AppStrings.T("clash.finder.summaries.oversize", _roundSizeMm / MmPerInch) : AppStrings.T("clash.finder.summaries.exactSize"));
                     return string.Join(" · ", bits);
                 }
                 case "S4":
                     return _runDimensionPass
-                        ? LemoineStrings.T("clash.finder.summaries.dimTo", _dimTargetType == "SlabEdge" ? LemoineStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? LemoineStrings.T("clash.finder.words.pickedEdge") : LemoineStrings.T("clash.finder.words.grid"))
-                          + (_adoptUserCallouts ? LemoineStrings.T("clash.finder.summaries.myCallouts") : "")
-                        : LemoineStrings.T("clash.finder.summaries.dimOff");
-                case "S5": return LemoineStrings.T("clash.finder.summaries.S5");
+                        ? AppStrings.T("clash.finder.summaries.dimTo", _dimTargetType == "SlabEdge" ? AppStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? AppStrings.T("clash.finder.words.pickedEdge") : AppStrings.T("clash.finder.words.grid"))
+                          + (_adoptUserCallouts ? AppStrings.T("clash.finder.summaries.myCallouts") : "")
+                        : AppStrings.T("clash.finder.summaries.dimOff");
+                case "S5": return AppStrings.T("clash.finder.summaries.S5");
                 default: return "—";
             }
         }
 
-        // ── ILemoineReviewable — framework renders the review step ────────────
+        // ── IReviewableTool — framework renders the review step ────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("defs",   LemoineStrings.T("clash.finder.review.itemDefs")),
-            ("views",  LemoineStrings.T("clash.finder.review.itemViews")),
-            ("marker", LemoineStrings.T("clash.finder.review.itemMarker")),
-            ("dim",    LemoineStrings.T("clash.finder.review.itemDim")),
+            ("defs",   AppStrings.T("clash.finder.review.itemDefs")),
+            ("views",  AppStrings.T("clash.finder.review.itemViews")),
+            ("marker", AppStrings.T("clash.finder.review.itemMarker")),
+            ("dim",    AppStrings.T("clash.finder.review.itemDim")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["defs"]   = _selectedDefDisplays.Count > 0 ? LemoineStrings.T("clash.finder.review.defsValue", _selectedDefDisplays.Count) : "—",
-            ["views"]  = _selectedViewIds.Count     > 0 ? LemoineStrings.T("clash.finder.review.viewsValue", _selectedViewIds.Count)          : "—",
-            ["marker"] = _roundSizeMm > 0 ? LemoineStrings.T("clash.finder.review.markerOversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.finder.review.markerExact"),
+            ["defs"]   = _selectedDefDisplays.Count > 0 ? AppStrings.T("clash.finder.review.defsValue", _selectedDefDisplays.Count) : "—",
+            ["views"]  = _selectedViewIds.Count     > 0 ? AppStrings.T("clash.finder.review.viewsValue", _selectedViewIds.Count)          : "—",
+            ["marker"] = _roundSizeMm > 0 ? AppStrings.T("clash.finder.review.markerOversize", _roundSizeMm / MmPerInch) : AppStrings.T("clash.finder.review.markerExact"),
             ["dim"]    = _runDimensionPass
-                ? (_dimTargetType == "SlabEdge" ? LemoineStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? LemoineStrings.T("clash.finder.words.pickedEdge") : LemoineStrings.T("clash.finder.words.grid"))
-                : LemoineStrings.T("clash.finder.review.dimOff"),
+                ? (_dimTargetType == "SlabEdge" ? AppStrings.T("clash.finder.words.slabEdge") : _dimTargetType == "ManualDatum" ? AppStrings.T("clash.finder.words.pickedEdge") : AppStrings.T("clash.finder.words.grid"))
+                : AppStrings.T("clash.finder.review.dimOff"),
         };
 
         public IList<string>? ReviewChips
@@ -431,19 +431,19 @@ namespace LemoineTools.Tools.Dimensioning
             get
             {
                 var chips = new List<string>();
-                if (_clearPrevious) chips.Add(LemoineStrings.T("clash.finder.review.chipClear"));
-                if (_runDimensionPass && _adoptUserCallouts) chips.Add(LemoineStrings.T("clash.finder.review.chipMyCallouts"));
+                if (_clearPrevious) chips.Add(AppStrings.T("clash.finder.review.chipClear"));
+                if (_runDimensionPass && _adoptUserCallouts) chips.Add(AppStrings.T("clash.finder.review.chipMyCallouts"));
                 if (_runDimensionPass && _dimTargetType == "SlabEdge")
-                    chips.Add(_pickedSlab != null ? LemoineStrings.T("clash.finder.review.chipSlab", _pickedSlabName) : LemoineStrings.T("clash.finder.review.chipSlabClashed"));
-                if (_runDimensionPass) chips.Add(LemoineStrings.T("clash.finder.review.chipCalloutsCap", ArchScaleLabel(_maxCalloutScale)));
+                    chips.Add(_pickedSlab != null ? AppStrings.T("clash.finder.review.chipSlab", _pickedSlabName) : AppStrings.T("clash.finder.review.chipSlabClashed"));
+                if (_runDimensionPass) chips.Add(AppStrings.T("clash.finder.review.chipCalloutsCap", ArchScaleLabel(_maxCalloutScale)));
                 return chips.Count > 0 ? chips : null;
             }
         }
 
-        public string? ReviewNote => LemoineStrings.T("clash.finder.review.note");
+        public string? ReviewNote => AppStrings.T("clash.finder.review.note");
 
         public string? ReviewWarning => _runDimensionPass && _dimTargetType == "ManualDatum"
-            ? LemoineStrings.T("clash.finder.review.warnManual")
+            ? AppStrings.T("clash.finder.review.warnManual")
             : null;
 
         // ── Run ───────────────────────────────────────────────────────────────
@@ -538,7 +538,7 @@ namespace LemoineTools.Tools.Dimensioning
         {
             AddLabel(parent, label);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 Value               = value,
                 MinValue            = min,

@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -74,14 +74,14 @@ namespace LemoineTools.Commands
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AlignCoordinatesCommand: read host grids", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AlignCoordinatesCommand: read host grids", ex); }
 
             try
             {
                 data.HostLevelNames = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>()
                     .OrderBy(l => l.ProjectElevation).Select(l => l.Name).ToList();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AlignCoordinatesCommand: read host levels", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AlignCoordinatesCommand: read host levels", ex); }
 
             foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
@@ -98,7 +98,7 @@ namespace LemoineTools.Commands
                     foreach (var g in new FilteredElementCollector(ld).OfClass(typeof(Grid)).Cast<Grid>())
                         if (!string.IsNullOrWhiteSpace(g.Name)) info.GridNames.Add(g.Name);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
 
                 // Every loaded link is selectable — grids are optional metadata for that link's own
                 // Grid Intersection override, never a filter on whether the link can be aligned.

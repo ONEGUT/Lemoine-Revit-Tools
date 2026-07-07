@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -112,7 +112,7 @@ namespace LemoineTools.Tools.ModifyElements
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed($"SplitByCell: cell boolean intersect failed on element {el.Id.Value}", ex);
+                        DiagnosticsLog.Swallowed($"SplitByCell: cell boolean intersect failed on element {el.Id.Value}", ex);
                         continue;
                     }
 
@@ -311,7 +311,7 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Swallowed($"SplitByCell: skipped a degenerate cell of filled region {fr.Id.Value}", ex);
+                    DiagnosticsLog.Swallowed($"SplitByCell: skipped a degenerate cell of filled region {fr.Id.Value}", ex);
                 }
             }
 
@@ -557,7 +557,7 @@ namespace LemoineTools.Tools.ModifyElements
                         0);
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("SplitByCell: read project base point", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitByCell: read project base point", __lex); }
 
             return null;
         }

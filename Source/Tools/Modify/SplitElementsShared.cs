@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -136,7 +136,7 @@ namespace LemoineTools.Tools.ModifyElements
                 // Abandon mid-run: stop processing more elements but let the caller's
                 // tx.Commit() still run so every element split so far is preserved. The
                 // handler logs the "Stopped by user" warn notice after this returns.
-                if (LemoineRun.CancelRequested) break;
+                if (RunState.CancelRequested) break;
 
                 try
                 {
@@ -240,7 +240,7 @@ namespace LemoineTools.Tools.ModifyElements
                 // Abandon mid-run: stop processing more elements but let the caller's
                 // tx.Commit() still run so every element split so far is preserved. The
                 // handler logs the "Stopped by user" warn notice after this returns.
-                if (LemoineRun.CancelRequested) break;
+                if (RunState.CancelRequested) break;
 
                 try
                 {
@@ -325,7 +325,7 @@ namespace LemoineTools.Tools.ModifyElements
             }
             else
             {
-                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete unused wall copy", __lex); }
+                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused wall copy", __lex); }
                 stats.Fail(wall.Id.ToString(),
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
@@ -377,7 +377,7 @@ namespace LemoineTools.Tools.ModifyElements
             }
             else
             {
-                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete unused column copy", __lex); }
+                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused column copy", __lex); }
                 stats.Fail(col.Id.ToString(),
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
@@ -511,7 +511,7 @@ namespace LemoineTools.Tools.ModifyElements
                 {
                     // Clean up all copies made so far before bailing (#2)
                     foreach (var cid in segIds.Skip(1))
-                        try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: clean up partial copies after failure", __lex); }
+                        try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: clean up partial copies after failure", __lex); }
                     stats.Fail(el.Id.ToString(), $"copy #{i} failed: {ex.Message}");
                     return;
                 }
@@ -528,7 +528,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (segA.DistanceTo(segB) < 0.01)
                 {
-                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete partial segment", __lex); } }
+                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete partial segment", __lex); } }
                     stats.Fail(el.Id.ToString(), $"seg {i}: degenerate length, removed.");
                     continue;
                 }
@@ -548,7 +548,7 @@ namespace LemoineTools.Tools.ModifyElements
                 catch (Exception ex)
                 {
                     // Remove orphaned copy; leave original (i==0) in place (#3)
-                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete orphaned segment copy", __lex); } }
+                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete orphaned segment copy", __lex); } }
                     stats.Fail(el.Id.ToString(), $"seg {i} curve set failed: {ex.Message}");
                 }
             }
@@ -683,14 +683,14 @@ namespace LemoineTools.Tools.ModifyElements
                         ElementTransformUtils.CopyElement(doc, id, XYZ.Zero);
                     if (c == null || !c.Any())
                     {
-                        foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: delete copies after empty copy result", __lex); }
+                        foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete copies after empty copy result", __lex); }
                         return null;
                     }
                     result.Add(c.First());
                 }
                 catch
                 {
-                    foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: clean up copies after copy failure", __lex); }
+                    foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: clean up copies after copy failure", __lex); }
                     return null;
                 }
             }
@@ -708,8 +708,8 @@ namespace LemoineTools.Tools.ModifyElements
 
         private static void DisallowWallJoins(Document doc, Wall wall)
         {
-            try { WallUtils.DisallowWallJoinAtEnd(wall, 0); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disallow wall join at end 0", __lex); }
-            try { WallUtils.DisallowWallJoinAtEnd(wall, 1); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disallow wall join at end 1", __lex); }
+            try { WallUtils.DisallowWallJoinAtEnd(wall, 0); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: disallow wall join at end 0", __lex); }
+            try { WallUtils.DisallowWallJoinAtEnd(wall, 1); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: disallow wall join at end 1", __lex); }
         }
 
         private static void DisconnectAllConnectors(Element el)
@@ -726,12 +726,12 @@ namespace LemoineTools.Tools.ModifyElements
                     try
                     {
                         foreach (Connector other in c.AllRefs.Cast<Connector>().ToList())
-                            try { c.DisconnectFrom(other); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disconnect MEP connector", __lex); }
+                            try { c.DisconnectFrom(other); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: disconnect MEP connector", __lex); }
                     }
-                    catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: enumerate connector references", __lex); }
+                    catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: enumerate connector references", __lex); }
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disconnect element connectors", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: disconnect element connectors", __lex); }
         }
     }
 

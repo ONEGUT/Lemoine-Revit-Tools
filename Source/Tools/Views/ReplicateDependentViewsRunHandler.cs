@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -31,15 +31,15 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
-            long __issues0 = LemoineLog.IssueCount;
+            long __issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try
             {
                 try { Run(doc, ref pass, ref fail, ref skip); }
-                catch (Exception ex) { LemoineLog.Error("ReplicateDependentViews: run aborted", ex); Log(LemoineStrings.T("linkviews.replicateDependent.log.error", ex.Message), "fail"); fail++; }
+                catch (Exception ex) { DiagnosticsLog.Error("ReplicateDependentViews: run aborted", ex); Log(AppStrings.T("linkviews.replicateDependent.log.error", ex.Message), "fail"); fail++; }
                 Progress(100, pass, fail, skip);
-                long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log(LemoineStrings.T("linkviews.replicateDependent.log.nonFatal", __issues), "warn");
+                long __issues = DiagnosticsLog.IssuesSince(__issues0);
+                if (__issues > 0) Log(AppStrings.T("linkviews.replicateDependent.log.nonFatal", __issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -55,14 +55,14 @@ namespace LemoineTools.Tools.LinkViews
         {
             if (SourceEntry == null || TargetEntries.Count == 0)
             {
-                Log(LemoineStrings.T("linkviews.replicateDependent.log.nothingToDo"), "info");
+                Log(AppStrings.T("linkviews.replicateDependent.log.nothingToDo"), "info");
                 return;
             }
 
             var deps = SourceEntry.Deps ?? new List<DepEntry>();
             if (deps.Count == 0)
             {
-                Log(LemoineStrings.T("linkviews.replicateDependent.log.noDeps"), "info");
+                Log(AppStrings.T("linkviews.replicateDependent.log.noDeps"), "info");
                 return;
             }
 
@@ -78,16 +78,16 @@ namespace LemoineTools.Tools.LinkViews
                 foreach (var target in TargetEntries)
                 {
                     if (cancelled) break;
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;   // falls through to the existing tx.Commit() below
                     }
 
                     View? targetView = doc.GetElement(target.ViewId) as View;
                     if (targetView == null)
                     {
-                        Log(LemoineStrings.T("linkviews.replicateDependent.log.skipNotFound", target.Name), "info");
+                        Log(AppStrings.T("linkviews.replicateDependent.log.skipNotFound", target.Name), "info");
                         skip += deps.Count;
                         done += deps.Count;
                         Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
@@ -97,19 +97,19 @@ namespace LemoineTools.Tools.LinkViews
                     // ── Log existing dependents on this target ─────────
                     if (target.ExistingDepCount > 0)
                     {
-                        Log(LemoineStrings.T("linkviews.replicateDependent.log.infoExisting", target.Name, target.ExistingDepCount), "info");
+                        Log(AppStrings.T("linkviews.replicateDependent.log.infoExisting", target.Name, target.ExistingDepCount), "info");
                     }
 
                     if (target.OrientationWarning)
                     {
-                        Log(LemoineStrings.T("linkviews.replicateDependent.log.warnOrient", target.Name), "info");
+                        Log(AppStrings.T("linkviews.replicateDependent.log.warnOrient", target.Name), "info");
                     }
 
                     foreach (var dep in deps)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                             cancelled = true;
                             break;   // breaks inner loop; outer loop guard breaks too → existing tx.Commit() runs
                         }
@@ -119,7 +119,7 @@ namespace LemoineTools.Tools.LinkViews
                         // Skip if already exists
                         if (ViewNameExists(doc, newName))
                         {
-                            Log(LemoineStrings.T("linkviews.replicateDependent.log.skipExists", newName), "info");
+                            Log(AppStrings.T("linkviews.replicateDependent.log.skipExists", newName), "info");
                             skip++;
                             done++;
                             Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
@@ -140,12 +140,12 @@ namespace LemoineTools.Tools.LinkViews
                             if (dep.HasCrop)
                                 ApplyCrop(newDep, dep, doc);
 
-                            Log(LemoineStrings.T("linkviews.replicateDependent.log.created", newName), "pass");
+                            Log(AppStrings.T("linkviews.replicateDependent.log.created", newName), "pass");
                             pass++;
                         }
                         catch (Exception e)
                         {
-                            Log(LemoineStrings.T("linkviews.replicateDependent.log.fail", newName, e.Message), "fail");
+                            Log(AppStrings.T("linkviews.replicateDependent.log.fail", newName, e.Message), "fail");
                             fail++;
                         }
 
@@ -157,7 +157,7 @@ namespace LemoineTools.Tools.LinkViews
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("linkviews.replicateDependent.log.complete", pass, skip, fail), "pass");
+            Log(AppStrings.T("linkviews.replicateDependent.log.complete", pass, skip, fail), "pass");
         }
 
         // ── Helpers ───────────────────────────────────────────────────
@@ -184,7 +184,7 @@ namespace LemoineTools.Tools.LinkViews
                     if (scopeParam != null && !scopeParam.IsReadOnly)
                         scopeParam.Set(dep.ScopeBoxId);
                 }
-                catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: apply scope box to view {newDep.Id.Value}", __lex); }
+                catch (Exception __lex) { DiagnosticsLog.Swallowed($"ReplicateDependentViews run: apply scope box to view {newDep.Id.Value}", __lex); }
             }
         }
 
@@ -198,7 +198,7 @@ namespace LemoineTools.Tools.LinkViews
             }
             catch
             {
-                try { view.Name = $"{name} ({view.Id.Value})"; } catch (Exception __lex) { LemoineLog.Swallowed($"ReplicateDependentViews run: set fallback name on view {view.Id.Value}", __lex); }
+                try { view.Name = $"{name} ({view.Id.Value})"; } catch (Exception __lex) { DiagnosticsLog.Swallowed($"ReplicateDependentViews run: set fallback name on view {view.Id.Value}", __lex); }
             }
         }
 
@@ -272,13 +272,13 @@ namespace LemoineTools.Tools.LinkViews
                     try { desc = msg.GetDescriptionText(); }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed("ReplicateDependentViews: read warning text", ex);
+                        DiagnosticsLog.Swallowed("ReplicateDependentViews: read warning text", ex);
                         desc = "(unreadable warning)";
                     }
                     if (_seen.Add(desc))   // report each distinct warning once, then resolve it
                     {
                         _log?.Invoke($"[warning] {desc}", "warn");
-                        LemoineLog.Warn("ReplicateDependentViews", desc);
+                        DiagnosticsLog.Warn("ReplicateDependentViews", desc);
                     }
                     fa.DeleteWarning(msg);
                 }

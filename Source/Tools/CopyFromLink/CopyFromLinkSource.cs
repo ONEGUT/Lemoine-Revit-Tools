@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Tools.CopyFromLink
@@ -49,7 +49,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 string en = SafeName(() => el?.Name ?? "");
                 return string.IsNullOrWhiteSpace(en) ? "(unnamed type)" : en;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSource.TypeKey", ex); return "(unnamed type)"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSource.TypeKey", ex); return "(unnamed type)"; }
         }
 
         /// <summary>Category display name for grouping (falls back to "Other").</summary>
@@ -60,7 +60,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var n = el?.Category?.Name;
                 return string.IsNullOrWhiteSpace(n) ? "Other" : n!;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSource.CategoryDisplay", ex); return "Other"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSource.CategoryDisplay", ex); return "Other"; }
         }
 
         /// <summary>
@@ -81,7 +81,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     box = R(mn) + ";" + R(mx);
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSource.GeoHash: box", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSource.GeoHash: box", ex); }
             return (typeKey ?? "") + "|" + box;
         }
 
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.CopyFromLink
         private static string SafeName(Func<string?> get)
         {
             try { return get() ?? ""; }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSource.SafeName", ex); return ""; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSource.SafeName", ex); return ""; }
         }
     }
 }

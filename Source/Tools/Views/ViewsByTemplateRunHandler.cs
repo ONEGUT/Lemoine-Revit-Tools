@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -34,14 +34,14 @@ namespace LemoineTools.Tools.LinkViews
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument?.Document;
-            long __issues0 = LemoineLog.IssueCount;
+            long __issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
 
             try
             {
                 if (doc == null)
                 {
-                    Log(LemoineStrings.T("linkviews.byTemplate.log.noDoc"), "fail");
+                    Log(AppStrings.T("linkviews.byTemplate.log.noDoc"), "fail");
                     Complete(0, 1, 0);
                     return;
                 }
@@ -49,14 +49,14 @@ namespace LemoineTools.Tools.LinkViews
                 try { RunPairs(doc, ref pass, ref fail, ref skip); }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error("Views by template: run aborted", ex);
-                    Log(LemoineStrings.T("linkviews.byTemplate.log.error", ex.Message), "fail");
+                    DiagnosticsLog.Error("Views by template: run aborted", ex);
+                    Log(AppStrings.T("linkviews.byTemplate.log.error", ex.Message), "fail");
                     fail++;
                 }
 
                 Progress(100, pass, fail, skip);
-                long __issues = LemoineLog.IssuesSince(__issues0);
-                if (__issues > 0) Log(LemoineStrings.T("linkviews.byTemplate.log.nonFatal", __issues), "warn");
+                long __issues = DiagnosticsLog.IssuesSince(__issues0);
+                if (__issues > 0) Log(AppStrings.T("linkviews.byTemplate.log.nonFatal", __issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -84,7 +84,7 @@ namespace LemoineTools.Tools.LinkViews
 
             if (views.Count == 0 || templates.Count == 0)
             {
-                Log(LemoineStrings.T("linkviews.byTemplate.log.nothingToDo"), "info");
+                Log(AppStrings.T("linkviews.byTemplate.log.nothingToDo"), "info");
                 return;
             }
 
@@ -108,14 +108,14 @@ namespace LemoineTools.Tools.LinkViews
                     if (cancelled) break;
                     foreach (var template in templates)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                             cancelled = true;
                             break;   // breaks inner loop; outer loop guard breaks too → existing tx.Commit() runs
                         }
 
-                        string name = LemoineTokenInput.Resolve(NamePattern,
+                        string name = TokenInput.Resolve(NamePattern,
                             new Dictionary<string, string>
                             {
                                 ["ViewName"]     = view.Name,
@@ -128,19 +128,19 @@ namespace LemoineTools.Tools.LinkViews
 
                         if (string.IsNullOrWhiteSpace(name))
                         {
-                            Log(LemoineStrings.T("linkviews.byTemplate.log.skipEmpty", view.Name, template.Name), "info");
+                            Log(AppStrings.T("linkviews.byTemplate.log.skipEmpty", view.Name, template.Name), "info");
                             skip++;
                             continue;
                         }
                         if (usedNames.Contains(name))
                         {
-                            Log(LemoineStrings.T("linkviews.byTemplate.log.skipExists", name), "info");
+                            Log(AppStrings.T("linkviews.byTemplate.log.skipExists", name), "info");
                             skip++;
                             continue;
                         }
                         if (!view.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing))
                         {
-                            Log(LemoineStrings.T("linkviews.byTemplate.log.skipNoDup", view.Name), "info");
+                            Log(AppStrings.T("linkviews.byTemplate.log.skipNoDup", view.Name), "info");
                             skip++;
                             continue;
                         }
@@ -157,7 +157,7 @@ namespace LemoineTools.Tools.LinkViews
                             dup.Name           = name;
 
                             usedNames.Add(name);
-                            Log(LemoineStrings.T("linkviews.byTemplate.log.created", name, template.Name), "pass");
+                            Log(AppStrings.T("linkviews.byTemplate.log.created", name, template.Name), "pass");
                             pass++;
                         }
                         catch (Exception e)
@@ -168,11 +168,11 @@ namespace LemoineTools.Tools.LinkViews
                                 try { doc.Delete(newId); }
                                 catch (Exception delEx)
                                 {
-                                    LemoineLog.Swallowed(
+                                    DiagnosticsLog.Swallowed(
                                         $"Views by template: delete orphan duplicate {newId.Value}", delEx);
                                 }
                             }
-                            Log(LemoineStrings.T("linkviews.byTemplate.log.failed", view.Name, template.Name, e.Message), "fail");
+                            Log(AppStrings.T("linkviews.byTemplate.log.failed", view.Name, template.Name, e.Message), "fail");
                             fail++;
                         }
                     }
@@ -181,7 +181,7 @@ namespace LemoineTools.Tools.LinkViews
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("linkviews.byTemplate.log.complete", pass, skip, fail), "pass");
+            Log(AppStrings.T("linkviews.byTemplate.log.complete", pass, skip, fail), "pass");
         }
 
         // Friendly label used for the {ViewType} token, tab grouping, and skip/fail messages.

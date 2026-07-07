@@ -12,18 +12,18 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 
-namespace LemoineTools.Lemoine
+namespace LemoineTools.Framework
 {
     public partial class GlobalSettingsWindow
     {
         // ═════════════════════════════════════════════════════════════════════
-                private UIElement BuildSpecContent(ILemoineToolSettings? vm, string tabLabel)
+                private UIElement BuildSpecContent(IToolSettings? vm, string tabLabel)
                 {
                     var scroll = new ScrollViewer
                     {
@@ -100,14 +100,14 @@ namespace LemoineTools.Lemoine
                 }
         
         // ═════════════════════════════════════════════════════════════════════
-                private static UIElement? BuildGlobalSpecControl(LemoineSettingDef setting, string groupId, ILemoineToolSettings ts)
+                private static UIElement? BuildGlobalSpecControl(SettingDef setting, string groupId, IToolSettings ts)
                 {
                     switch (setting.Kind)
                     {
                         case "toggle":
                         {
                             bool on = setting.Default is bool b && b;
-                            var tog = new Controls.LemoineToggleSwitches();
+                            var tog = new Controls.ToggleSwitches();
                             tog.SetItems(new List<Controls.ToggleItem>
                             {
                                 new Controls.ToggleItem { Id = setting.Id, Label = setting.Label ?? setting.Id,
@@ -146,7 +146,7 @@ namespace LemoineTools.Lemoine
                         case "color":
                         {
                             string currentHex = setting.Default as string ?? "#569cd6";
-                            return LemoineColorPickerWindow.BuildColorPickerSwatch(
+                            return ColorPickerWindow.BuildColorPickerSwatch(
                                 getHex: () => currentHex,
                                 setHex: h =>
                                 {
@@ -185,7 +185,7 @@ namespace LemoineTools.Lemoine
                 {
                     var tb = new TextBlock
                     {
-                        Text = LemoineStrings.T("globalSettings.spec.noSettings"), FontStyle = FontStyles.Italic,
+                        Text = AppStrings.T("globalSettings.spec.noSettings"), FontStyle = FontStyles.Italic,
                         Margin = new Thickness(0, 2, 0, 2),
                     };
                     tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");

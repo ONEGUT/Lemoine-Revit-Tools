@@ -181,7 +181,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Core
             }
             catch (Exception ex)
             {
-                LemoineTools.Lemoine.LemoineLog.Error("LayoutSnapshotWriter: write snapshot", ex);
+                LemoineTools.Framework.DiagnosticsLog.Error("LayoutSnapshotWriter: write snapshot", ex);
                 return null;
             }
         }

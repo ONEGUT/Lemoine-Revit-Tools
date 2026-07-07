@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Xml.Serialization;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine.Templates;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework.Templates;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -1018,7 +1018,7 @@ namespace LemoineTools.Tools.AutoFilters
 
                     Category? cat = null;
                     try { cat = Category.GetCategory(doc, id); }
-                    catch (Exception __cex) { LemoineLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
+                    catch (Exception __cex) { DiagnosticsLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
                     if (cat == null) continue;
                     if (cat.CategoryType != CategoryType.Model) continue;
 
@@ -1031,7 +1031,7 @@ namespace LemoineTools.Tools.AutoFilters
                         var p = cat.Parent;
                         if (p != null) parentRaw = p.Id.Value;
                     }
-                    catch (Exception __pex) { LemoineLog.Swallowed("CaptureFilterableCategories.Parent", __pex); }
+                    catch (Exception __pex) { DiagnosticsLog.Swallowed("CaptureFilterableCategories.Parent", __pex); }
                     // Only nest under a parent that is itself a filterable, builtin category.
                     if (parentRaw.HasValue && !filterable.Contains(parentRaw.Value)) parentRaw = null;
 
@@ -1087,7 +1087,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
+                DiagnosticsLog.Swallowed("AutoFiltersSettings.CaptureFilterableCategories", ex);
             }
         }
 
@@ -1167,7 +1167,7 @@ namespace LemoineTools.Tools.AutoFilters
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("AutoFiltersSettings: create config directory", __lex); }
                 return Path.Combine(dir, "LemoineAutoFiltersV2.xml");
             }
         }
@@ -1192,7 +1192,7 @@ namespace LemoineTools.Tools.AutoFilters
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
                 RaiseSaved();
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings.Save", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("AutoFiltersSettings.Save", __lex); }
         }
 
         // Fires Saved on each subscriber's OWN thread. Tool windows live on separate STA
@@ -1214,7 +1214,7 @@ namespace LemoineTools.Tools.AutoFilters
                     else
                         action();
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoFiltersSettings.Saved subscriber", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoFiltersSettings.Saved subscriber", ex); }
             }
         }
 
@@ -1236,7 +1236,7 @@ namespace LemoineTools.Tools.AutoFilters
                     }
                 }
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("AutoFiltersSettings.Load", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("AutoFiltersSettings.Load", __lex); }
             var fresh = new AutoFiltersSettings { Trades = BuildDefaultTrades() };
             fresh.Save();
             return fresh;
@@ -1331,16 +1331,16 @@ namespace LemoineTools.Tools.AutoFilters
 
         // ── Template store ────────────────────────────────────────────────────
 
-        private static LemoineTemplateStore<List<FilterTradeConfig>>? _templateStore;
+        private static TemplateStore<List<FilterTradeConfig>>? _templateStore;
 
         /// <summary>
         /// Reusable template store for AutoFilters.
         /// Stores named snapshots of the full trade list in
         /// <c>%AppData%\LemoineTools\Templates\AutoFilters\</c>.
         /// </summary>
-        public static LemoineTemplateStore<List<FilterTradeConfig>> Templates =>
+        public static TemplateStore<List<FilterTradeConfig>> Templates =>
             _templateStore ?? (_templateStore =
-                new LemoineTemplateStore<List<FilterTradeConfig>>(
+                new TemplateStore<List<FilterTradeConfig>>(
                     toolId:      "AutoFilters",
                     serialize:   (trades, path) => ExportTo(path, trades),
                     deserialize: path => TryLoadTrades(path)));

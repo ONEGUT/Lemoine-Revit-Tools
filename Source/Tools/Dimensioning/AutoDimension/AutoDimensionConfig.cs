@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using CoreLayout = LemoineTools.Tools.Dimensioning.AutoDimension.Core.LayoutConfig;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -128,7 +128,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LemoineTools");
                 try { Directory.CreateDirectory(dir); }
-                catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionConfig: ensure settings directory", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionConfig: ensure settings directory", ex); }
                 return Path.Combine(dir, "AutoDimension.xml");
             }
         }
@@ -140,7 +140,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 var xs = new XmlSerializer(typeof(AutoDimensionConfig));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
             }
-            catch (Exception ex) { LemoineLog.Error("AutoDimensionConfig: save", ex); }
+            catch (Exception ex) { DiagnosticsLog.Error("AutoDimensionConfig: save", ex); }
         }
 
         private static AutoDimensionConfig Load()
@@ -166,7 +166,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     }
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("AutoDimensionConfig: load (using defaults)", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionConfig: load (using defaults)", ex); }
             return new AutoDimensionConfig();
         }
 

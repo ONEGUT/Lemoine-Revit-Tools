@@ -1,6 +1,6 @@
 using System;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -24,12 +24,12 @@ namespace LemoineTools.Tools.Setup
             dir   = XYZ.BasisX;
             Curve? c = null;
             try { c = g?.Curve; }
-            catch (Exception ex) { LemoineLog.Swallowed("CoordinatesGeometry.TryGridLine: read grid curve", ex); c = null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CoordinatesGeometry.TryGridLine: read grid curve", ex); c = null; }
             if (c == null) return false;
 
             XYZ a, b;
             try { a = c.GetEndPoint(0); b = c.GetEndPoint(1); }
-            catch (Exception ex) { LemoineLog.Swallowed("CoordinatesGeometry.TryGridLine: read grid endpoints", ex); return false; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CoordinatesGeometry.TryGridLine: read grid endpoints", ex); return false; }
 
             var d = new XYZ(b.X - a.X, b.Y - a.Y, 0);
             if (d.GetLength() < Eps) return false;   // grid is vertical in plan — no usable XY direction

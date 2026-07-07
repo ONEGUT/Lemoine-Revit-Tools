@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -52,20 +52,20 @@ namespace LemoineTools.Tools.ScopeBoxes
         public void Execute(UIApplication app)
         {
             var doc = app.ActiveUIDocument.Document;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
             try
             {
                 try { RunBoxes(doc, ref pass, ref fail, ref skip); }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error("ScopeBoxCreator: run aborted", ex);
-                    Log(LemoineStrings.T("scopeBoxes.creator.log.error", ex.Message), "fail");
+                    DiagnosticsLog.Error("ScopeBoxCreator: run aborted", ex);
+                    Log(AppStrings.T("scopeBoxes.creator.log.error", ex.Message), "fail");
                     fail++;
                 }
                 Progress(100, pass, fail, skip);
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("scopeBoxes.creator.log.nonFatalIssues", issues), "warn");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("scopeBoxes.creator.log.nonFatalIssues", issues), "warn");
                 Complete(pass, fail, skip);
             }
             finally
@@ -96,7 +96,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             var seedBb = seed?.get_BoundingBox(null);
             if (seed == null || seedBb == null)
             {
-                Log(LemoineStrings.T("scopeBoxes.creator.log.noSeed"), "fail");
+                Log(AppStrings.T("scopeBoxes.creator.log.noSeed"), "fail");
                 fail++;
                 return;
             }
@@ -123,13 +123,13 @@ namespace LemoineTools.Tools.ScopeBoxes
             var rooms = RoomClusterSearch.CollectRooms(doc, sourceDocs);
             RoomClusterSearch.AssignHostLevelsByElevation(
                 rooms, allLevels, RoomClusterSearch.LevelMatchToleranceFt);
-            Log(LemoineStrings.T("scopeBoxes.creator.log.roomsFound", rooms.Count, sourceDocs.Count), "info");
+            Log(AppStrings.T("scopeBoxes.creator.log.roomsFound", rooms.Count, sourceDocs.Count), "info");
 
             var selectedIdSet = new HashSet<long>(SelectedLevelIds.Select(id => id.Value));
             var selLevels     = allLevels.Where(l => selectedIdSet.Contains(l.Id.Value)).ToList();
             if (selLevels.Count == 0)
             {
-                Log(LemoineStrings.T("scopeBoxes.creator.log.noLevels"), "fail");
+                Log(AppStrings.T("scopeBoxes.creator.log.noLevels"), "fail");
                 fail++;
                 return;
             }
@@ -176,7 +176,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                     var    highest = selLevels.Last();
                     string range   = selLevels.Count == 1
                         ? lowest.Name
-                        : LemoineStrings.T("scopeBoxes.creator.tokens.levelRange", lowest.Name, highest.Name);
+                        : AppStrings.T("scopeBoxes.creator.tokens.levelRange", lowest.Name, highest.Name);
 
                     for (int bi = 0; bi < clusters.Count; bi++)
                         specs.Add(MakeSpec(clusters[bi], clusters.Count, bi,
@@ -188,10 +188,10 @@ namespace LemoineTools.Tools.ScopeBoxes
             // A silent empty result is indistinguishable from a broken collector — say so.
             if (specs.Count == 0)
             {
-                Log(LemoineStrings.T("scopeBoxes.creator.log.noClusters"), "warn");
+                Log(AppStrings.T("scopeBoxes.creator.log.noClusters"), "warn");
                 return;
             }
-            Log(LemoineStrings.T("scopeBoxes.creator.log.planned", specs.Count), "info");
+            Log(AppStrings.T("scopeBoxes.creator.log.planned", specs.Count), "info");
 
             // ── Duplicate the seed per spec ───────────────────────────
             // Scope box name uniqueness is unverified in the API — pre-check against
@@ -210,9 +210,9 @@ namespace LemoineTools.Tools.ScopeBoxes
 
                 for (int i = 0; i < specs.Count; i++)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", i, specs.Count), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", i, specs.Count), "warn");
                         break;   // fall through to commit — work so far is preserved
                     }
 
@@ -220,7 +220,7 @@ namespace LemoineTools.Tools.ScopeBoxes
 
                     if (takenNames.Contains(spec.Name))
                     {
-                        Log(LemoineStrings.T("scopeBoxes.creator.log.skipExists", spec.Name), "info");
+                        Log(AppStrings.T("scopeBoxes.creator.log.skipExists", spec.Name), "info");
                         skip++;
                     }
                     else
@@ -240,7 +240,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                             var copy    = copyId != ElementId.InvalidElementId ? doc.GetElement(copyId) : null;
                             if (copy == null)
                             {
-                                Log(LemoineStrings.T("scopeBoxes.creator.log.copyFailed", spec.Name), "fail");
+                                Log(AppStrings.T("scopeBoxes.creator.log.copyFailed", spec.Name), "fail");
                                 fail++;
                             }
                             else
@@ -252,12 +252,12 @@ namespace LemoineTools.Tools.ScopeBoxes
                                     // delete the junk copy rather than leaving an auto-named box.
                                     doc.Delete(copyId);
                                     throw new InvalidOperationException(
-                                        LemoineStrings.T("scopeBoxes.creator.log.renameRefused", rex.Message), rex);
+                                        AppStrings.T("scopeBoxes.creator.log.renameRefused", rex.Message), rex);
                                 }
 
                                 takenNames.Add(spec.Name);
                                 pass++;
-                                Log(LemoineStrings.T("scopeBoxes.creator.log.created", spec.Name), "pass");
+                                Log(AppStrings.T("scopeBoxes.creator.log.created", spec.Name), "pass");
 
                                 // Height IS settable via VOLUME_OF_INTEREST_HEIGHT (grows from the
                                 // bottom, which we bottom-aligned above) — set it so Z fits exactly.
@@ -268,7 +268,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                                     if (hp != null && !hp.IsReadOnly) { hp.Set(spec.Height); heightSet = true; }
                                 }
                                 catch (Exception hex)
-                                { LemoineLog.Swallowed($"ScopeBoxCreator: set height on '{spec.Name}'", hex); }
+                                { DiagnosticsLog.Swallowed($"ScopeBoxCreator: set height on '{spec.Name}'", hex); }
 
                                 // Width/Depth are NOT exposed by the API — report the required
                                 // footprint so the user drags the handles once (name, position and
@@ -276,20 +276,20 @@ namespace LemoineTools.Tools.ScopeBoxes
                                 const double tol = 0.5; // ft
                                 if (Math.Abs(spec.Width - seedW) > tol || Math.Abs(spec.Depth - seedD) > tol)
                                 {
-                                    Log(LemoineStrings.T("scopeBoxes.creator.log.resizeNeeded",
+                                    Log(AppStrings.T("scopeBoxes.creator.log.resizeNeeded",
                                         spec.Name, spec.Width.ToString("0.#"),
                                         spec.Depth.ToString("0.#")), "warn");
                                 }
                                 if (!heightSet && Math.Abs(spec.Height - seedH) > tol)
                                 {
-                                    Log(LemoineStrings.T("scopeBoxes.creator.log.heightManual",
+                                    Log(AppStrings.T("scopeBoxes.creator.log.heightManual",
                                         spec.Name, spec.Height.ToString("0.#")), "warn");
                                 }
                             }
                         }
                         catch (Exception e)
                         {
-                            Log(LemoineStrings.T("scopeBoxes.creator.log.failBox", spec.Name, e.Message), "fail");
+                            Log(AppStrings.T("scopeBoxes.creator.log.failBox", spec.Name, e.Message), "fail");
                             fail++;
                         }
                     }
@@ -300,7 +300,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("scopeBoxes.creator.log.complete", pass, skip, fail), "pass");
+            Log(AppStrings.T("scopeBoxes.creator.log.complete", pass, skip, fail), "pass");
         }
 
         private BoxSpec MakeSpec(

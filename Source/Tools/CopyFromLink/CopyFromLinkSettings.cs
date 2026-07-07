@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -30,7 +30,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LemoineTools");
                 try { Directory.CreateDirectory(dir); }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSettings: create config directory", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSettings: create config directory", ex); }
                 return Path.Combine(dir, "CopyFromLinkSettings.xml");
             }
         }
@@ -42,7 +42,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var xs = new XmlSerializer(typeof(CopyFromLinkSettings));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSettings.Save", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSettings.Save", ex); }
         }
 
         private static CopyFromLinkSettings Load()
@@ -56,7 +56,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     using (var r = new StreamReader(path)) return (CopyFromLinkSettings)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkSettings.Load", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkSettings.Load", ex); }
             return new CopyFromLinkSettings();
         }
     }

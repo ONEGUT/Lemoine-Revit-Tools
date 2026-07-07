@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (!(doc.GetElement(viewId) is View view)) continue;
 
                     try { uidoc.ActiveView = view; }
-                    catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: set active view", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("SlabScopePicker: set active view", ex); }
 
                     try
                     {
@@ -62,7 +62,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error("SlabScopePicker: pick", ex);
+                        DiagnosticsLog.Error("SlabScopePicker: pick", ex);
                         log($"View '{view.Name}': floor pick failed — {ex.Message}", "fail");
                     }
                 }
@@ -120,7 +120,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     return new SlabScope { LinkInstanceId = ElementId.InvalidElementId, FloorId = r.ElementId };
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: resolve picked floor", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("SlabScopePicker: resolve picked floor", ex); }
             return null;
         }
 
@@ -149,7 +149,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                         return le is Floor;
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("SlabScopePicker: filter linked reference", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("SlabScopePicker: filter linked reference", ex); }
                 return false;
             }
         }

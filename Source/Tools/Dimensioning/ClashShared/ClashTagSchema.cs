@@ -1,7 +1,7 @@
 using System;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.ExtensibleStorage;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning
 {
@@ -59,7 +59,7 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 var schema = GetOrCreateTagSchema();
                 var field  = ResolveTagField(schema);
-                if (field == null) { LemoineLog.Error("ClashTagSchema: stamp clash tag", new InvalidOperationException("schema has no usable string field")); return; }
+                if (field == null) { DiagnosticsLog.Error("ClashTagSchema: stamp clash tag", new InvalidOperationException("schema has no usable string field")); return; }
 
                 string g = group ?? "";
                 bool hasTarget = targetElemId != null && targetElemId != ElementId.InvalidElementId;
@@ -76,7 +76,7 @@ namespace LemoineTools.Tools.Dimensioning
                 entity.Set(field, val);
                 element.SetEntity(entity);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: stamp clash tag", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashTagSchema: stamp clash tag", ex); }
         }
 
         /// <summary>
@@ -100,7 +100,7 @@ namespace LemoineTools.Tools.Dimensioning
                 var v = entity.Get<string>(field);
                 return v == TagValue || (v != null && v.StartsWith(TagValue + "|", StringComparison.Ordinal));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash tag", ex); return false; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashTagSchema: read clash tag", ex); return false; }
         }
 
         /// <summary>
@@ -123,7 +123,7 @@ namespace LemoineTools.Tools.Dimensioning
                 var parts = v.Split('|');
                 return parts.Length >= 2 ? parts[1] : "";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash group", ex); return ""; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashTagSchema: read clash group", ex); return ""; }
         }
 
         /// <summary>
@@ -151,7 +151,7 @@ namespace LemoineTools.Tools.Dimensioning
                 ElementId linkId = linkRaw > 0 ? new ElementId(linkRaw) : ElementId.InvalidElementId;
                 return (linkId, new ElementId(elemRaw));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashTagSchema: read clash target", ex); return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashTagSchema: read clash target", ex); return null; }
         }
 
         /// <summary>

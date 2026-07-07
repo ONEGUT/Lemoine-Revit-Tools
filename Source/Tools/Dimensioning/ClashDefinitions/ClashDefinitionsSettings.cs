@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning
 {
@@ -94,7 +94,7 @@ namespace LemoineTools.Tools.Dimensioning
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
                 try { Directory.CreateDirectory(dir); }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitionsSettings: ensure settings directory", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitionsSettings: ensure settings directory", ex); }
                 return Path.Combine(dir, "ClashDefinitions.xml");
             }
         }
@@ -107,7 +107,7 @@ namespace LemoineTools.Tools.Dimensioning
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch (Exception ex) { LemoineLog.Error("ClashDefinitionsSettings: save", ex); }
+            catch (Exception ex) { DiagnosticsLog.Error("ClashDefinitionsSettings: save", ex); }
         }
 
         private static ClashDefinitionsSettings Load()
@@ -133,7 +133,7 @@ namespace LemoineTools.Tools.Dimensioning
                     // writes over the (possibly recoverable) file — destroying every
                     // saved definition. Instead back the file up, surface the failure,
                     // and start empty without seeding so nothing is silently replaced.
-                    LemoineLog.Error(
+                    DiagnosticsLog.Error(
                         "ClashDefinitions: settings file is corrupt — backed up and starting empty (existing data NOT overwritten)",
                         ex);
                     TryBackupCorruptFile(path);
@@ -146,7 +146,7 @@ namespace LemoineTools.Tools.Dimensioning
             // choices carry over.
             var seeded = new ClashDefinitionsSettings();
             try { seeded.Definitions.Add(SeedFromClashDimension()); }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitionsSettings: seed from ClashDimension", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitionsSettings: seed from ClashDimension", ex); }
             return seeded;
         }
 
@@ -158,9 +158,9 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 string backup = path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".bak";
                 File.Copy(path, backup, overwrite: true);
-                LemoineLog.Info("ClashDefinitions", $"Corrupt settings backed up to {backup}");
+                DiagnosticsLog.Info("ClashDefinitions", $"Corrupt settings backed up to {backup}");
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashDefinitions: backup corrupt settings", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashDefinitions: backup corrupt settings", ex); }
         }
 
         /// <summary>

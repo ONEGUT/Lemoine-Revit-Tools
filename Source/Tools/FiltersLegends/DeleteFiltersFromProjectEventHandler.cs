@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -34,7 +34,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: delete filters from project aborted", ex); Log(LemoineStrings.T("autofilters.deleteFromProject.log.error", ex.Message), "fail");
+                DiagnosticsLog.Error("AutoFilters: delete filters from project aborted", ex); Log(AppStrings.T("autofilters.deleteFromProject.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -52,7 +52,7 @@ namespace LemoineTools.Tools.AutoFilters
         {
             if (SelectedFilterNames == null || SelectedFilterNames.Count == 0)
             {
-                Log(LemoineStrings.T("autofilters.deleteFromProject.log.noneSelected"), "fail");
+                Log(AppStrings.T("autofilters.deleteFromProject.log.noneSelected"), "fail");
                 fail++;
                 return;
             }
@@ -68,18 +68,18 @@ namespace LemoineTools.Tools.AutoFilters
             var notFound = SelectedFilterNames.Where(n => !filterMap.ContainsKey(n)).ToList();
             foreach (var n in notFound)
             {
-                Log(LemoineStrings.T("autofilters.deleteFromProject.log.notFound", n), "info");
+                Log(AppStrings.T("autofilters.deleteFromProject.log.notFound", n), "info");
                 skip++;
             }
 
             if (filterMap.Count == 0)
             {
-                Log(LemoineStrings.T("autofilters.deleteFromProject.log.noneExist"), "fail");
+                Log(AppStrings.T("autofilters.deleteFromProject.log.noneExist"), "fail");
                 fail++;
                 return;
             }
 
-            Log(LemoineStrings.T("autofilters.deleteFromProject.log.deletingN", filterMap.Count), "info");
+            Log(AppStrings.T("autofilters.deleteFromProject.log.deletingN", filterMap.Count), "info");
 
             int total = filterMap.Count;
             int done  = 0;
@@ -94,9 +94,9 @@ namespace LemoineTools.Tools.AutoFilters
 
                 foreach (var pair in filterMap)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                         break;
                     }
 
@@ -105,12 +105,12 @@ namespace LemoineTools.Tools.AutoFilters
                     try
                     {
                         doc.Delete(id);
-                        Log(LemoineStrings.T("autofilters.deleteFromProject.log.deleted", name), "info");
+                        Log(AppStrings.T("autofilters.deleteFromProject.log.deleted", name), "info");
                         pass++;
                     }
                     catch (Exception ex)
                     {
-                        Log(LemoineStrings.T("autofilters.deleteFromProject.log.deleteFailed", name, ex.Message), "fail");
+                        Log(AppStrings.T("autofilters.deleteFromProject.log.deleteFailed", name, ex.Message), "fail");
                         fail++;
                     }
 
@@ -121,7 +121,7 @@ namespace LemoineTools.Tools.AutoFilters
                 tx.Commit();
             }
 
-            Log(LemoineStrings.T("autofilters.deleteFromProject.log.complete", pass, fail, skip), "pass");
+            Log(AppStrings.T("autofilters.deleteFromProject.log.complete", pass, fail, skip), "pass");
         }
 
         // ── Callback wrappers ────────────────────────────────────────────────────

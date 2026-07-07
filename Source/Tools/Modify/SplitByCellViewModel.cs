@@ -5,27 +5,27 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByCellViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class SplitByCellViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "pieces";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
-        public string Title    => LemoineStrings.T("modify.splitByCell.title");
-        public string RunLabel => LemoineStrings.T("modify.splitByCell.runLabel");
+        public string Title    => AppStrings.T("modify.splitByCell.title");
+        public string RunLabel => AppStrings.T("modify.splitByCell.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("modify.splitByCell.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("modify.splitByCell.steps.S2"),         required: true),
-            new StepDefinition("S3", LemoineStrings.T("modify.splitByCell.steps.S3"),      required: false),
+            new StepDefinition("S1", AppStrings.T("modify.splitByCell.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("modify.splitByCell.steps.S2"),         required: true),
+            new StepDefinition("S3", AppStrings.T("modify.splitByCell.steps.S3"),      required: false),
         };
 
         // Maps BuiltInCategory → display label; shared with SplitByCellCommand for counts + pre-selection.
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return null; // framework renders review (ILemoineReviewable)
+                case "S3": return null; // framework renders review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -124,7 +124,7 @@ namespace LemoineTools.Tools.ModifyElements
                 .Select(bic => CatLabels.TryGetValue(bic, out string? lbl) ? lbl : bic.ToString().Replace("OST_", ""))
                 .ToList();
             var groups = new Dictionary<string, List<string>> { { "Categories", catLabels } };
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByCell.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = AppStrings.T("modify.splitByCell.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -156,7 +156,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = LemoineStrings.T("modify.splitByCell.labels.preselCount", cnt, cats),
+                Text         = AppStrings.T("modify.splitByCell.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -176,7 +176,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = LemoineStrings.T("modify.splitByCell.labels.preselNote"),
+                Text         = AppStrings.T("modify.splitByCell.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -197,10 +197,10 @@ namespace LemoineTools.Tools.ModifyElements
         {
             var outer = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
 
-            var sizeRange = new LemoineNumberRange
+            var sizeRange = new NumberRange
             {
-                MinLabel = LemoineStrings.T("modify.splitByCell.labels.cellXLabel"),
-                MaxLabel = LemoineStrings.T("modify.splitByCell.labels.cellYLabel"),
+                MinLabel = AppStrings.T("modify.splitByCell.labels.cellXLabel"),
+                MaxLabel = AppStrings.T("modify.splitByCell.labels.cellYLabel"),
                 AbsMin   = 0.1,
                 AbsMax   = 1000,
                 Step     = 0.5,
@@ -214,14 +214,14 @@ namespace LemoineTools.Tools.ModifyElements
             };
             outer.Children.Add(sizeRange);
 
-            var toggle = new LemoineToggleSwitches();
+            var toggle = new ToggleSwitches();
             toggle.SetItems(new List<ToggleItem>
             {
                 new ToggleItem
                 {
                     Id        = "projOrigin",
-                    Label     = LemoineStrings.T("modify.splitByCell.labels.originLabel"),
-                    Desc      = LemoineStrings.T("modify.splitByCell.labels.originDesc"),
+                    Label     = AppStrings.T("modify.splitByCell.labels.originLabel"),
+                    Desc      = AppStrings.T("modify.splitByCell.labels.originDesc"),
                     DefaultOn = false,
                 },
             });
@@ -240,27 +240,27 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   LemoineStrings.T("modify.splitByCell.review.itemCats")),
-            ("cell",   LemoineStrings.T("modify.splitByCell.review.itemCell")),
-            ("origin", LemoineStrings.T("modify.splitByCell.review.itemOrigin")),
-            ("scope",  LemoineStrings.T("modify.splitByCell.review.itemScope")),
+            ("cats",   AppStrings.T("modify.splitByCell.review.itemCats")),
+            ("cell",   AppStrings.T("modify.splitByCell.review.itemCell")),
+            ("origin", AppStrings.T("modify.splitByCell.review.itemOrigin")),
+            ("scope",  AppStrings.T("modify.splitByCell.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["cell"]   = LemoineStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY),
-            ["origin"] = _useProjectOrigin ? LemoineStrings.T("modify.splitByCell.review.originProject") : LemoineStrings.T("modify.splitByCell.review.originBbox"),
+            ["cell"]   = AppStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY),
+            ["origin"] = _useProjectOrigin ? AppStrings.T("modify.splitByCell.review.originProject") : AppStrings.T("modify.splitByCell.review.originBbox"),
             ["scope"]  = _preSelectedIds.Count > 0
-                ? LemoineStrings.T("modify.splitByCell.review.scopeFromSel", _preSelectedIds.Count)
-                : LemoineStrings.T("modify.splitByCell.review.scopeActive"),
+                ? AppStrings.T("modify.splitByCell.review.scopeFromSel", _preSelectedIds.Count)
+                : AppStrings.T("modify.splitByCell.review.scopeActive"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("modify.splitByCell.review.note");
+        public string?        ReviewNote    => AppStrings.T("modify.splitByCell.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -274,13 +274,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByCell.summaries.fromSelection", _preSelectedIds.Count);
+                if (_preSelectedIds.Count > 0) return AppStrings.T("modify.splitByCell.summaries.fromSelection", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return LemoineStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY);
+                return AppStrings.T("modify.splitByCell.review.cellValue", _cellX, _cellY);
             if (stepId == "S3")
-                return LemoineStrings.T("modify.splitByCell.summaries.S3");
+                return AppStrings.T("modify.splitByCell.summaries.S3");
             return "—";
         }
 

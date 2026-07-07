@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 {
@@ -57,13 +57,13 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
             var uidoc = app.ActiveUIDocument;
             if (uidoc == null)
             {
-                Log(LemoineStrings.T("testing.legendCreator.log.noActiveDoc"), "fail");
+                Log(AppStrings.T("testing.legendCreator.log.noActiveDoc"), "fail");
                 Complete(0, 1, 0);
                 return;
             }
             int pass = 0, fail = 0, skip = 0;
             try { CreateLegend(uidoc.Document, ref pass, ref fail, ref skip); }
-            catch (Exception ex) { LemoineLog.Error("LegendCreator: run aborted", ex); Log(LemoineStrings.T("testing.legendCreator.log.error", ex.Message), "fail"); fail++; }
+            catch (Exception ex) { DiagnosticsLog.Error("LegendCreator: run aborted", ex); Log(AppStrings.T("testing.legendCreator.log.error", ex.Message), "fail"); fail++; }
             finally
             {
                 // Session-long static handler — drop the run's payload.
@@ -99,7 +99,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     .FirstOrDefault(v => v.ViewType == ViewType.Legend);
             if (!UpdateMode && templateLegend == null)
             {
-                Log(LemoineStrings.T("testing.legendCreator.log.noLegendView"), "fail");
+                Log(AppStrings.T("testing.legendCreator.log.noLegendView"), "fail");
                 fail++;
                 return;
             }
@@ -113,7 +113,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
             if (baseFRT == null || textTypeId == ElementId.InvalidElementId)
             {
-                Log(LemoineStrings.T("testing.legendCreator.log.missingType"), "fail");
+                Log(AppStrings.T("testing.legendCreator.log.missingType"), "fail");
                 fail++;
                 return;
             }
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     foreach (var rule in trade.Rules)
                         if (!ruleMap.ContainsKey(rule.Id)) ruleMap[rule.Id] = rule;
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: load AutoFilters rule map", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: load AutoFilters rule map", __lex); }
 
             // ── Collect needed (colorHex, fill) pairs → display name for FRT ──
             // First block with a given (color, fill) pair wins the name slot.
@@ -228,11 +228,11 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                         newFRT.ForegroundPatternColor = new Color(
                             (byte)rgb.Value.R, (byte)rgb.Value.G, (byte)rgb.Value.B);
                         newFRT.BackgroundPatternId = ElementId.InvalidElementId;
-                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set filled-region line weight", __lex); }
+                        try { newFRT.LineWeight = 1; } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: set filled-region line weight", __lex); }
                         frtMap[(colorHex, fill)] = newFRT.Id;
                         frtByKey[tname]          = newFRT.Id;
                     }
-                    catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchTypeError", ex.Message)); }
+                    catch (Exception ex) { logMsgs.Add(AppStrings.T("testing.legendCreator.log.swatchTypeError", ex.Message)); }
                 }
 
                 Progress(60, pass, fail, skip);
@@ -249,7 +249,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                             new ElementClassFilter(typeof(TextNote))))
                         .ToElementIds().ToList();
                     foreach (var id in ids)
-                        try { doc.Delete(id); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: clear legend content", __lex); }
+                        try { doc.Delete(id); } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: clear legend content", __lex); }
                 }
 
                 // ── Find/create the target legend view ───────────────────────
@@ -277,7 +277,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                         // The bound view was deleted, or this is a different project. Don't
                         // dead-end the run — fall through to creating a fresh legend, which
                         // also rebinds the entry via OnLegendCreated.
-                        Log(LemoineStrings.T("testing.legendCreator.log.boundViewMissing"), "info");
+                        Log(AppStrings.T("testing.legendCreator.log.boundViewMissing"), "info");
                         updating = false;
                         dv       = null;
                     }
@@ -292,7 +292,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 {
                     if (templateLegend == null)
                     {
-                        Log(LemoineStrings.T("testing.legendCreator.log.noLegendView"), "fail");
+                        Log(AppStrings.T("testing.legendCreator.log.noLegendView"), "fail");
                         fail++;
                         tx.Commit();
                         return;
@@ -301,7 +301,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                     dv = doc.GetElement(newLegendId) as View;
                     if (dv == null)
                     {
-                        Log(LemoineStrings.T("testing.legendCreator.log.duplicateFailed"), "fail");
+                        Log(AppStrings.T("testing.legendCreator.log.duplicateFailed"), "fail");
                         fail++;
                         tx.Commit();
                         return;
@@ -316,7 +316,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 // provable (and defends the invariant if the flow above ever changes).
                 if (dv == null)
                 {
-                    Log(LemoineStrings.T("testing.legendCreator.log.noViewResolved"), "fail");
+                    Log(AppStrings.T("testing.legendCreator.log.noViewResolved"), "fail");
                     fail++;
                     tx.Commit();
                     return;
@@ -327,10 +327,10 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 // carries. Sizing from the realized value keeps text-vs-swatch paper
                 // proportions identical to the preview even when the set is refused.
                 try { dv.Scale = requestedScale; }
-                catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set legend view scale", __lex); }
+                catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: set legend view scale", __lex); }
                 double scale = dv.Scale > 0 ? dv.Scale : requestedScale;
                 if ((int)scale != requestedScale)
-                    Log(LemoineStrings.T("testing.legendCreator.log.scaleAdjusted", (int)scale, requestedScale), "info");
+                    Log(AppStrings.T("testing.legendCreator.log.scaleAdjusted", (int)scale, requestedScale), "info");
 
                 // Paper-inch → model-foot: feet = paper_inches × scale ÷ 12
                 double swatchW  = LegendLayout.InchesToFeet(layout.SwatchW, scale);
@@ -378,10 +378,10 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 {
                     if (string.IsNullOrEmpty(text)) return;
                     var o = new TextNoteOptions { TypeId = typeId };
-                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
-                    try { o.VerticalAlignment = VerticalTextAlignment.Middle; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: set text-note vertical alignment", __lex); }
+                    try { o.HorizontalAlignment = HorizontalTextAlignment.Left; } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: set text-note alignment", __lex); }
+                    try { o.VerticalAlignment = VerticalTextAlignment.Middle; } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: set text-note vertical alignment", __lex); }
                     try   { TextNote.Create(doc, viewId, centerOrigin, text, o); }
-                    catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.textNoteError", text, ex.Message)); textFails++; }
+                    catch (Exception ex) { logMsgs.Add(AppStrings.T("testing.legendCreator.log.textNoteError", text, ex.Message)); textFails++; }
                 }
 
                 double cy = 0.0;
@@ -431,10 +431,10 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
                         foreach (var blk in grp.Blocks ?? new List<LegendBlockConfig>())
                         {
-                            if (LemoineRun.CancelRequested)
+                            if (RunState.CancelRequested)
                             {
                                 cancelled = true;
-                                Log(LemoineStrings.T("testing.legendCreator.log.stoppedByUser", blocksDone, totalBlocks), "warn");
+                                Log(AppStrings.T("testing.legendCreator.log.stoppedByUser", blocksDone, totalBlocks), "warn");
                                 break;   // breaks block loop; the group/row loops break on the cancelled flag
                             }
                             if (!blk.Visible) { skip++; continue; }
@@ -453,14 +453,14 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                                     CurveLoop loop = MakeShapeLoop(blk.Kind ?? "square", x0, y0, x1, y1);
                                     FilledRegion.Create(doc, frtId, dv.Id, new List<CurveLoop> { loop });
                                 }
-                                catch (Exception ex) { logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchError", blk.Name, ex.Message)); fail++; }
+                                catch (Exception ex) { logMsgs.Add(AppStrings.T("testing.legendCreator.log.swatchError", blk.Name, ex.Message)); fail++; }
                             }
                             else if (rgb.HasValue)
                             {
                                 // The colour resolved but its FilledRegionType wasn't built
                                 // (failure already in logMsgs) — say which block lost its
                                 // swatch instead of dropping it silently.
-                                logMsgs.Add(LemoineStrings.T("testing.legendCreator.log.swatchNoType", blk.Name, hex, fill));
+                                logMsgs.Add(AppStrings.T("testing.legendCreator.log.swatchNoType", blk.Name, hex, fill));
                             }
 
                             // Label: Middle-aligned at blockY — the swatch is also centred
@@ -503,8 +503,8 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
                 foreach (var l in logMsgs) Log(l, "info");
                 Log(createdNew
-                    ? LemoineStrings.T("testing.legendCreator.log.createdSummary", legendName, pass, skip, fail)
-                    : LemoineStrings.T("testing.legendCreator.log.updatedSummary", baseTitle, pass, skip, fail),
+                    ? AppStrings.T("testing.legendCreator.log.createdSummary", legendName, pass, skip, fail)
+                    : AppStrings.T("testing.legendCreator.log.updatedSummary", baseTitle, pass, skip, fail),
                     fail > 0 ? "fail" : "pass");
             }
         }
@@ -623,8 +623,8 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
 
         private static string? SafeName(Element el)
         {
-            try { return el.Name; } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read element name", __lex); }
-            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read symbol name parameter", __lex); }
+            try { return el.Name; } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: read element name", __lex); }
+            try { return el.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM)?.AsString(); } catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: read symbol name parameter", __lex); }
             return null;
         }
 
@@ -648,7 +648,7 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
                 double h = tnt?.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 0;
                 if (h > 0) return h * scale;
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("LegendCreator: read text-note type size", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("LegendCreator: read text-note type size", __lex); }
             return fallbackPt / 72.0 / 12.0 * scale;
         }
 
@@ -672,8 +672,8 @@ namespace LemoineTools.Tools.FiltersLegends.LegendCreator
         private void Log(string t, string s)
         {
             PushLog?.Invoke(t, s);
-            if (s == "fail") LemoineLog.Warn("LegendCreator", t);
-            else             LemoineLog.Info("LegendCreator", t);
+            if (s == "fail") DiagnosticsLog.Warn("LegendCreator", t);
+            else             DiagnosticsLog.Info("LegendCreator", t);
         }
         private void Progress(int p, int a, int f, int sk) => OnProgress?.Invoke(p, a, f, sk);
         private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);

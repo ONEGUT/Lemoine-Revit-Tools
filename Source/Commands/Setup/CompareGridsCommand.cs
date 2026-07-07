@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -75,7 +75,7 @@ namespace LemoineTools.Commands
 
                 bool hasGrids = false;
                 try { hasGrids = new FilteredElementCollector(ld).OfClass(typeof(Grid)).Any(); }
-                catch (Exception ex) { LemoineLog.Swallowed("CompareGridsCommand: probe link grids", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CompareGridsCommand: probe link grids", ex); }
                 if (!hasGrids) continue;
 
                 data.Files.Add(new CompareFileInfo

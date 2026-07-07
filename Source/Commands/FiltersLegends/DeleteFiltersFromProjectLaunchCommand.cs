@@ -4,7 +4,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Commands
@@ -50,7 +50,7 @@ namespace LemoineTools.Commands
                 }
                 catch (System.Exception ex)
                 {
-                    LemoineLog.Swallowed("DeleteFromProject: bring-to-front", ex);
+                    DiagnosticsLog.Swallowed("DeleteFromProject: bring-to-front", ex);
                     _window = null;
                 }
             }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.AutoFilters
             {
                 if (SelectedFilterNames == null || SelectedFilterNames.Count == 0)
                 {
-                    Log(LemoineStrings.T("autofilters.deleteFilters.log.noneSelected"), "fail");
+                    Log(AppStrings.T("autofilters.deleteFilters.log.noneSelected"), "fail");
                     fail++;
                     Progress(100, pass, fail, skip);
                     Complete(pass, fail, skip);
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.AutoFilters
                 // accounts for every filter the user selected.
                 foreach (var n in SelectedFilterNames.Where(n => !appliedFilters.ContainsKey(n)))
                 {
-                    Log(LemoineStrings.T("autofilters.deleteFilters.log.notApplied", n), "info");
+                    Log(AppStrings.T("autofilters.deleteFilters.log.notApplied", n), "info");
                     skip++;
                 }
 
@@ -74,9 +74,9 @@ namespace LemoineTools.Tools.AutoFilters
 
                     foreach (var id in toRemove)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                             break;
                         }
 
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.AutoFilters
                         }
                         catch (Exception ex)
                         {
-                            Log(LemoineStrings.T("autofilters.deleteFilters.log.removeFailed", id, ex.Message), "fail");
+                            Log(AppStrings.T("autofilters.deleteFilters.log.removeFailed", id, ex.Message), "fail");
                             fail++;
                         }
                         done++;
@@ -97,12 +97,12 @@ namespace LemoineTools.Tools.AutoFilters
                     tx.Commit();
                 }
 
-                Log(LemoineStrings.T("autofilters.deleteFilters.log.complete", pass, fail, skip),
+                Log(AppStrings.T("autofilters.deleteFilters.log.complete", pass, fail, skip),
                     fail > 0 ? "fail" : "pass");
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: delete filters aborted", ex); Log(LemoineStrings.T("autofilters.deleteFilters.log.error", ex.Message), "fail");
+                DiagnosticsLog.Error("AutoFilters: delete filters aborted", ex); Log(AppStrings.T("autofilters.deleteFilters.log.error", ex.Message), "fail");
                 fail++;
             }
             finally

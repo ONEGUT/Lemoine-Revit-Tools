@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Tools.Dimensioning
@@ -18,12 +18,12 @@ namespace LemoineTools.Tools.Dimensioning
     /// review &amp; run. Marker oversize is edited in inches but stored internally in millimetres.
     /// The actual work happens in <see cref="ClashElevationFinderEventHandler"/>.
     /// </summary>
-    public class ClashElevationFinderViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ClashElevationFinderViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
         // Run strip: "markers" during the run, full marker/tag/failure breakdown on completion.
         public string? ResultNoun => "markers";
-        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
         // Null the callbacks parked on the static handler so this VM isn't retained after close.
         public void OnWindowClosed()
@@ -35,15 +35,15 @@ namespace LemoineTools.Tools.Dimensioning
             _handler.OnResultChips = null;
         }
 
-        public string Title    => LemoineStrings.T("clash.elevationFinder.title");
-        public string RunLabel => LemoineStrings.T("clash.elevationFinder.runLabel");
+        public string Title    => AppStrings.T("clash.elevationFinder.title");
+        public string RunLabel => AppStrings.T("clash.elevationFinder.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("clash.elevationFinder.steps.S1"),     required: true),
-            new StepDefinition("S2", LemoineStrings.T("clash.elevationFinder.steps.S2"),           required: true),
-            new StepDefinition("S3", LemoineStrings.T("clash.elevationFinder.steps.S3"),  required: false),
-            new StepDefinition("S4", LemoineStrings.T("clash.elevationFinder.steps.S4"),           required: false),
+            new StepDefinition("S1", AppStrings.T("clash.elevationFinder.steps.S1"),     required: true),
+            new StepDefinition("S2", AppStrings.T("clash.elevationFinder.steps.S2"),           required: true),
+            new StepDefinition("S3", AppStrings.T("clash.elevationFinder.steps.S3"),  required: false),
+            new StepDefinition("S4", AppStrings.T("clash.elevationFinder.steps.S4"),           required: false),
         };
 
         private const double MmPerInch = 25.4;
@@ -65,16 +65,16 @@ namespace LemoineTools.Tools.Dimensioning
         // ── State ─────────────────────────────────────────────────────────────
         private List<string> _selectedDefDisplays = new List<string>();
         private List<long>   _selectedViewIds     = new List<long>();
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
 
         private bool   _clearPrevious    = true;
         private double _roundSizeMm      = 0.0;     // round marker oversize; 0 = exact element size
         private string _anchorMode       = "Centre"; // "Top" | "Centre" | "Bottom"
         private ElementId _spotTypeId    = ElementId.InvalidElementId;
 
-        private static readonly string AnchorTop    = LemoineStrings.T("clash.elevationFinder.labels.anchorTop");
-        private static readonly string AnchorCentre = LemoineStrings.T("clash.elevationFinder.labels.anchorCenter");
-        private static readonly string AnchorBottom = LemoineStrings.T("clash.elevationFinder.labels.anchorBottom");
+        private static readonly string AnchorTop    = AppStrings.T("clash.elevationFinder.labels.anchorTop");
+        private static readonly string AnchorCentre = AppStrings.T("clash.elevationFinder.labels.anchorCenter");
+        private static readonly string AnchorBottom = AppStrings.T("clash.elevationFinder.labels.anchorBottom");
 
         public ClashElevationFinderViewModel(
             ClashElevationFinderEventHandler? handler,
@@ -82,19 +82,19 @@ namespace LemoineTools.Tools.Dimensioning
             List<View>                        allViews,
             List<ClashDefinition>             definitions,
             List<(string Name, ElementId Id)> spotTypes,
-            LemoineBrowserTree?               browserTree = null)
+            BrowserTree?               browserTree = null)
         {
             _handler     = handler;
             _event       = externalEvent;
             _allViews    = allViews    ?? new List<View>();
             _definitions = definitions ?? new List<ClashDefinition>();
             _spotTypes   = spotTypes   ?? new List<(string, ElementId)>();
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
 
             var used = new HashSet<string>();
             foreach (var def in _definitions)
             {
-                string baseName = string.IsNullOrWhiteSpace(def.Name) ? LemoineStrings.T("clash.elevationFinder.labels.unnamed") : def.Name;
+                string baseName = string.IsNullOrWhiteSpace(def.Name) ? AppStrings.T("clash.elevationFinder.labels.unnamed") : def.Name;
                 string display  = baseName;
                 int n = 2;
                 while (!used.Add(display)) display = $"{baseName} ({n++})";
@@ -117,7 +117,7 @@ namespace LemoineTools.Tools.Dimensioning
                 case "S1": return BuildDefinitionsStep();
                 case "S2": return BuildViewsStep();
                 case "S3": return BuildSettingsStep();
-                case "S4": return null;   // framework renders the review (ILemoineReviewable)
+                case "S4": return null;   // framework renders the review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -131,7 +131,7 @@ namespace LemoineTools.Tools.Dimensioning
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight                     = maxHeight,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
             return sv;
         }
 
@@ -142,18 +142,18 @@ namespace LemoineTools.Tools.Dimensioning
 
             if (_defDisplayToDef.Count == 0)
             {
-                AddDim(outer, LemoineStrings.T("clash.elevationFinder.labels.noDefs"));
+                AddDim(outer, AppStrings.T("clash.elevationFinder.labels.noDefs"));
                 return WrapInScroll(outer);
             }
 
-            AddLabel(outer, LemoineStrings.T("clash.elevationFinder.labels.pickDefs"));
+            AddLabel(outer, AppStrings.T("clash.elevationFinder.labels.pickDefs"));
 
             var groups = new Dictionary<string, List<string>>
             {
-                [LemoineStrings.T("clash.elevationFinder.labels.groupSaved")] = _defDisplayToDef.Keys.ToList(),
+                [AppStrings.T("clash.elevationFinder.labels.groupSaved")] = _defDisplayToDef.Keys.ToList(),
             };
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += selected =>
             {
                 _selectedDefDisplays = new List<string>(selected);
@@ -169,11 +169,11 @@ namespace LemoineTools.Tools.Dimensioning
         private FrameworkElement BuildViewsStep()
         {
             var outer = new StackPanel();
-            AddLabel(outer, LemoineStrings.T("clash.elevationFinder.labels.pickViews"));
-            var picker = new LemoineBrowserTreePicker
+            AddLabel(outer, AppStrings.T("clash.elevationFinder.labels.pickViews"));
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("clash.elevationFinder.labels.pickerName"),
+                AccessibleName = AppStrings.T("clash.elevationFinder.labels.pickerName"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -193,11 +193,11 @@ namespace LemoineTools.Tools.Dimensioning
         {
             var outer = new StackPanel();
 
-            var toggles = new LemoineToggleSwitches();
+            var toggles = new ToggleSwitches();
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "clear", Label = LemoineStrings.T("clash.elevationFinder.labels.clearLabel"),
-                                 Desc = LemoineStrings.T("clash.elevationFinder.labels.clearDesc"), DefaultOn = _clearPrevious },
+                new ToggleItem { Id = "clear", Label = AppStrings.T("clash.elevationFinder.labels.clearLabel"),
+                                 Desc = AppStrings.T("clash.elevationFinder.labels.clearDesc"), DefaultOn = _clearPrevious },
             });
             toggles.StateChanged += state =>
             {
@@ -208,14 +208,14 @@ namespace LemoineTools.Tools.Dimensioning
 
             AddDivider(outer);
             AddStepperRow(outer,
-                LemoineStrings.T("clash.elevationFinder.labels.oversizeLabel"),
-                LemoineStrings.T("clash.elevationFinder.labels.oversizeHint"),
+                AppStrings.T("clash.elevationFinder.labels.oversizeLabel"),
+                AppStrings.T("clash.elevationFinder.labels.oversizeHint"),
                 _roundSizeMm / MmPerInch, min: 0, max: 40, step: 0.25, decimals: 2,
                 v => { _roundSizeMm = v * MmPerInch; Fire(); });
 
             AddDivider(outer);
-            AddLabel(outer, LemoineStrings.T("clash.elevationFinder.labels.tagWhere"));
-            var anchorPicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.elevationFinder.labels.tagPosLabel") };
+            AddLabel(outer, AppStrings.T("clash.elevationFinder.labels.tagWhere"));
+            var anchorPicker = new SingleSelect { Label = AppStrings.T("clash.elevationFinder.labels.tagPosLabel") };
             anchorPicker.Items = new List<string> { AnchorTop, AnchorCentre, AnchorBottom };
             anchorPicker.SelectedItem = _anchorMode == "Top" ? AnchorTop
                                       : _anchorMode == "Bottom" ? AnchorBottom : AnchorCentre;
@@ -228,14 +228,14 @@ namespace LemoineTools.Tools.Dimensioning
             outer.Children.Add(anchorPicker);
 
             AddDivider(outer);
-            AddLabel(outer, LemoineStrings.T("clash.elevationFinder.labels.spotWhich"));
+            AddLabel(outer, AppStrings.T("clash.elevationFinder.labels.spotWhich"));
             if (_spotTypes.Count == 0)
             {
-                AddDim(outer, LemoineStrings.T("clash.elevationFinder.labels.noSpotType"));
+                AddDim(outer, AppStrings.T("clash.elevationFinder.labels.noSpotType"));
             }
             else
             {
-                var typePicker = new LemoineSingleSelect { Label = LemoineStrings.T("clash.elevationFinder.labels.spotTypeLabel") };
+                var typePicker = new SingleSelect { Label = AppStrings.T("clash.elevationFinder.labels.spotTypeLabel") };
                 typePicker.Items = _spotTypes.Select(t => t.Name).ToList();
                 typePicker.SelectedItem = _spotTypes.FirstOrDefault(t => t.Id == _spotTypeId).Name ?? _spotTypes[0].Name;
                 typePicker.SelectionChanged += sel =>
@@ -264,39 +264,39 @@ namespace LemoineTools.Tools.Dimensioning
         {
             switch (stepId)
             {
-                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : LemoineStrings.T("clash.elevationFinder.summaries.defCount", _selectedDefDisplays.Count);
-                case "S2": return _selectedViewIds.Count     == 0 ? "—" : LemoineStrings.T("clash.elevationFinder.summaries.viewCount", _selectedViewIds.Count);
+                case "S1": return _selectedDefDisplays.Count == 0 ? "—" : AppStrings.T("clash.elevationFinder.summaries.defCount", _selectedDefDisplays.Count);
+                case "S2": return _selectedViewIds.Count     == 0 ? "—" : AppStrings.T("clash.elevationFinder.summaries.viewCount", _selectedViewIds.Count);
                 case "S3":
                 {
                     var bits = new List<string>();
-                    if (_clearPrevious) bits.Add(LemoineStrings.T("clash.elevationFinder.summaries.clear"));
-                    bits.Add(LemoineStrings.T("clash.elevationFinder.summaries.tag", _anchorMode == "Top" ? LemoineStrings.T("clash.elevationFinder.words.top") : _anchorMode == "Bottom" ? LemoineStrings.T("clash.elevationFinder.words.bottom") : LemoineStrings.T("clash.elevationFinder.words.center")));
-                    bits.Add(_roundSizeMm > 0 ? LemoineStrings.T("clash.elevationFinder.summaries.oversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.elevationFinder.summaries.exactSize"));
+                    if (_clearPrevious) bits.Add(AppStrings.T("clash.elevationFinder.summaries.clear"));
+                    bits.Add(AppStrings.T("clash.elevationFinder.summaries.tag", _anchorMode == "Top" ? AppStrings.T("clash.elevationFinder.words.top") : _anchorMode == "Bottom" ? AppStrings.T("clash.elevationFinder.words.bottom") : AppStrings.T("clash.elevationFinder.words.center")));
+                    bits.Add(_roundSizeMm > 0 ? AppStrings.T("clash.elevationFinder.summaries.oversize", _roundSizeMm / MmPerInch) : AppStrings.T("clash.elevationFinder.summaries.exactSize"));
                     return string.Join(" · ", bits);
                 }
-                case "S4": return LemoineStrings.T("clash.elevationFinder.summaries.S4");
+                case "S4": return AppStrings.T("clash.elevationFinder.summaries.S4");
                 default: return "—";
             }
         }
 
-        // ── ILemoineReviewable — framework renders the review step ────────────
+        // ── IReviewableTool — framework renders the review step ────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("defs",   LemoineStrings.T("clash.elevationFinder.review.itemDefs")),
-            ("views",  LemoineStrings.T("clash.elevationFinder.review.itemViews")),
-            ("marker", LemoineStrings.T("clash.elevationFinder.review.itemMarker")),
-            ("tag",    LemoineStrings.T("clash.elevationFinder.review.itemTag")),
+            ("defs",   AppStrings.T("clash.elevationFinder.review.itemDefs")),
+            ("views",  AppStrings.T("clash.elevationFinder.review.itemViews")),
+            ("marker", AppStrings.T("clash.elevationFinder.review.itemMarker")),
+            ("tag",    AppStrings.T("clash.elevationFinder.review.itemTag")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["defs"]   = _selectedDefDisplays.Count > 0 ? LemoineStrings.T("clash.elevationFinder.review.defsValue", _selectedDefDisplays.Count) : "—",
-            ["views"]  = _selectedViewIds.Count     > 0 ? LemoineStrings.T("clash.elevationFinder.review.viewsValue", _selectedViewIds.Count)          : "—",
-            ["marker"] = _roundSizeMm > 0 ? LemoineStrings.T("clash.elevationFinder.review.markerOversize", _roundSizeMm / MmPerInch) : LemoineStrings.T("clash.elevationFinder.review.markerExact"),
-            ["tag"]    = (_anchorMode == "Top" ? LemoineStrings.T("clash.elevationFinder.words.top") : _anchorMode == "Bottom" ? LemoineStrings.T("clash.elevationFinder.words.bottom") : LemoineStrings.T("clash.elevationFinder.words.center"))
+            ["defs"]   = _selectedDefDisplays.Count > 0 ? AppStrings.T("clash.elevationFinder.review.defsValue", _selectedDefDisplays.Count) : "—",
+            ["views"]  = _selectedViewIds.Count     > 0 ? AppStrings.T("clash.elevationFinder.review.viewsValue", _selectedViewIds.Count)          : "—",
+            ["marker"] = _roundSizeMm > 0 ? AppStrings.T("clash.elevationFinder.review.markerOversize", _roundSizeMm / MmPerInch) : AppStrings.T("clash.elevationFinder.review.markerExact"),
+            ["tag"]    = (_anchorMode == "Top" ? AppStrings.T("clash.elevationFinder.words.top") : _anchorMode == "Bottom" ? AppStrings.T("clash.elevationFinder.words.bottom") : AppStrings.T("clash.elevationFinder.words.center"))
                 + (_spotTypes.Count > 0
                     ? $" · {_spotTypes.FirstOrDefault(t => t.Id == _spotTypeId).Name ?? _spotTypes[0].Name}"
-                    : LemoineStrings.T("clash.elevationFinder.review.tagNoSpot")),
+                    : AppStrings.T("clash.elevationFinder.review.tagNoSpot")),
         };
 
         public IList<string>? ReviewChips
@@ -304,15 +304,15 @@ namespace LemoineTools.Tools.Dimensioning
             get
             {
                 var chips = new List<string>();
-                if (_clearPrevious) chips.Add(LemoineStrings.T("clash.elevationFinder.review.chipClear"));
+                if (_clearPrevious) chips.Add(AppStrings.T("clash.elevationFinder.review.chipClear"));
                 return chips.Count > 0 ? chips : null;
             }
         }
 
-        public string? ReviewNote => LemoineStrings.T("clash.elevationFinder.review.note");
+        public string? ReviewNote => AppStrings.T("clash.elevationFinder.review.note");
 
         public string? ReviewWarning => _spotTypes.Count == 0
-            ? LemoineStrings.T("clash.elevationFinder.review.warnNoSpot")
+            ? AppStrings.T("clash.elevationFinder.review.warnNoSpot")
             : null;
 
         // ── Run ───────────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ namespace LemoineTools.Tools.Dimensioning
         {
             AddLabel(parent, label);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 Value               = value,
                 MinValue            = min,

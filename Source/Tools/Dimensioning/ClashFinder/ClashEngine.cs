@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 
 using RevitColor = Autodesk.Revit.DB.Color;
@@ -178,7 +178,7 @@ namespace LemoineTools.Tools.Dimensioning
                 foreach (Phase ph in doc.Phases)
                     det.HostPhaseSeq[ph.Name] = det.HostPhaseSeq.Count;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read host phases", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read host phases", ex); }
 
             // 2. Scan each group per its mode
             var group1Elements = ScanGroupSpec(group1Spec, sources, "Group 1");
@@ -336,7 +336,7 @@ namespace LemoineTools.Tools.Dimensioning
                     box = WorldAabb(BoxCorners(sb.Min, sb.Max), sb.Transform);
                     return true;
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: get 3D section box", ex); return false; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: get 3D section box", ex); return false; }
             }
 
             bool bounded = false;
@@ -353,7 +353,7 @@ namespace LemoineTools.Tools.Dimensioning
                     bounded = true;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read view crop box", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read view crop box", ex); }
 
             // Z from the storey band [Li - margin, Lnext - margin) for plan views.
             if (view is ViewPlan plan && TryGetStoreyZBand(plan, sortedLevelElevs, storeyMarginFt, out double zMin, out double zMax))
@@ -376,7 +376,7 @@ namespace LemoineTools.Tools.Dimensioning
 
             Level? genLevel;
             try { genLevel = plan.GenLevel; }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read plan GenLevel", ex); return false; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read plan GenLevel", ex); return false; }
             if (genLevel == null) return false;
 
             double baseElev = genLevel.Elevation;
@@ -424,7 +424,7 @@ namespace LemoineTools.Tools.Dimensioning
                     && el.Document.GetElement(pd.AsElementId()) is Phase phD)
                     demolished = phD.Name ?? "";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element phases", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read element phases", ex); }
             return (created, demolished);
         }
 
@@ -438,7 +438,7 @@ namespace LemoineTools.Tools.Dimensioning
                     && view.Document.GetElement(p.AsElementId()) is Phase ph)
                     return ph.Name ?? "";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read view phase", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read view phase", ex); }
             return "";
         }
 
@@ -473,7 +473,7 @@ namespace LemoineTools.Tools.Dimensioning
             if (!det.WarnedPhaseNames.Add(phaseName)) return;
             Log($"Phase filter: phase '{phaseName}' (from a linked model) has no same-named host phase — "
               + "its elements pass through unfiltered.", "info");
-            LemoineLog.Warn("ClashEngine phase filter", $"unmapped phase name '{phaseName}'");
+            DiagnosticsLog.Warn("ClashEngine phase filter", $"unmapped phase name '{phaseName}'");
         }
 
         // ── Group scanning (mode-aware) ───────────────────────────────────────
@@ -531,7 +531,7 @@ namespace LemoineTools.Tools.Dimensioning
         {
             if (excluded == null || excluded.Count == 0) return true;
             try { return !excluded.Contains(el.WorksetId.IntegerValue); }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element workset", ex); return true; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read element workset", ex); return true; }
         }
 
         private List<ClashElement> ScanRules(
@@ -750,7 +750,7 @@ namespace LemoineTools.Tools.Dimensioning
             var cat = el.Category;
             if (cat == null) return null;
             try { return ((BuiltInCategory)cat.Id.Value).ToString(); }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: resolve element category", ex); return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: resolve element category", ex); return null; }
         }
 
         private static bool MatchesRule(Element el, FilterRuleConfig rule)
@@ -781,7 +781,7 @@ namespace LemoineTools.Tools.Dimensioning
                     var t = el.Document.GetElement(el.GetTypeId());
                     if (t != null && !string.IsNullOrEmpty(t.Name)) return t.Name;
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read Type Name parameter", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read Type Name parameter", ex); }
             }
 
             try
@@ -795,7 +795,7 @@ namespace LemoineTools.Tools.Dimensioning
                     if (!string.IsNullOrEmpty(v)) return v;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read parameter value", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read parameter value", ex); }
 
             if (BipMap.TryGetValue(paramName, out var bip))
             {
@@ -808,7 +808,7 @@ namespace LemoineTools.Tools.Dimensioning
                         if (!string.IsNullOrEmpty(v)) return v;
                     }
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read built-in parameter value", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read built-in parameter value", ex); }
             }
             return null;
         }
@@ -857,7 +857,7 @@ namespace LemoineTools.Tools.Dimensioning
                     if (min > 1e-6) return (false, min, min, null, null);
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: element shape bbox", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: element shape bbox", ex); }
             return (false, 0.0, 0.0, null, null);
         }
 
@@ -877,7 +877,7 @@ namespace LemoineTools.Tools.Dimensioning
                     if (dir.GetLength() > 1e-9) run = dir.Normalize();
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read element location curve", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read element location curve", ex); }
             if (run == null) return;
 
             if (tx != null && !tx.IsIdentity) run = tx.OfVector(run);
@@ -958,7 +958,7 @@ namespace LemoineTools.Tools.Dimensioning
                 var p = el.get_Parameter(bip);
                 if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read double parameter", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read double parameter", ex); }
             return 0.0;
         }
 
@@ -971,7 +971,7 @@ namespace LemoineTools.Tools.Dimensioning
                 var p = el.LookupParameter(name);
                 if (p != null && p.StorageType == StorageType.Double && p.HasValue) return p.AsDouble();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: read named double parameter", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: read named double parameter", ex); }
             return 0.0;
         }
 
@@ -1127,7 +1127,7 @@ namespace LemoineTools.Tools.Dimensioning
                 {
                     GeometryElement? ige = null;
                     try { ige = gi.GetInstanceGeometry(); }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: extract instance geometry", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: extract instance geometry", ex); }
                     if (ige != null) acc = AccumulateSolids(ige, tx, acc);
                 }
             }
@@ -1237,7 +1237,7 @@ namespace LemoineTools.Tools.Dimensioning
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
                     ClashTagSchema.StampTag(fr, clashGroup, tgtLink, tgtElem);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: create clash filled region", ex); }
             }
 
             // ── Cross lines (tagged so the discovery pass can re-find them) ────
@@ -1337,7 +1337,7 @@ namespace LemoineTools.Tools.Dimensioning
                     var fr = FilledRegion.Create(doc, typeId, view.Id, new List<CurveLoop> { loop });
                     ClashTagSchema.StampTag(fr, clashGroup, tgtLink, tgtElem);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: create clash filled region (vertical)", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: create clash filled region (vertical)", ex); }
             }
 
             // ── Vertical line spanning the marker top→bottom, tagged for the spot-elevation pass ──
@@ -1405,7 +1405,7 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 var gs = doc.GetElement(lineStyleId) as GraphicsStyle;
                 if (gs != null) try { dc.LineStyle = gs; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: apply detail-curve line style", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: apply detail-curve line style", ex); }
             }
             return dc;
         }
@@ -1427,7 +1427,7 @@ namespace LemoineTools.Tools.Dimensioning
                     }
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: resolve cross-line graphics style", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: resolve cross-line graphics style", ex); }
             return ElementId.InvalidElementId;
         }
 
@@ -1437,7 +1437,7 @@ namespace LemoineTools.Tools.Dimensioning
                 .OfClass(typeof(FillPatternElement)).Cast<FillPatternElement>())
             {
                 try { if (fp.GetFillPattern().IsSolidFill) return fp.Id; }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: inspect fill pattern", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: inspect fill pattern", ex); }
             }
             return ElementId.InvalidElementId;
         }
@@ -1453,7 +1453,7 @@ namespace LemoineTools.Tools.Dimensioning
                     return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashEngine: parse hex colour", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: parse hex colour", ex); }
             return null;
         }
     }

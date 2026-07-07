@@ -6,8 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -19,7 +19,7 @@ namespace LemoineTools.Tools.Setup
     /// overridden per link). Repositions the host's copy of each link only — use the separate
     /// "Push Coordinates to Links" tool to commit the correction into the linked files.
     /// </summary>
-    public class AlignCoordinatesViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public class AlignCoordinatesViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
         private const string AnchorInternalOriginLabel   = "Internal Origin (default)";
         private const string AnchorGridIntersectionLabel = "Grid Intersection";
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.Setup
             {
                 case "host":  return BuildHostStep();
                 case "links": return BuildLinksStep();
-                default:      return null;   // "run" is rendered by ILemoineReviewable
+                default:      return null;   // "run" is rendered by IReviewableTool
             }
         }
 
@@ -97,7 +97,7 @@ namespace LemoineTools.Tools.Setup
             var outer = new StackPanel();
 
             outer.Children.Add(Label("Alignment method"));
-            var anchorSel = new LemoineSingleSelect
+            var anchorSel = new SingleSelect
             {
                 Items          = new List<string> { AnchorInternalOriginLabel, AnchorGridIntersectionLabel },
                 SelectedItem   = _hostAnchorSource == AnchorSource.GridIntersection ? AnchorGridIntersectionLabel : AnchorInternalOriginLabel,
@@ -110,7 +110,7 @@ namespace LemoineTools.Tools.Setup
             outer.Children.Add(_hostGridFieldsPanel);
 
             outer.Children.Add(Label("Elevation (Z) method"));
-            var zSel = new LemoineSingleSelect
+            var zSel = new SingleSelect
             {
                 Items          = new List<string> { ZInternalOriginLabel, ZMatchedLevelLabel },
                 SelectedItem   = _hostZSource == ZSource.MatchedLevel ? ZMatchedLevelLabel : ZInternalOriginLabel,
@@ -136,7 +136,7 @@ namespace LemoineTools.Tools.Setup
 
             Divider(outer);
             outer.Children.Add(Label("Move which host point(s)"));
-            var toggles = new LemoineToggleSwitches { AccessibleName = "Host points to move" };
+            var toggles = new ToggleSwitches { AccessibleName = "Host points to move" };
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "survey", Label = "Survey Point",       DefaultOn = _moveSurvey },
@@ -176,12 +176,12 @@ namespace LemoineTools.Tools.Setup
             var inner = (StackPanel)wrap.Child;
 
             inner.Children.Add(Label("Grid 1"));
-            var g1 = new LemoineSingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid1, AccessibleName = "Grid 1" };
+            var g1 = new SingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid1, AccessibleName = "Grid 1" };
             g1.SelectionChanged += v => { _hostGrid1 = v; Changed(); };
             inner.Children.Add(g1);
 
             inner.Children.Add(Label("Grid 2"));
-            var g2 = new LemoineSingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid2, AccessibleName = "Grid 2" };
+            var g2 = new SingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid2, AccessibleName = "Grid 2" };
             g2.SelectionChanged += v => { _hostGrid2 = v; Changed(); };
             inner.Children.Add(g2);
 
@@ -206,7 +206,7 @@ namespace LemoineTools.Tools.Setup
             var inner = (StackPanel)wrap.Child;
 
             inner.Children.Add(Label("Level"));
-            var lvl = new LemoineSingleSelect { Items = _data.HostLevelNames, SelectedItem = _hostLevel, AccessibleName = "Level" };
+            var lvl = new SingleSelect { Items = _data.HostLevelNames, SelectedItem = _hostLevel, AccessibleName = "Level" };
             lvl.SelectionChanged += v => { _hostLevel = v; Changed(); };
             inner.Children.Add(lvl);
 
@@ -248,7 +248,7 @@ namespace LemoineTools.Tools.Setup
             }
 
             Divider(outer);
-            var toggles = new LemoineToggleSwitches { AccessibleName = "Alignment options" };
+            var toggles = new ToggleSwitches { AccessibleName = "Alignment options" };
             toggles.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "rotate",  Label = "Rotate to align orientation",
@@ -368,7 +368,7 @@ namespace LemoineTools.Tools.Setup
                 var col1 = new StackPanel();
                 Grid.SetColumn(col1, 0);
                 col1.Children.Add(Label("Grid 1"));
-                var g1Sel = new LemoineSingleSelect { Items = grids, SelectedItem = spec.Grid1Name, AccessibleName = $"{info.Name} Grid 1" };
+                var g1Sel = new SingleSelect { Items = grids, SelectedItem = spec.Grid1Name, AccessibleName = $"{info.Name} Grid 1" };
                 g1Sel.SelectionChanged += v => { spec.Grid1Name = v ?? ""; Changed(); };
                 col1.Children.Add(g1Sel);
                 fieldsGrid.Children.Add(col1);
@@ -376,7 +376,7 @@ namespace LemoineTools.Tools.Setup
                 var col2 = new StackPanel();
                 Grid.SetColumn(col2, 2);
                 col2.Children.Add(Label("Grid 2"));
-                var g2Sel = new LemoineSingleSelect { Items = grids, SelectedItem = spec.Grid2Name, AccessibleName = $"{info.Name} Grid 2" };
+                var g2Sel = new SingleSelect { Items = grids, SelectedItem = spec.Grid2Name, AccessibleName = $"{info.Name} Grid 2" };
                 g2Sel.SelectionChanged += v => { spec.Grid2Name = v ?? ""; Changed(); };
                 col2.Children.Add(g2Sel);
                 fieldsGrid.Children.Add(col2);

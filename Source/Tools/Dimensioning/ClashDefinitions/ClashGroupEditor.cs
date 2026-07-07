@@ -7,8 +7,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.Dimensioning
@@ -324,7 +324,7 @@ namespace LemoineTools.Tools.Dimensioning
                 else
                     // Saved rule no longer exists in the catalog — it will be pruned when the group is
                     // re-saved. Record it so the drop isn't silent.
-                    LemoineLog.Warn("ClashGroupEditor", $"Saved clash rule '{pk}' no longer exists — dropped from the group.");
+                    DiagnosticsLog.Warn("ClashGroupEditor", $"Saved clash rule '{pk}' no longer exists — dropped from the group.");
             }
 
             foreach (var ost in _spec.Categories ?? new List<string>())
@@ -401,7 +401,7 @@ namespace LemoineTools.Tools.Dimensioning
             };
 
             AddLabel(outer, "Group definition mode");
-            var modeSelect = new LemoineSingleSelect
+            var modeSelect = new SingleSelect
             {
                 Items        = ModeDisplayItems,
                 SelectedItem = ModeToDisplay(_spec.Mode),
@@ -436,7 +436,7 @@ namespace LemoineTools.Tools.Dimensioning
                 AddDim(body, "No Auto Filters rules configured. Switch to Categories or Select Elements, or set up Auto Filters first.");
                 return;
             }
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), _ruleDisplays);
             tabs.SelectionChanged += selected =>
             {
@@ -454,7 +454,7 @@ namespace LemoineTools.Tools.Dimensioning
                 AddDim(body, "No categories available.");
                 return;
             }
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.Hierarchy = AutoFiltersSettings.CategorySubcategories;
             tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), _catDisplays);
             tabs.SelectionChanged += selected =>
@@ -528,7 +528,7 @@ namespace LemoineTools.Tools.Dimensioning
                 Cursor          = Cursors.Hand,
                 BorderThickness = new Thickness(1),
                 Margin          = new Thickness(0, 0, 8, 0),
-                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
+                Template        = ControlStyles.BuildFlatButtonTemplate(),
             };
             b.SetResourceReference(Button.MinHeightProperty,  "LemoineH_BtnMin");
             b.SetResourceReference(Button.PaddingProperty,    "LemoineTh_BtnPad");

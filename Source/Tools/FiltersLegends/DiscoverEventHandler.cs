@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.AutoFilters
 {
@@ -117,7 +117,7 @@ namespace LemoineTools.Tools.AutoFilters
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("AutoFilters: discover aborted", ex); Log(LemoineStrings.T("autofilters.discover.log.error", ex.Message), "fail");
+                DiagnosticsLog.Error("AutoFilters: discover aborted", ex); Log(AppStrings.T("autofilters.discover.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -131,7 +131,7 @@ namespace LemoineTools.Tools.AutoFilters
                     Progress(100, pass, fail, skip);
                     Complete(pass, fail, skip);
                 }
-                catch (Exception cbEx) { LemoineLog.Swallowed("AutoFilters: discover completion callback", cbEx); }
+                catch (Exception cbEx) { DiagnosticsLog.Swallowed("AutoFilters: discover completion callback", cbEx); }
 
                 ScanSpecs   = new List<ScanSpec>();
                 CommitSpecs = new List<CommitRuleSpec>();
@@ -179,21 +179,21 @@ namespace LemoineTools.Tools.AutoFilters
             foreach (var link in specsByLink)
             {
                 int catCount = link.Specs.Count;
-                Log(LemoineStrings.T("autofilters.discover.log.queued", link.TradeName, catCount), "info");
+                Log(AppStrings.T("autofilters.discover.log.queued", link.TradeName, catCount), "info");
             }
 
             foreach (var link in specsByLink)
             {
                 if (cancelled) break;
 
-                Log(LemoineStrings.T("autofilters.discover.log.scanningLink", link.TradeName), "info");
+                Log(AppStrings.T("autofilters.discover.log.scanningLink", link.TradeName), "info");
                 int resultsBefore = results.Count;
 
                 foreach (var spec in link.Specs)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                         cancelled = true;
                         break;
                     }
@@ -201,18 +201,18 @@ namespace LemoineTools.Tools.AutoFilters
                     done++;
                     Progress((int)(5 + 90.0 * done / Math.Max(1, total)), pass, fail, skip);
 
-                    Log(LemoineStrings.T("autofilters.discover.log.scanCategory", spec.OstCategory), "info");
+                    Log(AppStrings.T("autofilters.discover.log.scanCategory", spec.OstCategory), "info");
 
                     if (!Enum.TryParse<BuiltInCategory>(spec.OstCategory, false, out var bic))
                     {
-                        Log(LemoineStrings.T("autofilters.discover.log.unknownCategory"), "info");
+                        Log(AppStrings.T("autofilters.discover.log.unknownCategory"), "info");
                         skip++;
                         continue;
                     }
 
                     if (!linkDocMap.TryGetValue(spec.LinkId, out var scanDoc))
                     {
-                        Log(LemoineStrings.T("autofilters.discover.log.linkDocNotFound"), "info");
+                        Log(AppStrings.T("autofilters.discover.log.linkDocNotFound"), "info");
                         skip++;
                         continue;
                     }
@@ -279,11 +279,11 @@ namespace LemoineTools.Tools.AutoFilters
                 }
 
                 int linkRules = results.Count - resultsBefore;
-                Log(LemoineStrings.T("autofilters.discover.log.linkComplete", link.TradeName, linkRules), linkRules > 0 ? "pass" : "info");
+                Log(AppStrings.T("autofilters.discover.log.linkComplete", link.TradeName, linkRules), linkRules > 0 ? "pass" : "info");
             }
 
             ScanResults = results;
-            Log(LemoineStrings.T("autofilters.discover.log.scanComplete", pass, skip), pass > 0 ? "pass" : "info");
+            Log(AppStrings.T("autofilters.discover.log.scanComplete", pass, skip), pass > 0 ? "pass" : "info");
         }
 
         /// <summary>
@@ -378,15 +378,15 @@ namespace LemoineTools.Tools.AutoFilters
 
         private void RunCommit(ref int pass, ref int fail, ref int skip)
         {
-            Log(LemoineStrings.T("autofilters.discover.log.savingRules"), "info");
+            Log(AppStrings.T("autofilters.discover.log.savingRules"), "info");
             var settings = AutoFiltersSettings.Instance;
 
             int committed = 0;
             foreach (var spec in CommitSpecs)
             {
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("common.log.stoppedByUser", committed, CommitSpecs.Count), "warn");
+                    Log(AppStrings.T("common.log.stoppedByUser", committed, CommitSpecs.Count), "warn");
                     break;
                 }
                 committed++;
@@ -436,12 +436,12 @@ namespace LemoineTools.Tools.AutoFilters
 
                         if (added > 0)
                         {
-                            Log(LemoineStrings.T("autofilters.discover.log.merged", spec.RuleName, added), "pass");
+                            Log(AppStrings.T("autofilters.discover.log.merged", spec.RuleName, added), "pass");
                             pass++;
                         }
                         else
                         {
-                            Log(LemoineStrings.T("autofilters.discover.log.alreadyExists", spec.RuleName, spec.TradeName), "info");
+                            Log(AppStrings.T("autofilters.discover.log.alreadyExists", spec.RuleName, spec.TradeName), "info");
                             skip++;
                         }
                         continue;
@@ -478,12 +478,12 @@ namespace LemoineTools.Tools.AutoFilters
                     }
 
                     trade.Rules.Add(rule);
-                    Log(LemoineStrings.T("autofilters.discover.log.added", rule.Name, trade.Label), "pass");
+                    Log(AppStrings.T("autofilters.discover.log.added", rule.Name, trade.Label), "pass");
                     pass++;
                 }
                 catch (Exception ex)
                 {
-                    Log(LemoineStrings.T("autofilters.discover.log.commitFailed", spec.RuleName, ex.Message), "fail");
+                    Log(AppStrings.T("autofilters.discover.log.commitFailed", spec.RuleName, ex.Message), "fail");
                     fail++;
                 }
             }
@@ -495,7 +495,7 @@ namespace LemoineTools.Tools.AutoFilters
             // never treats two discovered trades as one.
             AutoFiltersSettings.EnsureUniqueTradeIds(settings.Trades);
             settings.Save();
-            Log(LemoineStrings.T("autofilters.discover.log.done", pass, skip, fail), pass > 0 ? "pass" : "info");
+            Log(AppStrings.T("autofilters.discover.log.done", pass, skip, fail), pass > 0 ? "pass" : "info");
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
@@ -507,9 +507,9 @@ namespace LemoineTools.Tools.AutoFilters
             PushLog?.Invoke(msg, status);
 
             if (status == "fail")
-                LemoineLog.Warn("AutoFilters.Discover", msg);
+                DiagnosticsLog.Warn("AutoFilters.Discover", msg);
             else
-                LemoineLog.Info("AutoFilters.Discover", msg);
+                DiagnosticsLog.Info("AutoFilters.Discover", msg);
         }
         private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
         private void Complete(int p, int f, int s)          => OnComplete?.Invoke(p, f, s);

@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -51,13 +51,13 @@ namespace LemoineTools.Tools.Setup
         private static RevitLinkType? SafeGetLinkType(Document doc, RevitLinkInstance li)
         {
             try { return doc.GetElement(li.GetTypeId()) as RevitLinkType; }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: resolve link type", ex); return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: resolve link type", ex); return null; }
         }
 
         private static Document? SafeGetLinkDocument(RevitLinkInstance li)
         {
             try { return li.GetLinkDocument(); }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: resolve link document", ex); return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: resolve link document", ex); return null; }
         }
 
         private static string ResolveName(RevitLinkInstance li, RevitLinkType? linkType, Document? linkDoc)
@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.Setup
             if (linkDoc != null)
             {
                 try { return "[" + Path.GetFileNameWithoutExtension(linkDoc.Title) + "]"; }
-                catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: name from link document", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from link document", ex); }
             }
             try
             {
@@ -73,17 +73,17 @@ namespace LemoineTools.Tools.Setup
                 var path = extRef != null ? ModelPathUtils.ConvertModelPathToUserVisiblePath(extRef.GetAbsolutePath()) : null;
                 if (!string.IsNullOrEmpty(path)) return "[" + Path.GetFileNameWithoutExtension(path) + "]";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: name from external file reference", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from external file reference", ex); }
 
             try { return "[" + li.Name + "]"; }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: name from instance", ex); return "[link]"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: name from instance", ex); return "[link]"; }
         }
 
         private static string ResolveLoadStatus(RevitLinkType? linkType)
         {
             if (linkType == null) return "Unknown";
             try { return linkType.GetLinkedFileStatus().ToString(); }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: read load status", ex); return "Unknown"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read load status", ex); return "Unknown"; }
         }
 
         /// <summary>
@@ -110,7 +110,7 @@ namespace LemoineTools.Tools.Setup
                 var workset = table?.GetWorkset(li.WorksetId);
                 return workset != null ? workset.Name : "Unknown";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: read workset", ex); return "Unknown"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read workset", ex); return "Unknown"; }
         }
 
         private static string ResolveDisplayMode(View? activeView, RevitLinkInstance li)
@@ -122,14 +122,14 @@ namespace LemoineTools.Tools.Setup
                 LinkVisibility mode = gs?.LinkVisibilityType ?? LinkVisibility.ByHostView;
                 return mode == LinkVisibility.ByHostView ? "By Host View" : mode.ToString();
             }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: read display mode", ex); return "n/a"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read display mode", ex); return "n/a"; }
         }
 
         private static string ResolveAttachmentType(RevitLinkType? linkType)
         {
             if (linkType == null) return "Unknown";
             try { return linkType.AttachmentType.ToString(); }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: read attachment type", ex); return "Unknown"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read attachment type", ex); return "Unknown"; }
         }
 
         private static string ResolveLastSaved(RevitLinkType? linkType)
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.Setup
                 if (!File.Exists(path)) return "n/a (cloud)";
                 return File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
             }
-            catch (Exception ex) { LemoineLog.Swallowed("LinkAudit: read last saved", ex); return "n/a"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkAudit: read last saved", ex); return "n/a"; }
         }
     }
 }

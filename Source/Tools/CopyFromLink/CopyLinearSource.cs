@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -44,7 +44,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinearSource.Resolve", ex);
+                DiagnosticsLog.Swallowed("CopyLinearSource.Resolve", ex);
                 return null;
             }
         }
@@ -69,7 +69,7 @@ namespace LemoineTools.Tools.CopyFromLink
                         .WhereElementIsNotElementType()
                         .ToElements();
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"CopyLinearSource.Collect: {ost}", ex); continue; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyLinearSource.Collect: {ost}", ex); continue; }
 
                 foreach (var el in elems)
                 {
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     string val = ReadParamDisplay(el?.LookupParameter(kv.Key));
                     if (!kv.Value.Contains(val)) return false;
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"CopyLinearSource.PassesFilters: param '{kv.Key}'", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyLinearSource.PassesFilters: param '{kv.Key}'", ex); }
             }
             return true;
         }
@@ -129,7 +129,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var v = p?.AsValueString() ?? p?.AsString();
                 return string.IsNullOrWhiteSpace(v) ? "(none)" : v!;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSource.ReadSystem", ex); return "(none)"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSource.ReadSystem", ex); return "(none)"; }
         }
 
         public static string ReadSize(Element el)
@@ -154,7 +154,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 }
                 return "(no size)";
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSource.ReadSize", ex); return "(no size)"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSource.ReadSize", ex); return "(no size)"; }
         }
 
         public static string ReadPhase(Document srcDoc, Element el)
@@ -166,7 +166,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var ph = srcDoc?.GetElement(id);
                 return string.IsNullOrWhiteSpace(ph?.Name) ? "(none)" : ph!.Name;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSource.ReadPhase", ex); return "(none)"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSource.ReadPhase", ex); return "(none)"; }
         }
 
         /// <summary>The element's straight LocationCurve as an [A,B] line, or null when it is not a straight run.</summary>
@@ -195,7 +195,7 @@ namespace LemoineTools.Tools.CopyFromLink
         private static bool IsExcludedWorkset(Element el, HashSet<int> excluded)
         {
             try { return excluded.Contains(el.WorksetId.IntegerValue); }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSource: read element workset", ex); return false; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSource: read element workset", ex); return false; }
         }
     }
 }

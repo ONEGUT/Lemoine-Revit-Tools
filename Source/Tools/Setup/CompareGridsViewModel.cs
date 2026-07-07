@@ -4,8 +4,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -14,7 +14,7 @@ namespace LemoineTools.Tools.Setup
     /// links once they are aligned/share coordinates, flagging grids that are missing, offset,
     /// rotated, or present in only one file.
     /// </summary>
-    public class CompareGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public class CompareGridsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
         public string Title    => "Compare Grids Across Links";
         public string RunLabel => "Compare Grids →";
@@ -56,7 +56,7 @@ namespace LemoineTools.Tools.Setup
         }
 
         public FrameworkElement? GetStepContent(string stepId)
-            => stepId == "files" ? BuildFilesStep() : null;   // "run" rendered by ILemoineReviewable
+            => stepId == "files" ? BuildFilesStep() : null;   // "run" rendered by IReviewableTool
 
         private FrameworkElement BuildFilesStep()
         {
@@ -73,7 +73,7 @@ namespace LemoineTools.Tools.Setup
             _fileByName.Clear();
             foreach (var f in links) _fileByName[f.Name] = f.LinkInstId;
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += sel =>
             {
                 _selectedLinkIds = new HashSet<long>(sel.Where(_fileByName.ContainsKey).Select(n => _fileByName[n]));
@@ -83,7 +83,7 @@ namespace LemoineTools.Tools.Setup
             tabs.SetGroups(new Dictionary<string, List<string>> { { "Links", all } }, all);
             outer.Children.Add(tabs);
 
-            var hostToggle = new LemoineToggleSwitches { AccessibleName = "Include host" };
+            var hostToggle = new ToggleSwitches { AccessibleName = "Include host" };
             hostToggle.SetItems(new List<ToggleItem>
             {
                 new ToggleItem { Id = "host", Label = "Include host grids", DefaultOn = _includeHost },
@@ -111,7 +111,7 @@ namespace LemoineTools.Tools.Setup
             tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             DockPanel.SetDock(tb, Dock.Left);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 Value = value, MinValue = min, MaxValue = max, Step = step, Decimals = decimals, ValueWidth = 52,
                 HorizontalAlignment = HorizontalAlignment.Right,

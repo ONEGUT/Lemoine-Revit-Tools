@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning;
 using LemoineTools.Tools.Dimensioning.ElevationTag;
 
@@ -46,12 +46,12 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 if (Definitions == null || Definitions.Count == 0)
                 {
-                    Log(LemoineStrings.T("clash.elevationFinder.log.noDefs"), "fail");
+                    Log(AppStrings.T("clash.elevationFinder.log.noDefs"), "fail");
                     fail++;
                 }
                 else if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log(LemoineStrings.T("clash.elevationFinder.log.noViews"), "fail");
+                    Log(AppStrings.T("clash.elevationFinder.log.noViews"), "fail");
                     fail++;
                 }
                 else
@@ -64,7 +64,7 @@ namespace LemoineTools.Tools.Dimensioning
                         if (ClearPrevious)
                         {
                             int removed = ClearPreviousMarkers(doc);
-                            if (removed > 0) Log(LemoineStrings.T("clash.elevationFinder.log.cleared", removed), "info");
+                            if (removed > 0) Log(AppStrings.T("clash.elevationFinder.log.cleared", removed), "info");
                         }
 
                         int done = 0;
@@ -72,14 +72,14 @@ namespace LemoineTools.Tools.Dimensioning
                         {
                             // Abandon mid-run: stop detecting/marking more definitions but let tx.Commit()
                             // (below) still run so markers placed for definitions done so far are preserved.
-                            if (LemoineRun.CancelRequested)
+                            if (RunState.CancelRequested)
                             {
-                                Log(LemoineStrings.T("common.log.stoppedByUser", done, Definitions.Count), "warn");
+                                Log(AppStrings.T("common.log.stoppedByUser", done, Definitions.Count), "warn");
                                 break;
                             }
 
                             Progress(10 + (int)(done * 70.0 / Definitions.Count), pass, fail, skip);
-                            Log(LemoineStrings.T("clash.elevationFinder.log.defHeader", def.Name), "info");
+                            Log(AppStrings.T("clash.elevationFinder.log.defHeader", def.Name), "info");
 
                             var opts = new ClashMarkingOptions
                             {
@@ -105,7 +105,7 @@ namespace LemoineTools.Tools.Dimensioning
                         }
 
                         tx.Commit();
-                        Log(LemoineStrings.T("clash.elevationFinder.log.markingDone", pass, fail), pass > 0 ? "pass" : "fail");
+                        Log(AppStrings.T("clash.elevationFinder.log.markingDone", pass, fail), pass > 0 ? "pass" : "fail");
                     }
 
                     // Elevation-tag pass: place a spot elevation at each marker. Runs after the marking
@@ -114,18 +114,18 @@ namespace LemoineTools.Tools.Dimensioning
                     {
                         if (SpotTypeId == ElementId.InvalidElementId)
                         {
-                            Log(LemoineStrings.T("clash.elevationFinder.log.noSpotType"), "fail");
+                            Log(AppStrings.T("clash.elevationFinder.log.noSpotType"), "fail");
                             fail++;
                         }
                         else
                         {
                             Progress(85, pass, fail, skip);
-                            Log(LemoineStrings.T("clash.elevationFinder.log.placingTags"), "info");
+                            Log(AppStrings.T("clash.elevationFinder.log.placingTags"), "info");
 
                             var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
                             tagsPlaced += tagResult.Placed;
                             fail       += tagResult.Failures;
-                            Log(LemoineStrings.T("clash.elevationFinder.log.tagsDone", tagResult.Placed, tagResult.Failures),
+                            Log(AppStrings.T("clash.elevationFinder.log.tagsDone", tagResult.Placed, tagResult.Failures),
                                 tagResult.Placed > 0 ? "pass" : "fail");
                         }
                     }
@@ -133,7 +133,7 @@ namespace LemoineTools.Tools.Dimensioning
             }
             catch (Exception ex)
             {
-                Log(LemoineStrings.T("clash.elevationFinder.log.fatal", ex.Message), "fail");
+                Log(AppStrings.T("clash.elevationFinder.log.fatal", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -142,7 +142,7 @@ namespace LemoineTools.Tools.Dimensioning
                 // throwing callback can never skip the payload clear (memory discipline).
                 try
                 {
-                    Log(LemoineStrings.T("clash.elevationFinder.log.done", pass, tagsPlaced, fail),
+                    Log(AppStrings.T("clash.elevationFinder.log.done", pass, tagsPlaced, fail),
                         pass > 0 ? "pass" : fail > 0 ? "fail" : "info");
                     Progress(100, pass, fail, skip);
                     OnResultChips?.Invoke(new List<ResultChip>
@@ -153,7 +153,7 @@ namespace LemoineTools.Tools.Dimensioning
                     });
                     Complete(pass, fail, skip);
                 }
-                catch (Exception cbEx) { LemoineLog.Swallowed("ClashElevationFinder: completion callback", cbEx); }
+                catch (Exception cbEx) { DiagnosticsLog.Swallowed("ClashElevationFinder: completion callback", cbEx); }
 
                 // Session-long static handler (App.ClashElevationFinderHandler) — drop the run's payload.
                 ViewIds     = new List<ElementId>();
@@ -176,7 +176,7 @@ namespace LemoineTools.Tools.Dimensioning
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged lines for cleanup", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged lines for cleanup", ex); }
 
                 try
                 {
@@ -186,7 +186,7 @@ namespace LemoineTools.Tools.Dimensioning
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged filled regions for cleanup", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged filled regions for cleanup", ex); }
 
                 try
                 {
@@ -196,12 +196,12 @@ namespace LemoineTools.Tools.Dimensioning
                         .Where(ClashTagSchema.IsOurs)
                         .Select(e => e.Id));
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: collect tagged spot elevations for cleanup", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged spot elevations for cleanup", ex); }
 
                 foreach (var id in toDelete)
                 {
                     try { if (doc.Delete(id).Count > 0) removed++; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashElevationFinder: delete tagged element", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: delete tagged element", ex); }
                 }
             }
             return removed;

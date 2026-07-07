@@ -5,10 +5,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.Dimensioning;
 
-namespace LemoineTools.Lemoine
+namespace LemoineTools.Framework
 {
     /// <summary>
     /// Library window for managing saved <see cref="ClashDefinition"/>s. Left = sidebar of
@@ -42,30 +42,30 @@ namespace LemoineTools.Lemoine
             // Named handlers (not lambdas) so they can be detached in OnClosed — a leaked
             // subscription to this STA window after its dispatcher has shut down crashes/hangs
             // Revit on the next theme change.
-            LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;
-            LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+            AppSettings.Instance.ThemeChanged  += OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
         }
 
-        private void OnThemeChanged(LemoineTheme t)
+        private void OnThemeChanged(ThemePalette t)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyTo(Resources);
+                AppSettings.Instance.ApplyTo(Resources);
                 Background = t.PageBg;
                 _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             }));
         }
 
-        private void OnUiSizeChanged(LemoineUiSize _)
+        private void OnUiSizeChanged(UiSize _)
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                LemoineSettings.Instance.ApplyScaleTo(Resources);
-                LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                AppSettings.Instance.ApplyScaleTo(Resources);
+                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
                 if (_root != null)
-                    _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
+                    _root.RowDefinitions[0].Height = new GridLength(AppSettings.Instance.ToolbarHeight);
             }));
         }
 
@@ -83,13 +83,13 @@ namespace LemoineTools.Lemoine
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            LemoineSettings.Instance.ApplyTo(Resources);
-            LemoineControlStyles.InjectInto(Resources, scrollBarWidth: 8);
-            Background = LemoineSettings.Instance.ActiveTheme.PageBg;
+            AppSettings.Instance.ApplyTo(Resources);
+            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+            Background = AppSettings.Instance.ActiveTheme.PageBg;
             _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
             _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             _outerBorder.CornerRadius = new CornerRadius(8);
-            _root.RowDefinitions[0].Height = new GridLength(LemoineSettings.Instance.ToolbarHeight);
+            _root.RowDefinitions[0].Height = new GridLength(AppSettings.Instance.ToolbarHeight);
             _sidebarBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
             _defs     = ClashDefinitionsSettings.DeepCopy(ClashDefinitionsSettings.Instance.Definitions);
@@ -104,8 +104,8 @@ namespace LemoineTools.Lemoine
 
         protected override void OnClosed(EventArgs e)
         {
-            LemoineSettings.Instance.ThemeChanged  -= OnThemeChanged;
-            LemoineSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+            AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
 
             // A pick callback parked on the static handler outlives this window — sever it so a
             // late pick can't marshal into this window's terminated dispatcher (and so the
@@ -125,7 +125,7 @@ namespace LemoineTools.Lemoine
         {
             _toolbarBorder.BorderThickness = new Thickness(0);
 
-            var closeBtn = LemoineControlStyles.BuildButton("×", LemoineControlStyles.LemoineButtonVariant.Ghost);
+            var closeBtn = ControlStyles.BuildButton("×", ControlStyles.ButtonVariant.Ghost);
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, ev) => Close();
 
@@ -136,9 +136,9 @@ namespace LemoineTools.Lemoine
             };
             rightPanel.Children.Add(closeBtn);
 
-            _toolbarBorder.Child = new LemoineTitleBar
+            _toolbarBorder.Child = new TitleBar
             {
-                Title        = LemoineStrings.T("clashDefinitions.window.title"),
+                Title        = AppStrings.T("clashDefinitions.window.title"),
                 IconGlyph    = char.ConvertFromUtf32(0xE71C),   // Segoe MDL2: Filter
                 RightContent = rightPanel,
             };
@@ -166,14 +166,14 @@ namespace LemoineTools.Lemoine
             foreach (var def in _defs)
                 _sidebarPanel.Children.Add(BuildDefRow(def));
 
-            _sidebarPanel.Children.Add(LemoineControlStyles.BuildAddPill(LemoineStrings.T("clashDefinitions.window.addPill"), AddDefinition));
+            _sidebarPanel.Children.Add(ControlStyles.BuildAddPill(AppStrings.T("clashDefinitions.window.addPill"), AddDefinition));
         }
 
         private Border BuildDefRow(ClashDefinition def)
         {
             var nameTb = new TextBlock
             {
-                Text              = string.IsNullOrWhiteSpace(def.Name) ? LemoineStrings.T("clashDefinitions.window.unnamed") : def.Name,
+                Text              = string.IsNullOrWhiteSpace(def.Name) ? AppStrings.T("clashDefinitions.window.unnamed") : def.Name,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming      = TextTrimming.CharacterEllipsis,
                 IsHitTestVisible  = false,
@@ -182,10 +182,10 @@ namespace LemoineTools.Lemoine
             nameTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             nameTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
 
-            var dupBtn = GlyphButton(char.ConvertFromUtf32(0xE8C8), LemoineStrings.T("clashDefinitions.window.dupTooltip"));   // Copy
+            var dupBtn = GlyphButton(char.ConvertFromUtf32(0xE8C8), AppStrings.T("clashDefinitions.window.dupTooltip"));   // Copy
             dupBtn.Click += (s, e) => DuplicateDefinition(def.Id);
 
-            var delBtn = GlyphButton(char.ConvertFromUtf32(0xE74D), LemoineStrings.T("clashDefinitions.window.delTooltip"));   // Trash
+            var delBtn = GlyphButton(char.ConvertFromUtf32(0xE74D), AppStrings.T("clashDefinitions.window.delTooltip"));   // Trash
             delBtn.Click += (s, e) => DeleteDefinition(def.Id);
 
             var grid = new Grid();
@@ -244,7 +244,7 @@ namespace LemoineTools.Lemoine
                 BorderThickness = new Thickness(1),
                 Padding         = new Thickness(6, 3, 6, 3),
                 ToolTip         = tip,
-                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
+                Template        = ControlStyles.BuildFlatButtonTemplate(),
                 Background      = Brushes.Transparent,
             };
             ((TextBlock)b.Content).SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -269,7 +269,7 @@ namespace LemoineTools.Lemoine
             if (src == null) return;
             var copy = ClashDefinitionsSettings.DeepCopy(src);
             copy.Id   = "C" + Guid.NewGuid().ToString("N").Substring(0, 7);
-            copy.Name = string.IsNullOrWhiteSpace(src.Name) ? LemoineStrings.T("clashDefinitions.window.copyDefault") : src.Name + LemoineStrings.T("clashDefinitions.window.copySuffix");
+            copy.Name = string.IsNullOrWhiteSpace(src.Name) ? AppStrings.T("clashDefinitions.window.copyDefault") : src.Name + AppStrings.T("clashDefinitions.window.copySuffix");
             int idx = _defs.FindIndex(d => d.Id == id);
             _defs.Insert(idx + 1, copy);
             _activeId = copy.Id;
@@ -304,34 +304,34 @@ namespace LemoineTools.Lemoine
             var def = _defs.Find(d => d.Id == _activeId);
             if (def == null)
             {
-                AddDim(panel, LemoineStrings.T("clashDefinitions.window.noSelection"));
+                AddDim(panel, AppStrings.T("clashDefinitions.window.noSelection"));
                 SetEditorContent(panel);
                 return;
             }
 
             // ── Name ──────────────────────────────────────────────────────────
-            AddLabel(panel, LemoineStrings.T("clashDefinitions.labels.name"));
-            var nameEdit = new LemoineInlineEdit { Text = def.Name, Margin = new Thickness(0, 0, 0, 10) };
+            AddLabel(panel, AppStrings.T("clashDefinitions.labels.name"));
+            var nameEdit = new InlineEdit { Text = def.Name, Margin = new Thickness(0, 0, 0, 10) };
             nameEdit.TextCommitted += (s, txt) =>
             {
-                def.Name = string.IsNullOrWhiteSpace(txt) ? LemoineStrings.T("clashDefinitions.window.unnamed") : txt.Trim();
+                def.Name = string.IsNullOrWhiteSpace(txt) ? AppStrings.T("clashDefinitions.window.unnamed") : txt.Trim();
                 RefreshSidebar();
             };
             panel.Children.Add(nameEdit);
 
             // ── Group 1 / Group 2 ─────────────────────────────────────────────
             var g1Editor = new ClashGroupEditor(def.Group1, _docs, _pickHandler, _pickEvent, null);
-            panel.Children.Add(new LemoineSectionCard
+            panel.Children.Add(new SectionCard
             {
-                Header      = LemoineStrings.T("clashDefinitions.labels.group1Header"),
+                Header      = AppStrings.T("clashDefinitions.labels.group1Header"),
                 CardContent = g1Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
 
             var g2Editor = new ClashGroupEditor(def.Group2, _docs, _pickHandler, _pickEvent, null);
-            panel.Children.Add(new LemoineSectionCard
+            panel.Children.Add(new SectionCard
             {
-                Header      = LemoineStrings.T("clashDefinitions.labels.group2Header"),
+                Header      = AppStrings.T("clashDefinitions.labels.group2Header"),
                 CardContent = g2Editor.Build(),
                 Margin      = new Thickness(0, 0, 0, 14),
             });
@@ -339,36 +339,36 @@ namespace LemoineTools.Lemoine
             // ── Marking settings ──────────────────────────────────────────────
             var marking = new StackPanel();
 
-            AddStepperRow(marking, LemoineStrings.T("clashDefinitions.labels.tolerance"),
-                LemoineStrings.T("clashDefinitions.labels.toleranceDesc"),
+            AddStepperRow(marking, AppStrings.T("clashDefinitions.labels.tolerance"),
+                AppStrings.T("clashDefinitions.labels.toleranceDesc"),
                 def.ToleranceMm, 0, 100, 0.5, 1, v => def.ToleranceMm = v);
 
-            AddStepperRow(marking, LemoineStrings.T("clashDefinitions.labels.maxClashes"),
-                LemoineStrings.T("clashDefinitions.labels.maxClashesDesc"),
+            AddStepperRow(marking, AppStrings.T("clashDefinitions.labels.maxClashes"),
+                AppStrings.T("clashDefinitions.labels.maxClashesDesc"),
                 def.MaxClashes, 1, 100000, 1, 0, v => def.MaxClashes = (int)v);
 
-            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.fillStyle"));
-            var fillSelect = new LemoineSingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = def.FillStyle };
+            AddLabel(marking, AppStrings.T("clashDefinitions.labels.fillStyle"));
+            var fillSelect = new SingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = def.FillStyle };
             fillSelect.SelectionChanged += val => { if (val != null) def.FillStyle = val; };
             marking.Children.Add(fillSelect);
 
             AddDivider(marking);
-            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.markerReference"));
-            var targetSelect = new LemoineSingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = def.DimTarget };
+            AddLabel(marking, AppStrings.T("clashDefinitions.labels.markerReference"));
+            var targetSelect = new SingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = def.DimTarget };
             targetSelect.SelectionChanged += val => { if (val != null) def.DimTarget = val; };
             marking.Children.Add(targetSelect);
 
             AddDivider(marking);
-            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.phase"));
-            string PhaseAll = LemoineStrings.T("clashDefinitions.phase.all"), PhaseMatch = LemoineStrings.T("clashDefinitions.phase.match"), PhaseSpecific = LemoineStrings.T("clashDefinitions.phase.specific");
-            var phaseSelect = new LemoineSingleSelect
+            AddLabel(marking, AppStrings.T("clashDefinitions.labels.phase"));
+            string PhaseAll = AppStrings.T("clashDefinitions.phase.all"), PhaseMatch = AppStrings.T("clashDefinitions.phase.match"), PhaseSpecific = AppStrings.T("clashDefinitions.phase.specific");
+            var phaseSelect = new SingleSelect
             {
                 Items        = new[] { PhaseAll, PhaseMatch, PhaseSpecific },
                 SelectedItem = def.PhaseMode == "MatchView" ? PhaseMatch
                              : def.PhaseMode == "Specific"  ? PhaseSpecific : PhaseAll,
             };
             marking.Children.Add(phaseSelect);
-            AddDim(marking, LemoineStrings.T("clashDefinitions.labels.phaseDesc"));
+            AddDim(marking, AppStrings.T("clashDefinitions.labels.phaseDesc"));
 
             // Specific-phase picker — visible only in Specific mode. Shown default = the saved
             // name when valid, else the last (newest) host phase; written back only on user action.
@@ -376,11 +376,11 @@ namespace LemoineTools.Lemoine
             string shownPhase = _hostPhaseNames.Contains(def.SpecificPhaseName)
                 ? def.SpecificPhaseName
                 : (_hostPhaseNames.Count > 0 ? _hostPhaseNames[_hostPhaseNames.Count - 1] : "");
-            LemoineSingleSelect? specificSelect = null;
+            SingleSelect? specificSelect = null;
             if (_hostPhaseNames.Count > 0)
             {
-                AddLabel(specificSection, LemoineStrings.T("clashDefinitions.labels.hostPhase"));
-                specificSelect = new LemoineSingleSelect
+                AddLabel(specificSection, AppStrings.T("clashDefinitions.labels.hostPhase"));
+                specificSelect = new SingleSelect
                 {
                     Items        = _hostPhaseNames.ToArray(),
                     SelectedItem = shownPhase,
@@ -390,7 +390,7 @@ namespace LemoineTools.Lemoine
             }
             else
             {
-                AddDim(specificSection, LemoineStrings.T("clashDefinitions.labels.noHostPhases"));
+                AddDim(specificSection, AppStrings.T("clashDefinitions.labels.noHostPhases"));
             }
             specificSection.Visibility = def.PhaseMode == "Specific"
                 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
@@ -407,30 +407,30 @@ namespace LemoineTools.Lemoine
             };
 
             AddDivider(marking);
-            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.crossLineStyle"));
-            var lineItems = new List<string> { LemoineStrings.T("clashDefinitions.labels.lineDefault") };
+            AddLabel(marking, AppStrings.T("clashDefinitions.labels.crossLineStyle"));
+            var lineItems = new List<string> { AppStrings.T("clashDefinitions.labels.lineDefault") };
             lineItems.AddRange(_lineStyleNames);
-            var lineSelect = new LemoineSingleSelect
+            var lineSelect = new SingleSelect
             {
                 Items        = lineItems.ToArray(),
-                SelectedItem = _lineStyleNames.Contains(def.CrossLineTypeName) ? def.CrossLineTypeName : LemoineStrings.T("clashDefinitions.labels.lineDefault"),
+                SelectedItem = _lineStyleNames.Contains(def.CrossLineTypeName) ? def.CrossLineTypeName : AppStrings.T("clashDefinitions.labels.lineDefault"),
             };
             lineSelect.SelectionChanged += val =>
-                def.CrossLineTypeName = (val == null || val == LemoineStrings.T("clashDefinitions.labels.lineDefault")) ? "" : val;
+                def.CrossLineTypeName = (val == null || val == AppStrings.T("clashDefinitions.labels.lineDefault")) ? "" : val;
             marking.Children.Add(lineSelect);
 
             AddDivider(marking);
-            AddLabel(marking, LemoineStrings.T("clashDefinitions.labels.fallbackColor"));
-            var picker = new LemoineColorPickerPanel
+            AddLabel(marking, AppStrings.T("clashDefinitions.labels.fallbackColor"));
+            var picker = new ColorPickerPanel
             {
-                SelectedColor = BrushHelper.ColorFromHex(def.FallbackColorHex, LemoineTheme.FallbackGrey),
+                SelectedColor = BrushHelper.ColorFromHex(def.FallbackColorHex, ThemePalette.FallbackGrey),
             };
             picker.ColorChanged += (s, c) => def.FallbackColorHex = HexFromColor(c);
             marking.Children.Add(picker);
 
-            panel.Children.Add(new LemoineSectionCard
+            panel.Children.Add(new SectionCard
             {
-                Header      = LemoineStrings.T("clashDefinitions.labels.markingSettings"),
+                Header      = AppStrings.T("clashDefinitions.labels.markingSettings"),
                 CardContent = marking,
                 Margin      = new Thickness(0, 0, 0, 14),
             });
@@ -446,7 +446,7 @@ namespace LemoineTools.Lemoine
                 VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             };
-            LemoineControlStyles.WireBubblingScroll(sv);
+            ControlStyles.WireBubblingScroll(sv);
             _editorBorder.Child = sv;
         }
 
@@ -487,7 +487,7 @@ namespace LemoineTools.Lemoine
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             parent.Children.Add(lbl);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 Value               = value,
                 MinValue            = min,
@@ -516,7 +516,7 @@ namespace LemoineTools.Lemoine
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ClashDefinitionsWindow.Serialize", ex);
+                DiagnosticsLog.Swallowed("ClashDefinitionsWindow.Serialize", ex);
                 return Guid.NewGuid().ToString();   // treat as dirty → save
             }
         }

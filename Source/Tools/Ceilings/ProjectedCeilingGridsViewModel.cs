@@ -4,28 +4,28 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfGrid    = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class ProjectedCeilingGridsViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ProjectedCeilingGridsViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "curves";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
-        // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("ceilings.projectGrids.title");
-        public string RunLabel => LemoineStrings.T("ceilings.projectGrids.runLabel");
+        // ── IStepFlowTool identity ─────────────────────────────────────────────
+        public string Title    => AppStrings.T("ceilings.projectGrids.title");
+        public string RunLabel => AppStrings.T("ceilings.projectGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("ceilings.projectGrids.steps.S1"),   required: true),
-            new StepDefinition("S2", LemoineStrings.T("ceilings.projectGrids.steps.S2"), required: false),
+            new StepDefinition("S1", AppStrings.T("ceilings.projectGrids.steps.S1"),   required: true),
+            new StepDefinition("S2", AppStrings.T("ceilings.projectGrids.steps.S2"), required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ namespace LemoineTools.Tools.Ceilings
         public FrameworkElement? GetStepContent(string stepId)
         {
             if (stepId == "S1") return BuildS1();
-            if (stepId == "S2") return null; // framework renders review (ILemoineReviewable)
+            if (stepId == "S2") return null; // framework renders review (IReviewableTool)
             return null;
         }
 
@@ -76,12 +76,12 @@ namespace LemoineTools.Tools.Ceilings
             var outer = new StackPanel();
 
             // Mode selector
-            var modeSelect = new LemoineSingleSelect { Label = LemoineStrings.T("ceilings.projectGrids.labels.importMode") };
-            modeSelect.Items = new List<string> { LemoineStrings.T("ceilings.projectGrids.labels.optionSingleFile"), LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder") };
-            modeSelect.SelectedItem = _batchMode ? LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder") : LemoineStrings.T("ceilings.projectGrids.labels.optionSingleFile");
+            var modeSelect = new SingleSelect { Label = AppStrings.T("ceilings.projectGrids.labels.importMode") };
+            modeSelect.Items = new List<string> { AppStrings.T("ceilings.projectGrids.labels.optionSingleFile"), AppStrings.T("ceilings.projectGrids.labels.optionBatchFolder") };
+            modeSelect.SelectedItem = _batchMode ? AppStrings.T("ceilings.projectGrids.labels.optionBatchFolder") : AppStrings.T("ceilings.projectGrids.labels.optionSingleFile");
             modeSelect.SelectionChanged += val =>
             {
-                _batchMode = val == LemoineStrings.T("ceilings.projectGrids.labels.optionBatchFolder");
+                _batchMode = val == AppStrings.T("ceilings.projectGrids.labels.optionBatchFolder");
                 RefreshPickerHost();
                 OnValidationChanged();
             };
@@ -105,7 +105,7 @@ namespace LemoineTools.Tools.Ceilings
 
                 var desc = new TextBlock
                 {
-                    Text         = LemoineStrings.T("ceilings.projectGrids.labels.batchHelp"),
+                    Text         = AppStrings.T("ceilings.projectGrids.labels.batchHelp"),
                     TextWrapping = TextWrapping.Wrap,
                     Margin       = new Thickness(0, 0, 0, 8),
                     FontStyle    = FontStyles.Italic,
@@ -115,10 +115,10 @@ namespace LemoineTools.Tools.Ceilings
                 desc.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 inner.Children.Add(desc);
 
-                var folder = new LemoineFolderBrowser
+                var folder = new FolderBrowser
                 {
                     Path        = _folderPath,
-                    DialogTitle = LemoineStrings.T("ceilings.projectGrids.labels.folderDialogTitle"),
+                    DialogTitle = AppStrings.T("ceilings.projectGrids.labels.folderDialogTitle"),
                 };
                 folder.PathChanged += p => { _folderPath = p; OnValidationChanged(); };
                 inner.Children.Add(folder);
@@ -127,11 +127,11 @@ namespace LemoineTools.Tools.Ceilings
             }
             else
             {
-                var browser = new LemoineFileBrowser
+                var browser = new FileBrowser
                 {
-                    Label       = LemoineStrings.T("ceilings.projectGrids.labels.fileLabel"),
-                    Filter      = LemoineStrings.T("ceilings.projectGrids.labels.fileFilter"),
-                    DialogTitle = LemoineStrings.T("ceilings.projectGrids.labels.fileDialogTitle"),
+                    Label       = AppStrings.T("ceilings.projectGrids.labels.fileLabel"),
+                    Filter      = AppStrings.T("ceilings.projectGrids.labels.fileFilter"),
+                    DialogTitle = AppStrings.T("ceilings.projectGrids.labels.fileDialogTitle"),
                     Path        = _dwgPath,
                 };
                 browser.PathChanged += path =>
@@ -145,19 +145,19 @@ namespace LemoineTools.Tools.Ceilings
 
         // ─────────────────────────────────────────────────────────────────────
 
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems
         {
             get
             {
                 var items = new List<(string, string)>
                 {
-                    ("source", LemoineStrings.T("ceilings.projectGrids.review.itemSource")),
-                    ("mode",   LemoineStrings.T("ceilings.projectGrids.review.itemMode")),
-                    ("target", LemoineStrings.T("ceilings.projectGrids.review.itemTarget")),
-                    ("output", LemoineStrings.T("ceilings.projectGrids.review.itemOutput")),
+                    ("source", AppStrings.T("ceilings.projectGrids.review.itemSource")),
+                    ("mode",   AppStrings.T("ceilings.projectGrids.review.itemMode")),
+                    ("target", AppStrings.T("ceilings.projectGrids.review.itemTarget")),
+                    ("output", AppStrings.T("ceilings.projectGrids.review.itemOutput")),
                 };
-                if (_batchMode) items.Add(("dwg", LemoineStrings.T("ceilings.projectGrids.review.itemDwg")));
+                if (_batchMode) items.Add(("dwg", AppStrings.T("ceilings.projectGrids.review.itemDwg")));
                 return items;
             }
         }
@@ -171,11 +171,11 @@ namespace LemoineTools.Tools.Ceilings
                     ["source"] = _batchMode
                         ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
                         : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)),
-                    ["mode"]   = _batchMode ? LemoineStrings.T("ceilings.projectGrids.review.modeBatch")   : LemoineStrings.T("ceilings.projectGrids.review.modeSingle"),
-                    ["target"] = _batchMode ? LemoineStrings.T("ceilings.projectGrids.review.targetBatch") : LemoineStrings.T("ceilings.projectGrids.review.targetSingle"),
-                    ["output"] = LemoineStrings.T("ceilings.projectGrids.review.output"),
+                    ["mode"]   = _batchMode ? AppStrings.T("ceilings.projectGrids.review.modeBatch")   : AppStrings.T("ceilings.projectGrids.review.modeSingle"),
+                    ["target"] = _batchMode ? AppStrings.T("ceilings.projectGrids.review.targetBatch") : AppStrings.T("ceilings.projectGrids.review.targetSingle"),
+                    ["output"] = AppStrings.T("ceilings.projectGrids.review.output"),
                 };
-                if (_batchMode) d["dwg"] = LemoineStrings.T("ceilings.projectGrids.review.dwgFound", CountDwgs());
+                if (_batchMode) d["dwg"] = AppStrings.T("ceilings.projectGrids.review.dwgFound", CountDwgs());
                 return d;
             }
         }
@@ -183,10 +183,10 @@ namespace LemoineTools.Tools.Ceilings
         public IList<string>? ReviewChips => null;
 
         public string? ReviewNote => _batchMode
-            ? LemoineStrings.T("ceilings.projectGrids.review.noteBatch")
-            : LemoineStrings.T("ceilings.projectGrids.review.noteSingle");
+            ? AppStrings.T("ceilings.projectGrids.review.noteBatch")
+            : AppStrings.T("ceilings.projectGrids.review.noteSingle");
 
-        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? LemoineStrings.T("ceilings.projectGrids.review.warnNoDwg") : null;
+        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? AppStrings.T("ceilings.projectGrids.review.warnNoDwg") : null;
 
         private int CountDwgs()
             => Directory.Exists(_folderPath)
@@ -219,7 +219,7 @@ namespace LemoineTools.Tools.Ceilings
                 return string.IsNullOrEmpty(_dwgPath) ? "—"
                     : System.IO.Path.GetFileName(_dwgPath);
             }
-            if (stepId == "S2") return LemoineStrings.T("ceilings.projectGrids.summaries.S2");
+            if (stepId == "S2") return AppStrings.T("ceilings.projectGrids.summaries.S2");
             return "—";
         }
 
@@ -248,7 +248,7 @@ namespace LemoineTools.Tools.Ceilings
                 _handler.BatchDwgFolder = "";
             }
 
-            pushLog(LemoineStrings.T("ceilings.projectGrids.log.raising"), "info");
+            pushLog(AppStrings.T("ceilings.projectGrids.log.raising"), "info");
             _event.Raise();
         }
     }

@@ -5,7 +5,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Commands
 {
@@ -63,7 +63,7 @@ namespace LemoineTools.Commands
                 }
                 catch (System.Exception ex)
                 {
-                    LemoineLog.Swallowed("LegendCreator: read text-note type size", ex);
+                    DiagnosticsLog.Swallowed("LegendCreator: read text-note type size", ex);
                 }
             }
             LemoineTools.Tools.FiltersLegends.LegendCreator.LegendTextTypeSizes.Set(typeCapInches);

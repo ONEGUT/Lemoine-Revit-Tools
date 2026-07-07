@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -86,7 +86,7 @@ namespace LemoineTools.Tools.BulkExport
                 // Guard: no active document
                 if (app.ActiveUIDocument == null)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.noDoc"), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.noDoc"), "fail");
                     debug.Log("INIT-ERROR", "app.ActiveUIDocument is null");
                     onComplete(0, 1, 0);
                     return;
@@ -101,14 +101,14 @@ namespace LemoineTools.Tools.BulkExport
                 // Guard: output folder
                 if (string.IsNullOrEmpty(OutputFolder))
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.noFolder"), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.noFolder"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
                 try { Directory.CreateDirectory(OutputFolder); }
                 catch (Exception ex)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.folderFail", ex.Message), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.folderFail", ex.Message), "fail");
                     debug.Log("INIT-ERROR", "CreateDirectory failed", $"{ex.GetType().Name}: {ex.Message}");
                     onComplete(0, 1, 0);
                     return;
@@ -123,13 +123,13 @@ namespace LemoineTools.Tools.BulkExport
                 int dropped = SelectedIds.Count - elements.Count;
                 if (dropped > 0)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.droppedWarn", dropped), "warn");
+                    pushLog(AppStrings.T("export.bulkExport.log.droppedWarn", dropped), "warn");
                     debug.Log("INIT", $"{dropped} element ID(s) dropped — GetElement returned null.");
                 }
 
                 if (elements.Count == 0)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.noElements"), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.noElements"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -146,7 +146,7 @@ namespace LemoineTools.Tools.BulkExport
                             .OfCategory(BuiltInCategory.OST_TitleBlocks)
                             .Any();
                         if (!has)
-                            pushLog(LemoineStrings.T("export.bulkExport.log.noTitleblock", sheet.SheetNumber), "warn");
+                            pushLog(AppStrings.T("export.bulkExport.log.noTitleblock", sheet.SheetNumber), "warn");
                     }
                 }
 
@@ -156,7 +156,7 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     if (ExportMode == "Sheets")
                     {
-                        pushLog(LemoineStrings.T("export.bulkExport.log.nwcNeedsViews"), "warn");
+                        pushLog(AppStrings.T("export.bulkExport.log.nwcNeedsViews"), "warn");
                         debug.Log("NWC", "Export blocked — ExportMode is Sheets.");
                         skip++;
                     }
@@ -183,7 +183,7 @@ namespace LemoineTools.Tools.BulkExport
 
                         if (!nwcReady)
                         {
-                            pushLog(LemoineStrings.T("export.bulkExport.log.nwcNotAvail"), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.nwcNotAvail"), "fail");
                             debug.Log("NWC", "NWC export disabled for this run — exporter not registered in Revit.");
                         }
                         else
@@ -200,7 +200,7 @@ namespace LemoineTools.Tools.BulkExport
                 // ── IFC pre-flight ────────────────────────────────────────────
                 if (ExportIfc && ExportMode == "Sheets")
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.ifcNeedsViews"), "warn");
+                    pushLog(AppStrings.T("export.bulkExport.log.ifcNeedsViews"), "warn");
                     debug.Log("IFC", "Export blocked — ExportMode is Sheets.");
                     skip++;
                 }
@@ -210,9 +210,9 @@ namespace LemoineTools.Tools.BulkExport
                     // Packs only combine PDF and order DWG. NWC/IFC are inherently per-view
                     // and cannot be packed — report this rather than dropping them silently.
                     if (ExportNwc)
-                        { pushLog(LemoineStrings.T("export.bulkExport.log.nwcInPack"), "warn"); skip++; }
+                        { pushLog(AppStrings.T("export.bulkExport.log.nwcInPack"), "warn"); skip++; }
                     if (ExportIfc && ExportMode != "Sheets")
-                        { pushLog(LemoineStrings.T("export.bulkExport.log.ifcInPack"), "warn"); skip++; }
+                        { pushLog(AppStrings.T("export.bulkExport.log.ifcInPack"), "warn"); skip++; }
 
                     ExportPackMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip);
                 }
@@ -227,7 +227,7 @@ namespace LemoineTools.Tools.BulkExport
             catch (Exception ex)
             {
                 debug.Log("FATAL", "Unhandled exception in Execute()", $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                pushLog(LemoineStrings.T("export.bulkExport.log.fatalError", ex.Message), "fail");
+                pushLog(AppStrings.T("export.bulkExport.log.fatalError", ex.Message), "fail");
                 onComplete(pass, 1, skip);
             }
             finally
@@ -283,9 +283,9 @@ namespace LemoineTools.Tools.BulkExport
 
             foreach (var pack in Packs)
             {
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                    pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                     break;
                 }
                 var packIds = pack.SheetNumbers
@@ -295,7 +295,7 @@ namespace LemoineTools.Tools.BulkExport
 
                 if (packIds.Count == 0)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.packNoItems", pack.PackName), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.packNoItems", pack.PackName), "fail");
                     skip++;
                     // Advance done for the pre-counted operations so progress stays accurate
                     if (ExportPdf) done++;
@@ -316,18 +316,18 @@ namespace LemoineTools.Tools.BulkExport
                         if (ok)
                         {
                             pass++; _pdf++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.pdfPackOk", packName, packIds.Count), "pass");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackOk", packName, packIds.Count), "pass");
                         }
                         else
                         {
                             fail++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.pdfPackFalse", pack.PackName), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackFalse", pack.PackName), "fail");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog(LemoineStrings.T("export.bulkExport.log.pdfPackFail", pack.PackName, ex.Message), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.pdfPackFail", pack.PackName, ex.Message), "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -345,7 +345,7 @@ namespace LemoineTools.Tools.BulkExport
                     if (dwgOpts == null)
                     {
                         // Log once per pack — no point repeating per-sheet
-                        pushLog(LemoineStrings.T("export.bulkExport.log.dwgPackNoSetup", DwgSetupName, pack.PackName), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.dwgPackNoSetup", DwgSetupName, pack.PackName), "fail");
                         skip += packIds.Count;
                         done += packIds.Count;
                         onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -354,9 +354,9 @@ namespace LemoineTools.Tools.BulkExport
                     {
                         foreach (var sheetId in packIds)
                         {
-                            if (LemoineRun.CancelRequested)
+                            if (RunState.CancelRequested)
                             {
-                                pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                                pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                                 return;
                             }
                             var sheet   = doc.GetElement(sheetId);
@@ -369,18 +369,18 @@ namespace LemoineTools.Tools.BulkExport
                                 if (ok)
                                 {
                                     pass++; _dwg++;
-                                    pushLog(LemoineStrings.T("export.bulkExport.log.dwgOk", safeName), "pass");
+                                    pushLog(AppStrings.T("export.bulkExport.log.dwgOk", safeName), "pass");
                                 }
                                 else
                                 {
                                     fail++;
-                                    pushLog(LemoineStrings.T("export.bulkExport.log.dwgFalse", safeName), "fail");
+                                    pushLog(AppStrings.T("export.bulkExport.log.dwgFalse", safeName), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
                                 fail++;
-                                pushLog(LemoineStrings.T("export.bulkExport.log.dwgFail", safeName, ex.Message), "fail");
+                                pushLog(AppStrings.T("export.bulkExport.log.dwgFail", safeName, ex.Message), "fail");
                             }
                             done++;
                             onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -428,18 +428,18 @@ namespace LemoineTools.Tools.BulkExport
                         if (ok)
                         {
                             pass++; _pdf++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.pdfCombinedOk", safeName, allIds.Count), "pass");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfCombinedOk", safeName, allIds.Count), "pass");
                         }
                         else
                         {
                             fail++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.pdfCombinedFalse"), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfCombinedFalse"), "fail");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog(LemoineStrings.T("export.bulkExport.log.pdfCombinedFail", ex.Message), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.pdfCombinedFail", ex.Message), "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -449,9 +449,9 @@ namespace LemoineTools.Tools.BulkExport
                     // One call per element
                     foreach (var element in elements)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                            pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                             return;
                         }
                         string safeName = ResolveExportName(element, projNumber, projName, "PDF", pushLog);
@@ -464,18 +464,18 @@ namespace LemoineTools.Tools.BulkExport
                             if (ok)
                             {
                                 pass++; _pdf++;
-                                pushLog(LemoineStrings.T("export.bulkExport.log.pdfOk", safeName), "pass");
+                                pushLog(AppStrings.T("export.bulkExport.log.pdfOk", safeName), "pass");
                             }
                             else
                             {
                                 fail++;
-                                pushLog(LemoineStrings.T("export.bulkExport.log.pdfFalse", safeName), "fail");
+                                pushLog(AppStrings.T("export.bulkExport.log.pdfFalse", safeName), "fail");
                             }
                         }
                         catch (Exception ex)
                         {
                             fail++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.pdfFail", safeName, ex.Message), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfFail", safeName, ex.Message), "fail");
                         }
                         done++;
                         onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -490,7 +490,7 @@ namespace LemoineTools.Tools.BulkExport
 
                 if (dwgOpts == null)
                 {
-                    pushLog(LemoineStrings.T("export.bulkExport.log.dwgNoSetupAll", DwgSetupName), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.dwgNoSetupAll", DwgSetupName), "fail");
                     skip += elements.Count;
                     done += elements.Count;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -499,9 +499,9 @@ namespace LemoineTools.Tools.BulkExport
                 {
                     foreach (var element in elements)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                            pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                             return;
                         }
                         string safeName = ResolveExportName(element, projNumber, projName, "DWG", pushLog);
@@ -513,18 +513,18 @@ namespace LemoineTools.Tools.BulkExport
                             if (ok)
                             {
                                 pass++; _dwg++;
-                                pushLog(LemoineStrings.T("export.bulkExport.log.dwgOk", safeName), "pass");
+                                pushLog(AppStrings.T("export.bulkExport.log.dwgOk", safeName), "pass");
                             }
                             else
                             {
                                 fail++;
-                                pushLog(LemoineStrings.T("export.bulkExport.log.dwgFalse", safeName), "fail");
+                                pushLog(AppStrings.T("export.bulkExport.log.dwgFalse", safeName), "fail");
                             }
                         }
                         catch (Exception ex)
                         {
                             fail++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.dwgFail", safeName, ex.Message), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.dwgFail", safeName, ex.Message), "fail");
                         }
                         done++;
                         onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -538,9 +538,9 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                        pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                         return;
                     }
                     string safeName = ResolveExportName(element, projNumber, projName, "NWC", pushLog);
@@ -550,7 +550,7 @@ namespace LemoineTools.Tools.BulkExport
                         if (!(element is View3D view3d))
                         {
                             skip++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.nwcNot3d", safeName), "warn");
+                            pushLog(AppStrings.T("export.bulkExport.log.nwcNot3d", safeName), "warn");
                         }
                         else
                         {
@@ -561,13 +561,13 @@ namespace LemoineTools.Tools.BulkExport
                             // NWC export uses the 3-parameter overload — ViewId is set on the options object
                             doc.Export(outDir, safeName, opts);
                             pass++; _nwc++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.nwcOk", safeName), "pass");
+                            pushLog(AppStrings.T("export.bulkExport.log.nwcOk", safeName), "pass");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog(LemoineStrings.T("export.bulkExport.log.nwcFail", safeName, ex.Message), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.nwcFail", safeName, ex.Message), "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -580,9 +580,9 @@ namespace LemoineTools.Tools.BulkExport
             {
                 foreach (var element in elements)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        pushLog(LemoineStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                        pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                         return;
                     }
                     string safeName = ResolveExportName(element, projNumber, projName, "IFC", pushLog);
@@ -592,7 +592,7 @@ namespace LemoineTools.Tools.BulkExport
                         if (!(element is View3D))
                         {
                             skip++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.ifcNot3d", safeName), "warn");
+                            pushLog(AppStrings.T("export.bulkExport.log.ifcNot3d", safeName), "warn");
                         }
                         else
                         {
@@ -608,13 +608,13 @@ namespace LemoineTools.Tools.BulkExport
                                 t.Commit();
                             }
                             pass++; _ifc++;
-                            pushLog(LemoineStrings.T("export.bulkExport.log.ifcOk", safeName), "pass");
+                            pushLog(AppStrings.T("export.bulkExport.log.ifcOk", safeName), "pass");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog(LemoineStrings.T("export.bulkExport.log.ifcFail", safeName, ex.Message), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.ifcFail", safeName, ex.Message), "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
@@ -701,7 +701,7 @@ namespace LemoineTools.Tools.BulkExport
                                          string fmt, Action<string, string> pushLog)
         {
             var    tokens   = BuildTokens(element, projNumber, projName);
-            string resolved = LemoineTokenInput.Resolve(FilenamePattern, tokens);
+            string resolved = TokenInput.Resolve(FilenamePattern, tokens);
 
             if (resolved.Any(char.IsLetterOrDigit))
                 return SanitizeFilename(resolved);
@@ -712,8 +712,8 @@ namespace LemoineTools.Tools.BulkExport
             if (!fallback.Any(char.IsLetterOrDigit))
                 fallback = "export-" + (element?.Id.Value.ToString() ?? "0");
 
-            pushLog(LemoineStrings.T("export.bulkExport.log.nameFallback", fmt, FilenamePattern, label, (element is ViewSheet ? LemoineStrings.T("export.bulkExport.words.sheet") : LemoineStrings.T("export.bulkExport.words.view")), fallback), "warn");
-            LemoineLog.Warn("BulkExport.ResolveExportName",
+            pushLog(AppStrings.T("export.bulkExport.log.nameFallback", fmt, FilenamePattern, label, (element is ViewSheet ? AppStrings.T("export.bulkExport.words.sheet") : AppStrings.T("export.bulkExport.words.view")), fallback), "warn");
+            DiagnosticsLog.Warn("BulkExport.ResolveExportName",
                 $"Degenerate filename. fmt={fmt} pattern='{FilenamePattern}' resolved='{resolved}' " +
                 $"element={element?.Id} name='{label}' fallback='{fallback}'");
             return fallback;

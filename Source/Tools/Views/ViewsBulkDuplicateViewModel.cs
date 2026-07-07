@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfPoint      = System.Windows.Point;
@@ -20,22 +20,22 @@ namespace LemoineTools.Tools.LinkViews
     /// options (Duplicate, Duplicate with Detailing, Duplicate as Dependent) and names
     /// each copy from a token/chip pattern (the Bulk Export naming control).
     /// </summary>
-    public class ViewsBulkDuplicateViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ViewsBulkDuplicateViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "views";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("linkviews.duplicate.title");
-        public string RunLabel => LemoineStrings.T("linkviews.duplicate.runLabel");
+        public string Title    => AppStrings.T("linkviews.duplicate.title");
+        public string RunLabel => AppStrings.T("linkviews.duplicate.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("linkviews.duplicate.steps.S1"),   required: true),
-            new StepDefinition("S2", LemoineStrings.T("linkviews.duplicate.steps.S2"), required: true),
-            new StepDefinition("S3", LemoineStrings.T("linkviews.duplicate.steps.S3"),    required: true),
-            new StepDefinition("S4", LemoineStrings.T("linkviews.duplicate.steps.S4"),   required: false),
+            new StepDefinition("S1", AppStrings.T("linkviews.duplicate.steps.S1"),   required: true),
+            new StepDefinition("S2", AppStrings.T("linkviews.duplicate.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("linkviews.duplicate.steps.S3"),    required: true),
+            new StepDefinition("S4", AppStrings.T("linkviews.duplicate.steps.S4"),   required: false),
         };
 
         // ── Duplicate-mode labels (must match the run handler's mapping) ──
@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.LinkViews
 
         // ── State ──────────────────────────────────────────────────────
         private readonly List<ViewEntry>    _views;
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
 
         private List<ElementId> _selectedViewIds = new List<ElementId>();
         private string          _mode            = ModeWithDetailing;
@@ -91,12 +91,12 @@ namespace LemoineTools.Tools.LinkViews
         public ViewsBulkDuplicateViewModel(
             ViewsBulkDuplicateRunHandler? runHandler, ExternalEvent? runEvent,
             List<ViewEntry>?              views,
-            LemoineBrowserTree?           browserTree = null)
+            BrowserTree?           browserTree = null)
         {
             _runHandler  = runHandler;
             _runEvent    = runEvent;
             _views       = views ?? new List<ViewEntry>();
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -107,17 +107,17 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S1") return BuildViewPicker();
             if (stepId == "S2") return BuildModePicker();
             if (stepId == "S3") return BuildNaming();
-            if (stepId == "S4") return null; // framework renders review (ILemoineReviewable)
+            if (stepId == "S4") return null; // framework renders review (IReviewableTool)
             return null;
         }
 
         // ── S1: Source Views ───────────────────────────────────────────
         private FrameworkElement BuildViewPicker()
         {
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("linkviews.duplicate.labels.sourceViews"),
+                AccessibleName = AppStrings.T("linkviews.duplicate.labels.sourceViews"),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
             picker.SelectionChanged += ids =>
@@ -139,7 +139,7 @@ namespace LemoineTools.Tools.LinkViews
         {
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
-            var header = new TextBlock { Text = LemoineStrings.T("linkviews.duplicate.labels.modeHeader"), Margin = new Thickness(0, 0, 0, 6) };
+            var header = new TextBlock { Text = AppStrings.T("linkviews.duplicate.labels.modeHeader"), Margin = new Thickness(0, 0, 0, 6) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -153,13 +153,13 @@ namespace LemoineTools.Tools.LinkViews
             void UpdateHint()
             {
                 hint.Text = _mode == ModeDuplicate
-                        ? LemoineStrings.T("linkviews.duplicate.labels.hintDuplicate")
+                        ? AppStrings.T("linkviews.duplicate.labels.hintDuplicate")
                     : _mode == ModeWithDetailing
-                        ? LemoineStrings.T("linkviews.duplicate.labels.hintDetailing")
-                        : LemoineStrings.T("linkviews.duplicate.labels.hintDependent");
+                        ? AppStrings.T("linkviews.duplicate.labels.hintDetailing")
+                        : AppStrings.T("linkviews.duplicate.labels.hintDependent");
             }
 
-            var select = new LemoineSingleSelect
+            var select = new SingleSelect
             {
                 Width        = 220,
                 Items        = DuplicateModes,
@@ -184,20 +184,20 @@ namespace LemoineTools.Tools.LinkViews
         {
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-            var header = new TextBlock { Text = LemoineStrings.T("linkviews.duplicate.labels.namePattern"), Margin = new Thickness(0, 0, 0, 6) };
+            var header = new TextBlock { Text = AppStrings.T("linkviews.duplicate.labels.namePattern"), Margin = new Thickness(0, 0, 0, 6) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(header);
 
-            var tokenInput = new LemoineTokenInput(NamingTokens, DefaultPattern) { Text = _namePattern };
+            var tokenInput = new TokenInput(NamingTokens, DefaultPattern) { Text = _namePattern };
             outer.Children.Add(tokenInput);
 
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 12, 0, 10) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            var previewHeader = new TextBlock { Text = LemoineStrings.T("linkviews.duplicate.labels.preview"), Margin = new Thickness(0, 0, 0, 4) };
+            var previewHeader = new TextBlock { Text = AppStrings.T("linkviews.duplicate.labels.preview"), Margin = new Thickness(0, 0, 0, 4) };
             previewHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             previewHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             previewHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -222,16 +222,16 @@ namespace LemoineTools.Tools.LinkViews
             void UpdatePreview()
             {
                 var v = FirstSelectedView();
-                string viewName = v?.Name      ?? LemoineStrings.T("linkviews.duplicate.labels.exView");
-                string viewType = v?.TypeLabel ?? LemoineStrings.T("linkviews.duplicate.labels.exType");
+                string viewName = v?.Name      ?? AppStrings.T("linkviews.duplicate.labels.exView");
+                string viewType = v?.TypeLabel ?? AppStrings.T("linkviews.duplicate.labels.exType");
 
-                string resolved = LemoineTokenInput.Resolve(_namePattern,
+                string resolved = TokenInput.Resolve(_namePattern,
                     new Dictionary<string, string>
                     {
                         ["ViewName"] = viewName,
                         ["ViewType"] = viewType,
                     });
-                previewText.Text = string.IsNullOrWhiteSpace(resolved) ? LemoineStrings.T("linkviews.duplicate.labels.emptyName") : resolved;
+                previewText.Text = string.IsNullOrWhiteSpace(resolved) ? AppStrings.T("linkviews.duplicate.labels.emptyName") : resolved;
             }
 
             tokenInput.TextChanged += (s, e) =>
@@ -252,28 +252,28 @@ namespace LemoineTools.Tools.LinkViews
             return id == null ? null : _views.FirstOrDefault(v => v.Id.Value == id.Value);
         }
 
-        // ── ILemoineReviewable — framework renders the review step ─────
+        // ── IReviewableTool — framework renders the review step ─────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("views",   LemoineStrings.T("linkviews.duplicate.review.itemViews")),
-            ("mode",    LemoineStrings.T("linkviews.duplicate.review.itemMode")),
-            ("pattern", LemoineStrings.T("linkviews.duplicate.review.itemPattern")),
-            ("total",   LemoineStrings.T("linkviews.duplicate.review.itemTotal")),
+            ("views",   AppStrings.T("linkviews.duplicate.review.itemViews")),
+            ("mode",    AppStrings.T("linkviews.duplicate.review.itemMode")),
+            ("pattern", AppStrings.T("linkviews.duplicate.review.itemPattern")),
+            ("total",   AppStrings.T("linkviews.duplicate.review.itemTotal")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]   = _selectedViewIds.Count > 0 ? LemoineStrings.T("linkviews.duplicate.review.viewsValue", _selectedViewIds.Count) : "—",
+            ["views"]   = _selectedViewIds.Count > 0 ? AppStrings.T("linkviews.duplicate.review.viewsValue", _selectedViewIds.Count) : "—",
             ["mode"]    = _mode,
             ["pattern"] = string.IsNullOrWhiteSpace(_namePattern) ? "—" : _namePattern,
-            ["total"]   = _selectedViewIds.Count > 0 ? LemoineStrings.T("linkviews.duplicate.review.totalValue", _selectedViewIds.Count) : "—",
+            ["total"]   = _selectedViewIds.Count > 0 ? AppStrings.T("linkviews.duplicate.review.totalValue", _selectedViewIds.Count) : "—",
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("linkviews.duplicate.review.note");
+        public string?        ReviewNote    => AppStrings.T("linkviews.duplicate.review.note");
         public string?        ReviewWarning =>
             (_namePattern != null && _namePattern.Trim() == "{ViewName}")
-                ? LemoineStrings.T("linkviews.duplicate.review.warnSameName")
+                ? AppStrings.T("linkviews.duplicate.review.warnSameName")
                 : null;
 
         // ═══════════════════════════════════════════════════════════════
@@ -289,10 +289,10 @@ namespace LemoineTools.Tools.LinkViews
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return _selectedViewIds.Count > 0 ? LemoineStrings.T("linkviews.duplicate.summaries.viewCount", _selectedViewIds.Count) : "—";
+            if (stepId == "S1") return _selectedViewIds.Count > 0 ? AppStrings.T("linkviews.duplicate.summaries.viewCount", _selectedViewIds.Count) : "—";
             if (stepId == "S2") return _mode;
             if (stepId == "S3") return string.IsNullOrWhiteSpace(_namePattern) ? "—" : _namePattern;
-            if (stepId == "S4") return LemoineStrings.T("linkviews.duplicate.summaries.S4");
+            if (stepId == "S4") return AppStrings.T("linkviews.duplicate.summaries.S4");
             return "—";
         }
 
@@ -311,7 +311,7 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.OnProgress      = onProgress;
             _runHandler.OnComplete      = onComplete;
 
-            pushLog(LemoineStrings.T("linkviews.duplicate.log.raising"), "info");
+            pushLog(AppStrings.T("linkviews.duplicate.log.raising"), "info");
             _runEvent!.Raise();
         }
     }

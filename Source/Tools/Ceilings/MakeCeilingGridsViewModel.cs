@@ -5,18 +5,18 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Ceilings
 {
-    public class MakeCeilingGridsViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class MakeCeilingGridsViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "views";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
         // ── DocEntry — passed in from Command ─────────────────────────────────
         public sealed class DocEntry
@@ -26,16 +26,16 @@ namespace LemoineTools.Tools.Ceilings
             public ElementId LinkInstId = ElementId.InvalidElementId;
         }
 
-        // ── ILemoineTool identity ─────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("ceilings.makeGrids.title");
-        public string RunLabel => LemoineStrings.T("ceilings.makeGrids.runLabel");
+        // ── IStepFlowTool identity ─────────────────────────────────────────────
+        public string Title    => AppStrings.T("ceilings.makeGrids.title");
+        public string RunLabel => AppStrings.T("ceilings.makeGrids.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("docs",    LemoineStrings.T("ceilings.makeGrids.steps.docs"),    required: true),
-            new StepDefinition("filter",  LemoineStrings.T("ceilings.makeGrids.steps.filter"), required: false),
-            new StepDefinition("export",  LemoineStrings.T("ceilings.makeGrids.steps.export"),      required: true),
-            new StepDefinition("run",     LemoineStrings.T("ceilings.makeGrids.steps.run"),         required: false),
+            new StepDefinition("docs",    AppStrings.T("ceilings.makeGrids.steps.docs"),    required: true),
+            new StepDefinition("filter",  AppStrings.T("ceilings.makeGrids.steps.filter"), required: false),
+            new StepDefinition("export",  AppStrings.T("ceilings.makeGrids.steps.export"),      required: true),
+            new StepDefinition("run",     AppStrings.T("ceilings.makeGrids.steps.run"),         required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ namespace LemoineTools.Tools.Ceilings
                 case "docs":   return BuildDocsStep();
                 case "filter": return BuildFilterStep();
                 case "export": return BuildExportStep();
-                case "run":    return null; // framework renders review (ILemoineReviewable)
+                case "run":    return null; // framework renders review (IReviewableTool)
                 default:       return null;
             }
         }
@@ -153,7 +153,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 var none = new TextBlock
                 {
-                    Text         = LemoineStrings.T("ceilings.makeGrids.labels.noDocs"),
+                    Text         = AppStrings.T("ceilings.makeGrids.labels.noDocs"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                 };
@@ -164,7 +164,7 @@ namespace LemoineTools.Tools.Ceilings
                 return outer;
             }
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += selected =>
             {
                 _selectedDocLabels = new List<string>(selected);
@@ -194,14 +194,14 @@ namespace LemoineTools.Tools.Ceilings
             if (_scanDone && _ceilingTypes.Count > 0)
                 PopulateFilterPanel();
             else if (_scanDone && _ceilingTypes.Count == 0)
-                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.noTypes"));
+                ShowFilterMessage(AppStrings.T("ceilings.makeGrids.labels.noTypes"));
             else if (!_scanning)
             {
-                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanning"));
+                ShowFilterMessage(AppStrings.T("ceilings.makeGrids.labels.scanning"));
                 TriggerPhase1();
             }
             else
-                ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanning"));
+                ShowFilterMessage(AppStrings.T("ceilings.makeGrids.labels.scanning"));
 
             return _filterContainer;
         }
@@ -250,7 +250,7 @@ namespace LemoineTools.Tools.Ceilings
 
                     if (_ceilingTypes.Count == 0)
                     {
-                        ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.noTypes"));
+                        ShowFilterMessage(AppStrings.T("ceilings.makeGrids.labels.noTypes"));
                         OnValidationChanged();
                         return;
                     }
@@ -265,7 +265,7 @@ namespace LemoineTools.Tools.Ceilings
                 _filterDispatcher?.BeginInvoke((Action)(() =>
                 {
                     _scanning = false;
-                    ShowFilterMessage(LemoineStrings.T("ceilings.makeGrids.labels.scanError", err));
+                    ShowFilterMessage(AppStrings.T("ceilings.makeGrids.labels.scanError", err));
                 }));
             };
 
@@ -293,7 +293,7 @@ namespace LemoineTools.Tools.Ceilings
                 .OrderBy(t => t.FamilyName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(t => t.TypeName,   StringComparer.OrdinalIgnoreCase))
             {
-                string display = LemoineStrings.T("ceilings.makeGrids.labels.typeDisplay", t.FamilyName, t.TypeName);
+                string display = AppStrings.T("ceilings.makeGrids.labels.typeDisplay", t.FamilyName, t.TypeName);
                 string key      = $"{t.FamilyName}|{t.TypeName}";
 
                 _displayToKey[display] = key;
@@ -321,7 +321,7 @@ namespace LemoineTools.Tools.Ceilings
                 .Select(kv => kv.Key)
                 .ToList();
 
-            var tabs = new LemoineMultiSelectTabs { AccessibleName = LemoineStrings.T("ceilings.makeGrids.labels.typesByModel") };
+            var tabs = new MultiSelectTabs { AccessibleName = AppStrings.T("ceilings.makeGrids.labels.typesByModel") };
             // Subscribe BEFORE SetGroups — SetGroups fires SelectionChanged once at the
             // end of setup, which is what initialises our excluded-key mirror.
             tabs.SelectionChanged += selected =>
@@ -344,7 +344,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             var outer = new StackPanel();
 
-            var folderLabel = new TextBlock { Text = LemoineStrings.T("ceilings.makeGrids.labels.outputFolder"), Margin = new Thickness(0, 0, 0, 4) };
+            var folderLabel = new TextBlock { Text = AppStrings.T("ceilings.makeGrids.labels.outputFolder"), Margin = new Thickness(0, 0, 0, 4) };
             folderLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             folderLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             folderLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -365,13 +365,13 @@ namespace LemoineTools.Tools.Ceilings
             pathBox.TextChanged += (s, e) => { _outputFolder = pathBox.Text; OnValidationChanged(); };
             outer.Children.Add(pathBox);
 
-            var browseBtn = LemoineControlStyles.BuildButton(LemoineStrings.T("ceilings.makeGrids.labels.browse"));
+            var browseBtn = ControlStyles.BuildButton(AppStrings.T("ceilings.makeGrids.labels.browse"));
             browseBtn.Margin = new Thickness(0, 4, 0, 0);
             browseBtn.Click += (s, e) =>
             {
                 var dlg = new System.Windows.Forms.FolderBrowserDialog
                 {
-                    Description         = LemoineStrings.T("ceilings.makeGrids.labels.browseDialog"),
+                    Description         = AppStrings.T("ceilings.makeGrids.labels.browseDialog"),
                     SelectedPath        = _outputFolder,
                     ShowNewFolderButton = true,
                 };
@@ -390,12 +390,12 @@ namespace LemoineTools.Tools.Ceilings
                 new ToggleItem
                 {
                     Id        = "subfolder",
-                    Label     = LemoineStrings.T("ceilings.makeGrids.labels.subfolderLabel"),
-                    Desc      = LemoineStrings.T("ceilings.makeGrids.labels.subfolderDesc"),
+                    Label     = AppStrings.T("ceilings.makeGrids.labels.subfolderLabel"),
+                    Desc      = AppStrings.T("ceilings.makeGrids.labels.subfolderDesc"),
                     DefaultOn = _useCeilingGridsSubfolder,
                 },
             };
-            var toggleSwitch = new LemoineToggleSwitches();
+            var toggleSwitch = new ToggleSwitches();
             toggleSwitch.Margin = new Thickness(0, 14, 0, 0);
             toggleSwitch.SetItems(toggleItems);
             toggleSwitch.StateChanged += state =>
@@ -409,14 +409,14 @@ namespace LemoineTools.Tools.Ceilings
         }
 
         // ── Step 5: Review & Run ───────────────────────────────────────────
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("types",     LemoineStrings.T("ceilings.makeGrids.review.itemTypes")),
-            ("folder",    LemoineStrings.T("ceilings.makeGrids.review.itemFolder")),
-            ("subfolder", LemoineStrings.T("ceilings.makeGrids.review.itemSubfolder")),
-            ("dwg",       LemoineStrings.T("ceilings.makeGrids.review.itemDwg")),
-            ("docs",      LemoineStrings.T("ceilings.makeGrids.review.itemDocs")),
+            ("types",     AppStrings.T("ceilings.makeGrids.review.itemTypes")),
+            ("folder",    AppStrings.T("ceilings.makeGrids.review.itemFolder")),
+            ("subfolder", AppStrings.T("ceilings.makeGrids.review.itemSubfolder")),
+            ("dwg",       AppStrings.T("ceilings.makeGrids.review.itemDwg")),
+            ("docs",      AppStrings.T("ceilings.makeGrids.review.itemDocs")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -427,13 +427,13 @@ namespace LemoineTools.Tools.Ceilings
                 int excluded = _excludedTypeKeys.Count;
                 return new Dictionary<string, string>
                 {
-                    ["types"]     = total == 0 ? LemoineStrings.T("ceilings.makeGrids.review.typesPending") : LemoineStrings.T("ceilings.makeGrids.review.typesIncluded", total - excluded, total),
+                    ["types"]     = total == 0 ? AppStrings.T("ceilings.makeGrids.review.typesPending") : AppStrings.T("ceilings.makeGrids.review.typesIncluded", total - excluded, total),
                     ["folder"]    = string.IsNullOrEmpty(_outputFolder) ? "—"
                         : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
-                    ["subfolder"] = _useCeilingGridsSubfolder ? LemoineStrings.T("ceilings.makeGrids.review.subfolderOn") : LemoineStrings.T("ceilings.makeGrids.review.subfolderOff"),
-                    ["dwg"]       = LemoineStrings.T("ceilings.makeGrids.review.dwg"),
-                    ["docs"]      = _selectedDocLabels.Count == 0 ? LemoineStrings.T("ceilings.makeGrids.review.docsNone")
-                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? LemoineStrings.T("ceilings.makeGrids.review.docsMore", _selectedDocLabels.Count - 2) : ""),
+                    ["subfolder"] = _useCeilingGridsSubfolder ? AppStrings.T("ceilings.makeGrids.review.subfolderOn") : AppStrings.T("ceilings.makeGrids.review.subfolderOff"),
+                    ["dwg"]       = AppStrings.T("ceilings.makeGrids.review.dwg"),
+                    ["docs"]      = _selectedDocLabels.Count == 0 ? AppStrings.T("ceilings.makeGrids.review.docsNone")
+                        : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? AppStrings.T("ceilings.makeGrids.review.docsMore", _selectedDocLabels.Count - 2) : ""),
                 };
             }
         }
@@ -462,18 +462,18 @@ namespace LemoineTools.Tools.Ceilings
             {
                 case "docs":
                     return _selectedDocLabels.Count == 0 ? "—"
-                        : LemoineStrings.T("ceilings.makeGrids.summaries.docsCount", _selectedDocLabels.Count);
+                        : AppStrings.T("ceilings.makeGrids.summaries.docsCount", _selectedDocLabels.Count);
                 case "filter":
-                    if (!_scanDone) return LemoineStrings.T("ceilings.makeGrids.summaries.scanPending");
+                    if (!_scanDone) return AppStrings.T("ceilings.makeGrids.summaries.scanPending");
                     int total    = DistinctTypeCount();
                     int excluded = _excludedTypeKeys.Count;
-                    return excluded == 0 ? LemoineStrings.T("ceilings.makeGrids.summaries.allIncluded", total)
-                        : LemoineStrings.T("ceilings.makeGrids.summaries.someIncluded", total - excluded, total);
+                    return excluded == 0 ? AppStrings.T("ceilings.makeGrids.summaries.allIncluded", total)
+                        : AppStrings.T("ceilings.makeGrids.summaries.someIncluded", total - excluded, total);
                 case "export":
                     return string.IsNullOrEmpty(_outputFolder) ? "—"
                         : System.IO.Path.GetFileName(_outputFolder.TrimEnd('\\', '/'));
                 case "run":
-                    return LemoineStrings.T("ceilings.makeGrids.summaries.run");
+                    return AppStrings.T("ceilings.makeGrids.summaries.run");
                 default:
                     return "—";
             }
@@ -496,7 +496,7 @@ namespace LemoineTools.Tools.Ceilings
         {
             if (_runHandler == null || _runEvent == null)
             {
-                pushLog(LemoineStrings.T("ceilings.makeGrids.log.runHandlerMissing"), "fail");
+                pushLog(AppStrings.T("ceilings.makeGrids.log.runHandlerMissing"), "fail");
                 onComplete(0, 1, 0);
                 return;
             }
@@ -531,7 +531,7 @@ namespace LemoineTools.Tools.Ceilings
             _runHandler.OnProgress    = onProgress;
             _runHandler.OnComplete    = onComplete;
 
-            pushLog(LemoineStrings.T("ceilings.makeGrids.log.raising"), "info");
+            pushLog(AppStrings.T("ceilings.makeGrids.log.raising"), "info");
             _runEvent.Raise();
         }
     }

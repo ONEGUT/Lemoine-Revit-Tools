@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LemoineTools");
                 try { Directory.CreateDirectory(dir); }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSettings: create config directory", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSettings: create config directory", ex); }
                 return Path.Combine(dir, "CopyLinearSettings.xml");
             }
         }
@@ -69,7 +69,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var xs = new XmlSerializer(typeof(CopyLinearSettings));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSettings.Save", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSettings.Save", ex); }
         }
 
         private static CopyLinearSettings Load()
@@ -83,7 +83,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     using (var r = new StreamReader(path)) return (CopyLinearSettings)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearSettings.Load", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearSettings.Load", ex); }
             return new CopyLinearSettings();
         }
     }

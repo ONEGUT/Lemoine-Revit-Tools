@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -85,20 +85,20 @@ namespace LemoineTools.Tools.CopyFromLink
             _manualApplyWarned = false;
             _rotationApplyWarned = false;
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var doc = app.ActiveUIDocument?.Document;
-                if (doc == null) { Log(LemoineStrings.T("copy.linear.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (doc == null) { Log(AppStrings.T("copy.linear.log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 var src = CopyLinearSource.Resolve(doc, Spec.LinkInstId);
-                if (src?.Doc == null) { Log(LemoineStrings.T("copy.linear.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                if (src?.Doc == null) { Log(AppStrings.T("copy.linear.log.srcNotLoaded"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
                 FamilySymbol? symbol = null;
                 if (Mode == "Replace")
                 {
                     symbol = doc.GetElement(new ElementId(SymbolId)) as FamilySymbol;
-                    if (symbol == null) { Log(LemoineStrings.T("copy.linear.log.pickFamily"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
+                    if (symbol == null) { Log(AppStrings.T("copy.linear.log.pickFamily"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
                 }
 
                 // ── Gather current source runs (straight lines only) keyed by stable identity ──
@@ -130,7 +130,7 @@ namespace LemoineTools.Tools.CopyFromLink
                                 var bb = el.get_BoundingBox(null);
                                 if (bb != null) corners = BoxCorners(bb, src.Transform);
                             }
-                            catch (Exception ex) { LemoineLog.Swallowed($"CopyLinear: source box {el.Id}", ex); }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyLinear: source box {el.Id}", ex); }
                         }
 
                         current[key] = new SourceRun { Element = el, A = a, B = b, Key = key, Hash = hash, BoxCorners = corners };
@@ -138,12 +138,12 @@ namespace LemoineTools.Tools.CopyFromLink
                     catch (Exception ex)
                     {
                         skip++;
-                        LemoineLog.Swallowed($"CopyLinear: read source {el?.Id}", ex);
+                        DiagnosticsLog.Swallowed($"CopyLinear: read source {el?.Id}", ex);
                     }
                 }
 
                 skip += nonLinear;
-                if (nonLinear > 0) Log(LemoineStrings.T("copy.linear.log.nonLinear", nonLinear), "info");
+                if (nonLinear > 0) Log(AppStrings.T("copy.linear.log.nonLinear", nonLinear), "info");
 
                 // ── Read existing stamps and decide what to (re)build / delete ──
                 var stampsByKey = new Dictionary<string, (List<ElementId> ids, string hash)>(StringComparer.Ordinal);
@@ -175,9 +175,9 @@ namespace LemoineTools.Tools.CopyFromLink
 
                 string runId = Guid.NewGuid().ToString("N");
                 int total = toBuild.Count, done = 0;
-                Log(LemoineStrings.T("copy.linear.log.modeHeader", Mode, current.Count, toBuild.Count, unchanged, (DeletePrevious
-                        ? LemoineStrings.T("copy.linear.log.copyingOrphans", orphanIds.Count)
-                        : LemoineStrings.T("copy.linear.log.copyingUntouched"))), "info");
+                Log(AppStrings.T("copy.linear.log.modeHeader", Mode, current.Count, toBuild.Count, unchanged, (DeletePrevious
+                        ? AppStrings.T("copy.linear.log.copyingOrphans", orphanIds.Count)
+                        : AppStrings.T("copy.linear.log.copyingUntouched"))), "info");
 
                 using (var tx = new Transaction(doc, "Copy Linear Elements"))
                 {
@@ -209,9 +209,9 @@ namespace LemoineTools.Tools.CopyFromLink
                     var prog = new RunProgressReporter(Log, total, "source runs");
                     foreach (var run in toBuild)
                     {
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                             break;   // falls through to doc.Regenerate() + tx.Commit() below
                         }
                         if (!described) { described = true; Log(DescribeSource(run.Element), "info"); }
@@ -227,8 +227,8 @@ namespace LemoineTools.Tools.CopyFromLink
                         catch (Exception ex)
                         {
                             fail++;
-                            LemoineLog.Error($"CopyLinear: build {run.Key}", ex);
-                            Log(LemoineStrings.T("copy.linear.log.runFail", run.Element.Id, ex.Message), "fail");
+                            DiagnosticsLog.Error($"CopyLinear: build {run.Key}", ex);
+                            Log(AppStrings.T("copy.linear.log.runFail", run.Element.Id, ex.Message), "fail");
                         }
                         done++;
                         if (total > 0) OnProgress?.Invoke((int)(done * 95.0 / total), pass, fail, skip);
@@ -242,21 +242,21 @@ namespace LemoineTools.Tools.CopyFromLink
                     // ground truth for diagnosing "work plane" style errors.
                     foreach (var f in failureHandler.Captured.Distinct().Take(15))
                     {
-                        Log(LemoineStrings.T("copy.linear.log.revitFailure", f), "warn");
-                        LemoineLog.Warn("CopyLinear: revit failure", f);
+                        Log(AppStrings.T("copy.linear.log.revitFailure", f), "warn");
+                        DiagnosticsLog.Warn("CopyLinear: revit failure", f);
                     }
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
-                if (issues > 0) Log(LemoineStrings.T("copy.linear.log.nonFatal", issues), "warn");
-                Log(LemoineStrings.T("copy.linear.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
+                long issues = DiagnosticsLog.IssuesSince(issues0);
+                if (issues > 0) Log(AppStrings.T("copy.linear.log.nonFatal", issues), "warn");
+                Log(AppStrings.T("copy.linear.log.done", pass, skip, fail), fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
                 OnComplete?.Invoke(pass, fail, skip);
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyLinearRunHandler.Execute", ex);
-                Log(LemoineStrings.T("copy.linear.log.aborted", ex.Message), "fail");
+                DiagnosticsLog.Error("CopyLinearRunHandler.Execute", ex);
+                Log(AppStrings.T("copy.linear.log.aborted", ex.Message), "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
             finally
@@ -290,7 +290,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var hostSymbol = FindOrCopySymbol(doc, srcDoc, srcFi.Symbol);
                 if (hostSymbol == null)
                 {
-                    Log(LemoineStrings.T("copy.linear.log.familyNotLoaded", run.Element.Id, srcFi.Symbol?.Family?.Name ?? string.Empty), "fail");
+                    Log(AppStrings.T("copy.linear.log.familyNotLoaded", run.Element.Id, srcFi.Symbol?.Family?.Name ?? string.Empty), "fail");
                     return (0, 1);
                 }
                 if (!hostSymbol.IsActive) hostSymbol.Activate();
@@ -298,7 +298,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var sp = EnsureHorizontalSketchPlane(doc, (run.A.Z + run.B.Z) * 0.5);
                 if (sp == null)
                 {
-                    Log(LemoineStrings.T("copy.linear.log.noSketchPlaneSplit", run.Element.Id), "fail");
+                    Log(AppStrings.T("copy.linear.log.noSketchPlaneSplit", run.Element.Id), "fail");
                     return (0, 1);
                 }
                 try
@@ -307,8 +307,8 @@ namespace LemoineTools.Tools.CopyFromLink
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error($"CopyLinear: reconstruct face-hosted {run.Element.Id}", ex);
-                    Log(LemoineStrings.T("copy.linear.log.reconstructFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
+                    DiagnosticsLog.Error($"CopyLinear: reconstruct face-hosted {run.Element.Id}", ex);
+                    Log(AppStrings.T("copy.linear.log.reconstructFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
                     return (0, 1);
                 }
             }
@@ -328,8 +328,8 @@ namespace LemoineTools.Tools.CopyFromLink
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
-                    Log(LemoineStrings.T("copy.linear.log.copyFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
+                    DiagnosticsLog.Error($"CopyLinear: copy source {run.Element.Id}", ex);
+                    Log(AppStrings.T("copy.linear.log.copyFail", run.Element.Id, ex.GetType().Name, ex.Message), "fail");
                     return (0, 1);
                 }
 
@@ -337,7 +337,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 if (hostCopy == null)
                 {
                     SafeDelete(doc, copied?.ToList() ?? new List<ElementId>());
-                    Log(LemoineStrings.T("copy.linear.log.copyNoCurve", run.Element.Id), "info");
+                    Log(AppStrings.T("copy.linear.log.copyNoCurve", run.Element.Id), "info");
                     return (0, 0);
                 }
             }
@@ -346,7 +346,7 @@ namespace LemoineTools.Tools.CopyFromLink
             if (!(hostCopy.Location is LocationCurve hostLocCurve) || !(hostLocCurve.Curve is Line hostLine))
             {
                 SafeDelete(doc, new List<ElementId> { hostCopy.Id });
-                Log(LemoineStrings.T("copy.linear.log.placedNoCurve", run.Element.Id), "info");
+                Log(AppStrings.T("copy.linear.log.placedNoCurve", run.Element.Id), "info");
                 return (0, 0);
             }
 
@@ -357,7 +357,7 @@ namespace LemoineTools.Tools.CopyFromLink
             if (cells.Count == 0)
             {
                 SafeDelete(doc, new List<ElementId> { hostCopy.Id });
-                Log(LemoineStrings.T("copy.linear.log.runTooShort", run.Element.Id), "info");
+                Log(AppStrings.T("copy.linear.log.runTooShort", run.Element.Id), "info");
                 return (0, 0);
             }
 
@@ -369,7 +369,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 var c = ElementTransformUtils.CopyElement(doc, hostCopy.Id, XYZ.Zero);
                 if (c == null || c.Count == 0)
                 {
-                    Log(LemoineStrings.T("copy.linear.log.copyIncomplete", run.Element.Id, i), "warn");
+                    Log(AppStrings.T("copy.linear.log.copyIncomplete", run.Element.Id, i), "warn");
                     break;
                 }
                 segIds.Add(c.First());
@@ -397,14 +397,14 @@ namespace LemoineTools.Tools.CopyFromLink
                     // Stamp only in delete-previous mode — otherwise the finished segment is a
                     // plain element, detached from this tool's reconciliation.
                     if (DeletePrevious && !CopyLinearStampSchema.Stamp(seg, run.Key, run.Hash, runId, "Split"))
-                        LemoineLog.Warn("CopyLinear: stamp", $"segment for {run.Element.Id} not stamped — it won't reconcile on a later run.");
+                        DiagnosticsLog.Warn("CopyLinear: stamp", $"segment for {run.Element.Id} not stamped — it won't reconcile on a later run.");
                     made++;
                 }
                 catch (Exception ex)
                 {
                     if (i > 0) SafeDelete(doc, new List<ElementId> { seg.Id });
-                    LemoineLog.Error($"CopyLinear: set segment curve {run.Element.Id}#{i}", ex);
-                    Log(LemoineStrings.T("copy.linear.log.segFail", run.Element.Id, i, ex.GetType().Name, ex.Message), "fail");
+                    DiagnosticsLog.Error($"CopyLinear: set segment curve {run.Element.Id}#{i}", ex);
+                    Log(AppStrings.T("copy.linear.log.segFail", run.Element.Id, i, ex.GetType().Name, ex.Message), "fail");
                     innerFailed++;
                 }
             }
@@ -426,15 +426,15 @@ namespace LemoineTools.Tools.CopyFromLink
             XYZ a = run.A, b = run.B;
             double totalLen = a.DistanceTo(b);
             var stations = CopyLinearEngine.PlacementStations(totalLen, IntervalFeet, ExtraSpacingFeet);
-            if (stations.Count == 0) { Log(LemoineStrings.T("copy.linear.log.noPlacementPts", run.Element.Id), "info"); return (0, 0); }
+            if (stations.Count == 0) { Log(AppStrings.T("copy.linear.log.noPlacementPts", run.Element.Id), "info"); return (0, 0); }
 
             FamilyPlacementType placement = FamilyPlacementType.OneLevelBased;
             try { placement = symbol.Family?.FamilyPlacementType ?? FamilyPlacementType.OneLevelBased; }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read FamilyPlacementType", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: read FamilyPlacementType", ex); }
 
             if (placement == FamilyPlacementType.CurveBasedDetail || placement == FamilyPlacementType.ViewBased)
             {
-                Log(LemoineStrings.T("copy.linear.log.detailFamily", symbol.Name), "fail");
+                Log(AppStrings.T("copy.linear.log.detailFamily", symbol.Name), "fail");
                 return (0, 1);
             }
 
@@ -451,21 +451,21 @@ namespace LemoineTools.Tools.CopyFromLink
             if (!_loggedPlacement)
             {
                 _loggedPlacement = true;
-                Log(LemoineStrings.T("copy.linear.log.replaceFamily", symbol.Name, placement, (curveBased ? LemoineStrings.T("copy.linear.log.pathCurve") :
-                       placement == FamilyPlacementType.WorkPlaneBased ? LemoineStrings.T("copy.linear.log.pathWorkplane") : LemoineStrings.T("copy.linear.log.pathPoint"))), "info");
+                Log(AppStrings.T("copy.linear.log.replaceFamily", symbol.Name, placement, (curveBased ? AppStrings.T("copy.linear.log.pathCurve") :
+                       placement == FamilyPlacementType.WorkPlaneBased ? AppStrings.T("copy.linear.log.pathWorkplane") : AppStrings.T("copy.linear.log.pathPoint"))), "info");
                 if (AlignToSource && curveBased)
-                    Log(LemoineStrings.T("copy.linear.log.alignSkipLine"), "info");
+                    Log(AppStrings.T("copy.linear.log.alignSkipLine"), "info");
                 if (hasRotation && curveBased)
-                    Log(LemoineStrings.T("copy.linear.log.rotSkipLine"), "info");
+                    Log(AppStrings.T("copy.linear.log.rotSkipLine"), "info");
                 if (hasManual)
-                    Log(LemoineStrings.T("copy.linear.log.manualActive"), "info");
+                    Log(AppStrings.T("copy.linear.log.manualActive"), "info");
             }
 
             // Host the instances on the level nearest the run, not the active view's work plane.
             Level? level = NearestLevel(levels, (a.Z + b.Z) * 0.5);
             if (level == null && (curveBased || placement == FamilyPlacementType.WorkPlaneBased))
             {
-                Log(LemoineStrings.T("copy.linear.log.noLevelHost", run.Element.Id, symbol.Name), "fail");
+                Log(AppStrings.T("copy.linear.log.noLevelHost", run.Element.Id, symbol.Name), "fail");
                 return (0, 1);
             }
 
@@ -505,7 +505,7 @@ namespace LemoineTools.Tools.CopyFromLink
                             var sp = EnsureHorizontalSketchPlane(doc, (p.Z + q.Z) * 0.5);
                             if (sp == null)
                             {
-                                Log(LemoineStrings.T("copy.linear.log.noSketchPlaneCurve", run.Element.Id), "fail");
+                                Log(AppStrings.T("copy.linear.log.noSketchPlaneCurve", run.Element.Id), "fail");
                                 innerFail++;
                                 continue;
                             }
@@ -527,8 +527,8 @@ namespace LemoineTools.Tools.CopyFromLink
                 }
                 catch (Exception ex)
                 {
-                    LemoineLog.Error($"CopyLinear: place instance for {run.Element.Id} ({placement})", ex);
-                    Log(LemoineStrings.T("copy.linear.log.placeFail", run.Element.Id, placement, ex.GetType().Name, ex.Message), "fail");
+                    DiagnosticsLog.Error($"CopyLinear: place instance for {run.Element.Id} ({placement})", ex);
+                    Log(AppStrings.T("copy.linear.log.placeFail", run.Element.Id, placement, ex.GetType().Name, ex.Message), "fail");
                     innerFail++;
                     continue;
                 }
@@ -539,7 +539,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 {
                     var axis = Line.CreateBound(p, p + XYZ.BasisZ);
                     try { ElementTransformUtils.RotateElement(doc, inst.Id, axis, angle); }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: rotate instance", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: rotate instance", ex); }
                 }
 
                 // User X/Y/Z rotation, in this run's own frame — before alignment so the
@@ -566,7 +566,7 @@ namespace LemoineTools.Tools.CopyFromLink
                         else if (!_alignNoBoxWarned)
                         {
                             _alignNoBoxWarned = true;
-                            Log(LemoineStrings.T("copy.linear.log.alignNoBox", run.Element.Id), "warn");
+                            Log(AppStrings.T("copy.linear.log.alignNoBox", run.Element.Id), "warn");
                         }
                     }
                 }
@@ -582,15 +582,15 @@ namespace LemoineTools.Tools.CopyFromLink
                 {
                     var lp = inst.LookupParameter(LengthParamName);
                     if (lp != null && !lp.IsReadOnly && lp.StorageType == StorageType.Double)
-                        try { lp.Set(Math.Min(IntervalFeet, remaining)); } catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: set length param", ex); }
+                        try { lp.Set(Math.Min(IntervalFeet, remaining)); } catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: set length param", ex); }
                     else if (lp == null)
-                        LemoineLog.Warn("CopyLinear: length parameter", $"'{LengthParamName}' not found on {symbol.Name}");
+                        DiagnosticsLog.Warn("CopyLinear: length parameter", $"'{LengthParamName}' not found on {symbol.Name}");
                 }
 
                 // Stamp only in delete-previous mode — otherwise the finished instance is a
                 // plain element, detached from this tool's reconciliation.
                 if (DeletePrevious && !CopyLinearStampSchema.Stamp(inst, run.Key, run.Hash, runId, "Replace"))
-                    LemoineLog.Warn("CopyLinear: stamp", $"instance for {run.Element.Id} not stamped — it won't reconcile on a later run.");
+                    DiagnosticsLog.Warn("CopyLinear: stamp", $"instance for {run.Element.Id} not stamped — it won't reconcile on a later run.");
                 made++;
             }
             return (made, innerFail);
@@ -613,18 +613,18 @@ namespace LemoineTools.Tools.CopyFromLink
                 if (profile == null)
                 {
                     _alignCalibrationFailed = true;
-                    Log(LemoineStrings.T("copy.linear.log.alignNoMeasure"), "warn");
-                    LemoineLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
+                    Log(AppStrings.T("copy.linear.log.alignNoMeasure"), "warn");
+                    DiagnosticsLog.Warn("CopyLinear: align", $"no instance box for {inst.Id}; calibration skipped");
                     return;
                 }
                 _alignProfile = profile;
-                Log(LemoineStrings.T("copy.linear.log.alignMeasured"), "info");
+                Log(AppStrings.T("copy.linear.log.alignMeasured"), "info");
             }
             catch (Exception ex)
             {
                 _alignCalibrationFailed = true;
-                LemoineLog.Error("CopyLinear: align calibration", ex);
-                Log(LemoineStrings.T("copy.linear.log.alignFail", ex.GetType().Name, ex.Message), "warn");
+                DiagnosticsLog.Error("CopyLinear: align calibration", ex);
+                Log(AppStrings.T("copy.linear.log.alignFail", ex.GetType().Name, ex.Message), "warn");
             }
         }
 
@@ -644,11 +644,11 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: apply alignment", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: apply alignment", ex);
                 if (!_alignApplyWarned)
                 {
                     _alignApplyWarned = true;
-                    Log(LemoineStrings.T("copy.linear.log.alignInstFail", inst.Id, ex.GetType().Name), "warn");
+                    Log(AppStrings.T("copy.linear.log.alignInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }
@@ -670,11 +670,11 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: apply rotation", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: apply rotation", ex);
                 if (!_rotationApplyWarned)
                 {
                     _rotationApplyWarned = true;
-                    Log(LemoineStrings.T("copy.linear.log.rotInstFail", inst.Id, ex.GetType().Name), "warn");
+                    Log(AppStrings.T("copy.linear.log.rotInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }
@@ -693,11 +693,11 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: apply manual override", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: apply manual override", ex);
                 if (!_manualApplyWarned)
                 {
                     _manualApplyWarned = true;
-                    Log(LemoineStrings.T("copy.linear.log.manualInstFail", inst.Id, ex.GetType().Name), "warn");
+                    Log(AppStrings.T("copy.linear.log.manualInstFail", inst.Id, ex.GetType().Name), "warn");
                 }
             }
         }
@@ -760,7 +760,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: copy family symbol to host", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: copy family symbol to host", ex);
             }
 
             // Final fallback: any type in the host that belongs to the same family.
@@ -789,7 +789,7 @@ namespace LemoineTools.Tools.CopyFromLink
                     if (Math.Abs(pln.Normal.Z - 1.0) < 1e-4 && Math.Abs(pln.Origin.Z - z) < tol)
                         return sp;
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read sketch plane", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: read sketch plane", ex); }
             }
             try
             {
@@ -798,7 +798,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: create sketch plane", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: create sketch plane", ex);
                 return null;
             }
         }
@@ -826,21 +826,21 @@ namespace LemoineTools.Tools.CopyFromLink
                 string cls = el.GetType().Name;
                 string cat;
                 try { cat = el.Category?.Name ?? "?"; }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: describe category", ex); cat = "?"; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: describe category", ex); cat = "?"; }
                 string extra = "";
                 if (el is FamilyInstance fi)
                 {
                     var fam = fi.Symbol?.Family;
                     string host;
                     try { host = fi.Host?.GetType().Name ?? "none"; }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: describe host", ex); host = "?"; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: describe host", ex); host = "?"; }
                     extra = $", family '{fam?.Name}', placement {(fam?.FamilyPlacementType.ToString() ?? "?")}, host {host}";
                 }
                 return $"Source element {el.Id}: {cls} [{cat}]{extra}";
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinear: describe source", ex);
+                DiagnosticsLog.Swallowed("CopyLinear: describe source", ex);
                 return $"Source element {el.Id}";
             }
         }
@@ -852,7 +852,7 @@ namespace LemoineTools.Tools.CopyFromLink
             {
                 if (id == null || id == ElementId.InvalidElementId) continue;
                 try { if (doc.GetElement(id) != null) doc.Delete(id); }
-                catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: delete output", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: delete output", ex); }
             }
         }
 
@@ -865,9 +865,9 @@ namespace LemoineTools.Tools.CopyFromLink
                 if (cm == null) return;
                 foreach (Connector c in cm.Connectors)
                     foreach (Connector other in c.AllRefs.Cast<Connector>().ToList())
-                        try { c.DisconnectFrom(other); } catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: disconnect connector", ex); }
+                        try { c.DisconnectFrom(other); } catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: disconnect connector", ex); }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: disconnect connectors", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: disconnect connectors", ex); }
         }
 
         // Copy options that silently reuse the destination's types — suppresses the modal
@@ -896,7 +896,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 opts.SetFailuresPreprocessor(handler);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: configure failure handling", ex); }
             return handler;
         }
 
@@ -916,10 +916,10 @@ namespace LemoineTools.Tools.CopyFromLink
                     var sev = msg.GetSeverity();
                     string desc;
                     try { desc = msg.GetDescriptionText(); }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read failure description", ex); desc = "(no description)"; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: read failure description", ex); desc = "(no description)"; }
                     string ids = "";
                     try { ids = string.Join(", ", msg.GetFailingElementIds().Select(i => i.Value)); }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinear: read failing ids", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinear: read failing ids", ex); }
                     _captured.Add($"[{sev}] {desc}" + (ids.Length > 0 ? $" — elements {ids}" : ""));
 
                     if (sev == FailureSeverity.Warning)

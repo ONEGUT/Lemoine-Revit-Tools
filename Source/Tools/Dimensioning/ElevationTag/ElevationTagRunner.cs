@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Tools.Dimensioning.ElevationTag
@@ -61,7 +61,7 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed("ElevationTagRunner: collect marker lines", ex);
+                        DiagnosticsLog.Swallowed("ElevationTagRunner: collect marker lines", ex);
                         log($"Could not read markers in '{view.Name}': {ex.Message}", "fail");
                         result.Failures++;
                         continue;
@@ -95,11 +95,11 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                             if (reference == null)
                             {
                                 try { reference = new Reference(ce); }
-                                catch (Exception ex) { LemoineLog.Swallowed("ElevationTagRunner: build element reference", ex); }
+                                catch (Exception ex) { DiagnosticsLog.Swallowed("ElevationTagRunner: build element reference", ex); }
                             }
                             if (reference == null)
                             {
-                                LemoineLog.Swallowed("ElevationTagRunner: marker line has no reference",
+                                DiagnosticsLog.Swallowed("ElevationTagRunner: marker line has no reference",
                                     new InvalidOperationException("null curve reference"));
                                 log($"Marker in '{view.Name}' had no usable reference — skipped.", "fail");
                                 result.Failures++;
@@ -118,7 +118,7 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                             if (spotTypeId != ElementId.InvalidElementId)
                             {
                                 try { if (spot.GetTypeId() != spotTypeId) spot.ChangeTypeId(spotTypeId); }
-                                catch (Exception ex) { LemoineLog.Swallowed("ElevationTagRunner: set spot elevation type", ex); }
+                                catch (Exception ex) { DiagnosticsLog.Swallowed("ElevationTagRunner: set spot elevation type", ex); }
                             }
 
                             ClashTagSchema.StampTag(spot, ClashTagSchema.ReadGroup(ce));
@@ -126,7 +126,7 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                         }
                         catch (Exception ex)
                         {
-                            LemoineLog.Swallowed("ElevationTagRunner: place spot elevation", ex);
+                            DiagnosticsLog.Swallowed("ElevationTagRunner: place spot elevation", ex);
                             log($"Spot elevation failed in '{view.Name}': {ex.Message}", "fail");
                             result.Failures++;
                         }

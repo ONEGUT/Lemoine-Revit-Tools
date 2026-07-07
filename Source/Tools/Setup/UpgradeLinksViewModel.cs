@@ -7,8 +7,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.Setup
@@ -19,18 +19,18 @@ namespace LemoineTools.Tools.Setup
     /// saved to the destination, closed, and linked into the host. Files are processed serially on the
     /// Revit thread for RAM control (see <see cref="UpgradeLinksRunHandler"/>).
     /// </summary>
-    public sealed class UpgradeLinksViewModel : ILemoineTool, ILemoineReviewable, ILemoineRunResult, IStepAware, ILemoineToolCleanup, ILemoineRunPausable
+    public sealed class UpgradeLinksViewModel : IStepFlowTool, IReviewableTool, IRunResult, IStepAware, IToolCleanup, IRunPausable
     {
-        public string Title       => LemoineStrings.T("upgradeLinks.title");
-        public string RunLabel    => LemoineStrings.T("upgradeLinks.runLabel");
-        public string? ResultNoun => LemoineStrings.T("upgradeLinks.resultNoun");
+        public string Title       => AppStrings.T("upgradeLinks.title");
+        public string RunLabel    => AppStrings.T("upgradeLinks.runLabel");
+        public string? ResultNoun => AppStrings.T("upgradeLinks.resultNoun");
         public IReadOnlyList<ResultChip>? ResultChips => null;
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("files", LemoineStrings.T("upgradeLinks.steps.files"), required: true),
-            new StepDefinition("dest",  LemoineStrings.T("upgradeLinks.steps.dest"),  required: true),
-            new StepDefinition("run",   LemoineStrings.T("upgradeLinks.steps.run"),   required: false),
+            new StepDefinition("files", AppStrings.T("upgradeLinks.steps.files"), required: true),
+            new StepDefinition("dest",  AppStrings.T("upgradeLinks.steps.dest"),  required: true),
+            new StepDefinition("run",   AppStrings.T("upgradeLinks.steps.run"),   required: false),
         };
 
         // ── Injected ───────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ namespace LemoineTools.Tools.Setup
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        // ── ILemoineRunPausable — Cloud mode pauses per file on Revit's native Save dialog ──────
+        // ── IRunPausable — Cloud mode pauses per file on Revit's native Save dialog ──────
         public event Action<bool, string?, string?>? AwaitingUserChanged;
         public void ContinueRun()
         {
@@ -106,7 +106,7 @@ namespace LemoineTools.Tools.Setup
             {
                 case "files": return BuildFilesStep();
                 case "dest":  return BuildDestStep();
-                default:      return null;   // "run" rendered by the framework (ILemoineReviewable)
+                default:      return null;   // "run" rendered by the framework (IReviewableTool)
             }
         }
 
@@ -119,7 +119,7 @@ namespace LemoineTools.Tools.Setup
         {
             _disp = Dispatcher.CurrentDispatcher;
             var outer = new StackPanel();
-            outer.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.filesHint")));
+            outer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.filesHint")));
             _filesContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             outer.Children.Add(_filesContainer);
             RebuildFilesTable();
@@ -131,11 +131,11 @@ namespace LemoineTools.Tools.Setup
             if (_filesContainer == null) return;
             _filesContainer.Children.Clear();
 
-            if (_scanning) _filesContainer.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.scanning")));
+            if (_scanning) _filesContainer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.scanning")));
 
             if (_rows.Count == 0)
             {
-                _filesContainer.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.empty")));
+                _filesContainer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.empty")));
             }
             else
             {
@@ -149,17 +149,17 @@ namespace LemoineTools.Tools.Setup
                 _filesContainer.Children.Add(border);
 
                 int unreadable = _rows.Count(r => !r.Readable);
-                if (unreadable > 0) _filesContainer.Children.Add(Warn(LemoineStrings.T("upgradeLinks.labels.unreadableNote", unreadable)));
+                if (unreadable > 0) _filesContainer.Children.Add(Warn(AppStrings.T("upgradeLinks.labels.unreadableNote", unreadable)));
             }
 
             // Add / Clear toolbar
             var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
-            var add = LemoineControlStyles.BuildButton(LemoineStrings.T("upgradeLinks.labels.addFiles"), LemoineControlStyles.LemoineButtonVariant.Primary);
+            var add = ControlStyles.BuildButton(AppStrings.T("upgradeLinks.labels.addFiles"), ControlStyles.ButtonVariant.Primary);
             add.Click += (s, e) => OnAddFiles();
             bar.Children.Add(add);
             if (_rows.Count > 0)
             {
-                var clear = LemoineControlStyles.BuildSmallButton(LemoineStrings.T("upgradeLinks.labels.clearList"));
+                var clear = ControlStyles.BuildSmallButton(AppStrings.T("upgradeLinks.labels.clearList"));
                 clear.Margin = new Thickness(8, 0, 0, 0);
                 clear.Click += (s, e) => { _rows.Clear(); RebuildFilesTable(); Changed(); };
                 bar.Children.Add(clear);
@@ -169,11 +169,11 @@ namespace LemoineTools.Tools.Setup
             if (_rows.Count > 0)
             {
                 var setAllPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-                var lbl = Label(LemoineStrings.T("upgradeLinks.labels.setAll") + ":");
+                var lbl = Label(AppStrings.T("upgradeLinks.labels.setAll") + ":");
                 lbl.VerticalAlignment = VerticalAlignment.Center;
                 lbl.Margin = new Thickness(0, 0, 8, 0);
                 setAllPanel.Children.Add(lbl);
-                var setAll = new LemoineSingleSelect { Width = 180 };
+                var setAll = new SingleSelect { Width = 180 };
                 setAll.Items = PlacementLabels();
                 setAll.SelectedItem = PlacementLabel(_defaultPlacement);
                 setAll.SelectionChanged += lblSel =>
@@ -188,11 +188,11 @@ namespace LemoineTools.Tools.Setup
                 setAllPanel.Children.Add(setAll);
                 _filesContainer.Children.Add(setAllPanel);
 
-                var toggles = new LemoineToggleSwitches { Margin = new Thickness(0, 12, 0, 0) };
+                var toggles = new ToggleSwitches { Margin = new Thickness(0, 12, 0, 0) };
                 toggles.SetItems(new List<ToggleItem>
                 {
-                    new ToggleItem { Id = "audit",  Label = LemoineStrings.T("upgradeLinks.labels.auditLabel"),  Desc = LemoineStrings.T("upgradeLinks.labels.auditDesc"),  DefaultOn = _audit },
-                    new ToggleItem { Id = "reload", Label = LemoineStrings.T("upgradeLinks.labels.reloadLabel"), Desc = LemoineStrings.T("upgradeLinks.labels.reloadDesc"), DefaultOn = _reload },
+                    new ToggleItem { Id = "audit",  Label = AppStrings.T("upgradeLinks.labels.auditLabel"),  Desc = AppStrings.T("upgradeLinks.labels.auditDesc"),  DefaultOn = _audit },
+                    new ToggleItem { Id = "reload", Label = AppStrings.T("upgradeLinks.labels.reloadLabel"), Desc = AppStrings.T("upgradeLinks.labels.reloadDesc"), DefaultOn = _reload },
                 });
                 toggles.StateChanged += st =>
                 {
@@ -207,9 +207,9 @@ namespace LemoineTools.Tools.Setup
         {
             var g = FileRowGrid();
             g.SetResourceReference(Grid.BackgroundProperty, "LemoineRaised");
-            var file = Dim(LemoineStrings.T("upgradeLinks.labels.colFile"));       Grid.SetColumn(file, 1);
-            var ver  = Dim(LemoineStrings.T("upgradeLinks.labels.colVersion"));    Grid.SetColumn(ver, 2);
-            var plc  = Dim(LemoineStrings.T("upgradeLinks.labels.colPlacement"));  Grid.SetColumn(plc, 3);
+            var file = Dim(AppStrings.T("upgradeLinks.labels.colFile"));       Grid.SetColumn(file, 1);
+            var ver  = Dim(AppStrings.T("upgradeLinks.labels.colVersion"));    Grid.SetColumn(ver, 2);
+            var plc  = Dim(AppStrings.T("upgradeLinks.labels.colPlacement"));  Grid.SetColumn(plc, 3);
             g.Children.Add(file); g.Children.Add(ver); g.Children.Add(plc);
             return g;
         }
@@ -248,7 +248,7 @@ namespace LemoineTools.Tools.Setup
             g.Children.Add(badge);
 
             // Column 3 — placement picker
-            var pick = new LemoineSingleSelect { IsEnabled = row.Readable };
+            var pick = new SingleSelect { IsEnabled = row.Readable };
             pick.Items = PlacementLabels();
             pick.SelectedItem = PlacementLabel(row.Placement);
             pick.SelectionChanged += lblSel =>
@@ -259,7 +259,7 @@ namespace LemoineTools.Tools.Setup
             g.Children.Add(pick);
 
             // Column 4 — remove
-            var rm = LemoineControlStyles.BuildSmallButton(char.ConvertFromUtf32(0xE74D), LemoineControlStyles.LemoineButtonVariant.Danger); // Delete (trash)
+            var rm = ControlStyles.BuildSmallButton(char.ConvertFromUtf32(0xE74D), ControlStyles.ButtonVariant.Danger); // Delete (trash)
             rm.FontFamily = new FontFamily("Segoe MDL2 Assets");   // glyph font — LemoineUiFont can't render MDL2 codepoints
             rm.VerticalAlignment = VerticalAlignment.Center;
             rm.Click += (s, e) => { _rows.Remove(row); RebuildFilesTable(); Changed(); };
@@ -303,10 +303,10 @@ namespace LemoineTools.Tools.Setup
         private FrameworkElement VersionBadge(UpgradeFileRow row)
         {
             string text; string colorKey;
-            if (!row.Readable)      { text = LemoineStrings.T("upgradeLinks.labels.verUnreadable");           colorKey = "LemoineRed"; }
-            else if (!row.Scanned)  { text = LemoineStrings.T("upgradeLinks.labels.verUnknown");              colorKey = "LemoineTextDim"; }
-            else if (row.IsCurrent) { text = LemoineStrings.T("upgradeLinks.labels.verCurrent", row.Version); colorKey = "LemoineGreen"; }
-            else                    { text = LemoineStrings.T("upgradeLinks.labels.verUpgrade", row.Version); colorKey = "LemoineAccent"; }
+            if (!row.Readable)      { text = AppStrings.T("upgradeLinks.labels.verUnreadable");           colorKey = "LemoineRed"; }
+            else if (!row.Scanned)  { text = AppStrings.T("upgradeLinks.labels.verUnknown");              colorKey = "LemoineTextDim"; }
+            else if (row.IsCurrent) { text = AppStrings.T("upgradeLinks.labels.verCurrent", row.Version); colorKey = "LemoineGreen"; }
+            else                    { text = AppStrings.T("upgradeLinks.labels.verUpgrade", row.Version); colorKey = "LemoineAccent"; }
 
             var tb = new TextBlock { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -324,11 +324,11 @@ namespace LemoineTools.Tools.Setup
             {
                 Multiselect = true,
                 Filter      = "Revit files (*.rvt)|*.rvt",
-                Title       = LemoineStrings.T("upgradeLinks.title"),
+                Title       = AppStrings.T("upgradeLinks.title"),
             };
             bool? ok;
             try { ok = dlg.ShowDialog(); }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinks: open file dialog", ex); return; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: open file dialog", ex); return; }
             if (ok != true || dlg.FileNames == null || dlg.FileNames.Length == 0) return;
 
             var existing = new HashSet<string>(_rows.Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
@@ -380,7 +380,7 @@ namespace LemoineTools.Tools.Setup
             _scanHandler.OnError = err => _disp?.BeginInvoke((Action)(() =>
             {
                 _scanning = false;
-                LemoineLog.Warn("UpgradeLinks: scan error", err ?? "");
+                DiagnosticsLog.Warn("UpgradeLinks: scan error", err ?? "");
                 RebuildFilesTable();
             }));
             _scanEvent.Raise();
@@ -390,8 +390,8 @@ namespace LemoineTools.Tools.Setup
         private FrameworkElement BuildDestStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(Label(LemoineStrings.T("upgradeLinks.labels.destQuestion")));
-            outer.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.destHint")));
+            outer.Children.Add(Label(AppStrings.T("upgradeLinks.labels.destQuestion")));
+            outer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.destHint")));
             _destContainer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             outer.Children.Add(_destContainer);
             RebuildDestCards();
@@ -408,8 +408,8 @@ namespace LemoineTools.Tools.Setup
             bool localSelected = _dest != UpgradeDestination.Cloud;
             _destContainer.Children.Add(BuildCard(
                 selected: localSelected, sub: false,
-                title: LemoineStrings.T("upgradeLinks.labels.optLocalTitle"),
-                desc:  LemoineStrings.T("upgradeLinks.labels.optLocalDesc"),
+                title: AppStrings.T("upgradeLinks.labels.optLocalTitle"),
+                desc:  AppStrings.T("upgradeLinks.labels.optLocalDesc"),
                 onClick: () => { if (_dest == UpgradeDestination.Cloud) { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); } },
                 extra: localSelected ? BuildLocalSubCards() : null));
 
@@ -418,10 +418,10 @@ namespace LemoineTools.Tools.Setup
                 bool cloudSelected = _dest == UpgradeDestination.Cloud;
                 _destContainer.Children.Add(BuildCard(
                     selected: cloudSelected, sub: false,
-                    title: LemoineStrings.T("upgradeLinks.labels.optCloudTitle"),
-                    desc:  LemoineStrings.T("upgradeLinks.labels.optCloudDesc"),
+                    title: AppStrings.T("upgradeLinks.labels.optCloudTitle"),
+                    desc:  AppStrings.T("upgradeLinks.labels.optCloudDesc"),
                     onClick: () => { if (_dest != UpgradeDestination.Cloud) { _dest = UpgradeDestination.Cloud; RebuildDestCards(); Changed(); } },
-                    extra: cloudSelected ? Dim(LemoineStrings.T("upgradeLinks.labels.optCloudNote")) : null));
+                    extra: cloudSelected ? Dim(AppStrings.T("upgradeLinks.labels.optCloudNote")) : null));
             }
         }
 
@@ -432,16 +432,16 @@ namespace LemoineTools.Tools.Setup
             bool selFolder = _dest == UpgradeDestination.SelectedFolder;
             panel.Children.Add(BuildCard(
                 selected: selFolder, sub: true,
-                title: LemoineStrings.T("upgradeLinks.labels.optSelectedFolderTitle"),
-                desc:  LemoineStrings.T("upgradeLinks.labels.optSelectedFolderDesc"),
+                title: AppStrings.T("upgradeLinks.labels.optSelectedFolderTitle"),
+                desc:  AppStrings.T("upgradeLinks.labels.optSelectedFolderDesc"),
                 onClick: () => { _dest = UpgradeDestination.SelectedFolder; RebuildDestCards(); Changed(); },
                 extra: selFolder ? BuildSelectedFolderExtra() : null));
 
             bool curLoc = _dest == UpgradeDestination.CurrentLocation;
             panel.Children.Add(BuildCard(
                 selected: curLoc, sub: true,
-                title: LemoineStrings.T("upgradeLinks.labels.optCurrentLocationTitle"),
-                desc:  LemoineStrings.T("upgradeLinks.labels.optCurrentLocationDesc"),
+                title: AppStrings.T("upgradeLinks.labels.optCurrentLocationTitle"),
+                desc:  AppStrings.T("upgradeLinks.labels.optCurrentLocationDesc"),
                 onClick: () => { _dest = UpgradeDestination.CurrentLocation; RebuildDestCards(); Changed(); },
                 extra: curLoc ? BuildCurrentLocationExtra() : null));
 
@@ -451,19 +451,19 @@ namespace LemoineTools.Tools.Setup
         private FrameworkElement BuildCurrentLocationExtra()
         {
             var panel = new StackPanel();
-            panel.Children.Add(Warn(LemoineStrings.T("upgradeLinks.labels.optOverwriteWarn")));
-            panel.Children.Add(Dim(LemoineStrings.T("upgradeLinks.labels.optOverwriteRenameNote")));
+            panel.Children.Add(Warn(AppStrings.T("upgradeLinks.labels.optOverwriteWarn")));
+            panel.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.optOverwriteRenameNote")));
             return panel;
         }
 
         private FrameworkElement BuildSelectedFolderExtra()
         {
             var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var folderPicker = new LemoineFolderBrowser
+            var folderPicker = new FolderBrowser
             {
-                Label       = LemoineStrings.T("upgradeLinks.labels.saveLocationLabel"),
+                Label       = AppStrings.T("upgradeLinks.labels.saveLocationLabel"),
                 Path        = _selectedFolder,
-                DialogTitle = LemoineStrings.T("upgradeLinks.labels.saveLocationDialogTitle"),
+                DialogTitle = AppStrings.T("upgradeLinks.labels.saveLocationDialogTitle"),
             };
             folderPicker.PathChanged += p => { _selectedFolder = p ?? ""; Changed(); };
             panel.Children.Add(folderPicker);
@@ -509,15 +509,15 @@ namespace LemoineTools.Tools.Setup
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("files",     LemoineStrings.T("upgradeLinks.review.itemFiles")),
-            ("placement", LemoineStrings.T("upgradeLinks.review.itemPlacement")),
-            ("dest",      LemoineStrings.T("upgradeLinks.review.itemDest")),
+            ("files",     AppStrings.T("upgradeLinks.review.itemFiles")),
+            ("placement", AppStrings.T("upgradeLinks.review.itemPlacement")),
+            ("dest",      AppStrings.T("upgradeLinks.review.itemDest")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["files"]     = ReadableCount() == 0 ? LemoineStrings.T("upgradeLinks.review.filesNone")
-                                                 : LemoineStrings.T("upgradeLinks.review.filesValue", ReadableCount(), UpgradeCount()),
+            ["files"]     = ReadableCount() == 0 ? AppStrings.T("upgradeLinks.review.filesNone")
+                                                 : AppStrings.T("upgradeLinks.review.filesValue", ReadableCount(), UpgradeCount()),
             ["placement"] = PlacementSummary(),
             ["dest"]      = DestSummary(),
         };
@@ -528,10 +528,10 @@ namespace LemoineTools.Tools.Setup
         {
             get
             {
-                if (ReadableCount() == 0) return LemoineStrings.T("upgradeLinks.review.warnNoFiles");
+                if (ReadableCount() == 0) return AppStrings.T("upgradeLinks.review.warnNoFiles");
                 int unreadable = _rows.Count(r => !r.Readable);
-                if (unreadable > 0) return LemoineStrings.T("upgradeLinks.review.warnUnreadable", unreadable);
-                if (_dest == UpgradeDestination.CurrentLocation) return LemoineStrings.T("upgradeLinks.review.warnOverwrite");
+                if (unreadable > 0) return AppStrings.T("upgradeLinks.review.warnUnreadable", unreadable);
+                if (_dest == UpgradeDestination.CurrentLocation) return AppStrings.T("upgradeLinks.review.warnOverwrite");
                 return null;
             }
         }
@@ -562,10 +562,10 @@ namespace LemoineTools.Tools.Setup
             switch (stepId)
             {
                 case "files":
-                    return _rows.Count == 0 ? LemoineStrings.T("upgradeLinks.summaries.filesEmpty")
-                        : LemoineStrings.T("upgradeLinks.summaries.files", ReadableCount(), UpgradeCount());
+                    return _rows.Count == 0 ? AppStrings.T("upgradeLinks.summaries.filesEmpty")
+                        : AppStrings.T("upgradeLinks.summaries.files", ReadableCount(), UpgradeCount());
                 case "dest": return DestSummary();
-                case "run":  return LemoineStrings.T("upgradeLinks.summaries.run");
+                case "run":  return AppStrings.T("upgradeLinks.summaries.run");
                 default:     return "—";
             }
         }
@@ -574,9 +574,9 @@ namespace LemoineTools.Tools.Setup
         {
             switch (_dest)
             {
-                case UpgradeDestination.CurrentLocation: return LemoineStrings.T("upgradeLinks.summaries.destCurrentLocation");
-                case UpgradeDestination.Cloud:            return LemoineStrings.T("upgradeLinks.summaries.destCloud");
-                default:                                  return LemoineStrings.T("upgradeLinks.summaries.destSelectedFolder", _selectedFolder);
+                case UpgradeDestination.CurrentLocation: return AppStrings.T("upgradeLinks.summaries.destCurrentLocation");
+                case UpgradeDestination.Cloud:            return AppStrings.T("upgradeLinks.summaries.destCloud");
+                default:                                  return AppStrings.T("upgradeLinks.summaries.destSelectedFolder", _selectedFolder);
             }
         }
 
@@ -585,7 +585,7 @@ namespace LemoineTools.Tools.Setup
             var readable = _rows.Where(r => r.Readable).ToList();
             if (readable.Count == 0) return "—";
             var distinct = readable.Select(r => r.Placement).Distinct().ToList();
-            return distinct.Count == 1 ? PlacementLabel(distinct[0]) : LemoineStrings.T("upgradeLinks.review.placementMixed");
+            return distinct.Count == 1 ? PlacementLabel(distinct[0]) : AppStrings.T("upgradeLinks.review.placementMixed");
         }
 
         private int ReadableCount() => _rows.Count(r => r.Readable);
@@ -594,7 +594,7 @@ namespace LemoineTools.Tools.Setup
         // ── Run ──────────────────────────────────────────────────────────────────
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog(LemoineStrings.T("upgradeLinks.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null) { pushLog(AppStrings.T("upgradeLinks.log.handlerMissing"), "fail"); onComplete(0, 1, 0); return; }
 
             SaveSettings();
 
@@ -615,7 +615,7 @@ namespace LemoineTools.Tools.Setup
             _runHandler.OnComplete     = onComplete;
             _runHandler.OnAwaitingUser = (awaiting, cLabel, sLabel) => AwaitingUserChanged?.Invoke(awaiting, cLabel, sLabel);
 
-            pushLog(LemoineStrings.T("upgradeLinks.log.raising"), "info");
+            pushLog(AppStrings.T("upgradeLinks.log.raising"), "info");
             _runEvent.Raise();
         }
 
@@ -648,7 +648,7 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
-        private static string PlacementLabel(UpgradePlacement p) => LemoineStrings.T("upgradeLinks.placement." + PlacementKey(p));
+        private static string PlacementLabel(UpgradePlacement p) => AppStrings.T("upgradeLinks.placement." + PlacementKey(p));
         private static List<string> PlacementLabels() => PlacementOrder.Select(PlacementLabel).ToList();
 
         private static readonly Dictionary<string, UpgradePlacement> LabelToPlacement =

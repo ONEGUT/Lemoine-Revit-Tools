@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.Sheets.AlignSheetViews
 {
@@ -15,18 +15,18 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
     /// sheet's viewports so its views overlay their counterparts on the source sheet. The
     /// source sheet's viewports are ground truth and are never moved.
     /// </summary>
-    public sealed class AlignSheetViewsViewModel : ILemoineTool, ILemoineReviewable, ILemoineToolCleanup
+    public sealed class AlignSheetViewsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
-        // ── ILemoineTool ──────────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("testing.alignSheetViews.title");
-        public string RunLabel => LemoineStrings.T("testing.alignSheetViews.runLabel");
+        // ── IStepFlowTool ──────────────────────────────────────────────────────
+        public string Title    => AppStrings.T("testing.alignSheetViews.title");
+        public string RunLabel => AppStrings.T("testing.alignSheetViews.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("testing.alignSheetViews.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("testing.alignSheetViews.steps.S2"), required: true),
-            new StepDefinition("S3", LemoineStrings.T("testing.alignSheetViews.steps.S3"),       required: false),
-            new StepDefinition("S4", LemoineStrings.T("testing.alignSheetViews.steps.S4"),  required: false),
+            new StepDefinition("S1", AppStrings.T("testing.alignSheetViews.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("testing.alignSheetViews.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("testing.alignSheetViews.steps.S3"),       required: false),
+            new StepDefinition("S4", AppStrings.T("testing.alignSheetViews.steps.S4"),  required: false),
         };
 
         public event EventHandler? ValidationChanged;
@@ -42,7 +42,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         }
 
         // ── State ─────────────────────────────────────────────────────────────
-        private readonly LemoineBrowserTree            _browserTree;
+        private readonly BrowserTree            _browserTree;
         private readonly List<long>                    _sheetIds;
         private readonly Dictionary<long, string>      _sheetLabels;
 
@@ -67,11 +67,11 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             AlignSheetViewsEventHandler? handler,
             ExternalEvent?               externalEvent,
             IEnumerable<(ElementId Id, string Label)>? sheets,
-            LemoineBrowserTree?          browserTree = null)
+            BrowserTree?          browserTree = null)
         {
             _handler     = handler;
             _event       = externalEvent;
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
 
             _sheetIds    = new List<long>();
             _sheetLabels = new Dictionary<long, string>();
@@ -95,7 +95,7 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 case "S1": return BuildSourceStep();
                 case "S2": return BuildTargetStep();
                 case "S3": return BuildOptionsStep();
-                case "S4": return null; // framework renders ILemoineReviewable
+                case "S4": return null; // framework renders IReviewableTool
                 default:   return null;
             }
         }
@@ -104,19 +104,19 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private FrameworkElement BuildSourceStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.alignSheetViews.labels.secReference")));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteReference")));
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.alignSheetViews.labels.secReference")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteReference")));
 
             if (_sheetIds.Count == 0)
             {
-                outer.Children.Add(Hint(LemoineStrings.T("testing.alignSheetViews.labels.noSheets")));
+                outer.Children.Add(Hint(AppStrings.T("testing.alignSheetViews.labels.noSheets")));
                 return outer;
             }
 
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 280,
-                AccessibleName = LemoineStrings.T("testing.alignSheetViews.labels.pickerSource"),
+                AccessibleName = AppStrings.T("testing.alignSheetViews.labels.pickerSource"),
                 Margin         = new Thickness(0, 8, 0, 0),
             };
             // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror field.
@@ -135,19 +135,19 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         private FrameworkElement BuildTargetStep()
         {
             var outer = new StackPanel();
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.alignSheetViews.labels.secTargets")));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteTargets")));
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.alignSheetViews.labels.secTargets")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteTargets")));
 
             if (_sheetIds.Count == 0)
             {
-                outer.Children.Add(Hint(LemoineStrings.T("testing.alignSheetViews.labels.noSheets")));
+                outer.Children.Add(Hint(AppStrings.T("testing.alignSheetViews.labels.noSheets")));
                 return outer;
             }
 
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 320,
-                AccessibleName = LemoineStrings.T("testing.alignSheetViews.labels.pickerTarget"),
+                AccessibleName = AppStrings.T("testing.alignSheetViews.labels.pickerTarget"),
                 Margin         = new Thickness(0, 8, 0, 0),
             };
             picker.SelectionChanged += ids =>
@@ -166,50 +166,50 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
         {
             var outer = new StackPanel();
 
-            outer.Children.Add(SectionLabel(LemoineStrings.T("testing.alignSheetViews.labels.secOverlap")));
-            var stepper = new LemoineInlineStepper
+            outer.Children.Add(SectionLabel(AppStrings.T("testing.alignSheetViews.labels.secOverlap")));
+            var stepper = new InlineStepper
             {
                 Value = _overlapPercent, MinValue = 5, MaxValue = 100, Step = 5, Decimals = 0,
                 ValueWidth = 56, HorizontalAlignment = HorizontalAlignment.Left,
             };
             stepper.ValueChanged += (s, v) => { _overlapPercent = (int)v; OnValidationChanged(); };
             outer.Children.Add(stepper);
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteOverlap")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteOverlap")));
 
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optAlignTitles"), _alignTitles,
+                AppStrings.T("testing.alignSheetViews.labels.optAlignTitles"), _alignTitles,
                 v => _alignTitles = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteAlignTitles")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteAlignTitles")));
 
             // ── Inherit from source view ──────────────────────────────────────
-            outer.Children.Add(SectionLabel2(LemoineStrings.T("testing.alignSheetViews.labels.secInherit")));
+            outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secInherit")));
 
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optScopeBox"), _inheritScopeBox,
+                AppStrings.T("testing.alignSheetViews.labels.optScopeBox"), _inheritScopeBox,
                 v => _inheritScopeBox = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteScopeBox")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteScopeBox")));
 
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optGrids"), _inheritGrids,
+                AppStrings.T("testing.alignSheetViews.labels.optGrids"), _inheritGrids,
                 v => _inheritGrids = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteGrids")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteGrids")));
 
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optCropVis"), _inheritCropVisibility,
+                AppStrings.T("testing.alignSheetViews.labels.optCropVis"), _inheritCropVisibility,
                 v => _inheritCropVisibility = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteCropVis")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteCropVis")));
 
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
+                AppStrings.T("testing.alignSheetViews.labels.optCropSize"), _inheritCropSize,
                 v => _inheritCropSize = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.noteCropSize")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.noteCropSize")));
 
             // ── Mode ──────────────────────────────────────────────────────────
-            outer.Children.Add(SectionLabel2(LemoineStrings.T("testing.alignSheetViews.labels.secMode")));
+            outer.Children.Add(SectionLabel2(AppStrings.T("testing.alignSheetViews.labels.secMode")));
             outer.Children.Add(OptionCheck(
-                LemoineStrings.T("testing.alignSheetViews.labels.optPreview"), _previewOnly,
+                AppStrings.T("testing.alignSheetViews.labels.optPreview"), _previewOnly,
                 v => _previewOnly = v));
-            outer.Children.Add(Note(LemoineStrings.T("testing.alignSheetViews.labels.notePreview")));
+            outer.Children.Add(Note(AppStrings.T("testing.alignSheetViews.labels.notePreview")));
             return outer;
         }
 
@@ -230,49 +230,49 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             return cb;
         }
 
-        // ── ILemoineReviewable ────────────────────────────────────────────────
+        // ── IReviewableTool ────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("source",  LemoineStrings.T("testing.alignSheetViews.review.itemSource")),
-            ("targets", LemoineStrings.T("testing.alignSheetViews.review.itemTargets")),
-            ("overlap", LemoineStrings.T("testing.alignSheetViews.review.itemOverlap")),
-            ("titles",  LemoineStrings.T("testing.alignSheetViews.review.itemTitles")),
-            ("inherit", LemoineStrings.T("testing.alignSheetViews.review.itemInherit")),
-            ("mode",    LemoineStrings.T("testing.alignSheetViews.review.itemMode")),
+            ("source",  AppStrings.T("testing.alignSheetViews.review.itemSource")),
+            ("targets", AppStrings.T("testing.alignSheetViews.review.itemTargets")),
+            ("overlap", AppStrings.T("testing.alignSheetViews.review.itemOverlap")),
+            ("titles",  AppStrings.T("testing.alignSheetViews.review.itemTitles")),
+            ("inherit", AppStrings.T("testing.alignSheetViews.review.itemInherit")),
+            ("mode",    AppStrings.T("testing.alignSheetViews.review.itemMode")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["source"]  = EffectiveSourceCount == 0
-                ? LemoineStrings.T("testing.alignSheetViews.review.none")
+                ? AppStrings.T("testing.alignSheetViews.review.none")
                 : (EffectiveSourceCount == 1
                     ? (_sheetLabels.TryGetValue(_sourceSheetIds[0].Value, out var lbl) ? lbl : _sourceSheetIds[0].Value.ToString())
-                    : LemoineStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount)),
+                    : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount)),
             ["targets"] = EffectiveTargetCount == 0
-                ? LemoineStrings.T("testing.alignSheetViews.review.none")
-                : LemoineStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount),
-            ["overlap"] = LemoineStrings.T("testing.alignSheetViews.review.overlapValue", _overlapPercent),
-            ["titles"]  = _alignTitles ? LemoineStrings.T("testing.alignSheetViews.review.titlesAligned") : LemoineStrings.T("testing.alignSheetViews.review.titlesUnchanged"),
+                ? AppStrings.T("testing.alignSheetViews.review.none")
+                : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount),
+            ["overlap"] = AppStrings.T("testing.alignSheetViews.review.overlapValue", _overlapPercent),
+            ["titles"]  = _alignTitles ? AppStrings.T("testing.alignSheetViews.review.titlesAligned") : AppStrings.T("testing.alignSheetViews.review.titlesUnchanged"),
             ["inherit"] = InheritSummary,
-            ["mode"]    = _previewOnly ? LemoineStrings.T("testing.alignSheetViews.review.modePreview") : LemoineStrings.T("testing.alignSheetViews.review.modeAlign"),
+            ["mode"]    = _previewOnly ? AppStrings.T("testing.alignSheetViews.review.modePreview") : AppStrings.T("testing.alignSheetViews.review.modeAlign"),
         };
 
         public IList<string>? ReviewChips => null;
-        public string?        ReviewNote  => LemoineStrings.T("testing.alignSheetViews.review.note");
+        public string?        ReviewNote  => AppStrings.T("testing.alignSheetViews.review.note");
         public string?        ReviewWarning => _previewOnly
             ? null
-            : LemoineStrings.T("testing.alignSheetViews.review.warning", (_alignTitles ? LemoineStrings.T("testing.alignSheetViews.review.warnTitles") : ""), (InheritSummary == LemoineStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : LemoineStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant())));
+            : AppStrings.T("testing.alignSheetViews.review.warning", (_alignTitles ? AppStrings.T("testing.alignSheetViews.review.warnTitles") : ""), (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.review.warnInherit", InheritSummary.ToLowerInvariant())));
 
         private string InheritSummary
         {
             get
             {
                 var parts = new List<string>();
-                if (_inheritScopeBox)       parts.Add(LemoineStrings.T("testing.alignSheetViews.inherit.scopeBox"));
-                if (_inheritGrids)          parts.Add(LemoineStrings.T("testing.alignSheetViews.inherit.gridExtents"));
-                if (_inheritCropVisibility) parts.Add(LemoineStrings.T("testing.alignSheetViews.inherit.cropVisibility"));
-                if (_inheritCropSize)       parts.Add(LemoineStrings.T("testing.alignSheetViews.inherit.cropSize"));
-                return parts.Count == 0 ? LemoineStrings.T("testing.alignSheetViews.inherit.nothing") : string.Join(", ", parts);
+                if (_inheritScopeBox)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.scopeBox"));
+                if (_inheritGrids)          parts.Add(AppStrings.T("testing.alignSheetViews.inherit.gridExtents"));
+                if (_inheritCropVisibility) parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropVisibility"));
+                if (_inheritCropSize)       parts.Add(AppStrings.T("testing.alignSheetViews.inherit.cropSize"));
+                return parts.Count == 0 ? AppStrings.T("testing.alignSheetViews.inherit.nothing") : string.Join(", ", parts);
             }
         }
 
@@ -307,14 +307,14 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
                 case "S1": return EffectiveSourceCount == 0
                     ? "—"
                     : (EffectiveSourceCount == 1
-                        ? (_sheetLabels.TryGetValue(_sourceSheetIds[0].Value, out var lbl) ? lbl : LemoineStrings.T("testing.alignSheetViews.summaries.s1Single"))
-                        : LemoineStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount));
-                case "S2": return EffectiveTargetCount == 0 ? "—" : LemoineStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount);
-                case "S3": return LemoineStrings.T("testing.alignSheetViews.summaries.s3Overlap", _overlapPercent) +
-                                  (_alignTitles ? LemoineStrings.T("testing.alignSheetViews.summaries.s3Titles") : "") +
-                                  (InheritSummary == LemoineStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : LemoineStrings.T("testing.alignSheetViews.summaries.s3Inherit")) +
-                                  (_previewOnly ? LemoineStrings.T("testing.alignSheetViews.summaries.s3Preview") : "");
-                case "S4": return LemoineStrings.T("testing.alignSheetViews.summaries.S4");
+                        ? (_sheetLabels.TryGetValue(_sourceSheetIds[0].Value, out var lbl) ? lbl : AppStrings.T("testing.alignSheetViews.summaries.s1Single"))
+                        : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveSourceCount));
+                case "S2": return EffectiveTargetCount == 0 ? "—" : AppStrings.T("testing.alignSheetViews.review.sheetCount", EffectiveTargetCount);
+                case "S3": return AppStrings.T("testing.alignSheetViews.summaries.s3Overlap", _overlapPercent) +
+                                  (_alignTitles ? AppStrings.T("testing.alignSheetViews.summaries.s3Titles") : "") +
+                                  (InheritSummary == AppStrings.T("testing.alignSheetViews.inherit.nothing") ? "" : AppStrings.T("testing.alignSheetViews.summaries.s3Inherit")) +
+                                  (_previewOnly ? AppStrings.T("testing.alignSheetViews.summaries.s3Preview") : "");
+                case "S4": return AppStrings.T("testing.alignSheetViews.summaries.S4");
                 default:   return "—";
             }
         }

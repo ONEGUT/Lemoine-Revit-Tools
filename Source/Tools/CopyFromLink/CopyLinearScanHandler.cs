@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.CopyFromLink
 {
@@ -65,7 +65,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 int scanned = 0;
                 foreach (var el in elems)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
                         OnError?.Invoke($"Stopped by user — {scanned} of {elems.Count} scanned; partial values returned.");
                         break;   // falls through to the OnScanned callback with what was collected
@@ -88,10 +88,10 @@ namespace LemoineTools.Tools.CopyFromLink
                                     paramValues[name] = set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
                                 set.Add(val);
                             }
-                            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearScan: read param", ex); }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearScan: read param", ex); }
                         }
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyLinearScan: iterate element params", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearScan: iterate element params", ex); }
                 }
 
                 // Keep only params with ≥2 distinct values ("value" and "(no value)" count as two).
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyLinearScanHandler.Execute", ex);
+                DiagnosticsLog.Error("CopyLinearScanHandler.Execute", ex);
                 OnError?.Invoke(ex.Message);
             }
             finally
@@ -159,13 +159,13 @@ namespace LemoineTools.Tools.CopyFromLink
                     finally
                     {
                         try { famDoc?.Close(false); }
-                        catch (Exception ex) { LemoineLog.Swallowed("CopyLinearScan: close family doc", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearScan: close family doc", ex); }
                     }
                 }
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("CopyLinearScan: family parameters", ex);
+                DiagnosticsLog.Swallowed("CopyLinearScan: family parameters", ex);
             }
             OnFamilyParams?.Invoke(symbolId, names.ToList());
         }

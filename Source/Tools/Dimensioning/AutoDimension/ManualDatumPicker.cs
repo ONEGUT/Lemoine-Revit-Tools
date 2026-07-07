@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension
@@ -32,7 +32,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (!(doc.GetElement(viewId) is View view)) continue;
 
                     try { uidoc.ActiveView = view; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ManualDatumPicker: set active view", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ManualDatumPicker: set active view", ex); }
 
                     try
                     {
@@ -51,7 +51,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error("ManualDatumPicker: pick", ex);
+                        DiagnosticsLog.Error("ManualDatumPicker: pick", ex);
                         log($"View '{view.Name}': datum pick failed — {ex.Message}", "fail");
                     }
                 }
@@ -98,7 +98,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ManualDatumPicker: read datum edge geometry", ex);
+                DiagnosticsLog.Swallowed("ManualDatumPicker: read datum edge geometry", ex);
                 key = $"datum:{r.ElementId.Value}";
             }
 

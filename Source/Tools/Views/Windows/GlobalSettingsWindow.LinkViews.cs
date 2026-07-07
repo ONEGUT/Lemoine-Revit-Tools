@@ -12,13 +12,13 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Automation;
 using System.Windows.Shapes;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 
-namespace LemoineTools.Lemoine
+namespace LemoineTools.Framework
 {
     // Link Views no longer has a global settings tab — its View Geometry settings
     // (XY buffer, cluster threshold, cut plane offset) are now per-run controls in

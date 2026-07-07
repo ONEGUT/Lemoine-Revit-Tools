@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Commands
@@ -67,7 +67,7 @@ namespace LemoineTools.Commands
                 {
                     foreach (Phase ph in doc.Phases) phaseNames.Add(ph.Name);
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("OpenClashDefinitionsCommand: read host phases", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("OpenClashDefinitionsCommand: read host phases", ex); }
             }
 
             // Source documents available to each clash group (host + each loaded link),
@@ -134,7 +134,7 @@ namespace LemoineTools.Commands
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("OpenClashDefinitionsCommand: read user worksets", ex);
+                DiagnosticsLog.Swallowed("OpenClashDefinitionsCommand: read user worksets", ex);
             }
             return list;
         }

@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.Ceilings
@@ -43,7 +43,7 @@ namespace LemoineTools.Tools.Ceilings
         public void Execute(UIApplication app)
         {
             var doc  = app.ActiveUIDocument.Document;
-            long __issues0 = LemoineLog.IssueCount;
+            long __issues0 = DiagnosticsLog.IssueCount;
             int pass = 0, fail = 0, skip = 0;
 
             try
@@ -52,8 +52,8 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("MakeCeilingGrids: run aborted", ex);
-                Log(LemoineStrings.T("ceilings.makeGrids.log.error", ex.Message), "fail");
+                DiagnosticsLog.Error("MakeCeilingGrids: run aborted", ex);
+                Log(AppStrings.T("ceilings.makeGrids.log.error", ex.Message), "fail");
                 fail++;
             }
             finally
@@ -64,8 +64,8 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             Progress(100, pass, fail, skip);
-            long __issues = LemoineLog.IssuesSince(__issues0);
-            if (__issues > 0) Log(LemoineStrings.T("ceilings.makeGrids.log.nonFatalIssues", __issues), "warn");
+            long __issues = DiagnosticsLog.IssuesSince(__issues0);
+            if (__issues > 0) Log(AppStrings.T("ceilings.makeGrids.log.nonFatalIssues", __issues), "warn");
             Complete(pass, fail, skip);
         }
 
@@ -78,7 +78,7 @@ namespace LemoineTools.Tools.Ceilings
                 .OrderBy(l => l.Elevation)
                 .ToList();
 
-            Log(LemoineStrings.T("ceilings.makeGrids.log.foundLevels", levels.Count), "info");
+            Log(AppStrings.T("ceilings.makeGrids.log.foundLevels", levels.Count), "info");
 
             // Find a CeilingPlan ViewFamilyType once
             var vft = new FilteredElementCollector(doc)
@@ -88,7 +88,7 @@ namespace LemoineTools.Tools.Ceilings
 
             if (vft == null)
             {
-                Log(LemoineStrings.T("ceilings.makeGrids.log.noRcpType"), "fail");
+                Log(AppStrings.T("ceilings.makeGrids.log.noRcpType"), "fail");
                 fail++;
                 return;
             }
@@ -107,9 +107,9 @@ namespace LemoineTools.Tools.Ceilings
 
             foreach (var level in levels)
             {
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("common.log.stoppedByUser", done, total), "warn");
+                    Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
                     break;
                 }
 
@@ -128,7 +128,7 @@ namespace LemoineTools.Tools.Ceilings
                         {
                             view = ViewPlan.Create(doc, vft.Id, level.Id);
                             try   { view.Name = viewName; }
-                            catch (Exception __lex) { LemoineLog.Swallowed($"MakeCeilingGrids: name conflict for RCP '{viewName}' — keeping Revit's generated name", __lex); }
+                            catch (Exception __lex) { DiagnosticsLog.Swallowed($"MakeCeilingGrids: name conflict for RCP '{viewName}' — keeping Revit's generated name", __lex); }
                         }
 
                         if (view != null)
@@ -137,12 +137,12 @@ namespace LemoineTools.Tools.Ceilings
                         tx.Commit();
                     }
 
-                    if (view == null) { Log(LemoineStrings.T("ceilings.makeGrids.log.rcpFailed", level.Name), "fail"); fail++; }
+                    if (view == null) { Log(AppStrings.T("ceilings.makeGrids.log.rcpFailed", level.Name), "fail"); fail++; }
                     else              { createdViews.Add((view, view.Name)); }
                 }
                 catch (Exception ex)
                 {
-                    Log(LemoineStrings.T("ceilings.makeGrids.log.levelFailed", level.Name, ex.Message), "fail");
+                    Log(AppStrings.T("ceilings.makeGrids.log.levelFailed", level.Name, ex.Message), "fail");
                     fail++;
                 }
 
@@ -152,7 +152,7 @@ namespace LemoineTools.Tools.Ceilings
 
             if (createdViews.Count == 0)
             {
-                Log(LemoineStrings.T("ceilings.makeGrids.log.noViewsCreated"), "fail");
+                Log(AppStrings.T("ceilings.makeGrids.log.noViewsCreated"), "fail");
                 fail++;
                 return;
             }
@@ -177,11 +177,11 @@ namespace LemoineTools.Tools.Ceilings
                 // engine never regenerates them.
                 RegisterHideTrade(cgRules);
 
-                Log(LemoineStrings.T("ceilings.makeGrids.log.hidTypes", cgRules.Count, viewIds.Count), "info");
+                Log(AppStrings.T("ceilings.makeGrids.log.hidTypes", cgRules.Count, viewIds.Count), "info");
             }
             else
             {
-                Log(LemoineStrings.T("ceilings.makeGrids.log.noExclusions"), "info");
+                Log(AppStrings.T("ceilings.makeGrids.log.noExclusions"), "info");
             }
 
             Progress(70, pass, fail, skip);
@@ -190,9 +190,9 @@ namespace LemoineTools.Tools.Ceilings
             int exported = 0;
             for (int i = 0; i < createdViews.Count; i++)
             {
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("common.log.stoppedByUser", i, createdViews.Count), "warn");
+                    Log(AppStrings.T("common.log.stoppedByUser", i, createdViews.Count), "warn");
                     break;
                 }
 
@@ -206,18 +206,18 @@ namespace LemoineTools.Tools.Ceilings
                             : OutputFolder;
                         EnsureDir(outDir);
                         ExportDwg(doc, view, name, outDir);
-                        Log(LemoineStrings.T("ceilings.makeGrids.log.exported", name), "pass");
+                        Log(AppStrings.T("ceilings.makeGrids.log.exported", name), "pass");
                         exported++;
                     }
                     else
                     {
-                        Log(LemoineStrings.T("ceilings.makeGrids.log.created", name), "pass");
+                        Log(AppStrings.T("ceilings.makeGrids.log.created", name), "pass");
                     }
                     pass++;
                 }
                 catch (Exception ex)
                 {
-                    Log(LemoineStrings.T("ceilings.makeGrids.log.exportFailed", name, ex.Message), "fail");
+                    Log(AppStrings.T("ceilings.makeGrids.log.exportFailed", name, ex.Message), "fail");
                     fail++;
                 }
 
@@ -255,9 +255,9 @@ namespace LemoineTools.Tools.Ceilings
 
                 foreach (var (family, type) in excluded)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
-                        Log(LemoineStrings.T("common.log.stoppedByUser", cgRules.Count, excluded.Count), "warn");
+                        Log(AppStrings.T("common.log.stoppedByUser", cgRules.Count, excluded.Count), "warn");
                         break;
                     }
 
@@ -280,7 +280,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log(LemoineStrings.T("ceilings.makeGrids.log.filterCreateError", filterName, ex.Message), "fail");
+                            Log(AppStrings.T("ceilings.makeGrids.log.filterCreateError", filterName, ex.Message), "fail");
                             fail++;
                             continue;
                         }
@@ -298,7 +298,7 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log(LemoineStrings.T("ceilings.makeGrids.log.filterApplyError", ex.Message), "fail");
+                            Log(AppStrings.T("ceilings.makeGrids.log.filterApplyError", ex.Message), "fail");
                         }
                     }
 
@@ -344,13 +344,13 @@ namespace LemoineTools.Tools.Ceilings
                             if (v.GetFilters().Contains(pfe.Id))
                                 v.RemoveFilter(pfe.Id);
                         }
-                        catch (Exception __lex) { LemoineLog.Swallowed("MakeCeilingGrids: remove filter from view (may not support filters)", __lex); }
+                        catch (Exception __lex) { DiagnosticsLog.Swallowed("MakeCeilingGrids: remove filter from view (may not support filters)", __lex); }
                     }
 
                     try   { doc.Delete(pfe.Id); }
                     catch (Exception ex)
                     {
-                        Log(LemoineStrings.T("ceilings.makeGrids.log.filterDeleteError", pfe.Name, ex.Message), "fail");
+                        Log(AppStrings.T("ceilings.makeGrids.log.filterDeleteError", pfe.Name, ex.Message), "fail");
                         fail++;
                     }
                 }
@@ -404,14 +404,14 @@ namespace LemoineTools.Tools.Ceilings
                 }
 
                 settings.Save();
-                Log(LemoineStrings.T("ceilings.makeGrids.log.tradeRegistered", CGTradeLabel, trade.Rules.Count), "info");
+                Log(AppStrings.T("ceilings.makeGrids.log.tradeRegistered", CGTradeLabel, trade.Rules.Count), "info");
             }
             catch (Exception ex)
             {
                 // Non-fatal: the Revit filters were already created/applied above. Surface
                 // the failure so the rules-list sync issue isn't hidden.
-                LemoineLog.Error("MakeCeilingGrids: register Ceiling Grids hide trade", ex);
-                Log(LemoineStrings.T("ceilings.makeGrids.log.rulesUpdateFailed", ex.Message), "fail");
+                DiagnosticsLog.Error("MakeCeilingGrids: register Ceiling Grids hide trade", ex);
+                Log(AppStrings.T("ceilings.makeGrids.log.rulesUpdateFailed", ex.Message), "fail");
             }
         }
 
@@ -443,16 +443,16 @@ namespace LemoineTools.Tools.Ceilings
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed("MakeCeilingGrids: read link display mode", ex);
+                        DiagnosticsLog.Swallowed("MakeCeilingGrids: read link display mode", ex);
                         continue;
                     }
 
                     if (mode != LinkVisibility.ByHostView)
                     {
                         notCascading++;
-                        Log(LemoineStrings.T("ceilings.makeGrids.log.linkNotCascading", link.Name, view.Name, mode),
+                        Log(AppStrings.T("ceilings.makeGrids.log.linkNotCascading", link.Name, view.Name, mode),
                             "fail");
-                        LemoineLog.Warn("MakeCeilingGrids",
+                        DiagnosticsLog.Warn("MakeCeilingGrids",
                             $"link '{link.Name}' in view '{view.Name}' display={mode}; "
                             + "host hide filters will not cascade onto its ceilings.");
                     }
@@ -460,7 +460,7 @@ namespace LemoineTools.Tools.Ceilings
             }
 
             if (notCascading == 0)
-                LemoineLog.Info("MakeCeilingGrids",
+                DiagnosticsLog.Info("MakeCeilingGrids",
                     "all visible links display By Host View — hide filters will cascade onto linked ceilings.");
         }
 
@@ -485,7 +485,7 @@ namespace LemoineTools.Tools.Ceilings
                 if (cat.CategoryType != CategoryType.Model) continue;
                 if (!cat.get_AllowsVisibilityControl(view)) continue;
                 bool keep = cat.Id.Value == (int)BuiltInCategory.OST_Ceilings;
-                try { view.SetCategoryHidden(cat.Id, !keep); } catch (Exception __lex) { LemoineLog.Swallowed($"MakeCeilingGrids: set category {cat.Id.Value} visibility in view {view.Id.Value}", __lex); }
+                try { view.SetCategoryHidden(cat.Id, !keep); } catch (Exception __lex) { DiagnosticsLog.Swallowed($"MakeCeilingGrids: set category {cat.Id.Value} visibility in view {view.Id.Value}", __lex); }
             }
         }
 

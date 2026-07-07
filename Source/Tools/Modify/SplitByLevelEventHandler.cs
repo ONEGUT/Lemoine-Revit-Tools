@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!levels.Any())
                 {
-                    pushLog(LemoineStrings.T("modify.splitByLevel.log.noValid"), "fail");
+                    pushLog(AppStrings.T("modify.splitByLevel.log.noValid"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -69,16 +69,16 @@ namespace LemoineTools.Tools.ModifyElements
                         .Select(id => doc.GetElement(id))
                         .Where(e => e != null)
                         .ToList()!;
-                    pushLog(LemoineStrings.T("modify.splitByLevel.log.preSelected", elements.Count), "info");
+                    pushLog(AppStrings.T("modify.splitByLevel.log.preSelected", elements.Count), "info");
                 }
                 else
                 {
                     View? view = ActiveViewId != null ? doc.GetElement(ActiveViewId) as View : null;
                     elements = CollectByName(doc, view, SelectedCategoryNames);
-                    pushLog(LemoineStrings.T("modify.splitByLevel.log.foundCats", elements.Count, SelectedCategoryNames.Count), "info");
+                    pushLog(AppStrings.T("modify.splitByLevel.log.foundCats", elements.Count, SelectedCategoryNames.Count), "info");
                 }
 
-                pushLog(LemoineStrings.T("modify.splitByLevel.log.splitting", elements.Count, levels.Count), "info");
+                pushLog(AppStrings.T("modify.splitByLevel.log.splitting", elements.Count, levels.Count), "info");
 
                 var progress = new RunProgressReporter(pushLog, elements.Count, "elements");
 
@@ -103,20 +103,20 @@ namespace LemoineTools.Tools.ModifyElements
                     pushLog(entry, status);
                 }
 
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
                     int processed = stats.SplitCount + stats.SkipCount + stats.FailCount;
-                    pushLog(LemoineStrings.T("common.log.stoppedByUser", processed, elements.Count), "warn");
+                    pushLog(AppStrings.T("common.log.stoppedByUser", processed, elements.Count), "warn");
                 }
 
-                pushLog(LemoineStrings.T("modify.splitByLevel.log.done", stats.SegmentsCreated, stats.SplitCount, stats.SkipCount, stats.FailCount),
+                pushLog(AppStrings.T("modify.splitByLevel.log.done", stats.SegmentsCreated, stats.SplitCount, stats.SkipCount, stats.FailCount),
                         stats.FailCount > 0 ? "fail" : "pass");
                 onProgress(100, stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
                 onComplete(stats.SegmentsCreated, stats.FailCount, stats.SkipCount);
             }
             catch (Exception ex)
             {
-                pushLog(LemoineStrings.T("modify.splitByLevel.log.error", ex.Message), "fail");
+                pushLog(AppStrings.T("modify.splitByLevel.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally

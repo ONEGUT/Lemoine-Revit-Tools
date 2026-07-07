@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.Setup
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LemoineTools");
                 try { Directory.CreateDirectory(dir); }
-                catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksSettings: create config directory", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinksSettings: create config directory", ex); }
                 return Path.Combine(dir, "UpgradeLinksSettings.xml");
             }
         }
@@ -45,7 +45,7 @@ namespace LemoineTools.Tools.Setup
                 var xs = new XmlSerializer(typeof(UpgradeLinksSettings));
                 using (var w = new StreamWriter(FilePath)) xs.Serialize(w, this);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksSettings.Save", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinksSettings.Save", ex); }
         }
 
         private static UpgradeLinksSettings Load()
@@ -59,7 +59,7 @@ namespace LemoineTools.Tools.Setup
                     using (var r = new StreamReader(path)) return (UpgradeLinksSettings)xs.Deserialize(r)!;
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("UpgradeLinksSettings.Load", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinksSettings.Load", ex); }
             return new UpgradeLinksSettings();
         }
     }

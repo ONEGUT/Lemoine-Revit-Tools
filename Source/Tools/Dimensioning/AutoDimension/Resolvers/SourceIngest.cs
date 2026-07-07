@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 {
@@ -38,7 +38,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("SourceIngest: collect tagged cross lines", ex);
+                DiagnosticsLog.Swallowed("SourceIngest: collect tagged cross lines", ex);
                 return result;
             }
 
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                     if (d >= bestDist) continue;
                     Reference? r = null;
                     try { r = g.gc.GetEndPointReference(idx); }
-                    catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("SourceIngest: endpoint reference", ex); }
                     if (r == null) continue;
                     bestDist = d; bestRef = r; bestPt = p;
                 }
@@ -144,7 +144,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             if (gc != null)
             {
                 try { sref = gc.GetEndPointReference(1); anchor = gc.GetEndPoint(1); }
-                catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: endpoint reference", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("SourceIngest: endpoint reference", ex); }
             }
             if (sref == null || anchor == null)
             {
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
         private static Curve? SafeGeometry(DetailCurve dc)
         {
             try { return dc.GeometryCurve; }
-            catch (Exception ex) { LemoineLog.Swallowed("SourceIngest: read geometry curve", ex); return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("SourceIngest: read geometry curve", ex); return null; }
         }
     }
 }

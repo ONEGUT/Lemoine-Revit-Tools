@@ -6,8 +6,8 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -16,21 +16,21 @@ namespace LemoineTools.Tools.ScopeBoxes
     /// and creates scope boxes by duplicating a user-picked seed box (the Revit API cannot
     /// create scope boxes from scratch; see ScopeBoxCreatorRunHandler).
     /// </summary>
-    public class ScopeBoxCreatorViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class ScopeBoxCreatorViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
     {
         public string? ResultNoun => "scope boxes";
         public IReadOnlyList<ResultChip>? ResultChips => null;
 
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("scopeBoxes.creator.title");
-        public string RunLabel => LemoineStrings.T("scopeBoxes.creator.runLabel");
+        public string Title    => AppStrings.T("scopeBoxes.creator.title");
+        public string RunLabel => AppStrings.T("scopeBoxes.creator.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("scopeBoxes.creator.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("scopeBoxes.creator.steps.S2"), required: true),
-            new StepDefinition("S3", LemoineStrings.T("scopeBoxes.creator.steps.S3"), required: true),
-            new StepDefinition("S4", LemoineStrings.T("scopeBoxes.creator.steps.S4"), required: false),
+            new StepDefinition("S1", AppStrings.T("scopeBoxes.creator.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("scopeBoxes.creator.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("scopeBoxes.creator.steps.S3"), required: true),
+            new StepDefinition("S4", AppStrings.T("scopeBoxes.creator.steps.S4"), required: false),
         };
 
         // ── Data types passed in from Command ─────────────────────────
@@ -80,7 +80,7 @@ namespace LemoineTools.Tools.ScopeBoxes
         private StackPanel? _s2Container;
         private Dispatcher? _s2Dispatcher;
         private TextBlock?  _plannedCountText;
-        private LemoineSingleSelect? _seedSelect;
+        private SingleSelect? _seedSelect;
         private TextBlock?  _seedSizeText;
         private TextBlock?  _namePreviewText;
 
@@ -137,7 +137,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             if (stepId == "S1") return BuildS1();
             if (stepId == "S2") return BuildS2();
             if (stepId == "S3") return BuildS3();
-            if (stepId == "S4") return null; // framework renders review (ILemoineReviewable)
+            if (stepId == "S4") return null; // framework renders review (IReviewableTool)
             return null;
         }
 
@@ -167,7 +167,7 @@ namespace LemoineTools.Tools.ScopeBoxes
         {
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SelectionChanged += selected =>
             {
                 _selectedDocLabels = new List<string>(selected);
@@ -191,19 +191,19 @@ namespace LemoineTools.Tools.ScopeBoxes
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            AddDimHeader(outer, LemoineStrings.T("scopeBoxes.creator.labels.geoHeader"));
+            AddDimHeader(outer, AppStrings.T("scopeBoxes.creator.labels.geoHeader"));
 
             var s = ScopeBoxSettings.Instance;
-            AddStepperRow(outer, LemoineStrings.T("scopeBoxes.creator.labels.bufferXY"),
-                LemoineStrings.T("scopeBoxes.creator.labels.bufferXYHint"),
+            AddStepperRow(outer, AppStrings.T("scopeBoxes.creator.labels.bufferXY"),
+                AppStrings.T("scopeBoxes.creator.labels.bufferXYHint"),
                 s.BufferXY, 0, 200, 1, 0,
                 v => { ScopeBoxSettings.Instance.BufferXY = v; ScopeBoxSettings.Instance.Save(); InvalidatePlannedCount(); });
-            AddStepperRow(outer, LemoineStrings.T("scopeBoxes.creator.labels.clusterThreshold"),
-                LemoineStrings.T("scopeBoxes.creator.labels.clusterThresholdHint"),
+            AddStepperRow(outer, AppStrings.T("scopeBoxes.creator.labels.clusterThreshold"),
+                AppStrings.T("scopeBoxes.creator.labels.clusterThresholdHint"),
                 s.ClusterThreshold, 0, 500, 1, 0,
                 v => { ScopeBoxSettings.Instance.ClusterThreshold = v; ScopeBoxSettings.Instance.Save(); InvalidatePlannedCount(); });
-            AddStepperRow(outer, LemoineStrings.T("scopeBoxes.creator.labels.topLevelHeight"),
-                LemoineStrings.T("scopeBoxes.creator.labels.topLevelHeightHint"),
+            AddStepperRow(outer, AppStrings.T("scopeBoxes.creator.labels.topLevelHeight"),
+                AppStrings.T("scopeBoxes.creator.labels.topLevelHeightHint"),
                 s.TopLevelHeight, 1, 100, 1, 0,
                 v => { ScopeBoxSettings.Instance.TopLevelHeight = v; ScopeBoxSettings.Instance.Save(); });
 
@@ -231,7 +231,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             parent.Children.Add(lbl);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 Value = value, MinValue = min, MaxValue = max, Step = step, Decimals = decimals,
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -261,12 +261,12 @@ namespace LemoineTools.Tools.ScopeBoxes
             }
             else if (!_scanning)
             {
-                ShowS2Message(LemoineStrings.T("scopeBoxes.creator.labels.scanning"));
+                ShowS2Message(AppStrings.T("scopeBoxes.creator.labels.scanning"));
                 TriggerScan();
             }
             else
             {
-                ShowS2Message(LemoineStrings.T("scopeBoxes.creator.labels.scanning"));
+                ShowS2Message(AppStrings.T("scopeBoxes.creator.labels.scanning"));
             }
 
             return _s2Container;
@@ -329,7 +329,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 {
                     _scanning = false;
                     _scanDone = true;
-                    ShowS2Message(LemoineStrings.T("scopeBoxes.creator.labels.scanError", msg));
+                    ShowS2Message(AppStrings.T("scopeBoxes.creator.labels.scanError", msg));
                     OnValidationChanged();
                 }));
             };
@@ -345,16 +345,16 @@ namespace LemoineTools.Tools.ScopeBoxes
 
             if (_scannedLevels.Count == 0)
             {
-                ShowS2Message(LemoineStrings.T("scopeBoxes.creator.labels.noLevels"));
+                ShowS2Message(AppStrings.T("scopeBoxes.creator.labels.noLevels"));
                 return;
             }
 
             // ── Layout mode ────────────────────────────────────────────
-            AddDimHeader(_s2Container, LemoineStrings.T("scopeBoxes.creator.labels.modeHeader"));
+            AddDimHeader(_s2Container, AppStrings.T("scopeBoxes.creator.labels.modeHeader"));
 
-            string fullHeightLabel = LemoineStrings.T("scopeBoxes.creator.labels.modeFullHeight");
-            string perLevelLabel   = LemoineStrings.T("scopeBoxes.creator.labels.modePerLevel");
-            var modeSelect = new LemoineSingleSelect
+            string fullHeightLabel = AppStrings.T("scopeBoxes.creator.labels.modeFullHeight");
+            string perLevelLabel   = AppStrings.T("scopeBoxes.creator.labels.modePerLevel");
+            var modeSelect = new SingleSelect
             {
                 Width = 260,
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -371,7 +371,7 @@ namespace LemoineTools.Tools.ScopeBoxes
 
             var modeHint = new TextBlock
             {
-                Text = LemoineStrings.T("scopeBoxes.creator.labels.modeHint"),
+                Text = AppStrings.T("scopeBoxes.creator.labels.modeHint"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 10),
             };
@@ -388,8 +388,8 @@ namespace LemoineTools.Tools.ScopeBoxes
                     .Select(l =>
                     {
                         string key = l.RoomCount > 0
-                            ? LemoineStrings.T("scopeBoxes.creator.labels.levelWithRooms", l.Name, l.ElevationFt, l.RoomCount)
-                            : LemoineStrings.T("scopeBoxes.creator.labels.levelNoRooms",  l.Name, l.ElevationFt);
+                            ? AppStrings.T("scopeBoxes.creator.labels.levelWithRooms", l.Name, l.ElevationFt, l.RoomCount)
+                            : AppStrings.T("scopeBoxes.creator.labels.levelNoRooms",  l.Name, l.ElevationFt);
                         _levelKeyToId[key] = l.LevelId;
                         return key;
                     })
@@ -402,7 +402,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 .Select(kv => kv.Key)
                 .ToList();
 
-            var levelTabs = new LemoineMultiSelectTabs();
+            var levelTabs = new MultiSelectTabs();
             levelTabs.SelectionChanged += selected =>
             {
                 _selectedLevelIds = selected
@@ -438,8 +438,8 @@ namespace LemoineTools.Tools.ScopeBoxes
             if (_plannedCountText == null) return;
             int? n = ComputePlannedCount();
             _plannedCountText.Text = n.HasValue
-                ? LemoineStrings.T("scopeBoxes.creator.labels.plannedCount", n.Value)
-                : LemoineStrings.T("scopeBoxes.creator.labels.plannedCountDeferred");
+                ? AppStrings.T("scopeBoxes.creator.labels.plannedCount", n.Value)
+                : AppStrings.T("scopeBoxes.creator.labels.plannedCountDeferred");
         }
 
         private int? ComputePlannedCount()
@@ -477,9 +477,9 @@ namespace LemoineTools.Tools.ScopeBoxes
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
             // ── Seed picker ────────────────────────────────────────────
-            AddDimHeader(outer, LemoineStrings.T("scopeBoxes.creator.labels.seedHeader"));
+            AddDimHeader(outer, AppStrings.T("scopeBoxes.creator.labels.seedHeader"));
 
-            _seedSelect = new LemoineSingleSelect
+            _seedSelect = new SingleSelect
             {
                 Width = 260,
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -494,7 +494,7 @@ namespace LemoineTools.Tools.ScopeBoxes
 
             var seedHint = new TextBlock
             {
-                Text = LemoineStrings.T("scopeBoxes.creator.labels.seedHint"),
+                Text = AppStrings.T("scopeBoxes.creator.labels.seedHint"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 12),
             };
@@ -506,9 +506,9 @@ namespace LemoineTools.Tools.ScopeBoxes
             PopulateSeedSelect();
 
             // ── Naming slots ───────────────────────────────────────────
-            AddDimHeader(outer, LemoineStrings.T("scopeBoxes.creator.labels.namingHeader"));
+            AddDimHeader(outer, AppStrings.T("scopeBoxes.creator.labels.namingHeader"));
 
-            var slots = new LemoineNamingSlots(NamingTokens, _naming);
+            var slots = new NamingSlots(NamingTokens, _naming);
             slots.Changed += () => { UpdateNamePreview(); OnValidationChanged(); };
             outer.Children.Add(slots);
 
@@ -516,7 +516,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            AddDimHeader(outer, LemoineStrings.T("scopeBoxes.creator.labels.previewHeader"));
+            AddDimHeader(outer, AppStrings.T("scopeBoxes.creator.labels.previewHeader"));
 
             _namePreviewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
             _namePreviewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -544,7 +544,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             if (_scopeBoxes.Count == 0)
             {
                 _seedSelect.Items = new List<string>
-                    { LemoineStrings.T("scopeBoxes.creator.labels.seedNone") };
+                    { AppStrings.T("scopeBoxes.creator.labels.seedNone") };
                 _seedBoxId = ElementId.InvalidElementId;
                 if (_seedSizeText != null) _seedSizeText.Text = "";
                 OnValidationChanged();
@@ -575,7 +575,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             var entry = _scopeBoxes.FirstOrDefault(b => b.Id.Value == _seedBoxId.Value);
             _seedSizeText.Text = entry == null
                 ? ""
-                : LemoineStrings.T("scopeBoxes.creator.labels.seedSize",
+                : AppStrings.T("scopeBoxes.creator.labels.seedSize",
                     entry.WidthFt.ToString("0.#"), entry.DepthFt.ToString("0.#"),
                     entry.HeightFt.ToString("0.#"));
         }
@@ -623,7 +623,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             string last  = selLevels.LastOrDefault()?.Name  ?? "L05";
             string range = _mode == ModePerLevel || first == last
                 ? first
-                : LemoineStrings.T("scopeBoxes.creator.tokens.levelRange", first, last);
+                : AppStrings.T("scopeBoxes.creator.tokens.levelRange", first, last);
             string model = _scannedRooms
                 .GroupBy(r => r.DocName, StringComparer.Ordinal)
                 .OrderByDescending(g => g.Count())
@@ -635,7 +635,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             string b = Resolve("B");
             _namePreviewText.Text = a == b
                 ? a
-                : LemoineStrings.T("scopeBoxes.creator.labels.previewTwo", a, b);
+                : AppStrings.T("scopeBoxes.creator.labels.previewTwo", a, b);
         }
 
         private List<string> ResolvePartsFor(string letter, string level, string range, string model)
@@ -655,14 +655,14 @@ namespace LemoineTools.Tools.ScopeBoxes
             return parts;
         }
 
-        // ── ILemoineReviewable ─────────────────────────────────────────
+        // ── IReviewableTool ─────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("docs",   LemoineStrings.T("scopeBoxes.creator.review.itemDocs")),
-            ("levels", LemoineStrings.T("scopeBoxes.creator.review.itemLevels")),
-            ("mode",   LemoineStrings.T("scopeBoxes.creator.review.itemMode")),
-            ("seed",   LemoineStrings.T("scopeBoxes.creator.review.itemSeed")),
-            ("count",  LemoineStrings.T("scopeBoxes.creator.review.itemCount")),
+            ("docs",   AppStrings.T("scopeBoxes.creator.review.itemDocs")),
+            ("levels", AppStrings.T("scopeBoxes.creator.review.itemLevels")),
+            ("mode",   AppStrings.T("scopeBoxes.creator.review.itemMode")),
+            ("seed",   AppStrings.T("scopeBoxes.creator.review.itemSeed")),
+            ("count",  AppStrings.T("scopeBoxes.creator.review.itemCount")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -674,24 +674,24 @@ namespace LemoineTools.Tools.ScopeBoxes
                 return new Dictionary<string, string>
                 {
                     ["docs"]   = _selectedDocLabels.Count > 0
-                        ? LemoineStrings.T("scopeBoxes.creator.review.docsValue", _selectedDocLabels.Count) : "—",
+                        ? AppStrings.T("scopeBoxes.creator.review.docsValue", _selectedDocLabels.Count) : "—",
                     ["levels"] = _selectedLevelIds.Count > 0
-                        ? LemoineStrings.T("scopeBoxes.creator.review.levelsValue", _selectedLevelIds.Count) : "—",
+                        ? AppStrings.T("scopeBoxes.creator.review.levelsValue", _selectedLevelIds.Count) : "—",
                     ["mode"]   = _mode == ModePerLevel
-                        ? LemoineStrings.T("scopeBoxes.creator.labels.modePerLevel")
-                        : LemoineStrings.T("scopeBoxes.creator.labels.modeFullHeight"),
+                        ? AppStrings.T("scopeBoxes.creator.labels.modePerLevel")
+                        : AppStrings.T("scopeBoxes.creator.labels.modeFullHeight"),
                     ["seed"]   = seed?.Name ?? "—",
                     ["count"]  = planned.HasValue
                         ? planned.Value.ToString()
-                        : LemoineStrings.T("scopeBoxes.creator.review.countDeferred"),
+                        : AppStrings.T("scopeBoxes.creator.review.countDeferred"),
                 };
             }
         }
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("scopeBoxes.creator.review.note");
+        public string?        ReviewNote    => AppStrings.T("scopeBoxes.creator.review.note");
         public string?        ReviewWarning => _seedBoxId == ElementId.InvalidElementId
-            ? LemoineStrings.T("scopeBoxes.creator.review.warnNoSeed")
+            ? AppStrings.T("scopeBoxes.creator.review.warnNoSeed")
             : null;
 
         // ═══════════════════════════════════════════════════════════════
@@ -706,21 +706,21 @@ namespace LemoineTools.Tools.ScopeBoxes
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1") return _selectedDocLabels.Count > 0
-                ? LemoineStrings.T("scopeBoxes.creator.summaries.docsCount", _selectedDocLabels.Count) : "—";
+                ? AppStrings.T("scopeBoxes.creator.summaries.docsCount", _selectedDocLabels.Count) : "—";
             if (stepId == "S2")
             {
                 if (!_scanDone) return "—";
                 string mode = _mode == ModePerLevel
-                    ? LemoineStrings.T("scopeBoxes.creator.labels.modePerLevel")
-                    : LemoineStrings.T("scopeBoxes.creator.labels.modeFullHeight");
-                return LemoineStrings.T("scopeBoxes.creator.summaries.s2", _selectedLevelIds.Count, mode);
+                    ? AppStrings.T("scopeBoxes.creator.labels.modePerLevel")
+                    : AppStrings.T("scopeBoxes.creator.labels.modeFullHeight");
+                return AppStrings.T("scopeBoxes.creator.summaries.s2", _selectedLevelIds.Count, mode);
             }
             if (stepId == "S3")
             {
                 var seed = _scopeBoxes.FirstOrDefault(b => b.Id.Value == _seedBoxId.Value);
-                return seed?.Name ?? LemoineStrings.T("scopeBoxes.creator.summaries.s3NoSeed");
+                return seed?.Name ?? AppStrings.T("scopeBoxes.creator.summaries.s3NoSeed");
             }
-            if (stepId == "S4") return LemoineStrings.T("scopeBoxes.creator.summaries.S4");
+            if (stepId == "S4") return AppStrings.T("scopeBoxes.creator.summaries.S4");
             return "—";
         }
 
@@ -755,7 +755,7 @@ namespace LemoineTools.Tools.ScopeBoxes
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog(LemoineStrings.T("scopeBoxes.creator.log.raising"), "info");
+            pushLog(AppStrings.T("scopeBoxes.creator.log.raising"), "info");
             _runEvent!.Raise();
         }
     }

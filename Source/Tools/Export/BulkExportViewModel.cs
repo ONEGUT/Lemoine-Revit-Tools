@@ -7,8 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfTextBox    = System.Windows.Controls.TextBox;
@@ -18,12 +18,12 @@ using WpfBrushes    = System.Windows.Media.Brushes;
 
 namespace LemoineTools.Tools.BulkExport
 {
-    public class BulkExportViewModel : ILemoineTool, ILemoineReviewable, ILemoineConditionalSteps, IStepAware, ILemoineRunResult, ILemoineToolCleanup
+    public class BulkExportViewModel : IStepFlowTool, IReviewableTool, IConditionalSteps, IStepAware, IRunResult, IToolCleanup
     {
         // Run strip: "files" during the run, per-format breakdown ("30 PDF · 30 DWG") on completion.
         public string? ResultNoun => "files";
-        private System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? _resultChips;
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => _resultChips;
+        private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
         // Null the callbacks parked on the static handler so this VM isn't retained after close.
         public void OnWindowClosed()
@@ -35,27 +35,27 @@ namespace LemoineTools.Tools.BulkExport
             _handler.OnResultChips = null;
         }
 
-        // ── ILemoineTool ──────────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("export.bulkExport.title");
-        public string RunLabel => LemoineStrings.T("export.bulkExport.runLabel");
+        // ── IStepFlowTool ──────────────────────────────────────────────────────
+        public string Title    => AppStrings.T("export.bulkExport.title");
+        public string RunLabel => AppStrings.T("export.bulkExport.runLabel");
 
         // PDF/DWG/NWC/IFC settings each get their own step, shown only when that format
-        // is enabled (ILemoineConditionalSteps). The settings steps must never be last —
+        // is enabled (IConditionalSteps). The settings steps must never be last —
         // S9 (review/run) is always visible.
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("export.bulkExport.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("export.bulkExport.steps.S2"),           required: false),
-            new StepDefinition("S3", LemoineStrings.T("export.bulkExport.steps.S3"),    required: true),
-            new StepDefinition("S4", LemoineStrings.T("export.bulkExport.steps.S4"),          required: false),
-            new StepDefinition("S5", LemoineStrings.T("export.bulkExport.steps.S5"),          required: false),
-            new StepDefinition("S6", LemoineStrings.T("export.bulkExport.steps.S6"),          required: false),
-            new StepDefinition("S7", LemoineStrings.T("export.bulkExport.steps.S7"),          required: false),
-            new StepDefinition("S8", LemoineStrings.T("export.bulkExport.steps.S8"),                required: true),
-            new StepDefinition("S9", LemoineStrings.T("export.bulkExport.steps.S9"),          required: false),
+            new StepDefinition("S1", AppStrings.T("export.bulkExport.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("export.bulkExport.steps.S2"),           required: false),
+            new StepDefinition("S3", AppStrings.T("export.bulkExport.steps.S3"),    required: true),
+            new StepDefinition("S4", AppStrings.T("export.bulkExport.steps.S4"),          required: false),
+            new StepDefinition("S5", AppStrings.T("export.bulkExport.steps.S5"),          required: false),
+            new StepDefinition("S6", AppStrings.T("export.bulkExport.steps.S6"),          required: false),
+            new StepDefinition("S7", AppStrings.T("export.bulkExport.steps.S7"),          required: false),
+            new StepDefinition("S8", AppStrings.T("export.bulkExport.steps.S8"),                required: true),
+            new StepDefinition("S9", AppStrings.T("export.bulkExport.steps.S9"),          required: false),
         };
 
-        // ── ILemoineConditionalSteps ──────────────────────────────────────────
+        // ── IConditionalSteps ──────────────────────────────────────────
         public bool IsStepVisible(string stepId)
         {
             switch (stepId)
@@ -154,7 +154,7 @@ namespace LemoineTools.Tools.BulkExport
         private bool               _ifcOn           = BulkExportSettings.Instance.ExportIfc;
         private string             _ifcVersion      = BulkExportSettings.Instance.IfcVersion;
         private string             _dwgSetup        = BulkExportSettings.Instance.DwgExportSetupName;
-        private LemoineTokenInput? _tokenInput;
+        private TokenInput? _tokenInput;
 
         // ── NWC option state (all NavisworksExportOptions properties) ─────────
         private string _nwcCoordinates         = BulkExportSettings.Instance.NwcCoordinates;
@@ -193,7 +193,7 @@ namespace LemoineTools.Tools.BulkExport
         private readonly List<View>                  _allViews;
         private readonly List<string>                _dwgSetupNames;
         private readonly Dictionary<ElementId, ViewSheet> _sheetById;
-        private readonly LemoineBrowserTree          _browserTree;
+        private readonly BrowserTree          _browserTree;
         private readonly Dictionary<long, string>    _idToName = new Dictionary<long, string>();
 
         // ── Preview (token preview in S3) ─────────────────────────────────────
@@ -211,7 +211,7 @@ namespace LemoineTools.Tools.BulkExport
             List<string>             dwgSetupNames,
             List<ViewSheet>          allSheets,
             List<View>               allViews,
-            LemoineBrowserTree       browserTree)
+            BrowserTree       browserTree)
         {
             _handler       = handler;
             _event         = externalEvent;
@@ -306,7 +306,7 @@ namespace LemoineTools.Tools.BulkExport
 
             var showAllCb = new CheckBox
             {
-                Content   = LemoineStrings.T("export.bulkExport.labels.showAllViews"),
+                Content   = AppStrings.T("export.bulkExport.labels.showAllViews"),
                 IsChecked = false,
                 Margin    = new Thickness(0, 0, 0, 6),
                 HorizontalAlignment = HorizontalAlignment.Right,
@@ -328,10 +328,10 @@ namespace LemoineTools.Tools.BulkExport
             return outer;
         }
 
-        private LemoineBrowserTreePicker BuildTreePicker(CheckBox showAllCb)
+        private BrowserTreePicker BuildTreePicker(CheckBox showAllCb)
         {
-            var picker = new LemoineBrowserTreePicker { Height = 300 };
-            // Subscribe BEFORE SetTree — per the LemoineBrowserTreePicker contract, the
+            var picker = new BrowserTreePicker { Height = 300 };
+            // Subscribe BEFORE SetTree — per the BrowserTreePicker contract, the
             // single SelectionChanged fired at the end of SetTree is the only mechanism
             // that initialises the mirror field.
             picker.SelectionChanged += ids =>
@@ -395,10 +395,10 @@ namespace LemoineTools.Tools.BulkExport
             var outer = new StackPanel();
 
             // Optional note (wording adapts to the export mode)
-            string itemWord = ViewsMode ? LemoineStrings.T("export.bulkExport.words.view") : LemoineStrings.T("export.bulkExport.words.sheet");
+            string itemWord = ViewsMode ? AppStrings.T("export.bulkExport.words.view") : AppStrings.T("export.bulkExport.words.sheet");
             var note = new TextBlock
             {
-                Text         = LemoineStrings.T("export.bulkExport.labels.packsNote", itemWord),
+                Text         = AppStrings.T("export.bulkExport.labels.packsNote", itemWord),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 0, 0, 10),
@@ -436,7 +436,7 @@ namespace LemoineTools.Tools.BulkExport
                         tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
                         tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                     }
-                    LemoineMotion.WireHover(tab,
+                    MotionEffects.WireHover(tab,
                         normalBgKey:     captured == _activePack ? "LemoineSelectBg" : "LemoineRaised",
                         hoverBgKey:      "LemoineAccentDim",
                         normalBorderKey: captured == _activePack ? "LemoineAccent" : "LemoineBorder",
@@ -468,10 +468,10 @@ namespace LemoineTools.Tools.BulkExport
                 };
                 addBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineCanvas");
                 addBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-                LemoineMotion.WireHover(addBtn,
+                MotionEffects.WireHover(addBtn,
                     normalBgKey:     "LemoineCanvas",  hoverBgKey:     "LemoineAccentDim",
                     normalBorderKey: "LemoineBorderMid", hoverBorderKey: "LemoineAccent");
-                var addText = new TextBlock { Text = LemoineStrings.T("export.bulkExport.labels.newPack") };
+                var addText = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.newPack") };
                 addText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 addText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 addText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -499,7 +499,7 @@ namespace LemoineTools.Tools.BulkExport
         {
             if (_activePack < 0 || _activePack >= _packs.Count)
             {
-                var empty = new TextBlock { Text = LemoineStrings.T("export.bulkExport.labels.noPackSelected") };
+                var empty = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.noPackSelected") };
                 empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
                 empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -523,7 +523,7 @@ namespace LemoineTools.Tools.BulkExport
 
             var nameLabel = new TextBlock
             {
-                Text              = LemoineStrings.T("export.bulkExport.labels.packName"),
+                Text              = AppStrings.T("export.bulkExport.labels.packName"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, 0, 8, 0),
             };
@@ -556,7 +556,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var delBtn = new Button
                 {
-                    Content         = LemoineStrings.T("export.bulkExport.labels.removePack"),
+                    Content         = AppStrings.T("export.bulkExport.labels.removePack"),
                     Margin          = new Thickness(8, 0, 0, 0),
                     Padding         = new Thickness(8, 0, 8, 0),
                     BorderThickness = new Thickness(1),
@@ -568,7 +568,7 @@ namespace LemoineTools.Tools.BulkExport
                 delBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
                 delBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineCanvas");
                 delBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
-                delBtn.Template = LemoineControlStyles.BuildFlatButtonTemplate();
+                delBtn.Template = ControlStyles.BuildFlatButtonTemplate();
                 delBtn.Click += (s, e) =>
                 {
                     _packs.RemoveAt(_activePack);
@@ -583,7 +583,7 @@ namespace LemoineTools.Tools.BulkExport
             // Sheet order label
             var editorLabel = new TextBlock
             {
-                Text   = LemoineStrings.T("export.bulkExport.labels.sheetOrder"),
+                Text   = AppStrings.T("export.bulkExport.labels.sheetOrder"),
                 Margin = new Thickness(0, 0, 0, 6),
             };
             editorLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -625,9 +625,9 @@ namespace LemoineTools.Tools.BulkExport
 
             // Filename pattern — token vocabulary matches the export mode so only valid
             // tokens are ever offered (sheet tokens for sheets, view tokens for views).
-            AddSectionLabel(outer, ViewsMode ? LemoineStrings.T("export.bulkExport.labels.patternViews") : LemoineStrings.T("export.bulkExport.labels.patternSheets"));
+            AddSectionLabel(outer, ViewsMode ? AppStrings.T("export.bulkExport.labels.patternViews") : AppStrings.T("export.bulkExport.labels.patternSheets"));
 
-            _tokenInput      = new LemoineTokenInput(ViewsMode ? ViewTokens : SheetTokens,
+            _tokenInput      = new TokenInput(ViewsMode ? ViewTokens : SheetTokens,
                                                      ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
             _tokenInput.Text = ActivePattern;
             outer.Children.Add(_tokenInput);
@@ -656,7 +656,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var packNote = new TextBlock
                 {
-                    Text         = LemoineStrings.T("export.bulkExport.labels.packFilenameNote"),
+                    Text         = AppStrings.T("export.bulkExport.labels.packFilenameNote"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 6, 0, 0),
@@ -671,15 +671,15 @@ namespace LemoineTools.Tools.BulkExport
 
             // Formats — toggling a format reveals/hides its settings step (via Fire →
             // the window re-evaluates IsStepVisible).
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secFormats"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secFormats"));
 
-            var formatToggles = new LemoineToggleSwitches();
+            var formatToggles = new ToggleSwitches();
             formatToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "pdf", Label = "PDF", Desc = LemoineStrings.T("export.bulkExport.labels.descPdf"),                     DefaultOn = _pdfOn  },
-                new ToggleItem { Id = "dwg", Label = "DWG", Desc = LemoineStrings.T("export.bulkExport.labels.descDwg"),                    DefaultOn = _dwgOn  },
-                new ToggleItem { Id = "nwc", Label = "NWC", Desc = LemoineStrings.T("export.bulkExport.labels.descNwc"),                  DefaultOn = _nwcOn  },
-                new ToggleItem { Id = "ifc", Label = "IFC", Desc = LemoineStrings.T("export.bulkExport.labels.descIfc"),   DefaultOn = _ifcOn  },
+                new ToggleItem { Id = "pdf", Label = "PDF", Desc = AppStrings.T("export.bulkExport.labels.descPdf"),                     DefaultOn = _pdfOn  },
+                new ToggleItem { Id = "dwg", Label = "DWG", Desc = AppStrings.T("export.bulkExport.labels.descDwg"),                    DefaultOn = _dwgOn  },
+                new ToggleItem { Id = "nwc", Label = "NWC", Desc = AppStrings.T("export.bulkExport.labels.descNwc"),                  DefaultOn = _nwcOn  },
+                new ToggleItem { Id = "ifc", Label = "IFC", Desc = AppStrings.T("export.bulkExport.labels.descIfc"),   DefaultOn = _ifcOn  },
             });
             formatToggles.StateChanged += state =>
             {
@@ -696,7 +696,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var modeHint = new TextBlock
                 {
-                    Text         = LemoineStrings.T("export.bulkExport.labels.modeHint"),
+                    Text         = AppStrings.T("export.bulkExport.labels.modeHint"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 8, 0, 0),
@@ -741,8 +741,8 @@ namespace LemoineTools.Tools.BulkExport
                     ["Day"]           = DateTime.Now.Day.ToString("D2"),
                 };
             }
-            string resolved = LemoineTokenInput.Resolve(ActivePattern, tokens);
-            preview.Text = LemoineStrings.T("export.bulkExport.labels.preview", SanitiseFilenamePreview(resolved), PreviewExtension());
+            string resolved = TokenInput.Resolve(ActivePattern, tokens);
+            preview.Text = AppStrings.T("export.bulkExport.labels.preview", SanitiseFilenamePreview(resolved), PreviewExtension());
         }
 
         // The dominant output extension for the preview (first enabled format).
@@ -765,7 +765,7 @@ namespace LemoineTools.Tools.BulkExport
         // ── NWC options builder ───────────────────────────────────────────────
         private void BuildNwcOptions(StackPanel parent)
         {
-            AddSectionLabel(parent, LemoineStrings.T("export.bulkExport.labels.secNwcOptions"));
+            AddSectionLabel(parent, AppStrings.T("export.bulkExport.labels.secNwcOptions"));
 
             // Mode-aware note. This step is rebuilt every time it is activated
             // (IStepAware.OnStepActivated → "S6"), so the text reflects the current mode
@@ -776,21 +776,21 @@ namespace LemoineTools.Tools.BulkExport
             note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             note.Text = _exportMode == "Sheets"
-                ? LemoineStrings.T("export.bulkExport.labels.nwcNoteSheets")
-                : LemoineStrings.T("export.bulkExport.labels.nwcNoteViews");
+                ? AppStrings.T("export.bulkExport.labels.nwcNoteSheets")
+                : AppStrings.T("export.bulkExport.labels.nwcNoteViews");
             parent.Children.Add(note);
 
             AddDivider(parent);
 
             // ── Coordinates & Parameters ──────────────────────────────────────
-            AddSectionLabel(parent, LemoineStrings.T("export.bulkExport.labels.secCoordParams"));
+            AddSectionLabel(parent, AppStrings.T("export.bulkExport.labels.secCoordParams"));
 
-            AddLabeledComboBox(parent, LemoineStrings.T("export.bulkExport.labels.lblCoordSystem"),
+            AddLabeledComboBox(parent, AppStrings.T("export.bulkExport.labels.lblCoordSystem"),
                 new[] { "Shared", "Internal" },
                 _nwcCoordinates == "Internal" ? 1 : 0,
                 val => { _nwcCoordinates = val; Fire(); });
 
-            AddLabeledComboBox(parent, LemoineStrings.T("export.bulkExport.labels.lblElementParams"),
+            AddLabeledComboBox(parent, AppStrings.T("export.bulkExport.labels.lblElementParams"),
                 new[] { "All", "Elements", "None" },
                 _nwcParameters == "Elements" ? 1 : _nwcParameters == "None" ? 2 : 0,
                 val => { _nwcParameters = val; Fire(); });
@@ -798,12 +798,12 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(parent);
 
             // ── Geometry & Mesh ───────────────────────────────────────────────
-            AddSectionLabel(parent, LemoineStrings.T("export.bulkExport.labels.secGeomMesh"));
+            AddSectionLabel(parent, AppStrings.T("export.bulkExport.labels.secGeomMesh"));
 
             int initFacetIdx = Array.IndexOf(NwcFacetingValues, _nwcFacetingFactor);
             if (initFacetIdx < 0) initFacetIdx = 1; // fallback to Standard
 
-            AddLabeledComboBox(parent, LemoineStrings.T("export.bulkExport.labels.lblMeshQuality"),
+            AddLabeledComboBox(parent, AppStrings.T("export.bulkExport.labels.lblMeshQuality"),
                 NwcFacetingLabels, initFacetIdx,
                 val =>
                 {
@@ -812,23 +812,23 @@ namespace LemoineTools.Tools.BulkExport
                     Fire();
                 });
 
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbConvertProps"),  _nwcConvertElementProps, v => _nwcConvertElementProps = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbConvertLights"),        _nwcConvertLights,       v => _nwcConvertLights       = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbConvertCad"),  _nwcConvertLinkedCad,    v => _nwcConvertLinkedCad    = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbConvertProps"),  _nwcConvertElementProps, v => _nwcConvertElementProps = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbConvertLights"),        _nwcConvertLights,       v => _nwcConvertLights       = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbConvertCad"),  _nwcConvertLinkedCad,    v => _nwcConvertLinkedCad    = v);
 
             AddDivider(parent);
 
             // ── Content to Include ────────────────────────────────────────────
-            AddSectionLabel(parent, LemoineStrings.T("export.bulkExport.labels.secContent"));
+            AddSectionLabel(parent, AppStrings.T("export.bulkExport.labels.secContent"));
 
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbDivideLevels"),                    _nwcDivideByLevel,       v => _nwcDivideByLevel        = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbLinkedRevit"),                _nwcExportLinks,         v => _nwcExportLinks          = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbParts"),                        _nwcExportParts,         v => _nwcExportParts          = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbElementIds"), _nwcExportElementIds,    v => _nwcExportElementIds     = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbUrls"),                     _nwcExportUrls,          v => _nwcExportUrls           = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbMissingMats"),                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbRoomGeom"), _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
-            AddNwcCheckBox(parent, LemoineStrings.T("export.bulkExport.labels.cbRoomAttr"),     _nwcExportRoomAsAttr,    v => _nwcExportRoomAsAttr     = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbDivideLevels"),                    _nwcDivideByLevel,       v => _nwcDivideByLevel        = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbLinkedRevit"),                _nwcExportLinks,         v => _nwcExportLinks          = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbParts"),                        _nwcExportParts,         v => _nwcExportParts          = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbElementIds"), _nwcExportElementIds,    v => _nwcExportElementIds     = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbUrls"),                     _nwcExportUrls,          v => _nwcExportUrls           = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbMissingMats"),                     _nwcFindMissingMaterials, v => _nwcFindMissingMaterials = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbRoomGeom"), _nwcExportRoomGeometry, v => _nwcExportRoomGeometry = v);
+            AddNwcCheckBox(parent, AppStrings.T("export.bulkExport.labels.cbRoomAttr"),     _nwcExportRoomAsAttr,    v => _nwcExportRoomAsAttr     = v);
         }
 
         private void AddNwcCheckBox(StackPanel parent, string label, bool isChecked, Action<bool> onChange)
@@ -845,11 +845,11 @@ namespace LemoineTools.Tools.BulkExport
         // ── IFC options builder ───────────────────────────────────────────────
         private void BuildIfcOptions(StackPanel parent)
         {
-            AddSectionLabel(parent, LemoineStrings.T("export.bulkExport.labels.secIfcOptions"));
+            AddSectionLabel(parent, AppStrings.T("export.bulkExport.labels.secIfcOptions"));
 
             var note = new TextBlock
             {
-                Text         = LemoineStrings.T("export.bulkExport.labels.ifcNote"),
+                Text         = AppStrings.T("export.bulkExport.labels.ifcNote"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 4),
             };
@@ -858,7 +858,7 @@ namespace LemoineTools.Tools.BulkExport
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             parent.Children.Add(note);
 
-            AddLabeledComboBox(parent, LemoineStrings.T("export.bulkExport.labels.lblIfcVersion"),
+            AddLabeledComboBox(parent, AppStrings.T("export.bulkExport.labels.lblIfcVersion"),
                 new[] { "IFC2x3", "IFC4" },
                 _ifcVersion == "IFC4" ? 1 : 0,
                 val => { _ifcVersion = val; Fire(); });
@@ -870,10 +870,10 @@ namespace LemoineTools.Tools.BulkExport
             var outer = new StackPanel();
 
             // PAGE SETUP ──────────────────────────────────────────────────────
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secPageSetup"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secPageSetup"));
 
             // Paper placement
-            AddSmallLabel(outer, LemoineStrings.T("export.bulkExport.labels.lblPaperPlacement"));
+            AddSmallLabel(outer, AppStrings.T("export.bulkExport.labels.lblPaperPlacement"));
             var offsetBtn  = BuildModeButton("Offset from Corner", _pdfPlacement == "Offset from Corner");
             var centerBtn  = BuildModeButton("Center",             _pdfPlacement == "Center");
             offsetBtn.Click += (s, e) => { _pdfPlacement = "Offset from Corner"; RefreshModeButtons(offsetBtn, centerBtn, true);  Fire(); };
@@ -885,7 +885,7 @@ namespace LemoineTools.Tools.BulkExport
 
             var placementHint = new TextBlock
             {
-                Text         = LemoineStrings.T("export.bulkExport.labels.placementHint"),
+                Text         = AppStrings.T("export.bulkExport.labels.placementHint"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, -4, 0, 8),
@@ -896,7 +896,7 @@ namespace LemoineTools.Tools.BulkExport
             outer.Children.Add(placementHint);
 
             // Zoom type
-            AddSmallLabel(outer, LemoineStrings.T("export.bulkExport.labels.lblZoom"));
+            AddSmallLabel(outer, AppStrings.T("export.bulkExport.labels.lblZoom"));
             var fitBtn   = BuildModeButton("Fit to Page", _zoomSetting == "Fit to Page");
             var scaleBtn = BuildModeButton("Scale %",     _zoomSetting == "Scale %");
             var zoomRow  = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 4) };
@@ -911,11 +911,11 @@ namespace LemoineTools.Tools.BulkExport
                 Margin      = new Thickness(0, 4, 0, 8),
                 Visibility  = _zoomSetting == "Scale %" ? WpfVisibility.Visible : WpfVisibility.Collapsed,
             };
-            var stepper = new LemoineInlineStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5, Decimals = 0, ValueWidth = 48 };
+            var stepper = new InlineStepper { Value = _zoomPct, MinValue = 10, MaxValue = 500, Step = 5, Decimals = 0, ValueWidth = 48 };
             stepper.ValueChanged += (s, v) => { _zoomPct = (int)v; Fire(); };
             var pctLabel = new TextBlock
             {
-                Text              = LemoineStrings.T("export.bulkExport.labels.pctPercent"),
+                Text              = AppStrings.T("export.bulkExport.labels.pctPercent"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(6, 0, 0, 0),
             };
@@ -944,19 +944,19 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // OUTPUT QUALITY ──────────────────────────────────────────────────
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secOutputQuality"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secOutputQuality"));
 
-            AddLabeledComboBox(outer, LemoineStrings.T("export.bulkExport.labels.lblColorDepth"),
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblColorDepth"),
                 new[] { "Color", "Grayscale", "Black & White" },
                 GetIndex(new[] { "Color", "Grayscale", "Black & White" }, _colorDepth),
                 val => { _colorDepth = val; Fire(); });
 
-            AddLabeledComboBox(outer, LemoineStrings.T("export.bulkExport.labels.lblRasterQuality"),
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblRasterQuality"),
                 new[] { "Draft", "Low", "Medium", "High", "Presentation" },
                 GetIndex(new[] { "Draft", "Low", "Medium", "High", "Presentation" }, _rasterQuality),
                 val => { _rasterQuality = val; Fire(); });
 
-            AddLabeledComboBox(outer, LemoineStrings.T("export.bulkExport.labels.lblHiddenLines"),
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblHiddenLines"),
                 new[] { "Vector Processing", "Raster Processing" },
                 _hiddenLines == "Vector Processing" ? 0 : 1,
                 val => { _hiddenLines = val; Fire(); });
@@ -964,12 +964,12 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // COMBINE ─────────────────────────────────────────────────────────
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secCombine"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secCombine"));
 
-            var combineToggle = new LemoineToggleSwitches();
+            var combineToggle = new ToggleSwitches();
             combineToggle.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "combine", Label = LemoineStrings.T("export.bulkExport.labels.combineLabel"), DefaultOn = _combinePdf },
+                new ToggleItem { Id = "combine", Label = AppStrings.T("export.bulkExport.labels.combineLabel"), DefaultOn = _combinePdf },
             });
             combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
             outer.Children.Add(combineToggle);
@@ -978,7 +978,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 var packCombineNote = new TextBlock
                 {
-                    Text         = LemoineStrings.T("export.bulkExport.labels.packCombineNote"),
+                    Text         = AppStrings.T("export.bulkExport.labels.packCombineNote"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 2, 0, 0),
@@ -992,13 +992,13 @@ namespace LemoineTools.Tools.BulkExport
             AddDivider(outer);
 
             // ADVANCED ────────────────────────────────────────────────────────
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secAdvanced"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secAdvanced"));
 
-            var advToggles = new LemoineToggleSwitches();
+            var advToggles = new ToggleSwitches();
             advToggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "viewlinks",       Label = LemoineStrings.T("export.bulkExport.labels.advViewLinks"),              Desc = LemoineStrings.T("export.bulkExport.labels.advViewLinksDesc"),      DefaultOn = _viewLinksBlue   },
-                new ToggleItem { Id = "replacehalftone", Label = LemoineStrings.T("export.bulkExport.labels.advReplaceHalftone"), Desc = LemoineStrings.T("export.bulkExport.labels.advReplaceHalftoneDesc"),         DefaultOn = _replaceHalftone },
+                new ToggleItem { Id = "viewlinks",       Label = AppStrings.T("export.bulkExport.labels.advViewLinks"),              Desc = AppStrings.T("export.bulkExport.labels.advViewLinksDesc"),      DefaultOn = _viewLinksBlue   },
+                new ToggleItem { Id = "replacehalftone", Label = AppStrings.T("export.bulkExport.labels.advReplaceHalftone"), Desc = AppStrings.T("export.bulkExport.labels.advReplaceHalftoneDesc"),         DefaultOn = _replaceHalftone },
             });
             advToggles.StateChanged += state =>
             {
@@ -1013,7 +1013,7 @@ namespace LemoineTools.Tools.BulkExport
             // Paper size note
             var sizeNote = new TextBlock
             {
-                Text         = LemoineStrings.T("export.bulkExport.labels.sizeNote"),
+                Text         = AppStrings.T("export.bulkExport.labels.sizeNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -1029,18 +1029,18 @@ namespace LemoineTools.Tools.BulkExport
         private FrameworkElement BuildS5Dwg()
         {
             var outer = new StackPanel();
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secDwgOptions"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secDwgOptions"));
 
             var setupNames = _dwgSetupNames.Count > 0
                 ? _dwgSetupNames.ToArray()
-                : new[] { LemoineStrings.T("export.bulkExport.labels.dwgNoSetups") };
+                : new[] { AppStrings.T("export.bulkExport.labels.dwgNoSetups") };
             int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
-            AddLabeledComboBox(outer, LemoineStrings.T("export.bulkExport.labels.lblExportSetup"), setupNames, initIdx,
+            AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblExportSetup"), setupNames, initIdx,
                 val => { _dwgSetup = val; Fire(); });
 
             var note = new TextBlock
             {
-                Text         = LemoineStrings.T("export.bulkExport.labels.dwgNote"),
+                Text         = AppStrings.T("export.bulkExport.labels.dwgNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 6, 0, 0),
@@ -1074,13 +1074,13 @@ namespace LemoineTools.Tools.BulkExport
         {
             var outer = new StackPanel();
 
-            AddSectionLabel(outer, LemoineStrings.T("export.bulkExport.labels.secOutputFolder"));
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secOutputFolder"));
             BuildFolderPicker(outer);
 
-            var splitToggle = new LemoineToggleSwitches { Margin = new Thickness(0, 6, 0, 0) };
+            var splitToggle = new ToggleSwitches { Margin = new Thickness(0, 6, 0, 0) };
             splitToggle.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "split", Label = LemoineStrings.T("export.bulkExport.labels.splitLabel"), DefaultOn = _splitByFormat },
+                new ToggleItem { Id = "split", Label = AppStrings.T("export.bulkExport.labels.splitLabel"), DefaultOn = _splitByFormat },
             });
             splitToggle.StateChanged += state => { state.TryGetValue("split", out _splitByFormat); Fire(); };
             outer.Children.Add(splitToggle);
@@ -1090,10 +1090,10 @@ namespace LemoineTools.Tools.BulkExport
 
         private void BuildFolderPicker(StackPanel parent)
         {
-            var folder = new LemoineFolderBrowser
+            var folder = new FolderBrowser
             {
                 Path        = _outputFolder,
-                DialogTitle = LemoineStrings.T("export.bulkExport.labels.folderDialog"),
+                DialogTitle = AppStrings.T("export.bulkExport.labels.folderDialog"),
             };
             folder.PathChanged += p => { _outputFolder = p; Fire(); };
             parent.Children.Add(folder);
@@ -1103,23 +1103,23 @@ namespace LemoineTools.Tools.BulkExport
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
-        // ── ILemoineReviewable (P3) — framework renders the final review step ─
+        // ── IReviewableTool (P3) — framework renders the final review step ─
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("sheets",  LemoineStrings.T("export.bulkExport.review.itemSheets")),
-            ("formats", LemoineStrings.T("export.bulkExport.review.itemFormats")),
-            ("packs",   LemoineStrings.T("export.bulkExport.review.itemPacks")),
-            ("quality", LemoineStrings.T("export.bulkExport.review.itemQuality")),
-            ("pattern", LemoineStrings.T("export.bulkExport.review.itemPattern")),
-            ("folder",  LemoineStrings.T("export.bulkExport.review.itemFolder")),
+            ("sheets",  AppStrings.T("export.bulkExport.review.itemSheets")),
+            ("formats", AppStrings.T("export.bulkExport.review.itemFormats")),
+            ("packs",   AppStrings.T("export.bulkExport.review.itemPacks")),
+            ("quality", AppStrings.T("export.bulkExport.review.itemQuality")),
+            ("pattern", AppStrings.T("export.bulkExport.review.itemPattern")),
+            ("folder",  AppStrings.T("export.bulkExport.review.itemFolder")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["sheets"]  = _selectedNames.Count == 0 ? "—" : LemoineStrings.T("export.bulkExport.review.sheetsValue", _selectedNames.Count),
+            ["sheets"]  = _selectedNames.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedNames.Count),
             ["formats"] = GetActiveFormats(),
-            ["packs"]   = HasActivePacks() ? LemoineStrings.T("export.bulkExport.review.packsValue", _packs.Count(p => p.SheetNumbers.Count > 0)) : LemoineStrings.T("export.bulkExport.review.packsNone"),
-            ["quality"] = _pdfOn ? LemoineStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : LemoineStrings.T("export.bulkExport.review.qualityPdfOff"),
+            ["packs"]   = HasActivePacks() ? AppStrings.T("export.bulkExport.review.packsValue", _packs.Count(p => p.SheetNumbers.Count > 0)) : AppStrings.T("export.bulkExport.review.packsNone"),
+            ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
             ["pattern"] = string.IsNullOrEmpty(ActivePattern) ? "—" : ActivePattern,
             ["folder"]  = _outputFolder.Length == 0 ? "—"
                 : _outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37)
@@ -1151,18 +1151,18 @@ namespace LemoineTools.Tools.BulkExport
             switch (stepId)
             {
                 case "S1": return _selectedNames.Count == 0 ? "—"
-                    : LemoineStrings.T("export.bulkExport.summaries.s1", _selectedNames.Count, _exportMode.ToLower());
+                    : AppStrings.T("export.bulkExport.summaries.s1", _selectedNames.Count, _exportMode.ToLower());
                 case "S2": return HasActivePacks()
-                    ? LemoineStrings.T("export.bulkExport.summaries.s2Packs", _packs.Count(p => p.SheetNumbers.Count > 0))
-                    : LemoineStrings.T("export.bulkExport.summaries.s2Individual");
+                    ? AppStrings.T("export.bulkExport.summaries.s2Packs", _packs.Count(p => p.SheetNumbers.Count > 0))
+                    : AppStrings.T("export.bulkExport.summaries.s2Individual");
                 case "S3": return GetActiveFormats() == "—"
-                    ? LemoineStrings.T("export.bulkExport.summaries.s3None")
-                    : LemoineStrings.T("export.bulkExport.summaries.s3", GetActiveFormats(), ActivePattern);
-                case "S4": return LemoineStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, _pdfPlacement.Split(' ')[0]);
-                case "S5": return string.IsNullOrEmpty(_dwgSetup) ? LemoineStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
-                case "S6": return LemoineStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
+                    ? AppStrings.T("export.bulkExport.summaries.s3None")
+                    : AppStrings.T("export.bulkExport.summaries.s3", GetActiveFormats(), ActivePattern);
+                case "S4": return AppStrings.T("export.bulkExport.summaries.s4", _hiddenLines.Split(' ')[0], _rasterQuality, _colorDepth, _pdfPlacement.Split(' ')[0]);
+                case "S5": return string.IsNullOrEmpty(_dwgSetup) ? AppStrings.T("export.bulkExport.summaries.s5Default") : _dwgSetup;
+                case "S6": return AppStrings.T("export.bulkExport.summaries.s6", _nwcCoordinates, _nwcParameters);
                 case "S7": return _ifcVersion;
-                case "S8": return string.IsNullOrEmpty(_outputFolder) ? LemoineStrings.T("export.bulkExport.summaries.s8NoFolder") : _outputFolder;
+                case "S8": return string.IsNullOrEmpty(_outputFolder) ? AppStrings.T("export.bulkExport.summaries.s8NoFolder") : _outputFolder;
                 default:   return "—";
             }
         }
@@ -1268,118 +1268,118 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        //  ILemoineToolSettings
+        //  IToolSettings
         // ═════════════════════════════════════════════════════════════════════
-        public LemoineToolSettingsSpec? GetSettingsSpec()
+        public ToolSettingsSpec? GetSettingsSpec()
         {
             var s = BulkExportSettings.Instance;
-            return new LemoineToolSettingsSpec
+            return new ToolSettingsSpec
             {
                 Id          = "tx",
                 Label       = "Bulk Export",
                 Icon        = "Tx",
                 Description = "Export sheets and views to PDF, DWG, NWC and IFC with parametric filenames.",
-                Groups      = new List<LemoineSettingsGroup>
+                Groups      = new List<SettingsGroup>
                 {
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G1", Title = "Output", OpenByDefault = true,
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "outdir",      Kind = "file",   Label = "Default output folder",
+                            new SettingDef { Id = "outdir",      Kind = "file",   Label = "Default output folder",
                                 Options = new FileOpts { Placeholder = @"C:\Projects\Exports\" }, Default = s.OutputFolder },
-                            new LemoineSettingDef { Id = "splitformat", Kind = "toggle", Label = "Split output by file format",
+                            new SettingDef { Id = "splitformat", Kind = "toggle", Label = "Split output by file format",
                                 Hint = "Creates PDF\\, DWG\\ subfolders automatically.", Default = s.SplitByFormat },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G2", Title = "Filename",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "pattern", Kind = "text", Label = "Default filename pattern",
+                            new SettingDef { Id = "pattern", Kind = "text", Label = "Default filename pattern",
                                 Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day}",
                                 Options = new TextOpts { Mono = true, Placeholder = "{SheetNumber}-{SheetName}" },
                                 Default = s.FilenamePattern },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G3", Title = "Default Formats",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "defpdf", Kind = "toggle", Label = "PDF on by default", Default = s.ExportPdf },
-                            new LemoineSettingDef { Id = "defdwg", Kind = "toggle", Label = "DWG on by default", Default = s.ExportDwg },
-                            new LemoineSettingDef { Id = "defnwc", Kind = "toggle", Label = "NWC on by default (Views mode only)", Default = s.ExportNwc },
-                            new LemoineSettingDef { Id = "defifc", Kind = "toggle", Label = "IFC on by default (Views mode only)", Default = s.ExportIfc },
+                            new SettingDef { Id = "defpdf", Kind = "toggle", Label = "PDF on by default", Default = s.ExportPdf },
+                            new SettingDef { Id = "defdwg", Kind = "toggle", Label = "DWG on by default", Default = s.ExportDwg },
+                            new SettingDef { Id = "defnwc", Kind = "toggle", Label = "NWC on by default (Views mode only)", Default = s.ExportNwc },
+                            new SettingDef { Id = "defifc", Kind = "toggle", Label = "IFC on by default (Views mode only)", Default = s.ExportIfc },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G4", Title = "PDF Options",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "combinepdf",  Kind = "toggle", Label = "Combine into single PDF by default", Default = s.CombinePdf },
-                            new LemoineSettingDef { Id = "placement",   Kind = "single", Label = "Paper placement",
+                            new SettingDef { Id = "combinepdf",  Kind = "toggle", Label = "Combine into single PDF by default", Default = s.CombinePdf },
+                            new SettingDef { Id = "placement",   Kind = "single", Label = "Paper placement",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Center", "Offset from Corner" } },
                                 Default = s.PdfPaperPlacement },
-                            new LemoineSettingDef { Id = "hiddenlines", Kind = "single", Label = "Hidden line views",
+                            new SettingDef { Id = "hiddenlines", Kind = "single", Label = "Hidden line views",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Vector Processing", "Raster Processing" } },
                                 Default = s.HiddenLinesVector ? "Vector Processing" : "Raster Processing" },
-                            new LemoineSettingDef { Id = "colordepth",  Kind = "single", Label = "Color depth",
+                            new SettingDef { Id = "colordepth",  Kind = "single", Label = "Color depth",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Color", "Grayscale", "Black & White" } },
                                 Default = s.ColorDepth },
-                            new LemoineSettingDef { Id = "rasterquality", Kind = "single", Label = "Raster quality",
+                            new SettingDef { Id = "rasterquality", Kind = "single", Label = "Raster quality",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Draft", "Low", "Medium", "High", "Presentation" } },
                                 Default = s.RasterQuality },
-                            new LemoineSettingDef { Id = "zoomsetting", Kind = "single", Label = "Zoom",
+                            new SettingDef { Id = "zoomsetting", Kind = "single", Label = "Zoom",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Fit to Page", "Scale %" } },
                                 Default = s.ZoomSetting },
-                            new LemoineSettingDef { Id = "zoompercent",  Kind = "number", Label = "Zoom percent (when Scale % mode)", Default = s.ZoomPercent },
-                            new LemoineSettingDef { Id = "viewlinksblue",    Kind = "toggle", Label = "View links in blue",               Default = s.ViewLinksInBlue },
-                            new LemoineSettingDef { Id = "replacehalftone",  Kind = "toggle", Label = "Replace halftone with thin lines", Default = s.ReplaceHalftoneWithThinLines },
+                            new SettingDef { Id = "zoompercent",  Kind = "number", Label = "Zoom percent (when Scale % mode)", Default = s.ZoomPercent },
+                            new SettingDef { Id = "viewlinksblue",    Kind = "toggle", Label = "View links in blue",               Default = s.ViewLinksInBlue },
+                            new SettingDef { Id = "replacehalftone",  Kind = "toggle", Label = "Replace halftone with thin lines", Default = s.ReplaceHalftoneWithThinLines },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G5", Title = "DWG Options",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "dwgsetup", Kind = "text", Label = "Default DWG export setup name",
+                            new SettingDef { Id = "dwgsetup", Kind = "text", Label = "Default DWG export setup name",
                                 Hint = "Must match a setup created in Revit via File → Export → DWG.",
                                 Options = new TextOpts { Placeholder = "Standard DWG" }, Default = s.DwgExportSetupName },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G7", Title = "NWC Options",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "nwccoords",    Kind = "single", Label = "Coordinate system",
+                            new SettingDef { Id = "nwccoords",    Kind = "single", Label = "Coordinate system",
                                 Options = new SingleSelectOpts { Items = new List<string> { "Shared", "Internal" } }, Default = s.NwcCoordinates },
-                            new LemoineSettingDef { Id = "nwcparams",    Kind = "single", Label = "Element parameters",
+                            new SettingDef { Id = "nwcparams",    Kind = "single", Label = "Element parameters",
                                 Options = new SingleSelectOpts { Items = new List<string> { "All", "Elements", "None" } }, Default = s.NwcParameters },
-                            new LemoineSettingDef { Id = "nwcfaceting",  Kind = "single", Label = "Mesh quality (faceting factor)",
+                            new SettingDef { Id = "nwcfaceting",  Kind = "single", Label = "Mesh quality (faceting factor)",
                                 Options = new SingleSelectOpts { Items = new List<string>(NwcFacetingLabels) }, Default = NwcFacetingLabels[1] },
-                            new LemoineSettingDef { Id = "nwcconvelemprop",  Kind = "toggle", Label = "Convert element properties",     Default = s.NwcConvertElementProps },
-                            new LemoineSettingDef { Id = "nwcdivide",        Kind = "toggle", Label = "Divide file into levels",         Default = s.NwcDivideByLevel },
-                            new LemoineSettingDef { Id = "nwclinks",         Kind = "toggle", Label = "Include linked Revit models",     Default = s.NwcExportLinks },
-                            new LemoineSettingDef { Id = "nwcparts",         Kind = "toggle", Label = "Include Revit parts",             Default = s.NwcExportParts },
-                            new LemoineSettingDef { Id = "nwcelementids",    Kind = "toggle", Label = "Include element IDs",             Default = s.NwcExportElementIds },
-                            new LemoineSettingDef { Id = "nwcurls",          Kind = "toggle", Label = "Include URL parameters",          Default = s.NwcExportUrls },
-                            new LemoineSettingDef { Id = "nwcmissingmats",   Kind = "toggle", Label = "Find missing materials",          Default = s.NwcFindMissingMaterials },
-                            new LemoineSettingDef { Id = "nwcroomgeo",       Kind = "toggle", Label = "Export room geometry",            Default = s.NwcExportRoomGeometry },
-                            new LemoineSettingDef { Id = "nwcroomattr",      Kind = "toggle", Label = "Attach room data as attributes",  Default = s.NwcExportRoomAsAttribute },
-                            new LemoineSettingDef { Id = "nwclights",        Kind = "toggle", Label = "Convert Revit lights",            Default = s.NwcConvertLights },
-                            new LemoineSettingDef { Id = "nwclinkedcad",     Kind = "toggle", Label = "Convert linked CAD formats",      Default = s.NwcConvertLinkedCad },
+                            new SettingDef { Id = "nwcconvelemprop",  Kind = "toggle", Label = "Convert element properties",     Default = s.NwcConvertElementProps },
+                            new SettingDef { Id = "nwcdivide",        Kind = "toggle", Label = "Divide file into levels",         Default = s.NwcDivideByLevel },
+                            new SettingDef { Id = "nwclinks",         Kind = "toggle", Label = "Include linked Revit models",     Default = s.NwcExportLinks },
+                            new SettingDef { Id = "nwcparts",         Kind = "toggle", Label = "Include Revit parts",             Default = s.NwcExportParts },
+                            new SettingDef { Id = "nwcelementids",    Kind = "toggle", Label = "Include element IDs",             Default = s.NwcExportElementIds },
+                            new SettingDef { Id = "nwcurls",          Kind = "toggle", Label = "Include URL parameters",          Default = s.NwcExportUrls },
+                            new SettingDef { Id = "nwcmissingmats",   Kind = "toggle", Label = "Find missing materials",          Default = s.NwcFindMissingMaterials },
+                            new SettingDef { Id = "nwcroomgeo",       Kind = "toggle", Label = "Export room geometry",            Default = s.NwcExportRoomGeometry },
+                            new SettingDef { Id = "nwcroomattr",      Kind = "toggle", Label = "Attach room data as attributes",  Default = s.NwcExportRoomAsAttribute },
+                            new SettingDef { Id = "nwclights",        Kind = "toggle", Label = "Convert Revit lights",            Default = s.NwcConvertLights },
+                            new SettingDef { Id = "nwclinkedcad",     Kind = "toggle", Label = "Convert linked CAD formats",      Default = s.NwcConvertLinkedCad },
                         }
                     },
-                    new LemoineSettingsGroup
+                    new SettingsGroup
                     {
                         Id = "G6", Title = "IFC Options",
-                        Settings = new List<LemoineSettingDef>
+                        Settings = new List<SettingDef>
                         {
-                            new LemoineSettingDef { Id = "ifcversion", Kind = "single", Label = "Default IFC version",
+                            new SettingDef { Id = "ifcversion", Kind = "single", Label = "Default IFC version",
                                 Options = new SingleSelectOpts { Items = new List<string> { "IFC2x3", "IFC4" } },
                                 Default = s.IfcVersion },
                         }
@@ -1445,7 +1445,7 @@ namespace LemoineTools.Tools.BulkExport
                 Content         = label,
                 Margin          = new Thickness(0, 0, 4, 0),
                 BorderThickness = new Thickness(1),
-                Template        = LemoineControlStyles.BuildFlatButtonTemplate(),
+                Template        = ControlStyles.BuildFlatButtonTemplate(),
                 Cursor          = Cursors.Hand,
             };
             b.SetResourceReference(Button.MinHeightProperty,  "LemoineH_BtnMin");
@@ -1534,7 +1534,7 @@ namespace LemoineTools.Tools.BulkExport
             combo.SetResourceReference(WpfComboBox.ForegroundProperty,  "LemoineText");
             combo.SetResourceReference(WpfComboBox.FontFamilyProperty,  "LemoineUiFont");
             combo.SetResourceReference(WpfComboBox.FontSizeProperty,    "LemoineFS_MD");
-            LemoineControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
+            ControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
             combo.SelectionChanged += (s, e) =>
             {
                 if (combo.SelectedItem is string val) onChange(val);

@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Commands
@@ -78,7 +78,7 @@ namespace LemoineTools.Commands
                 foreach (var g in new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>())
                     hostGridNames.Add(g.Name);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyDatumsCommand: read host grid names", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyDatumsCommand: read host grid names", ex); }
 
             var hostLevelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
@@ -86,7 +86,7 @@ namespace LemoineTools.Commands
                 foreach (var lvl in new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>())
                     hostLevelNames.Add(lvl.Name);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyDatumsCommand: read host level names", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyDatumsCommand: read host level names", ex); }
 
             foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
@@ -107,7 +107,7 @@ namespace LemoineTools.Commands
                             Name = g.Name, ElemId = g.Id.Value, ExistsInHost = hostGridNames.Contains(g.Name),
                         });
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"CopyDatumsCommand: read grids in {info.Name}", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyDatumsCommand: read grids in {info.Name}", ex); }
 
                 try
                 {
@@ -118,7 +118,7 @@ namespace LemoineTools.Commands
                             Name = lvl.Name, ElemId = lvl.Id.Value, ExistsInHost = hostLevelNames.Contains(lvl.Name),
                         });
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"CopyDatumsCommand: read levels in {info.Name}", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"CopyDatumsCommand: read levels in {info.Name}", ex); }
 
                 if (info.Grids.Count > 0 || info.Levels.Count > 0) result.Add(info);
             }

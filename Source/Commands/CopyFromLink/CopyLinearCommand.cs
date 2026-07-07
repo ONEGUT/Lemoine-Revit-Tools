@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.CopyFromLink;
 
@@ -110,7 +110,7 @@ namespace LemoineTools.Commands
                     list.Add(new CopyLinearWorksetInfo { Id = ws.Id.IntegerValue, Name = ws.Name });
                 list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearCommand: read user worksets", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearCommand: read user worksets", ex); }
             return list;
         }
 
@@ -131,7 +131,7 @@ namespace LemoineTools.Commands
                 }
                 list.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyLinearCommand: collect family symbols", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyLinearCommand: collect family symbols", ex); }
             return list;
         }
     }

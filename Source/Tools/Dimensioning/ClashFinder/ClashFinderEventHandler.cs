@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.Dimensioning.AutoDimension;
 
 namespace LemoineTools.Tools.Dimensioning
@@ -51,12 +51,12 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 if (Definitions == null || Definitions.Count == 0)
                 {
-                    Log(LemoineStrings.T("clash.finder.log.noDefs"), "fail");
+                    Log(AppStrings.T("clash.finder.log.noDefs"), "fail");
                     viewsFailed++;
                 }
                 else if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log(LemoineStrings.T("clash.finder.log.noViews"), "fail");
+                    Log(AppStrings.T("clash.finder.log.noViews"), "fail");
                     viewsFailed++;
                 }
                 else
@@ -70,13 +70,13 @@ namespace LemoineTools.Tools.Dimensioning
                         // Abandon mid-run during detection: stop scanning more definitions. Nothing
                         // is committed yet in this phase; Phase 2 below sees the same cancel flag and
                         // marks only what was already detected (its own check then stops it too).
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            Log(LemoineStrings.T("common.log.stoppedByUser", defsDetected, Definitions.Count), "warn");
+                            Log(AppStrings.T("common.log.stoppedByUser", defsDetected, Definitions.Count), "warn");
                             break;
                         }
 
-                        Log(LemoineStrings.T("clash.finder.log.detecting", def.Name), "info");
+                        Log(AppStrings.T("clash.finder.log.detecting", def.Name), "info");
                         var opts = new ClashMarkingOptions
                         {
                             ToleranceMm       = def.ToleranceMm,
@@ -121,9 +121,9 @@ namespace LemoineTools.Tools.Dimensioning
                         {
                             // Abandon mid-run: stop marking/dimensioning more views. Each view commits
                             // in its own transaction below, so every view already processed is preserved.
-                            if (LemoineRun.CancelRequested)
+                            if (RunState.CancelRequested)
                             {
-                                Log(LemoineStrings.T("common.log.stoppedByUser", processed, ViewIds.Count), "warn");
+                                Log(AppStrings.T("common.log.stoppedByUser", processed, ViewIds.Count), "warn");
                                 break;
                             }
 
@@ -137,7 +137,7 @@ namespace LemoineTools.Tools.Dimensioning
                                 continue;
                             }
 
-                            Log(LemoineStrings.T("clash.finder.log.viewHeader", view.Name), "info");
+                            Log(AppStrings.T("clash.finder.log.viewHeader", view.Name), "info");
                             int markers = 0, markerFails = 0;
                             bool viewFailed = false;
                             try
@@ -151,7 +151,7 @@ namespace LemoineTools.Tools.Dimensioning
                                     if (ClearPrevious)
                                     {
                                         int removed = ClearViewMarkers(doc, viewId);
-                                        if (removed > 0) Log(LemoineStrings.T("clash.finder.log.cleared", removed, view.Name), "info");
+                                        if (removed > 0) Log(AppStrings.T("clash.finder.log.cleared", removed, view.Name), "info");
                                     }
                                     foreach (var (engine, det, cache) in dets)
                                     {
@@ -164,7 +164,7 @@ namespace LemoineTools.Tools.Dimensioning
                                     }
                                     tx.Commit();
                                 }
-                                Log(LemoineStrings.T("clash.finder.log.viewMarkers", view.Name, markers), markers > 0 ? "pass" : "info");
+                                Log(AppStrings.T("clash.finder.log.viewMarkers", view.Name, markers), markers > 0 ? "pass" : "info");
 
                                 // Dimension this view (its own transaction), only when it has markers.
                                 if (RunDimensionPass && markers > 0)
@@ -215,7 +215,7 @@ namespace LemoineTools.Tools.Dimensioning
                                             foreach (var r in requests)
                                                 r.ClusterId = "c" + (calloutSeq++).ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
                                             if (pass > 0)
-                                                Log(LemoineStrings.T("clash.finder.log.reassessed", requests.Count), "info");
+                                                Log(AppStrings.T("clash.finder.log.reassessed", requests.Count), "info");
                                             var ids = CreateDenseCallouts(doc, view, requests, dets, deferred,
                                                 ref totalMarkers, ref totalMarkerFails);
                                             allRequests.AddRange(requests);
@@ -250,13 +250,13 @@ namespace LemoineTools.Tools.Dimensioning
                                     var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes, cropBounded);
                                     totalDims     += dimResult.Placed;
                                     totalDimFails += dimResult.Failures;
-                                    Log(LemoineStrings.T("clash.finder.log.viewDims", view.Name, dimResult.Placed, dimViewIds.Count - 1, dimResult.Failures),
+                                    Log(AppStrings.T("clash.finder.log.viewDims", view.Name, dimResult.Placed, dimViewIds.Count - 1, dimResult.Failures),
                                         dimResult.Placed > 0 ? "pass" : "info");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                Log(LemoineStrings.T("clash.finder.log.viewFailed", view.Name, ex.Message), "fail");
+                                Log(AppStrings.T("clash.finder.log.viewFailed", view.Name, ex.Message), "fail");
                                 viewFailed = true;
                             }
 
@@ -276,13 +276,13 @@ namespace LemoineTools.Tools.Dimensioning
                         dimCfg.MaxCalloutScale = snapMaxCallout;
                     }
 
-                    Log(LemoineStrings.T("clash.finder.log.done", totalMarkers, totalDims, viewsDone, totalMarkerFails + totalDimFails, viewsFailed, viewsSkipped),
+                    Log(AppStrings.T("clash.finder.log.done", totalMarkers, totalDims, viewsDone, totalMarkerFails + totalDimFails, viewsFailed, viewsSkipped),
                         totalMarkers + totalDims > 0 ? "pass" : (totalMarkerFails + totalDimFails) > 0 ? "fail" : "info");
                 }
             }
             catch (Exception ex)
             {
-                Log(LemoineStrings.T("clash.finder.log.fatal", ex.Message), "fail");
+                Log(AppStrings.T("clash.finder.log.fatal", ex.Message), "fail");
                 totalMarkerFails++;
             }
 
@@ -353,12 +353,12 @@ namespace LemoineTools.Tools.Dimensioning
 
                         ids.Add(cv.Id);
                         deferred.AddRange(req.SourceKeys);
-                        Log(LemoineStrings.T("clash.finder.log.denseCallout", req.ClusterId, cv.Name, cv.Scale, placed, parentRemoved, req.ClashCount), "pass");
+                        Log(AppStrings.T("clash.finder.log.denseCallout", req.ClusterId, cv.Name, cv.Scale, placed, parentRemoved, req.ClashCount), "pass");
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error("ClashFinderEventHandler: create dense-area callout", ex);
-                        Log(LemoineStrings.T("clash.finder.log.denseFailed", req.ClusterId, ex.Message), "fail");
+                        DiagnosticsLog.Error("ClashFinderEventHandler: create dense-area callout", ex);
+                        Log(AppStrings.T("clash.finder.log.denseFailed", req.ClusterId, ex.Message), "fail");
                     }
                 }
 
@@ -374,7 +374,7 @@ namespace LemoineTools.Tools.Dimensioning
                         {
                             bool unhidden = false;
                             try { parentView.SetCategoryHidden(calloutsCat, false); unhidden = true; }
-                            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: unhide Callouts category", ex); }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: unhide Callouts category", ex); }
                             Log(unhidden
                                 ? $"'{parentView.Name}' had the Callouts annotation category hidden — enabled it so the bubbles show."
                                 : $"'{parentView.Name}' HIDES the Callouts annotation category (its view template controls visibility) — "
@@ -382,7 +382,7 @@ namespace LemoineTools.Tools.Dimensioning
                                 unhidden ? "info" : "fail");
                         }
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: check Callouts visibility", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: check Callouts visibility", ex); }
                 }
                 tx.Commit();
             }
@@ -450,8 +450,8 @@ namespace LemoineTools.Tools.Dimensioning
                         {
                             // A crop that fails to grow starves the cropBounded dimension pass of
                             // references outside the drawn boundary — tell the run log, don't just swallow.
-                            LemoineLog.Swallowed("ClashFinderEventHandler: grow user callout crop", ex);
-                            Log(LemoineStrings.T("clash.finder.log.userCropFail", cv.Name, ex.Message), "fail");
+                            DiagnosticsLog.Swallowed("ClashFinderEventHandler: grow user callout crop", ex);
+                            Log(AppStrings.T("clash.finder.log.userCropFail", cv.Name, ex.Message), "fail");
                         }
                         doc.Regenerate();   // crop/scale must be current before the marker pass filters by view volume
 
@@ -482,16 +482,16 @@ namespace LemoineTools.Tools.Dimensioning
 
                         if (!UserCalloutSchema.Stamp(cv, req.MembershipMinWorld, req.MembershipMaxWorld,
                                 req.MinWorld, req.MaxWorld))
-                            Log(LemoineStrings.T("clash.finder.log.userStampFail", cv.Name), "fail");
+                            Log(AppStrings.T("clash.finder.log.userStampFail", cv.Name), "fail");
 
                         ids.Add(cv.Id);
                         deferred.AddRange(req.SourceKeys);
-                        Log(LemoineStrings.T("clash.finder.log.userAdopted", cv.Name, cv.Scale, placed, (pruned > 0 ? LemoineStrings.T("clash.finder.log.prunedClause", pruned) : ""), parentRemoved, req.ClashCount), "pass");
+                        Log(AppStrings.T("clash.finder.log.userAdopted", cv.Name, cv.Scale, placed, (pruned > 0 ? AppStrings.T("clash.finder.log.prunedClause", pruned) : ""), parentRemoved, req.ClashCount), "pass");
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error("ClashFinderEventHandler: adopt user callout", ex);
-                        Log(LemoineStrings.T("clash.finder.log.userAdoptFail", calloutName, ex.Message), "fail");
+                        DiagnosticsLog.Error("ClashFinderEventHandler: adopt user callout", ex);
+                        Log(AppStrings.T("clash.finder.log.userAdoptFail", calloutName, ex.Message), "fail");
                     }
                     // The survey claimed this rectangle's clashes for THIS callout (first
                     // containment wins) whether or not adoption succeeded — later callouts
@@ -541,7 +541,7 @@ namespace LemoineTools.Tools.Dimensioning
                     var entry = Entry(dc);
                     Curve? gc = null;
                     try { gc = dc.GeometryCurve; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: read marker line geometry", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: read marker line geometry", ex); }
                     if (gc == null) continue;
                     entry.LinePts.Add(gc.GetEndPoint(0));
                     entry.LinePts.Add(gc.GetEndPoint(1));
@@ -559,8 +559,8 @@ namespace LemoineTools.Tools.Dimensioning
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ClashFinderEventHandler: collect callout markers for membership prune", ex);
-                Log(LemoineStrings.T("clash.finder.log.userScanFail", calloutView.Name, ex.Message), "fail");
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: collect callout markers for membership prune", ex);
+                Log(AppStrings.T("clash.finder.log.userScanFail", calloutView.Name, ex.Message), "fail");
             }
 
             int removed = 0;
@@ -582,7 +582,7 @@ namespace LemoineTools.Tools.Dimensioning
                 foreach (var id in entry.Ids)
                 {
                     try { if (doc.Delete(id).Count > 0) removed++; }
-                    catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
                 }
             }
             return removed;
@@ -608,16 +608,16 @@ namespace LemoineTools.Tools.Dimensioning
                     try
                     {
                         doc.Delete(stale.Id);
-                        Log(LemoineStrings.T("clash.finder.log.deletedStale", staleName), "info");
+                        Log(AppStrings.T("clash.finder.log.deletedStale", staleName), "info");
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed("ClashFinderEventHandler: delete stale callout", ex);
-                        Log(LemoineStrings.T("clash.finder.log.deleteStaleFail", staleName), "fail");
+                        DiagnosticsLog.Swallowed("ClashFinderEventHandler: delete stale callout", ex);
+                        Log(AppStrings.T("clash.finder.log.deleteStaleFail", staleName), "fail");
                     }
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: stale callout sweep", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: stale callout sweep", ex); }
         }
 
         /// <summary>Deletes the parent view's marker elements (tagged cross lines + filled
@@ -641,12 +641,12 @@ namespace LemoineTools.Tools.Dimensioning
                     .Where(e => ClashTagSchema.IsOurs(e) && keys.Contains(ClashTagSchema.ReadGroup(e)))
                     .Select(e => e.Id));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: collect parent markers of callout clashes", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: collect parent markers of callout clashes", ex); }
 
             foreach (var id in toDelete)
             {
                 try { if (doc.Delete(id).Count > 0) removed++; }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: delete parent marker", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: delete parent marker", ex); }
             }
             return removed;
         }
@@ -672,14 +672,14 @@ namespace LemoineTools.Tools.Dimensioning
                     cb.Max = new XYZ(Math.Max(req.MinWorld.X, req.MaxWorld.X), Math.Max(req.MinWorld.Y, req.MaxWorld.Y), cb.Max.Z);
                     existing.CropBox = cb;
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: refresh callout crop", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: refresh callout crop", ex); }
                 return existing;
             }
 
             View callout = ViewSection.CreateCallout(doc, parentView.Id, parentView.GetTypeId(), req.MinWorld, req.MaxWorld);
             if (callout == null)
             {
-                Log(LemoineStrings.T("clash.finder.log.noCalloutView", req.ClusterId), "fail");
+                Log(AppStrings.T("clash.finder.log.noCalloutView", req.ClusterId), "fail");
                 return null;
             }
 
@@ -689,7 +689,7 @@ namespace LemoineTools.Tools.Dimensioning
             if (parentView.ViewTemplateId != null && parentView.ViewTemplateId != ElementId.InvalidElementId)
             {
                 try { callout.ViewTemplateId = parentView.ViewTemplateId; }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: apply template to callout", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: apply template to callout", ex); }
             }
             UnpinTemplate(callout);
             TrySetCalloutScale(callout, req.Scale);
@@ -697,9 +697,9 @@ namespace LemoineTools.Tools.Dimensioning
             try { callout.Name = name; }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ClashFinderEventHandler: name callout (duplicate?)", ex);
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: name callout (duplicate?)", ex);
                 try { callout.Name = name + " " + Guid.NewGuid().ToString("N").Substring(0, 4); }
-                catch (Exception ex2) { LemoineLog.Swallowed("ClashFinderEventHandler: name callout fallback", ex2); }
+                catch (Exception ex2) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: name callout fallback", ex2); }
             }
             return callout;
         }
@@ -713,7 +713,7 @@ namespace LemoineTools.Tools.Dimensioning
                 if (v.ViewTemplateId != null && v.ViewTemplateId != ElementId.InvalidElementId)
                     v.ViewTemplateId = ElementId.InvalidElementId;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinderEventHandler: unpin callout template", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: unpin callout template", ex); }
         }
 
         private void TrySetCalloutScale(View callout, int scale)
@@ -722,12 +722,12 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 callout.Scale = scale;
                 if (callout.Scale != scale)
-                    Log(LemoineStrings.T("clash.finder.log.scaleStuck", callout.Name, callout.Scale, scale), "fail");
+                    Log(AppStrings.T("clash.finder.log.scaleStuck", callout.Name, callout.Scale, scale), "fail");
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
-                Log(LemoineStrings.T("clash.finder.log.scaleSetFail", callout.Name, scale), "fail");
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
+                Log(AppStrings.T("clash.finder.log.scaleSetFail", callout.Name, scale), "fail");
             }
         }
 
@@ -744,7 +744,7 @@ namespace LemoineTools.Tools.Dimensioning
                     .Where(ClashTagSchema.IsOurs)
                     .Select(e => e.Id));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
 
             try
             {
@@ -754,7 +754,7 @@ namespace LemoineTools.Tools.Dimensioning
                     .Where(ClashTagSchema.IsOurs)
                     .Select(e => e.Id));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
 
             try
             {
@@ -764,12 +764,12 @@ namespace LemoineTools.Tools.Dimensioning
                     .Where(ClashTagSchema.IsOurs)
                     .Select(e => e.Id));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
 
             foreach (var id in toDelete)
             {
                 try { if (doc.Delete(id).Count > 0) removed++; }
-                catch (Exception ex) { LemoineLog.Swallowed("ClashFinder: delete tagged element", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: delete tagged element", ex); }
             }
             return removed;
         }

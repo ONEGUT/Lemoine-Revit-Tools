@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Xml.Serialization;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -87,7 +87,7 @@ namespace LemoineTools.Tools.BulkExport
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "LemoineTools");
-                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings: create config directory", __lex); }
+                try { Directory.CreateDirectory(dir); } catch (Exception __lex) { DiagnosticsLog.Swallowed("BulkExportSettings: create config directory", __lex); }
                 return Path.Combine(dir, "BulkExportSettings.xml");
             }
         }
@@ -100,7 +100,7 @@ namespace LemoineTools.Tools.BulkExport
                 using (var w = new StreamWriter(FilePath))
                     xs.Serialize(w, this);
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings.Save", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("BulkExportSettings.Save", __lex); }
         }
 
         // Legacy file written before this tool graduated from "Batch Export".
@@ -126,7 +126,7 @@ namespace LemoineTools.Tools.BulkExport
             }
             catch (Exception __lex)
             {
-                LemoineLog.Swallowed("BulkExportSettings.MigrateFromLegacy", __lex);
+                DiagnosticsLog.Swallowed("BulkExportSettings.MigrateFromLegacy", __lex);
                 return null;
             }
         }
@@ -147,7 +147,7 @@ namespace LemoineTools.Tools.BulkExport
                 var migrated = MigrateFromLegacy();
                 if (migrated != null) return migrated;
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("BulkExportSettings.Load", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("BulkExportSettings.Load", __lex); }
             return new BulkExportSettings();
         }
     }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (view == null || view.IsTemplate)
                 {
-                    pushLog(LemoineStrings.T("modify.splitByCell.log.noActiveView"), "fail");
+                    pushLog(AppStrings.T("modify.splitByCell.log.noActiveView"), "fail");
                     onComplete(0, 1, 0);
                     return;
                 }
@@ -46,7 +46,7 @@ namespace LemoineTools.Tools.ModifyElements
                 if (PreSelectedIds != null && PreSelectedIds.Count > 0)
                 {
                     targetIds = new List<ElementId>(PreSelectedIds);
-                    pushLog(LemoineStrings.T("modify.splitByCell.log.preSelected", targetIds.Count), "info");
+                    pushLog(AppStrings.T("modify.splitByCell.log.preSelected", targetIds.Count), "info");
                 }
                 else
                 {
@@ -65,19 +65,19 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (!targetIds.Any())
                 {
-                    pushLog(LemoineStrings.T("modify.splitByCell.log.noElements"), "info");
+                    pushLog(AppStrings.T("modify.splitByCell.log.noElements"), "info");
                     onComplete(0, 0, 0);
                     return;
                 }
 
-                pushLog(LemoineStrings.T("modify.splitByCell.log.foundElements", targetIds.Count), "info");
+                pushLog(AppStrings.T("modify.splitByCell.log.foundElements", targetIds.Count), "info");
 
                 XYZ? gridOrigin = null;
                 if (UseProjectOrigin)
                 {
                     XYZ? bp = SplitByCellHelpers.GetProjectBasePoint(doc);
                     if (bp == null)
-                        pushLog(LemoineStrings.T("modify.splitByCell.log.noBasePoint"), "info");
+                        pushLog(AppStrings.T("modify.splitByCell.log.noBasePoint"), "info");
                     gridOrigin = bp ?? XYZ.Zero;
                 }
 
@@ -95,9 +95,9 @@ namespace LemoineTools.Tools.ModifyElements
                     {
                         // Abandon mid-run: stop processing more elements but let tg.Assimilate()
                         // (below) still run so every per-element split already committed survives.
-                        if (LemoineRun.CancelRequested)
+                        if (RunState.CancelRequested)
                         {
-                            pushLog(LemoineStrings.T("common.log.stoppedByUser", progress.Done, targetIds.Count), "warn");
+                            pushLog(AppStrings.T("common.log.stoppedByUser", progress.Done, targetIds.Count), "warn");
                             break;
                         }
 
@@ -125,33 +125,33 @@ namespace LemoineTools.Tools.ModifyElements
                                 if (cellStatus == CellSplitStatus.Split)
                                 {
                                     created += n;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name ?? string.Empty, el.Id, n), "pass");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name ?? string.Empty, el.Id, n), "pass");
                                     tx.Commit();
                                 }
                                 else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name ?? string.Empty, el.Id), "info");
                                 }
                                 else if (cellStatus == CellSplitStatus.NoGeometry)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name ?? string.Empty, el.Id), "info");
                                 }
                                 else // NoCellsIntersected
                                 {
                                     tx.RollBack();
                                     failed++;
-                                    pushLog(LemoineStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name ?? string.Empty, el.Id), "fail");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name ?? string.Empty, el.Id), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
                                 tx.RollBack();
                                 failed++;
-                                pushLog(LemoineStrings.T("modify.splitByCell.log.cellError", el.Category?.Name ?? string.Empty, el.Id, ex.Message), "fail");
+                                pushLog(AppStrings.T("modify.splitByCell.log.cellError", el.Category?.Name ?? string.Empty, el.Id, ex.Message), "fail");
                             }
                         }
 
@@ -162,14 +162,14 @@ namespace LemoineTools.Tools.ModifyElements
                     tg.Assimilate();
                 }
 
-                pushLog(LemoineStrings.T("modify.splitByCell.log.done", created, skipped, failed),
+                pushLog(AppStrings.T("modify.splitByCell.log.done", created, skipped, failed),
                         failed > 0 ? "fail" : "pass");
                 onProgress(100, created, failed, skipped);
                 onComplete(created, failed, skipped);
             }
             catch (Exception ex)
             {
-                pushLog(LemoineStrings.T("modify.splitByCell.log.error", ex.Message), "fail");
+                pushLog(AppStrings.T("modify.splitByCell.log.error", ex.Message), "fail");
                 onComplete(0, 1, 0);
             }
             finally

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 {
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                         .OrderBy(g => g.Id.Value)
                         .ToList();
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("GridTargetResolver: collect grids", ex); continue; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("GridTargetResolver: collect grids", ex); continue; }
 
                 foreach (var grid in grids)
                 {

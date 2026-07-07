@@ -5,8 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 namespace LemoineTools.Tools.LinkViews.BulkRename
 {
@@ -17,18 +17,18 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
     /// rewrite Name only. A live preview (shared with the run handler through
     /// <see cref="BulkRenameEngine.Plan"/>) shows exactly what will be written.
     /// </summary>
-    public class BulkRenameViewModel : ILemoineTool, ILemoineReviewable, IStepAware, ILemoineToolCleanup
+    public class BulkRenameViewModel : IStepFlowTool, IReviewableTool, IStepAware, IToolCleanup
     {
         // ── Identity ──────────────────────────────────────────────────
-        public string Title    => LemoineStrings.T("linkviews.bulkRename.title");
-        public string RunLabel => LemoineStrings.T("linkviews.bulkRename.runLabel");
+        public string Title    => AppStrings.T("linkviews.bulkRename.title");
+        public string RunLabel => AppStrings.T("linkviews.bulkRename.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("linkviews.bulkRename.steps.S1"),          required: true),
-            new StepDefinition("S2", LemoineStrings.T("linkviews.bulkRename.steps.S2"),    required: true),
-            new StepDefinition("S3", LemoineStrings.T("linkviews.bulkRename.steps.S3"), required: true),
-            new StepDefinition("S4", LemoineStrings.T("linkviews.bulkRename.steps.S4"),    required: false),
+            new StepDefinition("S1", AppStrings.T("linkviews.bulkRename.steps.S1"),          required: true),
+            new StepDefinition("S2", AppStrings.T("linkviews.bulkRename.steps.S2"),    required: true),
+            new StepDefinition("S3", AppStrings.T("linkviews.bulkRename.steps.S3"), required: true),
+            new StepDefinition("S4", AppStrings.T("linkviews.bulkRename.steps.S4"),    required: false),
         };
 
         // ── Entry types passed from the Command (main thread) ─────────
@@ -49,10 +49,10 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         // ── Mode labels (display ↔ enum) ──────────────────────────────
         private static readonly (string Label, RenameMode Mode)[] Modes =
         {
-            (LemoineStrings.T("linkviews.bulkRename.labels.modeFindReplace"),      RenameMode.FindReplace),
-            (LemoineStrings.T("linkviews.bulkRename.labels.modePrefixSuffix"), RenameMode.PrefixSuffix),
-            (LemoineStrings.T("linkviews.bulkRename.labels.modeSequential"), RenameMode.Sequential),
-            (LemoineStrings.T("linkviews.bulkRename.labels.modeToken"),       RenameMode.Token),
+            (AppStrings.T("linkviews.bulkRename.labels.modeFindReplace"),      RenameMode.FindReplace),
+            (AppStrings.T("linkviews.bulkRename.labels.modePrefixSuffix"), RenameMode.PrefixSuffix),
+            (AppStrings.T("linkviews.bulkRename.labels.modeSequential"), RenameMode.Sequential),
+            (AppStrings.T("linkviews.bulkRename.labels.modeToken"),       RenameMode.Token),
         };
         private static string LabelFor(RenameMode m) => Modes.First(x => x.Mode == m).Label;
         private static RenameMode ModeFromLabel(string? l) =>
@@ -60,13 +60,13 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 ? RenameMode.FindReplace
                 : Modes.First(x => x.Label == l).Mode;
 
-        private static readonly string FieldNumber = LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetNumber");
-        private static readonly string FieldName   = LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetName");
+        private static readonly string FieldNumber = AppStrings.T("linkviews.bulkRename.labels.fieldSheetNumber");
+        private static readonly string FieldName   = AppStrings.T("linkviews.bulkRename.labels.fieldSheetName");
 
         // ── State ──────────────────────────────────────────────────────
         private readonly List<SheetEntry>  _sheets;
         private readonly List<ViewEntry>   _views;
-        private readonly LemoineBrowserTree _browserTree;
+        private readonly BrowserTree _browserTree;
 
         private RenameTarget _target = RenameTarget.Sheets;
         private RenameField  _field  = RenameField.Name;
@@ -100,13 +100,13 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         public BulkRenameViewModel(
             BulkRenameRunHandler? runHandler, ExternalEvent? runEvent,
             List<SheetEntry>? sheets, List<ViewEntry>? views,
-            LemoineBrowserTree? browserTree = null)
+            BrowserTree? browserTree = null)
         {
             _runHandler  = runHandler;
             _runEvent    = runEvent;
             _sheets      = sheets ?? new List<SheetEntry>();
             _views       = views  ?? new List<ViewEntry>();
-            _browserTree = browserTree ?? new LemoineBrowserTree();
+            _browserTree = browserTree ?? new BrowserTree();
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -128,26 +128,26 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             if (stepId == "S1") return BuildTargetPicker();
             if (stepId == "S2") return BuildItemPicker();
             if (stepId == "S3") return BuildOperation();
-            return null; // S4 rendered by the framework (ILemoineReviewable)
+            return null; // S4 rendered by the framework (IReviewableTool)
         }
 
         // ── S1: Target ─────────────────────────────────────────────────
         private FrameworkElement BuildTargetPicker()
         {
             var outer = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            outer.Children.Add(SectionHeader(LemoineStrings.T("linkviews.bulkRename.labels.headerTarget")));
+            outer.Children.Add(SectionHeader(AppStrings.T("linkviews.bulkRename.labels.headerTarget")));
 
-            var select = new LemoineSingleSelect
+            var select = new SingleSelect
             {
                 Width = 200,
-                Items = new[] { LemoineStrings.T("linkviews.bulkRename.labels.targetSheets"), LemoineStrings.T("linkviews.bulkRename.labels.targetViews") },
-                SelectedItem = _target == RenameTarget.Sheets ? LemoineStrings.T("linkviews.bulkRename.labels.targetSheets") : LemoineStrings.T("linkviews.bulkRename.labels.targetViews"),
-                AccessibleName = LemoineStrings.T("linkviews.bulkRename.labels.a11yTarget"),
+                Items = new[] { AppStrings.T("linkviews.bulkRename.labels.targetSheets"), AppStrings.T("linkviews.bulkRename.labels.targetViews") },
+                SelectedItem = _target == RenameTarget.Sheets ? AppStrings.T("linkviews.bulkRename.labels.targetSheets") : AppStrings.T("linkviews.bulkRename.labels.targetViews"),
+                AccessibleName = AppStrings.T("linkviews.bulkRename.labels.a11yTarget"),
             };
             select.SelectionChanged += v =>
             {
                 if (string.IsNullOrEmpty(v)) return;
-                _target = v == LemoineStrings.T("linkviews.bulkRename.labels.targetViews") ? RenameTarget.Views : RenameTarget.Sheets;
+                _target = v == AppStrings.T("linkviews.bulkRename.labels.targetViews") ? RenameTarget.Views : RenameTarget.Sheets;
                 if (_target == RenameTarget.Views) _field = RenameField.Name;
                 _refreshStep?.Invoke("S2");
                 _refreshStep?.Invoke("S3");
@@ -155,7 +155,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             };
             outer.Children.Add(select);
 
-            var hint = BodyHint(LemoineStrings.T("linkviews.bulkRename.labels.hintTarget"));
+            var hint = BodyHint(AppStrings.T("linkviews.bulkRename.labels.hintTarget"));
             outer.Children.Add(hint);
             return outer;
         }
@@ -163,10 +163,10 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         // ── S2: Select items ───────────────────────────────────────────
         private FrameworkElement BuildItemPicker()
         {
-            var picker = new LemoineBrowserTreePicker
+            var picker = new BrowserTreePicker
             {
                 Height         = 300,
-                AccessibleName = LemoineStrings.T("linkviews.bulkRename.labels.itemsPicker"),
+                AccessibleName = AppStrings.T("linkviews.bulkRename.labels.itemsPicker"),
             };
             // Subscribe BEFORE SetTree — the single SelectionChanged fired at the end
             // of SetTree is what re-seeds the mirror sets on step rebuild.
@@ -197,13 +197,13 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             // Field selector (sheets only)
             if (_target == RenameTarget.Sheets)
             {
-                outer.Children.Add(SectionHeader(LemoineStrings.T("linkviews.bulkRename.labels.headerField")));
-                var fieldSelect = new LemoineSingleSelect
+                outer.Children.Add(SectionHeader(AppStrings.T("linkviews.bulkRename.labels.headerField")));
+                var fieldSelect = new SingleSelect
                 {
                     Width = 200,
                     Items = new[] { FieldName, FieldNumber },
                     SelectedItem = _field == RenameField.Number ? FieldNumber : FieldName,
-                    AccessibleName = LemoineStrings.T("linkviews.bulkRename.labels.a11yField"),
+                    AccessibleName = AppStrings.T("linkviews.bulkRename.labels.a11yField"),
                 };
                 fieldSelect.SelectionChanged += v =>
                 {
@@ -215,17 +215,17 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             }
             else
             {
-                outer.Children.Add(BodyHint(LemoineStrings.T("linkviews.bulkRename.labels.renamingView")));
+                outer.Children.Add(BodyHint(AppStrings.T("linkviews.bulkRename.labels.renamingView")));
             }
 
             // Mode selector
-            outer.Children.Add(SectionHeader(LemoineStrings.T("linkviews.bulkRename.labels.headerOperation"), topMargin: 14));
-            var modeSelect = new LemoineSingleSelect
+            outer.Children.Add(SectionHeader(AppStrings.T("linkviews.bulkRename.labels.headerOperation"), topMargin: 14));
+            var modeSelect = new SingleSelect
             {
                 Width = 220,
                 Items = Modes.Select(m => m.Label).ToArray(),
                 SelectedItem = LabelFor(_config.Mode),
-                AccessibleName = LemoineStrings.T("linkviews.bulkRename.labels.a11yOperation"),
+                AccessibleName = AppStrings.T("linkviews.bulkRename.labels.a11yOperation"),
             };
             modeSelect.SelectionChanged += v =>
             {
@@ -246,7 +246,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
             outer.Children.Add(sep);
 
-            outer.Children.Add(SectionHeader(LemoineStrings.T("linkviews.bulkRename.labels.headerPreview")));
+            outer.Children.Add(SectionHeader(AppStrings.T("linkviews.bulkRename.labels.headerPreview")));
             _previewCount = BodyHint("");
             outer.Children.Add(_previewCount);
 
@@ -277,19 +277,19 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             {
                 case RenameMode.FindReplace:
                 {
-                    var find = new LemoineTextField { Label = LemoineStrings.T("linkviews.bulkRename.labels.findLabel"), Placeholder = LemoineStrings.T("linkviews.bulkRename.labels.findPlaceholder"), Text = _config.Find };
+                    var find = new TextField { Label = AppStrings.T("linkviews.bulkRename.labels.findLabel"), Placeholder = AppStrings.T("linkviews.bulkRename.labels.findPlaceholder"), Text = _config.Find };
                     find.TextChanged += t => { _config.Find = t; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(find);
 
-                    var repl = new LemoineTextField { Label = LemoineStrings.T("linkviews.bulkRename.labels.replaceLabel"), Placeholder = LemoineStrings.T("linkviews.bulkRename.labels.replacePlaceholder"), Text = _config.Replace, Margin = new Thickness(0, 8, 0, 0) };
+                    var repl = new TextField { Label = AppStrings.T("linkviews.bulkRename.labels.replaceLabel"), Placeholder = AppStrings.T("linkviews.bulkRename.labels.replacePlaceholder"), Text = _config.Replace, Margin = new Thickness(0, 8, 0, 0) };
                     repl.TextChanged += t => { _config.Replace = t; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(repl);
 
-                    var toggles = new LemoineToggleSwitches { AccessibleName = LemoineStrings.T("linkviews.bulkRename.labels.findOptions"), Margin = new Thickness(0, 8, 0, 0) };
+                    var toggles = new ToggleSwitches { AccessibleName = AppStrings.T("linkviews.bulkRename.labels.findOptions"), Margin = new Thickness(0, 8, 0, 0) };
                     toggles.SetItems(new List<ToggleItem>
                     {
-                        new ToggleItem { Id = "case",  Label = LemoineStrings.T("linkviews.bulkRename.labels.caseSensitive"),          DefaultOn = _config.CaseSensitive },
-                        new ToggleItem { Id = "whole", Label = LemoineStrings.T("linkviews.bulkRename.labels.wholeField"),   DefaultOn = _config.WholeField },
+                        new ToggleItem { Id = "case",  Label = AppStrings.T("linkviews.bulkRename.labels.caseSensitive"),          DefaultOn = _config.CaseSensitive },
+                        new ToggleItem { Id = "whole", Label = AppStrings.T("linkviews.bulkRename.labels.wholeField"),   DefaultOn = _config.WholeField },
                     });
                     toggles.StateChanged += d =>
                     {
@@ -304,11 +304,11 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 case RenameMode.PrefixSuffix:
                 {
-                    var prefix = new LemoineTextField { Label = LemoineStrings.T("linkviews.bulkRename.labels.prefixLabel"), Placeholder = LemoineStrings.T("linkviews.bulkRename.labels.prefixPlaceholder"), Text = _config.Prefix };
+                    var prefix = new TextField { Label = AppStrings.T("linkviews.bulkRename.labels.prefixLabel"), Placeholder = AppStrings.T("linkviews.bulkRename.labels.prefixPlaceholder"), Text = _config.Prefix };
                     prefix.TextChanged += t => { _config.Prefix = t; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(prefix);
 
-                    var suffix = new LemoineTextField { Label = LemoineStrings.T("linkviews.bulkRename.labels.suffixLabel"), Placeholder = LemoineStrings.T("linkviews.bulkRename.labels.suffixPlaceholder"), Text = _config.Suffix, Margin = new Thickness(0, 8, 0, 0) };
+                    var suffix = new TextField { Label = AppStrings.T("linkviews.bulkRename.labels.suffixLabel"), Placeholder = AppStrings.T("linkviews.bulkRename.labels.suffixPlaceholder"), Text = _config.Suffix, Margin = new Thickness(0, 8, 0, 0) };
                     suffix.TextChanged += t => { _config.Suffix = t; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(suffix);
                     break;
@@ -316,7 +316,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 case RenameMode.Sequential:
                 {
-                    var tokens = new LemoineTokenInput(FieldTokens(includeSeq: true), "{Seq}") { Text = _config.SeqPattern };
+                    var tokens = new TokenInput(FieldTokens(includeSeq: true), "{Seq}") { Text = _config.SeqPattern };
                     tokens.TextChanged += (s, e) => { _config.SeqPattern = tokens.Text; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(tokens);
                     _modeHost.Children.Add(BuildSeqSteppers());
@@ -325,7 +325,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 case RenameMode.Token:
                 {
-                    var tokens = new LemoineTokenInput(FieldTokens(includeSeq: true), DefaultTokenPattern()) { Text = _config.TokenPattern };
+                    var tokens = new TokenInput(FieldTokens(includeSeq: true), DefaultTokenPattern()) { Text = _config.TokenPattern };
                     tokens.TextChanged += (s, e) => { _config.TokenPattern = tokens.Text; RebuildPreview(); OnValidationChanged(); };
                     _modeHost.Children.Add(tokens);
                     _modeHost.Children.Add(BuildSeqSteppers());
@@ -338,9 +338,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
 
-            row.Children.Add(LabeledStepper(LemoineStrings.T("linkviews.bulkRename.labels.seqStart"), _config.SeqStart, 0, 100000, v => _config.SeqStart = v));
-            row.Children.Add(LabeledStepper(LemoineStrings.T("linkviews.bulkRename.labels.seqIncrement"), _config.SeqIncrement, 1, 1000, v => _config.SeqIncrement = v));
-            row.Children.Add(LabeledStepper(LemoineStrings.T("linkviews.bulkRename.labels.seqPad"), _config.SeqPad, 0, 8, v => _config.SeqPad = v));
+            row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqStart"), _config.SeqStart, 0, 100000, v => _config.SeqStart = v));
+            row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqIncrement"), _config.SeqIncrement, 1, 1000, v => _config.SeqIncrement = v));
+            row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqPad"), _config.SeqPad, 0, 8, v => _config.SeqPad = v));
             return row;
         }
 
@@ -351,7 +351,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             cap.Margin = new Thickness(0, 0, 0, 4);
             col.Children.Add(cap);
 
-            var stepper = new LemoineInlineStepper
+            var stepper = new InlineStepper
             {
                 MinValue = min, MaxValue = max, Step = 1, Decimals = 0, Value = value,
             };
@@ -364,9 +364,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         private (string Label, string Token)[] FieldTokens(bool includeSeq)
         {
             var list = _target == RenameTarget.Sheets
-                ? new List<(string, string)> { (LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetNumber"), "{SheetNumber}"), (LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetName"), "{SheetName}") }
-                : new List<(string, string)> { (LemoineStrings.T("linkviews.bulkRename.labels.fieldViewName"), "{ViewName}"), (LemoineStrings.T("linkviews.bulkRename.labels.tokViewType"), "{ViewType}") };
-            if (includeSeq) list.Add((LemoineStrings.T("linkviews.bulkRename.labels.tokSeq"), "{Seq}"));
+                ? new List<(string, string)> { (AppStrings.T("linkviews.bulkRename.labels.fieldSheetNumber"), "{SheetNumber}"), (AppStrings.T("linkviews.bulkRename.labels.fieldSheetName"), "{SheetName}") }
+                : new List<(string, string)> { (AppStrings.T("linkviews.bulkRename.labels.fieldViewName"), "{ViewName}"), (AppStrings.T("linkviews.bulkRename.labels.tokViewType"), "{ViewType}") };
+            if (includeSeq) list.Add((AppStrings.T("linkviews.bulkRename.labels.tokSeq"), "{Seq}"));
             return list.ToArray();
         }
 
@@ -433,22 +433,22 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             int empties    = plan.Count(p => p.Status == RenameStatus.Empty);
 
             _previewCount.Text = plan.Count == 0
-                ? LemoineStrings.T("linkviews.bulkRename.labels.previewNone")
-                : LemoineStrings.T("linkviews.bulkRename.labels.previewCounts", changes, collisions, empties);
+                ? AppStrings.T("linkviews.bulkRename.labels.previewNone")
+                : AppStrings.T("linkviews.bulkRename.labels.previewCounts", changes, collisions, empties);
 
             if (plan.Count == 0)
             {
-                _previewList.Children.Add(MonoLine(LemoineStrings.T("linkviews.bulkRename.labels.previewDash"), "LemoineTextDim"));
+                _previewList.Children.Add(MonoLine(AppStrings.T("linkviews.bulkRename.labels.previewDash"), "LemoineTextDim"));
                 return;
             }
 
             foreach (var p in plan.Take(12))
             {
-                string line = LemoineStrings.T("linkviews.bulkRename.labels.previewLine", p.OldValue, p.NewValue);
+                string line = AppStrings.T("linkviews.bulkRename.labels.previewLine", p.OldValue, p.NewValue);
                 string suffix =
-                    p.Status == RenameStatus.Collision ? LemoineStrings.T("linkviews.bulkRename.labels.sfxCollides") :
-                    p.Status == RenameStatus.Empty     ? LemoineStrings.T("linkviews.bulkRename.labels.sfxEmpty") :
-                    p.Status == RenameStatus.Unchanged ? LemoineStrings.T("linkviews.bulkRename.labels.sfxNoChange") : "";
+                    p.Status == RenameStatus.Collision ? AppStrings.T("linkviews.bulkRename.labels.sfxCollides") :
+                    p.Status == RenameStatus.Empty     ? AppStrings.T("linkviews.bulkRename.labels.sfxEmpty") :
+                    p.Status == RenameStatus.Unchanged ? AppStrings.T("linkviews.bulkRename.labels.sfxNoChange") : "";
                 string colour = p.Status == RenameStatus.Collision || p.Status == RenameStatus.Empty
                     ? "LemoineRed"
                     : p.Status == RenameStatus.Unchanged ? "LemoineTextDim" : "LemoineText";
@@ -456,7 +456,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             }
 
             if (plan.Count > 12)
-                _previewList.Children.Add(MonoLine(LemoineStrings.T("linkviews.bulkRename.labels.previewMore", plan.Count - 12), "LemoineTextDim"));
+                _previewList.Children.Add(MonoLine(AppStrings.T("linkviews.bulkRename.labels.previewMore", plan.Count - 12), "LemoineTextDim"));
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -484,33 +484,33 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
         public string SummaryFor(string stepId)
         {
-            if (stepId == "S1") return _target == RenameTarget.Sheets ? LemoineStrings.T("linkviews.bulkRename.labels.targetSheets") : LemoineStrings.T("linkviews.bulkRename.labels.targetViews");
+            if (stepId == "S1") return _target == RenameTarget.Sheets ? AppStrings.T("linkviews.bulkRename.labels.targetSheets") : AppStrings.T("linkviews.bulkRename.labels.targetViews");
             if (stepId == "S2")
             {
                 int n = SelectedIds().Count;
-                return n > 0 ? LemoineStrings.T("linkviews.bulkRename.summaries.itemCount", n) : "—";
+                return n > 0 ? AppStrings.T("linkviews.bulkRename.summaries.itemCount", n) : "—";
             }
             if (stepId == "S3")
             {
                 if (!ModeConfigured()) return LabelFor(_config.Mode);
                 int c = BuildPlan().Count(p => p.Status == RenameStatus.Change);
-                return LemoineStrings.T("linkviews.bulkRename.summaries.s3", LabelFor(_config.Mode), c);
+                return AppStrings.T("linkviews.bulkRename.summaries.s3", LabelFor(_config.Mode), c);
             }
-            if (stepId == "S4") return LemoineStrings.T("linkviews.bulkRename.summaries.S4");
+            if (stepId == "S4") return AppStrings.T("linkviews.bulkRename.summaries.S4");
             return "—";
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // ILemoineReviewable
+        // IReviewableTool
         // ═══════════════════════════════════════════════════════════════
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("target",  LemoineStrings.T("linkviews.bulkRename.review.itemTarget")),
-            ("field",   LemoineStrings.T("linkviews.bulkRename.review.itemField")),
-            ("mode",    LemoineStrings.T("linkviews.bulkRename.review.itemMode")),
-            ("count",   LemoineStrings.T("linkviews.bulkRename.review.itemCount")),
-            ("changes", LemoineStrings.T("linkviews.bulkRename.review.itemChanges")),
-            ("skips",   LemoineStrings.T("linkviews.bulkRename.review.itemSkips")),
+            ("target",  AppStrings.T("linkviews.bulkRename.review.itemTarget")),
+            ("field",   AppStrings.T("linkviews.bulkRename.review.itemField")),
+            ("mode",    AppStrings.T("linkviews.bulkRename.review.itemMode")),
+            ("count",   AppStrings.T("linkviews.bulkRename.review.itemCount")),
+            ("changes", AppStrings.T("linkviews.bulkRename.review.itemChanges")),
+            ("skips",   AppStrings.T("linkviews.bulkRename.review.itemSkips")),
         };
 
         public IDictionary<string, string> ReviewValues
@@ -521,15 +521,15 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 int changes = plan.Count(p => p.Status == RenameStatus.Change);
                 int skips   = plan.Count(p => p.Status != RenameStatus.Change);
                 string field = _target == RenameTarget.Views
-                    ? LemoineStrings.T("linkviews.bulkRename.labels.fieldViewName")
-                    : (_field == RenameField.Number ? LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetNumber") : LemoineStrings.T("linkviews.bulkRename.labels.fieldSheetName"));
+                    ? AppStrings.T("linkviews.bulkRename.labels.fieldViewName")
+                    : (_field == RenameField.Number ? AppStrings.T("linkviews.bulkRename.labels.fieldSheetNumber") : AppStrings.T("linkviews.bulkRename.labels.fieldSheetName"));
 
                 return new Dictionary<string, string>
                 {
-                    ["target"]  = _target == RenameTarget.Sheets ? LemoineStrings.T("linkviews.bulkRename.labels.targetSheets") : LemoineStrings.T("linkviews.bulkRename.labels.targetViews"),
+                    ["target"]  = _target == RenameTarget.Sheets ? AppStrings.T("linkviews.bulkRename.labels.targetSheets") : AppStrings.T("linkviews.bulkRename.labels.targetViews"),
                     ["field"]   = field,
                     ["mode"]    = LabelFor(_config.Mode),
-                    ["count"]   = SelectedIds().Count > 0 ? LemoineStrings.T("linkviews.bulkRename.review.countValue", SelectedIds().Count) : "—",
+                    ["count"]   = SelectedIds().Count > 0 ? AppStrings.T("linkviews.bulkRename.review.countValue", SelectedIds().Count) : "—",
                     ["changes"] = changes.ToString(),
                     ["skips"]   = skips.ToString(),
                 };
@@ -539,7 +539,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         public IList<string>? ReviewChips => null;
 
         public string? ReviewNote =>
-            LemoineStrings.T("linkviews.bulkRename.review.note");
+            AppStrings.T("linkviews.bulkRename.review.note");
 
         public string? ReviewWarning
         {
@@ -550,9 +550,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                 int empties    = plan.Count(p => p.Status == RenameStatus.Empty);
                 if (collisions == 0 && empties == 0) return null;
                 var parts = new List<string>();
-                if (collisions > 0) parts.Add(LemoineStrings.T("linkviews.bulkRename.review.warnCollide", collisions));
-                if (empties    > 0) parts.Add(LemoineStrings.T("linkviews.bulkRename.review.warnEmpty", empties));
-                return string.Join("; ", parts) + LemoineStrings.T("linkviews.bulkRename.review.warnSuffix");
+                if (collisions > 0) parts.Add(AppStrings.T("linkviews.bulkRename.review.warnCollide", collisions));
+                if (empties    > 0) parts.Add(AppStrings.T("linkviews.bulkRename.review.warnEmpty", empties));
+                return string.Join("; ", parts) + AppStrings.T("linkviews.bulkRename.review.warnSuffix");
             }
         }
 
@@ -572,7 +572,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             _runHandler.OnProgress       = onProgress;
             _runHandler.OnComplete       = onComplete;
 
-            pushLog(LemoineStrings.T("linkviews.bulkRename.log.raising"), "info");
+            pushLog(AppStrings.T("linkviews.bulkRename.log.raising"), "info");
             _runEvent!.Raise();
         }
 

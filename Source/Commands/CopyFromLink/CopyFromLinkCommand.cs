@@ -7,7 +7,7 @@ using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.CopyFromLink;
 
@@ -105,7 +105,7 @@ namespace LemoineTools.Commands
                     list.Add(new CopyFromLinkWorksetInfo { Id = ws.Id.IntegerValue, Name = ws.Name });
                 list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkCommand: read user worksets", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkCommand: read user worksets", ex); }
             return list;
         }
     }

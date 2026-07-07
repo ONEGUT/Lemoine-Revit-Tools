@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
 {
@@ -36,21 +36,21 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
                 var doc = app.ActiveUIDocument?.Document;
                 if (doc == null)
                 {
-                    Log(LemoineStrings.T("clash.refineDimensions.log.noDoc"), "fail");
+                    Log(AppStrings.T("clash.refineDimensions.log.noDoc"), "fail");
                     Progress(100, 0, 1, 0);
                     Complete(0, 1, 0);
                     return;
                 }
                 if (ViewIds == null || ViewIds.Count == 0)
                 {
-                    Log(LemoineStrings.T("clash.refineDimensions.log.noViews"), "fail");
+                    Log(AppStrings.T("clash.refineDimensions.log.noViews"), "fail");
                     Progress(100, 0, 1, 0);
                     Complete(0, 1, 0);
                     return;
                 }
-                if (LemoineRun.CancelRequested)
+                if (RunState.CancelRequested)
                 {
-                    Log(LemoineStrings.T("clash.refineDimensions.log.stoppedEarly"), "warn");
+                    Log(AppStrings.T("clash.refineDimensions.log.stoppedEarly"), "warn");
                     Complete(0, 0, ViewIds.Count);
                     return;
                 }
@@ -66,7 +66,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
                     dimCfg.TargetType = string.Equals(DimTargetType, "Grid", StringComparison.OrdinalIgnoreCase)
                         ? "Grid" : "SlabEdge";
 
-                    Log(LemoineStrings.T("clash.refineDimensions.log.refining", ViewIds.Count, dimCfg.TargetType == "Grid" ? LemoineStrings.T("clash.refineDimensions.log.wordGrid") : LemoineStrings.T("clash.refineDimensions.log.wordSlabEdge")), "info");
+                    Log(AppStrings.T("clash.refineDimensions.log.refining", ViewIds.Count, dimCfg.TargetType == "Grid" ? AppStrings.T("clash.refineDimensions.log.wordGrid") : AppStrings.T("clash.refineDimensions.log.wordSlabEdge")), "info");
 
                     // Every selected view is crop-bounded: the resolvers reject any target whose
                     // dimension landing point falls outside what the view shows, so each clash
@@ -89,7 +89,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
                     dimCfg.TargetType = snapTarget;
                 }
 
-                Log(LemoineStrings.T("clash.refineDimensions.log.done", placed, ViewIds.Count, replaced, failures),
+                Log(AppStrings.T("clash.refineDimensions.log.done", placed, ViewIds.Count, replaced, failures),
                     placed > 0 ? "pass" : failures > 0 ? "fail" : "info");
 
                 OnResultChips?.Invoke(new List<ResultChip>
@@ -104,8 +104,8 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("RefineDimensionsEventHandler: execute", ex);
-                Log(LemoineStrings.T("clash.refineDimensions.log.fatal", ex.Message), "fail");
+                DiagnosticsLog.Error("RefineDimensionsEventHandler: execute", ex);
+                Log(AppStrings.T("clash.refineDimensions.log.fatal", ex.Message), "fail");
                 Complete(placed, failures + 1, 0);
             }
             finally

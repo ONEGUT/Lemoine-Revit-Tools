@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
 {
@@ -50,7 +50,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                        ?? ElementId.InvalidElementId;
                 hostPhase = doc.GetElement(pid) as Phase;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("RoomBoundsResolver: read view phase", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("RoomBoundsResolver: read view phase", ex); }
 
             _docs.Add(new SearchDoc { Doc = doc, Phase = hostPhase });
 
@@ -83,7 +83,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                     });
                 }
             }
-            catch (Exception ex) { LemoineLog.Swallowed("RoomBoundsResolver: collect link instances", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("RoomBoundsResolver: collect link instances", ex); }
 
             // A clash anchor can sit above the room's upper limit (a duct near the ceiling),
             // so keep a second probe elevation just above the plan view's level.
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                 var level = (view as ViewPlan)?.GenLevel;
                 if (level != null) _fallbackZ = level.Elevation + 2.0;
             }
-            catch (Exception ex) { LemoineLog.Swallowed("RoomBoundsResolver: read plan level", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("RoomBoundsResolver: read plan level", ex); }
         }
 
         /// <summary>The room containing <paramref name="worldPt"/> in any searched document
@@ -130,7 +130,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("RoomBoundsResolver: GetRoomAtPoint", ex);
+                DiagnosticsLog.Swallowed("RoomBoundsResolver: GetRoomAtPoint", ex);
                 return null;
             }
         }
@@ -158,7 +158,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                     if (!string.IsNullOrWhiteSpace(n))
                         name = string.IsNullOrWhiteSpace(num) ? n! : $"{n} {num}";
                 }
-                catch (Exception ex) { LemoineLog.Swallowed("RoomBoundsResolver: read room name", ex); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("RoomBoundsResolver: read room name", ex); }
 
                 return new RoomHit
                 {
@@ -169,7 +169,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("RoomBoundsResolver: room bounding box", ex);
+                DiagnosticsLog.Swallowed("RoomBoundsResolver: room bounding box", ex);
                 return null;
             }
         }

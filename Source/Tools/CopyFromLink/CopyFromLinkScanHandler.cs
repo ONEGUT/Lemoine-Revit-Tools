@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Tools.CopyFromLink
@@ -44,7 +44,7 @@ namespace LemoineTools.Tools.CopyFromLink
                 int scanned = 0;
                 foreach (var el in elems)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
                         OnError?.Invoke($"Stopped by user — {scanned} of {elems.Count} scanned; partial results returned.");
                         break;
@@ -58,7 +58,7 @@ namespace LemoineTools.Tools.CopyFromLink
                             byCat[cat] = set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
                         set.Add(key);
                     }
-                    catch (Exception ex) { LemoineLog.Swallowed("CopyFromLinkScan: read element type", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("CopyFromLinkScan: read element type", ex); }
                 }
 
                 var result = new CopyFromLinkScanResult { ElementCount = elems.Count };
@@ -69,7 +69,7 @@ namespace LemoineTools.Tools.CopyFromLink
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("CopyFromLinkScanHandler.Execute", ex);
+                DiagnosticsLog.Error("CopyFromLinkScanHandler.Execute", ex);
                 OnError?.Invoke(ex.Message);
             }
             finally

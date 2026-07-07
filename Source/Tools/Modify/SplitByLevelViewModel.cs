@@ -5,27 +5,27 @@ using System.Windows;
 using System.Windows.Controls;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
-using LemoineTools.Lemoine.Controls;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    public class SplitByLevelViewModel : ILemoineTool, IStepAware, ILemoineReviewable, ILemoineRunResult, ILemoineToolCleanup
+    public class SplitByLevelViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
     {
-        // Self-describing result label for the run strip (see ILemoineRunResult).
+        // Self-describing result label for the run strip (see IRunResult).
         public string? ResultNoun => "segments";
-        public System.Collections.Generic.IReadOnlyList<LemoineTools.Lemoine.ResultChip>? ResultChips => null;
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
 
-        public string Title    => LemoineStrings.T("modify.splitByLevel.title");
-        public string RunLabel => LemoineStrings.T("modify.splitByLevel.runLabel");
+        public string Title    => AppStrings.T("modify.splitByLevel.title");
+        public string RunLabel => AppStrings.T("modify.splitByLevel.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("S1", LemoineStrings.T("modify.splitByLevel.steps.S1"), required: true),
-            new StepDefinition("S2", LemoineStrings.T("modify.splitByLevel.steps.S2"),     required: true),
-            new StepDefinition("S3", LemoineStrings.T("modify.splitByLevel.steps.S3"),      required: false),
+            new StepDefinition("S1", AppStrings.T("modify.splitByLevel.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("modify.splitByLevel.steps.S2"),     required: true),
+            new StepDefinition("S3", AppStrings.T("modify.splitByLevel.steps.S3"),      required: false),
         };
 
         // ── State ─────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 case "S1": return BuildS1();
                 case "S2": return BuildS2();
-                case "S3": return null; // framework renders review (ILemoineReviewable)
+                case "S3": return null; // framework renders review (IReviewableTool)
                 default:   return null;
             }
         }
@@ -135,7 +135,7 @@ namespace LemoineTools.Tools.ModifyElements
             int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
             var countStrip = new TextBlock
             {
-                Text         = LemoineStrings.T("modify.splitByLevel.labels.countStrip", totalCats, _totalElements),
+                Text         = AppStrings.T("modify.splitByLevel.labels.countStrip", totalCats, _totalElements),
                 TextWrapping = TextWrapping.Wrap,
                 Margin       = new Thickness(0, 0, 0, 6),
             };
@@ -145,7 +145,7 @@ namespace LemoineTools.Tools.ModifyElements
             outer.Children.Add(countStrip);
 
             // Category picker — grouped by discipline
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SetGroups(_categoryGroups);
             tabs.SelectionChanged += selected =>
             {
@@ -157,14 +157,14 @@ namespace LemoineTools.Tools.ModifyElements
             // Active view filter
             if (_activeViewId != null)
             {
-                var toggle = new LemoineToggleSwitches();
+                var toggle = new ToggleSwitches();
                 toggle.SetItems(new List<ToggleItem>
                 {
                     new ToggleItem
                     {
                         Id        = "activeView",
-                        Label     = LemoineStrings.T("modify.splitByLevel.labels.activeViewLabel"),
-                        Desc      = LemoineStrings.T("modify.splitByLevel.labels.activeViewDesc"),
+                        Label     = AppStrings.T("modify.splitByLevel.labels.activeViewLabel"),
+                        Desc      = AppStrings.T("modify.splitByLevel.labels.activeViewDesc"),
                         DefaultOn = false,
                     },
                 });
@@ -190,7 +190,7 @@ namespace LemoineTools.Tools.ModifyElements
             card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
             card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var header = new TextBlock { Text = LemoineStrings.T("modify.splitByLevel.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
+            var header = new TextBlock { Text = AppStrings.T("modify.splitByLevel.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
             header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -199,7 +199,7 @@ namespace LemoineTools.Tools.ModifyElements
             int cats = _selectedCats.Count;
             var countLine = new TextBlock
             {
-                Text         = LemoineStrings.T("modify.splitByLevel.labels.preselCount", cnt, cats),
+                Text         = AppStrings.T("modify.splitByLevel.labels.preselCount", cnt, cats),
                 FontWeight   = FontWeights.Medium,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -219,7 +219,7 @@ namespace LemoineTools.Tools.ModifyElements
 
             var note = new TextBlock
             {
-                Text         = LemoineStrings.T("modify.splitByLevel.labels.preselNote"),
+                Text         = AppStrings.T("modify.splitByLevel.labels.preselNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
             };
@@ -240,7 +240,7 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (_levelsByName.Count == 0)
             {
-                var msg = new TextBlock { Text = LemoineStrings.T("modify.splitByLevel.labels.noItems"), TextWrapping = TextWrapping.Wrap };
+                var msg = new TextBlock { Text = AppStrings.T("modify.splitByLevel.labels.noItems"), TextWrapping = TextWrapping.Wrap };
                 msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
                 msg.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
                 msg.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -252,7 +252,7 @@ namespace LemoineTools.Tools.ModifyElements
                 { "Levels", _levelsByName.Keys.ToList() }
             };
 
-            var tabs = new LemoineMultiSelectTabs();
+            var tabs = new MultiSelectTabs();
             tabs.SetGroups(groups);
             tabs.SelectionChanged += selected =>
             {
@@ -267,27 +267,27 @@ namespace LemoineTools.Tools.ModifyElements
         // ═════════════════════════════════════════════════════════════════════
         //  IsValid / SummaryFor / Run
         // ═════════════════════════════════════════════════════════════════════
-        // ── ILemoineReviewable (P3) — framework renders the review step ───────
+        // ── IReviewableTool (P3) — framework renders the review step ───────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("cats",   LemoineStrings.T("modify.splitByLevel.review.itemCats")),
-            ("levels", LemoineStrings.T("modify.splitByLevel.review.itemX")),
-            ("op",     LemoineStrings.T("modify.splitByLevel.review.itemOp")),
-            ("scope",  LemoineStrings.T("modify.splitByLevel.review.itemScope")),
+            ("cats",   AppStrings.T("modify.splitByLevel.review.itemCats")),
+            ("levels", AppStrings.T("modify.splitByLevel.review.itemX")),
+            ("op",     AppStrings.T("modify.splitByLevel.review.itemOp")),
+            ("scope",  AppStrings.T("modify.splitByLevel.review.itemScope")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
             ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
-            ["levels"] = _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByLevel.review.xValue", _selectedLevelNames.Count),
-            ["op"]     = LemoineStrings.T("modify.splitByLevel.review.op"),
-            ["scope"]  = _preSelectedIds.Count > 0 ? LemoineStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count)
-                : _useActiveView ? LemoineStrings.T("modify.splitByLevel.review.scopeActive")
-                : LemoineStrings.T("modify.splitByLevel.review.scopeDoc"),
+            ["levels"] = _selectedLevelNames.Count == 0 ? "—" : AppStrings.T("modify.splitByLevel.review.xValue", _selectedLevelNames.Count),
+            ["op"]     = AppStrings.T("modify.splitByLevel.review.op"),
+            ["scope"]  = _preSelectedIds.Count > 0 ? AppStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count)
+                : _useActiveView ? AppStrings.T("modify.splitByLevel.review.scopeActive")
+                : AppStrings.T("modify.splitByLevel.review.scopeDoc"),
         };
 
         public IList<string>? ReviewChips   => null;
-        public string?        ReviewNote    => LemoineStrings.T("modify.splitByLevel.review.note");
+        public string?        ReviewNote    => AppStrings.T("modify.splitByLevel.review.note");
         public string?        ReviewWarning => null;
 
         public bool IsValid(string stepId)
@@ -301,13 +301,13 @@ namespace LemoineTools.Tools.ModifyElements
         {
             if (stepId == "S1")
             {
-                if (_preSelectedIds.Count > 0) return LemoineStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count);
+                if (_preSelectedIds.Count > 0) return AppStrings.T("modify.splitByLevel.review.scopeFromSel", _preSelectedIds.Count);
                 return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
             }
             if (stepId == "S2")
-                return _selectedLevelNames.Count == 0 ? "—" : LemoineStrings.T("modify.splitByLevel.summaries.s2", _selectedLevelNames.Count);
+                return _selectedLevelNames.Count == 0 ? "—" : AppStrings.T("modify.splitByLevel.summaries.s2", _selectedLevelNames.Count);
             if (stepId == "S3")
-                return LemoineStrings.T("modify.splitByLevel.summaries.S3");
+                return AppStrings.T("modify.splitByLevel.summaries.S3");
             return "—";
         }
 

@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.Setup
 {
@@ -57,7 +57,7 @@ namespace LemoineTools.Tools.Setup
         public void Execute(UIApplication app)
         {
             int pass = 0, fail = 0, skip = 0;
-            long issues0 = LemoineLog.IssueCount;
+            long issues0 = DiagnosticsLog.IssueCount;
             try
             {
                 var hostDoc = app.ActiveUIDocument?.Document;
@@ -90,7 +90,7 @@ namespace LemoineTools.Tools.Setup
 
                 foreach (var spec in toRun)
                 {
-                    if (LemoineRun.CancelRequested)
+                    if (RunState.CancelRequested)
                     {
                         Log($"Stopped by user — {pass} link(s) pushed so far; work preserved.", "warn");
                         break;
@@ -107,14 +107,14 @@ namespace LemoineTools.Tools.Setup
                     catch (Exception ex)
                     {
                         fail++;
-                        LemoineLog.Error("PushCoordinatesToLinks: process link", ex);
+                        DiagnosticsLog.Error("PushCoordinatesToLinks: process link", ex);
                         Log($"✗ {spec.LinkName}: {ex.Message}", "fail");
                     }
 
                     Progress(done, total, pass, fail, skip);
                 }
 
-                long issues = LemoineLog.IssuesSince(issues0);
+                long issues = DiagnosticsLog.IssuesSince(issues0);
                 if (issues > 0) Log($"{issues} non-fatal issue(s) recorded — see diagnostics log.", "warn");
                 Log($"Done. {pass} link(s) pushed, {skip} skipped, {fail} failed.", fail > 0 ? "warn" : "pass");
                 OnProgress?.Invoke(100, pass, fail, skip);
@@ -122,7 +122,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error("PushCoordinatesToLinksRunHandler.Execute", ex);
+                DiagnosticsLog.Error("PushCoordinatesToLinksRunHandler.Execute", ex);
                 Log($"Run aborted: {ex.Message}", "fail");
                 OnComplete?.Invoke(pass, fail + 1, skip);
             }
@@ -154,7 +154,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed($"PushCoordinatesToLinks: resolve path for {spec.LinkName}", ex);
+                DiagnosticsLog.Swallowed($"PushCoordinatesToLinks: resolve path for {spec.LinkName}", ex);
                 Log($"⚠ {spec.LinkName}: could not resolve its source file ({ex.Message}) — skipped.", "warn");
                 return PushResult.Skipped;
             }
@@ -172,7 +172,7 @@ namespace LemoineTools.Tools.Setup
 
             bool isWs = false;
             try { var bfi = BasicFileInfo.Extract(srcPath); isWs = bfi != null && bfi.IsWorkshared; }
-            catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: BasicFileInfo", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinks: BasicFileInfo", ex); }
 
             // ── Unload the link so the file is no longer "in use" as a link in this session ──
             // ⚠ Unverified on Windows: assumes Unload() releases the in-memory link document so a
@@ -192,7 +192,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error($"PushCoordinatesToLinks: unload {spec.LinkName}", ex);
+                DiagnosticsLog.Error($"PushCoordinatesToLinks: unload {spec.LinkName}", ex);
                 Log($"✗ {spec.LinkName}: could not unload the link ({ex.Message}) — skipped.", "fail");
                 return PushResult.Failed;
             }
@@ -243,7 +243,7 @@ namespace LemoineTools.Tools.Setup
                     if (linkedOpen != null)
                     {
                         try { linkedOpen.Close(false); }
-                        catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: close linked doc", ex); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinks: close linked doc", ex); }
                     }
                 }
 
@@ -271,7 +271,7 @@ namespace LemoineTools.Tools.Setup
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Swallowed($"PushCoordinatesToLinks: publish coordinates for {spec.LinkName}", ex);
+                        DiagnosticsLog.Swallowed($"PushCoordinatesToLinks: publish coordinates for {spec.LinkName}", ex);
                         Log($"✗ {spec.LinkName}: reloaded the corrected file but could not publish shared coordinates ({ex.Message}) — link left as-is.", "fail");
                     }
                     tx.Commit();
@@ -285,13 +285,13 @@ namespace LemoineTools.Tools.Setup
 
                     bool wasPinned = false;
                     try { wasPinned = li.Pinned; if (wasPinned) li.Pinned = false; }
-                    catch (Exception ex) { LemoineLog.Swallowed($"PushCoordinatesToLinks: unpin {spec.LinkName}", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"PushCoordinatesToLinks: unpin {spec.LinkName}", ex); }
 
                     hostDoc.Delete(li.Id);
                     var newInst = RevitLinkInstance.Create(hostDoc, typeId, ImportPlacement.Shared);
 
                     try { if (wasPinned) newInst.Pinned = true; }
-                    catch (Exception ex) { LemoineLog.Swallowed($"PushCoordinatesToLinks: re-pin {spec.LinkName}", ex); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"PushCoordinatesToLinks: re-pin {spec.LinkName}", ex); }
 
                     tx.Commit();
                 }
@@ -318,7 +318,7 @@ namespace LemoineTools.Tools.Setup
                     }
                     catch (Exception ex)
                     {
-                        LemoineLog.Error($"PushCoordinatesToLinks: recovery reload for {spec.LinkName}", ex);
+                        DiagnosticsLog.Error($"PushCoordinatesToLinks: recovery reload for {spec.LinkName}", ex);
                         Log($"⚠ {spec.LinkName}: left unloaded after a failure — reload it manually via Manage Links.", "warn");
                     }
                 }
@@ -341,7 +341,7 @@ namespace LemoineTools.Tools.Setup
             }
             catch (Exception ex)
             {
-                LemoineLog.Error($"PushCoordinatesToLinks: move {label}", ex);
+                DiagnosticsLog.Error($"PushCoordinatesToLinks: move {label}", ex);
                 Log($"⚠ Could not move the link's own {label}: {ex.Message}", "warn");
             }
         }
@@ -362,7 +362,7 @@ namespace LemoineTools.Tools.Setup
                 opts.SetForcedModalHandling(false);
                 tx.SetFailureHandlingOptions(opts);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("PushCoordinatesToLinks: configure failure handling", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinks: configure failure handling", ex); }
         }
     }
 }
