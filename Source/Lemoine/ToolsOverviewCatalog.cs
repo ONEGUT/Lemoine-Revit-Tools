@@ -301,7 +301,7 @@ namespace LemoineTools.Lemoine
                     {
                         Name = LemoineStrings.T("overview.cat.copy.tools.linear.name"), Glyph = G(0xE71B),
                         Blurb = LemoineStrings.T("overview.cat.copy.tools.linear.blurb"),
-                        Feeds = new[] { "Modify", "Clash" },
+                        Feeds = new[] { "Modify", "Dimensioning" },
                         Example = LemoineStrings.T("overview.cat.copy.tools.linear.example"),
                     },
                     new OverviewTool
@@ -314,7 +314,7 @@ namespace LemoineTools.Lemoine
                     {
                         Name = LemoineStrings.T("overview.cat.copy.tools.elements.name"), Glyph = G(0xE8B3),
                         Blurb = LemoineStrings.T("overview.cat.copy.tools.elements.blurb"),
-                        Feeds = new[] { "Modify", "Clash" },
+                        Feeds = new[] { "Modify", "Dimensioning" },
                         Example = LemoineStrings.T("overview.cat.copy.tools.elements.example"),
                     },
                 },
@@ -330,7 +330,7 @@ namespace LemoineTools.Lemoine
                     {
                         Name = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.name"), Glyph = G(0xE809),
                         Blurb = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.blurb"),
-                        Feeds = new[] { "Compare Grids", "Copy from Link", "Clash" },
+                        Feeds = new[] { "Compare Grids", "Copy from Link", "Dimensioning" },
                         Example = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.example"),
                     },
                     new OverviewTool
