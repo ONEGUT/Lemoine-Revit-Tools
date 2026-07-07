@@ -641,8 +641,8 @@ namespace LemoineTools.Lemoine
 
         /// <summary>
         /// Creates a fully configured Lemoine flat Button — template + color resource references.
-        /// Replaces the three near-duplicate button factories that previously existed across
-        /// LemoineSettingsWindow, GlobalSettingsWindow, and StepFlowWindow.
+        /// Replaces the near-duplicate button factories that previously existed across
+        /// GlobalSettingsWindow and StepFlowWindow.
         /// </summary>
         public static Button BuildButton(
             string label,

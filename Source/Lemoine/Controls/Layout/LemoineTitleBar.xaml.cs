@@ -6,8 +6,8 @@ using System.Windows.Media;
 namespace LemoineTools.Lemoine.Controls
 {
     /// <summary>
-    /// Reusable title bar / window chrome strip used by LemoineSettingsWindow,
-    /// GlobalSettingsWindow, and StepFlowWindow.
+    /// Reusable title bar / window chrome strip used by GlobalSettingsWindow,
+    /// ToolsOverviewWindow, LinkAuditWindow, and StepFlowWindow.
     ///
     /// Provides:
     ///   • Theme-aware background (LemoineSurface) + bottom border (LemoineBorder)

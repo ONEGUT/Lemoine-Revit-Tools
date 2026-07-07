@@ -50,7 +50,7 @@ namespace LemoineTools.Lemoine.Controls
         // ── Build ─────────────────────────────────────────────────────────────
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Card chrome — matches LemoineSettingsWindow.AddSection() geometry
+            // Card chrome geometry
             _card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_MD");
             _card.Padding      = new Thickness(12);
             _card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");

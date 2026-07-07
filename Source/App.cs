@@ -47,14 +47,10 @@ namespace LemoineTools
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
-        internal static AutoFiltersLegendEventHandler?        AutoFiltersLegendHandler        { get; private set; }
-        internal static ExternalEvent?                        AutoFiltersLegendEvent          { get; private set; }
         internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
         internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
-        internal static ApplyFiltersToViewsEventHandler?      ApplyFiltersToViewsHandler      { get; private set; }
-        internal static ExternalEvent?                        ApplyFiltersToViewsEvent        { get; private set; }
         internal static DeleteFiltersFromProjectEventHandler? DeleteFiltersFromProjectHandler { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersFromProjectEvent   { get; private set; }
         // Opens the Delete-from-Project window from inside the Auto Filters window (main-thread setup).
@@ -212,14 +208,10 @@ namespace LemoineTools
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
-            AutoFiltersLegendHandler        = new AutoFiltersLegendEventHandler();
-            AutoFiltersLegendEvent          = ExternalEvent.Create(AutoFiltersLegendHandler);
             LegendCreatorHandler            = new LegendCreatorEventHandler();
             LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
-            ApplyFiltersToViewsHandler      = new ApplyFiltersToViewsEventHandler();
-            ApplyFiltersToViewsEvent        = ExternalEvent.Create(ApplyFiltersToViewsHandler);
             DeleteFiltersFromProjectHandler = new DeleteFiltersFromProjectEventHandler();
             DeleteFiltersFromProjectEvent   = ExternalEvent.Create(DeleteFiltersFromProjectHandler);
             OpenDeleteFromProjectHandler    = new OpenDeleteFromProjectEventHandler();

@@ -88,7 +88,6 @@ namespace LemoineTools.Lemoine
             BuildTabNav();
             BuildFooter();
             SwitchTab(_activeTabId);
-            // Distinguish from LemoineSettingsWindow ("Appearance Settings") for screen readers
             AutomationProperties.SetName(this, LemoineStrings.T("globalSettings.window.automationName"));
         }
 
