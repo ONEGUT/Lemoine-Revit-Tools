@@ -1,0 +1,201 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using Autodesk.Revit.DB;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
+
+using WpfGrid = System.Windows.Controls.Grid;
+
+namespace LemoineTools.Tools.Ceilings
+{
+    public class ReprojectCeilingGridsViewModel : IStepFlowTool, IReviewableTool, IRunResult, IToolCleanup
+    {
+        // Self-describing result label for the run strip (see IRunResult).
+        public string? ResultNoun => "curves";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
+
+        // ── Ceiling plan view entry passed in from Command ────────────────────
+        public sealed class CeilingPlanViewEntry
+        {
+            public ElementId Id        { get; }
+            public string    Name      { get; }
+            public string    LevelName { get; }
+
+            public CeilingPlanViewEntry(ElementId id, string name, string levelName)
+            {
+                Id        = id;
+                Name      = name;
+                LevelName = levelName;
+            }
+        }
+
+        // ── IStepFlowTool identity ─────────────────────────────────────────────
+        public string Title    => AppStrings.T("ceilings.reprojectGrids.title");
+        public string RunLabel => AppStrings.T("ceilings.reprojectGrids.runLabel");
+
+        public StepDefinition[] Steps => new[]
+        {
+            new StepDefinition("S1", AppStrings.T("ceilings.reprojectGrids.steps.S1"), required: true),
+            new StepDefinition("S2", AppStrings.T("ceilings.reprojectGrids.steps.S2"),         required: false),
+        };
+
+        // ── State ─────────────────────────────────────────────────────────────
+        private readonly List<CeilingPlanViewEntry>         _availableViews;
+        private readonly BrowserTree                 _browserTree;
+        private          List<ElementId>                    _selectedViewIds = new List<ElementId>();
+
+        public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.PushLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+        }
+
+        private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        // ── ExternalEvent wiring ───────────────────────────────────────────
+        private readonly CeilingGridEventHandler _handler;
+        private readonly Autodesk.Revit.UI.ExternalEvent _event;
+
+        public ReprojectCeilingGridsViewModel(
+            CeilingGridEventHandler handler,
+            Autodesk.Revit.UI.ExternalEvent externalEvent,
+            List<CeilingPlanViewEntry>? availableViews,
+            BrowserTree? browserTree = null)
+        {
+            _handler        = handler;
+            _event          = externalEvent;
+            _availableViews = availableViews ?? new List<CeilingPlanViewEntry>();
+            _browserTree    = browserTree ?? new BrowserTree();
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // GetStepContent
+        // ═════════════════════════════════════════════════════════════════════
+        public FrameworkElement? GetStepContent(string stepId)
+        {
+            if (stepId == "S1") return BuildS1();
+            if (stepId == "S2") return null; // framework renders review (IReviewableTool)
+            return null;
+        }
+
+        private FrameworkElement BuildS1()
+        {
+            var outer = new StackPanel();
+
+            if (_availableViews.Count == 0)
+            {
+                var none = new TextBlock
+                {
+                    Text         = AppStrings.T("ceilings.reprojectGrids.labels.noViews"),
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                };
+                none.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+                none.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                none.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                outer.Children.Add(none);
+                return outer;
+            }
+
+            var picker = new BrowserTreePicker
+            {
+                Height         = 300,
+                AccessibleName = AppStrings.T("ceilings.reprojectGrids.labels.pickerName"),
+            };
+            // Subscribe BEFORE SetTree — its end-of-setup SelectionChanged seeds the mirror list.
+            picker.SelectionChanged += ids =>
+            {
+                _selectedViewIds = ids.Select(id => new ElementId(id)).ToList();
+                OnValidationChanged();
+            };
+            picker.SetTree(_browserTree,
+                _availableViews.Select(v => v.Id.Value),
+                _selectedViewIds.Select(id => id.Value).ToList());
+            outer.Children.Add(picker);
+
+            var warning = new TextBlock
+            {
+                Text         = AppStrings.T("ceilings.reprojectGrids.labels.warning"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 10, 0, 0),
+            };
+            warning.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            warning.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            warning.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(warning);
+
+            return outer;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── IReviewableTool (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("views",  AppStrings.T("ceilings.reprojectGrids.review.itemViews")),
+            ("target", AppStrings.T("ceilings.reprojectGrids.review.itemTarget")),
+            ("op",     AppStrings.T("ceilings.reprojectGrids.review.itemOp")),
+            ("output", AppStrings.T("ceilings.reprojectGrids.review.itemOutput")),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["views"]  = _selectedViewIds.Count == 0 ? AppStrings.T("ceilings.reprojectGrids.review.viewsNone") : AppStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count),
+            ["target"] = AppStrings.T("ceilings.reprojectGrids.review.target"),
+            ["op"]     = AppStrings.T("ceilings.reprojectGrids.review.op"),
+            ["output"] = AppStrings.T("ceilings.reprojectGrids.review.output"),
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => AppStrings.T("ceilings.reprojectGrids.review.note");
+        public string?        ReviewWarning => null;
+
+        // ═════════════════════════════════════════════════════════════════════
+        // IsValid
+        // ═════════════════════════════════════════════════════════════════════
+        public bool IsValid(string stepId)
+        {
+            if (stepId == "S1") return _selectedViewIds.Count > 0;
+            return true;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // SummaryFor
+        // ═════════════════════════════════════════════════════════════════════
+        public string SummaryFor(string stepId)
+        {
+            if (stepId == "S1")
+                return _selectedViewIds.Count == 0 ? "—"
+                    : AppStrings.T("ceilings.reprojectGrids.labels.planCount", _selectedViewIds.Count);
+            if (stepId == "S2") return AppStrings.T("ceilings.reprojectGrids.summaries.S2");
+            return "—";
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Run
+        // ═════════════════════════════════════════════════════════════════════
+        public void Run(
+            Action<string, string>     pushLog,
+            Action<int, int, int, int> onProgress,
+            Action<int, int, int>      onComplete)
+        {
+            _handler.Mode           = CeilingGridEventHandler.ToolMode.Reproject;
+            _handler.SelectedViewIds = new List<ElementId>(_selectedViewIds);
+            _handler.BatchDwgFolder  = "";
+            _handler.PushLog        = pushLog;
+            _handler.OnProgress     = onProgress;
+            _handler.OnComplete     = onComplete;
+
+            pushLog(AppStrings.T("ceilings.reprojectGrids.log.raising"), "info");
+            _event.Raise();
+        }
+    }
+}

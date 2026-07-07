@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using RevitColor = Autodesk.Revit.DB.Color;
 using System;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Helpers
 {
@@ -99,7 +99,7 @@ namespace LemoineTools.Helpers
                     System.Globalization.NumberStyles.HexNumber, null, out int v))
                     return new RevitColor((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF));
             }
-            catch (Exception __lex) { LemoineLog.Swallowed("MepColorMap: parse colour hex", __lex); }
+            catch (Exception __lex) { DiagnosticsLog.Swallowed("MepColorMap: parse colour hex", __lex); }
             return null;
         }
     }

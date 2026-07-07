@@ -1,17 +1,16 @@
 using System.Reflection;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.BulkExport;
-using LemoineTools.Tools.Clash;
+using LemoineTools.Tools.Dimensioning;
 using LemoineTools.Tools.ExplodeViews;
-using LemoineTools.Tools.Testing.LegendCreator;
-using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using System;
-using L = LemoineTools.Lemoine.LemoineStrings;
+using L = LemoineTools.Framework.AppStrings;
 
 namespace LemoineTools
 {
@@ -19,7 +18,7 @@ namespace LemoineTools
     {
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.
-        internal static Lemoine.LemoineReloadHandler? ReloadHandler { get; private set; }
+        internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
         internal static ExternalEvent?                ReloadEvent   { get; private set; }
 
         internal static CeilingGridEventHandler? ProjectHandler   { get; private set; }
@@ -47,14 +46,10 @@ namespace LemoineTools
         // ── Auto Filters ────────────────────────────────────────────────────────────
         internal static AutoFiltersEventHandler?              AutoFiltersHandler              { get; private set; }
         internal static ExternalEvent?                        AutoFiltersEvent                { get; private set; }
-        internal static AutoFiltersLegendEventHandler?        AutoFiltersLegendHandler        { get; private set; }
-        internal static ExternalEvent?                        AutoFiltersLegendEvent          { get; private set; }
         internal static LegendCreatorEventHandler?            LegendCreatorHandler            { get; private set; }
         internal static ExternalEvent?                        LegendCreatorEvent              { get; private set; }
         internal static DeleteFiltersEventHandler?            DeleteFiltersHandler            { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersEvent              { get; private set; }
-        internal static ApplyFiltersToViewsEventHandler?      ApplyFiltersToViewsHandler      { get; private set; }
-        internal static ExternalEvent?                        ApplyFiltersToViewsEvent        { get; private set; }
         internal static DeleteFiltersFromProjectEventHandler? DeleteFiltersFromProjectHandler { get; private set; }
         internal static ExternalEvent?                        DeleteFiltersFromProjectEvent   { get; private set; }
         // Opens the Delete-from-Project window from inside the Auto Filters window (main-thread setup).
@@ -104,9 +99,9 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
         internal static ClashElevationFinderEventHandler? ClashElevationFinderHandler { get; private set; }
         internal static ExternalEvent?              ClashElevationFinderEvent   { get; private set; }
-        internal static LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
+        internal static LemoineTools.Tools.Dimensioning.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
-        internal static LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
+        internal static LemoineTools.Tools.Dimensioning.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
         internal static ExternalEvent?              RefineDimensionsEvent { get; private set; }
 
         // ── T06 — Views (Explode 3D View by Trade) ──────────────────────────────────
@@ -114,22 +109,22 @@ namespace LemoineTools
         internal static ExternalEvent?                  ExplodeViewByTradeEvent   { get; private set; }
 
         // ── Testing — Place Dependent Views ─────────────────────────────────────────
-        internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
+        internal static LemoineTools.Tools.Sheets.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
         internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
         // ── Testing — Align Sheet Views ─────────────────────────────────────────────
-        internal static LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler? AlignSheetViewsHandler { get; private set; }
+        internal static LemoineTools.Tools.Sheets.AlignSheetViews.AlignSheetViewsEventHandler? AlignSheetViewsHandler { get; private set; }
         internal static ExternalEvent?             AlignSheetViewsEvent { get; private set; }
 
         // ── Testing — Copy Linear Elements ──────────────────────────────────────────
-        internal static LemoineTools.Tools.CopyLinear.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
         internal static ExternalEvent?             CopyLinearScanEvent  { get; private set; }
-        internal static LemoineTools.Tools.CopyLinear.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyLinearRunEvent   { get; private set; }
 
-        // ── Testing — Copy Grids from Link ──────────────────────────────────────────
-        internal static LemoineTools.Tools.CopyLinear.CopyGridsRunHandler? CopyGridsRunHandler { get; private set; }
-        internal static ExternalEvent?             CopyGridsRunEvent    { get; private set; }
+        // ── Testing — Copy Datums from Link ─────────────────────────────────────────
+        internal static LemoineTools.Tools.CopyFromLink.CopyDatumsRunHandler? CopyDatumsRunHandler { get; private set; }
+        internal static ExternalEvent?             CopyDatumsRunEvent   { get; private set; }
 
         // ── Testing — Copy Elements from Link ───────────────────────────────────────
         internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler? CopyFromLinkScanHandler { get; private set; }
@@ -138,17 +133,17 @@ namespace LemoineTools
         internal static ExternalEvent?             CopyFromLinkRunEvent  { get; private set; }
 
         // ── Upgrade & Link Models ────────────────────────────────────────────────────
-        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler? UpgradeLinksScanHandler { get; private set; }
+        internal static LemoineTools.Tools.Setup.UpgradeLinksScanHandler? UpgradeLinksScanHandler { get; private set; }
         internal static ExternalEvent?             UpgradeLinksScanEvent { get; private set; }
-        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
+        internal static LemoineTools.Tools.Setup.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
-        // ── Coordination — Align Coordinates / Compare Grids / Push Coordinates to Links ─
-        internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
+        // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
+        internal static LemoineTools.Tools.Setup.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
-        internal static LemoineTools.Tools.Coordinates.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
+        internal static LemoineTools.Tools.Setup.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
         internal static ExternalEvent?             CompareGridsRunEvent     { get; private set; }
-        internal static LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
+        internal static LemoineTools.Tools.Setup.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             PushCoordinatesRunEvent  { get; private set; }
 
 
@@ -168,20 +163,23 @@ namespace LemoineTools
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
         // Tools Overview window — read-only guide, singleton like GlobalSettings
-        internal static Lemoine.ToolsOverviewWindow? Overview { get; set; }
+        internal static Framework.ToolsOverviewWindow? Overview { get; set; }
+
+        // Link Audit window — read-only report, singleton like GlobalSettings/Overview
+        internal static Framework.LinkAuditWindow? LinkAudit { get; set; }
 
         public Result OnStartup(UIControlledApplication application)
         {
             // Load user-facing text for the saved language (English fallback) before any window opens.
-            LemoineStrings.Load(LemoineSettings.Instance.Language);
+            AppStrings.Load(AppSettings.Instance.Language);
 
             // Surface Revit's transaction failures and modal dialogs into the running tool's
             // Output log (and suppress warning dialogs). Both handlers no-op unless a Lemoine
             // run is active, so non-Lemoine work is never affected.
-            application.ControlledApplication.FailuresProcessing += LemoineFailureCapture.OnFailuresProcessing;
-            application.DialogBoxShowing                         += LemoineFailureCapture.OnDialogBoxShowing;
+            application.ControlledApplication.FailuresProcessing += RevitFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         += RevitFailureCapture.OnDialogBoxShowing;
 
-            ReloadHandler = new Lemoine.LemoineReloadHandler();
+            ReloadHandler = new Framework.ReloadHandler();
             ReloadEvent   = ExternalEvent.Create(ReloadHandler);
 
             ProjectHandler   = new CeilingGridEventHandler();
@@ -209,14 +207,10 @@ namespace LemoineTools
             // ── Auto Filters suite ────────────────────────────────────────────
             AutoFiltersHandler              = new AutoFiltersEventHandler();
             AutoFiltersEvent                = ExternalEvent.Create(AutoFiltersHandler);
-            AutoFiltersLegendHandler        = new AutoFiltersLegendEventHandler();
-            AutoFiltersLegendEvent          = ExternalEvent.Create(AutoFiltersLegendHandler);
             LegendCreatorHandler            = new LegendCreatorEventHandler();
             LegendCreatorEvent              = ExternalEvent.Create(LegendCreatorHandler);
             DeleteFiltersHandler            = new DeleteFiltersEventHandler();
             DeleteFiltersEvent              = ExternalEvent.Create(DeleteFiltersHandler);
-            ApplyFiltersToViewsHandler      = new ApplyFiltersToViewsEventHandler();
-            ApplyFiltersToViewsEvent        = ExternalEvent.Create(ApplyFiltersToViewsHandler);
             DeleteFiltersFromProjectHandler = new DeleteFiltersFromProjectEventHandler();
             DeleteFiltersFromProjectEvent   = ExternalEvent.Create(DeleteFiltersFromProjectHandler);
             OpenDeleteFromProjectHandler    = new OpenDeleteFromProjectEventHandler();
@@ -257,40 +251,40 @@ namespace LemoineTools
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
             ClashElevationFinderHandler = new ClashElevationFinderEventHandler();
             ClashElevationFinderEvent   = ExternalEvent.Create(ClashElevationFinderHandler);
-            SlabPickHandler       = new LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler();
+            SlabPickHandler       = new LemoineTools.Tools.Dimensioning.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
-            RefineDimensionsHandler = new LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler();
+            RefineDimensionsHandler = new LemoineTools.Tools.Dimensioning.AutoDimension.Refine.RefineDimensionsEventHandler();
             RefineDimensionsEvent   = ExternalEvent.Create(RefineDimensionsHandler);
 
             // ── T06 — Views ───────────────────────────────────────────────────
             ExplodeViewByTradeHandler = new ExplodeViewByTradeEventHandler();
             ExplodeViewByTradeEvent   = ExternalEvent.Create(ExplodeViewByTradeHandler);
 
-            PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
+            PlaceDependentViewsHandler = new LemoineTools.Tools.Sheets.PlaceDependentViews.PlaceDependentViewsEventHandler();
             PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
-            AlignSheetViewsHandler     = new LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler();
+            AlignSheetViewsHandler     = new LemoineTools.Tools.Sheets.AlignSheetViews.AlignSheetViewsEventHandler();
             AlignSheetViewsEvent       = ExternalEvent.Create(AlignSheetViewsHandler);
-            CopyLinearScanHandler = new LemoineTools.Tools.CopyLinear.CopyLinearScanHandler();
+            CopyLinearScanHandler = new LemoineTools.Tools.CopyFromLink.CopyLinearScanHandler();
             CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
-            CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
+            CopyLinearRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyLinearRunHandler();
             CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
-            CopyGridsRunHandler   = new LemoineTools.Tools.CopyLinear.CopyGridsRunHandler();
-            CopyGridsRunEvent     = ExternalEvent.Create(CopyGridsRunHandler);
+            CopyDatumsRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyDatumsRunHandler();
+            CopyDatumsRunEvent    = ExternalEvent.Create(CopyDatumsRunHandler);
             CopyFromLinkScanHandler = new LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler();
             CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
             CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
             CopyFromLinkRunEvent    = ExternalEvent.Create(CopyFromLinkRunHandler);
 
-            UpgradeLinksScanHandler = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler();
+            UpgradeLinksScanHandler = new LemoineTools.Tools.Setup.UpgradeLinksScanHandler();
             UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
-            UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
+            UpgradeLinksRunHandler  = new LemoineTools.Tools.Setup.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
 
-            AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
+            AlignCoordinatesRunHandler = new LemoineTools.Tools.Setup.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
-            CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
+            CompareGridsRunHandler     = new LemoineTools.Tools.Setup.CompareGridsRunHandler();
             CompareGridsRunEvent       = ExternalEvent.Create(CompareGridsRunHandler);
-            PushCoordinatesRunHandler  = new LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler();
+            PushCoordinatesRunHandler  = new LemoineTools.Tools.Setup.PushCoordinatesToLinksRunHandler();
             PushCoordinatesRunEvent    = ExternalEvent.Create(PushCoordinatesRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────
@@ -305,7 +299,7 @@ namespace LemoineTools
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
 
-            try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { LemoineLog.Swallowed("App: create ribbon tab", __lex); }
+            try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { DiagnosticsLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
 
             // Local helper — avoids repeating the dll path and namespace prefix on every button.
@@ -317,171 +311,59 @@ namespace LemoineTools
                 return d;
             }
 
-            // ── Filters & Legends ─────────────────────────────────────────────
-            // Auto Filters + Legend Creation. Both open their own configuration windows
-            // (Discover, Remove-from-View, Delete-from-Project live inside Auto Filters).
-            var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.filtersLegends"));
+            // Ribbon panels are built in coordination-lifecycle order: Setup (get links in and
+            // aligned) → Copy from Link (pull reference geometry into the host) → Modify (prep
+            // elements) → Ceilings → Views (build the working-view structure) → Filters &
+            // Legends (graphics once views exist) → Dimensioning (the coordination loop) →
+            // Sheets (document it) → Export (publish) → Settings → Developer.
 
-            filtersPanel.AddItem(Btn(
-                "LT_AutoFilters", L.T("ribbon.buttons.autoFilters.label"), "OpenFiltersSettingsCommand",
-                L.T("ribbon.buttons.autoFilters.tip"),
-                char.ConvertFromUtf32(0xE71C)));  // Filter
+            // ── Setup ─────────────────────────────────────────────────────────
+            // Upgrade & link models, then align/verify/publish shared coordinates.
+            var setupPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.setup"));
 
-            filtersPanel.AddItem(Btn(
-                "LT_LegendSettings", L.T("ribbon.buttons.legendCreation.label"), "OpenLegendSettingsCommand",
-                L.T("ribbon.buttons.legendCreation.tip"),
-                char.ConvertFromUtf32(0xE713)));  // Settings
+            setupPanel.AddItem(Btn(
+                "LT_UpgradeLinks", L.T("ribbon.buttons.upgradeLinks.label"), "UpgradeLinksCommand",
+                L.T("ribbon.buttons.upgradeLinks.tip"),
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
-            // ── Ceilings ──────────────────────────────────────────────────────
-            // Large:    Ceiling Heatmap
-            // Pulldown: Ceiling Grids → Make / Project / Reproject
-            var ceilingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.ceilings"));
+            setupPanel.AddItem(Btn(
+                "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
+                L.T("ribbon.buttons.linkAudit.tip"),
+                char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
 
-            ceilingsPanel.AddItem(Btn(
-                "LT_CeilingHeatmap", L.T("ribbon.buttons.ceilingHeatmap.label"), "CeilingHeatmapCommand",
-                L.T("ribbon.buttons.ceilingHeatmap.tip"),
-                char.ConvertFromUtf32(0xE81D)));  // Map
+            setupPanel.AddItem(Btn(
+                "LT_AlignCoordinates", L.T("ribbon.buttons.alignCoordinates.label"), "AlignCoordinatesCommand",
+                L.T("ribbon.buttons.alignCoordinates.tip"),
+                char.ConvertFromUtf32(0xE809)));  // MapPin
 
-            var ceilingGridsPulldown = new PulldownButtonData("LT_CeilingGrids", L.T("ribbon.buttons.ceilingGrids.label"))
-            {
-                ToolTip    = L.T("ribbon.buttons.ceilingGrids.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE80A)),
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE80A)),
-            };
+            setupPanel.AddItem(Btn(
+                "LT_CompareGrids", L.T("ribbon.buttons.compareGrids.label"), "CompareGridsCommand",
+                L.T("ribbon.buttons.compareGrids.tip"),
+                char.ConvertFromUtf32(0xE80A)));  // GridView
 
-            var ceilingGridsBtn = ceilingsPanel.AddItem(ceilingGridsPulldown) as PulldownButton;
+            setupPanel.AddItem(Btn(
+                "LT_PushCoordinates", L.T("ribbon.buttons.pushCoordinates.label"), "PushCoordinatesToLinksCommand",
+                L.T("ribbon.buttons.pushCoordinates.tip"),
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
-            ceilingGridsBtn?.AddPushButton(new PushButtonData(
-                "LT_MakeCeilingGrids", L.T("ribbon.buttons.makeCeilingGrids.label"), dll,
-                "LemoineTools.Commands.MakeCeilingGridsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.makeCeilingGrids.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE80A)),
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE80A)),
-            });
+            // ── Copy from Link ────────────────────────────────────────────────
+            // Pull reference geometry out of trusted links into the host.
+            var copyPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.copyFromLink"));
 
-            ceilingGridsBtn?.AddPushButton(new PushButtonData(
-                "LT_ProjectCeilingGrids", L.T("ribbon.buttons.projectCeilingGrids.label"), dll,
-                "LemoineTools.Commands.ProjectedCeilingGridsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.projectCeilingGrids.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE896)),
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE896)),
-            });
+            copyPanel.AddItem(Btn(
+                "LT_CopyDatums", L.T("ribbon.buttons.copyDatums.label"), "CopyDatumsCommand",
+                L.T("ribbon.buttons.copyDatums.tip"),
+                char.ConvertFromUtf32(0xE80A)));  // GridView
 
-            ceilingGridsBtn?.AddPushButton(new PushButtonData(
-                "LT_ReprojectCeilingGrids", L.T("ribbon.buttons.reprojectCeilingGrids.label"), dll,
-                "LemoineTools.Commands.ReprojectCeilingGridsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.reprojectCeilingGrids.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE895)),
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE895)),
-            });
+            copyPanel.AddItem(Btn(
+                "LT_CopyLinear", L.T("ribbon.buttons.copyLinear.label"), "CopyLinearCommand",
+                L.T("ribbon.buttons.copyLinear.tip"),
+                char.ConvertFromUtf32(0xE71B)));  // Link
 
-            // ── Views ─────────────────────────────────────────────────────────
-            // Large:    Bulk Views by Level
-            // Pulldown: Duplicate Views (Bulk Duplicate | By Template | Dependent)
-            // Large:    Explode View by Trade
-            var viewsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.views"));
-
-            viewsPanel.AddItem(Btn(
-                "LT_LinkViewsLevel", L.T("ribbon.buttons.linkViewsLevel.label"), "LinkViewsLevelCommand",
-                L.T("ribbon.buttons.linkViewsLevel.tip"),
-                char.ConvertFromUtf32(0xE8B7)));  // Layers
-
-            var dupViewsPulldown = new PulldownButtonData("LT_DuplicateViews", L.T("ribbon.buttons.duplicateViews.label"))
-            {
-                ToolTip    = L.T("ribbon.buttons.duplicateViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            };
-            var dupViewsBtn = viewsPanel.AddItem(dupViewsPulldown) as PulldownButton;
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsBulkDuplicate", L.T("ribbon.buttons.viewsBulkDuplicate.label"), dll, "LemoineTools.Commands.ViewsBulkDuplicateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsBulkDuplicate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsByTemplate", L.T("ribbon.buttons.viewsByTemplate.label"), dll, "LemoineTools.Commands.ViewsByTemplateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsByTemplate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ReplicateDependentViews", L.T("ribbon.buttons.replicateDependentViews.label"), dll, "LemoineTools.Commands.ReplicateDependentViewsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
-            });
-
-            // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
-            var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
-            {
-                ToolTip    = L.T("ribbon.buttons.scopeBoxes.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),  // CubeShape
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
-            };
-            var scopeBoxBtn = viewsPanel.AddItem(scopeBoxPulldown) as PulldownButton;
-
-            scopeBoxBtn?.AddPushButton(new PushButtonData(
-                "LT_ScopeBoxCreator", L.T("ribbon.buttons.scopeBoxCreator.label"), dll, "LemoineTools.Commands.ScopeBoxCreatorCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.scopeBoxCreator.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
-            });
-
-            scopeBoxBtn?.AddPushButton(new PushButtonData(
-                "LT_ScopeBoxManager", L.T("ribbon.buttons.scopeBoxManager.label"), dll, "LemoineTools.Commands.ScopeBoxManagerCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.scopeBoxManager.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8FD)),  // ListView / manage
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8FD)),
-            });
-
-            viewsPanel.AddItem(Btn(
-                "LT_ExplodeViewByTrade", L.T("ribbon.buttons.explodeViewByTrade.label"), "ExplodeViewByTradeCommand",
-                L.T("ribbon.buttons.explodeViewByTrade.tip"),
-                char.ConvertFromUtf32(0xE8A9)));  // ViewAll
-
-            // ── Sheets ────────────────────────────────────────────────────────
-            // Place Dependent Views + Align Sheet Views (promoted from Testing) + Bulk Rename.
-            var sheetsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.sheets"));
-
-            sheetsPanel.AddItem(Btn(
-                "LT_PlaceDepViews", L.T("ribbon.buttons.placeDependentViews.label"), "PlaceDependentViewsCommand",
-                L.T("ribbon.buttons.placeDependentViews.tip"),
-                char.ConvertFromUtf32(0xE7C3)));  // Page
-
-            sheetsPanel.AddItem(Btn(
-                "LT_AlignSheetViews", L.T("ribbon.buttons.alignSheetViews.label"), "AlignSheetViewsCommand",
-                L.T("ribbon.buttons.alignSheetViews.tip"),
-                char.ConvertFromUtf32(0xE744)));  // FullScreen / fit
-
-            sheetsPanel.AddItem(Btn(
-                "LT_BulkRename", L.T("ribbon.buttons.bulkRename.label"), "BulkRenameCommand",
-                L.T("ribbon.buttons.bulkRename.tip"),
-                char.ConvertFromUtf32(0xE8AC)));  // Rename
-
-            // ── Export ────────────────────────────────────────────────────────
-            var exportPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.export"));
-
-            exportPanel.AddItem(Btn(
-                "LT_BulkExport", L.T("ribbon.buttons.bulkExport.label"), "BulkExportCommand",
-                L.T("ribbon.buttons.bulkExport.tip"),
-                char.ConvertFromUtf32(0xEDE1)));  // Share / Export
-
-            exportPanel.AddItem(Btn(
-                "LT_PrintView", L.T("ribbon.buttons.printView.label"), "PrintViewCommand",
-                L.T("ribbon.buttons.printView.tip"),
-                char.ConvertFromUtf32(0xE749)));  // Print
+            copyPanel.AddItem(Btn(
+                "LT_CopyFromLink", L.T("ribbon.buttons.copyFromLink.label"), "CopyFromLinkCommand",
+                L.T("ribbon.buttons.copyFromLink.tip"),
+                char.ConvertFromUtf32(0xE8B3)));  // SelectAll
 
             // ── Modify ────────────────────────────────────────────────────────
             // Pulldown: Split Elements (4 sub-commands)
@@ -533,70 +415,196 @@ namespace LemoineTools
                 L.T("ribbon.buttons.extendWalls.tip"),
                 char.ConvertFromUtf32(0xE898)));  // Up
 
-            // ── Clash ─────────────────────────────────────────────────────────
-            var clashPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.clash"));
+            // ── Ceilings ──────────────────────────────────────────────────────
+            // Large:    Ceiling Heatmap
+            // Pulldown: Ceiling Grids → Make / Project / Reproject
+            var ceilingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.ceilings"));
 
-            clashPanel.AddItem(Btn(
+            ceilingsPanel.AddItem(Btn(
+                "LT_CeilingHeatmap", L.T("ribbon.buttons.ceilingHeatmap.label"), "CeilingHeatmapCommand",
+                L.T("ribbon.buttons.ceilingHeatmap.tip"),
+                char.ConvertFromUtf32(0xE81D)));  // Map
+
+            var ceilingGridsPulldown = new PulldownButtonData("LT_CeilingGrids", L.T("ribbon.buttons.ceilingGrids.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.ceilingGrids.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE80A)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE80A)),
+            };
+
+            var ceilingGridsBtn = ceilingsPanel.AddItem(ceilingGridsPulldown) as PulldownButton;
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_MakeCeilingGrids", L.T("ribbon.buttons.makeCeilingGrids.label"), dll,
+                "LemoineTools.Commands.MakeCeilingGridsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.makeCeilingGrids.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE80A)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE80A)),
+            });
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_ProjectCeilingGrids", L.T("ribbon.buttons.projectCeilingGrids.label"), dll,
+                "LemoineTools.Commands.ProjectedCeilingGridsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.projectCeilingGrids.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE896)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE896)),
+            });
+
+            ceilingGridsBtn?.AddPushButton(new PushButtonData(
+                "LT_ReprojectCeilingGrids", L.T("ribbon.buttons.reprojectCeilingGrids.label"), dll,
+                "LemoineTools.Commands.ReprojectCeilingGridsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.reprojectCeilingGrids.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE895)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE895)),
+            });
+
+            // ── Views ─────────────────────────────────────────────────────────
+            // Pulldown: Scope Boxes (Creator | Manager) — moved to front, scope boxes
+            //           come before the views that use them.
+            // Large:    Bulk Views by Level
+            // Pulldown: Duplicate Views (Bulk Duplicate | By Template | Dependent)
+            // Large:    Explode View by Trade
+            var viewsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.views"));
+
+            // Scope Boxes pulldown — Creator now; the Manager joins here when it lands.
+            var scopeBoxPulldown = new PulldownButtonData("LT_ScopeBoxes", L.T("ribbon.buttons.scopeBoxes.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxes.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),  // CubeShape
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            };
+            var scopeBoxBtn = viewsPanel.AddItem(scopeBoxPulldown) as PulldownButton;
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxCreator", L.T("ribbon.buttons.scopeBoxCreator.label"), dll, "LemoineTools.Commands.ScopeBoxCreatorCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxCreator.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE7B8)),
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE7B8)),
+            });
+
+            scopeBoxBtn?.AddPushButton(new PushButtonData(
+                "LT_ScopeBoxManager", L.T("ribbon.buttons.scopeBoxManager.label"), dll, "LemoineTools.Commands.ScopeBoxManagerCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.scopeBoxManager.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8FD)),  // ListView / manage
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8FD)),
+            });
+
+            viewsPanel.AddItem(Btn(
+                "LT_LinkViewsLevel", L.T("ribbon.buttons.linkViewsLevel.label"), "LinkViewsLevelCommand",
+                L.T("ribbon.buttons.linkViewsLevel.tip"),
+                char.ConvertFromUtf32(0xE8B7)));  // Layers
+
+            var dupViewsPulldown = new PulldownButtonData("LT_DuplicateViews", L.T("ribbon.buttons.duplicateViews.label"))
+            {
+                ToolTip    = L.T("ribbon.buttons.duplicateViews.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
+            };
+            var dupViewsBtn = viewsPanel.AddItem(dupViewsPulldown) as PulldownButton;
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ViewsBulkDuplicate", L.T("ribbon.buttons.viewsBulkDuplicate.label"), dll, "LemoineTools.Commands.ViewsBulkDuplicateCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.viewsBulkDuplicate.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
+            });
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ViewsByTemplate", L.T("ribbon.buttons.viewsByTemplate.label"), dll, "LemoineTools.Commands.ViewsByTemplateCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.viewsByTemplate.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
+            });
+
+            dupViewsBtn?.AddPushButton(new PushButtonData(
+                "LT_ReplicateDependentViews", L.T("ribbon.buttons.replicateDependentViews.label"), dll, "LemoineTools.Commands.ReplicateDependentViewsCommand")
+            {
+                ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
+                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
+                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
+            });
+
+            viewsPanel.AddItem(Btn(
+                "LT_ExplodeViewByTrade", L.T("ribbon.buttons.explodeViewByTrade.label"), "ExplodeViewByTradeCommand",
+                L.T("ribbon.buttons.explodeViewByTrade.tip"),
+                char.ConvertFromUtf32(0xE8A9)));  // ViewAll
+
+            // ── Filters & Legends ─────────────────────────────────────────────
+            // Auto Filters + Legend Creation. Both open their own configuration windows
+            // (Discover, Remove-from-View, Delete-from-Project live inside Auto Filters).
+            var filtersPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.filtersLegends"));
+
+            filtersPanel.AddItem(Btn(
+                "LT_AutoFilters", L.T("ribbon.buttons.autoFilters.label"), "OpenFiltersSettingsCommand",
+                L.T("ribbon.buttons.autoFilters.tip"),
+                char.ConvertFromUtf32(0xE71C)));  // Filter
+
+            filtersPanel.AddItem(Btn(
+                "LT_LegendSettings", L.T("ribbon.buttons.legendCreation.label"), "OpenLegendSettingsCommand",
+                L.T("ribbon.buttons.legendCreation.tip"),
+                char.ConvertFromUtf32(0xE713)));  // Settings
+
+            // ── Dimensioning ──────────────────────────────────────────────────
+            var dimensioningPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.dimensioning"));
+
+            dimensioningPanel.AddItem(Btn(
                 "LT_ClashDefinitions", L.T("ribbon.buttons.clashDefinitions.label"), "OpenClashDefinitionsCommand",
                 L.T("ribbon.buttons.clashDefinitions.tip"),
                 char.ConvertFromUtf32(0xE8FD)));  // List
 
-            clashPanel.AddItem(Btn(
+            dimensioningPanel.AddItem(Btn(
                 "LT_ClashFinder", L.T("ribbon.buttons.clashFinder.label"), "ClashFinderCommand",
                 L.T("ribbon.buttons.clashFinder.tip"),
                 char.ConvertFromUtf32(0xE721)));  // Zoom (find)
 
-            clashPanel.AddItem(Btn(
+            dimensioningPanel.AddItem(Btn(
                 "LT_ClashElevationFinder", L.T("ribbon.buttons.clashElevationFinder.label"), "ClashElevationFinderCommand",
                 L.T("ribbon.buttons.clashElevationFinder.tip"),
                 char.ConvertFromUtf32(0xE898)));  // Up (elevation/height)
 
-            clashPanel.AddItem(Btn(
+            dimensioningPanel.AddItem(Btn(
                 "LT_RefineDimensions", L.T("ribbon.buttons.refineDimensions.label"), "RefineDimensionsCommand",
                 L.T("ribbon.buttons.refineDimensions.tip"),
                 char.ConvertFromUtf32(0xE70F)));  // Edit (pencil)
 
-            // ── Copy from Link ────────────────────────────────────────────────
-            // Promoted from Testing: pull linked elements into the host.
-            var copyPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.copyFromLink"));
+            // ── Sheets ────────────────────────────────────────────────────────
+            // Place Dependent Views + Align Sheet Views (promoted from Testing) + Bulk Rename.
+            var sheetsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.sheets"));
 
-            copyPanel.AddItem(Btn(
-                "LT_CopyLinear", L.T("ribbon.buttons.copyLinear.label"), "CopyLinearCommand",
-                L.T("ribbon.buttons.copyLinear.tip"),
-                char.ConvertFromUtf32(0xE71B)));  // Link
+            sheetsPanel.AddItem(Btn(
+                "LT_PlaceDepViews", L.T("ribbon.buttons.placeDependentViews.label"), "PlaceDependentViewsCommand",
+                L.T("ribbon.buttons.placeDependentViews.tip"),
+                char.ConvertFromUtf32(0xE7C3)));  // Page
 
-            copyPanel.AddItem(Btn(
-                "LT_CopyGrids", L.T("ribbon.buttons.copyGrids.label"), "CopyGridsCommand",
-                L.T("ribbon.buttons.copyGrids.tip"),
-                char.ConvertFromUtf32(0xE80A)));  // GridView
+            sheetsPanel.AddItem(Btn(
+                "LT_AlignSheetViews", L.T("ribbon.buttons.alignSheetViews.label"), "AlignSheetViewsCommand",
+                L.T("ribbon.buttons.alignSheetViews.tip"),
+                char.ConvertFromUtf32(0xE744)));  // FullScreen / fit
 
-            copyPanel.AddItem(Btn(
-                "LT_CopyFromLink", L.T("ribbon.buttons.copyFromLink.label"), "CopyFromLinkCommand",
-                L.T("ribbon.buttons.copyFromLink.tip"),
-                char.ConvertFromUtf32(0xE8B3)));  // SelectAll
+            sheetsPanel.AddItem(Btn(
+                "LT_BulkRename", L.T("ribbon.buttons.bulkRename.label"), "BulkRenameCommand",
+                L.T("ribbon.buttons.bulkRename.tip"),
+                char.ConvertFromUtf32(0xE8AC)));  // Rename
 
-            // ── Coordination ──────────────────────────────────────────────────
-            var coordPanel = application.CreateRibbonPanel("Lemoine Tools", "Coordination");
+            // ── Export ────────────────────────────────────────────────────────
+            var exportPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.export"));
 
-            coordPanel.AddItem(Btn(
-                "LT_AlignCoordinates", "Align\nCoordinates", "AlignCoordinatesCommand",
-                "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files.",
-                char.ConvertFromUtf32(0xE809)));  // MapPin
+            exportPanel.AddItem(Btn(
+                "LT_BulkExport", L.T("ribbon.buttons.bulkExport.label"), "BulkExportCommand",
+                L.T("ribbon.buttons.bulkExport.tip"),
+                char.ConvertFromUtf32(0xEDE1)));  // Share / Export
 
-            coordPanel.AddItem(Btn(
-                "LT_CompareGrids", "Compare\nGrids", "CompareGridsCommand",
-                "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file.",
-                char.ConvertFromUtf32(0xE80A)));  // GridView
-
-            coordPanel.AddItem(Btn(
-                "LT_PushCoordinates", "Push Coordinates\nto Links", "PushCoordinatesToLinksCommand",
-                "Commit an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, and saves in place — Synchronizing With Central for a workshared source — then publishes coordinates and re-places the link via Shared Coordinates.",
-                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
-
-            coordPanel.AddItem(Btn(
-                "LT_UpgradeLinks", "Upgrade &\nLink Models", "UpgradeLinksCommand",
-                "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat.",
-                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+            exportPanel.AddItem(Btn(
+                "LT_PrintView", L.T("ribbon.buttons.printView.label"), "PrintViewCommand",
+                L.T("ribbon.buttons.printView.tip"),
+                char.ConvertFromUtf32(0xE749)));  // Print
 
             // ── Settings ──────────────────────────────────────────────────────
             var settingsPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.settings"));
@@ -630,8 +638,8 @@ namespace LemoineTools
 
         public Result OnShutdown(UIControlledApplication application)
         {
-            application.ControlledApplication.FailuresProcessing -= LemoineFailureCapture.OnFailuresProcessing;
-            application.DialogBoxShowing                         -= LemoineFailureCapture.OnDialogBoxShowing;
+            application.ControlledApplication.FailuresProcessing -= RevitFailureCapture.OnFailuresProcessing;
+            application.DialogBoxShowing                         -= RevitFailureCapture.OnDialogBoxShowing;
             return Result.Succeeded;
         }
 
@@ -662,7 +670,7 @@ namespace LemoineTools
             // Render the ⚙ glyph from Segoe UI Symbol into a bitmap for the Revit ribbon.
             var tb = new System.Windows.Controls.TextBlock
             {
-                Text       = "\u2699",
+                Text       = "⚙",
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI Symbol"),
                 FontSize   = size * 0.75,
                 Foreground = System.Windows.Media.Brushes.White,

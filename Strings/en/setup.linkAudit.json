@@ -1,0 +1,24 @@
+// setup.linkAudit.json — Link Audit window strings.
+// Command: LinkAuditCommand. Read-only report window (LinkAuditWindow) — never changes the
+// model, and has no run/confirm action, so there's no run-handler log vocabulary here.
+{
+  "window": {
+    "title":           "Link Audit",
+    "close":            "Close",
+    "footerHint":       "Read-only — reports link health, makes no changes.",
+    "automationName":   "Lemoine Tools Link Audit"
+  },
+  "labels": {
+    "noneFound":        "No Revit links found in this model.",
+    "summary":          "{0} link(s) found — {1} flagged for attention.",
+    "fieldStatus":      "Load status",
+    "fieldPositioning": "Positioning",
+    "fieldDisplay":     "Display (active view)",
+    "fieldPinned":      "Pinned",
+    "fieldWorkset":     "Workset",
+    "fieldAttachment":  "Attachment type",
+    "fieldLastSaved":   "Last saved",
+    "yes":              "Yes",
+    "no":               "No"
+  }
+}

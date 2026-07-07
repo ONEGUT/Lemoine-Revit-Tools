@@ -1,0 +1,789 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using LemoineTools.Framework;
+using LemoineTools.Tools.Dimensioning.AutoDimension;
+
+namespace LemoineTools.Tools.Dimensioning
+{
+    /// <summary>
+    /// Runs the Clash Finder: for each selected <see cref="ClashDefinition"/> it detects clashes
+    /// and places coloured, ES-tagged markers (one transaction for the whole run). When the
+    /// dimension-pass checkbox is set, it then runs the auto-dimension engine to place dimensions
+    /// from each clash marker out to the chosen target (grids or slab edges).
+    /// Clear-previous is run-level (applied once, before the definition loop) so multi-definition
+    /// runs never wipe earlier markers.
+    /// </summary>
+    public class ClashFinderEventHandler : IExternalEventHandler
+    {
+        // ── Inputs (set by the ViewModel before Raise()) ──────────────────────
+        public List<ElementId>      ViewIds          { get; set; } = new List<ElementId>();
+        public List<ClashDefinition> Definitions     { get; set; } = new List<ClashDefinition>();
+        public bool                 ClearPrevious    { get; set; } = true;
+        public bool                 RunDimensionPass { get; set; } = false;
+        public bool                 AdoptUserCallouts { get; set; } = true;   // user-drawn callouts become pre-defined groups
+        public string               DimTargetType    { get; set; } = "Grid";   // dimension-pass target: "Grid" | "SlabEdge" | "ManualDatum"
+        public int                  MaxCalloutScale  { get; set; } = 12;     // finest scale (1:N) the callout auto-pick may reach
+        public double               RoundSizeMm      { get; set; } = 0.0;    // marker oversize added to the Group 1 element size; 0 = exact
+        public System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope> SlabScopes { get; set; }
+            = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();  // up-front picked slab(s); empty = all floors
+
+        public Action<string, string>?     PushLog    { get; set; }
+        public Action<int, int, int, int>? OnProgress { get; set; }
+        public Action<int, int, int>?      OnComplete { get; set; }
+        public Action<IReadOnlyList<ResultChip>>? OnResultChips { get; set; }
+
+        public string GetName() => "LemoineTools.Tools.Dimensioning.ClashFinderEventHandler";
+
+        public void Execute(UIApplication app)
+        {
+            var uidoc = app.ActiveUIDocument;
+            var doc   = uidoc.Document;
+            int viewsDone = 0, viewsFailed = 0, viewsSkipped = 0;
+            // The tool's real deliverables are markers and dimensions placed — these drive the
+            // pass/fail counters so the headline reflects what was produced, not how many views
+            // were touched. View tallies are reported in the summary log line.
+            int totalMarkers = 0, totalMarkerFails = 0, totalDims = 0, totalDimFails = 0;
+
+            try
+            {
+                if (Definitions == null || Definitions.Count == 0)
+                {
+                    Log(AppStrings.T("clash.finder.log.noDefs"), "fail");
+                    viewsFailed++;
+                }
+                else if (ViewIds == null || ViewIds.Count == 0)
+                {
+                    Log(AppStrings.T("clash.finder.log.noViews"), "fail");
+                    viewsFailed++;
+                }
+                else
+                {
+                    // ── Phase 1: detect each definition's clashes ONCE (view-independent) ──
+                    Progress(5, viewsDone, viewsFailed, viewsSkipped);
+                    var dets = new List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)>();
+                    int defsDetected = 0;
+                    foreach (var def in Definitions)
+                    {
+                        // Abandon mid-run during detection: stop scanning more definitions. Nothing
+                        // is committed yet in this phase; Phase 2 below sees the same cancel flag and
+                        // marks only what was already detected (its own check then stops it too).
+                        if (RunState.CancelRequested)
+                        {
+                            Log(AppStrings.T("common.log.stoppedByUser", defsDetected, Definitions.Count), "warn");
+                            break;
+                        }
+
+                        Log(AppStrings.T("clash.finder.log.detecting", def.Name), "info");
+                        var opts = new ClashMarkingOptions
+                        {
+                            ToleranceMm       = def.ToleranceMm,
+                            FillStyle         = def.FillStyle,
+                            FallbackColorHex  = def.FallbackColorHex,
+                            CrossLineTypeName = def.CrossLineTypeName,
+                            DimTarget         = def.DimTarget,
+                            MaxClashes        = def.MaxClashes,
+                            StoreyMarginMm    = ClashDimensionSettings.Instance.StoreyMarginMm,
+                            RoundSizeMm       = RoundSizeMm,
+                            PhaseMode         = def.PhaseMode,
+                            SpecificPhaseName = def.SpecificPhaseName,
+                        };
+                        var engine = new ClashEngine(opts, (t, s) => Log(t, s));
+                        var det = engine.Detect(doc, def.Group1, def.Group2);
+                        dets.Add((engine, det, new Dictionary<string, ElementId?>()));
+                        defsDetected++;
+                    }
+
+                    // ── Dimension-pass prep: apply run-level config overrides once (restored in
+                    // finally), and pick manual datums up front so all picks stay together. ──
+                    var dimCfg = AutoDimensionConfig.Instance;
+                    var snapTarget     = dimCfg.TargetType;
+                    var snapMaxCallout = dimCfg.MaxCalloutScale;
+                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
+                    bool slabEdge = string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
+                    try
+                    {
+                        if (RunDimensionPass)
+                        {
+                            // Destination is the only per-run override; chaining, callouts, and
+                            // grouping tolerances always come from the saved settings.
+                            dimCfg.TargetType = DimTargetType;
+                            if (MaxCalloutScale > 0) dimCfg.MaxCalloutScale = MaxCalloutScale;
+                            if (string.Equals(DimTargetType, "ManualDatum", StringComparison.OrdinalIgnoreCase))
+                                datums = AutoDimension.ManualDatumPicker.PickForViews(uidoc, ViewIds, (t, s) => Log(t, s));
+                        }
+
+                        // ── Phase 2: one view at a time — mark, then dimension, then next view ──
+                        int processed = 0;
+                        foreach (var viewId in ViewIds)
+                        {
+                            // Abandon mid-run: stop marking/dimensioning more views. Each view commits
+                            // in its own transaction below, so every view already processed is preserved.
+                            if (RunState.CancelRequested)
+                            {
+                                Log(AppStrings.T("common.log.stoppedByUser", processed, ViewIds.Count), "warn");
+                                break;
+                            }
+
+                            processed++;
+                            var view = doc.GetElement(viewId) as View;
+                            if (view == null)
+                            {
+                                viewsSkipped++;
+                                Progress(10 + (int)(processed * 88.0 / ViewIds.Count),
+                                     totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+                                continue;
+                            }
+
+                            Log(AppStrings.T("clash.finder.log.viewHeader", view.Name), "info");
+                            int markers = 0, markerFails = 0;
+                            bool viewFailed = false;
+                            try
+                            {
+                                // Mark this view: clear its old markers, then place every definition's
+                                // detected clashes that fall in this view — one transaction per view.
+                                using (var tx = new Transaction(doc, $"Lemoine - Clash Finder · {view.Name}"))
+                                {
+                                    tx.Start();
+                                    ConfigureFailures(tx);
+                                    if (ClearPrevious)
+                                    {
+                                        int removed = ClearViewMarkers(doc, viewId);
+                                        if (removed > 0) Log(AppStrings.T("clash.finder.log.cleared", removed, view.Name), "info");
+                                    }
+                                    foreach (var (engine, det, cache) in dets)
+                                    {
+                                        if (det.Failed || det.ClashCount == 0) continue;
+                                        var pr = engine.PlaceInView(doc, view, det, cache);
+                                        markers     += pr.Markers;
+                                        markerFails += pr.Fails;
+                                        totalMarkers     += pr.Markers;
+                                        totalMarkerFails += pr.Fails;
+                                    }
+                                    tx.Commit();
+                                }
+                                Log(AppStrings.T("clash.finder.log.viewMarkers", view.Name, markers), markers > 0 ? "pass" : "info");
+
+                                // Dimension this view (its own transaction), only when it has markers.
+                                if (RunDimensionPass && markers > 0)
+                                {
+                                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? oneDatum = null;
+                                    if (datums != null && datums.TryGetValue(viewId, out var vd) && vd != null)
+                                        oneDatum = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>> { [viewId] = vd };
+
+                                    System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>>? oneScope = null;
+                                    if (slabEdge && SlabScopes.Count > 0)
+                                        oneScope = new Dictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>> { [viewId] = SlabScopes };
+
+                                    // Callout tier: EXTREME dense areas (too packed even for chained
+                                    // strings) get an enlarged-plan callout each — marked like any view,
+                                    // dimensioned at the computed scale — and are excluded from this
+                                    // parent view's dimension pass. Moderate areas stay on the chain tier.
+                                    // Each callout REMOVES its clashes from the parent, which changes the
+                                    // clustering of everything left behind — so the survey re-runs on the
+                                    // remaining markers until no further dense area qualifies, and only
+                                    // then is the parent dimensioned (full reassessment per promotion).
+                                    var dimViewIds = new List<ElementId> { viewId };
+                                    System.Collections.Generic.IDictionary<ElementId, List<string>>? excludes = null;
+                                    HashSet<ElementId>? cropBounded = null;
+                                    var deferred   = new List<string>();
+                                    var calloutIds = new List<ElementId>();
+
+                                    // User-callout tier: callouts the USER drew on this view are
+                                    // pre-defined groups — adopted BEFORE the dense survey, whose
+                                    // ingest then never sees their clashes (their parent markers
+                                    // are deleted here), so they cannot cluster with anything else.
+                                    if (AdoptUserCallouts)
+                                        calloutIds.AddRange(AdoptUserCalloutViews(doc, view, dets, deferred,
+                                            ref totalMarkers, ref totalMarkerFails));
+
+                                    if (dimCfg.DenseCalloutsEnabled)
+                                    {
+                                        var allRequests = new List<AutoDimension.DenseCalloutRequest>();
+                                        int calloutSeq  = 0;
+                                        const int maxCalloutPasses = 4;   // each pass deletes markers, so this terminates fast
+                                        for (int pass = 0; pass < maxCalloutPasses; pass++)
+                                        {
+                                            var requests = AutoDimension.AutoDimensionEngine.SurveyDenseAreas(
+                                                doc, view, dimCfg, (t, s) => Log(t, s));
+                                            if (requests.Count == 0) break;
+                                            // Continuous ids across passes — a re-survey restarts at c000
+                                            // and must not collide with (and silently reuse) an earlier
+                                            // pass's callout view of the same name.
+                                            foreach (var r in requests)
+                                                r.ClusterId = "c" + (calloutSeq++).ToString("D3", System.Globalization.CultureInfo.InvariantCulture);
+                                            if (pass > 0)
+                                                Log(AppStrings.T("clash.finder.log.reassessed", requests.Count), "info");
+                                            var ids = CreateDenseCallouts(doc, view, requests, dets, deferred,
+                                                ref totalMarkers, ref totalMarkerFails);
+                                            allRequests.AddRange(requests);
+                                            calloutIds.AddRange(ids);
+                                            if (ids.Count == 0) break;   // every callout failed — re-surveying would loop on the same areas
+                                        }
+
+                                        if (ClearPrevious)
+                                        {
+                                            // Clear callouts a previous run left behind that this run did
+                                            // not reuse (their bubbles + stale markers) — after the loop,
+                                            // so the sweep keeps every callout created this run. User
+                                            // callouts never match the "- Dense" prefix and are never swept.
+                                            using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
+                                            {
+                                                tx.Start();
+                                                ConfigureFailures(tx);
+                                                SweepStaleCallouts(doc, view, allRequests);
+                                                tx.Commit();
+                                            }
+                                        }
+                                    }
+
+                                    if (calloutIds.Count > 0)
+                                    {
+                                        dimViewIds.AddRange(calloutIds);
+                                        excludes = new Dictionary<ElementId, List<string>> { [viewId] = deferred };
+                                        // Callout dims must land on references visible IN the callout.
+                                        cropBounded = new HashSet<ElementId>(calloutIds);
+                                    }
+
+                                    var dimResult = AutoDimensionRunner.Run(doc, dimViewIds, dimCfg, (t, s) => Log(t, s), null, oneDatum, oneScope, excludes, cropBounded);
+                                    totalDims     += dimResult.Placed;
+                                    totalDimFails += dimResult.Failures;
+                                    Log(AppStrings.T("clash.finder.log.viewDims", view.Name, dimResult.Placed, dimViewIds.Count - 1, dimResult.Failures),
+                                        dimResult.Placed > 0 ? "pass" : "info");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Log(AppStrings.T("clash.finder.log.viewFailed", view.Name, ex.Message), "fail");
+                                viewFailed = true;
+                            }
+
+                            // Classify the view for the top-bar tracker.
+                            if (viewFailed)            viewsFailed++;   // exception while processing this view
+                            else if (markers > 0)      viewsDone++;     // marked (and dimensioned, if enabled)
+                            else if (markerFails > 0)  viewsFailed++;   // attempted but every marker failed
+                            else                       viewsSkipped++;  // no clash fell in this view's volume
+
+                            Progress(10 + (int)(processed * 88.0 / ViewIds.Count),
+                                     totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+                        }
+                    }
+                    finally
+                    {
+                        dimCfg.TargetType      = snapTarget;
+                        dimCfg.MaxCalloutScale = snapMaxCallout;
+                    }
+
+                    Log(AppStrings.T("clash.finder.log.done", totalMarkers, totalDims, viewsDone, totalMarkerFails + totalDimFails, viewsFailed, viewsSkipped),
+                        totalMarkers + totalDims > 0 ? "pass" : (totalMarkerFails + totalDimFails) > 0 ? "fail" : "info");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log(AppStrings.T("clash.finder.log.fatal", ex.Message), "fail");
+                totalMarkerFails++;
+            }
+
+            Progress(100, totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+            OnResultChips?.Invoke(new List<ResultChip>
+            {
+                new ResultChip("markers", totalMarkers,                       "LemoineGreen"),
+                new ResultChip("dims",    totalDims,                          "LemoineGreen"),
+                new ResultChip("failed",  totalMarkerFails + totalDimFails,   "LemoineRed"),
+                new ResultChip("empty views", viewsSkipped,                   "LemoineTextDim"),
+            });
+            Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+
+            // Session-long static handler (App.ClashFinderHandler) — drop the run's payload.
+            ViewIds     = new List<ElementId>();
+            Definitions = new List<ClashDefinition>();
+            SlabScopes  = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();
+        }
+
+        // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the
+        // cross-lines also removes any dimensions that referenced them). One view at a time, inside the
+        // caller's open transaction.
+        // ── Callout tier ──────────────────────────────────────────────────────
+        /// <summary>
+        /// Creates (or reuses, by name) one enlarged-plan callout per extreme dense area, marks
+        /// each with every definition's clashes, and returns the callout view ids. Source keys of
+        /// successfully calloutted areas are appended to <paramref name="deferred"/> so the parent
+        /// view's dimension pass skips them — a failed callout leaves its area dimensioning in the
+        /// parent (degrade to the chain tier, never drop). One transaction for all callouts.
+        /// </summary>
+        private List<ElementId> CreateDenseCallouts(
+            Document doc, View parentView, List<AutoDimension.DenseCalloutRequest> requests,
+            List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)> dets,
+            List<string> deferred, ref int totalMarkers, ref int totalMarkerFails)
+        {
+            var ids = new List<ElementId>();
+            using (var tx = new Transaction(doc, $"Lemoine - Dense Area Callouts · {parentView.Name}"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
+                foreach (var req in requests)
+                {
+                    try
+                    {
+                        View? cv = GetOrCreateCalloutView(doc, parentView, req);
+                        if (cv == null) continue;
+                        doc.Regenerate();   // few callouts per view — the new view must exist before marking
+
+                        if (ClearPrevious)
+                        {
+                            int removed = ClearViewMarkers(doc, cv.Id);
+                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                        }
+
+                        int placed = 0;
+                        foreach (var (engine, det, cache) in dets)
+                        {
+                            if (det.Failed || det.ClashCount == 0) continue;
+                            var pr = engine.PlaceInView(doc, cv, det, cache);
+                            placed           += pr.Markers;
+                            totalMarkers     += pr.Markers;
+                            totalMarkerFails += pr.Fails;
+                        }
+
+                        // The callout owns these clashes now: remove their parent-view markers so
+                        // they show ONLY in the callout (the parent keeps the callout bubble).
+                        int parentRemoved = DeleteParentMarkers(doc, parentView.Id, req.SourceKeys);
+
+                        ids.Add(cv.Id);
+                        deferred.AddRange(req.SourceKeys);
+                        Log(AppStrings.T("clash.finder.log.denseCallout", req.ClusterId, cv.Name, cv.Scale, placed, parentRemoved, req.ClashCount), "pass");
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Error("ClashFinderEventHandler: create dense-area callout", ex);
+                        Log(AppStrings.T("clash.finder.log.denseFailed", req.ClusterId, ex.Message), "fail");
+                    }
+                }
+
+                // The bubbles live in the parent on the Callouts annotation category — if the
+                // parent (often via its template) hides it, every callout is INVISIBLE there.
+                // Unhide when we can; when the template controls V/G, tell the user loudly.
+                if (ids.Count > 0)
+                {
+                    try
+                    {
+                        var calloutsCat = new ElementId(BuiltInCategory.OST_Callouts);
+                        if (parentView.GetCategoryHidden(calloutsCat))
+                        {
+                            bool unhidden = false;
+                            try { parentView.SetCategoryHidden(calloutsCat, false); unhidden = true; }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: unhide Callouts category", ex); }
+                            Log(unhidden
+                                ? $"'{parentView.Name}' had the Callouts annotation category hidden — enabled it so the bubbles show."
+                                : $"'{parentView.Name}' HIDES the Callouts annotation category (its view template controls visibility) — "
+                                  + "the callout bubbles exist but are invisible until that category is enabled in the template.",
+                                unhidden ? "info" : "fail");
+                        }
+                    }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: check Callouts visibility", ex); }
+                }
+                tx.Commit();
+            }
+            return ids;
+        }
+
+        /// <summary>
+        /// Adopts USER-drawn callouts on this view as pre-defined clash groups (surveyed by
+        /// <see cref="AutoDimension.AutoDimensionEngine.SurveyUserCallouts"/>): each adopted
+        /// callout is marked, its members' parent markers are deleted (so neither the dense
+        /// survey nor the parent dimension pass ever sees them again), its crop is grown to the
+        /// containing room(s), its scale coarsened only when the text demand needs it, and the
+        /// membership rectangle is stamped via <see cref="UserCalloutSchema"/> for idempotent
+        /// re-runs. The callout keeps its name, is never swept, and a failed adoption leaves its
+        /// clashes dimensioning in the parent (degrade, never drop). One transaction for all.
+        /// </summary>
+        private List<ElementId> AdoptUserCalloutViews(
+            Document doc, View parentView,
+            List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)> dets,
+            List<string> deferred, ref int totalMarkers, ref int totalMarkerFails)
+        {
+            var ids = new List<ElementId>();
+            var requests = AutoDimension.AutoDimensionEngine.SurveyUserCallouts(
+                doc, parentView, AutoDimension.AutoDimensionConfig.Instance, (t, s) => Log(t, s));
+            if (requests.Count == 0) return ids;
+
+            // Membership is tested geometrically (same basis as the survey): marker group ids
+            // are minted fresh per placement, so the parent-derived source keys can NEVER match
+            // the markers placed in the callout — key-based pruning deleted every marker there.
+            var projection   = new AutoDimension.Resolvers.ViewProjection(parentView);
+            var claimedRects = new List<AutoDimension.Core.Box2>();
+
+            using (var tx = new Transaction(doc, $"Lemoine - User Callout Adoption · {parentView.Name}"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
+                foreach (var req in requests)
+                {
+                    var membership = AutoDimension.Core.Box2.FromPoints(
+                        projection.To2D(req.MembershipMinWorld), projection.To2D(req.MembershipMaxWorld));
+                    string calloutName = "";
+                    try
+                    {
+                        var cv = doc.GetElement(req.ExistingViewId) as View;
+                        if (cv == null) continue;
+                        calloutName = cv.Name;
+
+                        // Only touch the scale when the survey computed a change — and a pinned
+                        // template blocks the setter, so unpin only in that case (an untouched
+                        // callout keeps its template assignment).
+                        if (cv.Scale != req.Scale)
+                        {
+                            UnpinTemplate(cv);
+                            TrySetCalloutScale(cv, req.Scale);
+                        }
+
+                        try
+                        {
+                            var cb = cv.CropBox;   // grow the crop to the room-grown rectangle
+                            cb.Min = new XYZ(Math.Min(req.MinWorld.X, req.MaxWorld.X), Math.Min(req.MinWorld.Y, req.MaxWorld.Y), cb.Min.Z);
+                            cb.Max = new XYZ(Math.Max(req.MinWorld.X, req.MaxWorld.X), Math.Max(req.MinWorld.Y, req.MaxWorld.Y), cb.Max.Z);
+                            cv.CropBox = cb;
+                        }
+                        catch (Exception ex)
+                        {
+                            // A crop that fails to grow starves the cropBounded dimension pass of
+                            // references outside the drawn boundary — tell the run log, don't just swallow.
+                            DiagnosticsLog.Swallowed("ClashFinderEventHandler: grow user callout crop", ex);
+                            Log(AppStrings.T("clash.finder.log.userCropFail", cv.Name, ex.Message), "fail");
+                        }
+                        doc.Regenerate();   // crop/scale must be current before the marker pass filters by view volume
+
+                        if (ClearPrevious)
+                        {
+                            int removed = ClearViewMarkers(doc, cv.Id);
+                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                        }
+
+                        int placed = 0;
+                        foreach (var (engine, det, cache) in dets)
+                        {
+                            if (det.Failed || det.ClashCount == 0) continue;
+                            var pr = engine.PlaceInView(doc, cv, det, cache);
+                            placed           += pr.Markers;
+                            totalMarkers     += pr.Markers;
+                            totalMarkerFails += pr.Fails;
+                        }
+
+                        // The grown crop can cover NON-member clashes (the next group over, or a
+                        // second user callout in the same room) — those keep marking and
+                        // dimensioning in the parent, so their markers must not also show here.
+                        int pruned = PruneMarkersToMembership(doc, cv, projection, membership, claimedRects);
+
+                        // This callout owns its members now: remove their parent-view markers so
+                        // they show ONLY here (the parent keeps the callout bubble).
+                        int parentRemoved = DeleteParentMarkers(doc, parentView.Id, req.SourceKeys);
+
+                        if (!UserCalloutSchema.Stamp(cv, req.MembershipMinWorld, req.MembershipMaxWorld,
+                                req.MinWorld, req.MaxWorld))
+                            Log(AppStrings.T("clash.finder.log.userStampFail", cv.Name), "fail");
+
+                        ids.Add(cv.Id);
+                        deferred.AddRange(req.SourceKeys);
+                        Log(AppStrings.T("clash.finder.log.userAdopted", cv.Name, cv.Scale, placed, (pruned > 0 ? AppStrings.T("clash.finder.log.prunedClause", pruned) : ""), parentRemoved, req.ClashCount), "pass");
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Error("ClashFinderEventHandler: adopt user callout", ex);
+                        Log(AppStrings.T("clash.finder.log.userAdoptFail", calloutName, ex.Message), "fail");
+                    }
+                    // The survey claimed this rectangle's clashes for THIS callout (first
+                    // containment wins) whether or not adoption succeeded — later callouts
+                    // must prune them either way.
+                    claimedRects.Add(membership);
+                }
+                tx.Commit();
+            }
+            return ids;
+        }
+
+        /// <summary>Deletes the tagged marker elements (cross lines + filled regions) in an
+        /// adopted user callout whose clash anchor falls OUTSIDE the membership rectangle, or
+        /// inside an earlier-adopted callout's rectangle (first containment wins). Membership
+        /// must be geometric: every <c>PlaceInView</c> call mints fresh group GUIDs, so the
+        /// parent view's source keys never match the markers placed here — key-based pruning
+        /// deleted every marker, members included. The anchor mirrors the survey's ingest (the
+        /// line endpoint nearest the clash centroid), and a whole clash — every element sharing
+        /// one group id — is kept or deleted atomically. A clash whose geometry cannot be read
+        /// is KEPT (never guess-delete). Runs inside the caller's open transaction.</summary>
+        private int PruneMarkersToMembership(
+            Document doc, View calloutView, AutoDimension.Resolvers.ViewProjection projection,
+            AutoDimension.Core.Box2 membership, List<AutoDimension.Core.Box2> claimedEarlier)
+        {
+            // Gather this view's tagged elements per clash group: line endpoints anchor the
+            // clash exactly like SourceIngest; region bbox centres are a fallback for a group
+            // whose lines are unreadable. Ungrouped legacy markers evaluate individually.
+            var groups = new Dictionary<string, (List<ElementId> Ids, List<XYZ> LinePts, List<XYZ> RegionPts)>(StringComparer.Ordinal);
+            int anon = 0;
+            (List<ElementId> Ids, List<XYZ> LinePts, List<XYZ> RegionPts) Entry(Element e)
+            {
+                string g = ClashTagSchema.ReadGroup(e);
+                if (string.IsNullOrEmpty(g)) g = "!" + anon++;
+                if (!groups.TryGetValue(g, out var entry))
+                    groups[g] = entry = (new List<ElementId>(), new List<XYZ>(), new List<XYZ>());
+                entry.Ids.Add(e.Id);
+                return entry;
+            }
+            try
+            {
+                foreach (var dc in new FilteredElementCollector(doc, calloutView.Id)
+                             .OfCategory(BuiltInCategory.OST_Lines)
+                             .WhereElementIsNotElementType()
+                             .Where(ClashTagSchema.IsOurs)
+                             .OfType<DetailCurve>())
+                {
+                    var entry = Entry(dc);
+                    Curve? gc = null;
+                    try { gc = dc.GeometryCurve; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: read marker line geometry", ex); }
+                    if (gc == null) continue;
+                    entry.LinePts.Add(gc.GetEndPoint(0));
+                    entry.LinePts.Add(gc.GetEndPoint(1));
+                }
+                foreach (var fr in new FilteredElementCollector(doc, calloutView.Id)
+                             .OfClass(typeof(FilledRegion))
+                             .WhereElementIsNotElementType()
+                             .Where(ClashTagSchema.IsOurs)
+                             .Cast<FilledRegion>())
+                {
+                    var entry = Entry(fr);
+                    var bb = fr.get_BoundingBox(calloutView);
+                    if (bb != null) entry.RegionPts.Add((bb.Min + bb.Max) * 0.5);
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: collect callout markers for membership prune", ex);
+                Log(AppStrings.T("clash.finder.log.userScanFail", calloutView.Name, ex.Message), "fail");
+            }
+
+            int removed = 0;
+            foreach (var entry in groups.Values)
+            {
+                var pts = entry.LinePts.Count > 0 ? entry.LinePts : entry.RegionPts;
+                if (pts.Count == 0) continue;          // unreadable geometry — keep, never guess-delete
+
+                XYZ sum = XYZ.Zero;
+                foreach (var p in pts) sum += p;
+                XYZ centre = sum.Divide(pts.Count);
+                XYZ anchor = pts[0];
+                foreach (var p in pts)
+                    if (p.DistanceTo(centre) < anchor.DistanceTo(centre)) anchor = p;
+
+                var a = projection.To2D(anchor);
+                if (membership.Contains(a) && !claimedEarlier.Any(r => r.Contains(a))) continue;
+
+                foreach (var id in entry.Ids)
+                {
+                    try { if (doc.Delete(id).Count > 0) removed++; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: prune non-member marker", ex); }
+                }
+            }
+            return removed;
+        }
+
+        /// <summary>Deletes this parent's dense-area callout views from earlier runs that this
+        /// run does not reuse — leftovers keep stale bubbles (and stale markers) on the parent.
+        /// Runs inside the caller's open transaction.</summary>
+        private void SweepStaleCallouts(Document doc, View parentView, List<AutoDimension.DenseCalloutRequest> requests)
+        {
+            try
+            {
+                string prefix = parentView.Name + " - Dense ";
+                var keep = new HashSet<string>(requests.Select(r => prefix + r.ClusterId), StringComparer.Ordinal);
+                foreach (var stale in new FilteredElementCollector(doc)
+                             .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                             .Where(v => !v.IsTemplate
+                                      && v.Name.StartsWith(prefix, StringComparison.Ordinal)
+                                      && !keep.Contains(v.Name))
+                             .ToList())
+                {
+                    string staleName = stale.Name;
+                    try
+                    {
+                        doc.Delete(stale.Id);
+                        Log(AppStrings.T("clash.finder.log.deletedStale", staleName), "info");
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed("ClashFinderEventHandler: delete stale callout", ex);
+                        Log(AppStrings.T("clash.finder.log.deleteStaleFail", staleName), "fail");
+                    }
+                }
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: stale callout sweep", ex); }
+        }
+
+        /// <summary>Deletes the parent view's marker elements (tagged cross lines + filled
+        /// regions) for the given clash groups — those clashes live in a dense-area callout now
+        /// and must not also show in the parent. Runs inside the caller's open transaction.</summary>
+        private static int DeleteParentMarkers(Document doc, ElementId parentViewId, List<string> groupKeys)
+        {
+            int removed = 0;
+            var keys = new HashSet<string>(groupKeys, StringComparer.Ordinal);
+            var toDelete = new List<ElementId>();
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, parentViewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+                toDelete.AddRange(new FilteredElementCollector(doc, parentViewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(e => ClashTagSchema.IsOurs(e) && keys.Contains(ClashTagSchema.ReadGroup(e)))
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: collect parent markers of callout clashes", ex); }
+
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: delete parent marker", ex); }
+            }
+            return removed;
+        }
+
+        /// <summary>Finds the prior run's callout view by its deterministic name, else creates a
+        /// new plan callout over the request rectangle. Template (if any) is applied BEFORE the
+        /// scale so the scale override wins; a template that pins the scale is reported.</summary>
+        private View? GetOrCreateCalloutView(Document doc, View parentView, AutoDimension.DenseCalloutRequest req)
+        {
+            string name = $"{parentView.Name} - Dense {req.ClusterId}";
+
+            var existing = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                .FirstOrDefault(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.Ordinal));
+            if (existing != null)
+            {
+                UnpinTemplate(existing);                 // a pinned template blocks the scale
+                TrySetCalloutScale(existing, req.Scale);
+                try
+                {
+                    var cb = existing.CropBox;   // refresh the crop to the current cluster extent
+                    cb.Min = new XYZ(Math.Min(req.MinWorld.X, req.MaxWorld.X), Math.Min(req.MinWorld.Y, req.MaxWorld.Y), cb.Min.Z);
+                    cb.Max = new XYZ(Math.Max(req.MinWorld.X, req.MaxWorld.X), Math.Max(req.MinWorld.Y, req.MaxWorld.Y), cb.Max.Z);
+                    existing.CropBox = cb;
+                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: refresh callout crop", ex); }
+                return existing;
+            }
+
+            View callout = ViewSection.CreateCallout(doc, parentView.Id, parentView.GetTypeId(), req.MinWorld, req.MaxWorld);
+            if (callout == null)
+            {
+                Log(AppStrings.T("clash.finder.log.noCalloutView", req.ClusterId), "fail");
+                return null;
+            }
+
+            // Template first (it copies V/G etc. onto the view), then UNPIN it — clearing the
+            // assignment keeps the applied settings but unlocks the parameters a template pins
+            // (the scale above all: a pinned 1:96 template silently defeated the whole tier).
+            if (parentView.ViewTemplateId != null && parentView.ViewTemplateId != ElementId.InvalidElementId)
+            {
+                try { callout.ViewTemplateId = parentView.ViewTemplateId; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: apply template to callout", ex); }
+            }
+            UnpinTemplate(callout);
+            TrySetCalloutScale(callout, req.Scale);
+
+            try { callout.Name = name; }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: name callout (duplicate?)", ex);
+                try { callout.Name = name + " " + Guid.NewGuid().ToString("N").Substring(0, 4); }
+                catch (Exception ex2) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: name callout fallback", ex2); }
+            }
+            return callout;
+        }
+
+        /// <summary>Clears a view's template assignment, keeping the settings the template already
+        /// applied but unlocking the parameters it pins (scale, V/G). Failure is logged.</summary>
+        private static void UnpinTemplate(View v)
+        {
+            try
+            {
+                if (v.ViewTemplateId != null && v.ViewTemplateId != ElementId.InvalidElementId)
+                    v.ViewTemplateId = ElementId.InvalidElementId;
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: unpin callout template", ex); }
+        }
+
+        private void TrySetCalloutScale(View callout, int scale)
+        {
+            try
+            {
+                callout.Scale = scale;
+                if (callout.Scale != scale)
+                    Log(AppStrings.T("clash.finder.log.scaleStuck", callout.Name, callout.Scale, scale), "fail");
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("ClashFinderEventHandler: set callout scale", ex);
+                Log(AppStrings.T("clash.finder.log.scaleSetFail", callout.Name, scale), "fail");
+            }
+        }
+
+        private static int ClearViewMarkers(Document doc, ElementId viewId)
+        {
+            int removed = 0;
+            var toDelete = new List<ElementId>();
+
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged lines for cleanup", ex); }
+
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged filled regions for cleanup", ex); }
+
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(Dimension))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: collect tagged dimensions for cleanup", ex); }
+
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinder: delete tagged element", ex); }
+            }
+            return removed;
+        }
+
+        private static void ConfigureFailures(Transaction tx)
+        {
+            var opts = tx.GetFailureHandlingOptions();
+            opts.SetClearAfterRollback(true);
+            opts.SetDelayedMiniWarnings(true);
+            tx.SetFailureHandlingOptions(opts);
+        }
+
+        private void Log(string text, string status) => PushLog?.Invoke(text, status);
+        private void Progress(int pct, int p, int f, int s) => OnProgress?.Invoke(pct, p, f, s);
+        private void Complete(int p, int f, int s) => OnComplete?.Invoke(p, f, s);
+    }
+}

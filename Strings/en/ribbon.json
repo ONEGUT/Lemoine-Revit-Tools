@@ -2,21 +2,44 @@
 // Built in App.cs. Keys are addressed as "ribbon.<section>.<key>".
 // "\n" in a label forces a line break on the two-line ribbon buttons. Keep it.
 {
-  // panels — the grey panel titles along the Lemoine Tools ribbon tab
+  // panels — the grey panel titles along the Lemoine Tools ribbon tab.
+  // Order here is cosmetic (App.cs decides ribbon order); kept alphabetical-ish for scanning.
   "panels": {
+    "setup":          "Setup",
     "filtersLegends": "Filters & Legends",
     "ceilings":       "Ceilings",
     "views":          "Views",
     "sheets":         "Sheets",
     "export":         "Export",
     "modify":         "Modify",
-    "clash":          "Clash",
+    "dimensioning":   "Dimensioning",
     "copyFromLink":   "Copy from Link",
     "settings":       "Settings"
   },
 
   // buttons — each has a "label" (on the button) and a "tip" (hover tooltip)
   "buttons": {
+    "upgradeLinks": {
+      "label": "Upgrade &\nLink Models",
+      "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat."
+    },
+    "linkAudit": {
+      "label": "Link\nAudit",
+      "tip":   "Read-only report on every linked model: load status, positioning, display mode (active view), pinned state, workset, attachment type, and last-saved time. Changes nothing."
+    },
+    "alignCoordinates": {
+      "label": "Align\nCoordinates",
+      "tip":   "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."
+    },
+    "compareGrids": {
+      "label": "Compare\nGrids",
+      "tip":   "Read-only audit: compare grid lines across the host and loaded links once aligned, flagging grids that are missing, offset, rotated, or present in only one file."
+    },
+    "pushCoordinates": {
+      "label": "Push Coordinates\nto Links",
+      "tip":   "Commit an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, and saves in place — Synchronizing With Central for a workshared source — then publishes coordinates and re-places the link via Shared Coordinates."
+    },
+
     "autoFilters": {
       "label": "Auto\nFilters",
       "tip":   "Open the Auto Filters window to configure and create view filters."
@@ -152,9 +175,9 @@
       "label": "Copy\nLinear",
       "tip":   "Copy linear linked runs into the host and split them into standard lengths, or replace them with a picked family at set intervals. Re-runs can process only changed elements."
     },
-    "copyGrids": {
-      "label": "Copy\nGrids",
-      "tip":   "Copy grids from a linked model into the host. Grids whose name already exists in the host are skipped."
+    "copyDatums": {
+      "label": "Copy\nDatums",
+      "tip":   "Copy grids and levels from a linked model into the host. Datums whose name already exists in the host are skipped — Revit requires unique grid and level names."
     },
     "copyFromLink": {
       "label": "Copy\nElements",

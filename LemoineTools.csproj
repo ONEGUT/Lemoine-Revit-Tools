@@ -59,41 +59,45 @@
   <!--
     SDK-style project — all .cs files under Source\ compile automatically.
 
-    Tool folders are number-prefixed (T01-, T02-, ...) for ordering on disk, but
-    the namespaces are NOT prefixed — e.g. folder Tools\T01-AutoFilters\ maps to
-    namespace LemoineTools.Tools.AutoFilters.
+    Tool folders mirror the ribbon's lifecycle categories (Setup, Copy from Link, Modify,
+    Ceilings, Views, Filters & Legends, Dimensioning, Sheets, Export). Namespaces are NOT
+    folder-prefixed — e.g. folder Tools\Ceilings\ maps to namespace LemoineTools.Tools.Ceilings.
 
     Folder structure:
       Source\App.cs
-      Source\Commands\OpenSettingsCommand.cs
-      Source\Commands\T01-AutoFilters\    — Auto Filters commands (ns: LemoineTools.Commands)
-      Source\Commands\T02-Ceilings\       — Ceiling Grids + Ceiling Heatmap commands (ns: LemoineTools.Commands)
-      Source\Commands\T03-LinkViews\      — Link Views + Replicate Dependent Views commands (ns: LemoineTools.Commands)
-      Source\Commands\T04-ModifyElements\ — Split/Extend wall commands (ns: LemoineTools.Commands)
-      Source\Commands\Debuggers\          — Debug tool commands (ns: LemoineTools.Commands)
-      Source\Commands\Testing\            — In-progress/experimental tool commands (ns: LemoineTools.Commands)
-      Source\Tools\T01-AutoFilters\       — Auto Filters view-models + settings (ns: LemoineTools.Tools.AutoFilters)
-      Source\Tools\T02-Ceilings\          — Ceiling Grids + Ceiling Heatmap view-models (ns: LemoineTools.Tools.Ceilings)
-      Source\Tools\T03-LinkViews\         — Link Views view-models + settings (ns: LemoineTools.Tools.LinkViews)
-      Source\Tools\T04-ModifyElements\    — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
-      Source\Tools\BulkExport\            — Bulk Export (PDF/DWG/NWC/IFC) + SheetPack (ns: LemoineTools.Tools.BulkExport)
-      Source\Tools\Testing\               — Promoted tools, one subfolder each
-                                            (LegendCreator, PlaceDependentViews, AlignSheetViews;
-                                            ns: LemoineTools.Tools.Testing.*)
-      Source\Lemoine\                     — library (StepFlowWindow, GlobalSettingsWindow, controls)
-      Source\Lemoine\Controls\            — shared WPF controls (Color, Input, Layout, Legend)
-      Source\Lemoine\Templates\           — template store
-      Source\Lemoine\T01-AutoFilters\     — GlobalSettingsWindow partial + FiltersSettingsWindow
-      Source\Lemoine\T02-Ceilings\        — GlobalSettingsWindow partial for Ceilings tab
-      Source\Lemoine\T03-LinkViews\       — GlobalSettingsWindow partial for Link Views tab
-      Source\Lemoine\Testing\             — GlobalSettingsWindow partial for Testing tab
-      Source\Helpers\                     — shared utilities (MepColorMap)
-      Source\Resources\                   — embedded resources
-
-    *** NEW TOOL POLICY ***
-    All new tools must be created in Source\Commands\Testing\ and Source\Tools\Testing\
-    FIRST for development and review. Once stable and approved, they graduate to their
-    own named folder under Commands\ and Tools\ with a descriptive namespace.
+      Source\Commands\OpenSettingsCommand.cs, OpenOverviewCommand.cs
+      Source\Commands\Setup\          — Upgrade Links, Link Audit, Align/Compare/Push Coordinates commands (ns: LemoineTools.Commands)
+      Source\Commands\CopyFromLink\   — Copy Datums, Copy Linear, Copy Elements commands (ns: LemoineTools.Commands)
+      Source\Commands\Modify\         — Split/Extend wall commands (ns: LemoineTools.Commands)
+      Source\Commands\Ceilings\       — Ceiling Grids + Ceiling Heatmap commands (ns: LemoineTools.Commands)
+      Source\Commands\Views\          — Bulk Views, Duplicate Views, Scope Boxes, Explode View by Trade commands (ns: LemoineTools.Commands)
+      Source\Commands\FiltersLegends\ — Auto Filters + Legend Creation commands (ns: LemoineTools.Commands)
+      Source\Commands\Dimensioning\   — Clash Definitions/Finder/Elevation/Refine Dimensions commands (ns: LemoineTools.Commands)
+      Source\Commands\Sheets\         — Bulk Rename, Place Dependent Views, Align Sheet Views commands (ns: LemoineTools.Commands)
+      Source\Commands\Export\         — Bulk Export + Print View commands (ns: LemoineTools.Commands)
+      Source\Commands\Debuggers\      — Debug tool commands (ns: LemoineTools.Commands)
+      Source\Tools\Setup\             — Upgrade Links, Link Audit, Coordinates view-models (ns: LemoineTools.Tools.Setup)
+      Source\Tools\Setup\Windows\     — LinkAuditWindow (standalone report window; ns: LemoineTools.Framework)
+      Source\Tools\CopyFromLink\      — Copy Datums, Copy Linear, Copy Elements view-models (ns: LemoineTools.Tools.CopyFromLink)
+      Source\Tools\Modify\            — Split/Extend view-models (ns: LemoineTools.Tools.ModifyElements)
+      Source\Tools\Ceilings\          — Ceiling Grids + Ceiling Heatmap view-models (ns: LemoineTools.Tools.Ceilings)
+      Source\Tools\Ceilings\Windows\  — GlobalSettingsWindow partial for the Ceilings tab
+      Source\Tools\Views\             — Link Views, Duplicate Views view-models (ns: LemoineTools.Tools.LinkViews)
+      Source\Tools\Views\Windows\     — GlobalSettingsWindow partial for the Views tab
+      Source\Tools\Views\ScopeBoxes\  — Scope Box Creator/Manager (ns: LemoineTools.Tools.ScopeBoxes)
+      Source\Tools\Views\ExplodeViews\— Explode View by Trade (ns: LemoineTools.Tools.ExplodeViews)
+      Source\Tools\FiltersLegends\    — Auto Filters view-models + settings (ns: LemoineTools.Tools.AutoFilters)
+      Source\Tools\FiltersLegends\Windows\        — FiltersSettingsWindow + GlobalSettingsWindow partial
+      Source\Tools\FiltersLegends\LegendCreator\  — Legend Creator (ns: LemoineTools.Tools.FiltersLegends.LegendCreator)
+      Source\Tools\Dimensioning\      — Clash + Auto-Dimension engine (ns: LemoineTools.Tools.Dimensioning.*)
+      Source\Tools\Dimensioning\Windows\ — Clash Definitions window
+      Source\Tools\Sheets\            — Bulk Rename, Place Dependent Views, Align Sheet Views (ns: LemoineTools.Tools.LinkViews.BulkRename / .Sheets.*)
+      Source\Tools\Export\            — Bulk Export (PDF/DWG/NWC/IFC) + SheetPack (ns: LemoineTools.Tools.BulkExport)
+      Source\Framework\               — framework (StepFlowWindow, GlobalSettingsWindow, ToolsOverviewWindow, controls; ns: LemoineTools.Framework)
+      Source\Framework\Controls\      — shared WPF controls (Color, Input, Layout, Legend)
+      Source\Framework\Templates\     — template store
+      Source\Helpers\                 — shared utilities (MepColorMap)
+      Source\Resources\               — embedded resources
   -->
 
   <!-- Exclude sibling sub-projects from this project's SDK wildcard globs.
@@ -160,7 +164,7 @@
   <!--
     Build-info stamping. Runs before every compile and writes a generated partial
     that implements BuildInfo.InitGenerated() with the current build time, git branch
-    and short commit (see Source\Lemoine\BuildInfo.cs). The file lives under obj\ so it
+    and short commit (see Source\Framework\BuildInfo.cs). The file lives under obj\ so it
     is never committed.
 
     Branch/commit are read straight from the .git directory (HEAD + ref file) so no
@@ -220,7 +224,7 @@
          does not treat it as an item separator. -->
     <ItemGroup>
       <_BuildInfoLines Include="// &lt;auto-generated&gt; regenerated each build — do not edit or commit." />
-      <_BuildInfoLines Include="namespace LemoineTools.Lemoine" />
+      <_BuildInfoLines Include="namespace LemoineTools.Framework" />
       <_BuildInfoLines Include="{" />
       <_BuildInfoLines Include="    public static partial class BuildInfo" />
       <_BuildInfoLines Include="    {" />

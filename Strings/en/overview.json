@@ -158,7 +158,7 @@
       }
     },
     "clash": {
-      "name": "Clash",
+      "name": "Dimensioning",
       "intro": "Find where two groups of elements run into each other, mark and color them in plan or section, and dimension each one to the nearest grid or slab edge. Definitions hold the rules, the finders run them, and Refine just redoes the dimensions.",
       "tools": {
         "definitions": {
@@ -193,9 +193,9 @@
           "example": "a linked pipe run comes in as host pipes in 6 m lengths"
         },
         "grids": {
-          "name": "Copy Grids",
-          "blurb": "Copies grids from a link into the host. Any grid whose name already exists is skipped and noted, since grid names have to be unique.",
-          "example": "link grids A to F come across, and existing names are left alone"
+          "name": "Copy Datums",
+          "blurb": "Copies grids and levels from a link into the host. Any grid or level whose name already exists is skipped and noted, since both have to be unique.",
+          "example": "link grids A to F and levels L1-L4 come across, and existing names are left alone"
         },
         "elements": {
           "name": "Copy Elements",
@@ -205,9 +205,14 @@
       }
     },
     "coordination": {
-      "name": "Coordination",
-      "intro": "Line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
+      "name": "Setup",
+      "intro": "Check the links are set up right, line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
       "tools": {
+        "linkAudit": {
+          "name": "Link Audit",
+          "blurb": "Read-only report on every loaded link: load status, positioning, display mode, pinned state, workset, attachment type, and last-saved time. The first thing to check on a new coordination project.",
+          "example": "3 links found — 1 unloaded, 1 not displaying By Host View, flagged for attention"
+        },
         "alignCoordinates": {
           "name": "Align Coordinates",
           "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, rotates and translates each selected link so its same-named grid intersection lands on the host's, then publishes the host's shared coordinates to those links.",
@@ -222,10 +227,10 @@
     }
   },
   "stages": {
-    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link · Coordination" },
+    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link · Setup" },
     "s02": { "name": "Prep Geometry", "tagline": "Modify" },
     "s03": { "name": "Build Views",   "tagline": "Views · Ceilings" },
-    "s04": { "name": "Coordinate",    "tagline": "Clash" },
+    "s04": { "name": "Coordinate",    "tagline": "Dimensioning" },
     "s05": { "name": "Document",      "tagline": "Sheets" },
     "s06": { "name": "Output",        "tagline": "Export" }
   }

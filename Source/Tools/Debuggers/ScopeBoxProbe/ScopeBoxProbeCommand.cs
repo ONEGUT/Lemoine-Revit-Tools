@@ -8,7 +8,7 @@ using System.Text;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Commands
 {
@@ -53,7 +53,7 @@ namespace LemoineTools.Commands
             {
                 sb.AppendLine();
                 sb.AppendLine("FATAL: probe aborted — " + ex);
-                LemoineLog.Error("ScopeBoxProbe: aborted", ex);
+                DiagnosticsLog.Error("ScopeBoxProbe: aborted", ex);
             }
 
             Write(sb);
@@ -305,7 +305,7 @@ namespace LemoineTools.Commands
                 File.WriteAllText(path, sb.ToString());
                 Process.Start("notepad.exe", path);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("ScopeBoxProbe: write report", ex); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ScopeBoxProbe: write report", ex); }
         }
     }
 }

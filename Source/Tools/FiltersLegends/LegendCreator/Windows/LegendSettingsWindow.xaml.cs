@@ -1,0 +1,1363 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using Autodesk.Revit.DB;
+using LemoineTools.Framework.Controls;
+using LemoineTools.Tools.AutoFilters;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
+using WpfGrid       = System.Windows.Controls.Grid;
+using WpfPoint      = System.Windows.Point;
+using WpfVisibility = System.Windows.Visibility;
+
+namespace LemoineTools.Framework
+{
+    public partial class LegendSettingsWindow : Window
+    {
+        // ── Constructor parameters ─────────────────────────────────────────────
+        private readonly List<(ElementId Id, string Name)> _textTypes;
+        private readonly List<(ElementId Id, string Name)> _legendViews;
+
+        // ── Active state ───────────────────────────────────────────────────────
+        private int _activeIndex = 0;
+        private readonly Dictionary<string, LegendBuilder> _builders =
+            new Dictionary<string, LegendBuilder>();
+
+        // ── Preview overlay (covers ONLY the centre builder column) ─────────────
+        private LegendPreview?   _previewControl;
+        private WpfGrid?                _previewOverlayGrid;
+        private WpfGrid?                _mainGrid;        // 4-column layout grid; hosts the overlay in col 1
+        private bool                    _previewVisible;
+        private LegendBuilder?   _activeBuilder;   // subscribed for live preview refresh
+
+        // ── UI refs ────────────────────────────────────────────────────────────
+        private Border?                 _statusChip;       // surface chip behind status text
+        private TextBlock?              _statusText;
+        private Border?                 _createPill;       // floating bottom-right Create/Update
+        private TextBlock?              _createPillLabel;
+        private bool                    _createBusy;       // guards re-entry while a run is in flight
+        private Border?                 _previewPill;      // floating bottom-right Preview (above Create)
+        private TextBlock?              _previewPillLabel;
+        private StackPanel?             _tabStack;
+        private ListReorder?     _tabReorder;   // drag-to-reorder legend tabs
+        private ScrollViewer?           _tabScroll;   // auto-scroll to newly-added legend
+        private LegendPalette?   _palette;
+        private ContentControl?         _builderSlot;
+        private ContentControl?         _sizingSlot;
+        private ContentControl?         _textStylesSlot;
+        private ContentControl?         _paletteSlot;
+        private Border?                 _paletteCard;      // bottom card; inset to clear floating pills
+
+        // ── Constructor ────────────────────────────────────────────────────────
+        public LegendSettingsWindow(
+            List<(ElementId Id, string Name)>? textTypes   = null,
+            List<(ElementId Id, string Name)>? legendViews = null)
+        {
+            _textTypes   = textTypes   ?? new List<(ElementId, string)>();
+            _legendViews = legendViews ?? new List<(ElementId, string)>();
+
+            InitializeComponent();
+            Loaded += OnLoaded;
+
+            // Named handlers (not lambdas) so they can be detached in OnClosed — a leaked
+            // subscription to this STA window after its dispatcher has shut down crashes/hangs
+            // Revit on the next theme change.
+            AppSettings.Instance.ThemeChanged  += OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
+        }
+
+        private void OnThemeChanged(ThemePalette t)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AppSettings.Instance.ApplyTo(Resources);
+                Background = t.PageBg;
+                _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            }));
+        }
+
+        private void OnUiSizeChanged(UiSize _)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AppSettings.Instance.ApplyScaleTo(Resources);
+                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                UpdateRowHeights();
+            }));
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            AppSettings.Instance.ApplyTo(Resources);
+            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+            Background = AppSettings.Instance.ActiveTheme.PageBg;
+            _root.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineBg");
+            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            _outerBorder.CornerRadius = new CornerRadius(8);
+
+            _palette = new LegendPalette();
+            AutoFiltersSettings.Saved += OnFiltersSaved;
+
+            UpdateRowHeights();
+            BuildToolbar();
+            BuildMainLayout();
+            BuildPreviewLayer();
+            BuildFloatingActions();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
+            AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
+
+            AutoFiltersSettings.Saved -= OnFiltersSaved;
+            foreach (var b in _builders.Values)
+            {
+                AutoFiltersSettings.Saved -= b.OnFiltersSaved;
+                b.Edited                  -= OnBuilderEdited;
+            }
+            base.OnClosed(e);
+        }
+
+        private void OnFiltersSaved() => _palette?.Refresh();
+
+        private void UpdateRowHeights()
+        {
+            if (_root == null) return;
+            _root.RowDefinitions[0].Height = new GridLength(AppSettings.Instance.ToolbarHeight);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Toolbar
+        // ─────────────────────────────────────────────────────────────────────
+        private void BuildToolbar()
+        {
+            _toolbarBorder.BorderThickness = new Thickness(0);
+
+            var closeBtn = ControlStyles.BuildButton(
+                "×", ControlStyles.ButtonVariant.Ghost);
+            closeBtn.Margin = new Thickness(8, 0, 0, 0);
+            closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
+            closeBtn.Click += (s, ev) => Close();
+
+            var rightPanel = new StackPanel
+            {
+                Orientation       = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            rightPanel.Children.Add(closeBtn);
+
+            _toolbarBorder.Child = new TitleBar
+            {
+                Title        = AppStrings.T("testing.legendCreator.builder.window.titleBar.title"),
+                IconGlyph    = "⚙",
+                RightContent = rightPanel,
+            };
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Floating bottom-right action pills (status · Preview · Create/Update)
+        // ─────────────────────────────────────────────────────────────────────
+        private void BuildFloatingActions()
+        {
+            _statusChip = ControlStyles.BuildStatusChip(out _statusText);
+            _statusChip.HorizontalAlignment = HorizontalAlignment.Center;
+            _statusChip.Margin              = new Thickness(0, 0, 0, 6);
+
+            // Preview pill — sits directly above the Create pill
+            _previewPill = ControlStyles.BuildActionPill(AppStrings.T("testing.legendCreator.builder.window.actions.previewButton"), primary: false, TogglePreviewFromPill);
+            _previewPill.HorizontalAlignment = HorizontalAlignment.Center;
+            _previewPill.Margin              = new Thickness(0, 0, 0, 8);
+            _previewPill.ToolTip             = AppStrings.T("testing.legendCreator.builder.window.actions.previewTooltip");
+            _previewPillLabel = _previewPill.Child as TextBlock;
+
+            // Create / Update pill
+            _createPill = ControlStyles.BuildActionPill(AppStrings.T("testing.legendCreator.builder.window.actions.createLegend"), primary: true, HandleCreateUpdate);
+            _createPill.HorizontalAlignment = HorizontalAlignment.Center;
+            _createPill.ToolTip             = AppStrings.T("testing.legendCreator.builder.window.actions.createTooltip");
+            _createPillLabel = _createPill.Child as TextBlock;
+
+            var stack = new StackPanel
+            {
+                Orientation         = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Bottom,
+            };
+            stack.Children.Add(_statusChip);
+            stack.Children.Add(_previewPill);
+            stack.Children.Add(_createPill);
+
+            // Pills float at the bottom of the left sidebar column, centered on it.
+            // Kept in the ZIndex-50 slot (above the preview overlay) so the
+            // Hide-Preview pill stays clickable while a preview is open.
+            _floatingSlot.Content             = stack;
+            _floatingSlot.HorizontalAlignment = HorizontalAlignment.Left;
+            _floatingSlot.Width               = 180;   // matches the sidebar column width
+            _floatingSlot.Margin              = new Thickness(0, 0, 0, 16);
+
+            // Reserve space at the bottom of the sidebar tab list so the last
+            // legend tab / Add Legend pill is never hidden behind the floating pills.
+            _floatingSlot.SizeChanged += (s, e) => ApplyFloatingInset(e.NewSize.Height);
+
+            // Reflect the Create/Update label for the active legend
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex >= 0 && _activeIndex < entries.Count)
+                UpdateCreateUpdateButton(entries[_activeIndex]);
+        }
+
+        // ── Window-level preview overlay ────────────────────────────────────────
+        private void BuildPreviewLayer()
+        {
+            _previewControl = new LegendPreview { Margin = new Thickness(8) };
+
+            // A long/wide legend must stay reachable — scroll instead of clipping.
+            var previewScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content                       = _previewControl,
+            };
+
+            _previewOverlayGrid = new WpfGrid
+            {
+                Visibility            = WpfVisibility.Collapsed,
+                // Grows from/to the bottom-left corner — where the Preview pill lives
+                // (the pills now sit at the bottom of the left sidebar column).
+                RenderTransformOrigin = new WpfPoint(0, 1),
+                RenderTransform       = new ScaleTransform(0, 0),
+            };
+            _previewOverlayGrid.SetResourceReference(WpfGrid.BackgroundProperty, "LemoineSurface");
+            _previewOverlayGrid.Children.Add(previewScroll);
+
+            // Overlay ONLY the centre builder column — the legend tabs (sidebar) and the
+            // Sizing / Text Styles panel stay visible and editable while the preview is
+            // open, and their changes refresh it live. Hosting the overlay inside the main
+            // grid's column 1 (above the builder via ZIndex) also makes it track the
+            // GridSplitter automatically.
+            if (_mainGrid != null)
+            {
+                WpfGrid.SetColumn(_previewOverlayGrid, 1);
+                System.Windows.Controls.Panel.SetZIndex(_previewOverlayGrid, 40);
+                _mainGrid.Children.Add(_previewOverlayGrid);
+            }
+            else
+            {
+                _previewLayer.Children.Add(_previewOverlayGrid); // fallback: window-wide layer
+            }
+        }
+
+        private void TogglePreviewFromPill()
+        {
+            if (_previewVisible) ClosePreview(); else OpenPreview();
+        }
+
+        private void OpenPreview()
+        {
+            var builder = _builderSlot?.Content as LegendBuilder;
+            if (builder == null || _previewControl == null || _previewOverlayGrid == null) return;
+            _previewVisible = true;
+            _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
+            _previewOverlayGrid.Visibility = WpfVisibility.Visible;
+            var st   = (ScaleTransform)_previewOverlayGrid.RenderTransform;
+            var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, open);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, open);
+            if (_previewPillLabel != null) _previewPillLabel.Text = AppStrings.T("testing.legendCreator.builder.window.actions.hidePreviewButton");
+        }
+
+        private void ClosePreview()
+        {
+            _previewVisible = false;
+            if (_previewPillLabel != null) _previewPillLabel.Text = AppStrings.T("testing.legendCreator.builder.window.actions.previewButton");
+            if (_previewOverlayGrid == null) return;
+            var st    = (ScaleTransform)_previewOverlayGrid.RenderTransform;
+            var close = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            };
+            close.Completed += (s, e) => { if (_previewOverlayGrid != null) _previewOverlayGrid.Visibility = WpfVisibility.Collapsed; };
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, close);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, close);
+        }
+
+        // Refreshes the live preview from the active builder when it's showing.
+        private void OnBuilderEdited()
+        {
+            if (_previewVisible && _previewControl != null && _activeBuilder != null)
+                _previewControl.Update(_activeBuilder.Layout, _activeBuilder.Rows, ActiveRoleCaps());
+        }
+
+        // Per-role text cap heights (paper inches) for the active legend, resolved from each
+        // role's chosen TextNoteType (captured at launch) with the font-point fallback. Lets
+        // the preview size text to the real types the generated legend will use.
+        private LegendRoleCaps ActiveRoleCaps()
+        {
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex < 0 || _activeIndex >= entries.Count)
+                return LegendRoleCaps.FromFontPt(9);
+            var e  = entries[_activeIndex];
+            int pt = e.Layout?.FontPt ?? 9;
+            return new LegendRoleCaps(
+                LegendTextTypeSizes.CapInches(e.TitleTypeId,       pt),
+                LegendTextTypeSizes.CapInches(e.SubtitleTypeId,    pt),
+                LegendTextTypeSizes.CapInches(e.GroupHeaderTypeId, pt),
+                LegendTextTypeSizes.CapInches(e.LabelTypeId,       pt));
+        }
+
+        // Pushes a bottom inset onto the sidebar tab list so its last item (the
+        // Add Legend pill) clears the floating Preview / Create pills below it.
+        private void ApplyFloatingInset(double pillsHeight)
+        {
+            if (_tabScroll == null) return;
+            double inset = Math.Max(0, pillsHeight) + 24;
+            _tabScroll.Margin = new Thickness(0, 0, 0, inset);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Main 3-column layout
+        // ─────────────────────────────────────────────────────────────────────
+        private void BuildMainLayout()
+        {
+            // Four-column split mirroring the Auto Filters window:
+            // [sidebar 180] [canvas * (min150)] [splitter 5] [right editor 280 (min280)]
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280), MinWidth = 280 });
+
+            // Sidebar — no right border; the divider lives on the canvas's left
+            // edge instead so the active tab can overlap it (matches Auto Filters).
+            var sidebarBorder = new Border { BorderThickness = new Thickness(0) };
+            sidebarBorder.Child = BuildSidebar();
+            WpfGrid.SetColumn(sidebarBorder, 0);
+            grid.Children.Add(sidebarBorder);
+
+            // Center builder slot — wrapped in a 1px-left-border so the active tab
+            // overlaps it, visually connecting the selected tab to its content.
+            _builderSlot = new ContentControl();
+            var builderWrapper = new Border { BorderThickness = new Thickness(1, 0, 0, 0), Child = _builderSlot };
+            builderWrapper.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            WpfGrid.SetColumn(builderWrapper, 1);
+            grid.Children.Add(builderWrapper);
+
+            // Splitter between canvas and right editor
+            var splitter = new GridSplitter
+            {
+                Width               = 5,
+                VerticalAlignment   = VerticalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                ResizeDirection     = GridResizeDirection.Columns,
+                ResizeBehavior      = GridResizeBehavior.PreviousAndNext,
+                Background          = Brushes.Transparent,
+                Cursor              = Cursors.SizeWE,
+            };
+            WpfGrid.SetColumn(splitter, 2);
+            grid.Children.Add(splitter);
+
+            // Right panel
+            var rightBorder = new Border { BorderThickness = new Thickness(1, 0, 0, 0) };
+            rightBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            rightBorder.Child = BuildRightPanel();
+            WpfGrid.SetColumn(rightBorder, 3);
+            grid.Children.Add(rightBorder);
+
+            _mainGrid = grid; // BuildPreviewLayer parks the preview overlay in column 1
+            _contentBorder.Child = grid;
+
+            ActivateTab(0);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Sidebar
+        // ─────────────────────────────────────────────────────────────────────
+        private UIElement BuildSidebar()
+        {
+            var dp = new DockPanel { LastChildFill = true };
+            dp.SetResourceReference(DockPanel.BackgroundProperty, "LemoineSurface");
+
+            // Templates chip at top (matches the Auto Filters sidebar pill)
+            var templatesPill = BuildTemplatesPill();
+            DockPanel.SetDock(templatesPill, Dock.Top);
+            dp.Children.Add(templatesPill);
+
+            // Separator between templates chip and the tab list
+            var templSep = new Border { Height = 1, Margin = new Thickness(0, 4, 0, 0) };
+            templSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            DockPanel.SetDock(templSep, Dock.Top);
+            dp.Children.Add(templSep);
+
+            // "＋ Add Legend" floats as the last item inside the tab list
+            // (RebuildTabStack) — no sticky bar. Create/Update is the floating pill.
+
+            // Tab list (fills remaining space)
+            _tabStack = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 4, 0, 0) };
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            };
+            scroll.Content = _tabStack;
+            _tabScroll = scroll;
+            dp.Children.Add(scroll);
+
+            return dp;
+        }
+
+        private Border BuildTemplatesPill()
+        {
+            // Rounded chip identical to the Auto Filters sidebar Templates button.
+            var pill = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(10, 5, 10, 5),
+                Cursor          = Cursors.Hand,
+                Margin          = new Thickness(8, 8, 8, 4),
+            };
+            pill.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Chip");
+            pill.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            pill.SetResourceReference(Border.BackgroundProperty,   "LemoineRaised");
+
+            var inner = new StackPanel
+            {
+                Orientation         = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            var pillText = new TextBlock { Text = AppStrings.T("testing.legendCreator.builder.window.sidebar.templatesPill"), VerticalAlignment = VerticalAlignment.Center };
+            pillText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            pillText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            pillText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            var caret = new TextBlock { Text = "˅", Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            caret.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            caret.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            caret.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            inner.Children.Add(pillText);
+            inner.Children.Add(caret);
+            pill.Child = inner;
+
+            pill.MouseEnter += (s, e) =>
+                pill.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
+            pill.MouseLeave += (s, e) =>
+                pill.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+
+            pill.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                var entries = LegendCreatorSettings.Instance.Legends;
+                if (_activeIndex >= 0 && _activeIndex < entries.Count)
+                    GetOrCreateBuilder(entries[_activeIndex]).ShowTemplatesPopup(pill);
+            };
+
+            return pill;
+        }
+
+        private void RebuildTabStack()
+        {
+            if (_tabStack == null) return;
+            _tabStack.Children.Clear();
+
+            var entries = LegendCreatorSettings.Instance.Legends;
+
+            // Drag-to-reorder the legend tabs (whole tab is the handle, ghost included), like the
+            // Auto Filters trade tabs. Order is persisted; the active legend follows its tab.
+            if (_tabReorder == null)
+                _tabReorder = new ListReorder(_tabStack, (from, to) =>
+                {
+                    var legends = LegendCreatorSettings.Instance.Legends;
+                    var active  = (_activeIndex >= 0 && _activeIndex < legends.Count) ? legends[_activeIndex] : null;
+                    ListReorder.Move(legends, from, to);
+                    if (active != null) _activeIndex = legends.IndexOf(active);
+                    LegendCreatorSettings.Instance.Save();
+                    RebuildTabStack();
+                });
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var tab = BuildTabItem(entries[i], i);
+                _tabStack.Children.Add(tab);
+                _tabReorder.Arm(tab, i);
+            }
+
+            // "＋ Add Legend" floats as the last item in the list
+            _tabStack.Children.Add(
+                ControlStyles.BuildAddPill("＋  Add Legend", () => AddLegend()));
+
+            // Guard for ComboBoxes that may have been rebuilt
+            Dispatcher.BeginInvoke(new Action(() => Keyboard.ClearFocus()),
+                DispatcherPriority.Input);
+        }
+
+        private Border BuildTabItem(LegendEntry entry, int index)
+        {
+            bool isActive = index == _activeIndex;
+
+            // Identical chrome to the Auto Filters trade tab: active tab is rounded
+            // on the left only, drops its right border, and a -1px right margin
+            // overlaps the canvas's 1px left border to connect tab → content.
+            var tab = new Border
+            {
+                CornerRadius    = isActive ? new CornerRadius(10, 0, 0, 10) : new CornerRadius(10),
+                BorderThickness = isActive ? new Thickness(1, 1, 0, 1) : new Thickness(1),
+                Margin          = isActive ? new Thickness(4, 1, -1, 1) : new Thickness(4, 1, 4, 1),
+                Padding         = new Thickness(8, 6, 8, 6),
+                Cursor          = isActive ? Cursors.Arrow : Cursors.Hand,
+            };
+            tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            if (isActive)
+                tab.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
+            else
+                tab.Background = Brushes.Transparent;
+
+            int capturedIndex = index;
+            if (!isActive)
+            {
+                tab.MouseEnter += (s, e) =>
+                    tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                tab.MouseLeave += (s, e) =>
+                {
+                    tab.Background = Brushes.Transparent;
+                    tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                };
+                tab.MouseLeftButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    ActivateTab(capturedIndex);
+                };
+            }
+
+            // Row: [* label | Auto edit] — legends have no single representative
+            // colour, so the filters' leading colour swatch is intentionally omitted.
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var nameDisplay = new TextBlock
+            {
+                Text              = entry.GetDisplayName(),
+                FontWeight        = isActive ? FontWeights.SemiBold : FontWeights.Normal,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming      = TextTrimming.CharacterEllipsis,
+            };
+            nameDisplay.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            nameDisplay.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "LemoineAccent" : "LemoineText");
+            nameDisplay.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            WpfGrid.SetColumn(nameDisplay, 0);
+            grid.Children.Add(nameDisplay);
+
+            // Edit pencil (✎) — bordered hover button matching the filters trade edit.
+            // Opens the Title / Subtitle editor moved here from the builder's old bar.
+            var editBtn = BuildSidebarActionBtn("✎", "LemoineUiFont");
+            editBtn.ToolTip = AppStrings.T("testing.legendCreator.builder.window.sidebar.editTooltip");
+            editBtn.Margin  = new Thickness(4, 0, 0, 0);
+            editBtn.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                ShowLegendEditPopup(editBtn, entry, nameDisplay);
+            };
+            WpfGrid.SetColumn(editBtn, 1);
+            grid.Children.Add(editBtn);
+
+            tab.Child = grid;
+            return tab;
+        }
+
+        // Bordered icon button matching the Auto Filters sidebar action buttons.
+        private static Border BuildSidebarActionBtn(string glyph, string fontResourceKey)
+        {
+            var icon = new TextBlock
+            {
+                Text              = glyph,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible  = false,
+            };
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            icon.SetResourceReference(TextBlock.FontFamilyProperty, fontResourceKey);
+
+            var btn = new Border
+            {
+                Cursor              = Cursors.Hand,
+                Padding             = new Thickness(5),
+                BorderThickness     = new Thickness(1),
+                CornerRadius        = new CornerRadius(3),
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background          = Brushes.Transparent,
+                Margin              = new Thickness(2, 0, 0, 0),
+                Child               = icon,
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            btn.MouseEnter += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineAccent");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
+            };
+            btn.MouseLeave += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineBorder");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            };
+            return btn;
+        }
+
+        // Title / Subtitle editor — moved here from the builder's old top layout bar
+        // and anchored to the legend tab's ✎ pencil.
+        private void ShowLegendEditPopup(UIElement anchor, LegendEntry entry, TextBlock nameDisplay)
+        {
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Margin      = new Thickness(8),
+                MinWidth    = 200,
+            };
+
+            panel.Children.Add(MakeEditLabel(AppStrings.T("testing.legendCreator.builder.window.editPopup.titleLabel")));
+            var titleBox = MakeEditBox(entry.Layout?.Title ?? "");
+            titleBox.Margin = new Thickness(0, 0, 0, 8);
+            panel.Children.Add(titleBox);
+
+            panel.Children.Add(MakeEditLabel(AppStrings.T("testing.legendCreator.builder.window.editPopup.subtitleLabel")));
+            var subBox = MakeEditBox(entry.Layout?.Subtitle ?? "");
+            subBox.Margin = new Thickness(0, 0, 0, 10);
+            panel.Children.Add(subBox);
+
+            var popup = new Popup
+            {
+                PlacementTarget    = anchor,
+                Placement          = PlacementMode.Bottom,
+                StaysOpen          = true,   // StaysOpen=false crashes Revit (see CLAUDE.md)
+                AllowsTransparency = false,
+            };
+
+            void Commit()
+            {
+                ApplyLegendTitle(entry, titleBox.Text.Trim(), subBox.Text.Trim(), nameDisplay);
+                popup.IsOpen = false;
+            }
+
+            var saveBtn = ControlStyles.BuildButton(
+                AppStrings.T("testing.legendCreator.builder.window.editPopup.save"), ControlStyles.ButtonVariant.Primary);
+            saveBtn.Click += (s, e) => Commit();
+            panel.Children.Add(saveBtn);
+
+            // ── Duplicate / Delete actions (mirrors the Auto Filters trade editor) ──
+            // The legend popup is StaysOpen=true (StaysOpen=false crashes Revit), so
+            // the delete confirmation is shown inline rather than as a nested popup.
+            var actionSep = new Border { Height = 1, Margin = new Thickness(0, 10, 0, 8) };
+            actionSep.SetResourceReference(Border.BackgroundProperty, "LemoineBorder");
+            panel.Children.Add(actionSep);
+
+            var actionHost = new WpfGrid();
+            panel.Children.Add(actionHost);
+
+            void ShowActionButtons()
+            {
+                actionHost.Children.Clear();
+                var row = new WpfGrid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var dupBtn = ControlStyles.BuildSmallButton(
+                    AppStrings.T("testing.legendCreator.builder.window.editPopup.duplicate"), ControlStyles.ButtonVariant.Ghost);
+                dupBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+                WpfGrid.SetColumn(dupBtn, 0);
+                dupBtn.Click += (s, e) => { popup.IsOpen = false; DuplicateLegend(entry); };
+                row.Children.Add(dupBtn);
+
+                var delBtn = BuildTrashButton();
+                delBtn.Margin = new Thickness(6, 0, 0, 0);
+                delBtn.MouseLeftButtonUp += (s, e) => { e.Handled = true; ShowDeleteConfirm(); };
+                WpfGrid.SetColumn(delBtn, 1);
+                row.Children.Add(delBtn);
+
+                actionHost.Children.Add(row);
+            }
+
+            void ShowDeleteConfirm()
+            {
+                actionHost.Children.Clear();
+                var row = new WpfGrid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var confirmBtn = ControlStyles.BuildSmallButton(
+                    AppStrings.T("testing.legendCreator.builder.window.editPopup.deleteLegend"), ControlStyles.ButtonVariant.Ghost);
+                confirmBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+                confirmBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineRed");
+                confirmBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineRed");
+                WpfGrid.SetColumn(confirmBtn, 0);
+                confirmBtn.Click += (s, e) => { popup.IsOpen = false; DeleteLegend(entry); };
+                row.Children.Add(confirmBtn);
+
+                var cancelBtn = ControlStyles.BuildSmallButton(
+                    AppStrings.T("testing.legendCreator.builder.window.editPopup.cancel"), ControlStyles.ButtonVariant.Ghost);
+                cancelBtn.Margin = new Thickness(6, 0, 0, 0);
+                WpfGrid.SetColumn(cancelBtn, 1);
+                cancelBtn.Click += (s, e) => ShowActionButtons();
+                row.Children.Add(cancelBtn);
+
+                actionHost.Children.Add(row);
+            }
+
+            ShowActionButtons();
+
+            void OnKey(object s, KeyEventArgs e)
+            {
+                if (e.Key == Key.Return)      { Commit();            e.Handled = true; }
+                else if (e.Key == Key.Escape) { popup.IsOpen = false; e.Handled = true; }
+            }
+            titleBox.KeyDown += OnKey;
+            subBox.KeyDown   += OnKey;
+
+            var outerBorder = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(4),
+                Child           = panel,
+            };
+            outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            outerBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+
+            popup.Child  = outerBorder;
+
+            // Click-off dismiss without StaysOpen=false (which crashes Revit): while the
+            // popup is open, watch for a mouse-down anywhere in the owning window that lands
+            // outside the popup content and close it. The popup hosts its own hwnd, so its
+            // own clicks never tunnel through the window — outerBorder.IsMouseOver guards the
+            // rest. The handler is attached only for the popup's lifetime.
+            MouseButtonEventHandler outsideClick = (s, e) =>
+            {
+                if (popup.IsOpen && !outerBorder.IsMouseOver) popup.IsOpen = false;
+            };
+            popup.Opened += (s, e) => AddHandler(PreviewMouseDownEvent, outsideClick, true);
+            popup.Closed += (s, e) => RemoveHandler(PreviewMouseDownEvent, outsideClick);
+
+            popup.IsOpen = true;
+
+            Dispatcher.BeginInvoke(new Action(() => { titleBox.Focus(); titleBox.SelectAll(); }),
+                DispatcherPriority.Input);
+        }
+
+        // Trash-icon button mirroring the Auto Filters delete affordance. The glyph
+        // is the Segoe MDL2 "Delete" (U+E74D); built via ConvertFromUtf32 so no PUA
+        // literal lives in source.
+        private static Border BuildTrashButton()
+        {
+            var icon = new TextBlock
+            {
+                Text                = char.ConvertFromUtf32(0xE74D),
+                FontFamily          = new FontFamily("Segoe MDL2 Assets"),
+                VerticalAlignment   = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            icon.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+
+            var btn = new Border
+            {
+                Cursor            = Cursors.Hand,
+                Padding           = new Thickness(8, 5, 8, 5),
+                BorderThickness   = new Thickness(1),
+                CornerRadius      = new CornerRadius(3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background        = Brushes.Transparent,
+                Child             = icon,
+            };
+            btn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            btn.MouseEnter += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineRed");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+            };
+            btn.MouseLeave += (s, e) =>
+            {
+                btn.SetResourceReference(Border.BorderBrushProperty,    "LemoineBorder");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            };
+            return btn;
+        }
+
+        // Inserts a deep copy of the legend after the original and selects it. The
+        // copy is unlinked from the original's Revit view so it creates a fresh one.
+        private void DuplicateLegend(LegendEntry entry)
+        {
+            var list = LegendCreatorSettings.Instance.Legends;
+            int idx  = list.IndexOf(entry);
+            if (idx < 0) return;
+
+            var copy = entry.Clone();
+            copy.Id          = LegendIdGen.New("legend");
+            copy.RevitViewId = -1;
+            copy.DisplayName = null;
+            if (copy.Layout == null) copy.Layout = new LegendLayoutConfig();
+            copy.Layout.Title = (entry.Layout?.Title ?? AppStrings.T("testing.legendCreator.builder.window.defaults.untitledLegend")) + AppStrings.T("testing.legendCreator.builder.window.defaults.copySuffix");
+
+            list.Insert(idx + 1, copy);
+            LegendCreatorSettings.Instance.Save();
+            ActivateTab(idx + 1);
+        }
+
+        // Removes the legend (and its cached builder), keeping at least one legend.
+        private void DeleteLegend(LegendEntry entry)
+        {
+            var list = LegendCreatorSettings.Instance.Legends;
+            int idx  = list.IndexOf(entry);
+            if (idx < 0) return;
+
+            _builders.Remove(entry.Id);
+            list.RemoveAt(idx);
+            LegendCreatorSettings.Instance.Save();
+
+            if (list.Count == 0)
+            {
+                AddLegend();   // never leave the window with zero legends
+                return;
+            }
+            ActivateTab(Math.Min(idx, list.Count - 1));
+        }
+
+        private static TextBlock MakeEditLabel(string text)
+        {
+            var lbl = new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 2) };
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return lbl;
+        }
+
+        private static TextBox MakeEditBox(string text)
+        {
+            var box = new TextBox
+            {
+                Text            = text,
+                Padding         = new Thickness(6, 4, 6, 4),
+                BorderThickness = new Thickness(1),
+            };
+            box.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+            box.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineUiFont");
+            box.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_MD");
+            box.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+            box.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+            box.SetResourceReference(TextBox.CaretBrushProperty,  "LemoineText");
+            return box;
+        }
+
+        // Applies an edited Title/Subtitle to both the persisted entry and the live
+        // builder buffer, then refreshes the tab label and (if open) the preview.
+        private void ApplyLegendTitle(LegendEntry entry, string title, string subtitle, TextBlock nameDisplay)
+        {
+            if (entry.Layout == null) entry.Layout = new LegendLayoutConfig();
+            entry.Layout.Title    = title;
+            entry.Layout.Subtitle = subtitle;
+            entry.DisplayName     = null;   // the title is now the single source of the tab name
+
+            var builder = GetOrCreateBuilder(entry);
+            builder.Layout.Title    = title;
+            builder.Layout.Subtitle = subtitle;
+
+            nameDisplay.Text = entry.GetDisplayName();
+            LegendCreatorSettings.Instance.Save();
+            builder.NotifyLayoutChanged();   // rebuilds the canvas and raises Edited → refreshes preview
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Right panel
+        // ─────────────────────────────────────────────────────────────────────
+        private UIElement BuildRightPanel()
+        {
+            // Single shared scroll: SIZING + TEXT STYLES cards over the PALETTE, all stacked.
+            // The palette renders full-height (ExpandList) with no inner scroll, so it is "maxed"
+            // — you can scroll the one column all the way to the last filter.
+            if (_palette != null) _palette.ExpandList = true;
+
+            _sizingSlot     = new ContentControl();
+            _textStylesSlot = new ContentControl();
+
+            // PALETTE card (the control renders its own "PALETTE" header internally).
+            _paletteCard = new Border
+            {
+                Margin          = new Thickness(10, 8, 10, 10),
+                BorderThickness = new Thickness(1),
+            };
+            _paletteCard.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            _paletteCard.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            _paletteCard.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            _paletteSlot = new ContentControl { Content = _palette };
+            _paletteCard.Child = _paletteSlot;
+
+            var stack = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            stack.Children.Add(_sizingSlot);
+            stack.Children.Add(_textStylesSlot);
+            stack.Children.Add(_paletteCard);
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content                       = stack,
+            };
+            ControlStyles.WireBubblingScroll(scroll);
+            return scroll;
+        }
+
+        // Section label + rounded card wrapper shared by the right-panel sections.
+        private UIElement WrapCard(string title, UIElement body)
+        {
+            var outer = new StackPanel();
+
+            var lbl = new TextBlock { Text = title, Margin = new Thickness(12, 0, 12, 4) };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(lbl);
+
+            var card = new Border
+            {
+                Margin          = new Thickness(10, 0, 10, 10),
+                BorderThickness = new Thickness(1),
+                Padding         = new Thickness(10, 8, 10, 8),
+                Child           = body,
+            };
+            card.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
+            card.SetResourceReference(Border.BackgroundProperty,   "LemoineBg");
+            card.SetResourceReference(Border.BorderBrushProperty,  "LemoineBorder");
+            outer.Children.Add(card);
+
+            return outer;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ActivateTab
+        // ─────────────────────────────────────────────────────────────────────
+        private void ActivateTab(int index)
+        {
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (entries.Count == 0) return;
+            index = Math.Max(0, Math.Min(index, entries.Count - 1));
+            _activeIndex = index;
+
+            var entry = entries[index];
+
+            // Detach old builder events
+            if (_builderSlot?.Content is LegendBuilder oldBuilder)
+            {
+                oldBuilder.BulkEditorChanged -= OnBulkEditorChanged;
+                oldBuilder.Edited            -= OnBuilderEdited;
+            }
+
+            // Get/create builder and wire up
+            var builder = GetOrCreateBuilder(entry);
+            builder.BulkEditorChanged += OnBulkEditorChanged;
+            builder.Edited            += OnBuilderEdited;
+            _activeBuilder            = builder;
+
+            if (_builderSlot != null)
+                _builderSlot.Content = builder;
+
+            // Reset palette slot
+            if (_paletteSlot != null)
+                _paletteSlot.Content = _palette;
+
+            // Rebuild right-panel sections for this entry
+            if (_sizingSlot != null)
+                _sizingSlot.Content = BuildSizingSection(builder);
+            if (_textStylesSlot != null)
+                _textStylesSlot.Content = BuildTextStylesSection(entry);
+
+            UpdateCreateUpdateButton(entry);
+            // Preview is a single window-level overlay; reflect its state and, if
+            // it's showing, repoint it at the newly-active legend.
+            if (_previewPillLabel != null)
+                _previewPillLabel.Text = _previewVisible ? AppStrings.T("testing.legendCreator.builder.window.actions.hidePreviewButton") : AppStrings.T("testing.legendCreator.builder.window.actions.previewButton");
+            if (_previewVisible && _previewControl != null)
+                _previewControl.Update(builder.Layout, builder.Rows, ActiveRoleCaps());
+            RebuildTabStack();
+        }
+
+        private LegendBuilder GetOrCreateBuilder(LegendEntry entry)
+        {
+            if (_builders.TryGetValue(entry.Id, out var existing)) return existing;
+            var builder = new LegendBuilder();
+            builder.LoadFrom(entry);
+            _builders[entry.Id] = builder;
+            return builder;
+        }
+
+        private void OnBulkEditorChanged(UIElement? element)
+        {
+            if (_paletteSlot == null) return;
+            if (element != null) _paletteSlot.Content = element;
+            else                 _paletteSlot.Content = _palette;
+        }
+
+        private void UpdateCreateUpdateButton(LegendEntry entry)
+        {
+            _createBusy = false;
+            if (_createPill != null) _createPill.Opacity = 1.0;
+            if (_createPillLabel == null) return;
+            _createPillLabel.Text = entry.RevitViewId != -1 ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
+        }
+
+        // Toggles the floating Create pill between idle and in-flight (busy) states.
+        private void SetCreateBusy(bool busy, string? busyLabel)
+        {
+            _createBusy = busy;
+            if (_createPill != null) _createPill.Opacity = busy ? 0.6 : 1.0;
+            if (_createPillLabel == null) return;
+            if (busy && busyLabel != null)
+            {
+                _createPillLabel.Text = busyLabel;
+                return;
+            }
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex >= 0 && _activeIndex < entries.Count)
+                _createPillLabel.Text =
+                    entries[_activeIndex].RevitViewId != -1 ? AppStrings.T("testing.legendCreator.builder.window.actions.updateLegend") : AppStrings.T("testing.legendCreator.builder.window.actions.createLegend");
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Sizing section
+        // ─────────────────────────────────────────────────────────────────────
+        private UIElement BuildSizingSection(LegendBuilder builder)
+        {
+            var layout = builder.Layout;
+
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int r = 0; r < 6; r++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // Scale is a dropdown of the standard Revit imperial scales (the legend
+            // view's Scale is just the 1:n denominator). Text size in the generated
+            // legend comes from the assigned Text Styles, so there is no "Font pt" row.
+            AddScaleDropdownRow(grid, 0, layout.ViewScale,
+                denom => { layout.ViewScale = denom; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 1, AppStrings.T("testing.legendCreator.builder.window.sizing.swatchW"), layout.SwatchW, 0.05, 3.0, 0.05,
+                d => { layout.SwatchW = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 2, AppStrings.T("testing.legendCreator.builder.window.sizing.swatchH"), layout.SwatchH, 0.02, 2.0, 0.05,
+                d => { layout.SwatchH = d; builder.NotifyLayoutChanged(); });
+            // Three explicit gaps (paper inches): the old single "Gap" changed the row
+            // spacing in the preview but the swatch→label spacing in the output.
+            AddSizingRow(grid, 3, AppStrings.T("testing.legendCreator.builder.window.sizing.rowGap"), layout.RowGap, 0.0, 3.0, 0.02,
+                d => { layout.RowGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 4, AppStrings.T("testing.legendCreator.builder.window.sizing.colGap"), layout.ColGap, 0.0, 3.0, 0.02,
+                d => { layout.ColGap = d; builder.NotifyLayoutChanged(); });
+            AddSizingRow(grid, 5, AppStrings.T("testing.legendCreator.builder.window.sizing.swatchLabelGap"), layout.SwatchLabelGap, 0.0, 1.0, 0.01,
+                d => { layout.SwatchLabelGap = d; builder.NotifyLayoutChanged(); });
+
+            return WrapCard(AppStrings.T("testing.legendCreator.builder.window.sizing.header"), grid);
+        }
+
+        // Standard Revit imperial view scales: label shown to the user → 1:n denominator
+        // stored in ViewScale. Mirrors Revit's own scale dropdown for drafting views.
+        private static readonly (string Label, int Denom)[] ImperialScales =
+        {
+            ("12\" = 1'-0\"",      1),
+            ("6\" = 1'-0\"",       2),
+            ("3\" = 1'-0\"",       4),
+            ("1 1/2\" = 1'-0\"",   8),
+            ("1\" = 1'-0\"",      12),
+            ("3/4\" = 1'-0\"",    16),
+            ("1/2\" = 1'-0\"",    24),
+            ("3/8\" = 1'-0\"",    32),
+            ("1/4\" = 1'-0\"",    48),
+            ("3/16\" = 1'-0\"",   64),
+            ("1/8\" = 1'-0\"",    96),
+            ("3/32\" = 1'-0\"",  128),
+            ("1/16\" = 1'-0\"",  192),
+            ("1/32\" = 1'-0\"",  384),
+        };
+
+        private void AddScaleDropdownRow(WpfGrid grid, int row, int currentDenom, Action<int> onChanged)
+        {
+            var lbl = new TextBlock
+            {
+                Text              = AppStrings.T("testing.legendCreator.builder.window.sizing.scaleLabel"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var combo = new ComboBox
+            {
+                IsEditable = false,
+                Margin     = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+
+            foreach (var (label, _) in ImperialScales)
+                combo.Items.Add(label);
+
+            // Select the entry matching the stored denominator; if the stored value
+            // isn't a standard scale, fall back to 1/4" = 1'-0" (1:48).
+            int initIdx = Array.FindIndex(ImperialScales, s => s.Denom == currentDenom);
+            if (initIdx < 0) initIdx = Array.FindIndex(ImperialScales, s => s.Denom == 48);
+            combo.SelectedIndex = initIdx;
+
+            combo.SelectionChanged += (s, e) =>
+            {
+                int idx = combo.SelectedIndex;
+                if (idx >= 0 && idx < ImperialScales.Length)
+                    onChanged(ImperialScales[idx].Denom);
+            };
+
+            WpfGrid.SetRow(lbl,   row); WpfGrid.SetColumn(lbl,   0);
+            WpfGrid.SetRow(combo, row); WpfGrid.SetColumn(combo, 2);
+            grid.Children.Add(lbl);
+            grid.Children.Add(combo);
+        }
+
+        private void AddSizingRow(WpfGrid grid, int row, string label,
+                                  double value, double min, double max, double step, Action<double> onCommit)
+        {
+            var lbl = new TextBlock
+            {
+                Text              = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var stepper = new InlineStepper
+            {
+                Value               = value,
+                MinValue            = min,
+                MaxValue            = max,
+                Step                = step,
+                Decimals            = 2,
+                ValueWidth          = 48,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin              = new Thickness(0, row == 0 ? 0 : 5, 0, 0),
+            };
+            stepper.ValueChanged += (s, v) => onCommit(v);
+
+            WpfGrid.SetRow(lbl,     row); WpfGrid.SetColumn(lbl,     0);
+            WpfGrid.SetRow(stepper, row); WpfGrid.SetColumn(stepper, 2);
+            grid.Children.Add(lbl);
+            grid.Children.Add(stepper);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Text Styles section
+        // ─────────────────────────────────────────────────────────────────────
+        private UIElement BuildTextStylesSection(LegendEntry entry)
+        {
+            if (_textTypes.Count == 0)
+            {
+                var noTypes = new TextBlock
+                {
+                    Text         = AppStrings.T("testing.legendCreator.builder.window.textStyles.noTypesFound"),
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                noTypes.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                noTypes.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                noTypes.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                return WrapCard(AppStrings.T("testing.legendCreator.builder.window.textStyles.header"), noTypes);
+            }
+
+            var grid = new WpfGrid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            for (int r = 0; r < 4; r++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // Wrap each setter so a text-style change refreshes the live preview — role
+            // text sizes come from the chosen TextNoteType, so the preview must re-resolve
+            // its caps (ActiveRoleCaps) when a selection changes.
+            void SetAndRefresh(Action<long> set, long id) { set(id); OnBuilderEdited(); }
+
+            AddTextTypeRow(grid, 0, AppStrings.T("testing.legendCreator.builder.window.textStyles.title"),        entry.TitleTypeId,       id => SetAndRefresh(v => entry.TitleTypeId       = v, id));
+            AddTextTypeRow(grid, 1, AppStrings.T("testing.legendCreator.builder.window.textStyles.subtitle"),     entry.SubtitleTypeId,    id => SetAndRefresh(v => entry.SubtitleTypeId    = v, id));
+            AddTextTypeRow(grid, 2, AppStrings.T("testing.legendCreator.builder.window.textStyles.groupHeader"), entry.GroupHeaderTypeId, id => SetAndRefresh(v => entry.GroupHeaderTypeId = v, id));
+            AddTextTypeRow(grid, 3, AppStrings.T("testing.legendCreator.builder.window.textStyles.label"),        entry.LabelTypeId,       id => SetAndRefresh(v => entry.LabelTypeId       = v, id));
+
+            return WrapCard(AppStrings.T("testing.legendCreator.builder.window.textStyles.header"), grid);
+        }
+
+        private void AddTextTypeRow(WpfGrid grid, int row, string label, long storedId, Action<long> onChanged)
+        {
+            var lbl = new TextBlock
+            {
+                Text              = label,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin            = new Thickness(0, row == 0 ? 0 : 6, 0, 0),
+            };
+            lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var combo = new ComboBox
+            {
+                IsEditable = false,
+                Margin     = new Thickness(0, row == 0 ? 0 : 6, 0, 0),
+            };
+            combo.SetResourceReference(FrameworkElement.HeightProperty, "LemoineH_Input");
+            combo.SetResourceReference(ComboBox.FontFamilyProperty,     "LemoineMonoFont");
+            combo.SetResourceReference(ComboBox.FontSizeProperty,       "LemoineFS_SM");
+            ControlStyles.WireComboWheelBubbling(combo); // don't eat page scroll when closed
+
+            foreach (var (_, name) in _textTypes)
+                combo.Items.Add(name);
+
+            int initIdx = 0;
+            if (storedId != -1)
+            {
+                for (int i = 0; i < _textTypes.Count; i++)
+                    if (_textTypes[i].Id.Value == storedId) { initIdx = i; break; }
+            }
+            combo.SelectedIndex = initIdx;
+
+            combo.SelectionChanged += (s, e) =>
+            {
+                int idx = combo.SelectedIndex;
+                long newId = idx >= 0 && idx < _textTypes.Count ? _textTypes[idx].Id.Value : -1L;
+                onChanged(newId);
+            };
+
+            WpfGrid.SetRow(lbl,   row); WpfGrid.SetColumn(lbl,   0);
+            WpfGrid.SetRow(combo, row); WpfGrid.SetColumn(combo, 2);
+            grid.Children.Add(lbl);
+            grid.Children.Add(combo);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Create / Update
+        // ─────────────────────────────────────────────────────────────────────
+        private void HandleCreateUpdate()
+        {
+            if (_createBusy) return; // guard re-entry while a run is in flight
+
+            if (App.LegendCreatorHandler == null || App.LegendCreatorEvent == null)
+            {
+                FlashStatus(AppStrings.T("testing.legendCreator.builder.window.status.notInitialized"));
+                return;
+            }
+
+            var entries = LegendCreatorSettings.Instance.Legends;
+            if (_activeIndex < 0 || _activeIndex >= entries.Count) return;
+            var entry   = entries[_activeIndex];
+
+            // Flush editing buffer into entry
+            var builder = GetOrCreateBuilder(entry);
+            entry.Layout = builder.Layout;
+            entry.Rows   = builder.Rows;
+
+            bool isUpdate = entry.RevitViewId != -1;
+
+            App.LegendCreatorHandler.Layout     = entry.Layout;
+            App.LegendCreatorHandler.Rows        = entry.Rows;
+            App.LegendCreatorHandler.UpdateMode  = isUpdate;
+            App.LegendCreatorHandler.TargetLegendId    = isUpdate   ? new ElementId(entry.RevitViewId)       : (ElementId?)null;
+            App.LegendCreatorHandler.TemplateLegendId  = null;
+            App.LegendCreatorHandler.TitleTypeId       = entry.TitleTypeId       != -1 ? new ElementId(entry.TitleTypeId)       : (ElementId?)null;
+            App.LegendCreatorHandler.SubtitleTypeId    = entry.SubtitleTypeId    != -1 ? new ElementId(entry.SubtitleTypeId)    : (ElementId?)null;
+            App.LegendCreatorHandler.GroupHeaderTypeId = entry.GroupHeaderTypeId != -1 ? new ElementId(entry.GroupHeaderTypeId) : (ElementId?)null;
+            App.LegendCreatorHandler.LabelTypeId       = entry.LabelTypeId       != -1 ? new ElementId(entry.LabelTypeId)       : (ElementId?)null;
+            // Keep the last failure line so the status chip can say WHY a run failed —
+            // discarding the log left only "Completed with N error(s)" and no reason.
+            // (Full detail also lands in diagnostics.log via the handler's Log mirror.)
+            string? lastFailMsg = null;
+            App.LegendCreatorHandler.PushLog           = (text, status) =>
+            {
+                if (status == "fail") lastFailMsg = text;
+            };
+            App.LegendCreatorHandler.OnProgress        = null;
+
+            int capturedIndex = _activeIndex;
+
+            // True once OnLegendCreated rebinds the entry to a NEW view — covers the
+            // update-mode fallback (stale view id → fresh legend created instead), where
+            // OnComplete must not overwrite the "created" status with "updated".
+            bool createdNewView = false;
+
+            App.LegendCreatorHandler.OnLegendCreated = viewId =>
+            {
+                long idValue = viewId.Value;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    createdNewView = true;
+                    var list = LegendCreatorSettings.Instance.Legends;
+                    if (capturedIndex < list.Count)
+                    {
+                        list[capturedIndex].RevitViewId = idValue;
+                        LegendCreatorSettings.Instance.Save();
+                        UpdateCreateUpdateButton(list[capturedIndex]);
+                    }
+                    FlashStatus(AppStrings.T("testing.legendCreator.builder.window.status.createdMessage"));
+                    SetCreateBusy(false, null);
+                }));
+            };
+
+            App.LegendCreatorHandler.OnComplete = (pass, fail, skip) =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SetCreateBusy(false, null);
+                    if (fail > 0)                          FlashStatus(lastFailMsg ?? AppStrings.T("testing.legendCreator.builder.window.status.completedWithErrors", fail));
+                    else if (isUpdate && !createdNewView)  FlashStatus(AppStrings.T("testing.legendCreator.builder.window.status.updatedMessage"));
+                }));
+            };
+
+            SetCreateBusy(true, isUpdate ? AppStrings.T("testing.legendCreator.builder.window.status.updating") : AppStrings.T("testing.legendCreator.builder.window.status.creating"));
+
+            LegendCreatorSettings.Instance.Save();
+            App.LegendCreatorEvent.Raise();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Add Legend
+        // ─────────────────────────────────────────────────────────────────────
+        private void AddLegend()
+        {
+            var entry = new LegendEntry
+            {
+                Id     = LegendIdGen.New("legend"),
+                Layout = new LegendLayoutConfig { Title = AppStrings.T("testing.legendCreator.builder.window.defaults.newLegendTitle") },
+            };
+            LegendCreatorSettings.Instance.Legends.Add(entry);
+            LegendCreatorSettings.Instance.Save();
+            ActivateTab(LegendCreatorSettings.Instance.Legends.Count - 1);
+            Dispatcher.BeginInvoke(new Action(() => _tabScroll?.ScrollToBottom()),
+                DispatcherPriority.Background);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Status flash
+        // ─────────────────────────────────────────────────────────────────────
+        private void FlashStatus(string msg)
+        {
+            if (_statusText == null) return;
+            _statusText.Text = msg;
+            if (_statusChip != null) _statusChip.Visibility = WpfVisibility.Visible;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            timer.Tick += (s, e) =>
+            {
+                _statusText.Text = "";
+                if (_statusChip != null) _statusChip.Visibility = WpfVisibility.Collapsed;
+                timer.Stop();
+            };
+            timer.Start();
+        }
+    }
+}

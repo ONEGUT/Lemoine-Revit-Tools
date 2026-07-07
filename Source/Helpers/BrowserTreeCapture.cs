@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
-using LemoineTools.Lemoine;
+using LemoineTools.Framework;
 
 namespace LemoineTools.Helpers
 {
     /// <summary>
     /// Captures the source document's Project Browser organization into a
-    /// Revit-free <see cref="LemoineBrowserTree"/>. Call on the Revit main
+    /// Revit-free <see cref="BrowserTree"/>. Call on the Revit main
     /// thread (inside an <c>IExternalCommand.Execute</c>) before opening the
     /// tool window, so every picker mirrors the browser layout the user sees —
     /// folder titles, nesting, ordering, and dependent views nested under
@@ -16,9 +16,9 @@ namespace LemoineTools.Helpers
     /// </summary>
     public static class BrowserTreeCapture
     {
-        public static LemoineBrowserTree Capture(Document doc)
+        public static BrowserTree Capture(Document doc)
         {
-            var tree = new LemoineBrowserTree();
+            var tree = new BrowserTree();
             // Browser display order: Views, Legends, Schedules/Quantities, Sheets.
             AddRoot(tree, "views",     () => CaptureViews(doc));
             AddRoot(tree, "legends",   () => CaptureLegends(doc));
@@ -27,21 +27,21 @@ namespace LemoineTools.Helpers
             return tree;
         }
 
-        private static void AddRoot(LemoineBrowserTree tree, string what, Func<LemoineBrowserNode> capture)
+        private static void AddRoot(BrowserTree tree, string what, Func<BrowserNode> capture)
         {
             try { tree.Roots.Add(capture()); }
             catch (Exception ex)
             {
-                LemoineLog.Error($"BrowserTreeCapture: {what} capture failed — that browser node is missing from pickers", ex);
+                DiagnosticsLog.Error($"BrowserTreeCapture: {what} capture failed — that browser node is missing from pickers", ex);
             }
         }
 
         // ── Views (graphical views only — schedules/legends live under their own
         //    browser nodes and no tool picks them) ──────────────────────────────
-        private static LemoineBrowserNode CaptureViews(Document doc)
+        private static BrowserNode CaptureViews(Document doc)
         {
             var org = BrowserOrganization.GetCurrentBrowserOrganizationForViews(doc);
-            var root = new LemoineBrowserNode { Title = $"Views ({OrgName(org, "all")})" };
+            var root = new BrowserNode { Title = $"Views ({OrgName(org, "all")})" };
 
             var views = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
@@ -72,10 +72,10 @@ namespace LemoineTools.Helpers
                 else primaries.Add(v);
             }
 
-            var leavesById = new Dictionary<long, LemoineBrowserNode>();
+            var leavesById = new Dictionary<long, BrowserNode>();
             foreach (var v in primaries)
             {
-                var leaf = new LemoineBrowserNode { Title = v.Name, Id = v.Id.Value };
+                var leaf = new BrowserNode { Title = v.Name, Id = v.Id.Value };
                 leavesById[v.Id.Value] = leaf;
                 PlaceInFolders(root, org, v, leaf);
             }
@@ -84,7 +84,7 @@ namespace LemoineTools.Helpers
             {
                 foreach (var dep in pair.Value)
                 {
-                    var leaf = new LemoineBrowserNode { Title = dep.Name, Id = dep.Id.Value };
+                    var leaf = new BrowserNode { Title = dep.Name, Id = dep.Id.Value };
                     if (leavesById.TryGetValue(pair.Key, out var primaryLeaf))
                         primaryLeaf.Children.Add(leaf);
                     else
@@ -97,38 +97,38 @@ namespace LemoineTools.Helpers
         }
 
         // ── Legends (flat under their own browser root) ───────────────────────
-        private static LemoineBrowserNode CaptureLegends(Document doc)
+        private static BrowserNode CaptureLegends(Document doc)
         {
-            var root = new LemoineBrowserNode { Title = "Legends" };
+            var root = new BrowserNode { Title = "Legends" };
             var legends = new FilteredElementCollector(doc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate && v.ViewType == ViewType.Legend)
                 .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase);
             foreach (var v in legends)
-                root.Children.Add(new LemoineBrowserNode { Title = v.Name, Id = v.Id.Value });
+                root.Children.Add(new BrowserNode { Title = v.Name, Id = v.Id.Value });
             return root;
         }
 
         // ── Schedules (flat; titleblock revision schedules are browser-hidden) ─
-        private static LemoineBrowserNode CaptureSchedules(Document doc)
+        private static BrowserNode CaptureSchedules(Document doc)
         {
-            var root = new LemoineBrowserNode { Title = "Schedules/Quantities" };
+            var root = new BrowserNode { Title = "Schedules/Quantities" };
             var schedules = new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewSchedule))
                 .Cast<ViewSchedule>()
                 .Where(s => !s.IsTemplate && !s.IsTitleblockRevisionSchedule)
                 .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase);
             foreach (var s in schedules)
-                root.Children.Add(new LemoineBrowserNode { Title = s.Name, Id = s.Id.Value });
+                root.Children.Add(new BrowserNode { Title = s.Name, Id = s.Id.Value });
             return root;
         }
 
         // ── Sheets ────────────────────────────────────────────────────────────
-        private static LemoineBrowserNode CaptureSheets(Document doc)
+        private static BrowserNode CaptureSheets(Document doc)
         {
             var org = BrowserOrganization.GetCurrentBrowserOrganizationForSheets(doc);
-            var root = new LemoineBrowserNode { Title = $"Sheets ({OrgName(org, "all sheets")})" };
+            var root = new BrowserNode { Title = $"Sheets ({OrgName(org, "all sheets")})" };
 
             var sheets = new FilteredElementCollector(doc)
                 .OfClass(typeof(ViewSheet))
@@ -138,7 +138,7 @@ namespace LemoineTools.Helpers
 
             foreach (var s in sheets)
             {
-                var leaf = new LemoineBrowserNode
+                var leaf = new BrowserNode
                 {
                     Title   = $"{s.SheetNumber} - {s.Name}",
                     Id      = s.Id.Value,
@@ -163,14 +163,14 @@ namespace LemoineTools.Helpers
             try { return org != null && org.SortingOrder == SortingOrder.Descending; }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed("BrowserTreeCapture: SortingOrder read failed — assuming ascending", ex);
+                DiagnosticsLog.Swallowed("BrowserTreeCapture: SortingOrder read failed — assuming ascending", ex);
                 return false;
             }
         }
 
         /// <summary>Walks/creates the folder chain from the org's folder items and appends the leaf.</summary>
-        private static void PlaceInFolders(LemoineBrowserNode root, BrowserOrganization? org,
-                                           Element element, LemoineBrowserNode leaf)
+        private static void PlaceInFolders(BrowserNode root, BrowserOrganization? org,
+                                           Element element, BrowserNode leaf)
         {
             var target = root;
             try
@@ -185,7 +185,7 @@ namespace LemoineTools.Helpers
                             c => !c.IsLeaf && string.Equals(c.Title, folderName, StringComparison.Ordinal));
                         if (next == null)
                         {
-                            next = new LemoineBrowserNode { Title = folderName };
+                            next = new BrowserNode { Title = folderName };
                             target.Children.Add(next);
                         }
                         target = next;
@@ -194,14 +194,14 @@ namespace LemoineTools.Helpers
             }
             catch (Exception ex)
             {
-                LemoineLog.Swallowed($"BrowserTreeCapture: folder path for '{leaf.Title}' unreadable — placed at root", ex);
+                DiagnosticsLog.Swallowed($"BrowserTreeCapture: folder path for '{leaf.Title}' unreadable — placed at root", ex);
                 target = root;
             }
             target.Children.Add(leaf);
         }
 
         /// <summary>Folders before leaves, each alphabetical, honouring the org's sort direction.</summary>
-        private static void SortRecursive(LemoineBrowserNode node, bool descending)
+        private static void SortRecursive(BrowserNode node, bool descending)
         {
             var folders = node.Children.Where(c => !c.IsLeaf);
             var leaves  = node.Children.Where(c => c.IsLeaf);

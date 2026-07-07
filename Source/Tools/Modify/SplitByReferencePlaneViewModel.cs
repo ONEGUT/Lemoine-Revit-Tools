@@ -1,0 +1,340 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using LemoineTools.Framework;
+using LemoineTools.Framework.Controls;
+
+using WpfGrid = System.Windows.Controls.Grid;
+
+namespace LemoineTools.Tools.ModifyElements
+{
+    public class SplitByReferencePlaneViewModel : IStepFlowTool, IStepAware, IReviewableTool, IRunResult, IToolCleanup
+    {
+        // Self-describing result label for the run strip (see IRunResult).
+        public string? ResultNoun => "segments";
+        public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => null;
+
+        public string Title    => AppStrings.T("modify.splitByReferencePlane.title");
+        public string RunLabel => AppStrings.T("modify.splitByReferencePlane.runLabel");
+
+        public StepDefinition[] Steps => new[]
+        {
+            new StepDefinition("S1", AppStrings.T("modify.splitByReferencePlane.steps.S1"),       required: true),
+            new StepDefinition("S2", AppStrings.T("modify.splitByReferencePlane.steps.S2"), required: true),
+            new StepDefinition("S3", AppStrings.T("modify.splitByReferencePlane.steps.S3"),            required: false),
+        };
+
+        // ── State ─────────────────────────────────────────────────────────────
+        private List<string>  _selectedCats     = new List<string>();
+        private List<string>  _selectedRefNames = new List<string>();
+        private bool          _useActiveView    = false;
+        private Action<string>? _rebuildContent;
+
+        private Dictionary<string, ReferencePlane>                    _refPlanesByName;
+        private readonly Dictionary<string, List<string>>             _categoryGroups;
+        private readonly int                                          _totalElements;
+        private readonly ElementId?                                   _activeViewId;
+        private readonly IReadOnlyList<ElementId>                     _preSelectedIds;
+        private readonly IReadOnlyList<string>                        _preSelectedCats;
+
+        // ── Revit wiring ──────────────────────────────────────────────────────
+        private readonly SplitByReferencePlaneEventHandler _handler;
+        private readonly ExternalEvent                     _event;
+
+        public event EventHandler? ValidationChanged;
+
+        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        public void OnWindowClosed()
+        {
+            if (_handler == null) return;
+            _handler.OnLog    = null;
+            _handler.OnProgress = null;
+            _handler.OnComplete = null;
+            _handler.OnRefreshed = null;
+        }
+
+        private void OnValidationChanged() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        public SplitByReferencePlaneViewModel(
+            SplitByReferencePlaneEventHandler      handler,
+            ExternalEvent                          externalEvent,
+            IEnumerable<ReferencePlane>            allRefPlanes,
+            Dictionary<string, List<string>>       categoryGroups,
+            int                                    totalElements,
+            ElementId?                             activeViewId,
+            IReadOnlyList<ElementId>               preSelectedIds,
+            IReadOnlyList<string>                  preSelectedCats)
+        {
+            _handler         = handler;
+            _event           = externalEvent;
+            _categoryGroups  = categoryGroups;
+            _totalElements   = totalElements;
+            _activeViewId    = activeViewId;
+            _preSelectedIds  = preSelectedIds;
+            _preSelectedCats = preSelectedCats;
+
+            _refPlanesByName = BuildRefPlaneMap(allRefPlanes);
+
+            if (_preSelectedIds.Count > 0)
+                _selectedCats = new List<string>(_preSelectedCats);
+        }
+
+        // ── IStepAware ────────────────────────────────────────────────────────
+        public void SetContentRefreshCallback(Action<string> rebuildStepContent)
+            => _rebuildContent = rebuildStepContent;
+
+        public void OnStepActivated(string stepId)
+        {
+            if (stepId != "S2") return;
+
+            _handler.IsRefreshRequest = true;
+            _handler.OnRefreshed = freshPlanes =>
+            {
+                _refPlanesByName = BuildRefPlaneMap(freshPlanes);
+                _selectedRefNames = _selectedRefNames
+                    .Where(n => _refPlanesByName.ContainsKey(n))
+                    .ToList();
+                _rebuildContent?.Invoke("S2");
+            };
+            _event.Raise();
+        }
+
+        private static string RefPlaneName(ReferencePlane rp) =>
+            string.IsNullOrWhiteSpace(rp.Name)
+                ? AppStrings.T("modify.splitByReferencePlane.labels.refPlaneFallback", rp.Id.Value)
+                : rp.Name;
+
+        private static Dictionary<string, ReferencePlane> BuildRefPlaneMap(
+            IEnumerable<ReferencePlane> planes) =>
+            planes
+                .GroupBy(r => RefPlaneName(r))
+                .ToDictionary(g => g.Key, g => g.First());
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  GetStepContent
+        // ═════════════════════════════════════════════════════════════════════
+        public FrameworkElement? GetStepContent(string stepId)
+        {
+            switch (stepId)
+            {
+                case "S1": return BuildS1();
+                case "S2": return BuildS2();
+                case "S3": return null; // framework renders review (IReviewableTool)
+                default:   return null;
+            }
+        }
+
+        private FrameworkElement BuildS1()
+        {
+            if (_preSelectedIds.Count > 0)
+                return BuildS1_PreSelected();
+
+            var outer = new StackPanel();
+
+            int totalCats  = _categoryGroups.Values.Sum(g => g.Count);
+            var countStrip = new TextBlock
+            {
+                Text         = AppStrings.T("modify.splitByReferencePlane.labels.countStrip", totalCats, _totalElements),
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 0, 0, 6),
+            };
+            countStrip.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            countStrip.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            countStrip.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+            outer.Children.Add(countStrip);
+
+            var tabs = new MultiSelectTabs();
+            tabs.SetGroups(_categoryGroups);
+            tabs.SelectionChanged += selected =>
+            {
+                _selectedCats = new List<string>(selected);
+                OnValidationChanged();
+            };
+            outer.Children.Add(tabs);
+
+            if (_activeViewId != null)
+            {
+                var toggle = new ToggleSwitches();
+                toggle.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem
+                    {
+                        Id        = "activeView",
+                        Label     = AppStrings.T("modify.splitByReferencePlane.labels.activeViewLabel"),
+                        Desc      = AppStrings.T("modify.splitByReferencePlane.labels.activeViewDesc"),
+                        DefaultOn = false,
+                    },
+                });
+                toggle.StateChanged += state =>
+                {
+                    _useActiveView = state.TryGetValue("activeView", out bool v) && v;
+                    OnValidationChanged();
+                };
+                outer.Children.Add(toggle);
+            }
+
+            return outer;
+        }
+
+        private FrameworkElement BuildS1_PreSelected()
+        {
+            var card = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(3),
+            };
+            card.SetResourceReference(Border.PaddingProperty,     "LemoineTh_CardPad");
+            card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+            card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+
+            var header = new TextBlock { Text = AppStrings.T("modify.splitByReferencePlane.labels.fromSelection"), Margin = new Thickness(0, 0, 0, 4) };
+            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            int cnt  = _preSelectedIds.Count;
+            int cats = _selectedCats.Count;
+            var countLine = new TextBlock
+            {
+                Text         = AppStrings.T("modify.splitByReferencePlane.labels.preselCount", cnt, cats),
+                FontWeight   = FontWeights.Medium,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            countLine.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            countLine.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            countLine.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var catLine = new TextBlock
+            {
+                Text         = string.Join("  ·  ", _selectedCats),
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 2, 0, 6),
+            };
+            catLine.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            catLine.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            catLine.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+
+            var note = new TextBlock
+            {
+                Text         = AppStrings.T("modify.splitByReferencePlane.labels.preselNote"),
+                TextWrapping = TextWrapping.Wrap,
+                FontStyle    = FontStyles.Italic,
+            };
+            note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            note.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            note.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+
+            var sp = new StackPanel();
+            sp.Children.Add(header);
+            sp.Children.Add(countLine);
+            sp.Children.Add(catLine);
+            sp.Children.Add(note);
+            card.Child = sp;
+            return card;
+        }
+
+        private FrameworkElement BuildS2()
+        {
+            if (_refPlanesByName.Count == 0)
+            {
+                var msg = new TextBlock
+                {
+                    Text         = AppStrings.T("modify.splitByReferencePlane.labels.noItems"),
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                msg.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                msg.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                msg.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                return msg;
+            }
+
+            var groups = new Dictionary<string, List<string>>
+            {
+                { "Reference Planes", _refPlanesByName.Keys.OrderBy(n => n).ToList() }
+            };
+
+            var tabs = new MultiSelectTabs();
+            tabs.SetGroups(groups);
+            tabs.SelectionChanged += selected =>
+            {
+                _selectedRefNames = new List<string>(selected);
+                OnValidationChanged();
+            };
+            return tabs;
+        }
+
+
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  IsValid / SummaryFor / Run
+        // ═════════════════════════════════════════════════════════════════════
+        // ── IReviewableTool (P3) — framework renders the review step ───────
+        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        {
+            ("cats",   AppStrings.T("modify.splitByReferencePlane.review.itemCats")),
+            ("planes", AppStrings.T("modify.splitByReferencePlane.review.itemX")),
+            ("op",     AppStrings.T("modify.splitByReferencePlane.review.itemOp")),
+            ("scope",  AppStrings.T("modify.splitByReferencePlane.review.itemScope")),
+        };
+
+        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        {
+            ["cats"]   = _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats),
+            ["planes"] = _selectedRefNames.Count == 0 ? "—" : AppStrings.T("modify.splitByReferencePlane.review.xValue", _selectedRefNames.Count),
+            ["op"]     = AppStrings.T("modify.splitByReferencePlane.review.op"),
+            ["scope"]  = _preSelectedIds.Count > 0 ? AppStrings.T("modify.splitByReferencePlane.review.scopeFromSel", _preSelectedIds.Count)
+                : _useActiveView ? AppStrings.T("modify.splitByReferencePlane.review.scopeActive")
+                : AppStrings.T("modify.splitByReferencePlane.review.scopeDoc"),
+        };
+
+        public IList<string>? ReviewChips   => null;
+        public string?        ReviewNote    => AppStrings.T("modify.splitByReferencePlane.review.note");
+        public string?        ReviewWarning => null;
+
+        public bool IsValid(string stepId)
+        {
+            if (stepId == "S1") return _preSelectedIds.Count > 0 || _selectedCats.Count > 0;
+            if (stepId == "S2") return _selectedRefNames.Count > 0;
+            return true;
+        }
+
+        public string SummaryFor(string stepId)
+        {
+            if (stepId == "S1")
+            {
+                if (_preSelectedIds.Count > 0) return AppStrings.T("modify.splitByReferencePlane.review.scopeFromSel", _preSelectedIds.Count);
+                return _selectedCats.Count == 0 ? "—" : string.Join(", ", _selectedCats);
+            }
+            if (stepId == "S2")
+                return _selectedRefNames.Count == 0 ? "—" : AppStrings.T("modify.splitByReferencePlane.summaries.s2", _selectedRefNames.Count);
+            if (stepId == "S3")
+                return AppStrings.T("modify.splitByReferencePlane.summaries.S3");
+            return "—";
+        }
+
+        public void Run(
+            Action<string, string>     pushLog,
+            Action<int, int, int, int> onProgress,
+            Action<int, int, int>      onComplete)
+        {
+            _handler.PreSelectedIds        = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId          = (_useActiveView && _activeViewId != null) ? _activeViewId : null;
+            _handler.SelectedCategoryNames = new List<string>(_selectedCats);
+
+            _handler.SelectedRefPlaneIds = _selectedRefNames
+                .Where(n => _refPlanesByName.ContainsKey(n))
+                .Select(n => _refPlanesByName[n].Id)
+                .ToList();
+
+            _handler.OnLog      = pushLog;
+            _handler.OnProgress = onProgress;
+            _handler.OnComplete = onComplete;
+
+            _event.Raise();
+        }
+    }
+}

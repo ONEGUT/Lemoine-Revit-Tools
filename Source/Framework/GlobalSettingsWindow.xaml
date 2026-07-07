@@ -1,0 +1,36 @@
+<Window
+    x:Class="LemoineTools.Framework.GlobalSettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+    Title="Lemoine Tools — Settings"
+    Width="1296" Height="729"
+    MinWidth="1024" MinHeight="576"
+    WindowStartupLocation="CenterScreen"
+    WindowStyle="None"
+    ResizeMode="CanResizeWithGrip"
+    AllowsTransparency="False"
+    ShowInTaskbar="True">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="8"
+                            GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+
+    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True">
+        <Grid x:Name="_root">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="38"   />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*"    />
+                <RowDefinition Height="42"   />
+            </Grid.RowDefinitions>
+
+            <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
+            <Border x:Name="_pillNavBorder" Grid.Row="1" Padding="0" />
+            <Border x:Name="_contentBorder" Grid.Row="2" />
+            <Border x:Name="_footerBorder"  Grid.Row="3" ClipToBounds="True" />
+        </Grid>
+    </Border>
+</Window>

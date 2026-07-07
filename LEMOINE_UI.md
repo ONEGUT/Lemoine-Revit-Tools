@@ -10,10 +10,10 @@
 2. [The Theme System](#2-the-theme-system)
 3. [Resource Keys — Full Reference](#3-resource-keys--full-reference)
 4. [StepFlowWindow Layout](#4-stepflowwindow-layout)
-5. [ILemoineTool — The Tool Contract](#5-ilemoinetool--the-tool-contract)
-6. [ILemoineToolSettings — Persistent Settings](#6-ilemoinesettings--persistent-settings)
-7. [LemoineToolSettingsSpec — Declarative Settings](#7-lemoinesettingsspec--declarative-settings)
-8. [Lemoine Control Library](#8-lemoine-control-library)
+5. [IStepFlowTool — The Tool Contract](#5-istepflowtool--the-tool-contract)
+6. [IToolSettings — Persistent Settings](#6-itoolsettings--persistent-settings)
+7. [ToolSettingsSpec — Declarative Settings](#7-toolsettingsspec--declarative-settings)
+8. [Framework Control Library](#8-framework-control-library)
 9. [How to Add a New Tool — Step by Step](#9-how-to-add-a-new-tool--step-by-step)
 10. [File & Folder Map](#10-file--folder-map)
 
@@ -31,7 +31,7 @@ IExternalCommand.Execute()
 StepFlowWindow(new YourViewModel())
       │  drives via
       ▼
-ILemoineTool  ◄──────────  YourViewModel
+IStepFlowTool  ◄──────────  YourViewModel
       │                        │
       │  GetStepContent()      │  holds state, builds WPF controls
       │  IsValid()             │  wires events → fires ValidationChanged
@@ -45,7 +45,7 @@ log, settings overlay      calls back pushLog/onProgress/onComplete
 
 **Rules:**
 - `StepFlowWindow` owns ALL chrome (toolbar, progress, accordion, log, footer). You never subclass or touch it.
-- `YourViewModel` is a plain C# class that implements `ILemoineTool` (and optionally `ILemoineToolSettings`).
+- `YourViewModel` is a plain C# class that implements `IStepFlowTool` (and optionally `IToolSettings`).
 - All controls use `SetResourceReference(prop, "LemoineXxx")` — never hard-code colours or sizes.
 - Theming and scaling propagate automatically via WPF's dynamic resource system. No rebuild required.
 - Revit API calls happen exclusively inside `IExternalEventHandler.Execute()`, never on the WPF thread.
@@ -54,11 +54,11 @@ log, settings overlay      calls back pushLog/onProgress/onComplete
 
 ## 2. The Theme System
 
-### 2.1 LemoineTheme
+### 2.1 ThemePalette
 
-**File:** `Source/Lemoine/LemoineTheme.cs`
+**File:** `Source/Framework/ThemePalette.cs`
 
-A `LemoineTheme` is a plain C# object holding every colour and font for the UI. There are **8 built-in themes**:
+A `ThemePalette` is a plain C# object holding every colour and font for the UI. There are **8 built-in themes**:
 
 | Name | Swatch hex | Character |
 |---|---|---|
@@ -71,40 +71,40 @@ A `LemoineTheme` is a plain C# object holding every colour and font for the UI. 
 | Sahara | `#faf5ee` | Sun-baked linen, burnt-sienna accent |
 | Obsidian | `#09090b` | Near-black zinc, violet accent |
 
-The complete list is `LemoineTheme.All[]` (display order for the picker).
+The complete list is `ThemePalette.All[]` (display order for the picker).
 
-**Adding a new theme:** add a new `public static readonly LemoineTheme MyTheme = new LemoineTheme { … }` entry and include it in the `All` array.
+**Adding a new theme:** add a new `public static readonly ThemePalette MyTheme = new ThemePalette { … }` entry and include it in the `All` array.
 
-### 2.2 LemoineSettings singleton
+### 2.2 AppSettings singleton
 
-**File:** `Source/Lemoine/LemoineSettings.cs`
+**File:** `Source/Framework/AppSettings.cs`
 
 ```csharp
-LemoineSettings.Instance.ActiveTheme  // LemoineTheme
-LemoineSettings.Instance.UiSize       // LemoineUiSize { Small, Medium, Large }
-LemoineSettings.Instance.Scale        // 0.85 / 1.0 / 1.20
+AppSettings.Instance.ActiveTheme  // ThemePalette
+AppSettings.Instance.UiSize       // UiSize { Small, Medium, Large }
+AppSettings.Instance.Scale        // 0.85 / 1.0 / 1.20
 
-LemoineSettings.Instance.SetTheme(LemoineTheme.DarkNavy);
-LemoineSettings.Instance.SetUiSize(LemoineUiSize.Large);
+AppSettings.Instance.SetTheme(ThemePalette.DarkNavy);
+AppSettings.Instance.SetUiSize(UiSize.Large);
 ```
 
 Settings persist to `%AppData%\LemoineTools\UISettings.xml`.
 
 **Events (subscribe in your window constructor, unsubscribe on Close):**
 ```csharp
-LemoineSettings.Instance.ThemeChanged  += OnThemeChanged;   // Action<LemoineTheme>
-LemoineSettings.Instance.UiSizeChanged += OnUiSizeChanged;  // Action<LemoineUiSize>
+AppSettings.Instance.ThemeChanged  += OnThemeChanged;   // Action<ThemePalette>
+AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;  // Action<UiSize>
 ```
 
 **Applying to a window:**
 ```csharp
-LemoineSettings.Instance.ApplyTo(Resources);    // colours + scale
-LemoineSettings.Instance.ApplyScaleTo(Resources); // scale only (on resize)
+AppSettings.Instance.ApplyTo(Resources);    // colours + scale
+AppSettings.Instance.ApplyScaleTo(Resources); // scale only (on resize)
 ```
 
 ### 2.3 Animation constants
 
-All durations are read from `LemoineSettings.Instance`:
+All durations are read from `AppSettings.Instance`:
 
 | Property | ms | Use |
 |---|---|---|
@@ -119,7 +119,7 @@ All durations are read from `LemoineSettings.Instance`:
 
 Every control binds to these keys via `SetResourceReference(prop, "Key")`. Never use literal values.
 
-### 3.1 Colour keys (from LemoineTheme)
+### 3.1 Colour keys (from ThemePalette)
 
 | Key | Role |
 |---|---|
@@ -147,7 +147,7 @@ Every control binds to these keys via `SetResourceReference(prop, "Key")`. Never
 | `LemoineWarnBorder` | Warning banner border (alias of `LemoineRed`) |
 | `LemoineWarnText` | Warning banner text (alias of `LemoineRed`) |
 
-### 3.2 Font size keys (scaled by LemoineUiSize)
+### 3.2 Font size keys (scaled by UiSize)
 
 | Key | Base px | Use |
 |---|---|---|
@@ -217,14 +217,14 @@ Every control binds to these keys via `SetResourceReference(prop, "Key")`. Never
 
 ## 4. StepFlowWindow Layout
 
-**File:** `Source/Lemoine/StepFlowWindow.xaml` + `StepFlowWindow.xaml.cs`
+**File:** `Source/Framework/StepFlowWindow.xaml` + `StepFlowWindow.xaml.cs`
 
 The window is **500 × 720 px**, min **420 × 560 px**, resizable via grip. It uses `WindowStyle="None"` with a custom chrome shell.
 
 ### 4.1 Grid rows
 
 ```
-Row 0 — 38 px   Toolbar (LemoineTitleBar, step counter, close ×, ⚙ settings)
+Row 0 — 38 px   Toolbar (TitleBar, step counter, close ×, ⚙ settings)
 Row 1 — Auto    Progress strip (status, bar, pip dots, pass/fail/skip counters)
 Row 2 — *       Step accordion (ScrollViewer + StackPanel of step rows)
 Row 3 — Auto    Log tab area (tab bar + scrollable log output)
@@ -235,7 +235,7 @@ Row 0 and Row 4 heights update when `UiSizeChanged` fires.
 
 ### 4.2 Toolbar (Row 0)
 
-Built by `BuildToolbar()`. Uses `LemoineTitleBar` control (see §8.4). Right-side content contains:
+Built by `BuildToolbar()`. Uses `TitleBar` control (see §8.4). Right-side content contains:
 - ⚙ gear glyph → `ToggleSettings()` — slides in the tool-settings overlay
 - Vertical separator
 - Step counter badge (e.g. `Step 2 / 4`, `Running…`, `Complete`)
@@ -306,16 +306,16 @@ Each row: `[HH:mm:ss.mmm]  [icon]  [message text]`
 
 A slide-in panel from the right edge (`minWidth = 360`). Z-index 100. Slides with `CubicEase` animation. A transparent dismiss layer behind it (Z-index 99) closes it on click-outside.
 
-The overlay is built from `ILemoineToolSettings.GetSettingsSpec()`. If the tool doesn't implement that interface, shows "No settings for this tool."
+The overlay is built from `IToolSettings.GetSettingsSpec()`. If the tool doesn't implement that interface, shows "No settings for this tool."
 
 ---
 
-## 5. ILemoineTool — The Tool Contract
+## 5. IStepFlowTool — The Tool Contract
 
-**File:** `Source/Lemoine/ILemoineTool.cs`
+**File:** `Source/Framework/IStepFlowTool.cs`
 
 ```csharp
-public interface ILemoineTool
+public interface IStepFlowTool
 {
     string           Title    { get; }   // shown in toolbar
     string           RunLabel { get; }   // label on final step's button
@@ -374,16 +374,16 @@ Inside `IExternalEventHandler.Execute(UIApplication app)`:
 
 ---
 
-## 6. ILemoineToolSettings — Persistent Settings
+## 6. IToolSettings — Persistent Settings
 
-**File:** `Source/Lemoine/ILemoineToolSettings.cs`
+**File:** `Source/Framework/IToolSettings.cs`
 
-Optional. Implement alongside `ILemoineTool` on your ViewModel.
+Optional. Implement alongside `IStepFlowTool` on your ViewModel.
 
 ```csharp
-public interface ILemoineToolSettings
+public interface IToolSettings
 {
-    LemoineToolSettingsSpec? GetSettingsSpec();
+    ToolSettingsSpec? GetSettingsSpec();
     void ApplySettings(string groupId, string settingId, object value);
 }
 ```
@@ -405,28 +405,28 @@ public sealed class YourToolSettings
 
 ---
 
-## 7. LemoineToolSettingsSpec — Declarative Settings
+## 7. ToolSettingsSpec — Declarative Settings
 
-**File:** `Source/Lemoine/LemoineToolSettingsSpec.cs`
+**File:** `Source/Framework/ToolSettingsSpec.cs`
 
 Return one of these from `GetSettingsSpec()`. Both the in-tool ⚙ overlay and `GlobalSettingsWindow` consume it automatically.
 
 ### Structure
 
 ```
-LemoineToolSettingsSpec
+ToolSettingsSpec
   .Id          "T01"
   .Label       "Auto Filters"
   .Icon        "01"
   .Description "One-sentence description"
   .Groups[]
-      LemoineSettingsGroup
+      SettingsGroup
         .Id            "grp1"
         .Title         "Group heading"
         .Hint          "Optional sub-heading"
         .OpenByDefault true
         .Settings[]
-            LemoineSettingDef
+            SettingDef
               .Id      "myKey"
               .Label   "Setting label"
               .Hint    "Helper text"
@@ -441,16 +441,16 @@ LemoineToolSettingsSpec
 |---|---|---|---|
 | `"toggle"` | `ToggleOpts` | `bool` | Single toggle switch |
 | `"toggles"` | `TogglesOpts` | `Dictionary<string,bool>` | Multi-row toggle switches |
-| `"single"` | `SingleSelectOpts` | `string` | `LemoineSingleSelect` dropdown |
-| `"search"` | `SearchOpts` | `string` | `LemoineSearchAutocomplete` |
-| `"multi"` | `MultiSelectOpts` | `List<string>` | `LemoineMultiSelectTabs` |
+| `"single"` | `SingleSelectOpts` | `string` | `SingleSelect` dropdown |
+| `"search"` | `SearchOpts` | `string` | `SearchAutocomplete` |
+| `"multi"` | `MultiSelectOpts` | `List<string>` | `MultiSelectTabs` |
 | `"text"` | `TextOpts` | `string` | `TextBox` (mono optional) |
 | `"number"` | `NumberOpts` | `double` | `TextBox` + unit label |
-| `"range"` | `RangeOpts` | `(double Min, double Max)` | `LemoineNumberRange` |
-| `"file"` | `FileOpts` | `string` | `LemoineFileBrowser` |
+| `"range"` | `RangeOpts` | `(double Min, double Max)` | `NumberRange` |
+| `"file"` | `FileOpts` | `string` | `FileBrowser` |
 | `"color"` | *(none)* | `string` hex | Color picker swatch |
-| `"matrix"` | `MatrixOpts` | `Dictionary<string,string>` | `LemoineMatrixInput` |
-| `"date"` | `DateOpts` | `string` ISO | `LemoineDatePicker` |
+| `"matrix"` | `MatrixOpts` | `Dictionary<string,string>` | `MatrixInput` |
+| `"date"` | `DateOpts` | `string` ISO | `DateField` |
 | `"info"` | `InfoOpts` | *(none)* | Read-only italic text block |
 
 ### Options classes quick reference
@@ -472,17 +472,17 @@ new InfoOpts          { Text = "This setting affects X." }
 
 ---
 
-## 8. Lemoine Control Library
+## 8. Framework Control Library
 
-All controls live under `Source/Lemoine/Controls/`. Every control applies `SetResourceReference` internally — you just set properties and wire events.
+All controls live under `Source/Framework/Controls/`. Every control applies `SetResourceReference` internally — you just set properties and wire events.
 
 ### 8.1 Input controls
 
-#### LemoineFileBrowser
-**File:** `Controls/Layout/LemoineFileBrowser.xaml(.cs)`
+#### FileBrowser
+**File:** `Controls/Layout/FileBrowser.xaml(.cs)`
 
 ```csharp
-var fb = new LemoineFileBrowser
+var fb = new FileBrowser
 {
     Label       = "Select the DWG file to process.",
     Filter      = "AutoCAD DWG|*.dwg|All files|*.*",
@@ -494,11 +494,11 @@ var fb = new LemoineFileBrowser
 fb.PathChanged += path => { _myPath = path ?? ""; OnValidationChanged(); };
 ```
 
-#### LemoineSingleSelect
-**File:** `Controls/Input/LemoineSingleSelect.xaml(.cs)`
+#### SingleSelect
+**File:** `Controls/Input/SingleSelect.xaml(.cs)`
 
 ```csharp
-var sel = new LemoineSingleSelect
+var sel = new SingleSelect
 {
     Label        = "Choose level",
     Items        = myStringList,
@@ -507,11 +507,11 @@ var sel = new LemoineSingleSelect
 sel.SelectionChanged += v => _myValue = v;
 ```
 
-#### LemoineSearchAutocomplete
-**File:** `Controls/Input/LemoineSearchAutocomplete.xaml(.cs)`
+#### SearchAutocomplete
+**File:** `Controls/Input/SearchAutocomplete.xaml(.cs)`
 
 ```csharp
-var sa = new LemoineSearchAutocomplete
+var sa = new SearchAutocomplete
 {
     Items       = allStrings,
     Placeholder = "Search…",
@@ -520,11 +520,11 @@ var sa = new LemoineSearchAutocomplete
 sa.SelectionChanged += v => _myValue = v;
 ```
 
-#### LemoineToggleSwitches
-**File:** `Controls/Input/LemoineToggleSwitches.xaml(.cs)`
+#### ToggleSwitches
+**File:** `Controls/Input/ToggleSwitches.xaml(.cs)`
 
 ```csharp
-var tog = new LemoineToggleSwitches();
+var tog = new ToggleSwitches();
 tog.SetItems(new List<ToggleItem>
 {
     new ToggleItem { Id = "walls",   Label = "Walls",   Desc = "Split along walls",   DefaultOn = true },
@@ -535,11 +535,11 @@ tog.SetItems(items, new Dictionary<string,bool> { ["walls"] = false });
 tog.StateChanged += state => { /* state is Dictionary<string,bool> */ };
 ```
 
-#### LemoineMultiSelectTabs
-**File:** `Controls/Input/LemoineMultiSelectTabs.xaml(.cs)`
+#### MultiSelectTabs
+**File:** `Controls/Input/MultiSelectTabs.xaml(.cs)`
 
 ```csharp
-var tabs = new LemoineMultiSelectTabs();
+var tabs = new MultiSelectTabs();
 tabs.SetGroups(new Dictionary<string, List<string>>
 {
     ["Architectural"] = new List<string> { "Walls", "Floors" },
@@ -553,11 +553,11 @@ tabs.SelectionChanged += selected => { /* selected is List<string> */ };
 
 A numeric up/down control. Wire via `ValueChanged` event.
 
-#### LemoineNumberRange
-**File:** `Controls/Input/LemoineNumberRange.xaml(.cs)`
+#### NumberRange
+**File:** `Controls/Input/NumberRange.xaml(.cs)`
 
 ```csharp
-var nr = new LemoineNumberRange
+var nr = new NumberRange
 {
     MinLabel = "Min height",
     MaxLabel = "Max height",
@@ -570,53 +570,53 @@ nr.SetValues(500, 2500);
 nr.RangeChanged += (min, max) => { _min = min; _max = max; };
 ```
 
-#### LemoineTagChipInput
-**File:** `Controls/Input/LemoineTagChipInput.xaml(.cs)`
+#### TagChipInput
+**File:** `Controls/Input/TagChipInput.xaml(.cs)`
 
 Tag/chip text input for free-form multi-value entry.
 
-#### LemoineInlineEdit
-**File:** `Controls/Input/LemoineInlineEdit.xaml(.cs)`
+#### InlineEdit
+**File:** `Controls/Input/InlineEdit.xaml(.cs)`
 
 Inline text that flips to an edit TextBox on click.
 
-#### LemoineDatePicker
-**File:** `Controls/Input/LemoineDatePicker.xaml(.cs)`
+#### DateField
+**File:** `Controls/Input/DateField.xaml(.cs)`
 
 Single or range date picker. Mode set via `DateOpts.Mode`.
 
 ### 8.2 Color controls
 
-#### LemoineColorPickerWindow / LemoineColorPickerPanel
+#### ColorPickerWindow / ColorPickerPanel
 **File:** `Controls/Color/`
 
 For inline settings use the factory:
 ```csharp
-var swatch = LemoineColorPickerWindow.BuildColorPickerSwatch(
+var swatch = ColorPickerWindow.BuildColorPickerSwatch(
     getHex: () => currentHex,
     setHex: h => { currentHex = h; ApplySettings(groupId, settingId, h); });
 ```
 
-#### LemoineSwatchPicker / LemoineSwatchGlyph / LemoineEyeGlyph
+#### SwatchPicker / SwatchGlyph / EyeGlyph
 Supporting controls for the color picker UI.
 
 ### 8.3 Layout controls
 
-#### LemoineSectionCard
-**File:** `Controls/Layout/LemoineSectionCard.xaml(.cs)`
+#### SectionCard
+**File:** `Controls/Layout/SectionCard.xaml(.cs)`
 
 A collapsible card with a header and content area. Used inside `GlobalSettingsWindow`.
 
-#### LemoineReviewSummary
-**File:** `Controls/Layout/LemoineReviewSummary.xaml(.cs)`
+#### ReviewSummary
+**File:** `Controls/Layout/ReviewSummary.xaml(.cs)`
 
 A summary display for the final "Review & Run" step.
 
-#### LemoineTitleBar
-**File:** `Controls/Layout/LemoineTitleBar.xaml(.cs)`
+#### TitleBar
+**File:** `Controls/Layout/TitleBar.xaml(.cs)`
 
 ```csharp
-new LemoineTitleBar
+new TitleBar
 {
     Title          = _tool.Title,
     AllowsMaximize = true,         // double-click header = maximize/restore
@@ -627,34 +627,34 @@ new LemoineTitleBar
 
 Handles drag-to-move and double-click maximize internally.
 
-#### LemoineWarnBanner
-**File:** `Controls/Layout/LemoineWarnBanner.cs`
+#### WarnBanner
+**File:** `Controls/Layout/WarnBanner.cs`
 
 A warning banner using `LemoineWarnBg/Border/Text` semantic colour aliases.
 
-#### LemoineFileBrowser
+#### FileBrowser
 (see §8.1 — also a layout control housing the path input + browse button)
 
 ### 8.4 Legend controls
 
 All in `Controls/Legend/`. Used by AutoFilters legend builder:
 
-- `LemoineLegendBuilder` — full legend construction UI
-- `LemoineLegendGroupCard` — one legend group
-- `LemoineLegendRow` / `LemoineLegendBlockRow` — individual legend rows
-- `LemoineLegendPalette` — colour palette picker for the legend
-- `LemoineLegendPreview` — rendered preview of the legend
-- `LemoineLegendLayoutBar` — layout toolbar
+- `LegendBuilder` — full legend construction UI
+- `LegendGroupCard` — one legend group
+- `LegendRow` / `LegendBlockRow` — individual legend rows
+- `LegendPalette` — colour palette picker for the legend
+- `LegendPreview` — rendered preview of the legend
+- `LegendLayoutBar` — layout toolbar
 
 ### 8.5 Other controls
 
-#### LemoineCategoryChip
-**File:** `Controls/LemoineCategoryChip.xaml(.cs)`
+#### CategoryChip
+**File:** `Controls/CategoryChip.xaml(.cs)`
 
 A small coloured chip/badge for displaying category labels.
 
-### 8.6 LemoineControlStyles
-**File:** `Source/Lemoine/LemoineControlStyles.cs`
+### 8.6 ControlStyles
+**File:** `Source/Framework/ControlStyles.cs`
 
 Injects themed ControlTemplate overrides for `ScrollBar`, `ComboBox`, and `CheckBox` via `XamlReader.Parse`. Called once by `StepFlowWindow.InjectControlStyles()` with `scrollBarWidth: 5`.
 
@@ -666,12 +666,12 @@ Also exposes `BuildFlatButtonTemplate()` — the template used for all `Button` 
 
 ### Step 1 — Create the ViewModel
 
-Copy `Source/Tools/T02-Ceilings/ProjectedCeilingGridsViewModel.cs` to your new folder, e.g.:
+Copy `Source/Tools/Ceilings/ProjectedCeilingGridsViewModel.cs` to your new folder, e.g.:
 
-`Source/Tools/T05-MyFeature/MyFeatureViewModel.cs`
+`Source/Tools/Views/MyFeatureViewModel.cs`
 
 ```csharp
-public class MyFeatureViewModel : ILemoineTool  // add ILemoineToolSettings if needed
+public class MyFeatureViewModel : IStepFlowTool  // add IToolSettings if needed
 {
     public string Title    => "My Feature";
     public string RunLabel => "Run in Revit →";
@@ -701,13 +701,13 @@ public class MyFeatureViewModel : ILemoineTool  // add ILemoineToolSettings if n
     {
         if (stepId == "S1")
         {
-            var fb = new LemoineFileBrowser { Label = "Select your file.", Filter = "DWG|*.dwg" };
+            var fb = new FileBrowser { Label = "Select your file.", Filter = "DWG|*.dwg" };
             fb.PathChanged += p => { _path = p ?? ""; OnValidationChanged(); };
             return fb;
         }
         if (stepId == "S2")
         {
-            var sel = new LemoineSingleSelect { Label = "Mode", Items = new List<string> { "Default", "Advanced" } };
+            var sel = new SingleSelect { Label = "Mode", Items = new List<string> { "Default", "Advanced" } };
             sel.SelectionChanged += v => { _option = v ?? "Default"; OnValidationChanged(); };
             return sel;
         }
@@ -750,7 +750,7 @@ public class MyFeatureViewModel : ILemoineTool  // add ILemoineToolSettings if n
 
 ### Step 2 — Create the ExternalEventHandler
 
-`Source/Tools/T05-MyFeature/MyEventHandler.cs`
+`Source/Tools/Views/MyEventHandler.cs`
 
 ```csharp
 public class MyEventHandler : IExternalEventHandler
@@ -785,7 +785,7 @@ public class MyEventHandler : IExternalEventHandler
 
 ### Step 3 — Create the Command class
 
-`Source/Commands/T05-MyFeature/MyFeatureCommand.cs`
+`Source/Commands/Views/MyFeatureCommand.cs`
 
 ```csharp
 [Transaction(TransactionMode.Manual)]
@@ -823,7 +823,7 @@ panel.AddItem(btn);
 
 ### Step 5 (optional) — Add settings
 
-Implement `ILemoineToolSettings` on your ViewModel. Return a `LemoineToolSettingsSpec` from `GetSettingsSpec()`, write back in `ApplySettings()`.
+Implement `IToolSettings` on your ViewModel. Return a `ToolSettingsSpec` from `GetSettingsSpec()`, write back in `ApplySettings()`.
 
 ---
 
@@ -832,46 +832,65 @@ Implement `ILemoineToolSettings` on your ViewModel. Return a `LemoineToolSetting
 ```
 Source/
 ├── App.cs                              Ribbon registration, ExternalEvent creation
-├── Commands/
+├── Commands/                           ← mirrors Tools/ below, one command per ribbon button
 │   ├── OpenSettingsCommand.cs          Opens GlobalSettingsWindow
-│   ├── T01-AutoFilters/                One command per ribbon button
-│   ├── T02-Ceilings/
-│   ├── T03-LinkViews/
-│   ├── T04-ModifyElements/
-│   └── Testing/
-├── Lemoine/                            ← UI FRAMEWORK (never edit unless changing the framework)
-│   ├── ILemoineTool.cs                 Tool contract + StepDefinition
-│   ├── ILemoineToolSettings.cs         Optional persistent settings contract
-│   ├── LemoineTheme.cs                 All themes + design tokens
-│   ├── LemoineSettings.cs              Singleton: active theme, scale, persistence
-│   ├── LemoineToolSettingsSpec.cs      Declarative settings data model
-│   ├── LemoineControlStyles.cs         ScrollBar / ComboBox / CheckBox templates
-│   ├── LemoineSettingsWindow.xaml(.cs) Per-tool settings window (GlobalSettingsWindow subordinate)
+│   ├── OpenOverviewCommand.cs          Opens ToolsOverviewWindow
+│   ├── Setup/
+│   ├── CopyFromLink/
+│   ├── Modify/
+│   ├── Ceilings/
+│   ├── Views/
+│   ├── FiltersLegends/
+│   ├── Dimensioning/
+│   ├── Sheets/
+│   ├── Export/
+│   └── Debuggers/
+├── Framework/                           ← UI FRAMEWORK (never edit unless changing the framework)
+│   ├── IStepFlowTool.cs                 Tool contract + StepDefinition
+│   ├── IToolSettings.cs         Optional persistent settings contract
+│   ├── ThemePalette.cs                 All themes + design tokens
+│   ├── AppSettings.cs              Singleton: active theme, scale, persistence
+│   ├── ToolSettingsSpec.cs      Declarative settings data model
+│   ├── ControlStyles.cs         ScrollBar / ComboBox / CheckBox templates
 │   ├── GlobalSettingsWindow.xaml(.cs)  Global settings (theme, UI size, all tools)
-│   ├── GlobalSettingsWindow.*.cs       Per-tool partial classes for GlobalSettingsWindow
+│   ├── GlobalSettingsWindow.*.cs       Cross-cutting partial classes for GlobalSettingsWindow
+│   ├── ToolsOverviewWindow.xaml(.cs)   Read-only tools guide (NOT StepFlowWindow)
 │   ├── StepFlowWindow.xaml(.cs)        ← THE MAIN TOOL WINDOW (never subclass)
 │   ├── RelayCommand.cs                 ICommand helper for MVVM bindings
 │   ├── BrushHelper.cs                  Brush utility helpers
 │   ├── Templates/
-│   │   └── LemoineTemplateStore.cs     Template storage/retrieval
+│   │   └── TemplateStore.cs     Template storage/retrieval
 │   └── Controls/
 │       ├── Color/                      Color picker controls
-│       ├── Input/                      LemoineSingleSelect, LemoineToggleSwitches,
-│       │                               LemoineMultiSelectTabs, LemoineSearchAutocomplete,
-│       │                               LemoineNumberRange, LemoineNumberStepper,
-│       │                               LemoineTagChipInput, LemoineInlineEdit,
-│       │                               LemoineDatePicker, LemoineTokenInput
-│       ├── Layout/                     LemoineTitleBar, LemoineSectionCard,
-│       │                               LemoineFileBrowser, LemoineReviewSummary,
-│       │                               LemoineWarnBanner
+│       ├── Input/                      SingleSelect, ToggleSwitches,
+│       │                               MultiSelectTabs, SearchAutocomplete,
+│       │                               NumberRange, TagChipInput,
+│       │                               InlineEdit, InlineStepper,
+│       │                               DateField, TokenInput
+│       ├── Layout/                     TitleBar, SectionCard,
+│       │                               FileBrowser, ReviewSummary,
+│       │                               WarnBanner
 │       ├── Legend/                     Legend builder controls (AutoFilters tool)
-│       └── LemoineCategoryChip.xaml    Category badge chip
-├── Tools/                              ← TOOL VIEWMODELS + EVENT HANDLERS
-│   ├── T01-AutoFilters/
-│   ├── T02-Ceilings/
-│   ├── T03-LinkViews/
-│   ├── T04-ModifyElements/
-│   └── Testing/
+│       └── CategoryChip.xaml    Category badge chip
+├── Tools/                              ← TOOL VIEWMODELS + EVENT HANDLERS, one folder per ribbon panel
+│   ├── Setup/                          Upgrade Links, Link Audit, Align/Compare/Push Coordinates
+│   │   └── Windows/                    LinkAuditWindow (standalone report — not StepFlowWindow)
+│   ├── CopyFromLink/                   Copy Datums, Copy Linear, Copy Elements
+│   ├── Modify/                         Split Elements, Extend Walls
+│   ├── Ceilings/                       Ceiling Heatmap, Ceiling Grids
+│   │   └── Windows/                    GlobalSettingsWindow partial for the Ceilings tab
+│   ├── Views/                          Bulk Views by Level, Duplicate Views
+│   │   ├── Windows/                    GlobalSettingsWindow partial for the Views tab
+│   │   ├── ScopeBoxes/                 Scope Box Creator + Manager
+│   │   └── ExplodeViews/               Explode View by Trade
+│   ├── FiltersLegends/                 Auto Filters
+│   │   ├── Windows/                    FiltersSettingsWindow + GlobalSettingsWindow partial
+│   │   └── LegendCreator/              Legend Creation
+│   ├── Dimensioning/                   Clash Definitions/Finder/Elevation, Auto-Dimension engine
+│   │   └── Windows/                    ClashDefinitionsWindow
+│   ├── Sheets/                         Bulk Rename, Place Dependent Views, Align Sheet Views
+│   ├── Export/                         Bulk Export, Print View
+│   └── Debuggers/                      Debug harnesses (reserved Developer panel button)
 └── Helpers/
     └── MepColorMap.cs                  MEP category → colour mapping
 ```
@@ -883,11 +902,11 @@ Source/
 | Do | Don't |
 |---|---|
 | `SetResourceReference(prop, "LemoineXxx")` for all colours, sizes, fonts | Hard-code `#RRGGBB`, `14.0`, `Segoe UI` |
-| Implement `ILemoineTool` on a plain ViewModel class | Subclass `StepFlowWindow` |
+| Implement `IStepFlowTool` on a plain ViewModel class | Subclass `StepFlowWindow` |
 | Fire `ValidationChanged` every time user input changes | Return stale `IsValid` results |
 | Call Revit API only inside `IExternalEventHandler.Execute()` | Call Revit API in `Run()` or `GetStepContent()` |
 | Use `Dispatcher.BeginInvoke` for UI updates from background threads | Directly update UI from `Execute()` |
 | Persist tool settings via a dedicated `YourToolSettings` class | Store mutable state in static fields on the command class |
-| Add new themes to `LemoineTheme.All[]` | Fork `LemoineTheme` into a separate class |
-| Use `LemoineSettings.Instance.S(value)` to scale a raw px value | Multiply by a magic number |
+| Add new themes to `ThemePalette.All[]` | Fork `ThemePalette` into a separate class |
+| Use `AppSettings.Instance.S(value)` to scale a raw px value | Multiply by a magic number |
 | Build review panels using `LemoineRaised` background cards | Use inline styles or hardcoded backgrounds |
