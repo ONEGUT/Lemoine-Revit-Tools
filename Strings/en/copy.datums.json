@@ -1,0 +1,40 @@
+// copy.datums.json — Copy Datums from Link tool + run-handler logs (grids and levels).
+// Command: CopyDatumsCommand.
+{
+  "title": "Copy Datums from Link",
+  "runLabel": "Copy in Revit →",
+  "steps": { "source": "Source Link & Datums", "run": "Review & Run" },
+  "summaries": { "run": "Ready to run", "source": "{0} · {1} datum(s)" },
+  "labels": {
+    "noLinks":             "No loaded links contain grids or levels.",
+    "sourceLink":          "Source link",
+    "datumsToCopy":        "Datums to copy",
+    "gridsTab":            "Grids",
+    "levelsTab":           "Levels",
+    "allExist":            "All {0} datum(s) in this link already exist in the host.",
+    "noDatums":            "This link has no grids or levels.",
+    "someHidden":          "{0} datum(s) already exist in the host and were hidden.",
+    "levelNameCollision":  "{0} (Level)"
+  },
+  "review": {
+    "itemLink":    "Source Link",
+    "itemDatums":  "Datums",
+    "datumsNone":  "None",
+    "datumsValue": "{0} grid(s), {1} level(s)"
+  },
+  "log": {
+    "handlerMissing": "Run handler not registered.",
+    "raising":        "Raising Revit external event…",
+    "noDoc":          "No active document.",
+    "srcNotLoaded":   "Source link is not loaded.",
+    "gridExists":     "— Grid '{0}' already exists in host, skipped.",
+    "levelExists":    "— Level '{0}' already exists in host, skipped.",
+    "noDatumsToCopy": "No datums to copy (all selected grids and levels already exist in the host).",
+    "stopped":        "Stopped by user — {0} datum(s) copied so far; work preserved.",
+    "gridFail":       "✗ Grid {0}: {1}",
+    "levelFail":      "✗ Level {0}: {1}",
+    "nonFatal":       "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "done":           "Done. {0} datum(s) copied, {1} skipped, {2} failed.",
+    "aborted":        "Run aborted: {0}"
+  }
+}

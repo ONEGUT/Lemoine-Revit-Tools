@@ -14,7 +14,7 @@ namespace LemoineTools.Commands
 {
     [Transaction(TransactionMode.Manual)]
     [Regeneration(RegenerationOption.Manual)]
-    public class CopyGridsCommand : IExternalCommand
+    public class CopyDatumsCommand : IExternalCommand
     {
         private static StepFlowWindow? _window;
 
@@ -35,12 +35,12 @@ namespace LemoineTools.Commands
             }
 
             var uiApp = commandData.Application;
-            CopyGridsViewModel BuildTool()
+            CopyDatumsViewModel BuildTool()
             {
                 var doc = uiApp.ActiveUIDocument.Document;
-                var links = CollectGridLinks(doc);
+                var links = CollectDatumLinks(doc);
 
-                var vm = new CopyGridsViewModel(App.CopyGridsRunHandler, App.CopyGridsRunEvent, links);
+                var vm = new CopyDatumsViewModel(App.CopyDatumsRunHandler, App.CopyDatumsRunEvent, links);
 
                 return vm;
             }
@@ -65,26 +65,35 @@ namespace LemoineTools.Commands
             return Result.Succeeded;
         }
 
-        // Every loaded link that has grids, each grid flagged when its name already exists in the host.
-        private static List<CopyGridLinkInfo> CollectGridLinks(Document doc)
+        // Every loaded link that has grids and/or levels, each item flagged when its name
+        // already exists in the host — Revit enforces unique names for both element types.
+        private static List<CopyDatumLinkInfo> CollectDatumLinks(Document doc)
         {
-            var result = new List<CopyGridLinkInfo>();
+            var result = new List<CopyDatumLinkInfo>();
             if (doc == null) return result;
 
-            var hostNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var hostGridNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 foreach (var g in new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>())
-                    hostNames.Add(g.Name);
+                    hostGridNames.Add(g.Name);
             }
-            catch (Exception ex) { LemoineLog.Swallowed("CopyGridsCommand: read host grid names", ex); }
+            catch (Exception ex) { LemoineLog.Swallowed("CopyDatumsCommand: read host grid names", ex); }
+
+            var hostLevelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var lvl in new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>())
+                    hostLevelNames.Add(lvl.Name);
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("CopyDatumsCommand: read host level names", ex); }
 
             foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
                 var ld = li.GetLinkDocument();
                 if (ld == null) continue;
 
-                var info = new CopyGridLinkInfo
+                var info = new CopyDatumLinkInfo
                 {
                     Name = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "]",
                     LinkInstId = li.Id.Value,
@@ -93,14 +102,25 @@ namespace LemoineTools.Commands
                 {
                     foreach (var g in new FilteredElementCollector(ld).OfClass(typeof(Grid)).Cast<Grid>()
                                  .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase))
-                        info.Grids.Add(new CopyGridItem
+                        info.Grids.Add(new CopyDatumItem
                         {
-                            Name = g.Name, ElemId = g.Id.Value, ExistsInHost = hostNames.Contains(g.Name),
+                            Name = g.Name, ElemId = g.Id.Value, ExistsInHost = hostGridNames.Contains(g.Name),
                         });
                 }
-                catch (Exception ex) { LemoineLog.Swallowed($"CopyGridsCommand: read grids in {info.Name}", ex); }
+                catch (Exception ex) { LemoineLog.Swallowed($"CopyDatumsCommand: read grids in {info.Name}", ex); }
 
-                if (info.Grids.Count > 0) result.Add(info);
+                try
+                {
+                    foreach (var lvl in new FilteredElementCollector(ld).OfClass(typeof(Level)).Cast<Level>()
+                                 .OrderBy(lvl => lvl.Name, StringComparer.OrdinalIgnoreCase))
+                        info.Levels.Add(new CopyDatumItem
+                        {
+                            Name = lvl.Name, ElemId = lvl.Id.Value, ExistsInHost = hostLevelNames.Contains(lvl.Name),
+                        });
+                }
+                catch (Exception ex) { LemoineLog.Swallowed($"CopyDatumsCommand: read levels in {info.Name}", ex); }
+
+                if (info.Grids.Count > 0 || info.Levels.Count > 0) result.Add(info);
             }
             return result;
         }

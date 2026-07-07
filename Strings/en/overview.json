@@ -193,9 +193,9 @@
           "example": "a linked pipe run comes in as host pipes in 6 m lengths"
         },
         "grids": {
-          "name": "Copy Grids",
-          "blurb": "Copies grids from a link into the host. Any grid whose name already exists is skipped and noted, since grid names have to be unique.",
-          "example": "link grids A to F come across, and existing names are left alone"
+          "name": "Copy Datums",
+          "blurb": "Copies grids and levels from a link into the host. Any grid or level whose name already exists is skipped and noted, since both have to be unique.",
+          "example": "link grids A to F and levels L1-L4 come across, and existing names are left alone"
         },
         "elements": {
           "name": "Copy Elements",

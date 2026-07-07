@@ -127,9 +127,9 @@ namespace LemoineTools
         internal static LemoineTools.Tools.CopyLinear.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyLinearRunEvent   { get; private set; }
 
-        // ── Testing — Copy Grids from Link ──────────────────────────────────────────
-        internal static LemoineTools.Tools.CopyLinear.CopyGridsRunHandler? CopyGridsRunHandler { get; private set; }
-        internal static ExternalEvent?             CopyGridsRunEvent    { get; private set; }
+        // ── Testing — Copy Datums from Link ─────────────────────────────────────────
+        internal static LemoineTools.Tools.CopyLinear.CopyDatumsRunHandler? CopyDatumsRunHandler { get; private set; }
+        internal static ExternalEvent?             CopyDatumsRunEvent   { get; private set; }
 
         // ── Testing — Copy Elements from Link ───────────────────────────────────────
         internal static LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler? CopyFromLinkScanHandler { get; private set; }
@@ -274,8 +274,8 @@ namespace LemoineTools
             CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
             CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
             CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
-            CopyGridsRunHandler   = new LemoineTools.Tools.CopyLinear.CopyGridsRunHandler();
-            CopyGridsRunEvent     = ExternalEvent.Create(CopyGridsRunHandler);
+            CopyDatumsRunHandler  = new LemoineTools.Tools.CopyLinear.CopyDatumsRunHandler();
+            CopyDatumsRunEvent    = ExternalEvent.Create(CopyDatumsRunHandler);
             CopyFromLinkScanHandler = new LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler();
             CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
             CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
@@ -352,8 +352,8 @@ namespace LemoineTools
             var copyPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.copyFromLink"));
 
             copyPanel.AddItem(Btn(
-                "LT_CopyGrids", L.T("ribbon.buttons.copyGrids.label"), "CopyGridsCommand",
-                L.T("ribbon.buttons.copyGrids.tip"),
+                "LT_CopyDatums", L.T("ribbon.buttons.copyDatums.label"), "CopyDatumsCommand",
+                L.T("ribbon.buttons.copyDatums.tip"),
                 char.ConvertFromUtf32(0xE80A)));  // GridView
 
             copyPanel.AddItem(Btn(

@@ -171,9 +171,9 @@
       "label": "Copy\nLinear",
       "tip":   "Copy linear linked runs into the host and split them into standard lengths, or replace them with a picked family at set intervals. Re-runs can process only changed elements."
     },
-    "copyGrids": {
-      "label": "Copy\nGrids",
-      "tip":   "Copy grids from a linked model into the host. Grids whose name already exists in the host are skipped."
+    "copyDatums": {
+      "label": "Copy\nDatums",
+      "tip":   "Copy grids and levels from a linked model into the host. Datums whose name already exists in the host are skipped — Revit requires unique grid and level names."
     },
     "copyFromLink": {
       "label": "Copy\nElements",
