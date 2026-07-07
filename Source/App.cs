@@ -143,10 +143,6 @@ namespace LemoineTools
         internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
-        // ── Setup — Link Audit ───────────────────────────────────────────────────────
-        internal static LemoineTools.Tools.Coordinates.LinkAuditRunHandler? LinkAuditRunHandler { get; private set; }
-        internal static ExternalEvent?             LinkAuditRunEvent     { get; private set; }
-
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
@@ -173,6 +169,9 @@ namespace LemoineTools
 
         // Tools Overview window — read-only guide, singleton like GlobalSettings
         internal static Lemoine.ToolsOverviewWindow? Overview { get; set; }
+
+        // Link Audit window — read-only report, singleton like GlobalSettings/Overview
+        internal static Lemoine.LinkAuditWindow? LinkAudit { get; set; }
 
         public Result OnStartup(UIControlledApplication application)
         {
@@ -289,9 +288,6 @@ namespace LemoineTools
             UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
             UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
-
-            LinkAuditRunHandler = new LemoineTools.Tools.Coordinates.LinkAuditRunHandler();
-            LinkAuditRunEvent   = ExternalEvent.Create(LinkAuditRunHandler);
 
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);

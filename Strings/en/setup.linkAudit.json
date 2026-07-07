@@ -1,10 +1,13 @@
-// setup.linkAudit.json — Link Audit tool + run-handler logs.
-// Command: LinkAuditCommand. Read-only report — never changes the model.
+// setup.linkAudit.json — Link Audit window strings.
+// Command: LinkAuditCommand. Read-only report window (LinkAuditWindow) — never changes the
+// model, and has no run/confirm action, so there's no run-handler log vocabulary here.
 {
-  "title": "Link Audit",
-  "runLabel": "Refresh & Log →",
-  "steps": { "report": "Link Report", "run": "Review & Run" },
-  "summaries": { "run": "Ready to run", "report": "{0} link(s) · {1} flagged" },
+  "window": {
+    "title":           "Link Audit",
+    "close":            "Close",
+    "footerHint":       "Read-only — reports link health, makes no changes.",
+    "automationName":   "Lemoine Tools Link Audit"
+  },
   "labels": {
     "noneFound":        "No Revit links found in this model.",
     "summary":          "{0} link(s) found — {1} flagged for attention.",
@@ -17,22 +20,5 @@
     "fieldLastSaved":   "Last saved",
     "yes":              "Yes",
     "no":               "No"
-  },
-  "review": {
-    "itemLinks":   "Links Found",
-    "itemFlagged": "Flagged",
-    "note":        "Read-only — reports link health, makes no changes.",
-    "warning":     "{0} link(s) need attention — see the report above."
-  },
-  "log": {
-    "handlerMissing": "Run handler not registered.",
-    "raising":        "Raising Revit external event…",
-    "noDoc":          "No active document.",
-    "noneFound":      "No Revit links found in this model.",
-    "row":            "{0} — status: {1}; positioning: {2}; display: {3}; pinned: {4}; workset: {5}; attachment: {6}; last saved: {7}",
-    "pinnedYes":      "yes",
-    "pinnedNo":       "no",
-    "summary":        "{0} link(s) audited — {1} loaded, {2} flagged for attention.",
-    "aborted":        "Run aborted: {0}"
   }
 }

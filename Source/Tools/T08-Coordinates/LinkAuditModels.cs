@@ -19,7 +19,7 @@ namespace LemoineTools.Tools.Coordinates
         public bool IsWarning { get; set; }
     }
 
-    /// <summary>Revit-thread snapshot handed to <see cref="LinkAuditViewModel"/>.</summary>
+    /// <summary>Revit-thread snapshot handed to <see cref="LemoineTools.Lemoine.LinkAuditWindow"/>.</summary>
     public sealed class LinkAuditData
     {
         public List<LinkAuditRow> Rows { get; set; } = new List<LinkAuditRow>();
