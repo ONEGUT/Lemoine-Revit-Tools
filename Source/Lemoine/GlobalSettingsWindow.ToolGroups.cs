@@ -5,7 +5,6 @@ using System.Windows.Controls;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.BulkExport;
-using LemoineTools.Tools.CopyLinear;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Lemoine

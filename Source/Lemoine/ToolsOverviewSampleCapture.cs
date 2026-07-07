@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Tools.Clash;
+using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Lemoine
 {

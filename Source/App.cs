@@ -6,10 +6,9 @@ using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.ModifyElements;
 using LemoineTools.Tools.BulkExport;
-using LemoineTools.Tools.Clash;
+using LemoineTools.Tools.Dimensioning;
 using LemoineTools.Tools.ExplodeViews;
-using LemoineTools.Tools.Testing.LegendCreator;
-using LemoineTools.Tools.Testing;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using System;
 using L = LemoineTools.Lemoine.LemoineStrings;
 
@@ -100,9 +99,9 @@ namespace LemoineTools
         internal static ExternalEvent?              ClashFinderEvent      { get; private set; }
         internal static ClashElevationFinderEventHandler? ClashElevationFinderHandler { get; private set; }
         internal static ExternalEvent?              ClashElevationFinderEvent   { get; private set; }
-        internal static LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
+        internal static LemoineTools.Tools.Dimensioning.AutoDimension.SlabPickEventHandler? SlabPickHandler { get; private set; }
         internal static ExternalEvent?              SlabPickEvent         { get; private set; }
-        internal static LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
+        internal static LemoineTools.Tools.Dimensioning.AutoDimension.Refine.RefineDimensionsEventHandler? RefineDimensionsHandler { get; private set; }
         internal static ExternalEvent?              RefineDimensionsEvent { get; private set; }
 
         // ── T06 — Views (Explode 3D View by Trade) ──────────────────────────────────
@@ -110,21 +109,21 @@ namespace LemoineTools
         internal static ExternalEvent?                  ExplodeViewByTradeEvent   { get; private set; }
 
         // ── Testing — Place Dependent Views ─────────────────────────────────────────
-        internal static LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
+        internal static LemoineTools.Tools.Sheets.PlaceDependentViews.PlaceDependentViewsEventHandler? PlaceDependentViewsHandler { get; private set; }
         internal static ExternalEvent?             PlaceDependentViewsEvent { get; private set; }
 
         // ── Testing — Align Sheet Views ─────────────────────────────────────────────
-        internal static LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler? AlignSheetViewsHandler { get; private set; }
+        internal static LemoineTools.Tools.Sheets.AlignSheetViews.AlignSheetViewsEventHandler? AlignSheetViewsHandler { get; private set; }
         internal static ExternalEvent?             AlignSheetViewsEvent { get; private set; }
 
         // ── Testing — Copy Linear Elements ──────────────────────────────────────────
-        internal static LemoineTools.Tools.CopyLinear.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyLinearScanHandler? CopyLinearScanHandler { get; private set; }
         internal static ExternalEvent?             CopyLinearScanEvent  { get; private set; }
-        internal static LemoineTools.Tools.CopyLinear.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyLinearRunHandler?  CopyLinearRunHandler  { get; private set; }
         internal static ExternalEvent?             CopyLinearRunEvent   { get; private set; }
 
         // ── Testing — Copy Datums from Link ─────────────────────────────────────────
-        internal static LemoineTools.Tools.CopyLinear.CopyDatumsRunHandler? CopyDatumsRunHandler { get; private set; }
+        internal static LemoineTools.Tools.CopyFromLink.CopyDatumsRunHandler? CopyDatumsRunHandler { get; private set; }
         internal static ExternalEvent?             CopyDatumsRunEvent   { get; private set; }
 
         // ── Testing — Copy Elements from Link ───────────────────────────────────────
@@ -134,17 +133,17 @@ namespace LemoineTools
         internal static ExternalEvent?             CopyFromLinkRunEvent  { get; private set; }
 
         // ── Upgrade & Link Models ────────────────────────────────────────────────────
-        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler? UpgradeLinksScanHandler { get; private set; }
+        internal static LemoineTools.Tools.Setup.UpgradeLinksScanHandler? UpgradeLinksScanHandler { get; private set; }
         internal static ExternalEvent?             UpgradeLinksScanEvent { get; private set; }
-        internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
+        internal static LemoineTools.Tools.Setup.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
-        internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
+        internal static LemoineTools.Tools.Setup.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
-        internal static LemoineTools.Tools.Coordinates.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
+        internal static LemoineTools.Tools.Setup.CompareGridsRunHandler?     CompareGridsRunHandler     { get; private set; }
         internal static ExternalEvent?             CompareGridsRunEvent     { get; private set; }
-        internal static LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
+        internal static LemoineTools.Tools.Setup.PushCoordinatesToLinksRunHandler? PushCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             PushCoordinatesRunEvent  { get; private set; }
 
 
@@ -252,40 +251,40 @@ namespace LemoineTools
             ClashFinderEvent      = ExternalEvent.Create(ClashFinderHandler);
             ClashElevationFinderHandler = new ClashElevationFinderEventHandler();
             ClashElevationFinderEvent   = ExternalEvent.Create(ClashElevationFinderHandler);
-            SlabPickHandler       = new LemoineTools.Tools.Clash.AutoDimension.SlabPickEventHandler();
+            SlabPickHandler       = new LemoineTools.Tools.Dimensioning.AutoDimension.SlabPickEventHandler();
             SlabPickEvent         = ExternalEvent.Create(SlabPickHandler);
-            RefineDimensionsHandler = new LemoineTools.Tools.Clash.AutoDimension.Refine.RefineDimensionsEventHandler();
+            RefineDimensionsHandler = new LemoineTools.Tools.Dimensioning.AutoDimension.Refine.RefineDimensionsEventHandler();
             RefineDimensionsEvent   = ExternalEvent.Create(RefineDimensionsHandler);
 
             // ── T06 — Views ───────────────────────────────────────────────────
             ExplodeViewByTradeHandler = new ExplodeViewByTradeEventHandler();
             ExplodeViewByTradeEvent   = ExternalEvent.Create(ExplodeViewByTradeHandler);
 
-            PlaceDependentViewsHandler = new LemoineTools.Tools.Testing.PlaceDependentViews.PlaceDependentViewsEventHandler();
+            PlaceDependentViewsHandler = new LemoineTools.Tools.Sheets.PlaceDependentViews.PlaceDependentViewsEventHandler();
             PlaceDependentViewsEvent   = ExternalEvent.Create(PlaceDependentViewsHandler);
-            AlignSheetViewsHandler     = new LemoineTools.Tools.Testing.AlignSheetViews.AlignSheetViewsEventHandler();
+            AlignSheetViewsHandler     = new LemoineTools.Tools.Sheets.AlignSheetViews.AlignSheetViewsEventHandler();
             AlignSheetViewsEvent       = ExternalEvent.Create(AlignSheetViewsHandler);
-            CopyLinearScanHandler = new LemoineTools.Tools.CopyLinear.CopyLinearScanHandler();
+            CopyLinearScanHandler = new LemoineTools.Tools.CopyFromLink.CopyLinearScanHandler();
             CopyLinearScanEvent   = ExternalEvent.Create(CopyLinearScanHandler);
-            CopyLinearRunHandler  = new LemoineTools.Tools.CopyLinear.CopyLinearRunHandler();
+            CopyLinearRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyLinearRunHandler();
             CopyLinearRunEvent    = ExternalEvent.Create(CopyLinearRunHandler);
-            CopyDatumsRunHandler  = new LemoineTools.Tools.CopyLinear.CopyDatumsRunHandler();
+            CopyDatumsRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyDatumsRunHandler();
             CopyDatumsRunEvent    = ExternalEvent.Create(CopyDatumsRunHandler);
             CopyFromLinkScanHandler = new LemoineTools.Tools.CopyFromLink.CopyFromLinkScanHandler();
             CopyFromLinkScanEvent   = ExternalEvent.Create(CopyFromLinkScanHandler);
             CopyFromLinkRunHandler  = new LemoineTools.Tools.CopyFromLink.CopyFromLinkRunHandler();
             CopyFromLinkRunEvent    = ExternalEvent.Create(CopyFromLinkRunHandler);
 
-            UpgradeLinksScanHandler = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksScanHandler();
+            UpgradeLinksScanHandler = new LemoineTools.Tools.Setup.UpgradeLinksScanHandler();
             UpgradeLinksScanEvent   = ExternalEvent.Create(UpgradeLinksScanHandler);
-            UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
+            UpgradeLinksRunHandler  = new LemoineTools.Tools.Setup.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
 
-            AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
+            AlignCoordinatesRunHandler = new LemoineTools.Tools.Setup.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
-            CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
+            CompareGridsRunHandler     = new LemoineTools.Tools.Setup.CompareGridsRunHandler();
             CompareGridsRunEvent       = ExternalEvent.Create(CompareGridsRunHandler);
-            PushCoordinatesRunHandler  = new LemoineTools.Tools.Coordinates.PushCoordinatesToLinksRunHandler();
+            PushCoordinatesRunHandler  = new LemoineTools.Tools.Setup.PushCoordinatesToLinksRunHandler();
             PushCoordinatesRunEvent    = ExternalEvent.Create(PushCoordinatesRunHandler);
 
             // ── Modify Elements ───────────────────────────────────────────────

@@ -9,7 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using LemoineTools.Lemoine;
 using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Tools.Testing.LegendCreator;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using Microsoft.Win32;
 
 namespace LemoineTools.Lemoine.Controls

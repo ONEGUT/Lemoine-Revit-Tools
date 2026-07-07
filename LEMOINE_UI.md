@@ -666,9 +666,9 @@ Also exposes `BuildFlatButtonTemplate()` — the template used for all `Button` 
 
 ### Step 1 — Create the ViewModel
 
-Copy `Source/Tools/T02-Ceilings/ProjectedCeilingGridsViewModel.cs` to your new folder, e.g.:
+Copy `Source/Tools/Ceilings/ProjectedCeilingGridsViewModel.cs` to your new folder, e.g.:
 
-`Source/Tools/T05-MyFeature/MyFeatureViewModel.cs`
+`Source/Tools/Views/MyFeatureViewModel.cs`
 
 ```csharp
 public class MyFeatureViewModel : ILemoineTool  // add ILemoineToolSettings if needed
@@ -750,7 +750,7 @@ public class MyFeatureViewModel : ILemoineTool  // add ILemoineToolSettings if n
 
 ### Step 2 — Create the ExternalEventHandler
 
-`Source/Tools/T05-MyFeature/MyEventHandler.cs`
+`Source/Tools/Views/MyEventHandler.cs`
 
 ```csharp
 public class MyEventHandler : IExternalEventHandler
@@ -785,7 +785,7 @@ public class MyEventHandler : IExternalEventHandler
 
 ### Step 3 — Create the Command class
 
-`Source/Commands/T05-MyFeature/MyFeatureCommand.cs`
+`Source/Commands/Views/MyFeatureCommand.cs`
 
 ```csharp
 [Transaction(TransactionMode.Manual)]
@@ -832,13 +832,19 @@ Implement `ILemoineToolSettings` on your ViewModel. Return a `LemoineToolSetting
 ```
 Source/
 ├── App.cs                              Ribbon registration, ExternalEvent creation
-├── Commands/
+├── Commands/                           ← mirrors Tools/ below, one command per ribbon button
 │   ├── OpenSettingsCommand.cs          Opens GlobalSettingsWindow
-│   ├── T01-AutoFilters/                One command per ribbon button
-│   ├── T02-Ceilings/
-│   ├── T03-LinkViews/
-│   ├── T04-ModifyElements/
-│   └── Testing/
+│   ├── OpenOverviewCommand.cs          Opens ToolsOverviewWindow
+│   ├── Setup/
+│   ├── CopyFromLink/
+│   ├── Modify/
+│   ├── Ceilings/
+│   ├── Views/
+│   ├── FiltersLegends/
+│   ├── Dimensioning/
+│   ├── Sheets/
+│   ├── Export/
+│   └── Debuggers/
 ├── Lemoine/                            ← UI FRAMEWORK (never edit unless changing the framework)
 │   ├── ILemoineTool.cs                 Tool contract + StepDefinition
 │   ├── ILemoineToolSettings.cs         Optional persistent settings contract
@@ -846,9 +852,9 @@ Source/
 │   ├── LemoineSettings.cs              Singleton: active theme, scale, persistence
 │   ├── LemoineToolSettingsSpec.cs      Declarative settings data model
 │   ├── LemoineControlStyles.cs         ScrollBar / ComboBox / CheckBox templates
-│   ├── LemoineSettingsWindow.xaml(.cs) Per-tool settings window (GlobalSettingsWindow subordinate)
 │   ├── GlobalSettingsWindow.xaml(.cs)  Global settings (theme, UI size, all tools)
-│   ├── GlobalSettingsWindow.*.cs       Per-tool partial classes for GlobalSettingsWindow
+│   ├── GlobalSettingsWindow.*.cs       Cross-cutting partial classes for GlobalSettingsWindow
+│   ├── ToolsOverviewWindow.xaml(.cs)   Read-only tools guide (NOT StepFlowWindow)
 │   ├── StepFlowWindow.xaml(.cs)        ← THE MAIN TOOL WINDOW (never subclass)
 │   ├── RelayCommand.cs                 ICommand helper for MVVM bindings
 │   ├── BrushHelper.cs                  Brush utility helpers
@@ -858,20 +864,33 @@ Source/
 │       ├── Color/                      Color picker controls
 │       ├── Input/                      LemoineSingleSelect, LemoineToggleSwitches,
 │       │                               LemoineMultiSelectTabs, LemoineSearchAutocomplete,
-│       │                               LemoineNumberRange, LemoineNumberStepper,
-│       │                               LemoineTagChipInput, LemoineInlineEdit,
+│       │                               LemoineNumberRange, LemoineTagChipInput,
+│       │                               LemoineInlineEdit, LemoineInlineStepper,
 │       │                               LemoineDatePicker, LemoineTokenInput
 │       ├── Layout/                     LemoineTitleBar, LemoineSectionCard,
 │       │                               LemoineFileBrowser, LemoineReviewSummary,
 │       │                               LemoineWarnBanner
 │       ├── Legend/                     Legend builder controls (AutoFilters tool)
 │       └── LemoineCategoryChip.xaml    Category badge chip
-├── Tools/                              ← TOOL VIEWMODELS + EVENT HANDLERS
-│   ├── T01-AutoFilters/
-│   ├── T02-Ceilings/
-│   ├── T03-LinkViews/
-│   ├── T04-ModifyElements/
-│   └── Testing/
+├── Tools/                              ← TOOL VIEWMODELS + EVENT HANDLERS, one folder per ribbon panel
+│   ├── Setup/                          Upgrade Links, Link Audit, Align/Compare/Push Coordinates
+│   │   └── Windows/                    LinkAuditWindow (standalone report — not StepFlowWindow)
+│   ├── CopyFromLink/                   Copy Datums, Copy Linear, Copy Elements
+│   ├── Modify/                         Split Elements, Extend Walls
+│   ├── Ceilings/                       Ceiling Heatmap, Ceiling Grids
+│   │   └── Windows/                    GlobalSettingsWindow partial for the Ceilings tab
+│   ├── Views/                          Bulk Views by Level, Duplicate Views
+│   │   ├── Windows/                    GlobalSettingsWindow partial for the Views tab
+│   │   ├── ScopeBoxes/                 Scope Box Creator + Manager
+│   │   └── ExplodeViews/               Explode View by Trade
+│   ├── FiltersLegends/                 Auto Filters
+│   │   ├── Windows/                    FiltersSettingsWindow + GlobalSettingsWindow partial
+│   │   └── LegendCreator/              Legend Creation
+│   ├── Dimensioning/                   Clash Definitions/Finder/Elevation, Auto-Dimension engine
+│   │   └── Windows/                    ClashDefinitionsWindow
+│   ├── Sheets/                         Bulk Rename, Place Dependent Views, Align Sheet Views
+│   ├── Export/                         Bulk Export, Print View
+│   └── Debuggers/                      Debug harnesses (reserved Developer panel button)
 └── Helpers/
     └── MepColorMap.cs                  MEP category → colour mapping
 ```

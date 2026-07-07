@@ -5,7 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using LemoineTools.Tools.Testing.LegendCreator;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 
 namespace LemoineTools.Lemoine.Controls
 {

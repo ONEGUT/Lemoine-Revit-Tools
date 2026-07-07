@@ -1,0 +1,110 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Windows.Threading;
+using Autodesk.Revit.Attributes;
+using Autodesk.Revit.DB;
+using Autodesk.Revit.UI;
+using LemoineTools.Lemoine;
+using LemoineTools.Tools.Setup;
+
+namespace LemoineTools.Commands
+{
+    [Transaction(TransactionMode.Manual)]
+    [Regeneration(RegenerationOption.Manual)]
+    public class AlignCoordinatesCommand : IExternalCommand
+    {
+        private static StepFlowWindow? _window;
+
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            if (_window != null)
+            {
+                try
+                {
+                    _window.Dispatcher.Invoke(() =>
+                    {
+                        if (_window.IsVisible) _window.Activate();
+                        else _window = null;
+                    });
+                    if (_window != null) return Result.Succeeded;
+                }
+                catch { _window = null; }
+            }
+
+            var uiApp = commandData.Application;
+            AlignCoordinatesViewModel BuildTool()
+            {
+                var doc  = uiApp.ActiveUIDocument.Document;
+                var data = CollectData(doc);
+                return new AlignCoordinatesViewModel(App.AlignCoordinatesRunHandler, App.AlignCoordinatesRunEvent, data);
+            }
+            var vm = BuildTool();
+            var ready = new ManualResetEventSlim(false);
+            StepFlowWindow? win = null;
+
+            var thread = new Thread(() =>
+            {
+                win = new StepFlowWindow(vm, BuildTool);
+                win.Closed += (s, e) => { _window = null; Dispatcher.CurrentDispatcher.InvokeShutdown(); };
+                win.Show();
+                ready.Set();
+                Dispatcher.Run();
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.IsBackground = true;
+            thread.Start();
+
+            ready.Wait();
+            _window = win;
+            return Result.Succeeded;
+        }
+
+        private static AlignCoordinatesData CollectData(Document doc)
+        {
+            var data = new AlignCoordinatesData();
+            if (doc == null) return data;
+
+            try
+            {
+                data.HostGridNames = new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>()
+                    .Select(g => g.Name).Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AlignCoordinatesCommand: read host grids", ex); }
+
+            try
+            {
+                data.HostLevelNames = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>()
+                    .OrderBy(l => l.ProjectElevation).Select(l => l.Name).ToList();
+            }
+            catch (Exception ex) { LemoineLog.Swallowed("AlignCoordinatesCommand: read host levels", ex); }
+
+            foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+            {
+                var ld = li.GetLinkDocument();
+                if (ld == null) continue;
+
+                var info = new AlignLinkInfo
+                {
+                    Name       = "[" + Path.GetFileNameWithoutExtension(ld.Title) + "]",
+                    LinkInstId = li.Id.Value,
+                };
+                try
+                {
+                    foreach (var g in new FilteredElementCollector(ld).OfClass(typeof(Grid)).Cast<Grid>())
+                        if (!string.IsNullOrWhiteSpace(g.Name)) info.GridNames.Add(g.Name);
+                }
+                catch (Exception ex) { LemoineLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
+
+                // Every loaded link is selectable — grids are optional metadata for that link's own
+                // Grid Intersection override, never a filter on whether the link can be aligned.
+                data.Links.Add(info);
+            }
+            return data;
+        }
+    }
+}

@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using LemoineTools.Lemoine.Controls;
-using LemoineTools.Tools.Clash;
-using LemoineTools.Tools.Clash.AutoDimension;
+using LemoineTools.Tools.Dimensioning;
+using LemoineTools.Tools.Dimensioning.AutoDimension;
 
 namespace LemoineTools.Lemoine
 {

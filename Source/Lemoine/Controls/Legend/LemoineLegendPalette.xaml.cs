@@ -7,7 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using LemoineTools.Tools.AutoFilters;
-using LemoineTools.Tools.Testing.LegendCreator;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Lemoine.Controls

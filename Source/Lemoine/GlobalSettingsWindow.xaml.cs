@@ -10,7 +10,7 @@ using System.Windows.Threading;
 using System.Windows.Automation;
 using LemoineTools.Lemoine.Controls;
 using LemoineTools.Tools.Ceilings;
-using LemoineTools.Tools.Testing.LegendCreator;
+using LemoineTools.Tools.FiltersLegends.LegendCreator;
 
 namespace LemoineTools.Lemoine
 {
