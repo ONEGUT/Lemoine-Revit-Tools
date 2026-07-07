@@ -143,6 +143,10 @@ namespace LemoineTools
         internal static LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler?  UpgradeLinksRunHandler  { get; private set; }
         internal static ExternalEvent?             UpgradeLinksRunEvent  { get; private set; }
 
+        // ── Setup — Link Audit ───────────────────────────────────────────────────────
+        internal static LemoineTools.Tools.Coordinates.LinkAuditRunHandler? LinkAuditRunHandler { get; private set; }
+        internal static ExternalEvent?             LinkAuditRunEvent     { get; private set; }
+
         // ── Setup — Align Coordinates / Compare Grids / Push Coordinates to Links ───
         internal static LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler? AlignCoordinatesRunHandler { get; private set; }
         internal static ExternalEvent?             AlignCoordinatesRunEvent { get; private set; }
@@ -286,6 +290,9 @@ namespace LemoineTools
             UpgradeLinksRunHandler  = new LemoineTools.Tools.UpgradeLinks.UpgradeLinksRunHandler();
             UpgradeLinksRunEvent    = ExternalEvent.Create(UpgradeLinksRunHandler);
 
+            LinkAuditRunHandler = new LemoineTools.Tools.Coordinates.LinkAuditRunHandler();
+            LinkAuditRunEvent   = ExternalEvent.Create(LinkAuditRunHandler);
+
             AlignCoordinatesRunHandler = new LemoineTools.Tools.Coordinates.AlignCoordinatesRunHandler();
             AlignCoordinatesRunEvent   = ExternalEvent.Create(AlignCoordinatesRunHandler);
             CompareGridsRunHandler     = new LemoineTools.Tools.Coordinates.CompareGridsRunHandler();
@@ -331,6 +338,11 @@ namespace LemoineTools
                 "LT_UpgradeLinks", L.T("ribbon.buttons.upgradeLinks.label"), "UpgradeLinksCommand",
                 L.T("ribbon.buttons.upgradeLinks.tip"),
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+
+            setupPanel.AddItem(Btn(
+                "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
+                L.T("ribbon.buttons.linkAudit.tip"),
+                char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
 
             setupPanel.AddItem(Btn(
                 "LT_AlignCoordinates", L.T("ribbon.buttons.alignCoordinates.label"), "AlignCoordinatesCommand",

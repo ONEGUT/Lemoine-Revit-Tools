@@ -23,6 +23,10 @@
       "label": "Upgrade &\nLink Models",
       "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat."
     },
+    "linkAudit": {
+      "label": "Link\nAudit",
+      "tip":   "Read-only report on every linked model: load status, positioning, display mode (active view), pinned state, workset, attachment type, and last-saved time. Changes nothing."
+    },
     "alignCoordinates": {
       "label": "Align\nCoordinates",
       "tip":   "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."

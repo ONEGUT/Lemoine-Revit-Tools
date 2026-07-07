@@ -206,8 +206,13 @@
     },
     "coordination": {
       "name": "Setup",
-      "intro": "Line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
+      "intro": "Check the links are set up right, line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
       "tools": {
+        "linkAudit": {
+          "name": "Link Audit",
+          "blurb": "Read-only report on every loaded link: load status, positioning, display mode, pinned state, workset, attachment type, and last-saved time. The first thing to check on a new coordination project.",
+          "example": "3 links found — 1 unloaded, 1 not displaying By Host View, flagged for attention"
+        },
         "alignCoordinates": {
           "name": "Align Coordinates",
           "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, rotates and translates each selected link so its same-named grid intersection lands on the host's, then publishes the host's shared coordinates to those links.",

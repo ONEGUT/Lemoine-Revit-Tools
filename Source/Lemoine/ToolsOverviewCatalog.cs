@@ -328,6 +328,12 @@ namespace LemoineTools.Lemoine
                 {
                     new OverviewTool
                     {
+                        Name = LemoineStrings.T("overview.cat.coordination.tools.linkAudit.name"), Glyph = G(0xE9D9),
+                        Blurb = LemoineStrings.T("overview.cat.coordination.tools.linkAudit.blurb"),
+                        Example = LemoineStrings.T("overview.cat.coordination.tools.linkAudit.example"),
+                    },
+                    new OverviewTool
+                    {
                         Name = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.name"), Glyph = G(0xE809),
                         Blurb = LemoineStrings.T("overview.cat.coordination.tools.alignCoordinates.blurb"),
                         Feeds = new[] { "Compare Grids", "Copy from Link", "Dimensioning" },
