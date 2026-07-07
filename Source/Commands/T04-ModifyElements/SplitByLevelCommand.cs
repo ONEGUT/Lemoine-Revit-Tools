@@ -42,22 +42,16 @@ namespace LemoineTools.Commands
                 var doc          = uidoc.Document;
                 var activeViewId = uidoc.ActiveView?.Id;
 
-                // All categorised elements → discipline-grouped category picker.
-                var allElements = new FilteredElementCollector(doc)
-                    .WhereElementIsNotElementType()
-                    .Where(e => e.Category?.Name != null &&
-                               (e.Category.CategoryType == CategoryType.Model ||
-                                e.Category.CategoryType == CategoryType.Annotation))
-                    .ToList();
-                var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
-                int totalElements  = allElements.Count;
+                // Only categories the Level cutter can actually act on → discipline-grouped
+                // picker. SplitTargets is the single source of truth so the picker never offers
+                // — and a run never silently skips — a category the engine has no strategy for.
+                var levelTargets = SplitTargets.For(SplitCutterKind.Level);
+                var (categoryGroups, totalElements, _) = SplitTargets.CollectForPicker(doc, null, levelTargets);
 
-                // Pre-selection: any selected element with a recognisable category.
+                // Pre-selection: any selected element whose category is a supported Level target.
                 var rawSelection = uidoc.Selection.GetElementIds()
                     .Select(id => doc.GetElement(id))
-                    .Where(e => e?.Category?.Name != null &&
-                               (e.Category.CategoryType == CategoryType.Model ||
-                                e.Category.CategoryType == CategoryType.Annotation))
+                    .Where(e => SplitTargets.IsSupported(e, levelTargets))
                     .ToList();
                 var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
                 var preSelectedCats = rawSelection

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Mechanical;
+using Autodesk.Revit.DB.Plumbing;
 using LemoineTools.Lemoine;
 
 namespace LemoineTools.Tools.ModifyElements
@@ -130,6 +132,7 @@ namespace LemoineTools.Tools.ModifyElements
             RunProgressReporter? progress = null)
         {
             var stats = new SplitStats();
+            var levelPlanes = BuildLevelPlanes(levels);
 
             foreach (Element el in elements)
             {
@@ -141,17 +144,20 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
+                    if (!TryGuardElement(el, stats)) continue;
 
-                    // Property-based dispatch: works for any category.
+                    // Property/category-based dispatch: works for any category.
                     // Wall is checked first because walls also have a LocationCurve.
                     if (el is Wall)
                         SplitWallByLevel(doc, (Wall)el, levels, stats);
+                    else if (SplitTargets.StrategyFor(el) == SplitStrategyKind.SheetSolid)
+                        SplitByCellHelpers.SplitSheetElementByPlanes(doc, el, levelPlanes, "level", stats);
                     else if (el.get_Parameter(ColBase) != null && el.get_Parameter(ColTop) != null)
                         SplitColumnByLevel(doc, el, levels, stats);
                     else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByLevel(doc, el, levels, stats);
                     else
-                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable level-split strategy (not a wall, no level params, no linear curve)");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable level-split strategy (not a wall, no level params, no linear curve, no sheet solid)");
                 }
                 catch (Exception ex)
                 {
@@ -166,6 +172,16 @@ namespace LemoineTools.Tools.ModifyElements
             }
 
             return stats;
+        }
+
+        /// <summary>Horizontal cutting plane at each level's elevation — the Level cutter's
+        /// plane set, shared by the SheetSolid dispatch (§1.8) inside <see cref="SplitByLevel"/>.</summary>
+        private static List<(XYZ Normal, XYZ Origin)> BuildLevelPlanes(List<Level> levels)
+        {
+            var result = new List<(XYZ Normal, XYZ Origin)>();
+            foreach (var l in levels)
+                result.Add((XYZ.BasisZ, new XYZ(0, 0, l.Elevation)));
+            return result;
         }
 
         /// <summary>
@@ -245,15 +261,18 @@ namespace LemoineTools.Tools.ModifyElements
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
+                    if (!TryGuardElement(el, stats)) continue;
 
-                    // Property-based dispatch: works for any category.
+                    // Property/category-based dispatch: works for any category.
                     // Wall is checked first because walls also have a LocationCurve.
                     if (el is Wall)
                         SplitWallByGrid(doc, (Wall)el, planes, stats);
+                    else if (SplitTargets.StrategyFor(el) == SplitStrategyKind.SheetSolid)
+                        SplitByCellHelpers.SplitSheetElementByPlanes(doc, el, planes, contextLabel, stats);
                     else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByGrid(doc, el, planes, stats);
                     else
-                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable plane-split strategy (not a wall, no linear curve)");
+                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable plane-split strategy (not a wall, no linear curve, no sheet solid)");
                 }
                 catch (Exception ex)
                 {
@@ -279,20 +298,49 @@ namespace LemoineTools.Tools.ModifyElements
         {
             Level? baseLevel = doc.GetElement(
                 wall.get_Parameter(WallBase)?.AsElementId()) as Level;
-            Level? topLevel = doc.GetElement(
-                wall.get_Parameter(WallTop)?.AsElementId()) as Level;
-
-            if (baseLevel == null || topLevel == null)
-            { stats.Skip($"Wall {wall.Id}: not level-constrained"); return; }
-
-            var spans = BuildLevelSpans(levels, baseLevel, topLevel);
-            if (spans.Count < 3)
-            { stats.Skip($"Wall {wall.Id}: no selected levels fall between its base and top constraints"); return; }
+            if (baseLevel == null)
+            { stats.Skip($"Wall {wall.Id}: no base level constraint"); return; }
 
             double baseOff = wall.get_Parameter(WallBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = wall.get_Parameter(WallTopOff)?.AsDouble()  ?? 0.0;
 
-            var copies = CopyTimes(doc, wall.Id, spans.Count - 1);
+            // "Unconnected" top (extremely common) means WallTop's ElementId resolves to
+            // nothing — compute an equivalent top elevation from base + Unconnected Height
+            // instead of skipping, and give the final segment the same Unconnected treatment
+            // with a recomputed height rather than a top-level constraint.
+            Level? topLevel = doc.GetElement(
+                wall.get_Parameter(WallTop)?.AsElementId()) as Level;
+            bool unconnected = topLevel == null;
+            double topElevation;
+
+            if (unconnected)
+            {
+                double userHeight = wall.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM)?.AsDouble() ?? 0.0;
+                if (userHeight <= 1e-6)
+                { stats.Skip($"Wall {wall.Id}: not level-constrained (no top level, no unconnected height)"); return; }
+                topElevation = baseLevel.Elevation + baseOff + userHeight;
+            }
+            else
+            {
+                topElevation = topLevel!.Elevation + topOff;
+            }
+
+            double lo = Math.Min(baseLevel.Elevation, topElevation);
+            double hi = Math.Max(baseLevel.Elevation, topElevation);
+            var interior = levels
+                .Where(l => l.Elevation > lo + 1e-4 && l.Elevation < hi - 1e-4)
+                .OrderBy(l => l.Elevation)
+                .ToList();
+
+            if (interior.Count == 0)
+            { stats.Skip($"Wall {wall.Id}: no selected levels fall between its base and top"); return; }
+
+            // Boundaries below the (possibly unconnected) top: base level, then each interior
+            // level ascending. One segment per lowerBoundaries[k] .. (next entry, or the top).
+            var lowerBoundaries = new List<Level> { baseLevel };
+            lowerBoundaries.AddRange(interior);
+
+            var copies = CopyTimes(doc, wall.Id, lowerBoundaries.Count);
             if (copies == null) { stats.Fail(wall.Id.ToString(), "Copy failed"); return; }
 
             DisallowWallJoins(doc, wall);
@@ -307,12 +355,23 @@ namespace LemoineTools.Tools.ModifyElements
             {
                 var seg = doc.GetElement(copies[k]) as Wall;
                 if (seg == null) continue;
+                bool isTopSeg = k == copies.Count - 1;
                 try
                 {
-                    seg.get_Parameter(WallBase)   ?.Set(spans[k].Id);
-                    seg.get_Parameter(WallTop)    ?.Set(spans[k + 1].Id);
-                    seg.get_Parameter(WallBaseOff)?.Set(k == 0                    ? baseOff : 0.0);
-                    seg.get_Parameter(WallTopOff) ?.Set(k == copies.Count - 1    ? topOff  : 0.0);
+                    seg.get_Parameter(WallBase)   ?.Set(lowerBoundaries[k].Id);
+                    seg.get_Parameter(WallBaseOff)?.Set(k == 0 ? baseOff : 0.0);
+
+                    if (isTopSeg && unconnected)
+                    {
+                        seg.get_Parameter(WallTop)?.Set(ElementId.InvalidElementId);
+                        seg.get_Parameter(BuiltInParameter.WALL_USER_HEIGHT_PARAM)?.Set(topElevation - lowerBoundaries[k].Elevation);
+                    }
+                    else
+                    {
+                        Level segTop = isTopSeg ? topLevel! : lowerBoundaries[k + 1];
+                        seg.get_Parameter(WallTop)   ?.Set(segTop.Id);
+                        seg.get_Parameter(WallTopOff)?.Set(isTopSeg ? topOff : 0.0);
+                    }
                     successes++;
                 }
                 catch (Exception ex) { stats.Fail($"Wall {wall.Id} seg {k}", ex.Message); }
@@ -489,6 +548,16 @@ namespace LemoineTools.Tools.ModifyElements
                 .ToList();
             if (!pts.Any()) { stats.Skip($"{el.Id}: no interior split points after dedup"); return; }
 
+            // Ducts/pipes split in place via BreakCurve instead of copy-then-trim: it never
+            // disturbs the original element's true end connectors (to elbows/equipment), unlike
+            // the copy/trim path below which starts every copy as a full duplicate of the whole
+            // run and must sever its far-end connections along with the new interior cuts.
+            if (el is Duct || el is Pipe)
+            {
+                SplitDuctOrPipeInPlace(doc, el, pts, splitKind, stats);
+                return;
+            }
+
             var seq = new List<XYZ> { A };
             seq.AddRange(pts);
             seq.Add(B);
@@ -541,7 +610,14 @@ namespace LemoineTools.Tools.ModifyElements
                     var segLc = seg.Location as LocationCurve;
                     if (segLc == null) throw new InvalidOperationException("No LocationCurve on copy.");
                     if (seg is Wall wSeg) DisallowWallJoins(doc, wSeg);
-                    DisconnectAllConnectors(seg);
+
+                    // Each copy still carries the ORIGINAL run's connectors at both true ends
+                    // (A and B) until its curve is reassigned below. Segment 0 keeps its true
+                    // start (A); the last segment keeps its true end (B); only those two
+                    // surviving ends must NOT be disconnected — every other end here is a
+                    // brand-new interior cut point with nothing pre-existing to preserve.
+                    XYZ? keepPoint = i == 0 ? A : (i == segIds.Count - 1 ? B : (XYZ?)null);
+                    DisconnectConnectorsExcept(seg, keepPoint);
                     segLc.Curve = newCurve;
                     success++;
                 }
@@ -712,7 +788,12 @@ namespace LemoineTools.Tools.ModifyElements
             try { WallUtils.DisallowWallJoinAtEnd(wall, 1); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disallow wall join at end 1", __lex); }
         }
 
-        private static void DisconnectAllConnectors(Element el)
+        // Disconnects every connector on `el` EXCEPT one within tolerance of `keepPoint` (pass
+        // null to disconnect everything). Used by the copy/trim path so a segment's one true
+        // surviving end-connection (to an elbow/equipment/etc. at the original run's real A or
+        // B endpoint) is preserved instead of severed along with the new interior cut points —
+        // see the call site in SplitCurveElement.
+        private static void DisconnectConnectorsExcept(Element el, XYZ? keepPoint)
         {
             try
             {
@@ -725,6 +806,7 @@ namespace LemoineTools.Tools.ModifyElements
                 {
                     try
                     {
+                        if (keepPoint != null && c.Origin.DistanceTo(keepPoint) < 0.01) continue;
                         foreach (Connector other in c.AllRefs.Cast<Connector>().ToList())
                             try { c.DisconnectFrom(other); } catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disconnect MEP connector", __lex); }
                     }
@@ -732,6 +814,64 @@ namespace LemoineTools.Tools.ModifyElements
                 }
             }
             catch (Exception __lex) { LemoineLog.Swallowed("SplitElements: disconnect element connectors", __lex); }
+        }
+
+        // Splits a Duct or Pipe in place via MechanicalUtils/PlumbingUtils.BreakCurve instead
+        // of copy-then-trim: the original element's true end connectors are never touched, so
+        // whatever it was hooked up to (elbows, equipment, the rest of the system) stays
+        // connected. `orderedInteriorPoints` must already be ordered along the element's curve
+        // from its start — both callers of SplitCurveElement build their split-point lists that
+        // way (sorted by Z for the level cutter, by dot-product-along-direction for grid/ref
+        // plane), and dedup/endpoint-filtering above preserves that order.
+        private static void SplitDuctOrPipeInPlace(
+            Document doc, Element el, List<XYZ> orderedInteriorPoints, string splitKind, SplitStats stats)
+        {
+            var segIds = new List<ElementId> { el.Id };
+            ElementId tailId = el.Id;
+
+            foreach (XYZ pt in orderedInteriorPoints)
+            {
+                try
+                {
+                    ElementId newId = el is Duct
+                        ? MechanicalUtils.BreakCurve(doc, tailId, pt)
+                        : PlumbingUtils.BreakCurve(doc, tailId, pt);
+                    if (newId == null || newId == ElementId.InvalidElementId)
+                        throw new InvalidOperationException("BreakCurve returned no new element.");
+                    segIds.Add(newId);
+                    tailId = newId;
+                }
+                catch (Exception ex)
+                {
+                    // BreakCurve commits each break immediately (unlike the copy/trim path,
+                    // there is no batch of uncommitted copies to clean up), so whatever already
+                    // succeeded stays in the model — report the partial result truthfully rather
+                    // than a plain failure.
+                    if (segIds.Count > 1)
+                        stats.Split(segIds.Count,
+                            $"{el.Category?.Name} {el.Id} → {segIds.Count}/{orderedInteriorPoints.Count + 1} {splitKind} segment(s) " +
+                            "(break failed partway — pieces already split keep their end connections)");
+                    else
+                        stats.Fail(el.Id.ToString(), $"break failed: {ex.Message}");
+                    return;
+                }
+            }
+
+            stats.Split(segIds.Count,
+                $"{el.Category?.Name} {el.Id} → {segIds.Count} {splitKind} segment(s) (in place — original end connections preserved)");
+        }
+
+        // Pre-run guard shared by every per-element dispatch loop: a pinned element would fail
+        // (or throw) at the eventual doc.Delete of the original, and a grouped element cannot
+        // be copied/deleted independently of its group — both are reported as a clean skip
+        // instead of a raw Revit exception surfacing from deep inside a split strategy.
+        private static bool TryGuardElement(Element el, SplitStats stats)
+        {
+            if (el.Pinned)
+            { stats.Skip($"{el.Category?.Name} {el.Id}: pinned — skipped (unpin to split)"); return false; }
+            if (el.GroupId != null && el.GroupId != ElementId.InvalidElementId)
+            { stats.Skip($"{el.Category?.Name} {el.Id}: member of a group — skipped (ungroup to split)"); return false; }
+            return true;
         }
     }
 
