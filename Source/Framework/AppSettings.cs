@@ -15,7 +15,7 @@ namespace LemoineTools.Framework
     public sealed class UISettingsDto
     {
         [XmlAttribute] public string Theme  { get; set; } = nameof(ThemePalette.DarkMono);
-        [XmlAttribute] public string UiSize { get; set; } = nameof(UiSize.Medium);
+        [XmlAttribute] public string UiSize { get; set; } = nameof(LemoineTools.Framework.UiSize.Medium);
 
         /// <summary>Culture folder for user-facing text (e.g. "en", "fr"). Empty = use the fallback ("en").</summary>
         [XmlAttribute] public string Language { get; set; } = "en";
