@@ -15,6 +15,7 @@
   "summaries": {
     "S3":            "Ready to run",
     "viewsSelected": "{0} view(s) selected",   // {0} = selected view count
+    "levelsSelected":"{0} level(s) selected — RCPs generated",
     "s2Delete":      "Delete existing",
     "s2Tags":        "Place tags",
     "s2Tol":         "Tol {0} in"               // {0} = tolerance in inches
@@ -23,6 +24,13 @@
   "labels": {
     "noViews":          "No reflected ceiling plan views found in this document.",
     "pickerName":       "Ceiling plan views",
+    "modeExisting":     "Use existing RCP views",
+    "modeGenerate":     "Generate heatmap RCPs per level",
+    "noLevels":         "No levels found in this document.",
+    "levelRow":         "{0}  ({1} ft)",                 // {0}=name {1}=elevation
+    "generateSuffix":   "View name suffix",
+    "generateTemplate": "View template (optional)",
+    "generateTemplateNone": "(none)",
     "savedRamps":       "SAVED RAMPS",
     "delete":           "Delete",
     "load":             "Load",
@@ -51,6 +59,7 @@
     "itemTol":    "Elevation tolerance",
 
     "viewsValue": "{0} view(s)",   // {0} = selected count
+    "generateValue": "{0} level(s) — RCPs generated",
     "yes":        "Yes",
     "no":         "No",
     "tolValue":   "{0} in",        // {0} = tolerance in inches
@@ -62,6 +71,10 @@
     "starting":          "Starting Ceiling Elevation Heatmap…",
     "error":             "Error: {0}",
     "noViews":           "No views selected.",
+    "noRcpType":         "No Ceiling Plan view family type found in this document.",
+    "noViewsGenerated":  "No RCP views could be generated for the selected levels.",
+    "generated":         "Generated {0} RCP view(s), reused {1} existing.",
+    "generateFailed":    "Could not generate an RCP for level '{0}': {1}.",
     "scanning":          "Scanning ceiling height offsets from level (host + linked models)…",
     "scanned":           "Scanned {0} host ceiling(s) and {1} linked ceiling(s).",
     "noOffsets":         "No ceiling height offsets found in the selected views (checked the host model and every visible link).",

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -70,9 +71,25 @@ namespace LemoineTools.Commands
                     .OrderBy(kvp => kvp.Key)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
+                // ── Levels + Ceiling Plan view templates for "generate RCPs per level" ──
+                var levels = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Level)).Cast<Level>()
+                    .Select(l => new CeilingHeatmapViewModel.HeatmapLevelEntry
+                    {
+                        Id = l.Id, Name = l.Name, ElevationFt = l.Elevation,
+                    })
+                    .ToList();
+
+                var rcpTemplates = new FilteredElementCollector(doc)
+                    .OfClass(typeof(View)).Cast<View>()
+                    .Where(v => v.IsTemplate && v.ViewType == ViewType.CeilingPlan)
+                    .Select(v => new CeilingHeatmapViewModel.HeatmapTemplateEntry { Id = v.Id, Name = v.Name })
+                    .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
                 // ── Spin up dedicated STA thread for the WPF window ──────────────────
                 var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
-                                                        BrowserTreeCapture.Capture(doc));
+                                                        BrowserTreeCapture.Capture(doc), levels, rcpTemplates);
                 return vm;
             }
             var vm = BuildTool();

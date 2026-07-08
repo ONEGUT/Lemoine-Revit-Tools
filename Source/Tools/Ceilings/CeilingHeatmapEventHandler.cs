@@ -19,6 +19,13 @@ namespace LemoineTools.Tools.Ceilings
 
         // ── Inputs (set by ViewModel before Raise()) ──────────────────────────
         public List<ElementId>          SelectedViewIds { get; set; } = new List<ElementId>();
+        // "Generate heatmap RCPs per level" mode — when non-empty, one CeilingPlan view is
+        // found-or-created per level (Sanitize(level.Name) + GenerateSuffix) BEFORE the normal
+        // per-view pipeline runs, and SelectedViewIds is replaced with those views for this run.
+        // Mutually exclusive with picking existing views — the ViewModel only populates one.
+        public List<ElementId>          GenerateForLevelIds { get; set; } = new List<ElementId>();
+        public string                   GenerateSuffix      { get; set; } = "_Heatmap";
+        public ElementId                GenerateTemplateId  { get; set; } = ElementId.InvalidElementId;
         public bool                     DeleteExisting  { get; set; } = true;
         public bool                     PlaceTags       { get; set; } = false;
         public double                   ElevTolerance   { get; set; } = 1.0 / 96.0; // 1/8 in → ft
@@ -64,12 +71,23 @@ namespace LemoineTools.Tools.Ceilings
             Complete(pass, fail, skip);
 
             // Session-long static handler (App.CeilingHeatmapHandler) — drop the run's payload.
-            SelectedViewIds = new List<ElementId>();
+            SelectedViewIds     = new List<ElementId>();
+            GenerateForLevelIds = new List<ElementId>();
         }
 
         // ─────────────────────────────────────────────────────────────────────────
         private void RunHeatmap(Document doc, ref int pass, ref int fail, ref int skip)
         {
+            if (GenerateForLevelIds != null && GenerateForLevelIds.Count > 0)
+            {
+                var generated = GenerateRcpViews(doc, GenerateForLevelIds, GenerateSuffix, GenerateTemplateId, ref fail);
+                if (generated.Count == 0)
+                {
+                    Log(AppStrings.T("ceilings.heatmap.log.noViewsGenerated"), "fail"); fail++; return;
+                }
+                SelectedViewIds = generated;
+            }
+
             if (SelectedViewIds == null || SelectedViewIds.Count == 0)
             {
                 Log(AppStrings.T("ceilings.heatmap.log.noViews"), "fail"); fail++; return;
@@ -898,6 +916,85 @@ namespace LemoineTools.Tools.Ceilings
                 colors.Add(new Autodesk.Revit.DB.Color(r, g, b));
             }
             return colors;
+        }
+
+        // Finds (by name) or creates one CeilingPlan view per level, applies the chosen
+        // template (if any), and returns the resulting view ids. Mirrors
+        // MakeCeilingGridsRunHandler's find-or-create pattern, but does NOT restrict
+        // category visibility — the heatmap needs ceilings visible alongside everything else.
+        private List<ElementId> GenerateRcpViews(
+            Document doc, List<ElementId> levelIds, string suffix, ElementId templateId, ref int fail)
+        {
+            var result = new List<ElementId>();
+
+            var vft = new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewFamilyType)).Cast<ViewFamilyType>()
+                .FirstOrDefault(t => t.ViewFamily == ViewFamily.CeilingPlan);
+            if (vft == null)
+            {
+                Log(AppStrings.T("ceilings.heatmap.log.noRcpType"), "fail");
+                fail++;
+                return result;
+            }
+
+            int created = 0, reused = 0;
+            using (var tx = new Transaction(doc, "Generate Heatmap RCPs"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                foreach (var levelId in levelIds)
+                {
+                    var level = doc.GetElement(levelId) as Level;
+                    if (level == null) continue;
+
+                    string viewName = SanitizeViewName(level.Name) + suffix;
+                    try
+                    {
+                        var view = FindRcpByName(doc, viewName);
+                        if (view == null)
+                        {
+                            view = ViewPlan.Create(doc, vft.Id, level.Id);
+                            try { view.Name = viewName; }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: name conflict for generated RCP '{viewName}'", ex); }
+                            created++;
+                        }
+                        else reused++;
+
+                        if (templateId != ElementId.InvalidElementId)
+                        {
+                            try { view.ViewTemplateId = templateId; }
+                            catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: apply template to generated RCP '{viewName}'", ex); }
+                        }
+
+                        result.Add(view.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        fail++;
+                        DiagnosticsLog.Error($"CeilingHeatmap: generate RCP for level '{level.Name}'", ex);
+                        Log(AppStrings.T("ceilings.heatmap.log.generateFailed", level.Name, ex.Message), "fail");
+                    }
+                }
+
+                tx.Commit();
+            }
+
+            Log(AppStrings.T("ceilings.heatmap.log.generated", created, reused), "info");
+            return result;
+        }
+
+        private static ViewPlan? FindRcpByName(Document doc, string name)
+            => new FilteredElementCollector(doc)
+                .OfClass(typeof(ViewPlan)).Cast<ViewPlan>()
+                .FirstOrDefault(v =>
+                    v.Name == name && !v.IsTemplate &&
+                    (doc.GetElement(v.GetTypeId()) as ViewFamilyType)?.ViewFamily == ViewFamily.CeilingPlan);
+
+        private static string SanitizeViewName(string name)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            return string.Join("_", name.Split(invalid)).Trim();
         }
 
         private static void ConfigureFailures(Transaction tx)
