@@ -134,9 +134,15 @@ namespace LemoineTools.Tools.BulkExport
         private List<string>                  _selectedNames = new List<string>();
         private Dictionary<string, ElementId> _nameToId      = new Dictionary<string, ElementId>();
 
-        // ── S2 state (packs) ──────────────────────────────────────────────────
-        private readonly List<SheetPackLayout> _packs      = new List<SheetPackLayout>();
-        private int                            _activePack = 0;
+        // ── S2 state (print sets) ──────────────────────────────────────────────
+        // Existing Revit print sets (ViewSheetSet elements), refreshed after creating a new
+        // one. Checking a set makes it an export group with its own optional overrides.
+        private List<PrintSetInfo>       _availablePrintSets;
+        private readonly HashSet<long>   _selectedPrintSetIds = new HashSet<long>();
+        private readonly Dictionary<long, string?> _patternOverrides = new Dictionary<long, string?>();
+        private readonly Dictionary<long, bool?>   _pdfOverrides     = new Dictionary<long, bool?>();
+        private readonly Dictionary<long, bool?>   _dwgOverrides     = new Dictionary<long, bool?>();
+        private string _newPrintSetName = "";
 
         // ── S3 state (filename & formats) ────────────────────────────────────
         // Separate patterns per mode so each carries a default built from its own valid
@@ -211,7 +217,8 @@ namespace LemoineTools.Tools.BulkExport
             List<string>             dwgSetupNames,
             List<ViewSheet>          allSheets,
             List<View>               allViews,
-            BrowserTree       browserTree)
+            BrowserTree       browserTree,
+            List<PrintSetInfo>? availablePrintSets = null)
         {
             _handler       = handler;
             _event         = externalEvent;
@@ -219,6 +226,7 @@ namespace LemoineTools.Tools.BulkExport
             _allSheets     = allSheets;
             _allViews      = allViews;
             _browserTree   = browserTree;
+            _availablePrintSets = availablePrintSets ?? new List<PrintSetInfo>();
 
             // Build fast ID→Sheet lookup
             _sheetById = new Dictionary<ElementId, ViewSheet>();
@@ -242,13 +250,6 @@ namespace LemoineTools.Tools.BulkExport
                 _previewSheetNumber = _allSheets[0].SheetNumber;
                 _previewSheetName   = _allSheets[0].Name;
             }
-
-            // Restore saved packs
-            var saved = BulkExportSettings.Instance.SavedPacks;
-            if (saved.Count > 0)
-                foreach (var p in saved) _packs.Add(p.Clone());
-            else
-                _packs.Add(new SheetPackLayout("Pack 1"));
 
             // Default the DWG setup to the first available so the combo's shown value
             // matches what actually gets used (previously the combo displayed setup [0]
@@ -390,15 +391,17 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── S2 — Build Packs ──────────────────────────────────────────────────
+        // Print Sets step — pick existing Revit print sets (ViewSheetSets) as export groups,
+        // each with an optional filename-pattern and format override, or save the current
+        // S1 selection as a new print set. Membership comes from Revit itself, not a drag-drop
+        // editor, so no "Load"/reorder UI is needed — a real print set already knows its members.
         private FrameworkElement BuildS2()
         {
             var outer = new StackPanel();
 
-            // Optional note (wording adapts to the export mode)
-            string itemWord = ViewsMode ? AppStrings.T("export.bulkExport.words.view") : AppStrings.T("export.bulkExport.words.sheet");
             var note = new TextBlock
             {
-                Text         = AppStrings.T("export.bulkExport.labels.packsNote", itemWord),
+                Text         = AppStrings.T("export.bulkExport.labels.printSetsNote"),
                 TextWrapping = TextWrapping.Wrap,
                 FontStyle    = FontStyles.Italic,
                 Margin       = new Thickness(0, 0, 0, 10),
@@ -408,212 +411,203 @@ namespace LemoineTools.Tools.BulkExport
             note.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             outer.Children.Add(note);
 
-            var tabsRow      = new WrapPanel { Margin = new Thickness(0, 0, 0, 0) };
-            var tabContainer = new ContentControl { Margin = new Thickness(0, 0, 0, 0) };
+            var listContainer = new StackPanel();
+            outer.Children.Add(listContainer);
 
-            Action rebuildPackTabs = null!;
-            rebuildPackTabs = () =>
+            void RebuildList()
             {
-                tabsRow.Children.Clear();
-                for (int i = 0; i < _packs.Count; i++)
+                listContainer.Children.Clear();
+                if (_availablePrintSets.Count == 0)
                 {
-                    int captured = i;
-                    var tab = new Border
-                    {
-                        BorderThickness = new Thickness(1),
-                        CornerRadius    = new CornerRadius(3, 3, 0, 0),
-                        Margin          = new Thickness(0, 0, 4, 0),
-                        Padding         = new Thickness(10, 4, 10, 4),
-                        Cursor          = Cursors.Hand,
-                    };
-                    if (captured == _activePack)
-                    {
-                        tab.SetResourceReference(Border.BackgroundProperty,  "LemoineSelectBg");
-                        tab.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                    }
-                    else
-                    {
-                        tab.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                        tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                    }
-                    MotionEffects.WireHover(tab,
-                        normalBgKey:     captured == _activePack ? "LemoineSelectBg" : "LemoineRaised",
-                        hoverBgKey:      "LemoineAccentDim",
-                        normalBorderKey: captured == _activePack ? "LemoineAccent" : "LemoineBorder",
-                        hoverBorderKey:  "LemoineAccent");
-
-                    var tabText = new TextBlock { Text = _packs[captured].PackName };
-                    tabText.SetResourceReference(TextBlock.ForegroundProperty,
-                        captured == _activePack ? "LemoineAccent" : "LemoineText");
-                    tabText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                    tabText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                    tab.Child = tabText;
-
-                    tab.MouseLeftButtonDown += (s, e) =>
-                    {
-                        _activePack = captured;
-                        rebuildPackTabs();
-                        tabContainer.Content = BuildPackEditor(rebuildPackTabs);
-                    };
-                    tabsRow.Children.Add(tab);
+                    listContainer.Children.Add(Dim(AppStrings.T("export.bulkExport.labels.noPrintSets")));
                 }
-
-                // "+ New Pack" button
-                var addBtn = new Border
-                {
-                    BorderThickness = new Thickness(1),
-                    CornerRadius    = new CornerRadius(3, 3, 0, 0),
-                    Padding         = new Thickness(10, 4, 10, 4),
-                    Cursor          = Cursors.Hand,
-                };
-                addBtn.SetResourceReference(Border.BackgroundProperty,  "LemoineCanvas");
-                addBtn.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-                MotionEffects.WireHover(addBtn,
-                    normalBgKey:     "LemoineCanvas",  hoverBgKey:     "LemoineAccentDim",
-                    normalBorderKey: "LemoineBorderMid", hoverBorderKey: "LemoineAccent");
-                var addText = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.newPack") };
-                addText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                addText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                addText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                addBtn.Child = addText;
-                addBtn.MouseLeftButtonDown += (s, e) =>
-                {
-                    _packs.Add(new SheetPackLayout($"Pack {_packs.Count + 1}"));
-                    _activePack = _packs.Count - 1;
-                    rebuildPackTabs();
-                    tabContainer.Content = BuildPackEditor(rebuildPackTabs);
-                    Fire();
-                };
-                tabsRow.Children.Add(addBtn);
-            };
-
-            outer.Children.Add(tabsRow);
-            tabContainer.Content = BuildPackEditor(rebuildPackTabs);
-            outer.Children.Add(tabContainer);
-            rebuildPackTabs();
-
-            return outer;
-        }
-
-        private FrameworkElement BuildPackEditor(Action rebuildTabs)
-        {
-            if (_activePack < 0 || _activePack >= _packs.Count)
-            {
-                var empty = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.noPackSelected") };
-                empty.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                empty.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                empty.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                return empty;
+                foreach (var ps in _availablePrintSets)
+                    listContainer.Children.Add(BuildPrintSetRow(ps, RebuildList));
             }
+            RebuildList();
 
-            var pack  = _packs[_activePack];
-            var outer = new Border
+            AddDivider(outer);
+            AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.saveAsPrintSet"));
+
+            var saveRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
+            var saveBtn = new Button
             {
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(0, 3, 3, 3),
-                Padding         = new Thickness(12),
+                Content = AppStrings.T("export.bulkExport.labels.savePrintSetBtn"),
+                Margin  = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(8, 0, 8, 0),
             };
-            outer.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            outer.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+            saveBtn.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnMin");
+            saveBtn.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
+            saveBtn.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
+            saveBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+            saveBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineCanvas");
+            saveBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+            saveBtn.Template = ControlStyles.BuildFlatButtonTemplate();
+            DockPanel.SetDock(saveBtn, Dock.Right);
 
-            var inner = new StackPanel();
-
-            // Pack name row
-            var nameRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-
-            var nameLabel = new TextBlock
-            {
-                Text              = AppStrings.T("export.bulkExport.labels.packName"),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(0, 0, 8, 0),
-            };
-            nameLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            nameLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            nameLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            nameRow.Children.Add(nameLabel);
-
-            var nameBox = new WpfTextBox
-            {
-                Text    = pack.PackName,
-                Width   = 180,
-                Padding = new Thickness(6, 2, 6, 2),
-            };
+            var nameBox = new WpfTextBox { Text = _newPrintSetName, Padding = new Thickness(6, 2, 6, 2) };
             nameBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
             nameBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
             nameBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
             nameBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineUiFont");
             nameBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
             nameBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
-            nameBox.TextChanged += (s, e) =>
+            nameBox.TextChanged += (s, e) => _newPrintSetName = nameBox.Text;
+
+            saveBtn.Click += (s, e) => SaveCurrentSelectionAsPrintSet(RebuildList);
+
+            saveRow.Children.Add(saveBtn);
+            saveRow.Children.Add(nameBox);
+            outer.Children.Add(saveRow);
+
+            var saveHint = new TextBlock
             {
-                pack.PackName = nameBox.Text;
-                rebuildTabs();
-                Fire();
+                Text         = AppStrings.T("export.bulkExport.labels.saveAsPrintSetHint"),
+                TextWrapping = TextWrapping.Wrap,
             };
-            nameRow.Children.Add(nameBox);
+            saveHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            saveHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            saveHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            outer.Children.Add(saveHint);
 
-            if (_packs.Count > 1)
-            {
-                var delBtn = new Button
-                {
-                    Content         = AppStrings.T("export.bulkExport.labels.removePack"),
-                    Margin          = new Thickness(8, 0, 0, 0),
-                    Padding         = new Thickness(8, 0, 8, 0),
-                    BorderThickness = new Thickness(1),
-                    Cursor          = Cursors.Hand,
-                };
-                delBtn.SetResourceReference(Button.MinHeightProperty,   "LemoineH_BtnMin");
-                delBtn.SetResourceReference(Button.FontSizeProperty,    "LemoineFS_SM");
-                delBtn.SetResourceReference(Button.FontFamilyProperty,  "LemoineUiFont");
-                delBtn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
-                delBtn.SetResourceReference(Button.BackgroundProperty,  "LemoineCanvas");
-                delBtn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
-                delBtn.Template = ControlStyles.BuildFlatButtonTemplate();
-                delBtn.Click += (s, e) =>
-                {
-                    _packs.RemoveAt(_activePack);
-                    _activePack = Math.Max(0, _activePack - 1);
-                    rebuildTabs();
-                    Fire();
-                };
-                nameRow.Children.Add(delBtn);
-            }
-            inner.Children.Add(nameRow);
-
-            // Sheet order label
-            var editorLabel = new TextBlock
-            {
-                Text   = AppStrings.T("export.bulkExport.labels.sheetOrder"),
-                Margin = new Thickness(0, 0, 0, 6),
-            };
-            editorLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            editorLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            editorLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            inner.Children.Add(editorLabel);
-
-            // Build available-for-pack dict from the live S1 selection. Sheets are keyed
-            // by sheet number (preserves saved-pack keys); views are keyed by their name.
-            var availableForPack = new Dictionary<string, string>();
-            foreach (var name in _selectedNames)
-            {
-                if (!_nameToId.TryGetValue(name, out var id)) continue;
-                if (_sheetById.TryGetValue(id, out var sheet))
-                    availableForPack[sheet.SheetNumber] = sheet.Name;
-                else
-                    availableForPack[name] = name;   // view: key == display name
-            }
-
-            var editor = new SheetPackLayoutEditor();
-            editor.Load(availableForPack, pack.SheetNumbers);
-            editor.LayoutChanged += () =>
-            {
-                pack.SheetNumbers = new List<string>(editor.PackSheetNumbers);
-                Fire();
-            };
-            inner.Children.Add(editor);
-
-            outer.Child = inner;
             return outer;
+        }
+
+        private void SaveCurrentSelectionAsPrintSet(Action rebuildList)
+        {
+            if (string.IsNullOrWhiteSpace(_newPrintSetName)) return;
+            var handler = App.BulkExportPrintSetHandler;
+            var evt     = App.BulkExportPrintSetEvent;
+            if (handler == null || evt == null) return;
+
+            handler.Name      = _newPrintSetName.Trim();
+            handler.MemberIds = _selectedNames.Where(_nameToId.ContainsKey).Select(n => _nameToId[n]).ToList();
+            handler.OnCreated = sets =>
+            {
+                _availablePrintSets = sets;
+                _newPrintSetName    = "";
+                rebuildList();
+                Fire();
+            };
+            handler.OnError = msg => DiagnosticsLog.Warn("BulkExport: save print set", msg ?? "");
+            evt.Raise();
+        }
+
+        private FrameworkElement BuildPrintSetRow(PrintSetInfo ps, Action rebuildList)
+        {
+            long key = ps.Id.Value;
+            bool selected = _selectedPrintSetIds.Contains(key);
+
+            var card = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(5),
+                Padding         = new Thickness(10, 8, 10, 8),
+                Margin          = new Thickness(0, 0, 0, 8),
+            };
+            card.SetResourceReference(Border.BackgroundProperty,  selected ? "LemoineAccentDim" : "LemoineRaised");
+            card.SetResourceReference(Border.BorderBrushProperty, selected ? "LemoineAccent" : "LemoineBorder");
+
+            var stack = new StackPanel();
+
+            var headerRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var cb = new CheckBox { IsChecked = selected, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            headerRow.Children.Add(cb);
+
+            var nameTb = new TextBlock
+            {
+                Text = AppStrings.T("export.bulkExport.labels.printSetRow", ps.Name, ps.MemberIds.Count),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            nameTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            nameTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            nameTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            headerRow.Children.Add(nameTb);
+            stack.Children.Add(headerRow);
+
+            var overridesPanel = new StackPanel { Margin = new Thickness(24, 8, 0, 0) };
+            overridesPanel.Visibility = selected ? WpfVisibility.Visible : WpfVisibility.Collapsed;
+            stack.Children.Add(overridesPanel);
+
+            void RebuildOverrides()
+            {
+                overridesPanel.Children.Clear();
+
+                var patternLabel = new TextBlock { Text = AppStrings.T("export.bulkExport.labels.printSetPatternOverride"), Margin = new Thickness(0, 0, 0, 4) };
+                patternLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                patternLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                patternLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                overridesPanel.Children.Add(patternLabel);
+
+                _patternOverrides.TryGetValue(key, out var curPattern);
+                var patternBox = new WpfTextBox
+                {
+                    Text = curPattern ?? "", Width = 260, HorizontalAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(6, 2, 6, 2),
+                };
+                patternBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+                patternBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+                patternBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
+                patternBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+                patternBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+                patternBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
+                patternBox.TextChanged += (s, e) =>
+                    _patternOverrides[key] = string.IsNullOrWhiteSpace(patternBox.Text) ? null : patternBox.Text;
+                overridesPanel.Children.Add(patternBox);
+
+                overridesPanel.Children.Add(new FrameworkElement { Height = 8 });
+
+                string inheritLabel = AppStrings.T("export.bulkExport.labels.printSetInherit");
+                string onLabel      = AppStrings.T("export.bulkExport.labels.printSetOn");
+                string offLabel     = AppStrings.T("export.bulkExport.labels.printSetOff");
+                var tristate = new List<string> { inheritLabel, onLabel, offLabel };
+
+                FrameworkElement FormatOverrideRow(string label, Dictionary<long, bool?> map)
+                {
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+                    var lbl = new TextBlock { Text = label, Width = 50, VerticalAlignment = VerticalAlignment.Center };
+                    lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                    lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                    row.Children.Add(lbl);
+
+                    map.TryGetValue(key, out var cur);
+                    var sel = new SingleSelect
+                    {
+                        Width = 140,
+                        Items = tristate,
+                        SelectedItem = cur == true ? onLabel : cur == false ? offLabel : inheritLabel,
+                    };
+                    sel.SelectionChanged += v =>
+                        map[key] = v == onLabel ? true : v == offLabel ? false : (bool?)null;
+                    row.Children.Add(sel);
+                    return row;
+                }
+
+                overridesPanel.Children.Add(FormatOverrideRow("PDF", _pdfOverrides));
+                overridesPanel.Children.Add(FormatOverrideRow("DWG", _dwgOverrides));
+            }
+            RebuildOverrides();
+
+            cb.Checked += (s, e) =>
+            {
+                _selectedPrintSetIds.Add(key);
+                card.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
+                card.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
+                overridesPanel.Visibility = WpfVisibility.Visible;
+                Fire();
+            };
+            cb.Unchecked += (s, e) =>
+            {
+                _selectedPrintSetIds.Remove(key);
+                card.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
+                card.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                overridesPanel.Visibility = WpfVisibility.Collapsed;
+                Fire();
+            };
+
+            card.Child = stack;
+            return card;
         }
 
         // ── S3 — Filename & Formats ───────────────────────────────────────────
@@ -651,12 +645,12 @@ namespace LemoineTools.Tools.BulkExport
                 Fire();
             };
 
-            // Pack filename note (shown when packs have items)
-            if (HasActivePacks())
+            // Print set filename note (shown when print sets are selected)
+            if (HasActivePrintSets())
             {
                 var packNote = new TextBlock
                 {
-                    Text         = AppStrings.T("export.bulkExport.labels.packFilenameNote"),
+                    Text         = AppStrings.T("export.bulkExport.labels.printSetFilenameNote"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 6, 0, 0),
@@ -974,11 +968,11 @@ namespace LemoineTools.Tools.BulkExport
             combineToggle.StateChanged += state => { state.TryGetValue("combine", out _combinePdf); Fire(); };
             outer.Children.Add(combineToggle);
 
-            if (HasActivePacks())
+            if (HasActivePrintSets())
             {
                 var packCombineNote = new TextBlock
                 {
-                    Text         = AppStrings.T("export.bulkExport.labels.packCombineNote"),
+                    Text         = AppStrings.T("export.bulkExport.labels.printSetCombineNote"),
                     TextWrapping = TextWrapping.Wrap,
                     FontStyle    = FontStyles.Italic,
                     Margin       = new Thickness(0, 2, 0, 0),
@@ -1118,7 +1112,7 @@ namespace LemoineTools.Tools.BulkExport
         {
             ["sheets"]  = _selectedNames.Count == 0 ? "—" : AppStrings.T("export.bulkExport.review.sheetsValue", _selectedNames.Count),
             ["formats"] = GetActiveFormats(),
-            ["packs"]   = HasActivePacks() ? AppStrings.T("export.bulkExport.review.packsValue", _packs.Count(p => p.SheetNumbers.Count > 0)) : AppStrings.T("export.bulkExport.review.packsNone"),
+            ["packs"]   = HasActivePrintSets() ? AppStrings.T("export.bulkExport.review.printSetsValue", _selectedPrintSetIds.Count) : AppStrings.T("export.bulkExport.review.printSetsNone"),
             ["quality"] = _pdfOn ? AppStrings.T("export.bulkExport.review.qualityValue", _colorDepth, _rasterQuality) : AppStrings.T("export.bulkExport.review.qualityPdfOff"),
             ["pattern"] = string.IsNullOrEmpty(ActivePattern) ? "—" : ActivePattern,
             ["folder"]  = _outputFolder.Length == 0 ? "—"
@@ -1152,8 +1146,8 @@ namespace LemoineTools.Tools.BulkExport
             {
                 case "S1": return _selectedNames.Count == 0 ? "—"
                     : AppStrings.T("export.bulkExport.summaries.s1", _selectedNames.Count, _exportMode.ToLower());
-                case "S2": return HasActivePacks()
-                    ? AppStrings.T("export.bulkExport.summaries.s2Packs", _packs.Count(p => p.SheetNumbers.Count > 0))
+                case "S2": return HasActivePrintSets()
+                    ? AppStrings.T("export.bulkExport.summaries.s2PrintSets", _selectedPrintSetIds.Count)
                     : AppStrings.T("export.bulkExport.summaries.s2Individual");
                 case "S3": return GetActiveFormats() == "—"
                     ? AppStrings.T("export.bulkExport.summaries.s3None")
@@ -1211,13 +1205,21 @@ namespace LemoineTools.Tools.BulkExport
             s.ZoomPercent                  = _zoomPct;
             s.ViewLinksInBlue              = _viewLinksBlue;
             s.ReplaceHalftoneWithThinLines = _replaceHalftone;
-            s.SavedPacks                   = _packs.Select(p => p.Clone()).ToList();
             s.Save();
 
-            // Packs to export: any non-empty pack (sheets or views).
-            var packsToExport = HasActivePacks()
-                ? _packs.Where(p => p.SheetNumbers.Count > 0).ToList()
-                : new List<SheetPackLayout>();
+            // Print sets to export: every checked set, each carrying its own overrides
+            // (null = inherit the tool's global pattern/format for that field).
+            var printSetsToExport = _availablePrintSets
+                .Where(ps => _selectedPrintSetIds.Contains(ps.Id.Value))
+                .Select(ps => new PrintSetExportSpec
+                {
+                    Name            = ps.Name,
+                    MemberIds       = new List<ElementId>(ps.MemberIds),
+                    PatternOverride = _patternOverrides.TryGetValue(ps.Id.Value, out var pat) ? pat : null,
+                    PdfOverride     = _pdfOverrides.TryGetValue(ps.Id.Value, out var pdf) ? pdf : null,
+                    DwgOverride     = _dwgOverrides.TryGetValue(ps.Id.Value, out var dwg) ? dwg : null,
+                })
+                .ToList();
 
             _handler.SelectedIds              = _selectedNames
                 .Where(n => _nameToId.ContainsKey(n))
@@ -1258,7 +1260,7 @@ namespace LemoineTools.Tools.BulkExport
             _handler.ZoomPercent              = _zoomPct;
             _handler.ViewLinksInBlue          = _viewLinksBlue;
             _handler.ReplaceHalftoneWithThinLines = _replaceHalftone;
-            _handler.Packs                    = packsToExport;
+            _handler.PrintSets                = printSetsToExport;
             _handler.PushLog                  = pushLog;
             _handler.OnProgress               = onProgress;
             _handler.OnComplete               = onComplete;
@@ -1506,6 +1508,15 @@ namespace LemoineTools.Tools.BulkExport
             parent.Children.Add(lbl);
         }
 
+        private static TextBlock Dim(string text)
+        {
+            var tb = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic, Margin = new Thickness(0, 0, 0, 8) };
+            tb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            return tb;
+        }
+
         private static void AddDivider(System.Windows.Controls.Panel parent)
         {
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 10, 0, 10) };
@@ -1552,8 +1563,7 @@ namespace LemoineTools.Tools.BulkExport
             return fmts.Count > 0 ? string.Join(", ", fmts) : "—";
         }
 
-        private bool HasActivePacks() =>
-            _packs.Any(p => p.SheetNumbers.Count > 0);
+        private bool HasActivePrintSets() => _selectedPrintSetIds.Count > 0;
 
         private static int GetIndex(string[] items, string value)
         {

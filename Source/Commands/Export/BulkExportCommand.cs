@@ -71,9 +71,12 @@ namespace LemoineTools.Commands
                 // Snapshot of the Project Browser organization so the picker mirrors it exactly.
                 var browserTree = BrowserTreeCapture.Capture(doc);
 
+                // Existing print sets (ViewSheetSet elements) for the Print Sets step.
+                var printSets = LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler.Collect(doc);
+
                 var vm    = new BulkExportViewModel(
                     App.BulkExportHandler!, App.BulkExportEvent!,
-                    dwgSetupNames, allSheets, allViews, browserTree);
+                    dwgSetupNames, allSheets, allViews, browserTree, printSets);
 
                 return vm;
             }

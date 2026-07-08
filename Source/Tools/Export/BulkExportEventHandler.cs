@@ -33,7 +33,7 @@ namespace LemoineTools.Tools.BulkExport
         public int                    ZoomPercent                  { get; set; } = 100;
         public bool                   ViewLinksInBlue              { get; set; } = false;
         public bool                   ReplaceHalftoneWithThinLines { get; set; } = false;
-        public List<SheetPackLayout>  Packs                        { get; set; } = new List<SheetPackLayout>();
+        public List<PrintSetExportSpec> PrintSets                  { get; set; } = new List<PrintSetExportSpec>();
 
         // ── Format flags ──────────────────────────────────────────────────────
         public bool                   ExportNwc                    { get; set; } = false;
@@ -205,16 +205,16 @@ namespace LemoineTools.Tools.BulkExport
                     skip++;
                 }
 
-                if (Packs.Count > 0)
+                if (PrintSets.Count > 0)
                 {
-                    // Packs only combine PDF and order DWG. NWC/IFC are inherently per-view
-                    // and cannot be packed — report this rather than dropping them silently.
+                    // Print sets only combine PDF and order DWG. NWC/IFC are inherently
+                    // per-view and cannot be grouped — report this rather than dropping them.
                     if (ExportNwc)
                         { pushLog(AppStrings.T("export.bulkExport.log.nwcInPack"), "warn"); skip++; }
                     if (ExportIfc && ExportMode != "Sheets")
                         { pushLog(AppStrings.T("export.bulkExport.log.ifcInPack"), "warn"); skip++; }
 
-                    ExportPackMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip);
+                    ExportPrintSetMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip);
                 }
                 else
                     ExportIndividualMode(doc, elements, projNumber, projName, pushLog, onProgress, ref pass, ref fail, ref skip, nwcReady);
@@ -234,7 +234,7 @@ namespace LemoineTools.Tools.BulkExport
             {
                 // Session-long static handler (App.BulkExportHandler) — drop the run's payload.
                 SelectedIds = new List<ElementId>();
-                Packs       = new List<SheetPackLayout>();
+                PrintSets   = new List<PrintSetExportSpec>();
             }
         }
 
@@ -253,88 +253,91 @@ namespace LemoineTools.Tools.BulkExport
             OnResultChips(chips);
         }
 
-        // ── Pack mode ─────────────────────────────────────────────────────────
+        // ── Print set mode ────────────────────────────────────────────────────
 
-        private void ExportPackMode(
+        private void ExportPrintSetMode(
             Document doc, List<Element> elements,
             string projNumber, string projName,
             Action<string, string> pushLog,
             Action<int, int, int, int> onProgress,
             ref int pass, ref int fail, ref int skip)
         {
-            // Pack keys are sheet numbers (Sheets mode) or view names (Views mode), matching
-            // how the ViewModel builds the pack editor. Duplicate keys can occur (placeholder
-            // sheets, identically-named views); group and keep the first id so a dup doesn't
-            // abort the whole export.
-            var keyToId = elements
-                .Select(e => new { Key = e is ViewSheet vs ? vs.SheetNumber : e.Name, e.Id })
-                .Where(x => !string.IsNullOrEmpty(x.Key))
-                .GroupBy(x => x.Key)
-                .ToDictionary(g => g.Key, g => g.First().Id);
+            // A print set's own membership is authoritative — it is NOT gated by the S1
+            // sheet/view picker (that picker only drives the individual-item export path).
+            // Just confirm each captured member id still resolves in the document.
+            bool StillExists(ElementId id) => doc.GetElement(id) != null;
 
-            // Pre-build DWG options once — setup lookup is constant across packs
             DWGExportOptions? dwgOpts     = null;
             bool              dwgResolved = false;
 
-            int totalPdf = ExportPdf ? Packs.Count : 0;
-            int totalDwg = ExportDwg ? Packs.Sum(p => p.SheetNumbers.Count) : 0;
+            int totalPdf = PrintSets.Count(ps => ps.PdfOverride ?? ExportPdf);
+            int totalDwg = PrintSets.Where(ps => ps.DwgOverride ?? ExportDwg)
+                                    .Sum(ps => ps.MemberIds.Count(StillExists));
             int total    = totalPdf + totalDwg;
             int done     = 0;
 
-            foreach (var pack in Packs)
+            string globalPattern = FilenamePattern;
+
+            foreach (var ps in PrintSets)
             {
                 if (RunState.CancelRequested)
                 {
                     pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
                     break;
                 }
-                var packIds = pack.SheetNumbers
-                    .Where(n => keyToId.ContainsKey(n))
-                    .Select(n => keyToId[n])
-                    .ToList();
 
-                if (packIds.Count == 0)
+                var memberIds = ps.MemberIds.Where(StillExists).ToList();
+                bool doPdf = ps.PdfOverride ?? ExportPdf;
+                bool doDwg = ps.DwgOverride ?? ExportDwg;
+
+                if (memberIds.Count == 0)
                 {
-                    pushLog(AppStrings.T("export.bulkExport.log.packNoItems", pack.PackName), "fail");
+                    pushLog(AppStrings.T("export.bulkExport.log.packNoItems", ps.Name), "fail");
                     skip++;
-                    // Advance done for the pre-counted operations so progress stays accurate
-                    if (ExportPdf) done++;
-                    if (ExportDwg) done += pack.SheetNumbers.Count;
+                    if (doPdf) done++;
+                    if (doDwg) done += ps.MemberIds.Count;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                     continue;
                 }
 
-                // PDF: one combined call per pack, named after the pack
-                if (ExportPdf)
+                // A per-set pattern override only affects filename resolution — swap it in
+                // for this set's PDF/DWG naming, then restore the global pattern after.
+                FilenamePattern = string.IsNullOrWhiteSpace(ps.PatternOverride) ? globalPattern : ps.PatternOverride!;
+
+                // PDF: one combined call per print set. Named from the override pattern
+                // (resolved against the first member) when given, else the set's own name.
+                if (doPdf)
                 {
                     try
                     {
-                        string outDir   = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
-                        string packName = SanitizeFilename(pack.PackName);
-                        var opts        = BuildPdfOptions(packName, combine: true);
-                        bool ok         = doc.Export(outDir, packIds, opts);
+                        string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
+                        string setName = string.IsNullOrWhiteSpace(ps.PatternOverride)
+                            ? SanitizeFilename(ps.Name)
+                            : ResolveExportName(doc.GetElement(memberIds[0]), projNumber, projName, "PDF", pushLog);
+                        var opts = BuildPdfOptions(setName, combine: true);
+                        bool ok  = doc.Export(outDir, memberIds, opts);
                         if (ok)
                         {
                             pass++; _pdf++;
-                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackOk", packName, packIds.Count), "pass");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackOk", setName, memberIds.Count), "pass");
                         }
                         else
                         {
                             fail++;
-                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackFalse", pack.PackName), "fail");
+                            pushLog(AppStrings.T("export.bulkExport.log.pdfPackFalse", ps.Name), "fail");
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        pushLog(AppStrings.T("export.bulkExport.log.pdfPackFail", pack.PackName, ex.Message), "fail");
+                        pushLog(AppStrings.T("export.bulkExport.log.pdfPackFail", ps.Name, ex.Message), "fail");
                     }
                     done++;
                     onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                 }
 
-                // DWG: individual export per sheet in the pack
-                if (ExportDwg)
+                // DWG: individual export per member in the set.
+                if (doDwg)
                 {
                     if (!dwgResolved)
                     {
@@ -344,28 +347,28 @@ namespace LemoineTools.Tools.BulkExport
 
                     if (dwgOpts == null)
                     {
-                        // Log once per pack — no point repeating per-sheet
-                        pushLog(AppStrings.T("export.bulkExport.log.dwgPackNoSetup", DwgSetupName, pack.PackName), "fail");
-                        skip += packIds.Count;
-                        done += packIds.Count;
+                        pushLog(AppStrings.T("export.bulkExport.log.dwgPackNoSetup", DwgSetupName, ps.Name), "fail");
+                        skip += memberIds.Count;
+                        done += memberIds.Count;
                         onProgress(total > 0 ? (int)(done * 90.0 / total) : 90, pass, fail, skip);
                     }
                     else
                     {
-                        foreach (var sheetId in packIds)
+                        foreach (var id in memberIds)
                         {
                             if (RunState.CancelRequested)
                             {
                                 pushLog(AppStrings.T("export.bulkExport.log.stoppedExport", pass), "warn");
+                                FilenamePattern = globalPattern;
                                 return;
                             }
-                            var sheet   = doc.GetElement(sheetId);
-                            string safeName = ResolveExportName(sheet, projNumber, projName, "DWG", pushLog);
+                            var el = doc.GetElement(id);
+                            string safeName = ResolveExportName(el, projNumber, projName, "DWG", pushLog);
 
                             try
                             {
                                 string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "DWG") : OutputFolder;
-                                bool ok = doc.Export(outDir, safeName, new List<ElementId> { sheetId }, dwgOpts);
+                                bool ok = doc.Export(outDir, safeName, new List<ElementId> { id }, dwgOpts);
                                 if (ok)
                                 {
                                     pass++; _dwg++;
@@ -388,6 +391,8 @@ namespace LemoineTools.Tools.BulkExport
                     }
                 }
             }
+
+            FilenamePattern = globalPattern;
         }
 
         // ── Individual mode ───────────────────────────────────────────────────
