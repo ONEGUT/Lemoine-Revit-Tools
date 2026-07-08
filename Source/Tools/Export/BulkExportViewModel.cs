@@ -1170,12 +1170,8 @@ namespace LemoineTools.Tools.BulkExport
 
             _resultChips = null;   // clear any breakdown from a previous run
 
-            // Persist settings
+            // Persist settings (paths/patterns are Settings-window-only now — see ApplySettings)
             var s = BulkExportSettings.Instance;
-            s.FilenamePattern              = _sheetPattern;
-            s.ViewFilenamePattern          = _viewPattern;
-            s.OutputFolder                 = _outputFolder;
-            s.SplitByFormat                = _splitByFormat;
             s.ExportPdf                    = _pdfOn;
             s.ExportDwg                    = _dwgOn;
             s.ExportNwc                    = _nwcOn;
