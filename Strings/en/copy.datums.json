@@ -11,9 +11,9 @@
     "datumsToCopy":        "Datums to copy",
     "gridsTab":            "Grids",
     "levelsTab":           "Levels",
-    "allExist":            "All {0} datum(s) in this link already exist in the host.",
     "noDatums":            "This link has no grids or levels.",
-    "someHidden":          "{0} datum(s) already exist in the host and were hidden.",
+    "existingSuffix":      "{0} (already in host)",
+    "existingCount":       "{0} datum(s) already exist in the host — shown greyed out above.",
     "levelNameCollision":  "{0} (Level)"
   },
   "review": {

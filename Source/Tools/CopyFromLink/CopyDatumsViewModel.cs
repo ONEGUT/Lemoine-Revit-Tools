@@ -110,32 +110,44 @@ namespace LemoineTools.Tools.CopyFromLink
             var link = _links.FirstOrDefault(l => l.LinkInstId == _linkId);
             var grids  = link?.Grids  ?? new List<CopyDatumItem>();
             var levels = link?.Levels ?? new List<CopyDatumItem>();
-            var copyableGrids  = grids.Where(g => !g.ExistsInHost).ToList();
-            var copyableLevels = levels.Where(l => !l.ExistsInHost).ToList();
-            int existing = (grids.Count - copyableGrids.Count) + (levels.Count - copyableLevels.Count);
 
-            if (copyableGrids.Count == 0 && copyableLevels.Count == 0)
+            if (grids.Count == 0 && levels.Count == 0)
             {
-                _datumContainer.Children.Add(Dim(existing > 0
-                    ? AppStrings.T("copy.datums.labels.allExist", existing)
-                    : AppStrings.T("copy.datums.labels.noDatums")));
+                _datumContainer.Children.Add(Dim(AppStrings.T("copy.datums.labels.noDatums")));
                 return;
             }
 
+            // Every grid/level is listed below even when it already exists in the host —
+            // shown disabled via MultiSelectTabs.DisabledItems rather than hidden, so the
+            // user sees why it's absent from the copyable set instead of a shrinking list.
+            int existing = grids.Count(g => g.ExistsInHost) + levels.Count(l => l.ExistsInHost);
+
             _gridDisplayToId.Clear();
             _levelDisplayToId.Clear();
+            var disabled = new HashSet<string>(StringComparer.Ordinal);
 
-            var gridNames = new HashSet<string>(copyableGrids.Select(g => g.Name), StringComparer.OrdinalIgnoreCase);
-            foreach (var g in copyableGrids) _gridDisplayToId[g.Name] = g.ElemId;
-            foreach (var lvl in copyableLevels)
+            var gridNames = new HashSet<string>(grids.Select(g => g.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (var g in grids)
             {
-                string display = gridNames.Contains(lvl.Name)
+                string display = g.ExistsInHost
+                    ? AppStrings.T("copy.datums.labels.existingSuffix", g.Name)
+                    : g.Name;
+                _gridDisplayToId[display] = g.ElemId;
+                if (g.ExistsInHost) disabled.Add(display);
+            }
+            foreach (var lvl in levels)
+            {
+                string baseName = gridNames.Contains(lvl.Name)
                     ? AppStrings.T("copy.datums.labels.levelNameCollision", lvl.Name)
                     : lvl.Name;
+                string display = lvl.ExistsInHost
+                    ? AppStrings.T("copy.datums.labels.existingSuffix", baseName)
+                    : baseName;
                 _levelDisplayToId[display] = lvl.ElemId;
+                if (lvl.ExistsInHost) disabled.Add(display);
             }
 
-            var tabs = new MultiSelectTabs();
+            var tabs = new MultiSelectTabs { DisabledItems = disabled };
             tabs.SelectionChanged += sel =>
             {
                 _selectedGridIds  = new HashSet<long>(sel.Where(_gridDisplayToId.ContainsKey).Select(n => _gridDisplayToId[n]));
@@ -149,19 +161,19 @@ namespace LemoineTools.Tools.CopyFromLink
             {
                 var names = _gridDisplayToId.Keys.ToList();
                 groups[AppStrings.T("copy.datums.labels.gridsTab")] = names;
-                allDisplay.AddRange(names);
+                allDisplay.AddRange(names.Where(n => !disabled.Contains(n)));
             }
             if (_levelDisplayToId.Count > 0)
             {
                 var names = _levelDisplayToId.Keys.ToList();
                 groups[AppStrings.T("copy.datums.labels.levelsTab")] = names;
-                allDisplay.AddRange(names);
+                allDisplay.AddRange(names.Where(n => !disabled.Contains(n)));
             }
-            tabs.SetGroups(groups, allDisplay);  // default: copy all
+            tabs.SetGroups(groups, allDisplay);  // default: copy all copyable datums
             _datumContainer.Children.Add(tabs);
 
             if (existing > 0)
-                _datumContainer.Children.Add(Dim(AppStrings.T("copy.datums.labels.someHidden", existing)));
+                _datumContainer.Children.Add(Dim(AppStrings.T("copy.datums.labels.existingCount", existing)));
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
