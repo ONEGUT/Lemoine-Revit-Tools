@@ -1,0 +1,77 @@
+// linkviews.bulkViews.json — merged Bulk Views tool (mode dropdown + the new "By Link" mode).
+// Command: BulkViewsCommand. NOTE: mode tokens (ByLevel/Duplicate/ByTemplate/
+// ReplicateDependents/ByLink) stay as code identifiers; only their display labels live here.
+// Bulk Views by Level / Duplicate Views / Bulk Views by Template / Replicate Dependent Views
+// each keep using their OWN existing strings files (linkviews.level.json, linkviews.duplicate.json,
+// linkviews.byTemplate.json, linkviews.replicateDependent.json) for their step content — this
+// file only covers the shared "mode" step, the shared review wrapper, and the new By Link mode.
+{
+  "title": "Bulk Views",
+
+  "steps": {
+    "mode": "Mode",
+    "run":  "Review & Run"
+  },
+
+  "modes": {
+    "byLevel":             "By Level",
+    "duplicate":           "Duplicate",
+    "byTemplate":          "By Template",
+    "replicateDependents": "Replicate Dependent Views",
+    "byLink":              "By Link (isolate one linked file per view)"
+  },
+
+  "labels": {
+    "modeHeader": "WHAT DO YOU WANT TO CREATE?",
+    "modeHint":   "Each mode's own steps appear below once selected. Switching modes here does not lose the other modes' settings."
+  },
+
+  "review": {
+    "modeNote": "Mode: {0}."   // {0} = mode label, prefixed to the mode's own review note
+  },
+
+  "byLink": {
+    "title":    "Bulk Views — By Link",
+    "runLabel": "Create views in Revit →",
+
+    "steps": {
+      "S1": "Select Links",
+      "S2": "Naming & Template",
+      "S3": "Review & Run"
+    },
+
+    "labels": {
+      "noLinks":      "No linked files are loaded in this document.",
+      "namePattern":  "View name pattern",
+      "template":     "View template (optional)",
+      "templateNone": "(none)"
+    },
+
+    "review": {
+      "itemLinks":   "Links",
+      "itemPattern": "Name pattern",
+      "linksValue":  "{0} link(s) — one view each",
+      "note":        "Each view hides every other loaded link and every host model/annotation/analytical/imported category, so only the chosen link's own geometry (rendered by its own default 3D view) remains visible."
+    },
+
+    "summaries": {
+      "linkCount": "{0} link(s)",
+      "S3":        "Ready to run"
+    },
+
+    "log": {
+      "handlerMissing": "Run handler not registered.",
+      "raising":        "Raising Revit external event…"
+    }
+  },
+
+  "log": {
+    "byLinkError":     "Run aborted: {0}",
+    "byLinkNoLinks":   "No links selected.",
+    "byLinkNo3dType":  "No 3D view family type found in this document.",
+    "byLinkNoOverride":"'{0}': could not set the link to render by its own default 3D view — the target link's geometry may also be affected by the host category hides.",
+    "byLinkCreated":   "Created '{0}' isolating link '{1}'.",
+    "byLinkFailed":    "Failed to create a view for link '{0}': {1}",
+    "byLinkDone":      "Done — {0} view(s) created, {1} failed."
+  }
+}

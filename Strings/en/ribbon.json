@@ -70,6 +70,10 @@
       "tip":   "Reproject existing ceiling grid model curves to updated ceiling elevations."
     },
 
+    "bulkViews": {
+      "label": "Bulk Views",
+      "tip":   "Create views in bulk: by level (uncropped or bounded by scope boxes), duplicate, duplicate across view templates, duplicate as dependent, or one isolated view per linked file."
+    },
     "linkViewsLevel": {
       "label": "Bulk Views\nby Level",
       "tip":   "Create 3D, floor plan, and ceiling plan views per level — uncropped, or bounded by scope boxes (plans get the Scope Box parameter; 3D gets the box bounds as its section box)."

@@ -64,6 +64,10 @@ namespace LemoineTools
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
 
+        // ── Bulk Views — By Link (merged into the Bulk Views tool) ──────────────────
+        internal static LemoineTools.Tools.LinkViews.ViewsByLinkRunHandler? ViewsByLinkRunHandler { get; private set; }
+        internal static ExternalEvent?               ViewsByLinkRunEvent         { get; private set; }
+
         // ── T10 — Scope Boxes ───────────────────────────────────────────────────────
         internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler? ScopeBoxCreatorScanHandler { get; private set; }
         internal static ExternalEvent?               ScopeBoxCreatorScanEvent    { get; private set; }
@@ -223,6 +227,8 @@ namespace LemoineTools
             // ── Link Views — Level ────────────────────────────────────────────
             LinkViewsLevelRunHandler    = new LinkViewsLevelRunHandler();
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
+            ViewsByLinkRunHandler       = new LemoineTools.Tools.LinkViews.ViewsByLinkRunHandler();
+            ViewsByLinkRunEvent         = ExternalEvent.Create(ViewsByLinkRunHandler);
             ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();
             ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
             ViewsBulkDuplicateRunHandler = new ViewsBulkDuplicateRunHandler();
@@ -507,41 +513,9 @@ namespace LemoineTools
             });
 
             viewsPanel.AddItem(Btn(
-                "LT_LinkViewsLevel", L.T("ribbon.buttons.linkViewsLevel.label"), "LinkViewsLevelCommand",
-                L.T("ribbon.buttons.linkViewsLevel.tip"),
-                char.ConvertFromUtf32(0xE8B7)));  // Layers
-
-            var dupViewsPulldown = new PulldownButtonData("LT_DuplicateViews", L.T("ribbon.buttons.duplicateViews.label"))
-            {
-                ToolTip    = L.T("ribbon.buttons.duplicateViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            };
-            var dupViewsBtn = viewsPanel.AddItem(dupViewsPulldown) as PulldownButton;
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsBulkDuplicate", L.T("ribbon.buttons.viewsBulkDuplicate.label"), dll, "LemoineTools.Commands.ViewsBulkDuplicateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsBulkDuplicate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsByTemplate", L.T("ribbon.buttons.viewsByTemplate.label"), dll, "LemoineTools.Commands.ViewsByTemplateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsByTemplate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ReplicateDependentViews", L.T("ribbon.buttons.replicateDependentViews.label"), dll, "LemoineTools.Commands.ReplicateDependentViewsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
-            });
+                "LT_BulkViews", L.T("ribbon.buttons.bulkViews.label"), "BulkViewsCommand",
+                L.T("ribbon.buttons.bulkViews.tip"),
+                char.ConvertFromUtf32(0xE8A9)));  // ViewAll
 
             viewsPanel.AddItem(Btn(
                 "LT_ExplodeViewByTrade", L.T("ribbon.buttons.explodeViewByTrade.label"), "ExplodeViewByTradeCommand",
