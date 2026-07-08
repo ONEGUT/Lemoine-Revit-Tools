@@ -190,6 +190,23 @@ namespace LemoineTools.Tools.ScopeBoxes
         public List<(ElementId BoxId, string NewName)> RenamePairs { get; set; }
             = new List<(ElementId, string)>();
 
+        // ── "Bind sides to grids" inputs — InvalidElementId keeps that edge unchanged ──
+        public ElementId NorthGridId { get; set; } = ElementId.InvalidElementId;
+        public ElementId SouthGridId { get; set; } = ElementId.InvalidElementId;
+        public ElementId EastGridId  { get; set; } = ElementId.InvalidElementId;
+        public ElementId WestGridId  { get; set; } = ElementId.InvalidElementId;
+
+        // ── "Split" inputs ──────────────────────────────────────────────
+        /// <summary>"Gridline" | "Middle" (logic tokens).</summary>
+        public string    SplitMode           { get; set; } = "Gridline";
+        public ElementId SplitGridId         { get; set; } = ElementId.InvalidElementId;
+        /// <summary>Middle mode only — "NS" (a north-south line, splits West/East) or
+        /// "EW" (an east-west line, splits South/North). Gridline mode infers this from
+        /// the chosen grid's own orientation.</summary>
+        public string    SplitAxis           { get; set; } = "NS";
+        public double    SplitOverlapFt      { get; set; }
+        public bool      SplitDeleteOriginal { get; set; } = true;
+
         // ── Callbacks ─────────────────────────────────────────────────
         /// <summary>(succeededCount, failedCount, summaryLine, refreshed scan)</summary>
         public Action<int, int, string, ManagerScanResult?>? OnActionComplete { get; set; }
@@ -220,12 +237,18 @@ namespace LemoineTools.Tools.ScopeBoxes
             finally
             {
                 // Session-long static handler — drop the action's payload.
-                Action      = "";
-                BoxId       = ElementId.InvalidElementId;
-                ViewIds     = new List<ElementId>();
-                DatumIds    = new List<ElementId>();
-                BoxIds      = new List<ElementId>();
-                RenamePairs = new List<(ElementId, string)>();
+                Action        = "";
+                BoxId         = ElementId.InvalidElementId;
+                ViewIds       = new List<ElementId>();
+                DatumIds      = new List<ElementId>();
+                BoxIds        = new List<ElementId>();
+                RenamePairs   = new List<(ElementId, string)>();
+                NorthGridId = SouthGridId = EastGridId = WestGridId = ElementId.InvalidElementId;
+                SplitGridId   = ElementId.InvalidElementId;
+                SplitMode     = "Gridline";
+                SplitAxis     = "NS";
+                SplitOverlapFt = 0;
+                SplitDeleteOriginal = true;
             }
         }
 
@@ -239,6 +262,9 @@ namespace LemoineTools.Tools.ScopeBoxes
                     targetIds: DatumIds, isView: false);
                 case "Rename":    return Rename(doc, ref ok, ref failed);
                 case "Delete":    return Delete(doc, ref ok, ref failed);
+                case "Duplicate": return Duplicate(doc, ref ok, ref failed);
+                case "BindSides": return BindSides(doc, ref ok, ref failed);
+                case "Split":     return Split(doc, ref ok, ref failed);
                 default:
                     failed++;
                     return AppStrings.T("scopeBoxes.manager.status.unknownAction", Action);
@@ -383,6 +409,317 @@ namespace LemoineTools.Tools.ScopeBoxes
             return names.Count > 0
                 ? AppStrings.T("scopeBoxes.manager.status.deleted", ok, string.Join(", ", names), failed)
                 : AppStrings.T("scopeBoxes.manager.status.deletedNone");
+        }
+
+        // ── Duplicate ────────────────────────────────────────────────────────────
+        private string Duplicate(Document doc, ref int ok, ref int failed)
+        {
+            var box = doc.GetElement(BoxId);
+            if (box == null) { failed++; return AppStrings.T("scopeBoxes.manager.status.boxGone"); }
+            string baseName = box.Name;
+
+            var taken = new HashSet<string>(
+                ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc).Select(b => b.Name),
+                StringComparer.OrdinalIgnoreCase);
+            string newName = UniqueCopyName(baseName, taken);
+
+            using (var tx = new Transaction(doc, "Scope Box Manager — duplicate"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+                try
+                {
+                    // Small XY offset so the copy isn't perfectly hidden under the original.
+                    var copyIds = ElementTransformUtils.CopyElement(doc, BoxId, new XYZ(10, 0, 0));
+                    var copyId = copyIds.FirstOrDefault() ?? ElementId.InvalidElementId;
+                    var copy = copyId != ElementId.InvalidElementId ? doc.GetElement(copyId) : null;
+                    if (copy == null)
+                    {
+                        failed++;
+                        tx.RollBack();
+                        return AppStrings.T("scopeBoxes.manager.status.duplicateFailed", baseName);
+                    }
+                    copy.Name = newName;
+                    ok++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    DiagnosticsLog.Swallowed($"ScopeBoxManager duplicate: box {BoxId.Value}", ex);
+                    tx.RollBack();
+                    return AppStrings.T("scopeBoxes.manager.status.duplicateFailed", baseName);
+                }
+                tx.Commit();
+            }
+
+            return AppStrings.T("scopeBoxes.manager.status.duplicated", baseName, newName);
+        }
+
+        private static string UniqueCopyName(string baseName, HashSet<string> taken)
+        {
+            string candidate = $"{baseName} - Copy";
+            int n = 2;
+            while (taken.Contains(candidate)) candidate = $"{baseName} - Copy {n++}";
+            return candidate;
+        }
+
+        // ── Bind sides to grids ────────────────────────────────────────────────────
+        // The Revit API cannot resize a scope box's footprint (width/depth have no writable
+        // parameter — confirmed by the Scope Box Probe), so this repositions the box so its
+        // CENTER lands on the target rectangle's center, leaving its existing footprint
+        // unchanged, and reports the exact W×D the user must then drag the handles to. Levels
+        // within the box's (unchanged) Z-range are auto-assigned to it unless already claimed
+        // by a different box.
+        private string BindSides(Document doc, ref int ok, ref int failed)
+        {
+            var box = doc.GetElement(BoxId);
+            var bb  = box?.get_BoundingBox(null);
+            if (box == null || bb == null) { failed++; return AppStrings.T("scopeBoxes.manager.status.boxGone"); }
+
+            double curMinX = Math.Min(bb.Min.X, bb.Max.X), curMaxX = Math.Max(bb.Min.X, bb.Max.X);
+            double curMinY = Math.Min(bb.Min.Y, bb.Max.Y), curMaxY = Math.Max(bb.Min.Y, bb.Max.Y);
+            double curMinZ = Math.Min(bb.Min.Z, bb.Max.Z), curMaxZ = Math.Max(bb.Min.Z, bb.Max.Z);
+            double curW = curMaxX - curMinX, curD = curMaxY - curMinY;
+
+            double? GridMidY(ElementId gid)
+            {
+                if (gid == ElementId.InvalidElementId) return null;
+                var gbb = doc.GetElement(gid)?.get_BoundingBox(null);
+                if (gbb == null) return null;
+                return (Math.Min(gbb.Min.Y, gbb.Max.Y) + Math.Max(gbb.Min.Y, gbb.Max.Y)) / 2.0;
+            }
+            double? GridMidX(ElementId gid)
+            {
+                if (gid == ElementId.InvalidElementId) return null;
+                var gbb = doc.GetElement(gid)?.get_BoundingBox(null);
+                if (gbb == null) return null;
+                return (Math.Min(gbb.Min.X, gbb.Max.X) + Math.Max(gbb.Min.X, gbb.Max.X)) / 2.0;
+            }
+
+            double north = GridMidY(NorthGridId) ?? curMaxY;
+            double south = GridMidY(SouthGridId) ?? curMinY;
+            double east  = GridMidX(EastGridId)  ?? curMaxX;
+            double west  = GridMidX(WestGridId)  ?? curMinX;
+
+            double targetCenterX = (west + east) / 2.0;
+            double targetCenterY = (south + north) / 2.0;
+            double curCenterX = (curMinX + curMaxX) / 2.0;
+            double curCenterY = (curMinY + curMaxY) / 2.0;
+            var delta = new XYZ(targetCenterX - curCenterX, targetCenterY - curCenterY, 0);
+
+            int levelsAssigned = 0;
+            using (var tx = new Transaction(doc, "Scope Box Manager — bind sides"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                try
+                {
+                    bool pinned = box.Pinned;
+                    if (pinned) box.Pinned = false;
+                    ElementTransformUtils.MoveElement(doc, BoxId, delta);
+                    if (pinned) box.Pinned = true;
+                    ok++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    DiagnosticsLog.Swallowed($"ScopeBoxManager bind sides: box {BoxId.Value}", ex);
+                    tx.RollBack();
+                    return AppStrings.T("scopeBoxes.manager.status.bindFailed", box.Name);
+                }
+
+                // Levels are automatic: assign every level in the box's Z-range, skipping one
+                // already claimed by a DIFFERENT box (single-carrier — see ScopeBoxCreatorRunHandler).
+                foreach (var lvl in new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>())
+                {
+                    if (lvl.Elevation < curMinZ - 0.01 || lvl.Elevation > curMaxZ + 0.01) continue;
+                    Parameter? p;
+                    try { p = lvl.get_Parameter(BuiltInParameter.DATUM_VOLUME_OF_INTEREST); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager bind sides: read level {lvl.Id.Value} param", ex); continue; }
+                    if (p == null || p.IsReadOnly) continue;
+
+                    var current = p.AsElementId();
+                    bool claimedByOther = current != null && current.Value != ElementId.InvalidElementId.Value && current.Value != BoxId.Value;
+                    if (claimedByOther) continue;
+
+                    try { p.Set(BoxId); levelsAssigned++; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager bind sides: assign level {lvl.Id.Value}", ex); }
+                }
+
+                tx.Commit();
+            }
+
+            double reqW = east - west, reqD = north - south;
+            if (Math.Abs(reqW - curW) > 0.5 || Math.Abs(reqD - curD) > 0.5)
+                return AppStrings.T("scopeBoxes.manager.status.bindResizeNeeded",
+                    box.Name, reqW.ToString("0.#"), reqD.ToString("0.#"), levelsAssigned);
+            return AppStrings.T("scopeBoxes.manager.status.bound", box.Name, levelsAssigned);
+        }
+
+        // ── Split ────────────────────────────────────────────────────────────────
+        // Same footprint constraint as BindSides — each half is a duplicate of the original
+        // (so it inherits the un-resizable footprint) repositioned to its own half-center;
+        // the exact required W×D per half is reported for a manual handle-drag.
+        private string Split(Document doc, ref int ok, ref int failed)
+        {
+            var box = doc.GetElement(BoxId);
+            var bb  = box?.get_BoundingBox(null);
+            if (box == null || bb == null) { failed++; return AppStrings.T("scopeBoxes.manager.status.boxGone"); }
+
+            double minX = Math.Min(bb.Min.X, bb.Max.X), maxX = Math.Max(bb.Min.X, bb.Max.X);
+            double minY = Math.Min(bb.Min.Y, bb.Max.Y), maxY = Math.Max(bb.Min.Y, bb.Max.Y);
+            double curW = maxX - minX, curD = maxY - minY;
+            double centerX = (minX + maxX) / 2.0, centerY = (minY + maxY) / 2.0;
+
+            string axis;      // "NS" (splits West/East) | "EW" (splits South/North)
+            double splitCoord;
+
+            if (SplitMode == "Gridline")
+            {
+                var gbb = doc.GetElement(SplitGridId)?.get_BoundingBox(null);
+                if (gbb == null) { failed++; return AppStrings.T("scopeBoxes.manager.status.splitNoGrid"); }
+                double gMinX = Math.Min(gbb.Min.X, gbb.Max.X), gMaxX = Math.Max(gbb.Min.X, gbb.Max.X);
+                double gMinY = Math.Min(gbb.Min.Y, gbb.Max.Y), gMaxY = Math.Max(gbb.Min.Y, gbb.Max.Y);
+                bool vertical = (gMaxY - gMinY) > (gMaxX - gMinX); // tall & thin → runs N-S
+                axis = vertical ? "NS" : "EW";
+                splitCoord = vertical ? (gMinX + gMaxX) / 2.0 : (gMinY + gMaxY) / 2.0;
+            }
+            else // Middle
+            {
+                axis = SplitAxis == "EW" ? "EW" : "NS";
+                splitCoord = axis == "NS" ? centerX : centerY;
+            }
+
+            double half = Math.Max(0, SplitOverlapFt) / 2.0;
+
+            // Half A (west/south) and Half B (east/north) — centers + required footprints.
+            double aCenterX, aCenterY, aW, aD, bCenterX, bCenterY, bW, bD;
+            if (axis == "NS")
+            {
+                double aMax = splitCoord + half, bMin = splitCoord - half;
+                aCenterX = (minX + aMax) / 2.0; aW = aMax - minX; aCenterY = centerY; aD = curD;
+                bCenterX = (bMin + maxX) / 2.0; bW = maxX - bMin; bCenterY = centerY; bD = curD;
+            }
+            else
+            {
+                double aMax = splitCoord + half, bMin = splitCoord - half;
+                aCenterY = (minY + aMax) / 2.0; aD = aMax - minY; aCenterX = centerX; aW = curW;
+                bCenterY = (bMin + maxY) / 2.0; bD = maxY - bMin; bCenterX = centerX; bW = curW;
+            }
+
+            var taken = new HashSet<string>(
+                ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc).Select(b => b.Name),
+                StringComparer.OrdinalIgnoreCase);
+            string nameA = UniqueSplitName(box.Name, 1, taken);
+            string nameB = UniqueSplitName(box.Name, 2, taken);
+
+            ElementId aId = ElementId.InvalidElementId, bId = ElementId.InvalidElementId;
+            using (var tx = new Transaction(doc, "Scope Box Manager — split"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                try
+                {
+                    aId = CreateHalf(doc, BoxId, centerX, centerY, aCenterX, aCenterY, nameA);
+                    bId = CreateHalf(doc, BoxId, centerX, centerY, bCenterX, bCenterY, nameB);
+                    if (aId == ElementId.InvalidElementId || bId == ElementId.InvalidElementId)
+                    {
+                        failed++;
+                        tx.RollBack();
+                        return AppStrings.T("scopeBoxes.manager.status.splitFailed", box.Name);
+                    }
+                    ok += 2;
+
+                    if (SplitDeleteOriginal)
+                    {
+                        ReassignCarriers(doc, BoxId, aId);
+                        doc.Delete(BoxId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    DiagnosticsLog.Swallowed($"ScopeBoxManager split: box {BoxId.Value}", ex);
+                    tx.RollBack();
+                    return AppStrings.T("scopeBoxes.manager.status.splitFailed", box.Name);
+                }
+
+                tx.Commit();
+            }
+
+            var resizeNotes = new List<string>();
+            if (Math.Abs(aW - curW) > 0.5 || Math.Abs(aD - curD) > 0.5)
+                resizeNotes.Add(AppStrings.T("scopeBoxes.manager.status.splitResizeNeeded", nameA, aW.ToString("0.#"), aD.ToString("0.#")));
+            if (Math.Abs(bW - curW) > 0.5 || Math.Abs(bD - curD) > 0.5)
+                resizeNotes.Add(AppStrings.T("scopeBoxes.manager.status.splitResizeNeeded", nameB, bW.ToString("0.#"), bD.ToString("0.#")));
+
+            string baseMsg = AppStrings.T("scopeBoxes.manager.status.split", nameA, nameB);
+            return resizeNotes.Count == 0 ? baseMsg : baseMsg + " " + string.Join(" ", resizeNotes);
+        }
+
+        private static ElementId CreateHalf(
+            Document doc, ElementId sourceId, double srcCenterX, double srcCenterY,
+            double newCenterX, double newCenterY, string name)
+        {
+            var translation = new XYZ(newCenterX - srcCenterX, newCenterY - srcCenterY, 0);
+            var copyIds = ElementTransformUtils.CopyElement(doc, sourceId, translation);
+            var copyId = copyIds.FirstOrDefault() ?? ElementId.InvalidElementId;
+            var copy = copyId != ElementId.InvalidElementId ? doc.GetElement(copyId) : null;
+            if (copy == null) return ElementId.InvalidElementId;
+            try { copy.Name = name; }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"ScopeBoxManager split: rename half '{name}'", ex);
+                doc.Delete(copyId);
+                return ElementId.InvalidElementId;
+            }
+            return copyId;
+        }
+
+        private static string UniqueSplitName(string baseName, int half, HashSet<string> taken)
+        {
+            string candidate = $"{baseName} - {half}";
+            int n = 2;
+            while (taken.Contains(candidate)) candidate = $"{baseName} - {half} ({n++})";
+            taken.Add(candidate);
+            return candidate;
+        }
+
+        // Re-points every view/datum currently carrying `fromBoxId` to `toBoxId` — used before
+        // deleting a split's original so its view/datum assignments survive onto Half A.
+        private static void ReassignCarriers(Document doc, ElementId fromBoxId, ElementId toBoxId)
+        {
+            foreach (var v in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().Where(v => !v.IsTemplate))
+            {
+                Parameter? p;
+                try { p = v.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager split: read view {v.Id.Value} param", ex); continue; }
+                if (p == null || p.IsReadOnly) continue;
+                if (p.AsElementId()?.Value != fromBoxId.Value) continue;
+                try { p.Set(toBoxId); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager split: reassign view {v.Id.Value}", ex); }
+            }
+
+            IEnumerable<Element> datums = new FilteredElementCollector(doc)
+                .WherePasses(new LogicalOrFilter(new List<ElementFilter>
+                {
+                    new ElementClassFilter(typeof(Autodesk.Revit.DB.Grid)),
+                    new ElementClassFilter(typeof(Level)),
+                    new ElementClassFilter(typeof(ReferencePlane)),
+                }))
+                .WhereElementIsNotElementType();
+            foreach (var e in datums)
+            {
+                Parameter? p;
+                try { p = e.get_Parameter(BuiltInParameter.DATUM_VOLUME_OF_INTEREST); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager split: read datum {e.Id.Value} param", ex); continue; }
+                if (p == null || p.IsReadOnly) continue;
+                if (p.AsElementId()?.Value != fromBoxId.Value) continue;
+                try { p.Set(toBoxId); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"ScopeBoxManager split: reassign datum {e.Id.Value}", ex); }
+            }
         }
 
         private static void ConfigureFailures(Transaction tx, bool swallowWarnings = false)

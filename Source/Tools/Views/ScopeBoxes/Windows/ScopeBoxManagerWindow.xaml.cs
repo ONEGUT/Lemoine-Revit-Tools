@@ -509,6 +509,7 @@ namespace LemoineTools.Framework
             nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var nameEdit = new InlineEdit
             {
@@ -545,14 +546,39 @@ namespace LemoineTools.Framework
             WpfGrid.SetColumn(size, 1);
             nameGrid.Children.Add(size);
 
+            var dupBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.main.duplicateBox"),
+                ControlStyles.ButtonVariant.Ghost);
+            dupBtn.Margin = new Thickness(0, 0, 6, 0);
+            dupBtn.Click += (s, e) => RaiseAction(h => { h.Action = "Duplicate"; h.BoxId = box.Id; });
+            WpfGrid.SetColumn(dupBtn, 2);
+            nameGrid.Children.Add(dupBtn);
+
             var delBtn = ControlStyles.BuildSmallButton(
                 AppStrings.T("scopeBoxes.manager.main.deleteBox"),
                 ControlStyles.ButtonVariant.Danger);
             delBtn.Click += (s, e) => ShowDeleteBoxOverlay(box);
-            WpfGrid.SetColumn(delBtn, 2);
+            WpfGrid.SetColumn(delBtn, 3);
             nameGrid.Children.Add(delBtn);
 
-            nameCard.Child = nameGrid;
+            var nameCardStack = new StackPanel();
+            nameCardStack.Children.Add(nameGrid);
+
+            var geomBtnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+            var bindBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.main.bindSides"), ControlStyles.ButtonVariant.Ghost);
+            bindBtn.Margin = new Thickness(0, 0, 6, 0);
+            bindBtn.Click += (s, e) => ShowBindSidesOverlay(box);
+            geomBtnRow.Children.Add(bindBtn);
+
+            var splitBtn = ControlStyles.BuildSmallButton(
+                AppStrings.T("scopeBoxes.manager.main.splitBox"), ControlStyles.ButtonVariant.Ghost);
+            splitBtn.Click += (s, e) => ShowSplitOverlay(box);
+            geomBtnRow.Children.Add(splitBtn);
+
+            nameCardStack.Children.Add(geomBtnRow);
+
+            nameCard.Child = nameCardStack;
             _mainPanel.Children.Add(nameCard);
 
             // ── Views section ──────────────────────────────────────────
@@ -984,6 +1010,230 @@ namespace LemoineTools.Framework
             DockPanel.SetDock(footer, Dock.Bottom);
             host.Children.Add(footer);
             host.Children.Add(scroll);
+
+            ShowOverlay(card);
+        }
+
+        // ── Bind sides to grids overlay ───────────────────────────────────────
+        private void ShowBindSidesOverlay(ScopeBoxUsage box)
+        {
+            if (_scan == null) return;
+
+            var card = NewOverlayCard(
+                AppStrings.T("scopeBoxes.manager.overlay.bindSidesTitle", box.Name), 460);
+            var host = (DockPanel)card.Child;
+
+            var help = new TextBlock
+            {
+                Text = AppStrings.T("scopeBoxes.manager.overlay.bindNote"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+            help.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            help.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            help.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            host.Children.Add(help);
+
+            // Grids classified by orientation: wide/flat bbox → runs E-W (offered for
+            // North/South edges); tall/thin bbox → runs N-S (offered for East/West edges).
+            var allGrids = _scan.Datums.Where(d => d.Kind == "Grid" && d.HasBounds).ToList();
+            var horizontalGrids = allGrids.Where(d => (d.MaxX - d.MinX) >= (d.MaxY - d.MinY)).ToList();
+            var verticalGrids   = allGrids.Where(d => (d.MaxX - d.MinX) <  (d.MaxY - d.MinY)).ToList();
+
+            string keepLabel = AppStrings.T("scopeBoxes.manager.overlay.sideKeep");
+            ElementId northId = ElementId.InvalidElementId, southId = ElementId.InvalidElementId;
+            ElementId eastId  = ElementId.InvalidElementId, westId  = ElementId.InvalidElementId;
+
+            var body = new StackPanel();
+
+            FrameworkElement SideRow(string label, List<ManagerDatumRef> candidates, Action<ElementId> onPick)
+            {
+                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+                var lbl = new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 4) };
+                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                row.Children.Add(lbl);
+
+                var items = new List<string> { keepLabel }.Concat(candidates.Select(c => c.Name)).ToList();
+                var select = new SingleSelect { Items = items, SelectedItem = keepLabel };
+                select.SelectionChanged += name =>
+                {
+                    var match = candidates.FirstOrDefault(c => c.Name == name);
+                    onPick(match?.Id ?? ElementId.InvalidElementId);
+                };
+                row.Children.Add(select);
+                return row;
+            }
+
+            body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideNorth"), horizontalGrids, id => northId = id));
+            body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideSouth"), horizontalGrids, id => southId = id));
+            body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideEast"),  verticalGrids,   id => eastId  = id));
+            body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideWest"),  verticalGrids,   id => westId  = id));
+
+            host.Children.Add(body);
+
+            var footer = OverlayFooter(
+                AppStrings.T("scopeBoxes.manager.overlay.applyBind"),
+                () => RaiseAction(h =>
+                {
+                    h.Action       = "BindSides";
+                    h.BoxId        = box.Id;
+                    h.NorthGridId  = northId;
+                    h.SouthGridId  = southId;
+                    h.EastGridId   = eastId;
+                    h.WestGridId   = westId;
+                }));
+            DockPanel.SetDock(footer, Dock.Bottom);
+            host.Children.Add(footer);
+
+            ShowOverlay(card);
+        }
+
+        // ── Split overlay ──────────────────────────────────────────────────────
+        private void ShowSplitOverlay(ScopeBoxUsage box)
+        {
+            if (_scan == null) return;
+
+            var card = NewOverlayCard(AppStrings.T("scopeBoxes.manager.overlay.splitTitle", box.Name), 460);
+            var host = (DockPanel)card.Child;
+
+            var help = new TextBlock
+            {
+                Text = AppStrings.T("scopeBoxes.manager.overlay.splitNote"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+            help.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            help.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            help.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            host.Children.Add(help);
+
+            var crossingGrids = _scan.Datums
+                .Where(d => d.Kind == "Grid" && d.IntersectsBox(box))
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string modeGridLabel   = AppStrings.T("scopeBoxes.manager.overlay.splitModeGrid");
+            string modeMiddleLabel = AppStrings.T("scopeBoxes.manager.overlay.splitModeMiddle");
+
+            var body = new StackPanel();
+
+            var modeSelect = new SingleSelect
+            {
+                Items        = new List<string> { modeGridLabel, modeMiddleLabel },
+                SelectedItem = crossingGrids.Count > 0 ? modeGridLabel : modeMiddleLabel,
+            };
+            body.Children.Add(modeSelect);
+
+            var subPanel = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            body.Children.Add(subPanel);
+
+            string splitMode = crossingGrids.Count > 0 ? "Gridline" : "Middle";
+            ElementId splitGridId = crossingGrids.FirstOrDefault()?.Id ?? ElementId.InvalidElementId;
+            string splitAxis = "NS";
+
+            void RebuildSub()
+            {
+                subPanel.Children.Clear();
+                if (splitMode == "Gridline")
+                {
+                    if (crossingGrids.Count == 0)
+                    {
+                        subPanel.Children.Add(new TextBlock
+                        {
+                            Text = AppStrings.T("scopeBoxes.manager.status.splitNoGrid"),
+                            TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
+                        });
+                        return;
+                    }
+                    var lbl = new TextBlock { Text = AppStrings.T("scopeBoxes.manager.overlay.splitGridLabel"), Margin = new Thickness(0, 0, 0, 4) };
+                    lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                    lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                    subPanel.Children.Add(lbl);
+
+                    var gridSelect = new SingleSelect
+                    {
+                        Items        = crossingGrids.Select(g => g.Name).ToList(),
+                        SelectedItem = crossingGrids.FirstOrDefault(g => g.Id.Value == splitGridId.Value)?.Name
+                                       ?? crossingGrids[0].Name,
+                    };
+                    gridSelect.SelectionChanged += name =>
+                    {
+                        var match = crossingGrids.FirstOrDefault(g => g.Name == name);
+                        if (match != null) splitGridId = match.Id;
+                    };
+                    subPanel.Children.Add(gridSelect);
+                }
+                else
+                {
+                    var lbl = new TextBlock { Text = AppStrings.T("scopeBoxes.manager.overlay.splitAxisLabel"), Margin = new Thickness(0, 0, 0, 4) };
+                    lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                    lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+                    lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+                    subPanel.Children.Add(lbl);
+
+                    string axisNS = AppStrings.T("scopeBoxes.manager.overlay.splitAxisNS");
+                    string axisEW = AppStrings.T("scopeBoxes.manager.overlay.splitAxisEW");
+                    var axisSelect = new SingleSelect
+                    {
+                        Items        = new List<string> { axisNS, axisEW },
+                        SelectedItem = splitAxis == "EW" ? axisEW : axisNS,
+                    };
+                    axisSelect.SelectionChanged += v => splitAxis = v == axisEW ? "EW" : "NS";
+                    subPanel.Children.Add(axisSelect);
+                }
+            }
+
+            modeSelect.SelectionChanged += v =>
+            {
+                splitMode = v == modeMiddleLabel ? "Middle" : "Gridline";
+                RebuildSub();
+            };
+            RebuildSub();
+
+            var overlapLabel = new TextBlock { Text = AppStrings.T("scopeBoxes.manager.overlay.splitOverlap"), Margin = new Thickness(0, 10, 0, 4) };
+            overlapLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            overlapLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            overlapLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            body.Children.Add(overlapLabel);
+
+            double splitOverlapFt = 0;
+            var overlapStepper = new InlineStepper { Value = 0, MinValue = 0, MaxValue = 100, Step = 1, Decimals = 1, HorizontalAlignment = HorizontalAlignment.Left };
+            overlapStepper.ValueChanged += (s, v) => splitOverlapFt = v;
+            body.Children.Add(overlapStepper);
+
+            bool splitDeleteOriginal = true;
+            var deleteCb = new CheckBox
+            {
+                Content = AppStrings.T("scopeBoxes.manager.overlay.splitDeleteOriginal"),
+                IsChecked = true,
+                Margin = new Thickness(0, 10, 0, 0),
+            };
+            deleteCb.SetResourceReference(CheckBox.ForegroundProperty, "LemoineText");
+            deleteCb.SetResourceReference(CheckBox.FontFamilyProperty, "LemoineUiFont");
+            deleteCb.SetResourceReference(CheckBox.FontSizeProperty,   "LemoineFS_SM");
+            deleteCb.Checked   += (s, e) => splitDeleteOriginal = true;
+            deleteCb.Unchecked += (s, e) => splitDeleteOriginal = false;
+            body.Children.Add(deleteCb);
+
+            host.Children.Add(body);
+
+            var footer = OverlayFooter(
+                AppStrings.T("scopeBoxes.manager.overlay.applySplit"),
+                () => RaiseAction(h =>
+                {
+                    h.Action              = "Split";
+                    h.BoxId               = box.Id;
+                    h.SplitMode           = splitMode;
+                    h.SplitGridId         = splitGridId;
+                    h.SplitAxis           = splitAxis;
+                    h.SplitOverlapFt      = splitOverlapFt;
+                    h.SplitDeleteOriginal = splitDeleteOriginal;
+                }));
+            DockPanel.SetDock(footer, Dock.Bottom);
+            host.Children.Add(footer);
 
             ShowOverlay(card);
         }

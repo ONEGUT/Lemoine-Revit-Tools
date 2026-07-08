@@ -26,6 +26,9 @@
     "noSelection":  "Select a scope box on the left to manage it.",
     "size":         "W {0} · D {1} · H {2} ft",          // {0}/{1}/{2}=dims
     "deleteBox":    "Delete box",
+    "duplicateBox": "Duplicate box",
+    "bindSides":    "Bind sides to grids…",
+    "splitBox":     "Split…",
 
     "viewsHeader":  "Views using this box  ({0})",       // {0}=count
     "assignViews":  "Assign to views…",
@@ -57,7 +60,28 @@
     "deleteBoxTitle":    "Delete ‘{0}’?",                // {0}=box name
     "deleteBoxUnused":   "This box is not used by any view or datum.",
     "deleteBoxInUse":    "This box is used by {0} view(s) and {1} datum(s) — they will lose their scope box.",  // counts
-    "applyDelete":       "Delete"
+    "applyDelete":       "Delete",
+
+    "bindSidesTitle":  "Bind sides of ‘{0}’ to grids",   // {0}=box name
+    "bindNote":        "The API can't resize a scope box's footprint, so this moves the box's center to the new sides and reports the exact size to drag its handles to afterward. Levels in range are assigned to the box automatically.",
+    "sideNorth":       "North",
+    "sideSouth":       "South",
+    "sideEast":        "East",
+    "sideWest":        "West",
+    "sideKeep":        "(keep current edge)",
+    "applyBind":       "Apply",
+
+    "splitTitle":       "Split ‘{0}’",                   // {0}=box name
+    "splitNote":        "Each half is a copy of this box repositioned to its own half — the API can't resize footprints, so the exact required size for each half is reported for a manual handle-drag afterward.",
+    "splitModeGrid":    "At a gridline",
+    "splitModeMiddle":  "In the middle",
+    "splitGridLabel":   "Split at grid",
+    "splitAxisLabel":   "Split axis",
+    "splitAxisNS":      "North ↔ South line (splits West / East)",
+    "splitAxisEW":      "East ↔ West line (splits South / North)",
+    "splitOverlap":     "Overlap (ft)",
+    "splitDeleteOriginal": "Delete original after split (views/datums move to the first half)",
+    "applySplit":       "Split"
   },
 
   "status": {
@@ -73,6 +97,18 @@
     "datumsSet":      "‘{0}’ — {1} datum(s) assigned, {2} cleared, {3} failed.", // name, assigned, cleared, failed
     "renamed":        "Renamed {0} box(es), {1} skipped, {2} failed.",  // counts
     "deleted":        "Deleted {0} box(es): {1}. ({2} failed.)",        // count, names, failed
-    "deletedNone":    "No boxes were deleted."
+    "deletedNone":    "No boxes were deleted.",
+
+    "duplicated":         "Duplicated ‘{0}’ as ‘{1}’.",   // {0}=original {1}=new name
+    "duplicateFailed":    "Could not duplicate ‘{0}’.",   // {0}=name
+
+    "bound":              "‘{0}’ moved to the new sides — {1} level(s) assigned automatically.",  // {0}=name {1}=count
+    "bindFailed":         "Could not move ‘{0}’ to the new sides.",  // {0}=name
+    "bindResizeNeeded":   "‘{0}’ moved to the new sides — {3} level(s) assigned automatically. The API can't resize the footprint, so drag its handles to W {1} × D {2} ft.",  // {0}=name {1}=width {2}=depth {3}=levels
+
+    "splitNoGrid":        "Pick a grid that crosses this box to split at.",
+    "splitFailed":        "Could not split ‘{0}’.",  // {0}=name
+    "split":              "Split into ‘{0}’ and ‘{1}’.",  // {0}=first half {1}=second half
+    "splitResizeNeeded":  "‘{0}’ needs a manual footprint resize: required W {1} × D {2} ft."  // {0}=name {1}=width {2}=depth
   }
 }
