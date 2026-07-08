@@ -5,10 +5,13 @@ using Autodesk.Revit.DB;
 
 namespace LemoineTools.Tools.Setup
 {
-    /// <summary>How a freshly-linked instance is positioned in the host — maps 1:1 to
-    /// <see cref="ImportPlacement"/>. Enum tokens are persisted/compared, so they never
-    /// get externalized; only the display labels live in <c>upgradeLinks.json</c>.</summary>
-    public enum UpgradePlacement { OriginToOrigin, CenterToCenter, SharedCoordinates, Site }
+    /// <summary>How a freshly-linked instance is positioned in the host. Enum tokens are
+    /// persisted/compared, so they never get externalized; only the display labels live in
+    /// <c>upgradeLinks.json</c>. Three map 1:1 to <see cref="ImportPlacement"/>;
+    /// <see cref="SurveyPoint"/> has no ImportPlacement equivalent — it links at
+    /// <see cref="ImportPlacement.Origin"/> and is then translated by the run handler so the
+    /// link's Survey Point lands on the host's Survey Point (see UpgradeLinksRunHandler.LinkIntoHost).</summary>
+    public enum UpgradePlacement { InternalOrigin, ProjectBasePoint, CenterToCenter, SurveyPoint }
 
     /// <summary>Where the upgraded copy is written before it is linked. The UI groups the first
     /// two under a "Local" top-level choice and the third under "Cloud" (shown only when the
@@ -24,9 +27,12 @@ namespace LemoineTools.Tools.Setup
         public string Version  { get; set; } = "?";
         public bool   IsWorkshared { get; set; }
         public bool   IsCurrent { get; set; }   // saved-in version already matches this Revit
+        /// <summary>Saved-in version is a LATER Revit release than this one — Revit cannot open
+        /// it (not backwards compatible), so the row is treated like an unreadable row.</summary>
+        public bool   IsFutureVersion { get; set; }
         public bool   Readable  { get; set; } = true;
         public bool   Scanned   { get; set; }
-        public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+        public UpgradePlacement Placement { get; set; } = UpgradePlacement.InternalOrigin;
 
         // Editable "save as" base name (no extension). Defaults to the source file's own name.
         // Ignored in CurrentLocation mode, which always saves back to the file's own original path.
@@ -40,6 +46,7 @@ namespace LemoineTools.Tools.Setup
         public string  Version { get; set; } = "?";
         public bool    IsWorkshared { get; set; }
         public bool    IsCurrent { get; set; }
+        public bool    IsFutureVersion { get; set; }
         public bool    Readable { get; set; } = true;
         public string? Error { get; set; }
     }
@@ -48,7 +55,7 @@ namespace LemoineTools.Tools.Setup
     public sealed class UpgradeFileItem
     {
         public string Path { get; set; } = "";
-        public UpgradePlacement Placement { get; set; } = UpgradePlacement.OriginToOrigin;
+        public UpgradePlacement Placement { get; set; } = UpgradePlacement.InternalOrigin;
         public string SaveAsName { get; set; } = "";
     }
 
@@ -74,13 +81,15 @@ namespace LemoineTools.Tools.Setup
 
     public static class UpgradePlacementMap
     {
+        // SurveyPoint has no ImportPlacement equivalent — it links at Origin and the run
+        // handler then translates the instance so the link's Survey Point lands on the
+        // host's Survey Point (see UpgradeLinksRunHandler.LinkIntoHost).
         public static ImportPlacement ToImportPlacement(UpgradePlacement p)
         {
             switch (p)
             {
                 case UpgradePlacement.CenterToCenter:    return ImportPlacement.Centered;
-                case UpgradePlacement.SharedCoordinates: return ImportPlacement.Shared;
-                case UpgradePlacement.Site:              return ImportPlacement.Site;
+                case UpgradePlacement.ProjectBasePoint:  return ImportPlacement.Site;
                 default:                                 return ImportPlacement.Origin;
             }
         }

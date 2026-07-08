@@ -50,6 +50,11 @@ namespace LemoineTools.Tools.Setup
         private bool               _audit   = UpgradeLinksSettings.Instance.AuditOnOpen;
         private bool               _reload  = UpgradeLinksSettings.Instance.ReloadExisting;
         private readonly UpgradePlacement _defaultPlacement = UpgradeLinksSettings.Instance.DefaultPlacement;
+        // The user's last "Set all placement" choice — RebuildFilesTable() reseeds the
+        // control from this (falling back to _defaultPlacement) instead of always reseeding
+        // from _defaultPlacement, which previously made the picker snap back to the default
+        // label on every rebuild even though the rows themselves had been updated correctly.
+        private UpgradePlacement?  _setAllSelection;
         private bool               _scanning;
 
         // Live UI handles
@@ -148,8 +153,19 @@ namespace LemoineTools.Tools.Setup
                 border.Child = table;
                 _filesContainer.Children.Add(border);
 
-                int unreadable = _rows.Count(r => !r.Readable);
+                int unreadable = _rows.Count(r => !r.Readable && !r.IsFutureVersion);
                 if (unreadable > 0) _filesContainer.Children.Add(Warn(AppStrings.T("upgradeLinks.labels.unreadableNote", unreadable)));
+
+                int tooNew = _rows.Count(r => r.IsFutureVersion);
+                if (tooNew > 0) _filesContainer.Children.Add(Warn(AppStrings.T("upgradeLinks.labels.tooNewNote", tooNew)));
+            }
+
+            if (_rows.Count > 0)
+            {
+                string curVer = _scanHandler?.CurrentVersionNumber ?? "";
+                _filesContainer.Children.Add(Dim(string.IsNullOrEmpty(curVer)
+                    ? AppStrings.T("upgradeLinks.labels.futureVersionNoteGeneric")
+                    : AppStrings.T("upgradeLinks.labels.futureVersionNote", curVer)));
             }
 
             // Add / Clear toolbar
@@ -175,11 +191,12 @@ namespace LemoineTools.Tools.Setup
                 setAllPanel.Children.Add(lbl);
                 var setAll = new SingleSelect { Width = 180 };
                 setAll.Items = PlacementLabels();
-                setAll.SelectedItem = PlacementLabel(_defaultPlacement);
+                setAll.SelectedItem = PlacementLabel(_setAllSelection ?? _defaultPlacement);
                 setAll.SelectionChanged += lblSel =>
                 {
                     if (lblSel != null && LabelToPlacement.TryGetValue(lblSel, out var p))
                     {
+                        _setAllSelection = p;
                         foreach (var r in _rows) r.Placement = p;
                         RebuildFilesTable();
                         Changed();
@@ -242,13 +259,15 @@ namespace LemoineTools.Tools.Setup
             names.Children.Add(nameGrid); names.Children.Add(path);
             g.Children.Add(names);
 
-            // Column 2 — version badge
+            // Column 2 — version badge. Top-aligned (not Center) so it lines up with the
+            // first line of the two-line name+path cell rather than the cell's full height.
             var badge = VersionBadge(row);
+            badge.VerticalAlignment = VerticalAlignment.Top;
             Grid.SetColumn(badge, 2);
             g.Children.Add(badge);
 
-            // Column 3 — placement picker
-            var pick = new SingleSelect { IsEnabled = row.Readable };
+            // Column 3 — placement picker (same top-alignment as the badge above).
+            var pick = new SingleSelect { IsEnabled = Usable(row), VerticalAlignment = VerticalAlignment.Top };
             pick.Items = PlacementLabels();
             pick.SelectedItem = PlacementLabel(row.Placement);
             pick.SelectionChanged += lblSel =>
@@ -274,7 +293,7 @@ namespace LemoineTools.Tools.Setup
             var tb = new WpfTextBox
             {
                 Text = row.SaveAsName,
-                IsEnabled = row.Readable,
+                IsEnabled = Usable(row),
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(4, 2, 4, 2),
             };
@@ -296,17 +315,22 @@ namespace LemoineTools.Tools.Setup
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });  // 1 name + path
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(118) });                   // 2 version badge
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });                   // 3 placement picker
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });                       // 4 remove
+            // Fixed (not Auto) so the header row — which never populates column 4 with a
+            // button — reserves the same width as a data row's remove button. An Auto
+            // column collapses to 0 in the header, which pushes the star column 1 wider
+            // there and throws Version/Placement out of alignment with the rows below.
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });                    // 4 remove
             return g;
         }
 
         private FrameworkElement VersionBadge(UpgradeFileRow row)
         {
             string text; string colorKey;
-            if (!row.Readable)      { text = AppStrings.T("upgradeLinks.labels.verUnreadable");           colorKey = "LemoineRed"; }
-            else if (!row.Scanned)  { text = AppStrings.T("upgradeLinks.labels.verUnknown");              colorKey = "LemoineTextDim"; }
-            else if (row.IsCurrent) { text = AppStrings.T("upgradeLinks.labels.verCurrent", row.Version); colorKey = "LemoineGreen"; }
-            else                    { text = AppStrings.T("upgradeLinks.labels.verUpgrade", row.Version); colorKey = "LemoineAccent"; }
+            if (row.IsFutureVersion) { text = AppStrings.T("upgradeLinks.labels.verTooNew", row.Version);   colorKey = "LemoineRed"; }
+            else if (!row.Readable)  { text = AppStrings.T("upgradeLinks.labels.verUnreadable");            colorKey = "LemoineRed"; }
+            else if (!row.Scanned)   { text = AppStrings.T("upgradeLinks.labels.verUnknown");               colorKey = "LemoineTextDim"; }
+            else if (row.IsCurrent)  { text = AppStrings.T("upgradeLinks.labels.verCurrent", row.Version);  colorKey = "LemoineGreen"; }
+            else                     { text = AppStrings.T("upgradeLinks.labels.verUpgrade", row.Version);  colorKey = "LemoineAccent"; }
 
             var tb = new TextBlock { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
             tb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -372,6 +396,7 @@ namespace LemoineTools.Tools.Setup
                         row.Version = res.Version;
                         row.IsWorkshared = res.IsWorkshared;
                         row.IsCurrent = res.IsCurrent;
+                        row.IsFutureVersion = res.IsFutureVersion;
                     }
                 }
                 RebuildFilesTable();
@@ -529,7 +554,9 @@ namespace LemoineTools.Tools.Setup
             get
             {
                 if (ReadableCount() == 0) return AppStrings.T("upgradeLinks.review.warnNoFiles");
-                int unreadable = _rows.Count(r => !r.Readable);
+                int tooNew = _rows.Count(r => r.IsFutureVersion);
+                if (tooNew > 0) return AppStrings.T("upgradeLinks.review.warnTooNew", tooNew);
+                int unreadable = _rows.Count(r => !r.Readable && !r.IsFutureVersion);
                 if (unreadable > 0) return AppStrings.T("upgradeLinks.review.warnUnreadable", unreadable);
                 if (_dest == UpgradeDestination.CurrentLocation) return AppStrings.T("upgradeLinks.review.warnOverwrite");
                 return null;
@@ -582,14 +609,19 @@ namespace LemoineTools.Tools.Setup
 
         private string PlacementSummary()
         {
-            var readable = _rows.Where(r => r.Readable).ToList();
+            var readable = _rows.Where(Usable).ToList();
             if (readable.Count == 0) return "—";
             var distinct = readable.Select(r => r.Placement).Distinct().ToList();
             return distinct.Count == 1 ? PlacementLabel(distinct[0]) : AppStrings.T("upgradeLinks.review.placementMixed");
         }
 
-        private int ReadableCount() => _rows.Count(r => r.Readable);
-        private int UpgradeCount()  => _rows.Count(r => r.Readable && !r.IsCurrent);
+        // A row is usable when it's both readable and not saved in a Revit version newer
+        // than this one — Revit cannot open files from a later release (not backwards
+        // compatible), so a future-version row is excluded the same way an unreadable one is.
+        private static bool Usable(UpgradeFileRow r) => r.Readable && !r.IsFutureVersion;
+
+        private int ReadableCount() => _rows.Count(Usable);
+        private int UpgradeCount()  => _rows.Count(r => Usable(r) && !r.IsCurrent);
 
         // ── Run ──────────────────────────────────────────────────────────────────
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
@@ -600,7 +632,7 @@ namespace LemoineTools.Tools.Setup
 
             var spec = new UpgradeLinksSpec
             {
-                Files          = _rows.Where(r => r.Readable).Select(r => new UpgradeFileItem { Path = r.Path, Placement = r.Placement, SaveAsName = r.SaveAsName }).ToList(),
+                Files          = _rows.Where(Usable).Select(r => new UpgradeFileItem { Path = r.Path, Placement = r.Placement, SaveAsName = r.SaveAsName }).ToList(),
                 Destination    = _dest,
                 SelectedFolder = _selectedFolder,
                 AuditOnOpen    = _audit,
@@ -619,12 +651,12 @@ namespace LemoineTools.Tools.Setup
             _runEvent.Raise();
         }
 
+        // Persists only the non-path toggles this run used — the folder/destination
+        // defaults are set exclusively from the Settings window (see CLAUDE.md WS-10:
+        // a run no longer remembers its own last-used path back into the defaults).
         private void SaveSettings()
         {
             var s = UpgradeLinksSettings.Instance;
-            if (_dest == UpgradeDestination.SelectedFolder && !string.IsNullOrWhiteSpace(_selectedFolder))
-                s.LastSelectedFolder = _selectedFolder;
-            s.Destination    = _dest;
             s.AuditOnOpen    = _audit;
             s.ReloadExisting = _reload;
             s.Save();
@@ -633,18 +665,18 @@ namespace LemoineTools.Tools.Setup
         // ── Placement label ↔ enum ────────────────────────────────────────────────
         private static readonly UpgradePlacement[] PlacementOrder =
         {
-            UpgradePlacement.OriginToOrigin, UpgradePlacement.CenterToCenter,
-            UpgradePlacement.SharedCoordinates, UpgradePlacement.Site,
+            UpgradePlacement.InternalOrigin, UpgradePlacement.ProjectBasePoint,
+            UpgradePlacement.CenterToCenter, UpgradePlacement.SurveyPoint,
         };
 
         private static string PlacementKey(UpgradePlacement p)
         {
             switch (p)
             {
-                case UpgradePlacement.CenterToCenter:    return "center";
-                case UpgradePlacement.SharedCoordinates: return "shared";
-                case UpgradePlacement.Site:              return "site";
-                default:                                 return "origin";
+                case UpgradePlacement.ProjectBasePoint: return "projectBasePoint";
+                case UpgradePlacement.CenterToCenter:   return "center";
+                case UpgradePlacement.SurveyPoint:      return "surveyPoint";
+                default:                                return "internalOrigin";
             }
         }
 

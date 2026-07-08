@@ -31,12 +31,16 @@
     "verCurrent":    "{0} (current)",
     "verUpgrade":    "{0} → current",
     "verUnreadable": "unreadable",
+    "verTooNew":     "{0} — too new",
     "auditLabel":    "Audit each file on open",
     "auditDesc":     "On = run Revit's audit while opening (slower, repairs some corruption). Off = plain open.",
     "reloadLabel":   "Reload existing link if a name already exists",
     "reloadDesc":    "On = if a link with the same name is already in this model, re-point it at the upgraded copy. Off = skip that file and log it.",
     "scanning":      "Reading file versions…",
     "unreadableNote":"{0} file(s) could not be read and will be skipped.",
+    "tooNewNote":    "{0} file(s) are saved in a newer Revit version and cannot be opened here — they will be skipped.",
+    "futureVersionNote":        "Files saved in a Revit version newer than this one ({0}) cannot be opened, upgraded, or linked — Revit is not backwards compatible.",
+    "futureVersionNoteGeneric": "Files saved in a Revit version newer than this one cannot be opened, upgraded, or linked — Revit is not backwards compatible.",
     "destQuestion":  "Where should the upgraded files be saved?",
     "destHint":      "The link always points at the saved copy — choose where that copy lives.",
 
@@ -58,10 +62,10 @@
     "optCloudNote":  "Each file will open Revit's own Save As → Cloud Model dialog, one at a time — pick the ACC folder and name yourself, same as saving any cloud model normally. \"Save as\" names from the Files step don't apply here. The tool waits for you to finish (or click Skip) before moving to the next file."
   },
   "placement": {
-    "origin": "Origin to Origin",
-    "center": "Center to Center",
-    "shared": "Shared Coordinates",
-    "site":   "By Shared Site"
+    "internalOrigin":   "Internal Origin",
+    "projectBasePoint": "Project Base Point",
+    "center":           "Center to Center",
+    "surveyPoint":      "Survey Point"
   },
   "review": {
     "itemFiles": "Files",
@@ -72,7 +76,8 @@
     "placementMixed": "Mixed",
     "warnNoFiles": "Add at least one readable Revit file.",
     "warnOverwrite": "Current location is destructive — the original files will be replaced with current-version copies.",
-    "warnUnreadable": "{0} unreadable file(s) will be skipped."
+    "warnUnreadable": "{0} unreadable file(s) will be skipped.",
+    "warnTooNew": "{0} file(s) are saved in a newer Revit version and cannot be opened — they will be skipped."
   },
   "log": {
     "handlerMissing": "Internal error: run handler not registered.",
@@ -90,7 +95,7 @@
     "renameInvalid":  "{0}: the \"save as\" name had no usable characters — kept the original name instead.",
     "linkExistsSkip": "Skipped {0} — a link with that name already exists (reload is off).",
     "linkReloaded":   "Reloaded existing link {0} from the upgraded copy.",
-    "sharedFallback": "{0}: no shared coordinates — placed at Origin instead.",
+    "surveyFallback": "{0}: could not resolve Survey Point on host and/or link — placed at Internal Origin instead.",
     "fileFail":       "Failed on {0}: {1} — {2}",
     "progress":       "{0}% · {1}/{2} processed · {3} linked",
     "nonFatal":       "{0} non-fatal issue(s) logged during the run — see diagnostics.",
