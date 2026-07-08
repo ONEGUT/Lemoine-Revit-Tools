@@ -16,6 +16,10 @@ namespace LemoineTools
 {
     public class App : IExternalApplication
     {
+        // Link Audit and Compare Grids buttons are deactivated on the ribbon (deliberately
+        // left in the codebase) — flip to true to bring them back without re-adding code.
+        private const bool ShowRetiredSetupTools = false;
+
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.
         internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
@@ -326,20 +330,28 @@ namespace LemoineTools
                 L.T("ribbon.buttons.upgradeLinks.tip"),
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
-            setupPanel.AddItem(Btn(
-                "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
-                L.T("ribbon.buttons.linkAudit.tip"),
-                char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
+            // Link Audit and Compare Grids are deactivated (not deleted) — flip
+            // ShowRetiredSetupTools to true to bring them back on the ribbon.
+            if (ShowRetiredSetupTools)
+            {
+                setupPanel.AddItem(Btn(
+                    "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
+                    L.T("ribbon.buttons.linkAudit.tip"),
+                    char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
+            }
 
             setupPanel.AddItem(Btn(
                 "LT_AlignCoordinates", L.T("ribbon.buttons.alignCoordinates.label"), "AlignCoordinatesCommand",
                 L.T("ribbon.buttons.alignCoordinates.tip"),
                 char.ConvertFromUtf32(0xE809)));  // MapPin
 
-            setupPanel.AddItem(Btn(
-                "LT_CompareGrids", L.T("ribbon.buttons.compareGrids.label"), "CompareGridsCommand",
-                L.T("ribbon.buttons.compareGrids.tip"),
-                char.ConvertFromUtf32(0xE80A)));  // GridView
+            if (ShowRetiredSetupTools)
+            {
+                setupPanel.AddItem(Btn(
+                    "LT_CompareGrids", L.T("ribbon.buttons.compareGrids.label"), "CompareGridsCommand",
+                    L.T("ribbon.buttons.compareGrids.tip"),
+                    char.ConvertFromUtf32(0xE80A)));  // GridView
+            }
 
             setupPanel.AddItem(Btn(
                 "LT_PushCoordinates", L.T("ribbon.buttons.pushCoordinates.label"), "PushCoordinatesToLinksCommand",
@@ -623,15 +635,10 @@ namespace LemoineTools
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
 
-            // ── Developer ─────────────────────────────────────────────────────
-            // Reserved panel for debug harnesses. Remove/repoint buttons once their
-            // investigation is resolved.
-            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
-
-            devPanel.AddItem(Btn(
-                "LT_ScopeBoxProbe", "Scope Box\nProbe", "ScopeBoxProbeCommand",
-                "DEBUG: probe the Revit API for scope-box copy/rename/move/rotate/resize capability on this Revit year (all mutations rolled back), and write a report to %AppData%\\LemoineTools\\ScopeBoxProbe.txt.",
-                char.ConvertFromUtf32(0xE7B3)));  // Diagnostic / Bug
+            // Developer panel: created on demand for future debug harnesses (see
+            // CLAUDE.md "Crashes & Large Ambiguous Issues"). None are active right now —
+            // the Scope Box Probe that lived here has been removed (its findings are
+            // captured in CLAUDE.md and in ScopeBoxCreatorRunHandler's comments).
 
             return Result.Succeeded;
         }
