@@ -6,6 +6,7 @@ using LemoineTools.Framework.Controls;
 using LemoineTools.Tools.Ceilings;
 using LemoineTools.Tools.BulkExport;
 using LemoineTools.Tools.CopyFromLink;
+using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Framework
 {
@@ -74,6 +75,75 @@ namespace LemoineTools.Framework
             swatch.HorizontalAlignment = HorizontalAlignment.Left;
             swatch.Margin = new Thickness(0, 0, 0, 10);
             panel.Children.Add(swatch);
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Setup — Upgrade & Link Models
+        // ═════════════════════════════════════════════════════════════════════
+        private UIElement BuildSetupGroupContent()
+        {
+            var scroll = NewGroupPanel(AppStrings.T("globalSettings.groups.hdrSetup"), out var panel);
+
+            var ul = UpgradeLinksSettings.Instance;
+            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.groups.setupSub")));
+
+            var placementPicker = new SingleSelect
+            {
+                Label        = AppStrings.T("globalSettings.groups.defaultPlacement"),
+                Items        = UpgradeLinksViewModel.PlacementLabels(),
+                SelectedItem = UpgradeLinksViewModel.PlacementLabel(ul.DefaultPlacement),
+            };
+            placementPicker.SelectionChanged += sel =>
+            {
+                if (sel != null && UpgradeLinksViewModel.LabelToPlacement.TryGetValue(sel, out var p))
+                {
+                    ul.DefaultPlacement = p;
+                    ul.Save();
+                }
+            };
+            panel.Children.Add(placementPicker);
+            panel.Children.Add(new FrameworkElement { Height = 8 });
+
+            // Cloud is only offered when the host itself is a cloud model, so it's omitted
+            // here — Current Location vs Selected Folder are the choices meaningful with no
+            // document open. No folder-path field: the last folder used is remembered
+            // per-run only, not set as a default (see CLAUDE.md WS-10 decision 4).
+            var destLabels = new List<string>
+            {
+                AppStrings.T("globalSettings.groups.destCurrentLocation"),
+                AppStrings.T("globalSettings.groups.destSelectedFolder"),
+            };
+            var destPicker = new SingleSelect
+            {
+                Label        = AppStrings.T("globalSettings.groups.defaultDestination"),
+                Items        = destLabels,
+                SelectedItem = ul.Destination == UpgradeDestination.SelectedFolder ? destLabels[1] : destLabels[0],
+            };
+            destPicker.SelectionChanged += sel =>
+            {
+                ul.Destination = sel == destLabels[1] ? UpgradeDestination.SelectedFolder : UpgradeDestination.CurrentLocation;
+                ul.Save();
+            };
+            panel.Children.Add(destPicker);
+            panel.Children.Add(new FrameworkElement { Height = 8 });
+
+            var ulToggles = new ToggleSwitches();
+            ulToggles.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "audit", Label = AppStrings.T("globalSettings.groups.auditOnOpen"),
+                                 Desc = AppStrings.T("globalSettings.groups.auditOnOpenDesc"), DefaultOn = ul.AuditOnOpen },
+                new ToggleItem { Id = "reload", Label = AppStrings.T("globalSettings.groups.reloadExisting"),
+                                 Desc = AppStrings.T("globalSettings.groups.reloadExistingDesc"), DefaultOn = ul.ReloadExisting },
+            });
+            ulToggles.StateChanged += state =>
+            {
+                if (state.TryGetValue("audit",  out var a)) ul.AuditOnOpen    = a;
+                if (state.TryGetValue("reload", out var r)) ul.ReloadExisting = r;
+                ul.Save();
+            };
+            panel.Children.Add(ulToggles);
+
+            return scroll;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -168,16 +238,6 @@ namespace LemoineTools.Framework
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Sheets — no saved defaults yet
-        // ═════════════════════════════════════════════════════════════════════
-        private UIElement BuildSheetsGroupContent()
-        {
-            var scroll = NewGroupPanel(AppStrings.T("globalSettings.groups.hdrSheets"), out var panel);
-            AddGroupNote(panel, AppStrings.T("globalSettings.groups.noteSheets"));
-            return scroll;
-        }
-
-        // ═════════════════════════════════════════════════════════════════════
         // Export — Bulk Export
         // ═════════════════════════════════════════════════════════════════════
         private UIElement BuildExportGroupContent()
@@ -218,16 +278,6 @@ namespace LemoineTools.Framework
             };
             panel.Children.Add(beToggles);
 
-            return scroll;
-        }
-
-        // ═════════════════════════════════════════════════════════════════════
-        // Modify — no saved defaults yet
-        // ═════════════════════════════════════════════════════════════════════
-        private UIElement BuildModifyGroupContent()
-        {
-            var scroll = NewGroupPanel(AppStrings.T("globalSettings.groups.hdrModify"), out var panel);
-            AddGroupNote(panel, AppStrings.T("globalSettings.groups.noteModify"));
             return scroll;
         }
 

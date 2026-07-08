@@ -144,15 +144,14 @@ namespace LemoineTools.Framework
         private static (string Id, string Label)[] _navDefs =>
         new (string, string)[]
         {
-            ("general",  AppStrings.T("globalSettings.nav.general")),
-            ("filters",  AppStrings.T("globalSettings.nav.filters")),
-            ("ceilings", AppStrings.T("globalSettings.nav.ceilings")),
-            ("views",    AppStrings.T("globalSettings.nav.views")),
-            ("sheets",   AppStrings.T("globalSettings.nav.sheets")),
-            ("export",   AppStrings.T("globalSettings.nav.export")),
-            ("modify",   AppStrings.T("globalSettings.nav.modify")),
-            ("clash",    AppStrings.T("globalSettings.nav.clash")),
-            ("copy",     AppStrings.T("globalSettings.nav.copy")),
+            ("general",       AppStrings.T("globalSettings.nav.general")),
+            ("setup",         AppStrings.T("globalSettings.nav.setup")),
+            ("copy",          AppStrings.T("globalSettings.nav.copy")),
+            ("ceilings",      AppStrings.T("globalSettings.nav.ceilings")),
+            ("views",         AppStrings.T("globalSettings.nav.views")),
+            ("filters",       AppStrings.T("globalSettings.nav.filters")),
+            ("dimensioning",  AppStrings.T("globalSettings.nav.dimensioning")),
+            ("export",        AppStrings.T("globalSettings.nav.export")),
         };
 
         private void BuildTabNav()
@@ -251,17 +250,16 @@ namespace LemoineTools.Framework
             UIElement content;
             switch (tabId)
             {
-                case "general":  content = BuildGeneralContent();      break;
-                case "filters":  content = BuildFiltersGroupContent(); break;
-                case "ceilings": content = BuildCeilingsGroupContent(); break;
-                case "views":    content = BuildViewsGroupContent();   break;
-                case "sheets":   content = BuildSheetsGroupContent();  break;
-                case "export":   content = BuildExportGroupContent();  break;
-                case "modify":   content = BuildModifyGroupContent();  break;
-                // Clash → the auto-dimension defaults (Finder & Dimension section).
-                case "clash":    content = BuildDimensionsContent();   break;
-                case "copy":     content = BuildCopyGroupContent();    break;
-                default:         content = BuildNoSettingsContent();   break;
+                case "general":      content = BuildGeneralContent();       break;
+                case "setup":        content = BuildSetupGroupContent();    break;
+                case "filters":      content = BuildFiltersGroupContent();  break;
+                case "ceilings":     content = BuildCeilingsGroupContent(); break;
+                case "views":        content = BuildViewsGroupContent();   break;
+                case "export":       content = BuildExportGroupContent();  break;
+                // Dimensioning → the auto-dimension defaults (Finder & Dimension section).
+                case "dimensioning": content = BuildDimensionsContent();   break;
+                case "copy":         content = BuildCopyGroupContent();    break;
+                default:             content = BuildNoSettingsContent();   break;
             }
 
             _contentBorder.Child = content;

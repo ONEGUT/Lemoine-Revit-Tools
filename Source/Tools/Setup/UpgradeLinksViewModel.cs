@@ -663,7 +663,9 @@ namespace LemoineTools.Tools.Setup
         }
 
         // ── Placement label ↔ enum ────────────────────────────────────────────────
-        private static readonly UpgradePlacement[] PlacementOrder =
+        // internal (not private): reused by GlobalSettingsWindow's Setup tab (WS-10) to
+        // present the same placement picker for the persisted default.
+        internal static readonly UpgradePlacement[] PlacementOrder =
         {
             UpgradePlacement.InternalOrigin, UpgradePlacement.ProjectBasePoint,
             UpgradePlacement.CenterToCenter, UpgradePlacement.SurveyPoint,
@@ -680,10 +682,10 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
-        private static string PlacementLabel(UpgradePlacement p) => AppStrings.T("upgradeLinks.placement." + PlacementKey(p));
-        private static List<string> PlacementLabels() => PlacementOrder.Select(PlacementLabel).ToList();
+        internal static string PlacementLabel(UpgradePlacement p) => AppStrings.T("upgradeLinks.placement." + PlacementKey(p));
+        internal static List<string> PlacementLabels() => PlacementOrder.Select(PlacementLabel).ToList();
 
-        private static readonly Dictionary<string, UpgradePlacement> LabelToPlacement =
+        internal static readonly Dictionary<string, UpgradePlacement> LabelToPlacement =
             PlacementOrder.ToDictionary(PlacementLabel, p => p, StringComparer.Ordinal);
 
         // ── Small WPF helpers (theme via resource refs only) ──────────────────────
