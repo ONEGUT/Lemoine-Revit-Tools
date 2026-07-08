@@ -85,6 +85,19 @@ namespace LemoineTools.Tools.ScopeBoxes
             public double Depth  => Y1 - Y0;
             public double Height => ZTop - ZBot;
             public XYZ Center => new XYZ((X0 + X1) / 2, (Y0 + Y1) / 2, (ZBot + ZTop) / 2);
+
+            // ── Auto datum assignment (WS-6a) ──────────────────────────
+            // The level this box's floor sits on (InvalidElementId = none). Bottom claims
+            // always win a conflict over a top claim on the same level (see ApplyLevelClaims).
+            public ElementId BottomLevelId = ElementId.InvalidElementId;
+            // The level this box's ceiling touches (only set for the box(es) spanning the
+            // highest selected level) — the level ABOVE the highest selected level, i.e. the
+            // one whose datum line this box's top actually reaches. InvalidElementId when no
+            // such level exists (topmost level in the model, or the TopLevelHeight fallback).
+            public ElementId TopLevelId = ElementId.InvalidElementId;
+            // Cluster index (0 = "Building A") — conflict priority when two boxes on the SAME
+            // level both claim it the same way (e.g. two clusters' bottom box on one level).
+            public int ClusterIndex;
         }
 
         private void RunBoxes(Document doc, ref int pass, ref int fail, ref int skip)
@@ -146,8 +159,20 @@ namespace LemoineTools.Tools.ScopeBoxes
             // ── Compute box specs ─────────────────────────────────────
             var specs = new List<BoxSpec>();
 
+            // Level ABOVE the given one in the full (unfiltered) level list, or null if it's
+            // the topmost level in the model. Used to find the level a box's ceiling actually
+            // touches, for the auto datum-assignment in WS-6a.
+            Level? LevelAbove(Level lvl)
+            {
+                int ord = allLevels.IndexOf(lvl);
+                return ord >= 0 && ord < allLevels.Count - 1 ? allLevels[ord + 1] : null;
+            }
+
             if (Mode == "PerLevel")
             {
+                var lowestSel  = selLevels.First();
+                var highestSel = selLevels.Last();
+
                 foreach (var lvl in selLevels)
                 {
                     var levelRooms = rooms.Where(r => r.LevelName == lvl.Name).ToList();
@@ -156,10 +181,29 @@ namespace LemoineTools.Tools.ScopeBoxes
                     clusters.Sort((a, b) =>
                         b.Average(r => r.CentroidY).CompareTo(a.Average(r => r.CentroidY)));
 
+                    // Per-Level end extension (WS-6b): the bottommost and topmost selected
+                    // level's box(es) push their outer face PerLevelEndExtension feet further,
+                    // so they truly act as the building's overall bottom/top.
+                    double zBot = lvl.Elevation;
+                    double zTop = TopAbove(lvl);
+                    bool isLowest  = lvl.Id.Value == lowestSel.Id.Value;
+                    bool isHighest = lvl.Id.Value == highestSel.Id.Value;
+                    if (isLowest)  zBot -= s.PerLevelEndExtension;
+                    if (isHighest) zTop += s.PerLevelEndExtension;
+
+                    var topLevelId = isHighest
+                        ? LevelAbove(lvl)?.Id ?? ElementId.InvalidElementId
+                        : ElementId.InvalidElementId;
+
                     for (int bi = 0; bi < clusters.Count; bi++)
-                        specs.Add(MakeSpec(clusters[bi], clusters.Count, bi,
-                                           lvl.Name, lvl.Name,
-                                           lvl.Elevation, TopAbove(lvl), s.BufferXY));
+                    {
+                        var spec = MakeSpec(clusters[bi], clusters.Count, bi,
+                                             lvl.Name, lvl.Name, zBot, zTop, s.BufferXY);
+                        spec.BottomLevelId = lvl.Id;
+                        spec.TopLevelId    = topLevelId;
+                        spec.ClusterIndex  = bi;
+                        specs.Add(spec);
+                    }
                 }
             }
             else // FullHeight
@@ -177,11 +221,18 @@ namespace LemoineTools.Tools.ScopeBoxes
                     string range   = selLevels.Count == 1
                         ? lowest.Name
                         : AppStrings.T("scopeBoxes.creator.tokens.levelRange", lowest.Name, highest.Name);
+                    var topLevelId = LevelAbove(highest)?.Id ?? ElementId.InvalidElementId;
 
                     for (int bi = 0; bi < clusters.Count; bi++)
-                        specs.Add(MakeSpec(clusters[bi], clusters.Count, bi,
-                                           lowest.Name, range,
-                                           lowest.Elevation, TopAbove(highest), s.BufferXY));
+                    {
+                        var spec = MakeSpec(clusters[bi], clusters.Count, bi,
+                                             lowest.Name, range,
+                                             lowest.Elevation, TopAbove(highest), s.BufferXY);
+                        spec.BottomLevelId = lowest.Id;
+                        spec.TopLevelId    = topLevelId;
+                        spec.ClusterIndex  = bi;
+                        specs.Add(spec);
+                    }
                 }
             }
 
@@ -199,6 +250,34 @@ namespace LemoineTools.Tools.ScopeBoxes
             var takenNames = new HashSet<string>(
                 ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc).Select(b => b.Name),
                 StringComparer.OrdinalIgnoreCase);
+
+            // ── Level datum-assignment claims (WS-6a) ──────────────────
+            // One level can carry only ONE scope box in its own DATUM_VOLUME_OF_INTEREST
+            // parameter, so when two boxes both want the same level (an interior level is
+            // simultaneously the "bottom" of its own per-level box and the "top" of the box
+            // below it), a bottom claim always wins over a top claim; among two claims of the
+            // SAME kind (e.g. two building clusters' bottom box landing on one level), the
+            // lower cluster index ("Building A") wins. The loser is logged, never silently lost.
+            var levelClaims = new Dictionary<long, (ElementId BoxId, string BoxName, bool IsBottom, int ClusterIndex)>();
+
+            void ClaimLevel(ElementId levelId, ElementId boxId, string boxName, bool isBottom, int clusterIndex)
+            {
+                if (levelId == ElementId.InvalidElementId) return;
+                long key = levelId.Value;
+                string levelName = (doc.GetElement(levelId) as Level)?.Name ?? levelId.Value.ToString();
+
+                if (!levelClaims.TryGetValue(key, out var existing))
+                {
+                    levelClaims[key] = (boxId, boxName, isBottom, clusterIndex);
+                    return;
+                }
+
+                bool takeNew = isBottom != existing.IsBottom ? isBottom : clusterIndex < existing.ClusterIndex;
+                string winnerName = takeNew ? boxName : existing.BoxName;
+                string loserName  = takeNew ? existing.BoxName : boxName;
+                Log(AppStrings.T("scopeBoxes.creator.log.levelClaimConflict", levelName, winnerName, loserName), "warn");
+                if (takeNew) levelClaims[key] = (boxId, boxName, isBottom, clusterIndex);
+            }
 
             using (var tx = new Transaction(doc, "Create Scope Boxes"))
             {
@@ -259,6 +338,9 @@ namespace LemoineTools.Tools.ScopeBoxes
                                 pass++;
                                 Log(AppStrings.T("scopeBoxes.creator.log.created", spec.Name), "pass");
 
+                                ClaimLevel(spec.BottomLevelId, copyId, spec.Name, isBottom: true,  clusterIndex: spec.ClusterIndex);
+                                ClaimLevel(spec.TopLevelId,    copyId, spec.Name, isBottom: false, clusterIndex: spec.ClusterIndex);
+
                                 // Height IS settable via VOLUME_OF_INTEREST_HEIGHT (grows from the
                                 // bottom, which we bottom-aligned above) — set it so Z fits exactly.
                                 bool heightSet = false;
@@ -296,6 +378,28 @@ namespace LemoineTools.Tools.ScopeBoxes
 
                     Progress((int)((i + 1) * 90.0 / specs.Count), pass, fail, skip);
                 }
+
+                // ── Apply the resolved level claims (WS-6a) ────────────
+                int levelsAssigned = 0;
+                foreach (var kv in levelClaims)
+                {
+                    var level = doc.GetElement(new ElementId(kv.Key)) as Level;
+                    if (level == null) continue;
+                    try
+                    {
+                        var p = level.get_Parameter(BuiltInParameter.DATUM_VOLUME_OF_INTEREST);
+                        if (p == null || p.IsReadOnly) continue;
+                        p.Set(kv.Value.BoxId);
+                        levelsAssigned++;
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"ScopeBoxCreator: assign level '{level.Name}' to a scope box", ex);
+                        Log(AppStrings.T("scopeBoxes.creator.log.levelAssignFailed", level.Name), "warn");
+                    }
+                }
+                if (levelsAssigned > 0)
+                    Log(AppStrings.T("scopeBoxes.creator.log.levelsAssigned", levelsAssigned), "info");
 
                 tx.Commit();
             }
