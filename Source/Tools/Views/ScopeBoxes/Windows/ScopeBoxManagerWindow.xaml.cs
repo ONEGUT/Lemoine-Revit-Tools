@@ -1032,6 +1032,7 @@ namespace LemoineTools.Framework
             help.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             help.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             help.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            DockPanel.SetDock(help, Dock.Top);
             host.Children.Add(help);
 
             // Grids classified by orientation: wide/flat bbox → runs E-W (offered for
@@ -1071,8 +1072,6 @@ namespace LemoineTools.Framework
             body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideEast"),  verticalGrids,   id => eastId  = id));
             body.Children.Add(SideRow(AppStrings.T("scopeBoxes.manager.overlay.sideWest"),  verticalGrids,   id => westId  = id));
 
-            host.Children.Add(body);
-
             var footer = OverlayFooter(
                 AppStrings.T("scopeBoxes.manager.overlay.applyBind"),
                 () => RaiseAction(h =>
@@ -1086,6 +1085,13 @@ namespace LemoineTools.Framework
                 }));
             DockPanel.SetDock(footer, Dock.Bottom);
             host.Children.Add(footer);
+
+            // body is added LAST — DockPanel.LastChildFill fills it into the remaining
+            // space regardless of Dock, matching the working Rename/Delete overlays. Adding
+            // it before the footer (as this used to) let the footer become the last child
+            // instead, so IT filled the whole card while body/help were squeezed into
+            // default-Dock.Left slivers — the truncated-text bug this fixes.
+            host.Children.Add(body);
 
             ShowOverlay(card);
         }
@@ -1107,6 +1113,7 @@ namespace LemoineTools.Framework
             help.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             help.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
             help.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            DockPanel.SetDock(help, Dock.Top);
             host.Children.Add(help);
 
             var crossingGrids = _scan.Datums
@@ -1218,8 +1225,6 @@ namespace LemoineTools.Framework
             deleteCb.Unchecked += (s, e) => splitDeleteOriginal = false;
             body.Children.Add(deleteCb);
 
-            host.Children.Add(body);
-
             var footer = OverlayFooter(
                 AppStrings.T("scopeBoxes.manager.overlay.applySplit"),
                 () => RaiseAction(h =>
@@ -1234,6 +1239,10 @@ namespace LemoineTools.Framework
                 }));
             DockPanel.SetDock(footer, Dock.Bottom);
             host.Children.Add(footer);
+
+            // body is added LAST — see the matching comment in ShowBindSidesOverlay for why
+            // this order (not the previous body-then-footer order) is required.
+            host.Children.Add(body);
 
             ShowOverlay(card);
         }
