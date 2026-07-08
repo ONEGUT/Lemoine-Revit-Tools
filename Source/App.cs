@@ -18,7 +18,9 @@ namespace LemoineTools
     {
         // Link Audit and Compare Grids buttons are deactivated on the ribbon (deliberately
         // left in the codebase) — flip to true to bring them back without re-adding code.
-        private const bool ShowRetiredSetupTools = false;
+        // static readonly (not const): a const would make the `if` below a compile-time
+        // constant and the compiler flags its guarded block as unreachable code (CS0162).
+        private static readonly bool ShowRetiredSetupTools = false;
 
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.

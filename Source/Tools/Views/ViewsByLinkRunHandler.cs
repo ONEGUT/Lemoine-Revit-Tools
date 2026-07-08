@@ -118,26 +118,23 @@ namespace LemoineTools.Tools.LinkViews
                         }
 
                         // Hide every host model/annotation/analytical/imported category so only
-                        // the target link's own geometry (rendered By Linked View, immune to the
-                        // host category hides below) remains visible.
+                        // the target link's own geometry remains visible. LinkVisibility.Custom
+                        // detaches the link's category visibility from the host view's — with no
+                        // per-category hides set on the settings object below, the link renders
+                        // normally regardless of the host category hides applied further down.
+                        // (LinkVisibility has only ByHostView/Custom in the 2024 API — there is no
+                        // "render using one of the link's own views" mode.)
                         bool customOverrideApplied = false;
-                        if (link != null && linkDoc != null)
+                        if (link != null)
                         {
                             try
                             {
-                                var linkedDefaultView = new FilteredElementCollector(linkDoc)
-                                    .OfClass(typeof(View3D)).Cast<View3D>()
-                                    .FirstOrDefault(v => !v.IsTemplate);
-                                if (linkedDefaultView != null)
+                                var settings = new RevitLinkGraphicsSettings
                                 {
-                                    var settings = new RevitLinkGraphicsSettings
-                                    {
-                                        LinkVisibilityType = LinkVisibility.ByLinkedView,
-                                        LinkedViewId       = linkedDefaultView.Id,
-                                    };
-                                    view.SetLinkOverrides(linkId, settings);
-                                    customOverrideApplied = true;
-                                }
+                                    LinkVisibilityType = LinkVisibility.Custom,
+                                };
+                                view.SetLinkOverrides(linkId, settings);
+                                customOverrideApplied = true;
                             }
                             catch (Exception ex)
                             {
