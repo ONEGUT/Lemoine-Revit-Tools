@@ -13,27 +13,28 @@ namespace LemoineTools.Framework
 {
     // ─────────────────────────────────────────────────────────────────────────
     // Read-only "Tools Overview" window — a guided field-guide to every tool in
-    // the plugin and how they tie together. Layout = Option A (Pipeline + Catalog):
+    // the plugin and how they tie together.
     //
     //   Row 0  Toolbar (TitleBar)
-    //   Row 1  Workflow strip — six stages, click to jump to that stage's category
-    //   Row 2  Body — left category rail + right scrolling tool-card pane
+    //   Row 1  Category tab strip — one tab per ribbon panel, in ribbon order
+    //   Row 2  Body — scrolling tool-card pane for the selected category
     //   Row 3  Footer (Close)
     //
     // Modelled on GlobalSettingsWindow (NOT StepFlowWindow — no wizard chrome).
     // Makes no Revit API calls; opened on Revit's main STA thread by OpenOverviewCommand.
     // All colors/sizes via SetResourceReference; named global-event handlers are
     // detached on Closed to avoid the leaked-subscription Revit crash.
+    //
+    // Previously a two-layer nav (a "workflow stage" strip over a left category rail);
+    // collapsed to one layer because the categories already are the ribbon panels in
+    // ribbon order, so the stage grouping was a redundant indirection (WS-11).
     // ─────────────────────────────────────────────────────────────────────────
     public partial class ToolsOverviewWindow : Window
     {
         private const string IconFont = "Segoe MDL2 Assets";
 
         private string _activeCategoryId = "";
-        private readonly Dictionary<string, Border> _railRows   = new Dictionary<string, Border>();
-        private readonly Dictionary<string, (TextBlock name, TextBlock glyph)> _railText =
-            new Dictionary<string, (TextBlock, TextBlock)>();
-        private readonly Dictionary<string, Border> _stageChips = new Dictionary<string, Border>();
+        private readonly Dictionary<string, Border> _catTabs = new Dictionary<string, Border>();
         private Border? _cardsHost;
 
         // Navigation: tool name → its card (for the current category), the cards scroll
@@ -110,7 +111,7 @@ namespace LemoineTools.Framework
 
             UpdateRowHeights();
             BuildToolbar();
-            BuildWorkflowStrip();
+            BuildCategoryTabs();
             BuildBody();
             BuildFooterBar();
             SelectCategory(ToolsOverviewCatalog.Categories[0].Id);
@@ -154,204 +155,97 @@ namespace LemoineTools.Framework
         }
 
         // ═════════════════════════════════════════════════════════════════════
-        // Workflow strip (Row 1)
+        // Category tab strip (Row 1) — one tab per ribbon panel, in ribbon order
         // ═════════════════════════════════════════════════════════════════════
-        private void BuildWorkflowStrip()
+        private void BuildCategoryTabs()
         {
-            _stageChips.Clear();
+            _catTabs.Clear();
 
-            _flowBorder.Padding         = new Thickness(12, 10, 12, 10);
+            _flowBorder.Padding         = new Thickness(12, 8, 12, 0);
             _flowBorder.BorderThickness = new Thickness(0, 0, 0, 1);
             _flowBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
 
-            var stages = ToolsOverviewCatalog.Stages;
-            var grid   = new Grid();
-            for (int i = 0; i < stages.Length; i++)
-            {
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                if (i < stages.Length - 1)
-                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            }
-
-            for (int i = 0; i < stages.Length; i++)
-            {
-                var chip = BuildStageChip(stages[i]);
-                _stageChips[stages[i].Number] = chip;
-                Grid.SetColumn(chip, i * 2);
-                grid.Children.Add(chip);
-
-                if (i < stages.Length - 1)
-                {
-                    var arrow = new TextBlock
-                    {
-                        Text                = "→",
-                        VerticalAlignment   = VerticalAlignment.Center,
-                        Margin              = new Thickness(4, 0, 4, 0),
-                    };
-                    arrow.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-                    arrow.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_LG");
-                    Grid.SetColumn(arrow, i * 2 + 1);
-                    grid.Children.Add(arrow);
-                }
-            }
-
-            _flowBorder.Child = grid;
-        }
-
-        private Border BuildStageChip(OverviewStage stage)
-        {
-            var chip = new Border
-            {
-                CornerRadius    = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                Padding         = new Thickness(9, 7, 9, 7),
-                Cursor          = Cursors.Hand,
-            };
-
-            var stack = new StackPanel();
-
-            var num = new TextBlock { Text = stage.Number };
-            num.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            num.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            num.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var name = new TextBlock { Text = stage.Name, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 1, 0, 0) };
-            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            var tag = new TextBlock { Text = stage.Tagline, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 1, 0, 0) };
-            tag.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            tag.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            tag.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-
-            stack.Children.Add(num);
-            stack.Children.Add(name);
-            stack.Children.Add(tag);
-            chip.Child = stack;
-
-            chip.MouseLeftButtonDown += (s, e) => SelectCategory(stage.CategoryIds[0]);
-            chip.MouseEnter += (s, e) =>
-            {
-                if (!IsStageActive(stage))
-                    chip.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
-            };
-            chip.MouseLeave += (s, e) =>
-            {
-                if (!IsStageActive(stage))
-                    chip.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            };
-            return chip;
-        }
-
-        private bool IsStageActive(OverviewStage stage)
-        {
-            var owning = ToolsOverviewCatalog.StageForCategory(_activeCategoryId);
-            return owning != null && owning.Number == stage.Number;
-        }
-
-        // ═════════════════════════════════════════════════════════════════════
-        // Body — rail + cards (Row 2)
-        // ═════════════════════════════════════════════════════════════════════
-        private void BuildBody()
-        {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(206) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // ── Left rail ─────────────────────────────────────────────────────
-            var railBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0) };
-            railBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineSurface");
-            railBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-
-            var railStack = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+            var stack = new StackPanel { Orientation = Orientation.Horizontal };
             foreach (var cat in ToolsOverviewCatalog.Categories)
             {
-                var row = BuildRailRow(cat);
-                _railRows[cat.Id] = row;
-                railStack.Children.Add(row);
+                var tab = BuildCategoryTab(cat);
+                _catTabs[cat.Id] = tab;
+                stack.Children.Add(tab);
             }
 
-            var railScroll = new ScrollViewer
+            var scroll = new ScrollViewer
             {
-                VerticalScrollBarVisibility   = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = railStack,
+                VerticalScrollBarVisibility   = ScrollBarVisibility.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = stack,
             };
-            railBorder.Child = railScroll;
-            Grid.SetColumn(railBorder, 0);
-            grid.Children.Add(railBorder);
-
-            // ── Right cards host (filled per selection) ───────────────────────
-            _cardsHost = new Border();
-            Grid.SetColumn(_cardsHost, 1);
-            grid.Children.Add(_cardsHost);
-
-            _bodyBorder.Child = grid;
+            _flowBorder.Child = scroll;
         }
 
-        private Border BuildRailRow(OverviewCategory cat)
+        private Border BuildCategoryTab(OverviewCategory cat)
         {
-            var row = new Border
-            {
-                Padding         = new Thickness(14, 8, 12, 8),
-                BorderThickness = new Thickness(2, 0, 0, 0), // left accent bar slot
-                Cursor          = Cursors.Hand,
-            };
+            bool active = cat.Id == _activeCategoryId;
 
-            var dock = new DockPanel { LastChildFill = true };
+            var tab = new Border
+            {
+                Cursor          = Cursors.Hand,
+                CornerRadius    = active ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6),
+                BorderThickness = active ? new Thickness(1, 1, 1, 0) : new Thickness(1, 1, 1, 1),
+                Margin          = active ? new Thickness(0, 0, 4, -1) : new Thickness(0, 2, 4, 1),
+                Padding         = new Thickness(10, 7, 10, 7),
+            };
+            tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+            if (active) tab.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
+            else        tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
 
             var glyph = new TextBlock
             {
                 Text              = cat.Glyph,
                 FontFamily        = new FontFamily(IconFont),
                 VerticalAlignment = VerticalAlignment.Center,
-                Width             = 18,
-                TextAlignment     = TextAlignment.Center,
-                Margin            = new Thickness(0, 0, 9, 0),
+                Margin            = new Thickness(0, 0, 7, 0),
             };
-            glyph.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineTextDim");
             glyph.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            DockPanel.SetDock(glyph, Dock.Left);
-
-            var count = new TextBlock
-            {
-                Text              = cat.Tools.Length.ToString(),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin            = new Thickness(8, 0, 0, 0),
-            };
-            count.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            count.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            count.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-            DockPanel.SetDock(count, Dock.Right);
 
             var name = new TextBlock
             {
-                Text              = cat.Name,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming      = TextTrimming.CharacterEllipsis,
+                Text                = cat.Name,
+                VerticalAlignment   = VerticalAlignment.Center,
+                TextTrimming        = TextTrimming.CharacterEllipsis,
+                FontWeight          = active ? FontWeights.SemiBold : FontWeights.Normal,
             };
-            name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
-            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            name.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineText" : "LemoineTextDim");
 
-            dock.Children.Add(glyph);
-            dock.Children.Add(count);
-            dock.Children.Add(name);
-            row.Child = dock;
-            _railText[cat.Id] = (name, glyph);
+            row.Children.Add(glyph);
+            row.Children.Add(name);
+            tab.Child = row;
 
-            row.MouseLeftButtonDown += (s, e) => SelectCategory(cat.Id);
-            row.MouseEnter += (s, e) =>
+            tab.MouseLeftButtonDown += (s, e) => SelectCategory(cat.Id);
+            tab.MouseEnter += (s, e) =>
             {
                 if (cat.Id != _activeCategoryId)
-                    row.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
+                    tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorderMid");
             };
-            row.MouseLeave += (s, e) =>
+            tab.MouseLeave += (s, e) =>
             {
                 if (cat.Id != _activeCategoryId)
-                    row.Background = Brushes.Transparent;
+                    tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
             };
-            return row;
+            return tab;
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // Body — cards (Row 2)
+        // ═════════════════════════════════════════════════════════════════════
+        private void BuildBody()
+        {
+            _cardsHost = new Border();
+            _bodyBorder.Child = _cardsHost;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -363,57 +257,34 @@ namespace LemoineTools.Framework
             if (cat == null) return;
             _activeCategoryId = categoryId;
 
-            StyleRailRows();
-            StyleStageChips();
+            StyleCategoryTabs();
             BuildCards(cat);
         }
 
-        private void StyleRailRows()
+        private void StyleCategoryTabs()
         {
             foreach (var cat in ToolsOverviewCatalog.Categories)
             {
-                if (!_railRows.TryGetValue(cat.Id, out var row)) continue;
+                if (!_catTabs.TryGetValue(cat.Id, out var tab)) continue;
                 bool active = cat.Id == _activeCategoryId;
 
-                if (active)
-                {
-                    row.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                    row.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                }
-                else
-                {
-                    row.Background   = Brushes.Transparent;
-                    row.BorderBrush  = Brushes.Transparent;
-                }
+                tab.CornerRadius    = active ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6);
+                tab.BorderThickness = active ? new Thickness(1, 1, 1, 0) : new Thickness(1, 1, 1, 1);
+                tab.Margin          = active ? new Thickness(0, 0, 4, -1) : new Thickness(0, 2, 4, 1);
+                tab.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                if (active) tab.SetResourceReference(Border.BackgroundProperty, "LemoineBg");
+                else        tab.SetResourceReference(Border.BackgroundProperty, "LemoineRaised");
 
-                if (_railText.TryGetValue(cat.Id, out var t))
+                if (tab.Child is StackPanel row && row.Children.Count >= 2)
                 {
-                    t.name.SetResourceReference(TextBlock.ForegroundProperty,  active ? "LemoineText"   : "LemoineTextSub");
-                    t.glyph.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineTextDim");
+                    if (row.Children[0] is TextBlock glyphTb)
+                        glyphTb.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineTextDim");
+                    if (row.Children[1] is TextBlock nameTb)
+                    {
+                        nameTb.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+                        nameTb.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineText" : "LemoineTextDim");
+                    }
                 }
-            }
-        }
-
-        private void StyleStageChips()
-        {
-            foreach (var stage in ToolsOverviewCatalog.Stages)
-            {
-                if (!_stageChips.TryGetValue(stage.Number, out var chip)) continue;
-                bool active = IsStageActive(stage);
-
-                if (active)
-                {
-                    chip.SetResourceReference(Border.BackgroundProperty,  "LemoineAccentDim");
-                    chip.SetResourceReference(Border.BorderBrushProperty, "LemoineAccent");
-                }
-                else
-                {
-                    chip.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-                    chip.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-                }
-
-                if (chip.Child is StackPanel sp && sp.Children.Count >= 2 && sp.Children[1] is TextBlock nameTb)
-                    nameTb.SetResourceReference(TextBlock.ForegroundProperty, active ? "LemoineAccent" : "LemoineText");
             }
         }
 
@@ -426,27 +297,8 @@ namespace LemoineTools.Framework
 
             var stack = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
 
-            // Header: category name + stage badge
+            // Header: category name
             var headerDock = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 3) };
-
-            var stage = ToolsOverviewCatalog.StageForCategory(cat.Id);
-            if (stage != null)
-            {
-                var badge = new Border
-                {
-                    CornerRadius = new CornerRadius(3),
-                    Padding      = new Thickness(7, 2, 7, 2),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                badge.SetResourceReference(Border.BackgroundProperty, "LemoineAccentDim");
-                var badgeTb = new TextBlock { Text = AppStrings.T("overview.window.stageBadge", stage.Number, stage.Name.ToUpperInvariant()) };
-                badgeTb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineAccent");
-                badgeTb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                badgeTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-                badge.Child = badgeTb;
-                DockPanel.SetDock(badge, Dock.Right);
-                headerDock.Children.Add(badge);
-            }
 
             var title = new TextBlock { Text = cat.Name, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
             title.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");

@@ -8,11 +8,18 @@ namespace LemoineTools.Framework
     //
     // This is the single source of truth for the on-screen guide: every tool's
     // blurb and its "feeds → / fed by ←" relationships live here, grouped into
-    // the eight ribbon categories and the six workflow stages. The window
-    // (ToolsOverviewWindow) only renders this data — it holds no copy of its own.
+    // the nine ribbon categories, in ribbon order (see App.cs's panel build
+    // order). The window (ToolsOverviewWindow) only renders this data — it
+    // holds no copy of its own.
     //
     // Glyphs are Segoe MDL2 Assets codepoints, built with char.ConvertFromUtf32
     // so the source stays plain ASCII (Edit-tool safe — see CLAUDE.md).
+    //
+    // A prior "workflow stage" grouping (six stages spanning the categories,
+    // shown as a strip above a left category rail) was removed — the categories
+    // already are the ribbon panels in ribbon order, so the stage layer was a
+    // redundant indirection once the window collapsed to a single tab strip
+    // driven directly by Categories (WS-11).
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>One tool entry shown as a card in the overview.</summary>
@@ -29,7 +36,7 @@ namespace LemoineTools.Framework
         public string   Example { get; set; } = "";
     }
 
-    /// <summary>One ribbon category (left-rail entry) holding its tools.</summary>
+    /// <summary>One ribbon category (tab strip entry) holding its tools.</summary>
     public sealed class OverviewCategory
     {
         public string         Id    { get; set; } = "";
@@ -40,43 +47,109 @@ namespace LemoineTools.Framework
         public OverviewTool[] Tools { get; set; } = Array.Empty<OverviewTool>();
     }
 
-    /// <summary>One workflow stage (top strip) spanning one or more categories.</summary>
-    public sealed class OverviewStage
-    {
-        public string   Number      { get; set; } = "";
-        public string   Name        { get; set; } = "";
-        public string   Tagline     { get; set; } = "";
-        /// <summary>Category ids that belong to this stage, in display order.</summary>
-        public string[] CategoryIds { get; set; } = Array.Empty<string>();
-    }
-
     public static class ToolsOverviewCatalog
     {
         private static string G(int cp) => char.ConvertFromUtf32(cp);
 
-        // ── Categories (left rail order = ribbon panel order) ─────────────────
+        // ── Categories (tab order = ribbon panel order) ────────────────────────
         public static readonly OverviewCategory[] Categories =
         {
             new OverviewCategory
             {
-                Id = "filters", Name = AppStrings.T("overview.cat.filters.name"), Glyph = G(0xE71C),
-                Intro = AppStrings.T("overview.cat.filters.intro"),
+                Id = "setup", Name = AppStrings.T("overview.cat.setup.name"), Glyph = G(0xE809),
+                Intro = AppStrings.T("overview.cat.setup.intro"),
                 Tools = new[]
                 {
                     new OverviewTool
                     {
-                        Name = AppStrings.T("overview.cat.filters.tools.autoFilters.name"), Glyph = G(0xE71C),
-                        Blurb = AppStrings.T("overview.cat.filters.tools.autoFilters.blurb"),
-                        FedBy = new[] { "Discover (auto-detect rules)", "Apply to Views" },
-                        Feeds = new[] { "Explode View by Trade", "Clash Definitions", "Ceiling Heatmap", "Legend Creation" },
-                        Example = AppStrings.T("overview.cat.filters.tools.autoFilters.example"),
+                        Name = AppStrings.T("overview.cat.setup.tools.upgradeLinks.name"), Glyph = G(0xE896),
+                        Blurb = AppStrings.T("overview.cat.setup.tools.upgradeLinks.blurb"),
+                        Feeds = new[] { "Align Coordinates" },
+                        Example = AppStrings.T("overview.cat.setup.tools.upgradeLinks.example"),
                     },
                     new OverviewTool
                     {
-                        Name = AppStrings.T("overview.cat.filters.tools.legendCreation.name"), Glyph = G(0xE713),
-                        Blurb = AppStrings.T("overview.cat.filters.tools.legendCreation.blurb"),
-                        FedBy = new[] { "Auto Filters" },
-                        Example = AppStrings.T("overview.cat.filters.tools.legendCreation.example"),
+                        Name = AppStrings.T("overview.cat.setup.tools.alignCoordinates.name"), Glyph = G(0xE809),
+                        Blurb = AppStrings.T("overview.cat.setup.tools.alignCoordinates.blurb"),
+                        FedBy = new[] { "Upgrade & Link Models" },
+                        Feeds = new[] { "Push Coordinates to Links", "Copy from Link", "Dimensioning" },
+                        Example = AppStrings.T("overview.cat.setup.tools.alignCoordinates.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.setup.tools.pushCoordinates.name"), Glyph = G(0xE896),
+                        Blurb = AppStrings.T("overview.cat.setup.tools.pushCoordinates.blurb"),
+                        FedBy = new[] { "Align Coordinates" },
+                        Example = AppStrings.T("overview.cat.setup.tools.pushCoordinates.example"),
+                    },
+                },
+            },
+
+            new OverviewCategory
+            {
+                Id = "copy", Name = AppStrings.T("overview.cat.copy.name"), Glyph = G(0xE71B),
+                Intro = AppStrings.T("overview.cat.copy.intro"),
+                Tools = new[]
+                {
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.copy.tools.linear.name"), Glyph = G(0xE71B),
+                        Blurb = AppStrings.T("overview.cat.copy.tools.linear.blurb"),
+                        Feeds = new[] { "Modify", "Dimensioning" },
+                        Example = AppStrings.T("overview.cat.copy.tools.linear.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.copy.tools.grids.name"), Glyph = G(0xE80A),
+                        Blurb = AppStrings.T("overview.cat.copy.tools.grids.blurb"),
+                        Example = AppStrings.T("overview.cat.copy.tools.grids.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.copy.tools.elements.name"), Glyph = G(0xE8B3),
+                        Blurb = AppStrings.T("overview.cat.copy.tools.elements.blurb"),
+                        Feeds = new[] { "Modify", "Dimensioning" },
+                        Example = AppStrings.T("overview.cat.copy.tools.elements.example"),
+                    },
+                },
+            },
+
+            new OverviewCategory
+            {
+                Id = "modify", Name = AppStrings.T("overview.cat.modify.name"), Glyph = G(0xE8C6),
+                Intro = AppStrings.T("overview.cat.modify.intro"),
+                Tools = new[]
+                {
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.modify.tools.splitLevels.name"), Glyph = G(0xE8C6),
+                        Blurb = AppStrings.T("overview.cat.modify.tools.splitLevels.blurb"),
+                        FedBy = new[] { "Copy from Link (host geometry)" },
+                        Example = AppStrings.T("overview.cat.modify.tools.splitLevels.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.modify.tools.splitGrid.name"), Glyph = G(0xE80A),
+                        Blurb = AppStrings.T("overview.cat.modify.tools.splitGrid.blurb"),
+                        Example = AppStrings.T("overview.cat.modify.tools.splitGrid.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.modify.tools.splitRefPlane.name"), Glyph = G(0xE8C6),
+                        Blurb = AppStrings.T("overview.cat.modify.tools.splitRefPlane.blurb"),
+                        Example = AppStrings.T("overview.cat.modify.tools.splitRefPlane.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.modify.tools.splitCell.name"), Glyph = G(0xE80A),
+                        Blurb = AppStrings.T("overview.cat.modify.tools.splitCell.blurb"),
+                        Example = AppStrings.T("overview.cat.modify.tools.splitCell.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.modify.tools.extendWalls.name"), Glyph = G(0xE898),
+                        Blurb = AppStrings.T("overview.cat.modify.tools.extendWalls.blurb"),
+                        Example = AppStrings.T("overview.cat.modify.tools.extendWalls.example"),
                     },
                 },
             },
@@ -127,28 +200,25 @@ namespace LemoineTools.Framework
                 {
                     new OverviewTool
                     {
-                        Name = AppStrings.T("overview.cat.views.tools.byLevel.name"), Glyph = G(0xE8B7),
-                        Blurb = AppStrings.T("overview.cat.views.tools.byLevel.blurb"),
+                        Name = AppStrings.T("overview.cat.views.tools.scopeBoxCreator.name"), Glyph = G(0xE7B8),
+                        Blurb = AppStrings.T("overview.cat.views.tools.scopeBoxCreator.blurb"),
+                        Feeds = new[] { "Bulk Views", "Scope Box Manager" },
+                        Example = AppStrings.T("overview.cat.views.tools.scopeBoxCreator.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.views.tools.scopeBoxManager.name"), Glyph = G(0xE8FD),
+                        Blurb = AppStrings.T("overview.cat.views.tools.scopeBoxManager.blurb"),
+                        FedBy = new[] { "Scope Box Creator" },
+                        Example = AppStrings.T("overview.cat.views.tools.scopeBoxManager.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.views.tools.bulkViews.name"), Glyph = G(0xE8A9),
+                        Blurb = AppStrings.T("overview.cat.views.tools.bulkViews.blurb"),
+                        FedBy = new[] { "Scope Box Creator" },
                         Feeds = new[] { "Place Dependent Views", "Sheets" },
-                        Example = AppStrings.T("overview.cat.views.tools.byLevel.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.views.tools.duplicate.name"), Glyph = G(0xE8C8),
-                        Blurb = AppStrings.T("overview.cat.views.tools.duplicate.blurb"),
-                        Example = AppStrings.T("overview.cat.views.tools.duplicate.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.views.tools.byTemplate.name"), Glyph = G(0xE8A9),
-                        Blurb = AppStrings.T("overview.cat.views.tools.byTemplate.blurb"),
-                        Example = AppStrings.T("overview.cat.views.tools.byTemplate.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.views.tools.dependents.name"), Glyph = G(0xE71B),
-                        Blurb = AppStrings.T("overview.cat.views.tools.dependents.blurb"),
-                        Example = AppStrings.T("overview.cat.views.tools.dependents.example"),
+                        Example = AppStrings.T("overview.cat.views.tools.bulkViews.example"),
                     },
                     new OverviewTool
                     {
@@ -156,6 +226,69 @@ namespace LemoineTools.Framework
                         Blurb = AppStrings.T("overview.cat.views.tools.explode.blurb"),
                         FedBy = new[] { "Auto Filters (trades)" },
                         Example = AppStrings.T("overview.cat.views.tools.explode.example"),
+                    },
+                },
+            },
+
+            new OverviewCategory
+            {
+                Id = "filters", Name = AppStrings.T("overview.cat.filters.name"), Glyph = G(0xE71C),
+                Intro = AppStrings.T("overview.cat.filters.intro"),
+                Tools = new[]
+                {
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.filters.tools.autoFilters.name"), Glyph = G(0xE71C),
+                        Blurb = AppStrings.T("overview.cat.filters.tools.autoFilters.blurb"),
+                        FedBy = new[] { "Discover (auto-detect rules)", "Apply to Views" },
+                        Feeds = new[] { "Explode View by Trade", "Clash Definitions", "Ceiling Heatmap", "Legend Creation" },
+                        Example = AppStrings.T("overview.cat.filters.tools.autoFilters.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.filters.tools.legendCreation.name"), Glyph = G(0xE713),
+                        Blurb = AppStrings.T("overview.cat.filters.tools.legendCreation.blurb"),
+                        FedBy = new[] { "Auto Filters" },
+                        Example = AppStrings.T("overview.cat.filters.tools.legendCreation.example"),
+                    },
+                },
+            },
+
+            new OverviewCategory
+            {
+                Id = "dimensioning", Name = AppStrings.T("overview.cat.dimensioning.name"), Glyph = G(0xE8FD),
+                Intro = AppStrings.T("overview.cat.dimensioning.intro"),
+                Tools = new[]
+                {
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.dimensioning.tools.definitions.name"), Glyph = G(0xE8FD),
+                        Blurb = AppStrings.T("overview.cat.dimensioning.tools.definitions.blurb"),
+                        FedBy = new[] { "Auto Filters (trades)" },
+                        Feeds = new[] { "Clash Finder & Dimension", "Clash Finder & Elevation" },
+                        Example = AppStrings.T("overview.cat.dimensioning.tools.definitions.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.dimensioning.tools.finderDim.name"), Glyph = G(0xE721),
+                        Blurb = AppStrings.T("overview.cat.dimensioning.tools.finderDim.blurb"),
+                        FedBy = new[] { "Clash Definitions" },
+                        Feeds = new[] { "Refine Dimensions", "Sheets" },
+                        Example = AppStrings.T("overview.cat.dimensioning.tools.finderDim.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.dimensioning.tools.finderElev.name"), Glyph = G(0xE898),
+                        Blurb = AppStrings.T("overview.cat.dimensioning.tools.finderElev.blurb"),
+                        FedBy = new[] { "Clash Definitions" },
+                        Example = AppStrings.T("overview.cat.dimensioning.tools.finderElev.example"),
+                    },
+                    new OverviewTool
+                    {
+                        Name = AppStrings.T("overview.cat.dimensioning.tools.refine.name"), Glyph = G(0xE70F),
+                        Blurb = AppStrings.T("overview.cat.dimensioning.tools.refine.blurb"),
+                        FedBy = new[] { "Clash Finder & Dimension (existing markers)" },
+                        Example = AppStrings.T("overview.cat.dimensioning.tools.refine.example"),
                     },
                 },
             },
@@ -170,7 +303,7 @@ namespace LemoineTools.Framework
                     {
                         Name = AppStrings.T("overview.cat.sheets.tools.placeDependent.name"), Glyph = G(0xE7C3),
                         Blurb = AppStrings.T("overview.cat.sheets.tools.placeDependent.blurb"),
-                        FedBy = new[] { "Views" },
+                        FedBy = new[] { "Bulk Views" },
                         Feeds = new[] { "Align Sheet Views", "Bulk Export" },
                         Example = AppStrings.T("overview.cat.sheets.tools.placeDependent.example"),
                     },
@@ -211,162 +344,10 @@ namespace LemoineTools.Framework
                     },
                 },
             },
-
-            new OverviewCategory
-            {
-                Id = "modify", Name = AppStrings.T("overview.cat.modify.name"), Glyph = G(0xE8C6),
-                Intro = AppStrings.T("overview.cat.modify.intro"),
-                Tools = new[]
-                {
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.modify.tools.splitLevels.name"), Glyph = G(0xE8C6),
-                        Blurb = AppStrings.T("overview.cat.modify.tools.splitLevels.blurb"),
-                        FedBy = new[] { "Copy from Link (host geometry)" },
-                        Example = AppStrings.T("overview.cat.modify.tools.splitLevels.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.modify.tools.splitGrid.name"), Glyph = G(0xE80A),
-                        Blurb = AppStrings.T("overview.cat.modify.tools.splitGrid.blurb"),
-                        Example = AppStrings.T("overview.cat.modify.tools.splitGrid.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.modify.tools.splitRefPlane.name"), Glyph = G(0xE8C6),
-                        Blurb = AppStrings.T("overview.cat.modify.tools.splitRefPlane.blurb"),
-                        Example = AppStrings.T("overview.cat.modify.tools.splitRefPlane.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.modify.tools.splitCell.name"), Glyph = G(0xE80A),
-                        Blurb = AppStrings.T("overview.cat.modify.tools.splitCell.blurb"),
-                        Example = AppStrings.T("overview.cat.modify.tools.splitCell.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.modify.tools.extendWalls.name"), Glyph = G(0xE898),
-                        Blurb = AppStrings.T("overview.cat.modify.tools.extendWalls.blurb"),
-                        Example = AppStrings.T("overview.cat.modify.tools.extendWalls.example"),
-                    },
-                },
-            },
-
-            new OverviewCategory
-            {
-                Id = "clash", Name = AppStrings.T("overview.cat.clash.name"), Glyph = G(0xE8FD),
-                Intro = AppStrings.T("overview.cat.clash.intro"),
-                Tools = new[]
-                {
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.clash.tools.definitions.name"), Glyph = G(0xE8FD),
-                        Blurb = AppStrings.T("overview.cat.clash.tools.definitions.blurb"),
-                        FedBy = new[] { "Auto Filters (trades)" },
-                        Feeds = new[] { "Clash Finder & Dimension", "Clash Finder & Elevation" },
-                        Example = AppStrings.T("overview.cat.clash.tools.definitions.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.clash.tools.finderDim.name"), Glyph = G(0xE721),
-                        Blurb = AppStrings.T("overview.cat.clash.tools.finderDim.blurb"),
-                        FedBy = new[] { "Clash Definitions" },
-                        Feeds = new[] { "Refine Dimensions", "Sheets" },
-                        Example = AppStrings.T("overview.cat.clash.tools.finderDim.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.clash.tools.finderElev.name"), Glyph = G(0xE898),
-                        Blurb = AppStrings.T("overview.cat.clash.tools.finderElev.blurb"),
-                        FedBy = new[] { "Clash Definitions" },
-                        Example = AppStrings.T("overview.cat.clash.tools.finderElev.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.clash.tools.refine.name"), Glyph = G(0xE70F),
-                        Blurb = AppStrings.T("overview.cat.clash.tools.refine.blurb"),
-                        FedBy = new[] { "Clash Finder & Dimension (existing markers)" },
-                        Example = AppStrings.T("overview.cat.clash.tools.refine.example"),
-                    },
-                },
-            },
-
-            new OverviewCategory
-            {
-                Id = "copy", Name = AppStrings.T("overview.cat.copy.name"), Glyph = G(0xE71B),
-                Intro = AppStrings.T("overview.cat.copy.intro"),
-                Tools = new[]
-                {
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.copy.tools.linear.name"), Glyph = G(0xE71B),
-                        Blurb = AppStrings.T("overview.cat.copy.tools.linear.blurb"),
-                        Feeds = new[] { "Modify", "Dimensioning" },
-                        Example = AppStrings.T("overview.cat.copy.tools.linear.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.copy.tools.grids.name"), Glyph = G(0xE80A),
-                        Blurb = AppStrings.T("overview.cat.copy.tools.grids.blurb"),
-                        Example = AppStrings.T("overview.cat.copy.tools.grids.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.copy.tools.elements.name"), Glyph = G(0xE8B3),
-                        Blurb = AppStrings.T("overview.cat.copy.tools.elements.blurb"),
-                        Feeds = new[] { "Modify", "Dimensioning" },
-                        Example = AppStrings.T("overview.cat.copy.tools.elements.example"),
-                    },
-                },
-            },
-
-            new OverviewCategory
-            {
-                Id = "coordination", Name = AppStrings.T("overview.cat.coordination.name"), Glyph = G(0xE809),
-                Intro = AppStrings.T("overview.cat.coordination.intro"),
-                Tools = new[]
-                {
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.coordination.tools.linkAudit.name"), Glyph = G(0xE9D9),
-                        Blurb = AppStrings.T("overview.cat.coordination.tools.linkAudit.blurb"),
-                        Example = AppStrings.T("overview.cat.coordination.tools.linkAudit.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.coordination.tools.alignCoordinates.name"), Glyph = G(0xE809),
-                        Blurb = AppStrings.T("overview.cat.coordination.tools.alignCoordinates.blurb"),
-                        Feeds = new[] { "Compare Grids", "Copy from Link", "Dimensioning" },
-                        Example = AppStrings.T("overview.cat.coordination.tools.alignCoordinates.example"),
-                    },
-                    new OverviewTool
-                    {
-                        Name = AppStrings.T("overview.cat.coordination.tools.compareGrids.name"), Glyph = G(0xE80A),
-                        Blurb = AppStrings.T("overview.cat.coordination.tools.compareGrids.blurb"),
-                        FedBy = new[] { "Align Coordinates" },
-                        Example = AppStrings.T("overview.cat.coordination.tools.compareGrids.example"),
-                    },
-                },
-            },
-        };
-
-        // ── Workflow stages (top strip order) ─────────────────────────────────
-        public static readonly OverviewStage[] Stages =
-        {
-            new OverviewStage { Number = "01", Name = AppStrings.T("overview.stages.s01.name"),        Tagline = AppStrings.T("overview.stages.s01.tagline"), CategoryIds = new[] { "filters", "copy", "coordination" } },
-            new OverviewStage { Number = "02", Name = AppStrings.T("overview.stages.s02.name"), Tagline = AppStrings.T("overview.stages.s02.tagline"),                        CategoryIds = new[] { "modify" } },
-            new OverviewStage { Number = "03", Name = AppStrings.T("overview.stages.s03.name"),   Tagline = AppStrings.T("overview.stages.s03.tagline"),         CategoryIds = new[] { "views", "ceilings" } },
-            new OverviewStage { Number = "04", Name = AppStrings.T("overview.stages.s04.name"),    Tagline = AppStrings.T("overview.stages.s04.tagline"),                         CategoryIds = new[] { "clash" } },
-            new OverviewStage { Number = "05", Name = AppStrings.T("overview.stages.s05.name"),      Tagline = AppStrings.T("overview.stages.s05.tagline"),                        CategoryIds = new[] { "sheets" } },
-            new OverviewStage { Number = "06", Name = AppStrings.T("overview.stages.s06.name"),        Tagline = AppStrings.T("overview.stages.s06.tagline"),                        CategoryIds = new[] { "export" } },
         };
 
         /// <summary>The category for an id, or null if unknown.</summary>
         public static OverviewCategory? FindCategory(string id) =>
             Categories.FirstOrDefault(c => c.Id == id);
-
-        /// <summary>The stage that owns a given category, or null.</summary>
-        public static OverviewStage? StageForCategory(string categoryId) =>
-            Stages.FirstOrDefault(s => s.CategoryIds.Contains(categoryId));
     }
 }
