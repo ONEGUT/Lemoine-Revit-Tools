@@ -34,177 +34,179 @@ namespace LemoineTools.Framework
             var panel = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
 
             panel.Children.Add(ContentHeader(AppStrings.T("globalSettings.dim.header")));
-            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.finderSub")));
             panel.Children.Add(DimIntro(AppStrings.T("globalSettings.dim.intro")));
 
-            // ── Run defaults ─────────────────────────────────────────────────
-            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.runDefaults")));
-
-            var destPicker = new SingleSelect
+            panel.Children.Add(ToolSection.Build(AppStrings.T("globalSettings.dim.finderSub"), body =>
             {
-                Label        = AppStrings.T("globalSettings.dim.defaultDest"),
-                Items        = new List<string> { DimGridDisplay, DimSlabDisplay, DimManualDisplay },
-                SelectedItem = cfg.TargetType == "SlabEdge" ? DimSlabDisplay
-                             : cfg.TargetType == "ManualDatum" ? DimManualDisplay : DimGridDisplay,
-            };
-            destPicker.SelectionChanged += sel =>
-            {
-                cfg.TargetType = sel == DimSlabDisplay ? "SlabEdge"
-                               : sel == DimManualDisplay ? "ManualDatum" : "Grid";
-                cfg.Save();
-            };
-            panel.Children.Add(destPicker);
-            panel.Children.Add(new FrameworkElement { Height = 8 });
+                // ── Run defaults ─────────────────────────────────────────────
+                body.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.runDefaults")));
 
-            var runToggles = new ToggleSwitches();
-            runToggles.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem { Id = "chain", Label = AppStrings.T("globalSettings.dim.chainLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.chainDesc"),
-                                 DefaultOn = cfg.ChainAligned },
-                new ToggleItem { Id = "density", Label = AppStrings.T("globalSettings.dim.densityLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.densityDesc"),
-                                 DefaultOn = cfg.DensityChaining },
-                new ToggleItem { Id = "callouts", Label = AppStrings.T("globalSettings.dim.calloutsLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.calloutsDesc"),
-                                 DefaultOn = cfg.DenseCalloutsEnabled },
-                new ToggleItem { Id = "bothAxes", Label = AppStrings.T("globalSettings.dim.bothAxesLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.bothAxesDesc"),
-                                 DefaultOn = cfg.DimensionBothAxes },
-                new ToggleItem { Id = "links", Label = AppStrings.T("globalSettings.dim.linksLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.linksDesc"),
-                                 DefaultOn = cfg.IncludeLinks },
-                new ToggleItem { Id = "slabDiag", Label = AppStrings.T("globalSettings.dim.slabDiagLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.slabDiagDesc"),
-                                 DefaultOn = cfg.DiagnoseSlabEdge },
-            });
-            runToggles.StateChanged += state =>
-            {
-                if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned      = c;
-                if (state.TryGetValue("density",  out var dc)) cfg.DensityChaining  = dc;
-                if (state.TryGetValue("callouts", out var co)) cfg.DenseCalloutsEnabled = co;
-                if (state.TryGetValue("bothAxes", out var b)) cfg.DimensionBothAxes = b;
-                if (state.TryGetValue("links",    out var l)) cfg.IncludeLinks      = l;
-                if (state.TryGetValue("slabDiag", out var d)) cfg.DiagnoseSlabEdge  = d;
-                cfg.Save();
-            };
-            panel.Children.Add(runToggles);
+                var destPicker = new SingleSelect
+                {
+                    Label        = AppStrings.T("globalSettings.dim.defaultDest"),
+                    Items        = new List<string> { DimGridDisplay, DimSlabDisplay, DimManualDisplay },
+                    SelectedItem = cfg.TargetType == "SlabEdge" ? DimSlabDisplay
+                                 : cfg.TargetType == "ManualDatum" ? DimManualDisplay : DimGridDisplay,
+                };
+                destPicker.SelectionChanged += sel =>
+                {
+                    cfg.TargetType = sel == DimSlabDisplay ? "SlabEdge"
+                                   : sel == DimManualDisplay ? "ManualDatum" : "Grid";
+                    cfg.Save();
+                };
+                body.Children.Add(destPicker);
+                body.Children.Add(new FrameworkElement { Height = 8 });
 
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.clusterDist"),
-                AppStrings.T("globalSettings.dim.clusterDistDesc"),
-                cfg.ClusterLinkPaperIn, 0, 4, 0.0625, 4,
-                v => { cfg.ClusterLinkPaperIn = v; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.runLineTol"),
-                AppStrings.T("globalSettings.dim.runLineTolDesc"),
-                cfg.RunCrossPaperIn, 0, 1, 0.03125, 5,
-                v => { cfg.RunCrossPaperIn = v; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.calloutMin"),
-                AppStrings.T("globalSettings.dim.calloutMinDesc"),
-                cfg.CalloutMinClashes, 2, 50, 1, 0,
-                v => { cfg.CalloutMinClashes = (int)Math.Round(v); cfg.Save(); });
+                var runToggles = new ToggleSwitches();
+                runToggles.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem { Id = "chain", Label = AppStrings.T("globalSettings.dim.chainLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.chainDesc"),
+                                     DefaultOn = cfg.ChainAligned },
+                    new ToggleItem { Id = "density", Label = AppStrings.T("globalSettings.dim.densityLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.densityDesc"),
+                                     DefaultOn = cfg.DensityChaining },
+                    new ToggleItem { Id = "callouts", Label = AppStrings.T("globalSettings.dim.calloutsLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.calloutsDesc"),
+                                     DefaultOn = cfg.DenseCalloutsEnabled },
+                    new ToggleItem { Id = "bothAxes", Label = AppStrings.T("globalSettings.dim.bothAxesLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.bothAxesDesc"),
+                                     DefaultOn = cfg.DimensionBothAxes },
+                    new ToggleItem { Id = "links", Label = AppStrings.T("globalSettings.dim.linksLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.linksDesc"),
+                                     DefaultOn = cfg.IncludeLinks },
+                    new ToggleItem { Id = "slabDiag", Label = AppStrings.T("globalSettings.dim.slabDiagLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.slabDiagDesc"),
+                                     DefaultOn = cfg.DiagnoseSlabEdge },
+                });
+                runToggles.StateChanged += state =>
+                {
+                    if (state.TryGetValue("chain",    out var c)) cfg.ChainAligned      = c;
+                    if (state.TryGetValue("density",  out var dc)) cfg.DensityChaining  = dc;
+                    if (state.TryGetValue("callouts", out var co)) cfg.DenseCalloutsEnabled = co;
+                    if (state.TryGetValue("bothAxes", out var b)) cfg.DimensionBothAxes = b;
+                    if (state.TryGetValue("links",    out var l)) cfg.IncludeLinks      = l;
+                    if (state.TryGetValue("slabDiag", out var d)) cfg.DiagnoseSlabEdge  = d;
+                    cfg.Save();
+                };
+                body.Children.Add(runToggles);
 
-            var clashSettings = ClashDimensionSettings.Instance;
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.storeyMargin"),
-                AppStrings.T("globalSettings.dim.storeyMarginDesc"),
-                clashSettings.StoreyMarginMm / 304.8, 0, 12, 0.5, 2,
-                v => { clashSettings.StoreyMarginMm = v * 304.8; clashSettings.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.clusterDist"),
+                    AppStrings.T("globalSettings.dim.clusterDistDesc"),
+                    cfg.ClusterLinkPaperIn, 0, 4, 0.0625, 4,
+                    v => { cfg.ClusterLinkPaperIn = v; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.runLineTol"),
+                    AppStrings.T("globalSettings.dim.runLineTolDesc"),
+                    cfg.RunCrossPaperIn, 0, 1, 0.03125, 5,
+                    v => { cfg.RunCrossPaperIn = v; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.calloutMin"),
+                    AppStrings.T("globalSettings.dim.calloutMinDesc"),
+                    cfg.CalloutMinClashes, 2, 50, 1, 0,
+                    v => { cfg.CalloutMinClashes = (int)Math.Round(v); cfg.Save(); });
 
-            panel.Children.Add(HSep(12));
+                var clashSettings = ClashDimensionSettings.Instance;
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.storeyMargin"),
+                    AppStrings.T("globalSettings.dim.storeyMarginDesc"),
+                    clashSettings.StoreyMarginMm / 304.8, 0, 12, 0.5, 2,
+                    v => { clashSettings.StoreyMarginMm = v * 304.8; clashSettings.Save(); });
 
-            // ── Target resolution ────────────────────────────────────────────
-            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.targetRes")));
+                body.Children.Add(HSep(12));
 
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.maxDist"),
-                AppStrings.T("globalSettings.dim.maxDistDesc"),
-                cfg.MaxDistanceFt, 1, 200, 1, 1,
-                v => { cfg.MaxDistanceFt = v; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.axisTol"),
-                AppStrings.T("globalSettings.dim.axisTolDesc"),
-                cfg.AxisToleranceDeg, 0, 45, 1, 1,
-                v => { cfg.AxisToleranceDeg = v; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.ambiguity"),
-                AppStrings.T("globalSettings.dim.ambiguityDesc"),
-                cfg.AmbiguityThresholdFt * 12.0, 0, 12, 0.25, 2,
-                v => { cfg.AmbiguityThresholdFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.slabAxisW"),
-                AppStrings.T("globalSettings.dim.slabAxisWDesc"),
-                cfg.SlabAxisWeight, 0, 1, 0.01, 2,
-                v => { cfg.SlabAxisWeight = v; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.slabLenW"),
-                AppStrings.T("globalSettings.dim.slabLenWDesc"),
-                cfg.SlabLengthWeight, 0, 1, 0.01, 2,
-                v => { cfg.SlabLengthWeight = v; cfg.Save(); });
+                // ── Target resolution ────────────────────────────────────────
+                body.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.targetRes")));
 
-            panel.Children.Add(DimRowLabel(AppStrings.T("globalSettings.dim.dimTypeName")));
-            var typeBox = new TextBox { Text = cfg.DimensionTypeName, Width = 240,
-                                        HorizontalAlignment = HorizontalAlignment.Left };
-            typeBox.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
-            typeBox.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
-            typeBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
-            typeBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
-            typeBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
-            typeBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
-            typeBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
-            typeBox.TextChanged += (s, e) => { cfg.DimensionTypeName = typeBox.Text ?? ""; cfg.Save(); };
-            panel.Children.Add(typeBox);
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.maxDist"),
+                    AppStrings.T("globalSettings.dim.maxDistDesc"),
+                    cfg.MaxDistanceFt, 1, 200, 1, 1,
+                    v => { cfg.MaxDistanceFt = v; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.axisTol"),
+                    AppStrings.T("globalSettings.dim.axisTolDesc"),
+                    cfg.AxisToleranceDeg, 0, 45, 1, 1,
+                    v => { cfg.AxisToleranceDeg = v; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.ambiguity"),
+                    AppStrings.T("globalSettings.dim.ambiguityDesc"),
+                    cfg.AmbiguityThresholdFt * 12.0, 0, 12, 0.25, 2,
+                    v => { cfg.AmbiguityThresholdFt = v / 12.0; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.slabAxisW"),
+                    AppStrings.T("globalSettings.dim.slabAxisWDesc"),
+                    cfg.SlabAxisWeight, 0, 1, 0.01, 2,
+                    v => { cfg.SlabAxisWeight = v; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.slabLenW"),
+                    AppStrings.T("globalSettings.dim.slabLenWDesc"),
+                    cfg.SlabLengthWeight, 0, 1, 0.01, 2,
+                    v => { cfg.SlabLengthWeight = v; cfg.Save(); });
 
-            panel.Children.Add(HSep(12));
+                body.Children.Add(DimRowLabel(AppStrings.T("globalSettings.dim.dimTypeName")));
+                var typeBox = new TextBox { Text = cfg.DimensionTypeName, Width = 240,
+                                            HorizontalAlignment = HorizontalAlignment.Left };
+                typeBox.SetResourceReference(FrameworkElement.HeightProperty,                 "LemoineH_Input");
+                typeBox.SetResourceReference(System.Windows.Controls.Control.PaddingProperty, "LemoineTh_InputPad");
+                typeBox.SetResourceReference(TextBox.ForegroundProperty,  "LemoineText");
+                typeBox.SetResourceReference(TextBox.BackgroundProperty,  "LemoineSelectBg");
+                typeBox.SetResourceReference(TextBox.FontSizeProperty,    "LemoineFS_SM");
+                typeBox.SetResourceReference(TextBox.FontFamilyProperty,  "LemoineMonoFont");
+                typeBox.SetResourceReference(TextBox.BorderBrushProperty, "LemoineBorder");
+                typeBox.TextChanged += (s, e) => { cfg.DimensionTypeName = typeBox.Text ?? ""; cfg.Save(); };
+                body.Children.Add(typeBox);
 
-            // ── Layout spacing (paper-space, inches) ─────────────────────────
-            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.layoutSpacing")));
+                body.Children.Add(HSep(12));
 
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.firstOffset"),
-                AppStrings.T("globalSettings.dim.firstOffsetDesc"),
-                cfg.Layout.FirstOffsetFt * 12.0, 0, 2, 0.0625, 4,
-                v => { cfg.Layout.FirstOffsetFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.stringSpacing"),
-                AppStrings.T("globalSettings.dim.stringSpacingDesc"),
-                cfg.Layout.StringSpacingFt * 12.0, 0, 2, 0.0625, 4,
-                v => { cfg.Layout.StringSpacingFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.roundingPrec"),
-                AppStrings.T("globalSettings.dim.roundingPrecDesc"),
-                cfg.Layout.PrecisionFt * 12.0, 0, 2, 0.0625, 4,
-                v => { cfg.Layout.PrecisionFt = v / 12.0; cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.textHeight"),
-                AppStrings.T("globalSettings.dim.textHeightDesc"),
-                cfg.Layout.TextHeightFt * 12.0, 0.03125, 1, 0.015625, 4,
-                v => { cfg.Layout.TextHeightFt = v / 12.0; cfg.Save(); });
+                // ── Layout spacing (paper-space, inches) ─────────────────────
+                body.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.layoutSpacing")));
 
-            panel.Children.Add(HSep(12));
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.firstOffset"),
+                    AppStrings.T("globalSettings.dim.firstOffsetDesc"),
+                    cfg.Layout.FirstOffsetFt * 12.0, 0, 2, 0.0625, 4,
+                    v => { cfg.Layout.FirstOffsetFt = v / 12.0; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.stringSpacing"),
+                    AppStrings.T("globalSettings.dim.stringSpacingDesc"),
+                    cfg.Layout.StringSpacingFt * 12.0, 0, 2, 0.0625, 4,
+                    v => { cfg.Layout.StringSpacingFt = v / 12.0; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.roundingPrec"),
+                    AppStrings.T("globalSettings.dim.roundingPrecDesc"),
+                    cfg.Layout.PrecisionFt * 12.0, 0, 2, 0.0625, 4,
+                    v => { cfg.Layout.PrecisionFt = v / 12.0; cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.textHeight"),
+                    AppStrings.T("globalSettings.dim.textHeightDesc"),
+                    cfg.Layout.TextHeightFt * 12.0, 0.03125, 1, 0.015625, 4,
+                    v => { cfg.Layout.TextHeightFt = v / 12.0; cfg.Save(); });
 
-            // ── Advanced layout ──────────────────────────────────────────────
-            panel.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.advLayout")));
+                body.Children.Add(HSep(12));
 
-            var layoutToggles = new ToggleSwitches();
-            layoutToggles.SetItems(new List<ToggleItem>
-            {
-                new ToggleItem { Id = "alignRows", Label = AppStrings.T("globalSettings.dim.alignRowsLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.alignRowsDesc"),
-                                 DefaultOn = cfg.Layout.AlignSharedRows },
-                new ToggleItem { Id = "stagger", Label = AppStrings.T("globalSettings.dim.staggerLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.staggerDesc"),
-                                 DefaultOn = cfg.Layout.StaggerStackedText },
-                new ToggleItem { Id = "snapshot", Label = AppStrings.T("globalSettings.dim.snapshotLabel"),
-                                 Desc = AppStrings.T("globalSettings.dim.snapshotDesc"),
-                                 DefaultOn = cfg.DumpLayoutSnapshots },
-            });
-            layoutToggles.StateChanged += state =>
-            {
-                if (state.TryGetValue("alignRows", out var a)) cfg.Layout.AlignSharedRows    = a;
-                if (state.TryGetValue("stagger",   out var s)) cfg.Layout.StaggerStackedText = s;
-                if (state.TryGetValue("snapshot",  out var d)) cfg.DumpLayoutSnapshots       = d;
-                cfg.Save();
-            };
-            panel.Children.Add(layoutToggles);
+                // ── Advanced layout ──────────────────────────────────────────
+                body.Children.Add(SubLabel(AppStrings.T("globalSettings.dim.advLayout")));
 
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.maxStackedRows"),
-                AppStrings.T("globalSettings.dim.maxStackedRowsDesc"),
-                cfg.Layout.MaxOffsetSteps, 1, 20, 1, 0,
-                v => { cfg.Layout.MaxOffsetSteps = (int)Math.Round(v); cfg.Save(); });
-            AddCfgStepper(panel, AppStrings.T("globalSettings.dim.repairPasses"),
-                AppStrings.T("globalSettings.dim.repairPassesDesc"),
-                cfg.Layout.MaxRepairPasses, 0, 10, 1, 0,
-                v => { cfg.Layout.MaxRepairPasses = (int)Math.Round(v); cfg.Save(); });
+                var layoutToggles = new ToggleSwitches();
+                layoutToggles.SetItems(new List<ToggleItem>
+                {
+                    new ToggleItem { Id = "alignRows", Label = AppStrings.T("globalSettings.dim.alignRowsLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.alignRowsDesc"),
+                                     DefaultOn = cfg.Layout.AlignSharedRows },
+                    new ToggleItem { Id = "stagger", Label = AppStrings.T("globalSettings.dim.staggerLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.staggerDesc"),
+                                     DefaultOn = cfg.Layout.StaggerStackedText },
+                    new ToggleItem { Id = "snapshot", Label = AppStrings.T("globalSettings.dim.snapshotLabel"),
+                                     Desc = AppStrings.T("globalSettings.dim.snapshotDesc"),
+                                     DefaultOn = cfg.DumpLayoutSnapshots },
+                });
+                layoutToggles.StateChanged += state =>
+                {
+                    if (state.TryGetValue("alignRows", out var a)) cfg.Layout.AlignSharedRows    = a;
+                    if (state.TryGetValue("stagger",   out var s)) cfg.Layout.StaggerStackedText = s;
+                    if (state.TryGetValue("snapshot",  out var d)) cfg.DumpLayoutSnapshots       = d;
+                    cfg.Save();
+                };
+                body.Children.Add(layoutToggles);
+
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.maxStackedRows"),
+                    AppStrings.T("globalSettings.dim.maxStackedRowsDesc"),
+                    cfg.Layout.MaxOffsetSteps, 1, 20, 1, 0,
+                    v => { cfg.Layout.MaxOffsetSteps = (int)Math.Round(v); cfg.Save(); });
+                AddCfgStepper(body, AppStrings.T("globalSettings.dim.repairPasses"),
+                    AppStrings.T("globalSettings.dim.repairPassesDesc"),
+                    cfg.Layout.MaxRepairPasses, 0, 10, 1, 0,
+                    v => { cfg.Layout.MaxRepairPasses = (int)Math.Round(v); cfg.Save(); });
+            }));
 
             scroll.Content = panel;
             return scroll;
