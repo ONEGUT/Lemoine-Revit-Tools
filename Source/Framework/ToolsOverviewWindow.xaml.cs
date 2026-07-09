@@ -342,7 +342,7 @@ namespace LemoineTools.Framework
         private static string Slug(string name)
         {
             var chars = name.ToLowerInvariant().Where(c => char.IsLetterOrDigit(c) || c == ' ').ToArray();
-            return string.Join("-", new string(chars).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            return string.Join("-", new string(chars).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
         }
 
         private Border BuildCard(OverviewTool tool)
