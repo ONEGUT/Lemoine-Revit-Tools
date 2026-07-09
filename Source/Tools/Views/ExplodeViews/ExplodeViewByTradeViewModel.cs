@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 using WpfTextBlock = System.Windows.Controls.TextBlock;
 
 namespace LemoineTools.Tools.ExplodeViews
@@ -58,6 +59,18 @@ namespace LemoineTools.Tools.ExplodeViews
         private bool _numberPrefix      = true;
         private bool _applyColorOverride = true;
         private bool _hideOthers        = false;
+
+        // ── Naming ──────────────────────────────────────────────────────
+        private const string ToolId         = "views.explodeByTrade";
+        private const string DefaultPattern = "{Counter}_{SourceView} - {Trade}";
+        private string _namePattern = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
+
+        private static readonly TokenDefinition[] ExplodeComputedTokens =
+        {
+            new TokenDefinition("Counter",    AppStrings.T("naming.computed.explodeByTrade.counter.label"),    TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+            new TokenDefinition("SourceView", AppStrings.T("naming.computed.explodeByTrade.sourceView.label"), TokenOrigin.Computed, TokenSubject.Source, TokenEntity.View),
+            new TokenDefinition("Trade",      AppStrings.T("naming.computed.explodeByTrade.trade.label"),      TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+        };
 
         // ── Validation ───────────────────────────────────────────────────────────
         public event EventHandler? ValidationChanged;
@@ -217,7 +230,43 @@ namespace LemoineTools.Tools.ExplodeViews
                 _hideOthers         = state.TryGetValue("hide",   out bool hv) && hv;
                 OnValidationChanged();
             };
-            return tog;
+
+            var outer = new StackPanel();
+            outer.Children.Add(tog);
+
+            var patLabel = new WpfTextBlock { Text = AppStrings.T("explode.byTrade.labels.namePattern"), Margin = new Thickness(0, 14, 0, 6) };
+            patLabel.SetResourceReference(WpfTextBlock.FontSizeProperty,   "LemoineFS_SM");
+            patLabel.SetResourceReference(WpfTextBlock.ForegroundProperty, "LemoineTextDim");
+            patLabel.SetResourceReference(WpfTextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(patLabel);
+
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: true, ExplodeComputedTokens);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namePattern };
+            tokenInput.SetPreview(pattern =>
+            {
+                string srcName = SourceViewName() ?? AppStrings.T("explode.byTrade.labels.exSource");
+                string trade   = _labelToTradeId
+                    .Where(kv => _selectedTradeIds.Contains(kv.Value))
+                    .Select(kv => kv.Key)
+                    .FirstOrDefault()
+                    ?? AppStrings.T("explode.byTrade.labels.exTrade");
+
+                var ctx = new TokenContext();
+                ctx.Computed["Counter"]    = _numberPrefix ? "01" : "";
+                ctx.Computed["SourceView"] = srcName;
+                ctx.Computed["Trade"]      = trade;
+                string resolved = TokenResolver.Resolve(pattern, ctx);
+                return resolved.Trim().TrimStart('_', ' ', '-').Trim();
+            });
+            tokenInput.TextChanged += (s, e) =>
+            {
+                _namePattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ToolId, _namePattern);
+            };
+            ValidationChanged += (s, e) => tokenInput.RefreshPreview();
+            outer.Children.Add(tokenInput);
+
+            return outer;
         }
 
         // ── Review (IReviewableTool) ────────────────────────────────────────
@@ -293,6 +342,7 @@ namespace LemoineTools.Tools.ExplodeViews
             _handler.NumberPrefix        = _numberPrefix;
             _handler.ApplyColorOverride  = _applyColorOverride;
             _handler.HideOthers          = _hideOthers;
+            _handler.NamePattern         = _namePattern;
             _handler.PushLog             = pushLog;
             _handler.OnProgress          = onProgress;
             _handler.OnComplete          = onComplete;

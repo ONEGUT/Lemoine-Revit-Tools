@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -45,10 +46,22 @@ namespace LemoineTools.Tools.ScopeBoxes
         private const string ModeFullHeight = "FullHeight";
         private const string ModePerLevel   = "PerLevel";
 
-        // Naming token vocabulary shown in the slot dropdowns (logic identifiers).
-        private static readonly string[] NamingTokens =
+        // ── Naming ──────────────────────────────────────────────────────
+        private const string ToolId         = "scopeBoxes.creator";
+        private const string DefaultPattern = "{BuildingLetter} - {LevelRange}";
+
+        // Scope boxes are neither Sheets nor Views — TokenEntity only models those two, so
+        // scope-box tools query TokensFor(TokenEntity.Any, ...): that surfaces only the
+        // entity-agnostic built-ins (Year/Month/Day/ProjectNumber/ProjectName/CurrentName)
+        // plus these Computed tokens (also Entity=Any so they aren't filtered out), and no
+        // Sheet/View-bound user token ever leaks in (the settings page only ever creates
+        // those two entities).
+        private static readonly TokenDefinition[] ScopeBoxComputedTokens =
         {
-            "None", "Building Letter", "Level", "Level Range", "Model Name", "Custom",
+            new TokenDefinition("BuildingLetter", AppStrings.T("naming.computed.scopeBoxes.buildingLetter.label"), TokenOrigin.Computed, TokenSubject.Target, TokenEntity.Any),
+            new TokenDefinition("LevelName",       AppStrings.T("naming.computed.scopeBoxes.levelName.label"),      TokenOrigin.Computed, TokenSubject.Target, TokenEntity.Any),
+            new TokenDefinition("LevelRange",      AppStrings.T("naming.computed.scopeBoxes.levelRange.label"),     TokenOrigin.Computed, TokenSubject.Target, TokenEntity.Any),
+            new TokenDefinition("ModelName",       AppStrings.T("naming.computed.scopeBoxes.modelName.label"),      TokenOrigin.Computed, TokenSubject.Target, TokenEntity.Any),
         };
 
         // Live cluster-count preview is skipped above this many rooms — union-find is
@@ -69,12 +82,7 @@ namespace LemoineTools.Tools.ScopeBoxes
         private ElementId            _seedBoxId         = ElementId.InvalidElementId;
         private bool                 _scanning          = false;
         private bool                 _scanDone          = false;
-        private readonly NamingSlotsState _naming = new NamingSlotsState
-        {
-            Front  = "Building Letter",
-            Center = "Level Range",
-            End    = "None",
-        };
+        private string _namePattern = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
 
         // S2/S3 live-update handles
         private StackPanel? _s2Container;
@@ -509,12 +517,19 @@ namespace LemoineTools.Tools.ScopeBoxes
 
             PopulateSeedSelect();
 
-            // ── Naming slots ───────────────────────────────────────────
+            // ── Naming pattern ─────────────────────────────────────────
             AddDimHeader(outer, AppStrings.T("scopeBoxes.creator.labels.namingHeader"));
 
-            var slots = new NamingSlots(NamingTokens, _naming);
-            slots.Changed += () => { UpdateNamePreview(); OnValidationChanged(); };
-            outer.Children.Add(slots);
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.Any, hasSource: false, ScopeBoxComputedTokens);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namePattern };
+            tokenInput.TextChanged += (s, e) =>
+            {
+                _namePattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ToolId, _namePattern);
+                UpdateNamePreview();
+                OnValidationChanged();
+            };
+            outer.Children.Add(tokenInput);
 
             var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 4, 0, 10) };
             sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
@@ -633,30 +648,22 @@ namespace LemoineTools.Tools.ScopeBoxes
                 .OrderByDescending(g => g.Count())
                 .FirstOrDefault()?.Key ?? "Architecture";
 
-            string Resolve(string letter) => string.Join(" - ", ResolvePartsFor(letter, first, range, model));
+            string Resolve(string letter)
+            {
+                var ctx = new TokenContext();
+                ctx.Computed["BuildingLetter"] = letter;
+                ctx.Computed["LevelName"]      = first;
+                ctx.Computed["LevelRange"]     = range;
+                ctx.Computed["ModelName"]      = model;
+                string resolved = TokenResolver.Resolve(_namePattern, ctx);
+                return TokenResolver.GuardDegenerate(resolved, ctx, $"{letter} - {range}", null);
+            }
 
             string a = Resolve("A");
             string b = Resolve("B");
             _namePreviewText.Text = a == b
                 ? a
                 : AppStrings.T("scopeBoxes.creator.labels.previewTwo", a, b);
-        }
-
-        private List<string> ResolvePartsFor(string letter, string level, string range, string model)
-        {
-            var parts = _naming.ResolveParts(token =>
-            {
-                switch (token)
-                {
-                    case "Building Letter": return letter;
-                    case "Level":           return level;
-                    case "Level Range":     return range;
-                    case "Model Name":      return model;
-                    default:                return "";
-                }
-            });
-            if (parts.Count == 0) { parts.Add(letter); parts.Add(range); }
-            return parts;
         }
 
         // ── IReviewableTool ─────────────────────────────────────────
@@ -749,12 +756,7 @@ namespace LemoineTools.Tools.ScopeBoxes
                 _selectedLevelIds.GroupBy(id => id.Value).Select(g => g.First()));
             _runHandler.Mode              = _mode;
             _runHandler.SeedBoxId         = _seedBoxId;
-            _runHandler.NamingFront        = _naming.Front;
-            _runHandler.NamingFrontCustom  = _naming.FrontCustom;
-            _runHandler.NamingCenter       = _naming.Center;
-            _runHandler.NamingCenterCustom = _naming.CenterCustom;
-            _runHandler.NamingEnd          = _naming.End;
-            _runHandler.NamingEndCustom    = _naming.EndCustom;
+            _runHandler.NamePattern        = _namePattern;
             _runHandler.PushLog    = pushLog;
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;

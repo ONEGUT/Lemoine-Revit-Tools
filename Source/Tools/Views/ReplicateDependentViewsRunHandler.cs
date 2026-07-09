@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -13,13 +14,8 @@ namespace LemoineTools.Tools.LinkViews
         public SourceViewEntry       SourceEntry   { get; set; } = null!;
         public List<TargetViewEntry> TargetEntries { get; set; } = new List<TargetViewEntry>();
 
-        // ── Naming options ─────────────────────────────────────────────
-        public string NamingFront        { get; set; } = "Host Level";
-        public string NamingFrontCustom  { get; set; } = "";
-        public string NamingCenter       { get; set; } = "Source View Name";
-        public string NamingCenterCustom { get; set; } = "";
-        public string NamingEnd          { get; set; } = "None";
-        public string NamingEndCustom    { get; set; } = "";
+        /// <summary>Naming pattern, e.g. "{HostLevel} - {SourceViewName} - {DepSuffix}".</summary>
+        public string NamePattern { get; set; } = "{HostLevel} - {SourceViewName} - {DepSuffix}";
 
         // ── Callbacks ─────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -207,40 +203,18 @@ namespace LemoineTools.Tools.LinkViews
                 .OfClass(typeof(View)).Cast<View>()
                 .Any(v => !v.IsTemplate && string.Equals(v.Name, name, StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>
-        /// Assembles the new dependent view name from the naming slot configuration.
-        /// If all slots are None, falls back to "{target.Name} - {suffix}".
-        /// The dep suffix is always appended last.
-        /// </summary>
+        /// <summary>Resolves the naming pattern for one dependent-view copy.</summary>
         private string BuildDepName(SourceViewEntry source, TargetViewEntry target, string suffix)
         {
-            var slots = new[] { NamingFront, NamingCenter, NamingEnd };
-            bool anySet = slots.Any(s => s != "None");
+            var ctx = new TokenContext();
+            ctx.Computed["HostLevel"]      = target.LevelName ?? "";
+            ctx.Computed["SourceViewName"] = source.Name ?? "";
+            ctx.Computed["TargetViewName"] = target.Name ?? "";
+            ctx.Computed["ViewType"]       = target.TypeLabel ?? "";
+            ctx.Computed["DepSuffix"]      = suffix ?? "";
 
-            if (!anySet)
-                return $"{target.Name} - {suffix}";
-
-            var customs = new[] { NamingFrontCustom, NamingCenterCustom, NamingEndCustom };
-            var parts = slots
-                .Select((slot, i) => ResolveSlot(slot, customs[i], source, target))
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToList();
-            parts.Add(suffix);
-            return string.Join(" - ", parts);
-        }
-
-        private string ResolveSlot(string slot, string custom, SourceViewEntry source, TargetViewEntry target)
-        {
-            switch (slot)
-            {
-                case "Host Level":       return target.LevelName ?? "";
-                case "Source View Name": return source.Name ?? "";
-                case "Target View Name": return target.Name ?? "";
-                case "View Type":        return target.TypeLabel ?? "";
-                case "Dep Suffix":       return "";   // suffix is appended outside; skip here
-                case "Custom":           return string.IsNullOrWhiteSpace(custom) ? "" : custom.Trim();
-                default:                 return "";
-            }
+            string resolved = TokenResolver.Resolve(NamePattern, ctx, msg => Log(msg, "warn"));
+            return TokenResolver.GuardDegenerate(resolved, ctx, $"{target.Name} - {suffix}", msg => Log(msg, "warn"));
         }
 
         private void ConfigureFailures(Transaction tx)
