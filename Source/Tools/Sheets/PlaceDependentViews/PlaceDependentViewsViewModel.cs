@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 using WpfGrid = System.Windows.Controls.Grid;
 
@@ -14,13 +15,8 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 {
     public sealed class PlaceDependentViewsViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
-        private static readonly (string Label, string Token)[] NamingTokens =
-        {
-            ("Parent View", "{ParentViewName}"),
-            ("View Type",   "{ViewType}"),
-            ("Level",       "{Level}"),
-            ("Sheet Number","{SheetNumber}"),
-        };
+        private const string ToolId         = "sheets.placeDependent";
+        private const string DefaultPattern = "{ParentViewName}";
 
         // ── IStepFlowTool ──────────────────────────────────────────────────────
         public string Title    => AppStrings.T("testing.placeDependentViews.title");
@@ -66,7 +62,7 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
         private string _selectedTitleblock = "";
 
         private int    _startingNumber = 1;
-        private string _namingPattern  = "{ParentViewName}";
+        private string _namingPattern  = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
         private string _numberPrefix    = "";
         private string _numberSuffix    = "";
         private string _sheetSeries     = "";
@@ -279,8 +275,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             patLabel.Margin = new Thickness(0, 14, 0, 4);
             outer.Children.Add(patLabel);
 
-            var tokenInput = new TokenInput(NamingTokens) { Text = _namingPattern };
-            tokenInput.TextChanged += (s, e) => { _namingPattern = tokenInput.Text; OnValidationChanged(); };
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.Sheet, hasSource: true);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namingPattern };
+            tokenInput.TextChanged += (s, e) =>
+            {
+                _namingPattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ToolId, _namingPattern);
+                OnValidationChanged();
+            };
             outer.Children.Add(tokenInput);
 
             // ── Sheet series ──────────────────────────────────────────────────
@@ -312,18 +314,15 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
             preview.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
 
             var sample = _parents.FirstOrDefault();
-            var placeholders = new Dictionary<string, string>
-            {
-                ["ParentViewName"] = sample?.Name ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleName"),
-                ["ViewType"]       = sample?.TypeLabel ?? "FloorPlan",
-                ["Level"]          = sample?.LevelName ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleLevel"),
-                ["SheetNumber"]    = _startingNumber.ToString(),
-            };
             Action update = () =>
             {
                 string fullNumber = _numberPrefix + _startingNumber.ToString() + _numberSuffix;
-                placeholders["SheetNumber"] = fullNumber;
-                string name = TokenInput.Resolve(_namingPattern, placeholders);
+                var ctx = new TokenContext();
+                ctx.Computed["ParentViewName"] = sample?.Name ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleName");
+                ctx.Computed["ViewType"]       = sample?.TypeLabel ?? "FloorPlan";
+                ctx.Computed["Level"]          = sample?.LevelName ?? AppStrings.T("testing.placeDependentViews.labels.previewSampleLevel");
+                ctx.Computed["SheetNumber"]    = fullNumber;
+                string name = TokenResolver.Resolve(_namingPattern, ctx);
                 preview.Text = $"{fullNumber}   |   {name}";
             };
             update();

@@ -70,7 +70,8 @@
     "groupSource": "Source",
     "groupProject": "Project",
     "groupDate": "Date & Counter",
-    "groupUser": "Your tokens"
+    "groupUser": "Your tokens",
+    "parameterTooltip": "Parameter: {0}"
   },
 
   "resolver": {

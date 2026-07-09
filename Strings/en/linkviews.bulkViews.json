@@ -44,7 +44,8 @@
       "noLinks":      "No linked files are loaded in this document.",
       "namePattern":  "View name pattern",
       "template":     "View template (optional)",
-      "templateNone": "(none)"
+      "templateNone": "(none)",
+      "exLink":       "Structural Model"
     },
 
     "review": {

@@ -1,24 +1,31 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Framework.Controls
 {
     /// <summary>
-    /// Code-behind-only UserControl that renders a themed TextBox with a row of
-    /// clickable token chip Buttons below it.  Clicking a chip inserts its token
-    /// string at the current cursor position.
-    ///
-    /// Used by Bulk Export (filename pattern) and Create Sheets (sheet naming scheme).
+    /// Code-behind-only UserControl that renders a themed TextBox with clickable token
+    /// chip Buttons grouped underneath it. Clicking a chip inserts its token text at the
+    /// current cursor position. This is the one naming-pattern editor shared by every
+    /// tool that generates or rewrites names (the former separate Front/Center/End
+    /// "NamingSlots" control is retired in favour of this).
     /// </summary>
     public class TokenInput : UserControl
     {
         // ── Internal refs ─────────────────────────────────────────────────────
-        private readonly TextBox   _textBox;
-        private readonly WrapPanel _chipPanel;
+        private readonly TextBox    _textBox;
+        private readonly StackPanel _chipGroups;
+        private readonly Button     _resetButton;
+        private readonly StackPanel _root;
+        private TextBlock?          _previewText;
+        private readonly string     _defaultPattern;
+        private Func<string, string>? _resolvePreview;
 
         // ── Public API ────────────────────────────────────────────────────────
 
@@ -34,80 +41,176 @@ namespace LemoineTools.Framework.Controls
 
         // ── Construction ──────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Creates a TokenInput with the given token set.
-        /// </summary>
-        /// <param name="tokens">List of (DisplayLabel, InsertedToken) pairs.</param>
-        /// <param name="placeholder">Greyed hint text shown when the box is empty.</param>
-        public TokenInput(IEnumerable<(string Label, string Token)> tokens,
-                                  string placeholder = "")
+        /// <param name="tokens">The token vocabulary to offer, already filtered to what's
+        /// valid for the caller's entity/context (see <see cref="NamingTokenRegistry.TokensFor"/>).</param>
+        /// <param name="defaultPattern">The tool's default pattern — also doubles as the
+        /// textbox tooltip and the target of the reset button.</param>
+        public TokenInput(IReadOnlyList<TokenDefinition> tokens, string defaultPattern = "")
         {
+            _defaultPattern = defaultPattern ?? "";
+
             // ── TextBox ───────────────────────────────────────────────────────
             _textBox = new TextBox
             {
-                Text        = "",
-                Padding     = new Thickness(8, 4, 8, 4),
-                TextWrapping = TextWrapping.NoWrap,
+                Text          = "",
+                Padding       = new Thickness(8, 4, 8, 4),
+                TextWrapping  = TextWrapping.NoWrap,
                 AcceptsReturn = false,
             };
-            _textBox.SetResourceReference(TextBox.MinHeightProperty,    "LemoineH_Input");
-            _textBox.SetResourceReference(TextBox.FontFamilyProperty,   "LemoineMonoFont");
-            _textBox.SetResourceReference(TextBox.FontSizeProperty,     "LemoineFS_MD");
-            _textBox.SetResourceReference(TextBox.BackgroundProperty,   "LemoineSelectBg");
-            _textBox.SetResourceReference(TextBox.ForegroundProperty,   "LemoineText");
-            _textBox.SetResourceReference(TextBox.BorderBrushProperty,  "LemoineBorderMid");
-            _textBox.SetResourceReference(TextBox.CaretBrushProperty,   "LemoineText");
+            _textBox.SetResourceReference(TextBox.MinHeightProperty,      "LemoineH_Input");
+            _textBox.SetResourceReference(TextBox.FontFamilyProperty,     "LemoineMonoFont");
+            _textBox.SetResourceReference(TextBox.FontSizeProperty,       "LemoineFS_MD");
+            _textBox.SetResourceReference(TextBox.BackgroundProperty,     "LemoineSelectBg");
+            _textBox.SetResourceReference(TextBox.ForegroundProperty,     "LemoineText");
+            _textBox.SetResourceReference(TextBox.BorderBrushProperty,    "LemoineBorderMid");
+            _textBox.SetResourceReference(TextBox.CaretBrushProperty,     "LemoineText");
             _textBox.SetResourceReference(TextBox.SelectionBrushProperty, "LemoineAccent");
+            if (!string.IsNullOrEmpty(_defaultPattern)) _textBox.ToolTip = _defaultPattern;
 
-            if (!string.IsNullOrEmpty(placeholder))
+            _textBox.TextChanged += (s, e) => OnTextChanged();
+
+            // ── Reset button ─────────────────────────────────────────────────
+            _resetButton = new Button
             {
-                // Watermark via Tag + style trigger is complex code-behind; use a simpler
-                // overlay approach — show a TextBlock behind the TextBox and hide it on focus/text
-                // For simplicity here, we set the actual text and clear on first edit.
-                _textBox.Foreground = Brushes.Transparent;  // initially invisible placeholder
-                var placed = false;
-                _textBox.GotFocus += (s, e) =>
-                {
-                    if (!placed) return;
-                    placed = false;
-                    _textBox.Text = "";
-                    _textBox.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
-                };
-                // Actually, use a simpler approach: just set Tag and use ToolTip for placeholder
-                _textBox.SetResourceReference(TextBox.ForegroundProperty, "LemoineText");
-                _textBox.ToolTip = placeholder;
-            }
-
-            _textBox.TextChanged += (s, e) => TextChanged?.Invoke(this, EventArgs.Empty);
-
-            // ── Chip WrapPanel ────────────────────────────────────────────────
-            _chipPanel = new WrapPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin      = new Thickness(0, 5, 0, 0),
+                Content         = char.ConvertFromUtf32(0x21BA) + " " + AppStrings.T("naming.input.reset"),
+                Cursor          = Cursors.Hand,
+                Margin          = new Thickness(6, 0, 0, 0),
+                Padding         = new Thickness(8, 0, 8, 0),
+                BorderThickness = new Thickness(1),
+                Template        = ControlStyles.BuildFlatButtonTemplate(),
+                Visibility      = Visibility.Collapsed,
             };
+            _resetButton.SetResourceReference(Button.MinHeightProperty,  "LemoineH_Input");
+            _resetButton.SetResourceReference(Button.FontSizeProperty,   "LemoineFS_SM");
+            _resetButton.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
+            _resetButton.Background = Brushes.Transparent;
+            _resetButton.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+            _resetButton.SetResourceReference(Button.ForegroundProperty,  "LemoineTextDim");
+            _resetButton.Click += (s, e) => Text = _defaultPattern;
 
-            foreach (var (label, token) in tokens)
+            var inputRow = new Grid();
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(_textBox, 0);
+            Grid.SetColumn(_resetButton, 1);
+            inputRow.Children.Add(_textBox);
+            inputRow.Children.Add(_resetButton);
+
+            // ── Grouped chip rows ────────────────────────────────────────────
+            _chipGroups = new StackPanel
             {
-                var captured = token;
-                var chip = BuildChipButton(label, captured);
-                _chipPanel.Children.Add(chip);
-            }
+                Orientation = Orientation.Vertical,
+                Margin      = new Thickness(0, 6, 0, 0),
+            };
+            BuildChipGroups(tokens);
 
             // ── Layout ────────────────────────────────────────────────────────
-            var stack = new StackPanel { Orientation = Orientation.Vertical };
-            stack.Children.Add(_textBox);
-            stack.Children.Add(_chipPanel);
-            Content = stack;
+            _root = new StackPanel { Orientation = Orientation.Vertical };
+            _root.Children.Add(_chipGroups);
+            _root.Children.Add(inputRow);
+            Content = _root;
+        }
+
+        /// <summary>
+        /// Adds a live preview line under the input, re-rendered on every text change and once
+        /// immediately. <paramref name="resolvePattern"/> should build a sample context and call
+        /// <see cref="TokenResolver.Resolve"/> — the caller owns context construction since only
+        /// it knows a representative sample element.
+        /// </summary>
+        public void SetPreview(Func<string, string> resolvePattern)
+        {
+            _resolvePreview = resolvePattern;
+
+            if (_previewText == null)
+            {
+                _previewText = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    FontStyle    = FontStyles.Italic,
+                    Margin       = new Thickness(0, 6, 0, 0),
+                };
+                _previewText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+                _previewText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
+                _previewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+                _root.Children.Add(_previewText);
+            }
+
+            RefreshPreview();
+        }
+
+        /// <summary>Re-renders the preview against the current text. Call this when the
+        /// caller's own state changes (e.g. a different sample element becomes selected on
+        /// another step) — <see cref="TextChanged"/> alone only covers edits to this box.</summary>
+        public void RefreshPreview()
+        {
+            RefreshPreviewCore();
         }
 
         // ── Private helpers ───────────────────────────────────────────────────
 
-        private Button BuildChipButton(string label, string token)
+        private void OnTextChanged()
         {
+            _resetButton.Visibility = Text.Trim() == _defaultPattern.Trim()
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            RefreshPreviewCore();
+            TextChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void RefreshPreviewCore()
+        {
+            if (_previewText == null || _resolvePreview == null) return;
+            string resolved = _resolvePreview(Text) ?? "";
+            _previewText.Text = AppStrings.T("naming.input.previewLabel") + " " +
+                (string.IsNullOrWhiteSpace(resolved) ? AppStrings.T("naming.input.previewEmpty") : resolved);
+        }
+
+        // Fixed group order: This item -> Source -> Project -> Date & Counter -> Your tokens.
+        // A group is omitted entirely when it has no matching tokens, so a tool with no source
+        // concept never shows an empty "Source" header.
+        private void BuildChipGroups(IReadOnlyList<TokenDefinition> tokens)
+        {
+            var builtin = tokens.Where(t => t.Origin != TokenOrigin.UserParameter).ToList();
+            var user    = tokens.Where(t => t.Origin == TokenOrigin.UserParameter).ToList();
+
+            AddGroupIfAny(AppStrings.T("naming.input.groupTarget"),
+                builtin.Where(t => t.Subject == TokenSubject.Target).ToList());
+            AddGroupIfAny(AppStrings.T("naming.input.groupSource"),
+                builtin.Where(t => t.Subject == TokenSubject.Source).ToList());
+            AddGroupIfAny(AppStrings.T("naming.input.groupProject"),
+                builtin.Where(t => t.Subject == TokenSubject.ProjectInfo).ToList());
+            AddGroupIfAny(AppStrings.T("naming.input.groupDate"),
+                builtin.Where(t => t.Subject == TokenSubject.Environment).ToList());
+            AddGroupIfAny(AppStrings.T("naming.input.groupUser"), user);
+        }
+
+        private void AddGroupIfAny(string headerLabel, IReadOnlyList<TokenDefinition> items)
+        {
+            if (items.Count == 0) return;
+
+            var header = new TextBlock
+            {
+                Text   = headerLabel.ToUpperInvariant(),
+                Margin = new Thickness(0, _chipGroups.Children.Count == 0 ? 0 : 8, 0, 4),
+            };
+            header.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            header.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            _chipGroups.Children.Add(header);
+
+            var row = new WrapPanel { Orientation = Orientation.Horizontal };
+            foreach (var def in items)
+                row.Children.Add(BuildChipButton(def));
+            _chipGroups.Children.Add(row);
+        }
+
+        private Button BuildChipButton(TokenDefinition def)
+        {
+            bool isUser = def.Origin == TokenOrigin.UserParameter;
+
             var btn = new Button
             {
-                Content         = label,
+                Content         = def.Label,
                 Cursor          = Cursors.Hand,
                 Margin          = new Thickness(0, 4, 4, 0),
                 Padding         = new Thickness(8, 0, 8, 0),
@@ -119,8 +222,14 @@ namespace LemoineTools.Framework.Controls
             btn.SetResourceReference(Button.FontFamilyProperty, "LemoineUiFont");
             btn.Background = Brushes.Transparent;
             btn.SetResourceReference(Button.BackgroundProperty,  "LemoineRaised");
-            btn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
-            btn.SetResourceReference(Button.ForegroundProperty,  "LemoineText");
+            btn.SetResourceReference(Button.BorderBrushProperty, isUser ? "LemoineAccent" : "LemoineBorder");
+            btn.SetResourceReference(Button.ForegroundProperty,  isUser ? "LemoineAccent" : "LemoineText");
+
+            string tooltip = def.Description ?? "";
+            if (isUser && !string.IsNullOrEmpty(def.ParameterName))
+                tooltip = (string.IsNullOrEmpty(tooltip) ? "" : tooltip + "\n") +
+                          AppStrings.T("naming.input.parameterTooltip", def.ParameterName);
+            if (!string.IsNullOrEmpty(tooltip)) btn.ToolTip = tooltip;
 
             btn.MouseEnter += (s, e) =>
             {
@@ -130,10 +239,10 @@ namespace LemoineTools.Framework.Controls
             btn.MouseLeave += (s, e) =>
             {
                 btn.SetResourceReference(Button.BackgroundProperty,  "LemoineRaised");
-                btn.SetResourceReference(Button.BorderBrushProperty, "LemoineBorder");
+                btn.SetResourceReference(Button.BorderBrushProperty, isUser ? "LemoineAccent" : "LemoineBorder");
             };
 
-            btn.Click += (s, e) => InsertAtCursor(token);
+            btn.Click += (s, e) => InsertAtCursor(def.Braced);
             return btn;
         }
 
@@ -143,22 +252,6 @@ namespace LemoineTools.Framework.Controls
             _textBox.Text = _textBox.Text.Insert(caret, s);
             _textBox.CaretIndex = caret + s.Length;
             _textBox.Focus();
-        }
-
-        // ── Static helper ─────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Resolves a token pattern against a dictionary of values.
-        /// E.g. "{SheetNumber}-{SheetName}" + {"SheetNumber":"A101"} → "A101-Ground Floor"
-        /// Any token not found in the dictionary is left unchanged.
-        /// </summary>
-        public static string Resolve(string pattern, Dictionary<string, string> values)
-        {
-            if (string.IsNullOrEmpty(pattern)) return pattern ?? "";
-            var result = pattern;
-            foreach (var kvp in values)
-                result = result.Replace("{" + kvp.Key + "}", kvp.Value ?? "");
-            return result;
         }
     }
 }
