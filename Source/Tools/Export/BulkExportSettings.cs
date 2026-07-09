@@ -74,12 +74,9 @@ namespace LemoineTools.Tools.BulkExport
         public bool   ExportIfc  { get; set; } = false;
         public string IfcVersion { get; set; } = "IFC2x3"; // "IFC2x3" | "IFC4"
 
-        // ── Saved packs ───────────────────────────────────────────────────────
-        [XmlArray("SavedPacks")]
-        [XmlArrayItem("Pack")]
-        public List<SheetPackLayout> SavedPacks { get; set; } = new List<SheetPackLayout>();
-
         // ── Persistence ───────────────────────────────────────────────────────
+        // Print sets are Revit ViewSheetSet elements now — they live in the document itself,
+        // not in this settings file (the old SavedPacks list was removed with the pack UI).
         private static string FilePath
         {
             get

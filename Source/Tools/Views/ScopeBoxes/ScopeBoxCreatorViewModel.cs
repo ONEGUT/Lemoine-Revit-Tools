@@ -206,6 +206,10 @@ namespace LemoineTools.Tools.ScopeBoxes
                 AppStrings.T("scopeBoxes.creator.labels.topLevelHeightHint"),
                 s.TopLevelHeight, 1, 100, 1, 0,
                 v => { ScopeBoxSettings.Instance.TopLevelHeight = v; ScopeBoxSettings.Instance.Save(); });
+            AddStepperRow(outer, AppStrings.T("scopeBoxes.creator.labels.perLevelEndExtension"),
+                AppStrings.T("scopeBoxes.creator.labels.perLevelEndExtensionHint"),
+                s.PerLevelEndExtension, 0, 500, 5, 0,
+                v => { ScopeBoxSettings.Instance.PerLevelEndExtension = v; ScopeBoxSettings.Instance.Save(); });
 
             return outer;
         }

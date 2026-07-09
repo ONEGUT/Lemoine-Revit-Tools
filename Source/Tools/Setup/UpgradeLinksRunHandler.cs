@@ -560,38 +560,66 @@ namespace LemoineTools.Tools.Setup
 
                 if (typeId == ElementId.InvalidElementId) { tx.RollBack(); return false; }
 
+                RevitLinkInstance? instance = null;
                 try
                 {
-                    RevitLinkInstance.Create(hostDoc, typeId, import);
+                    instance = RevitLinkInstance.Create(hostDoc, typeId, import);
                 }
                 catch (Exception ex)
                 {
-                    DiagnosticsLog.Swallowed("UpgradeLinks: RevitLinkInstance.Create", ex);
-                    if (placement == UpgradePlacement.SharedCoordinates)
-                    {
-                        // No shared-coordinate relationship in the file — fall back to Origin, reported.
-                        try
-                        {
-                            RevitLinkInstance.Create(hostDoc, typeId, ImportPlacement.Origin);
-                            Log(AppStrings.T("upgradeLinks.log.sharedFallback", baseName), "warn");
-                        }
-                        catch (Exception ex2)
-                        {
-                            DiagnosticsLog.Error("UpgradeLinks: instance origin fallback", ex2);
-                            tx.RollBack();
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        DiagnosticsLog.Error("UpgradeLinks: instance placement", ex);
-                        tx.RollBack();
-                        return false;
-                    }
+                    DiagnosticsLog.Error("UpgradeLinks: instance placement", ex);
+                    tx.RollBack();
+                    return false;
                 }
+
+                // Survey Point has no ImportPlacement — the instance was just linked at Origin;
+                // translate it so the link's own Survey Point lands on the host's Survey Point.
+                if (placement == UpgradePlacement.SurveyPoint && instance != null)
+                    TranslateToSurveyPoint(hostDoc, instance, baseName);
 
                 tx.Commit();
                 return true;
+            }
+        }
+
+        // Moves a just-linked (Origin-placed) instance so its link document's Survey Point
+        // coincides with the host's Survey Point. Both points are read/moved in internal
+        // coordinates. Falls back to leaving the Origin placement (reported) when either
+        // base point can't be resolved — never throws out of the run.
+        private void TranslateToSurveyPoint(Document hostDoc, RevitLinkInstance instance, string baseName)
+        {
+            try
+            {
+                var linkDoc = instance.GetLinkDocument();
+                if (linkDoc == null)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
+                    return;
+                }
+
+                var hostSp = BasePoint.GetSurveyPoint(hostDoc);
+                var linkSp = BasePoint.GetSurveyPoint(linkDoc);
+                if (hostSp == null || linkSp == null)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
+                    return;
+                }
+
+                // The link's own Survey Point position, expressed in the link's internal
+                // coordinates, projected through the just-created (Origin) instance transform
+                // to the host's internal coordinates.
+                XYZ linkSpInHost = instance.GetTotalTransform().OfPoint(linkSp.Position);
+                XYZ delta = hostSp.Position - linkSpInHost;
+
+                bool pinned = instance.Pinned;
+                if (pinned) instance.Pinned = false;
+                ElementTransformUtils.MoveElement(hostDoc, instance.Id, delta);
+                if (pinned) instance.Pinned = true;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"UpgradeLinks: translate to Survey Point for '{baseName}'", ex);
+                Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
             }
         }
 

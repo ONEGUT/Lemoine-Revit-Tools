@@ -28,6 +28,8 @@
     "clusterThresholdHint": "Maximum room-edge gap for union-find building cluster merging.",
     "topLevelHeight":       "Top level height (ft)",
     "topLevelHeightHint":   "Box height above the topmost level when no level exists above it.",
+    "perLevelEndExtension":     "Per-level end extension (ft)",
+    "perLevelEndExtensionHint": "In \"One box per level\" mode, the bottommost and topmost boxes extend this far past the lowest/highest selected level so they truly act as the building's overall bottom and top.",
 
     "scanning":  "Scanning rooms in the selected documents…",
     "scanError": "Scan failed: {0}",            // {0} = error message
@@ -67,7 +69,7 @@
     "docsValue":     "{0} selected",   // {0} = count
     "levelsValue":   "{0} selected",   // {0} = count
     "countDeferred": "Computed at run",
-    "note":          "Existing scope boxes with the same name are skipped, never overwritten. Height is set automatically; width/depth can't be set through the API, so any box wider/deeper than the seed is reported with the exact footprint to drag by hand.",
+    "note":          "Existing scope boxes with the same name are skipped, never overwritten. Height is set automatically; width/depth can't be set through the API, so any box wider/deeper than the seed is reported with the exact footprint to drag by hand. In \"One box per level\" mode, each box's level is assigned to it automatically, and the bottommost/topmost boxes extend past the source levels by the per-level end extension.",
     "warnNoSeed":    "No seed scope box selected — draw one in Revit (View ▸ Scope Box), then re-enter Seed & Naming."
   },
 
@@ -87,6 +89,9 @@
     "resizeNeeded":   "'{0}' needs a manual footprint resize: required W {1} × D {2} ft (drag its handles once — name, position and height are already set; the API can't set width/depth).",  // {0}=name {1}=width {2}=depth
     "heightManual":   "'{0}' height could not be set automatically — set it to {1} ft by hand.",  // {0}=name {1}=height
     "failBox":        "'{0}' failed: {1}",                      // {0}=name {1}=message
+    "levelClaimConflict": "Level '{0}': '{1}' keeps the datum-crop assignment, '{2}' does not — a level can only carry one scope box in its own Scope Box parameter.",  // {0}=level {1}=winning box {2}=losing box
+    "levelAssignFailed":  "Could not assign level '{0}' to its scope box.",  // {0} = level name
+    "levelsAssigned":     "Assigned {0} level(s) to their scope box automatically.",  // {0} = count
     "complete":       "Done — {0} created, {1} skipped, {2} failed."  // counts
   }
 }

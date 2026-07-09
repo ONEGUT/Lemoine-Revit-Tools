@@ -17,6 +17,10 @@ namespace LemoineTools.Tools.Setup
     {
         public List<string> Paths { get; set; } = new List<string>();
 
+        /// <summary>The current Revit's saved-file version year, captured during the last scan
+        /// (e.g. "2026") — used by the ViewModel's "files newer than this cannot be opened" note.</summary>
+        public string CurrentVersionNumber { get; private set; } = "";
+
         public Action<List<UpgradeFileScan>>? OnScanned { get; set; }
         public Action<string>?                OnError   { get; set; }
 
@@ -29,6 +33,8 @@ namespace LemoineTools.Tools.Setup
                 string current = "";
                 try { current = app.Application.VersionNumber ?? ""; }
                 catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: read current version", ex); }
+                CurrentVersionNumber = current;
+                bool currentParsed = int.TryParse(current, out int currentYear);
 
                 var results = new List<UpgradeFileScan>();
                 foreach (var path in Paths)
@@ -47,6 +53,8 @@ namespace LemoineTools.Tools.Setup
                             scan.IsWorkshared = bfi.IsWorkshared;
                             scan.Version      = ReadVersion(bfi);
                             scan.IsCurrent    = current.Length > 0 && scan.Version == current;
+                            if (currentParsed && int.TryParse(scan.Version, out int fileYear))
+                                scan.IsFutureVersion = fileYear > currentYear;
                         }
                     }
                     catch (Exception ex)

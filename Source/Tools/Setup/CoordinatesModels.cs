@@ -28,7 +28,23 @@ namespace LemoineTools.Tools.Setup
     }
 
     /// <summary>
-    /// A loaded Revit link, with the set of grid names it contains (offered for that link's own
+    /// A single grid's endpoint geometry, captured on the main thread in its own document's
+    /// internal coordinates (host grids in host coords, a link's grids in that link's own
+    /// coords — never transformed). Used only to test whether two grids in the SAME document
+    /// cross each other, so the Grid 2 picker can be filtered to grids that actually intersect
+    /// the chosen Grid 1 (see AlignCoordinatesViewModel.GridsCross). A grid whose curve isn't a
+    /// straight Line (arc/spline) has <see cref="IsLine"/> false and is treated as always
+    /// crossing — never filtered out, since curved-grid intersection isn't worth modelling here.
+    /// </summary>
+    public sealed class GridGeom
+    {
+        public string Name   { get; set; } = "";
+        public bool   IsLine { get; set; }
+        public double X0, Y0, X1, Y1;
+    }
+
+    /// <summary>
+    /// A loaded Revit link, with the grids it contains (offered for that link's own
     /// Grid Intersection override — no longer required to match the host's grid names, and no
     /// longer used to filter which links are selectable).
     /// </summary>
@@ -37,6 +53,7 @@ namespace LemoineTools.Tools.Setup
         public string          Name       { get; set; } = "";
         public long            LinkInstId { get; set; }
         public HashSet<string> GridNames  { get; set; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        public List<GridGeom>  Grids      { get; set; } = new List<GridGeom>();
     }
 
     /// <summary>
@@ -63,6 +80,7 @@ namespace LemoineTools.Tools.Setup
     public sealed class AlignCoordinatesData
     {
         public List<string>        HostGridNames  { get; set; } = new List<string>();
+        public List<GridGeom>      HostGrids      { get; set; } = new List<GridGeom>();
         public List<string>        HostLevelNames { get; set; } = new List<string>();
         public List<AlignLinkInfo> Links          { get; set; } = new List<AlignLinkInfo>();
     }

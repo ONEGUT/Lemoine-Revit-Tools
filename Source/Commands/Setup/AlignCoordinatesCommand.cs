@@ -69,10 +69,12 @@ namespace LemoineTools.Commands
 
             try
             {
-                data.HostGridNames = new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>()
-                    .Select(g => g.Name).Where(n => !string.IsNullOrWhiteSpace(n))
+                var hostGrids = new FilteredElementCollector(doc).OfClass(typeof(Grid)).Cast<Grid>()
+                    .Where(g => !string.IsNullOrWhiteSpace(g.Name)).ToList();
+                data.HostGridNames = hostGrids.Select(g => g.Name)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                data.HostGrids = hostGrids.Select(CaptureGridGeom).ToList();
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("AlignCoordinatesCommand: read host grids", ex); }
 
@@ -96,7 +98,11 @@ namespace LemoineTools.Commands
                 try
                 {
                     foreach (var g in new FilteredElementCollector(ld).OfClass(typeof(Grid)).Cast<Grid>())
-                        if (!string.IsNullOrWhiteSpace(g.Name)) info.GridNames.Add(g.Name);
+                    {
+                        if (string.IsNullOrWhiteSpace(g.Name)) continue;
+                        info.GridNames.Add(g.Name);
+                        info.Grids.Add(CaptureGridGeom(g));
+                    }
                 }
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
 
@@ -105,6 +111,28 @@ namespace LemoineTools.Commands
                 data.Links.Add(info);
             }
             return data;
+        }
+
+        // Reads a grid's endpoint geometry in its OWN document's internal coordinates (host
+        // grids from the host doc, a link's grids from that link's own doc — never the host's
+        // transform). Used only for the Grid-2-crosses-Grid-1 filter in the ViewModel; a
+        // non-Line curve (arc/spline) is reported IsLine=false and is never filtered out.
+        private static GridGeom CaptureGridGeom(Grid g)
+        {
+            var geom = new GridGeom { Name = g.Name };
+            try
+            {
+                if (g.Curve is Line line)
+                {
+                    var p0 = line.GetEndPoint(0);
+                    var p1 = line.GetEndPoint(1);
+                    geom.IsLine = true;
+                    geom.X0 = p0.X; geom.Y0 = p0.Y;
+                    geom.X1 = p1.X; geom.Y1 = p1.Y;
+                }
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinatesCommand: read grid curve for '{g.Name}'", ex); }
+            return geom;
         }
     }
 }

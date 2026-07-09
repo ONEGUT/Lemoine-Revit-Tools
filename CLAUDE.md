@@ -264,6 +264,8 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 **Tab ordering** — `SetGroups` auto-sorts tabs alphabetically with `"Other"` pinned last. Callers do not need to pre-sort their group dictionaries.
 
+**Disabled items** — `MultiSelectTabs` accepts a `DisabledItems` property (`IReadOnlyCollection<string>?`). Set it before `SetGroups`. A disabled item is still listed (so the user sees WHY it's absent, not a silently shrinking list) but rendered dimmed with a non-interactive checkbox, is excluded from the per-group "All" toggle's all-checked/some-checked math and from what "All" adds/removes, and can never appear in `SelectionChanged` results. This is the mechanism Copy Datums uses to show grids/levels that already exist in the host, greyed out, instead of hiding them. Only the flat (non-`Hierarchy`) list path honours it today.
+
 **Annotation categories** — Annotation categories (`CategoryType != Model`) must never appear in model-element category pickers. `AutoFiltersSettings.CaptureFilterableCategories` already filters them out; do not re-introduce them.
 
 ---

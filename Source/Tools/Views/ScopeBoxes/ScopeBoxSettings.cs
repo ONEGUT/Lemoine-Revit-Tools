@@ -24,6 +24,10 @@ namespace LemoineTools.Tools.ScopeBoxes
         public double ClusterThreshold { get; set; } = 20.0;
         /// <summary>Fallback height above the topmost level when no level exists above it (feet).</summary>
         public double TopLevelHeight   { get; set; } = 12.0;
+        /// <summary>In Per-Level mode, the bottom box's floor and the top box's ceiling extend
+        /// this far past the lowest/highest selected level (feet) so they truly act as the
+        /// building's overall bottom and top rather than stopping exactly at the source level.</summary>
+        public double PerLevelEndExtension { get; set; } = 100.0;
 
         private static string FilePath
         {

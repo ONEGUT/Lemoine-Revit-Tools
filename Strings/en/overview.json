@@ -1,12 +1,12 @@
 // overview.json — Tools Overview window (read-only field guide) + its catalog data.
 // Files: ToolsOverviewWindow.xaml.cs (chrome) + ToolsOverviewCatalog.cs (per-tool prose).
-// NOTE: Segoe MDL2 glyphs, category ids, stage numbers/category-id lists, and the
-// FedBy/Feeds cross-link keys stay in code (the links resolve tool cards by these names).
+// NOTE: Segoe MDL2 glyphs, category ids, and the FedBy/Feeds cross-link keys stay in
+// code (the links resolve tool cards by these names). Section order below matches the
+// ribbon panel order the categories are built in (see App.cs).
 {
   "window": {
     "automationName": "Tools Overview",
     "title": "Lemoine Tools — Overview",
-    "stageBadge": "STAGE {0} · {1}",
     "runButton": "Dummy run ▶",
     "runTooltip": "Step through {0} in a real tool window. It's a demo, so nothing gets changed.",
     "fedBy": "FED BY",
@@ -16,113 +16,45 @@
     "close": "Close"
   },
   "cat": {
-    "filters": {
-      "name": "Filters & Legends",
-      "intro": "Set up the view filters and legend the rest of the workflow leans on. The trades you define here get reused by the view, ceiling and clash tools, so this is usually the first stop.",
+    "setup": {
+      "name": "Setup",
+      "intro": "Get every linked model current and positioned correctly before anything else in the workflow depends on it: upgrade and link the files, align shared coordinates to a common point, then push that correction back into the link files themselves.",
       "tools": {
-        "autoFilters": {
-          "name": "Auto Filters",
-          "blurb": "Scans the linked models for the systems in use, builds one view filter per trade, and applies its color across the views you choose. Explode View by Trade, the clash tools and Ceiling Heatmap all reuse these trades instead of setting them up again.",
-          "example": "\"Chilled Water Supply\" becomes a blue filter, reused as a clash group and a legend row"
+        "upgradeLinks": {
+          "name": "Upgrade & Link Models",
+          "blurb": "Picks Revit files from any folder, lets you choose each file's link placement (Internal Origin, Project Base Point, Center to Center, or Survey Point), upgrades every file to the current Revit version, saves it, and links it into the active model — one file at a time to keep memory flat.",
+          "example": "12 links across 3 Revit versions all come in current and placed at Survey Point"
         },
-        "legendCreation": {
-          "name": "Legend Creation",
-          "blurb": "Builds and updates a Legend view from the same filters, so the legend on the sheet always matches the colors on the views.",
-          "example": "add a trade in Auto Filters, run this again, and the new swatch turns up in the legend"
+        "alignCoordinates": {
+          "name": "Align Coordinates",
+          "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, then rotates and translates each selected link so its same-named grid intersection lands on the host's. Repositions the host's copy of each link only.",
+          "example": "Survey Point to A ∩ 1 at Level 1, 3 links aligned"
+        },
+        "pushCoordinates": {
+          "name": "Push Coordinates to Links",
+          "blurb": "Commits an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, saves in place, then publishes coordinates and re-places the link via Shared Coordinates.",
+          "example": "3 aligned links get their own coordinates corrected and saved"
         }
       }
     },
-    "ceilings": {
-      "name": "Ceilings",
-      "intro": "Color ceilings by height, and build, project or refresh the DWG ceiling grids.",
+    "copy": {
+      "name": "Copy from Link",
+      "intro": "Pull elements out of a linked model into the host so the other tools can work on real host geometry. Run any of these again and only what changed gets redone.",
       "tools": {
-        "heatmap": {
-          "name": "Ceiling Heatmap",
-          "blurb": "Colors each ceiling by its height using view-filter overrides, so high and low areas read at a glance. Because it works through filters, ceilings inside links set to \"By Host View\" get colored too.",
-          "example": "ceilings at 2700, 3000 and 3300 mm fall into three color bands"
+        "linear": {
+          "name": "Copy Linear",
+          "blurb": "Copies linear runs out of a link into the host and either splits them into standard lengths or swaps in a family at set spacing. Run it again and only the changed runs get redone.",
+          "example": "a linked pipe run comes in as host pipes in 6 m lengths"
         },
-        "makeGrids": {
-          "name": "Make Ceiling Grids",
-          "blurb": "Builds a reflected ceiling plan per level that shows only the ceilings, then exports each one to DWG. This is the first half of the ceiling-grid round trip.",
-          "example": "the Level 2 RCP exports to L02-Ceilings.dwg"
+        "grids": {
+          "name": "Copy Datums",
+          "blurb": "Copies grids and levels from a link into the host. Any grid or level whose name already exists is skipped and noted, since both have to be unique.",
+          "example": "link grids A to F and levels L1-L4 come across, and existing names are left alone"
         },
-        "projectGrids": {
-          "name": "Project Grids",
-          "blurb": "Imports a ceiling-grid DWG and lays its lines onto the actual ceiling soffit faces as model curves.",
-          "example": "an imported grid lands on the real soffit instead of a flat plane"
-        },
-        "reprojectGrids": {
-          "name": "Reproject Grids",
-          "blurb": "Moves the existing grid curves onto the current ceiling heights after the design changes, so you don't have to import the DWG again.",
-          "example": "raise a ceiling 150 mm and its grid lines follow it up"
-        }
-      }
-    },
-    "views": {
-      "name": "Views",
-      "intro": "Create and duplicate views in bulk: per level, across templates, as dependents, or one per trade.",
-      "tools": {
-        "byLevel": {
-          "name": "Bulk Views by Level",
-          "blurb": "Creates cropped 3D, floor plan and ceiling plan views for every level and building cluster in one go.",
-          "example": "5 levels across 2 clusters gives 30 cropped views"
-        },
-        "duplicate": {
-          "name": "Bulk Duplicate",
-          "blurb": "Duplicates the views you pick (plain, with detailing, or as a dependent) and names the copies from a token pattern.",
-          "example": "{ViewName} - COORD names every copy in one pass"
-        },
-        "byTemplate": {
-          "name": "Bulk Views by Template",
-          "blurb": "Duplicates each selected view once for every view template you pick, naming each result from a token pattern.",
-          "example": "3 views across 4 templates gives 12 named views"
-        },
-        "dependents": {
-          "name": "Bulk Dependent Views",
-          "blurb": "Copies a view's dependents and their crop regions onto other views, so you set a crop layout up once and reuse it instead of redrawing it.",
-          "example": "clone a source view's 4 dependent crops onto each target"
-        },
-        "explode": {
-          "name": "Explode View by Trade",
-          "blurb": "Copies a 3D view once per trade at the same camera angle and section box, isolates each copy to its trade using the Auto Filters filters, and stacks the copies by elevation.",
-          "example": "one coordination view becomes a separate 3D for each trade"
-        }
-      }
-    },
-    "sheets": {
-      "name": "Sheets",
-      "intro": "Get views onto sheets, line up matching viewports, and rename sheets or views in bulk.",
-      "tools": {
-        "placeDependent": {
-          "name": "Place Dependent Views",
-          "blurb": "Makes one sheet per view and drops that view's dependents onto it, each trimmed to its crop and packed so nothing overlaps.",
-          "example": "a parent view and its 6 dependents land on a single packed sheet"
-        },
-        "alignViews": {
-          "name": "Align Sheet Views",
-          "blurb": "Lines the viewports on your sheets up against a reference sheet so matching views sit exactly on top of each other. It pairs views by scope box, or by crop overlap when there isn't one, and can inherit the scope box, grid extents and crop.",
-          "example": "snap the MEP sheet's viewports to match the architectural reference"
-        },
-        "rename": {
-          "name": "Bulk Rename",
-          "blurb": "Renames sheets or views in bulk by find-and-replace, a prefix or suffix, a running number, or a token pattern. It checks for duplicate numbers and names and skips the clashes.",
-          "example": "turn A-101, A-102... into M-101, M-102... in one pass"
-        }
-      }
-    },
-    "export": {
-      "name": "Export",
-      "intro": "Send finished sheets and views out to PDF, DWG, NWC or IFC.",
-      "tools": {
-        "bulkExport": {
-          "name": "Bulk Export",
-          "blurb": "Exports the sheets and views you pick to PDF, DWG, NWC or IFC, naming each file from a token pattern. It only offers the formats that suit your selection, since NWC and IFC need a 3D view.",
-          "example": "every sheet exports as {SheetNumber}-{SheetName}.pdf"
-        },
-        "printView": {
-          "name": "Print View",
-          "blurb": "Exports just the active view or sheet to PDF using the same settings as Bulk Export. One click, no picker.",
-          "example": "the active sheet becomes a single PDF"
+        "elements": {
+          "name": "Copy Elements",
+          "blurb": "Copies elements from a link into the host: pick the categories, then tick the family types you want. Run it again and only the changed elements get redone.",
+          "example": "pick Mechanical Equipment, then tick the AHU types to bring in"
         }
       }
     },
@@ -157,7 +89,75 @@
         }
       }
     },
-    "clash": {
+    "ceilings": {
+      "name": "Ceilings",
+      "intro": "Color ceilings by height, and build, project or refresh the DWG ceiling grids.",
+      "tools": {
+        "heatmap": {
+          "name": "Ceiling Heatmap",
+          "blurb": "Colors each ceiling by its height using view-filter overrides, so high and low areas read at a glance — or generates a fresh RCP per level/template and colors those in one pass. Because it works through filters, ceilings inside links set to \"By Host View\" get colored too.",
+          "example": "ceilings at 2700, 3000 and 3300 mm fall into three color bands"
+        },
+        "makeGrids": {
+          "name": "Make Ceiling Grids",
+          "blurb": "Builds a reflected ceiling plan per level that shows only the ceilings, then exports each one to DWG. This is the first half of the ceiling-grid round trip.",
+          "example": "the Level 2 RCP exports to L02-Ceilings.dwg"
+        },
+        "projectGrids": {
+          "name": "Project Grids",
+          "blurb": "Imports a ceiling-grid DWG and lays its lines onto the actual ceiling soffit faces as model curves.",
+          "example": "an imported grid lands on the real soffit instead of a flat plane"
+        },
+        "reprojectGrids": {
+          "name": "Reproject Grids",
+          "blurb": "Moves the existing grid curves onto the current ceiling heights after the design changes, so you don't have to import the DWG again.",
+          "example": "raise a ceiling 150 mm and its grid lines follow it up"
+        }
+      }
+    },
+    "views": {
+      "name": "Views",
+      "intro": "Build the working-view structure in bulk: scope boxes first, then the views bounded by them, plus one isolated view per trade.",
+      "tools": {
+        "scopeBoxCreator": {
+          "name": "Scope Box Creator",
+          "blurb": "Creates scope boxes from room clusters by duplicating a seed box — one per building cluster (full height), or one per cluster per level with automatic level assignment (each level claimed by exactly one box, bottom-level claims taking priority) — with slot-based naming and a per-level end-extension.",
+          "example": "2 clusters × 5 levels auto-assigns 10 per-level boxes with no level left unclaimed"
+        },
+        "scopeBoxManager": {
+          "name": "Scope Box Manager",
+          "blurb": "Manages existing scope boxes: see which views and datums use each, assign to views or grids/levels/reference planes, duplicate, bind a box's sides to grid lines, split one box into two, bulk rename, and delete unused boxes.",
+          "example": "duplicate a box, bind its sides to grids C and 4, then split it into East/West halves"
+        },
+        "bulkViews": {
+          "name": "Bulk Views",
+          "blurb": "Creates views in bulk, five ways: by level (cropped to scope boxes or uncropped), duplicated plain/with-detailing/as-dependent, duplicated once per view template, dependents copied from a source view's crop layout, or one isolated view per linked file.",
+          "example": "5 levels × 2 clusters by level, or one isolated view per link — same tool, pick the mode"
+        },
+        "explode": {
+          "name": "Explode View by Trade",
+          "blurb": "Copies a 3D view once per trade at the same camera angle and section box, isolates each copy to its trade using the Auto Filters filters, and stacks the copies by elevation.",
+          "example": "one coordination view becomes a separate 3D for each trade"
+        }
+      }
+    },
+    "filters": {
+      "name": "Filters & Legends",
+      "intro": "Set up the view filters and legend the rest of the workflow leans on. The trades you define here get reused by the view, ceiling and clash tools, so this is usually the first stop.",
+      "tools": {
+        "autoFilters": {
+          "name": "Auto Filters",
+          "blurb": "Scans the linked models for the systems in use, builds one view filter per trade, and applies its color across the views you choose. Explode View by Trade, the clash tools and Ceiling Heatmap all reuse these trades instead of setting them up again.",
+          "example": "\"Chilled Water Supply\" becomes a blue filter, reused as a clash group and a legend row"
+        },
+        "legendCreation": {
+          "name": "Legend Creation",
+          "blurb": "Builds and updates a Legend view from the same filters, so the legend on the sheet always matches the colors on the views.",
+          "example": "add a trade in Auto Filters, run this again, and the new swatch turns up in the legend"
+        }
+      }
+    },
+    "dimensioning": {
       "name": "Dimensioning",
       "intro": "Find where two groups of elements run into each other, mark and color them in plan or section, and dimension each one to the nearest grid or slab edge. Definitions hold the rules, the finders run them, and Refine just redoes the dimensions.",
       "tools": {
@@ -183,55 +183,42 @@
         }
       }
     },
-    "copy": {
-      "name": "Copy from Link",
-      "intro": "Pull elements out of a linked model into the host so the other tools can work on real host geometry. Run any of these again and only what changed gets redone.",
+    "sheets": {
+      "name": "Sheets",
+      "intro": "Get views onto sheets, line up matching viewports, and rename sheets or views in bulk.",
       "tools": {
-        "linear": {
-          "name": "Copy Linear",
-          "blurb": "Copies linear runs out of a link into the host and either splits them into standard lengths or swaps in a family at set spacing. Run it again and only the changed runs get redone.",
-          "example": "a linked pipe run comes in as host pipes in 6 m lengths"
+        "placeDependent": {
+          "name": "Place Dependent Views",
+          "blurb": "Makes one sheet per view and drops that view's dependents onto it, each trimmed to its crop and packed so nothing overlaps.",
+          "example": "a parent view and its 6 dependents land on a single packed sheet"
         },
-        "grids": {
-          "name": "Copy Datums",
-          "blurb": "Copies grids and levels from a link into the host. Any grid or level whose name already exists is skipped and noted, since both have to be unique.",
-          "example": "link grids A to F and levels L1-L4 come across, and existing names are left alone"
+        "alignViews": {
+          "name": "Align Sheet Views",
+          "blurb": "Lines the viewports on your sheets up against a reference sheet so matching views sit exactly on top of each other. It pairs views by scope box, or by crop overlap when there isn't one, and can inherit the scope box, grid extents and crop.",
+          "example": "snap the MEP sheet's viewports to match the architectural reference"
         },
-        "elements": {
-          "name": "Copy Elements",
-          "blurb": "Copies elements from a link into the host: pick the categories, then tick the family types you want. Run it again and only the changed elements get redone.",
-          "example": "pick Mechanical Equipment, then tick the AHU types to bring in"
+        "rename": {
+          "name": "Bulk Rename",
+          "blurb": "Renames sheets or views in bulk by find-and-replace, a prefix or suffix, a running number, or a token pattern. It checks for duplicate numbers and names and skips the clashes.",
+          "example": "turn A-101, A-102... into M-101, M-102... in one pass"
         }
       }
     },
-    "coordination": {
-      "name": "Setup",
-      "intro": "Check the links are set up right, line up shared coordinates across the host and its links, then audit that every file's grids actually agree.",
+    "export": {
+      "name": "Export",
+      "intro": "Send finished sheets and views out to PDF, DWG, NWC or IFC.",
       "tools": {
-        "linkAudit": {
-          "name": "Link Audit",
-          "blurb": "Read-only report on every loaded link: load status, positioning, display mode, pinned state, workset, attachment type, and last-saved time. The first thing to check on a new coordination project.",
-          "example": "3 links found — 1 unloaded, 1 not displaying By Host View, flagged for attention"
+        "bulkExport": {
+          "name": "Bulk Export",
+          "blurb": "Exports the sheets and views you pick to PDF, DWG, NWC or IFC, naming each file from a token pattern. A saved Revit print set can be combined into one PDF and exported as individual DWGs in the same run. It only offers the formats that suit your selection, since NWC and IFC need a 3D view.",
+          "example": "a saved print set exports as one combined PDF plus individual DWGs"
         },
-        "alignCoordinates": {
-          "name": "Align Coordinates",
-          "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, rotates and translates each selected link so its same-named grid intersection lands on the host's, then publishes the host's shared coordinates to those links.",
-          "example": "Survey Point to A ∩ 1 at Level 1, 3 links aligned, coordinates published"
-        },
-        "compareGrids": {
-          "name": "Compare Grids",
-          "blurb": "Read-only audit that compares grid lines across the host and its loaded links in one shared frame, flagging grids that are missing, offset, rotated, or present in only one file.",
-          "example": "host vs 2 links: 14 grids match, grid C is offset 3/8\", grid F only exists in STR"
+        "printView": {
+          "name": "Print View",
+          "blurb": "Exports just the active view or sheet to PDF using the same settings as Bulk Export. One click, no picker.",
+          "example": "the active sheet becomes a single PDF"
         }
       }
     }
-  },
-  "stages": {
-    "s01": { "name": "Set Up",        "tagline": "Filters · Copy from Link · Setup" },
-    "s02": { "name": "Prep Geometry", "tagline": "Modify" },
-    "s03": { "name": "Build Views",   "tagline": "Views · Ceilings" },
-    "s04": { "name": "Coordinate",    "tagline": "Dimensioning" },
-    "s05": { "name": "Document",      "tagline": "Sheets" },
-    "s06": { "name": "Output",        "tagline": "Export" }
   }
 }

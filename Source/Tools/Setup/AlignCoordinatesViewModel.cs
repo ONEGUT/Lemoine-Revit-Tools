@@ -170,22 +170,82 @@ namespace LemoineTools.Tools.Setup
             }
 
             if (_hostGrid1 == null) _hostGrid1 = _data.HostGridNames[0];
-            if (_hostGrid2 == null) _hostGrid2 = _data.HostGridNames.Count > 1 ? _data.HostGridNames[1] : _data.HostGridNames[0];
 
             var wrap = SubFieldsBox();
             var inner = (StackPanel)wrap.Child;
 
             inner.Children.Add(Label("Grid 1"));
             var g1 = new SingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid1, AccessibleName = "Grid 1" };
-            g1.SelectionChanged += v => { _hostGrid1 = v; Changed(); };
             inner.Children.Add(g1);
 
-            inner.Children.Add(Label("Grid 2"));
-            var g2 = new SingleSelect { Items = _data.HostGridNames, SelectedItem = _hostGrid2, AccessibleName = "Grid 2" };
-            g2.SelectionChanged += v => { _hostGrid2 = v; Changed(); };
-            inner.Children.Add(g2);
+            var g2Label = Label("Grid 2");
+            inner.Children.Add(g2Label);
+            var g2Container = new StackPanel();
+            inner.Children.Add(g2Container);
+
+            void RebuildGrid2()
+            {
+                g2Container.Children.Clear();
+                var candidates = CrossingGridNames(_data.HostGrids, _hostGrid1);
+                if (candidates.Count == 0)
+                {
+                    g2Container.Children.Add(Dim($"No grids cross '{_hostGrid1}' — pick a different Grid 1."));
+                    _hostGrid2 = null;
+                    return;
+                }
+                if (_hostGrid2 == null || !candidates.Contains(_hostGrid2))
+                    _hostGrid2 = candidates[0];
+
+                var g2 = new SingleSelect { Items = candidates, SelectedItem = _hostGrid2, AccessibleName = "Grid 2" };
+                g2.SelectionChanged += v => { _hostGrid2 = v; Changed(); };
+                g2Container.Children.Add(g2);
+            }
+
+            g1.SelectionChanged += v => { _hostGrid1 = v; RebuildGrid2(); Changed(); };
+            RebuildGrid2();
 
             _hostGridFieldsPanel.Children.Add(wrap);
+        }
+
+        // Grids that cross the named grid within the SAME document (host grids against host
+        // grids). A grid whose curve isn't a straight Line is never filtered out (IsLine=false
+        // is treated as "always crosses" — see GridGeom's doc comment).
+        private static List<string> CrossingGridNames(List<GridGeom> grids, string? againstName)
+        {
+            var against = grids.FirstOrDefault(g => g.Name == againstName);
+            if (against == null) return grids.Select(g => g.Name).Where(n => n != againstName).ToList();
+            return grids.Where(g => g.Name != againstName && GridsCross(against, g))
+                        .Select(g => g.Name).ToList();
+        }
+
+        // Segment/segment intersection test with each segment extended slightly (1 ft) at both
+        // ends so grids that meet exactly at their drawn extents still count as crossing.
+        // Non-Line grids (arcs/splines) are treated as always crossing.
+        private static bool GridsCross(GridGeom a, GridGeom b)
+        {
+            if (!a.IsLine || !b.IsLine) return true;
+
+            const double ext = 1.0;
+            (double x0, double y0, double x1, double y1) Extend(GridGeom g)
+            {
+                double dx = g.X1 - g.X0, dy = g.Y1 - g.Y0;
+                double len = Math.Sqrt(dx * dx + dy * dy);
+                if (len < 1e-9) return (g.X0, g.Y0, g.X1, g.Y1);
+                double ux = dx / len, uy = dy / len;
+                return (g.X0 - ux * ext, g.Y0 - uy * ext, g.X1 + ux * ext, g.Y1 + uy * ext);
+            }
+
+            var (ax0, ay0, ax1, ay1) = Extend(a);
+            var (bx0, by0, bx1, by1) = Extend(b);
+
+            double d1x = ax1 - ax0, d1y = ay1 - ay0;
+            double d2x = bx1 - bx0, d2y = by1 - by0;
+            double denom = d1x * d2y - d1y * d2x;
+            if (Math.Abs(denom) < 1e-9) return false; // parallel (or coincident) — never crosses
+
+            double t = ((bx0 - ax0) * d2y - (by0 - ay0) * d2x) / denom;
+            double u = ((bx0 - ax0) * d1y - (by0 - ay0) * d1x) / denom;
+            return t >= 0 && t <= 1 && u >= 0 && u <= 1;
         }
 
         private void RebuildHostLevelFields()
@@ -358,7 +418,6 @@ namespace LemoineTools.Tools.Setup
                 }
 
                 if (string.IsNullOrEmpty(spec.Grid1Name)) spec.Grid1Name = grids[0];
-                if (string.IsNullOrEmpty(spec.Grid2Name)) spec.Grid2Name = grids.Count > 1 ? grids[1] : grids[0];
 
                 var fieldsGrid = new Grid();
                 fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -369,17 +428,35 @@ namespace LemoineTools.Tools.Setup
                 Grid.SetColumn(col1, 0);
                 col1.Children.Add(Label("Grid 1"));
                 var g1Sel = new SingleSelect { Items = grids, SelectedItem = spec.Grid1Name, AccessibleName = $"{info.Name} Grid 1" };
-                g1Sel.SelectionChanged += v => { spec.Grid1Name = v ?? ""; Changed(); };
-                col1.Children.Add(g1Sel);
                 fieldsGrid.Children.Add(col1);
 
                 var col2 = new StackPanel();
                 Grid.SetColumn(col2, 2);
                 col2.Children.Add(Label("Grid 2"));
-                var g2Sel = new SingleSelect { Items = grids, SelectedItem = spec.Grid2Name, AccessibleName = $"{info.Name} Grid 2" };
-                g2Sel.SelectionChanged += v => { spec.Grid2Name = v ?? ""; Changed(); };
-                col2.Children.Add(g2Sel);
+                var g2Container = new StackPanel();
+                col2.Children.Add(g2Container);
                 fieldsGrid.Children.Add(col2);
+
+                void RebuildG2()
+                {
+                    g2Container.Children.Clear();
+                    var candidates = CrossingGridNames(info.Grids, spec.Grid1Name);
+                    if (candidates.Count == 0)
+                    {
+                        g2Container.Children.Add(Dim($"No grids in {info.Name} cross '{spec.Grid1Name}' — pick a different Grid 1."));
+                        spec.Grid2Name = "";
+                        return;
+                    }
+                    if (string.IsNullOrEmpty(spec.Grid2Name) || !candidates.Contains(spec.Grid2Name))
+                        spec.Grid2Name = candidates[0];
+
+                    var g2Sel = new SingleSelect { Items = candidates, SelectedItem = spec.Grid2Name, AccessibleName = $"{info.Name} Grid 2" };
+                    g2Sel.SelectionChanged += v => { spec.Grid2Name = v ?? ""; Changed(); };
+                    g2Container.Children.Add(g2Sel);
+                }
+
+                g1Sel.SelectionChanged += v => { spec.Grid1Name = v ?? ""; RebuildG2(); Changed(); };
+                RebuildG2();
 
                 overridePanel.Children.Add(fieldsGrid);
             }

@@ -208,7 +208,12 @@ namespace LemoineTools.Framework
                 RunLog = RL((AppStrings.T("overviewDemos.tools.reprojectGrids.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.reprojectGrids.runLog.2"), "pass")),
             },
 
-            ["Bulk Views by Level"] = new OverviewDemoSpec
+            // Bulk Views merged 4 separate tools (by level, duplicate, by template, dependents)
+            // into one 5-mode tool (WS-11); this demo (formerly "Bulk Views by Level") is kept
+            // as the representative walkthrough. The other 3 demos' dictionary entries were
+            // removed since no card resolves to their old tool names anymore — their JSON
+            // strings stay in overviewDemos.json (harmless unused text, not a broken lookup).
+            ["Bulk Views"] = new OverviewDemoSpec
             {
                 Title = AppStrings.T("overviewDemos.tools.bulkViewsByLevel.title"), RunLabel = AppStrings.T("overviewDemos.tools.bulkViewsByLevel.runLabel"),
                 Steps = new[]
@@ -219,46 +224,6 @@ namespace LemoineTools.Framework
                     Info("S4", AppStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s4.title"), AppStrings.T("overviewDemos.tools.bulkViewsByLevel.steps.s4.info")),
                 },
                 RunLog = RL((AppStrings.T("overviewDemos.tools.bulkViewsByLevel.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.bulkViewsByLevel.runLog.2"), "pass")),
-            },
-
-            ["Bulk Duplicate"] = new OverviewDemoSpec
-            {
-                Title = AppStrings.T("overviewDemos.tools.bulkDuplicate.title"), RunLabel = AppStrings.T("overviewDemos.tools.bulkDuplicate.runLabel"),
-                Steps = new[]
-                {
-                    MultiFlat("S1", AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s1.title"), true, AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s1.hint"), PlanViews),
-                    Single("S2", AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.title"), true, AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.hint"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.1"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.2"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s2.items.3")),
-                    Txt("S3", AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.title"), true, AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.hint"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.default"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s3.placeholder")),
-                    Info("S4", AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s4.title"), AppStrings.T("overviewDemos.tools.bulkDuplicate.steps.s4.info")),
-                },
-                RunLog = RL((AppStrings.T("overviewDemos.tools.bulkDuplicate.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.bulkDuplicate.runLog.2"), "pass")),
-            },
-
-            ["Bulk Views by Template"] = new OverviewDemoSpec
-            {
-                Title = AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.title"), RunLabel = AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLabel"),
-                Steps = new[]
-                {
-                    MultiFlat("S1", AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s1.title"), true, AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s1.hint"), PlanViews),
-                    MultiFlat("S2", AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s2.title"), true, AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s2.hint"), Templates),
-                    Txt("S3", AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.title"), true, AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.hint"), AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.default"), AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s3.placeholder")),
-                    Info("S4", AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s4.title"), AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.steps.s4.info")),
-                },
-                RunLog = RL((AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.bulkViewsByTemplate.runLog.2"), "pass")),
-            },
-
-            ["Bulk Dependent Views"] = new OverviewDemoSpec
-            {
-                Title = AppStrings.T("overviewDemos.tools.bulkDependentViews.title"), RunLabel = AppStrings.T("overviewDemos.tools.bulkDependentViews.runLabel"),
-                Steps = new[]
-                {
-                    Single("S1", AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s1.title"), true, AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s1.hint"), PlanViews.ToArray()),
-                    Info("S2", AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s2.title"), AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s2.info")),
-                    MultiFlat("S3", AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s3.title"), true, AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s3.hint"), PlanViews),
-                    Txt("S4", AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.title"), false, AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.hint"), AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.default"), AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s4.placeholder")),
-                    Info("S5", AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s5.title"), AppStrings.T("overviewDemos.tools.bulkDependentViews.steps.s5.info")),
-                },
-                RunLog = RL((AppStrings.T("overviewDemos.tools.bulkDependentViews.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.bulkDependentViews.runLog.2"), "pass"), (AppStrings.T("overviewDemos.tools.bulkDependentViews.runLog.3"), "pass")),
             },
 
             ["Explode View by Trade"] = new OverviewDemoSpec
@@ -500,7 +465,7 @@ namespace LemoineTools.Framework
                 RunLog = RL((AppStrings.T("overviewDemos.tools.copyLinear.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.copyLinear.runLog.2"), "pass"), (AppStrings.T("overviewDemos.tools.copyLinear.runLog.3"), "pass")),
             },
 
-            ["Copy Grids"] = new OverviewDemoSpec
+            ["Copy Datums"] = new OverviewDemoSpec
             {
                 Title = AppStrings.T("overviewDemos.tools.copyGrids.title"), RunLabel = AppStrings.T("overviewDemos.tools.copyGrids.runLabel"),
                 Steps = new[]
@@ -544,21 +509,8 @@ namespace LemoineTools.Framework
                 RunLog = RL((AppStrings.T("overviewDemos.tools.alignCoordinates.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.alignCoordinates.runLog.2"), "pass"), (AppStrings.T("overviewDemos.tools.alignCoordinates.runLog.3"), "pass")),
             },
 
-            ["Compare Grids"] = new OverviewDemoSpec
-            {
-                Title = AppStrings.T("overviewDemos.tools.compareGrids.title"), RunLabel = AppStrings.T("overviewDemos.tools.compareGrids.runLabel"),
-                Steps = new[]
-                {
-                    Composite("files", AppStrings.T("overviewDemos.tools.compareGrids.steps.files.title"), true, AppStrings.T("overviewDemos.tools.compareGrids.steps.files.hint"),
-                        MultiFlat("links", AppStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.links"), true, "", Links),
-                        Toggles("host", "", "",
-                            Tg("inclhost", AppStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.inclHost"), "", true)),
-                        Num("postol", AppStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.posTol"), "", 0.5, 0, 120, 0.0625, "", 3),
-                        Num("angtol", AppStrings.T("overviewDemos.tools.compareGrids.steps.files.parts.angTol"), "", 0.5, 0, 45, 0.05, "", 2)),
-                    Info("run", AppStrings.T("overviewDemos.tools.compareGrids.steps.run.title"), AppStrings.T("overviewDemos.tools.compareGrids.steps.run.info")),
-                },
-                RunLog = RL((AppStrings.T("overviewDemos.tools.compareGrids.runLog.1"), "info"), (AppStrings.T("overviewDemos.tools.compareGrids.runLog.2"), "pass"), (AppStrings.T("overviewDemos.tools.compareGrids.runLog.3"), "skip")),
-            },
+            // Compare Grids' demo entry was removed — the tool is ribbon-retired
+            // (ShowRetiredSetupTools = false) and no longer has a catalog card.
         };
 
             string sampledFrom = OverviewSamples.Current?.DocumentTitle ?? "";

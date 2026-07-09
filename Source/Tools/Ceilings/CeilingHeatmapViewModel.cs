@@ -75,6 +75,31 @@ namespace LemoineTools.Tools.Ceilings
         private readonly List<long>         _allViewIds      = new List<long>();
         private readonly BrowserTree _browserTree;
 
+        // ── S1 mode: existing RCP views vs. generate one per level ──────────────
+        private const string ModeExisting = "Existing";
+        private const string ModeGenerate = "Generate";
+        private string _viewMode = ModeExisting;
+
+        public sealed class HeatmapLevelEntry
+        {
+            public ElementId Id          { get; set; } = ElementId.InvalidElementId;
+            public string    Name        { get; set; } = "";
+            public double    ElevationFt { get; set; }
+        }
+
+        public sealed class HeatmapTemplateEntry
+        {
+            public ElementId Id   { get; set; } = ElementId.InvalidElementId;
+            public string    Name { get; set; } = "";
+        }
+
+        private readonly List<HeatmapLevelEntry>    _levels;
+        private readonly List<HeatmapTemplateEntry> _rcpTemplates;
+        private List<ElementId> _selectedGenerateLevelIds = new List<ElementId>();
+        private string          _generateSuffix           = "_Heatmap";
+        private ElementId       _generateTemplateId       = ElementId.InvalidElementId;
+        private Dictionary<string, ElementId> _levelKeyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
+
         // ── Debug wiring ─────────────────────────────────────────────────────────
         private static CeilingHeatmapDebugHandler? _debugHandler;
         private static ExternalEvent?              _debugEvent;
@@ -98,11 +123,15 @@ namespace LemoineTools.Tools.Ceilings
             CeilingHeatmapEventHandler? handler,
             ExternalEvent?              externalEvent,
             Dictionary<string, List<(string Name, ElementId Id)>>? viewsByLevel = null,
-            BrowserTree?         browserTree = null)
+            BrowserTree?         browserTree = null,
+            List<HeatmapLevelEntry>?    levels = null,
+            List<HeatmapTemplateEntry>? rcpTemplates = null)
         {
             _handler     = handler;
             _event       = externalEvent;
             _browserTree = browserTree ?? new BrowserTree();
+            _levels       = levels       ?? new List<HeatmapLevelEntry>();
+            _rcpTemplates = rcpTemplates ?? new List<HeatmapTemplateEntry>();
 
             if (viewsByLevel != null)
                 foreach (var kvp in viewsByLevel)
@@ -127,6 +156,41 @@ namespace LemoineTools.Tools.Ceilings
 
         // ── S1: View selection ───────────────────────────────────────────────────
         private FrameworkElement BuildS1()
+        {
+            var outer = new StackPanel();
+
+            string existingLabel = AppStrings.T("ceilings.heatmap.labels.modeExisting");
+            string generateLabel = AppStrings.T("ceilings.heatmap.labels.modeGenerate");
+            var modeSelect = new SingleSelect
+            {
+                Width = 300,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Items = new List<string> { existingLabel, generateLabel },
+                SelectedItem = _viewMode == ModeGenerate ? generateLabel : existingLabel,
+            };
+
+            var body = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+
+            void RebuildBody()
+            {
+                body.Children.Clear();
+                body.Children.Add(_viewMode == ModeGenerate ? BuildGenerateBody() : BuildExistingBody());
+            }
+
+            modeSelect.SelectionChanged += v =>
+            {
+                _viewMode = v == generateLabel ? ModeGenerate : ModeExisting;
+                RebuildBody();
+                OnValidationChanged();
+            };
+
+            outer.Children.Add(modeSelect);
+            outer.Children.Add(body);
+            RebuildBody();
+            return outer;
+        }
+
+        private FrameworkElement BuildExistingBody()
         {
             if (_allViewIds.Count == 0)
             {
@@ -155,6 +219,90 @@ namespace LemoineTools.Tools.Ceilings
             };
             picker.SetTree(_browserTree, _allViewIds, _selectedViewIds.ToList());
             return picker;
+        }
+
+        private FrameworkElement BuildGenerateBody()
+        {
+            var outer = new StackPanel();
+
+            if (_levels.Count == 0)
+            {
+                outer.Children.Add(new TextBlock
+                {
+                    Text = AppStrings.T("ceilings.heatmap.labels.noLevels"),
+                    TextWrapping = TextWrapping.Wrap, FontStyle = FontStyles.Italic,
+                });
+                return outer;
+            }
+
+            _levelKeyToId.Clear();
+            var groups = new Dictionary<string, List<string>>
+            {
+                ["Levels"] = _levels.OrderBy(l => l.ElevationFt).Select(l =>
+                {
+                    string key = AppStrings.T("ceilings.heatmap.labels.levelRow", l.Name, l.ElevationFt);
+                    _levelKeyToId[key] = l.Id;
+                    return key;
+                }).ToList(),
+            };
+            var selectedIdSet = new HashSet<long>(_selectedGenerateLevelIds.Select(id => id.Value));
+            var preSelected = _levelKeyToId.Where(kv => selectedIdSet.Contains(kv.Value.Value)).Select(kv => kv.Key).ToList();
+
+            var levelTabs = new MultiSelectTabs();
+            levelTabs.SelectionChanged += selected =>
+            {
+                _selectedGenerateLevelIds = selected
+                    .Where(k => _levelKeyToId.ContainsKey(k))
+                    .Select(k => _levelKeyToId[k])
+                    .ToList();
+                OnValidationChanged();
+            };
+            // First build: nothing selected yet, so default to all levels. SetGroups fires
+            // SelectionChanged once at the end of setup (subscribed above), which syncs
+            // _selectedGenerateLevelIds to whatever list is passed here — including on
+            // later rebuilds, where the user's own selection is preserved via preSelected.
+            levelTabs.SetGroups(groups, preSelected.Count > 0 ? preSelected : _levelKeyToId.Keys.ToList());
+            outer.Children.Add(levelTabs);
+
+            outer.Children.Add(new FrameworkElement { Height = 10 });
+
+            var suffixLabel = new TextBlock { Text = AppStrings.T("ceilings.heatmap.labels.generateSuffix"), Margin = new Thickness(0, 0, 0, 4) };
+            suffixLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            suffixLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            suffixLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(suffixLabel);
+
+            var suffixBox = new WpfTextBox { Text = _generateSuffix, Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
+            suffixBox.SetResourceReference(FrameworkElement.HeightProperty,                "LemoineH_Input");
+            suffixBox.SetResourceReference(System.Windows.Controls.Control.PaddingProperty,"LemoineTh_InputPad");
+            suffixBox.SetResourceReference(WpfTextBox.BackgroundProperty,  "LemoineSelectBg");
+            suffixBox.SetResourceReference(WpfTextBox.ForegroundProperty,  "LemoineText");
+            suffixBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
+            suffixBox.SetResourceReference(WpfTextBox.FontFamilyProperty,  "LemoineMonoFont");
+            suffixBox.SetResourceReference(WpfTextBox.BorderBrushProperty, "LemoineBorderMid");
+            suffixBox.TextChanged += (s, e) => { _generateSuffix = suffixBox.Text; OnValidationChanged(); };
+            outer.Children.Add(suffixBox);
+
+            outer.Children.Add(new FrameworkElement { Height = 10 });
+
+            var tmplLabel = new TextBlock { Text = AppStrings.T("ceilings.heatmap.labels.generateTemplate"), Margin = new Thickness(0, 0, 0, 4) };
+            tmplLabel.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            tmplLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            tmplLabel.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(tmplLabel);
+
+            string noneLabel = AppStrings.T("ceilings.heatmap.labels.generateTemplateNone");
+            var tmplNames = new List<string> { noneLabel }.Concat(_rcpTemplates.Select(t => t.Name)).ToList();
+            string curTmplName = _rcpTemplates.FirstOrDefault(t => t.Id.Value == _generateTemplateId.Value)?.Name ?? noneLabel;
+            var tmplSelect = new SingleSelect { Width = 260, HorizontalAlignment = HorizontalAlignment.Left, Items = tmplNames, SelectedItem = curTmplName };
+            tmplSelect.SelectionChanged += name =>
+            {
+                var entry = _rcpTemplates.FirstOrDefault(t => t.Name == name);
+                _generateTemplateId = entry?.Id ?? ElementId.InvalidElementId;
+            };
+            outer.Children.Add(tmplSelect);
+
+            return outer;
         }
 
         // ── S_RAMP: Color Ramp step ──────────────────────────────────────────────
@@ -460,8 +608,11 @@ namespace LemoineTools.Tools.Ceilings
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
         {
-            ["views"]  = _selectedViewIds.Count == 0 ? "—"
-                : AppStrings.T("ceilings.heatmap.review.viewsValue", _selectedViewIds.Count),
+            ["views"]  = _viewMode == ModeGenerate
+                ? (_selectedGenerateLevelIds.Count == 0 ? "—"
+                    : AppStrings.T("ceilings.heatmap.review.generateValue", _selectedGenerateLevelIds.Count))
+                : (_selectedViewIds.Count == 0 ? "—"
+                    : AppStrings.T("ceilings.heatmap.review.viewsValue", _selectedViewIds.Count)),
             ["ramp"]   = AppStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh),
             ["delete"] = _deleteExisting ? AppStrings.T("ceilings.heatmap.review.yes") : AppStrings.T("ceilings.heatmap.review.no"),
             ["tags"]   = _placeTags ? AppStrings.T("ceilings.heatmap.review.yes") : AppStrings.T("ceilings.heatmap.review.no"),
@@ -477,15 +628,21 @@ namespace LemoineTools.Tools.Ceilings
         // ═════════════════════════════════════════════════════════════════════════
         public bool IsValid(string stepId)
         {
-            if (stepId == "S1") return _selectedViewIds.Count > 0;
+            if (stepId == "S1")
+                return _viewMode == ModeGenerate
+                    ? _selectedGenerateLevelIds.Count > 0
+                    : _selectedViewIds.Count > 0;
             return true;
         }
 
         public string SummaryFor(string stepId)
         {
             if (stepId == "S1")
-                return _selectedViewIds.Count == 0 ? "—"
-                    : AppStrings.T("ceilings.heatmap.summaries.viewsSelected", _selectedViewIds.Count);
+                return _viewMode == ModeGenerate
+                    ? (_selectedGenerateLevelIds.Count == 0 ? "—"
+                        : AppStrings.T("ceilings.heatmap.summaries.levelsSelected", _selectedGenerateLevelIds.Count))
+                    : (_selectedViewIds.Count == 0 ? "—"
+                        : AppStrings.T("ceilings.heatmap.summaries.viewsSelected", _selectedViewIds.Count));
             if (stepId == "S_RAMP")
                 return AppStrings.T("ceilings.heatmap.labels.rampDisplay", _colorLow, _colorMid, _colorHigh);
             if (stepId == "S2")
@@ -512,9 +669,18 @@ namespace LemoineTools.Tools.Ceilings
             CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
             SaveColorsToSettings();
 
-            _handler!.SelectedViewIds = _selectedViewIds
-                .Select(id => new ElementId(id))
-                .ToList();
+            if (_viewMode == ModeGenerate)
+            {
+                _handler!.SelectedViewIds     = new List<ElementId>();
+                _handler.GenerateForLevelIds  = new List<ElementId>(_selectedGenerateLevelIds);
+                _handler.GenerateSuffix       = string.IsNullOrWhiteSpace(_generateSuffix) ? "_Heatmap" : _generateSuffix;
+                _handler.GenerateTemplateId   = _generateTemplateId;
+            }
+            else
+            {
+                _handler!.SelectedViewIds    = _selectedViewIds.Select(id => new ElementId(id)).ToList();
+                _handler.GenerateForLevelIds = new List<ElementId>();
+            }
             _handler.DeleteExisting  = _deleteExisting;
             _handler.PlaceTags       = _placeTags;
             _handler.ElevTolerance   = _elevTolerance;

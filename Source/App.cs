@@ -16,6 +16,12 @@ namespace LemoineTools
 {
     public class App : IExternalApplication
     {
+        // Link Audit and Compare Grids buttons are deactivated on the ribbon (deliberately
+        // left in the codebase) — flip to true to bring them back without re-adding code.
+        // static readonly (not const): a const would make the `if` below a compile-time
+        // constant and the compiler flags its guarded block as unreachable code (CS0162).
+        private static readonly bool ShowRetiredSetupTools = false;
+
         // Shared main-thread reload event for StepFlowWindow's "Reload" action (re-captures a
         // tool's document-derived options). Tool-agnostic, so one instance serves every window.
         internal static Framework.ReloadHandler? ReloadHandler { get; private set; }
@@ -60,6 +66,10 @@ namespace LemoineTools
         internal static LinkViewsLevelRunHandler?    LinkViewsLevelRunHandler    { get; private set; }
         internal static ExternalEvent?               LinkViewsLevelRunEvent      { get; private set; }
 
+        // ── Bulk Views — By Link (merged into the Bulk Views tool) ──────────────────
+        internal static LemoineTools.Tools.LinkViews.ViewsByLinkRunHandler? ViewsByLinkRunHandler { get; private set; }
+        internal static ExternalEvent?               ViewsByLinkRunEvent         { get; private set; }
+
         // ── T10 — Scope Boxes ───────────────────────────────────────────────────────
         internal static LemoineTools.Tools.ScopeBoxes.ScopeBoxCreatorScanHandler? ScopeBoxCreatorScanHandler { get; private set; }
         internal static ExternalEvent?               ScopeBoxCreatorScanEvent    { get; private set; }
@@ -89,6 +99,8 @@ namespace LemoineTools
         // ── T03 — Bulk Export ───────────────────────────────────────────────────────
         internal static BulkExportEventHandler?   BulkExportHandler   { get; private set; }
         internal static ExternalEvent?             BulkExportEvent     { get; private set; }
+        internal static LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler? BulkExportPrintSetHandler { get; private set; }
+        internal static ExternalEvent?             BulkExportPrintSetEvent { get; private set; }
         internal static PrintViewEventHandler?     PrintViewHandler    { get; private set; }
         internal static ExternalEvent?             PrintViewEvent      { get; private set; }
 
@@ -219,6 +231,8 @@ namespace LemoineTools
             // ── Link Views — Level ────────────────────────────────────────────
             LinkViewsLevelRunHandler    = new LinkViewsLevelRunHandler();
             LinkViewsLevelRunEvent      = ExternalEvent.Create(LinkViewsLevelRunHandler);
+            ViewsByLinkRunHandler       = new LemoineTools.Tools.LinkViews.ViewsByLinkRunHandler();
+            ViewsByLinkRunEvent         = ExternalEvent.Create(ViewsByLinkRunHandler);
             ViewsByTemplateRunHandler   = new ViewsByTemplateRunHandler();
             ViewsByTemplateRunEvent     = ExternalEvent.Create(ViewsByTemplateRunHandler);
             ViewsBulkDuplicateRunHandler = new ViewsBulkDuplicateRunHandler();
@@ -243,6 +257,8 @@ namespace LemoineTools
             // ── Testing — new tools ───────────────────────────────────────────
             BulkExportHandler   = new BulkExportEventHandler();
             BulkExportEvent     = ExternalEvent.Create(BulkExportHandler);
+            BulkExportPrintSetHandler = new LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler();
+            BulkExportPrintSetEvent   = ExternalEvent.Create(BulkExportPrintSetHandler);
             PrintViewHandler    = new PrintViewEventHandler();
             PrintViewEvent      = ExternalEvent.Create(PrintViewHandler);
             ClashPickHandler      = new ClashPickEventHandler();
@@ -326,20 +342,28 @@ namespace LemoineTools
                 L.T("ribbon.buttons.upgradeLinks.tip"),
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
-            setupPanel.AddItem(Btn(
-                "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
-                L.T("ribbon.buttons.linkAudit.tip"),
-                char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
+            // Link Audit and Compare Grids are deactivated (not deleted) — flip
+            // ShowRetiredSetupTools to true to bring them back on the ribbon.
+            if (ShowRetiredSetupTools)
+            {
+                setupPanel.AddItem(Btn(
+                    "LT_LinkAudit", L.T("ribbon.buttons.linkAudit.label"), "LinkAuditCommand",
+                    L.T("ribbon.buttons.linkAudit.tip"),
+                    char.ConvertFromUtf32(0xE9D9)));  // Diagnostic
+            }
 
             setupPanel.AddItem(Btn(
                 "LT_AlignCoordinates", L.T("ribbon.buttons.alignCoordinates.label"), "AlignCoordinatesCommand",
                 L.T("ribbon.buttons.alignCoordinates.tip"),
                 char.ConvertFromUtf32(0xE809)));  // MapPin
 
-            setupPanel.AddItem(Btn(
-                "LT_CompareGrids", L.T("ribbon.buttons.compareGrids.label"), "CompareGridsCommand",
-                L.T("ribbon.buttons.compareGrids.tip"),
-                char.ConvertFromUtf32(0xE80A)));  // GridView
+            if (ShowRetiredSetupTools)
+            {
+                setupPanel.AddItem(Btn(
+                    "LT_CompareGrids", L.T("ribbon.buttons.compareGrids.label"), "CompareGridsCommand",
+                    L.T("ribbon.buttons.compareGrids.tip"),
+                    char.ConvertFromUtf32(0xE80A)));  // GridView
+            }
 
             setupPanel.AddItem(Btn(
                 "LT_PushCoordinates", L.T("ribbon.buttons.pushCoordinates.label"), "PushCoordinatesToLinksCommand",
@@ -495,41 +519,9 @@ namespace LemoineTools
             });
 
             viewsPanel.AddItem(Btn(
-                "LT_LinkViewsLevel", L.T("ribbon.buttons.linkViewsLevel.label"), "LinkViewsLevelCommand",
-                L.T("ribbon.buttons.linkViewsLevel.tip"),
-                char.ConvertFromUtf32(0xE8B7)));  // Layers
-
-            var dupViewsPulldown = new PulldownButtonData("LT_DuplicateViews", L.T("ribbon.buttons.duplicateViews.label"))
-            {
-                ToolTip    = L.T("ribbon.buttons.duplicateViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            };
-            var dupViewsBtn = viewsPanel.AddItem(dupViewsPulldown) as PulldownButton;
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsBulkDuplicate", L.T("ribbon.buttons.viewsBulkDuplicate.label"), dll, "LemoineTools.Commands.ViewsBulkDuplicateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsBulkDuplicate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8C8)),  // Copy
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8C8)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ViewsByTemplate", L.T("ribbon.buttons.viewsByTemplate.label"), dll, "LemoineTools.Commands.ViewsByTemplateCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.viewsByTemplate.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE8A9)),  // ViewAll
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE8A9)),
-            });
-
-            dupViewsBtn?.AddPushButton(new PushButtonData(
-                "LT_ReplicateDependentViews", L.T("ribbon.buttons.replicateDependentViews.label"), dll, "LemoineTools.Commands.ReplicateDependentViewsCommand")
-            {
-                ToolTip    = L.T("ribbon.buttons.replicateDependentViews.tip"),
-                LargeImage = CreateGlyphBitmap(32, char.ConvertFromUtf32(0xE71B)),  // Link
-                Image      = CreateGlyphBitmap(16, char.ConvertFromUtf32(0xE71B)),
-            });
+                "LT_BulkViews", L.T("ribbon.buttons.bulkViews.label"), "BulkViewsCommand",
+                L.T("ribbon.buttons.bulkViews.tip"),
+                char.ConvertFromUtf32(0xE8A9)));  // ViewAll
 
             viewsPanel.AddItem(Btn(
                 "LT_ExplodeViewByTrade", L.T("ribbon.buttons.explodeViewByTrade.label"), "ExplodeViewByTradeCommand",
@@ -623,15 +615,10 @@ namespace LemoineTools
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
 
-            // ── Developer ─────────────────────────────────────────────────────
-            // Reserved panel for debug harnesses. Remove/repoint buttons once their
-            // investigation is resolved.
-            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
-
-            devPanel.AddItem(Btn(
-                "LT_ScopeBoxProbe", "Scope Box\nProbe", "ScopeBoxProbeCommand",
-                "DEBUG: probe the Revit API for scope-box copy/rename/move/rotate/resize capability on this Revit year (all mutations rolled back), and write a report to %AppData%\\LemoineTools\\ScopeBoxProbe.txt.",
-                char.ConvertFromUtf32(0xE7B3)));  // Diagnostic / Bug
+            // Developer panel: created on demand for future debug harnesses (see
+            // CLAUDE.md "Crashes & Large Ambiguous Issues"). None are active right now —
+            // the Scope Box Probe that lived here has been removed (its findings are
+            // captured in CLAUDE.md and in ScopeBoxCreatorRunHandler's comments).
 
             return Result.Succeeded;
         }

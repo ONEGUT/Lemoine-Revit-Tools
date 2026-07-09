@@ -501,10 +501,7 @@ namespace LemoineTools.Tools.Ceilings
                 return;
             }
 
-            // Save settings
-            MakeCeilingGridsSettings.Instance.OutputFolder             = _outputFolder;
-            MakeCeilingGridsSettings.Instance.UseCeilingGridsSubfolder = _useCeilingGridsSubfolder;
-            MakeCeilingGridsSettings.Instance.Save();
+            // Output folder/subfolder default is Settings-window-only now (see GlobalSettingsWindow.ToolGroups.cs).
 
             // Build excluded (Family, Type) name pairs — distinct across all models.
             var excludedTypeNames = _ceilingTypes

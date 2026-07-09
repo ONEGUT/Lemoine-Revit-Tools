@@ -41,6 +41,19 @@ namespace LemoineTools.Framework.Controls
         /// </summary>
         public IReadOnlyDictionary<string, IReadOnlyList<string>>? Hierarchy { get; set; }
 
+        /// <summary>
+        /// Items shown greyed-out and un-checkable (e.g. a datum that already exists in the
+        /// host, so copying it again isn't offered) — still listed, so the user sees WHY it's
+        /// absent from the selection, rather than the item silently disappearing. Never
+        /// included in the per-group "All" toggle or in <see cref="SelectionChanged"/> results.
+        /// Set before <see cref="SetGroups"/>; <see langword="null"/> (the default) disables
+        /// no items. Only the flat (non-<see cref="Hierarchy"/>) list path honours this.
+        /// </summary>
+        public IReadOnlyCollection<string>? DisabledItems { get; set; }
+
+        private bool IsDisabled(string item) =>
+            DisabledItems != null && DisabledItems.Contains(item);
+
         // Parents whose children are currently visible (reset on SetGroups).
         private readonly HashSet<string> _expandedParents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -258,15 +271,16 @@ namespace LemoineTools.Framework.Controls
             // The per-group "All" row is meaningless when only one item may be selected.
             if (!SingleSelect)
             {
-                bool allChecked  = allItems.Count > 0 && allItems.All(x => _selected.Contains(x));
-                bool someChecked = allItems.Any(x => _selected.Contains(x)) && !allChecked;
+                var toggleable = allItems.Where(x => !IsDisabled(x)).ToList();
+                bool allChecked  = toggleable.Count > 0 && toggleable.All(x => _selected.Contains(x));
+                bool someChecked = toggleable.Any(x => _selected.Contains(x)) && !allChecked;
 
                 _checkStack.Children.Add(BuildCheckItem(
                     AppStrings.T("controls.pickers.multiSelectTabs.allGroupRow", groupName), allChecked, someChecked,
                     on =>
                     {
-                        if (on) foreach (var it in allItems) _selected.Add(it);
-                        else    foreach (var it in allItems) _selected.Remove(it);
+                        if (on) foreach (var it in toggleable) _selected.Add(it);
+                        else    foreach (var it in toggleable) _selected.Remove(it);
                         SelectionChanged?.Invoke(SelectedItems);
                         RefreshAllCounters();
                         ActivateGroup(groupName);
@@ -341,6 +355,7 @@ namespace LemoineTools.Framework.Controls
                 foreach (var item in allItems)
                 {
                     var captured = item;
+                    bool disabled = IsDisabled(item);
                     _checkStack.Children.Add(BuildCheckItem(
                         item, _selected.Contains(item), false,
                         on =>
@@ -355,7 +370,8 @@ namespace LemoineTools.Framework.Controls
                             RefreshAllCounters();
                             if (SingleSelect) ActivateGroup(groupName);
                             else              RefreshSelectAllRow(groupName, allItems);
-                        }));
+                        },
+                        disabled: disabled));
                 }
             }
         }
@@ -379,16 +395,17 @@ namespace LemoineTools.Framework.Controls
         private void RefreshSelectAllRow(string groupName, List<string> items)
         {
             if (_checkStack.Children.Count == 0) return;
-            bool allChecked  = items.Count > 0 && items.All(x => _selected.Contains(x));
-            bool someChecked = items.Any(x => _selected.Contains(x)) && !allChecked;
+            var toggleable = items.Where(x => !IsDisabled(x)).ToList();
+            bool allChecked  = toggleable.Count > 0 && toggleable.All(x => _selected.Contains(x));
+            bool someChecked = toggleable.Any(x => _selected.Contains(x)) && !allChecked;
 
             _checkStack.Children.RemoveAt(0);
             var newAll = BuildCheckItem(
                 AppStrings.T("controls.pickers.multiSelectTabs.allGroupRow", groupName), allChecked, someChecked,
                 on =>
                 {
-                    if (on) foreach (var it in items) _selected.Add(it);
-                    else    foreach (var it in items) _selected.Remove(it);
+                    if (on) foreach (var it in toggleable) _selected.Add(it);
+                    else    foreach (var it in toggleable) _selected.Remove(it);
                     SelectionChanged?.Invoke(SelectedItems);
                     RefreshAllCounters();
                     ActivateGroup(groupName);
@@ -398,13 +415,17 @@ namespace LemoineTools.Framework.Controls
         }
 
         // A flat checkbox row. Used for the "All" row, Selected-tab items, and non-hierarchy groups.
+        // A disabled row (see DisabledItems) is shown dimmed, its checkbox non-interactive, and
+        // never responds to a row click — it exists only to show the user why the item is absent
+        // from the selection.
         private UIElement BuildCheckItem(string text, bool isChecked, bool indeterminate,
-            Action<bool> onToggle, bool bold = false)
+            Action<bool> onToggle, bool bold = false, bool disabled = false)
         {
             var cb = new CheckBox
             {
                 IsChecked         = indeterminate ? (bool?)null : isChecked,
                 IsThreeState      = indeterminate,
+                IsEnabled         = !disabled,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, 0, 6, 0),
             };
@@ -416,17 +437,19 @@ namespace LemoineTools.Framework.Controls
                 Text              = text,
             };
             lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
-            lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
+            lbl.SetResourceReference(TextBlock.ForegroundProperty, disabled ? "LemoineTextDim" : "LemoineText");
             lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
             var sp = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Margin      = new Thickness(0, 0, 0, 5),
-                Cursor      = Cursors.Hand,
+                Cursor      = disabled ? Cursors.Arrow : Cursors.Hand,
             };
             sp.Children.Add(cb);
             sp.Children.Add(lbl);
+
+            if (disabled) return sp; // no hover/click wiring — read-only row
 
             MotionEffects.WireHover(sp, normalBgKey: null, hoverBgKey: "LemoineAccentDim");
 
