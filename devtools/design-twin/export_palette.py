@@ -18,9 +18,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 THEME_FILE = REPO_ROOT / "Source" / "Framework" / "ThemePalette.cs"
 OUT_JSON = Path(__file__).resolve().parent / "palette.json"
 OUT_CSS = Path(__file__).resolve().parent / "palette.css"
-# Second copy for the WebView2 pilot (Part B) — same tokens, one source of
-# truth, so the twin and the WebView2 page can never disagree on a color.
-OUT_CSS_WEBVIEW = REPO_ROOT / "Source" / "Resources" / "Web" / "overview" / "palette.css"
 
 # Order matches ThemePalette.All[] (the toolbar picker's display order).
 THEME_ORDER = [
@@ -120,11 +117,8 @@ def main():
         lines.append("")
     css_text = "\n".join(lines)
     OUT_CSS.write_text(css_text, encoding="utf-8")
-    OUT_CSS_WEBVIEW.parent.mkdir(parents=True, exist_ok=True)
-    OUT_CSS_WEBVIEW.write_text(css_text, encoding="utf-8")
 
-    print(f"Wrote {OUT_JSON.relative_to(REPO_ROOT)}, {OUT_CSS.relative_to(REPO_ROOT)} and "
-          f"{OUT_CSS_WEBVIEW.relative_to(REPO_ROOT)} "
+    print(f"Wrote {OUT_JSON.relative_to(REPO_ROOT)} and {OUT_CSS.relative_to(REPO_ROOT)} "
           f"({len(themes)} themes, {len(COLOR_MEMBERS)} colors + {len(FONT_MEMBERS)} fonts each)")
 
 

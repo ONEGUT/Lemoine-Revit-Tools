@@ -13,7 +13,7 @@ Pilot surface: **Tools Overview**, "Setup" category
 
 | File | Runs where | What it does |
 |---|---|---|
-| `export_palette.py` | anywhere (Python) | Parses `Source/Framework/ThemePalette.cs` → `palette.json` + `palette.css` (+ a copy into `Source/Resources/Web/overview/` for the WebView2 pilot). Source of truth for every color/font token. |
+| `export_palette.py` | anywhere (Python) | Parses `Source/Framework/ThemePalette.cs` → `palette.json` + `palette.css`. Source of truth for every color/font token. |
 | `twin.css` | browser | Shared component styles for the twin, `@import`s `palette.css`. |
 | `pages/tools-overview.html` | browser | The twin page itself — every element tagged `data-id="..."` to match the WPF `Uid`/`Name` tags on the real window. |
 | `measure.py` | anywhere (Python + the pre-installed Chromium) | Renders a twin page headless, measures every `[data-id]` element's exact bounds, writes the same JSON schema the WPF exporter produces. |

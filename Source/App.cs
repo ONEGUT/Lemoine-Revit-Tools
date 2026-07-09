@@ -177,10 +177,6 @@ namespace LemoineTools
         // Tools Overview window — read-only guide, singleton like GlobalSettings
         internal static Framework.ToolsOverviewWindow? Overview { get; set; }
 
-        // WebView2 pilot copy of Tools Overview — Developer panel only, see
-        // plan-design-twin-parity-and-webview2-overview.md Part B.
-        internal static Framework.Web.ToolsOverviewWebWindow? OverviewWeb { get; set; }
-
         // Link Audit window — read-only report, singleton like GlobalSettings/Overview
         internal static Framework.LinkAuditWindow? LinkAudit { get; set; }
 
@@ -620,15 +616,9 @@ namespace LemoineTools
                 char.ConvertFromUtf32(0xE946)));  // Info
 
             // Developer panel: created on demand for future debug harnesses (see
-            // CLAUDE.md "Crashes & Large Ambiguous Issues"). The Scope Box Probe that
-            // once lived here has been removed (its findings are captured in CLAUDE.md
-            // and in ScopeBoxCreatorRunHandler's comments).
-            var developerPanel = application.CreateRibbonPanel("Lemoine Tools", L.T("ribbon.panels.developer"));
-
-            developerPanel.AddItem(Btn(
-                "LT_OverviewWeb", L.T("ribbon.buttons.overviewWeb.label"), "OpenOverviewWebCommand",
-                L.T("ribbon.buttons.overviewWeb.tip"),
-                char.ConvertFromUtf32(0xE946)));  // Info
+            // CLAUDE.md "Crashes & Large Ambiguous Issues"). None are active right now —
+            // the Scope Box Probe that lived here has been removed (its findings are
+            // captured in CLAUDE.md and in ScopeBoxCreatorRunHandler's comments).
 
             return Result.Succeeded;
         }

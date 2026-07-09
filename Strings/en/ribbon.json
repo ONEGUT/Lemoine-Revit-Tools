@@ -14,8 +14,7 @@
     "modify":         "Modify",
     "dimensioning":   "Dimensioning",
     "copyFromLink":   "Copy from Link",
-    "settings":       "Settings",
-    "developer":      "Developer"
+    "settings":       "Settings"
   },
 
   // buttons — each has a "label" (on the button) and a "tip" (hover tooltip)
@@ -196,10 +195,6 @@
     "overview": {
       "label": "Overview",
       "tip":   "Open the Tools Overview — a visual guide to every tool in the plugin and how they tie together."
-    },
-    "overviewWeb": {
-      "label": "Overview\n(Web)",
-      "tip":   "WebView2 pilot copy of the Tools Overview window — for side-by-side comparison against the real (WPF) Overview while evaluating a UI migration."
     }
   }
 }

@@ -1,16 +1,25 @@
 # Plan — Design-Twin Parity Harness + WebView2 Overview Test Copy
 
+> **STATUS UPDATE:** Part B (the WebView2 pilot) was built, then **removed** —
+> the user's machine doesn't have what's needed to run WebView2, and the
+> project is proceeding WPF-only. `ToolsOverviewWebWindow`,
+> `OpenOverviewWebCommand`, `Source/Resources/Web/`, the `Microsoft.Web.WebView2`
+> package reference, the Developer ribbon panel, and the `ribbon.buttons.overviewWeb`
+> / `ribbon.panels.developer` strings have all been deleted. Part B's section
+> below is kept only as a record of what was tried. **Part A (the parity
+> harness) is unaffected and remains the active plan.**
+
 Two deliverables:
 
 - **Part A — Parity harness.** An HTML "design twin" of the design system plus tooling that
   measures the real WPF UI and the twin to sub-pixel precision, diffs them, and reports every
   deviation — so twin and plugin can be driven to exact agreement on every edge and text position.
-- **Part B — WebView2 pilot.** A second, web-native copy of the Tools Overview window rendered
-  in a WebView2 control inside the plugin, opened from its own Developer-panel button, so both
-  directions (WPF + twin vs. web-native) can be tested side by side in Revit before committing
-  to either.
+- ~~**Part B — WebView2 pilot.**~~ *(removed — see status note above)* A second, web-native copy
+  of the Tools Overview window rendered in a WebView2 control inside the plugin, opened from its
+  own Developer-panel button, so both directions (WPF + twin vs. web-native) could be tested side
+  by side in Revit before committing to either.
 
-The Tools Overview window is the pilot surface for **both** parts: it is read-only, fully
+The Tools Overview window is the pilot surface for Part A: it is read-only, fully
 data-driven from the Revit-free `ToolsOverviewCatalog`, and modelled on `GlobalSettingsWindow`
 (no wizard chrome) — the smallest real window that exercises tabs, cards, chips, scroll, theme,
 and UI-size scaling.
@@ -97,7 +106,7 @@ and UI-size scaling.
 
 ---
 
-## Part B — WebView2 Tools Overview Copy
+## Part B — WebView2 Tools Overview Copy *(removed — see status note at top)*
 
 ### B1. Dependency & build
 
@@ -156,26 +165,24 @@ WebView2" decision.
 | 1 | A1 palette export + A2 twin scaffold + Tools Overview twin page | No |
 | 2 | A3 snapshot exporter + `--capture` CLI in LemoinePreview | Build/run: yes |
 | 3 | A4 measure + compare, first calibration round on Tools Overview | Capture: yes; compare: no |
-| 4 | B WebView2 overview copy (independent of phases 2–3) | Build/test: yes |
+| ~~4~~ | ~~B WebView2 overview copy~~ *(built, then removed)* | — |
 
 ## Files added / changed (summary)
 
 - **New:** `devtools/design-twin/` (export_palette.py, palette.json/css, twin.css, index.html,
-  pages/tools-overview.html, measure.mjs, compare.py, README.md, snapshots/),
-  `LemoinePreview/Parity/SnapshotExporter.cs`, `LemoinePreview/Parity/CaptureRunner.cs`,
-  `Source/Framework/Web/ToolsOverviewWebWindow.cs`, `Source/Commands/OpenOverviewWebCommand.cs`,
-  `Source/Resources/Web/overview/` (index.html, overview.css, overview.js).
-- **Changed:** `LemoinePreview/App.xaml.cs` (CLI capture mode), `LemoineTools.csproj`
-  (WebView2 PackageReference + Web asset deploy copy), `Source/App.cs` (Developer-panel button +
-  web-overview static), `Strings/en/` (any new UI strings for the web window chrome/errors).
+  pages/tools-overview.html, measure.py, compare.py, README.md, snapshots/),
+  `LemoinePreview/Parity/SnapshotExporter.cs`, `LemoinePreview/Parity/CaptureRunner.cs`.
+- **Changed:** `LemoinePreview/App.xaml.cs` (CLI capture mode), `LemoinePreview/LemoinePreview.csproj`
+  (repaired stale file list), `Source/Framework/ToolsOverviewWindow.xaml[.cs]` (parity `Uid` tags),
+  `Source/Framework/Controls/Layout/TitleBar.xaml.cs` (parity `Uid` tags).
+- **Removed (Part B, no longer part of this plan):** `Source/Framework/Web/ToolsOverviewWebWindow.cs`,
+  `Source/Commands/OpenOverviewWebCommand.cs`, `Source/Resources/Web/overview/`, the
+  `Microsoft.Web.WebView2` PackageReference, the Developer ribbon panel, and the
+  `ribbon.buttons.overviewWeb` / `ribbon.panels.developer` string keys.
 
 ## Risks & notes
 
-- WebView2 adds a runtime dependency and a browser process per open window — that cost is part
-  of what the pilot is measuring.
 - Capture determinism depends on zeroed animations and a fixed 96-DPI render — both handled in
   capture mode, not globally.
-- `Source/Resources/Web/**` must be excluded from anything that treats it as XAML/resource
-  compile input (plain content copy only).
 - Sheet-metal check per CLAUDE.md: all new user-facing strings go through `AppStrings`;
   the catalog content itself is already externalized.
