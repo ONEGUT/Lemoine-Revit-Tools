@@ -228,7 +228,7 @@ namespace LemoineTools.Framework.Controls
             string tooltip = def.Description ?? "";
             if (isUser && !string.IsNullOrEmpty(def.ParameterName))
                 tooltip = (string.IsNullOrEmpty(tooltip) ? "" : tooltip + "\n") +
-                          AppStrings.T("naming.input.parameterTooltip", def.ParameterName);
+                          AppStrings.T("naming.input.parameterTooltip", def.ParameterName ?? "");
             if (!string.IsNullOrEmpty(tooltip)) btn.ToolTip = tooltip;
 
             btn.MouseEnter += (s, e) =>

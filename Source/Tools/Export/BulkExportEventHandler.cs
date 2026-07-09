@@ -312,7 +312,7 @@ namespace LemoineTools.Tools.BulkExport
                     {
                         string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
                         string setName = string.IsNullOrWhiteSpace(ps.PatternOverride)
-                            ? SanitizeFilename(ps.Name)
+                            ? TokenResolver.SanitizeFilename(ps.Name)
                             : ResolveExportName(doc.GetElement(memberIds[0]), projNumber, projName, "PDF", pushLog);
                         var opts = BuildPdfOptions(setName, combine: true);
                         bool ok  = doc.Export(outDir, memberIds, opts);
