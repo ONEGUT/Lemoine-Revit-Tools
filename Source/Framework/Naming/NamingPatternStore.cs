@@ -46,6 +46,11 @@ namespace LemoineTools.Framework.Naming
             return match != null && !string.IsNullOrEmpty(match.Pattern) ? match.Pattern : defaultPattern;
         }
 
+        /// <summary>Every persisted (toolId, pattern) pair — used by the Naming settings page to
+        /// warn "used by X, Y" before deleting a user token whose key appears in a saved pattern.</summary>
+        public IReadOnlyList<(string ToolId, string Pattern)> AllPatterns() =>
+            _dtos.Select(d => (d.ToolId, d.Pattern)).ToList();
+
         /// <summary>Saves the current pattern for <paramref name="toolId"/> immediately
         /// (settings auto-save on change — no separate Apply step).</summary>
         public void Set(string toolId, string pattern)

@@ -40,7 +40,7 @@ namespace LemoineTools.Framework.Naming
     /// </summary>
     public static class ParameterCatalog
     {
-        public static ParameterCatalogSnapshot Capture(Document doc)
+        public static ParameterCatalogSnapshot Capture(Document? doc)
         {
             var snapshot = new ParameterCatalogSnapshot();
             if (doc == null) return snapshot;

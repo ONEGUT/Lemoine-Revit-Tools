@@ -100,6 +100,64 @@
       "labelEmpty":         "Give the token a display label.",
       "guidInvalid":        "That doesn't look like a valid parameter GUID.",
       "parameterRequired":  "Pick a parameter, or enter one manually."
-    }
+    },
+
+    "intro":        "Tokens are placeholders like {SheetName} used by naming fields across the tools. Tokens you define here appear in every matching tool. Open tools pick up new tokens the next time they're opened.",
+    "introSource":  "Parameters read from: {0}",
+    "introNoDoc":   "No document was open when this page loaded — parameter lists are unavailable, but you can still define a token by entering its parameter name manually.",
+
+    "builtInHeader":     "Built-in tokens ({0}) — reference",
+    "builtInEntityAny":  "Any",
+
+    "yourTokensHeader": "Your Tokens",
+    "emptyState":       "No custom tokens yet — define one below.",
+
+    "rowEdit":          "Edit",
+    "rowDelete":        "Delete",
+    "rowDeleteConfirm": "Delete?",
+    "rowDeleteYes":     "✓",
+    "rowDeleteNo":      "✕",
+    "rowUsedBy":        "Used by: {0} — patterns will keep the literal text and warn at run time.",
+
+    "addNew":           "＋ New token",
+    "editorTitleNew":   "New Token",
+    "editorTitleEdit":  "Edit Token — {0}",
+    "cancelEdit":       "Cancel",
+
+    "fieldName":            "Name",
+    "fieldKey":             "Key",
+    "fieldKeyEdit":         "edit",
+    "fieldAppliesTo":       "Applies to",
+    "appliesToSheets":      "Sheets",
+    "appliesToViews":       "Views",
+    "fieldReadsFrom":       "Reads from",
+    "readsFromTarget":      "This item (target)",
+    "readsFromSource":      "Source element",
+    "readsFromProject":     "Project information",
+    "readsFromCaption":     "In tools that create from a parent (Place Dependent Views, Views by Template…), \"Source element\" reads the value from that parent instead of the new element.",
+
+    "fieldParameter":              "Parameter",
+    "parameterSearchPlaceholder":  "Search parameters…",
+    "parameterNoneFound":          "No bindable parameters found for this document/category — use manual entry below.",
+    "manualNamePlaceholder":       "Parameter name (manual)",
+    "manualGuidPlaceholder":       "GUID (optional)",
+    "manualCaption":               "Use this if the parameter isn't in the current document. Name-only binding picks the first match — prefer the GUID for shared parameters.",
+    "nonStringNotice":             "Non-text parameter — the displayed value (as shown in Revit) will be used.",
+
+    "fieldFallback":     "Fallback text",
+    "fallbackPlaceholder": "(leave blank to drop the token when missing)",
+    "fallbackCaption":   "Used when the parameter is missing or empty. Leave blank to drop the token from the name.",
+
+    "fieldDescription":  "Description (optional)",
+
+    "fieldLiveTest":     "Live test",
+    "liveTestSample":    "Sample: {0}",
+    "liveTestFallback":  "No sample value captured — the token will show its fallback text: {0}",
+    "liveTestNoFallback":"No sample value captured and no fallback text set — the token will resolve to nothing.",
+
+    "saveNew":    "Save Token",
+    "saveUpdate": "Save Changes",
+    "saved":      "Saved '{0}'.",
+    "deleted":    "Deleted '{0}'."
   }
 }
