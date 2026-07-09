@@ -17,14 +17,28 @@
        drift — stale file-by-file Includes left over from the Lemoine ->
        Framework rename — is why this project didn't build before the
        design-twin parity harness work; see plan-design-twin-parity-and-
-       webview2-overview.md). Three files are excluded because they touch
-       the Revit API directly and this project has no RevitAPI.dll reference. -->
+       webview2-overview.md).
+
+       Excluded:
+       - ReloadHandler.cs, RevitFailureCapture.cs, ToolsOverviewSampleCapture.cs
+         touch the Revit API directly and this project has no RevitAPI.dll reference.
+       - GlobalSettingsWindow.*.cs/.xaml and Controls\Legend\** pull in per-tool
+         settings types from Source\Tools\** (Dimensioning, Ceilings, LinkViews,
+         BulkExport, CopyFromLink, Setup, AutoFilters, FiltersLegends\LegendCreator...)
+         that this project doesn't otherwise need — the design-twin capture harness
+         only opens ToolsOverviewWindow. Bringing GlobalSettingsWindow in means
+         chasing that whole per-tool settings dependency graph (and re-verifying
+         each one is Revit-free) for no benefit to the harness. -->
   <ItemGroup>
     <Compile Include="..\Source\Framework\**\*.cs"
              Exclude="..\Source\Framework\ReloadHandler.cs;
                        ..\Source\Framework\RevitFailureCapture.cs;
-                       ..\Source\Framework\ToolsOverviewSampleCapture.cs" />
-    <Page Include="..\Source\Framework\**\*.xaml" />
+                       ..\Source\Framework\ToolsOverviewSampleCapture.cs;
+                       ..\Source\Framework\GlobalSettingsWindow.*.cs;
+                       ..\Source\Framework\Controls\Legend\**\*.cs" />
+    <Page Include="..\Source\Framework\**\*.xaml"
+          Exclude="..\Source\Framework\GlobalSettingsWindow.xaml;
+                    ..\Source\Framework\Controls\Legend\**\*.xaml" />
   </ItemGroup>
 
   <!-- This project's own files (App.xaml[.cs], PreviewMainWindow.cs, Parity\*.cs)

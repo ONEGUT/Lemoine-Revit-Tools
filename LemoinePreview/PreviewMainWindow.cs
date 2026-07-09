@@ -39,7 +39,6 @@ namespace LemoineTools.Preview
             stack.Children.Add(heading);
 
             stack.Children.Add(BuildLaunchButton("Tools Overview", () => new ToolsOverviewWindow().Show()));
-            stack.Children.Add(BuildLaunchButton("Global Settings", () => new GlobalSettingsWindow().Show()));
 
             var themeLabel = new TextBlock { Text = "Theme", Margin = new Thickness(0, 12, 0, 4) };
             themeLabel.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
