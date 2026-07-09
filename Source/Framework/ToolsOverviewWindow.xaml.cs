@@ -134,6 +134,7 @@ namespace LemoineTools.Framework
             _toolbarBorder.BorderThickness = new Thickness(0);
 
             var closeBtn = BuildGhostButton("×");
+            closeBtn.Uid = "toolbar-close";
             closeBtn.Margin = new Thickness(8, 0, 0, 0);
             closeBtn.SetResourceReference(Button.ForegroundProperty, "LemoineTextDim");
             closeBtn.Click += (s, e) => Close();
@@ -188,6 +189,7 @@ namespace LemoineTools.Framework
 
             var tab = new Border
             {
+                Uid             = "cat-tab-" + cat.Id,
                 Cursor          = Cursors.Hand,
                 CornerRadius    = active ? new CornerRadius(6, 6, 0, 0) : new CornerRadius(6),
                 BorderThickness = active ? new Thickness(1, 1, 1, 0) : new Thickness(1, 1, 1, 1),
@@ -202,6 +204,7 @@ namespace LemoineTools.Framework
 
             var glyph = new TextBlock
             {
+                Uid               = "cat-tab-" + cat.Id + "-glyph",
                 Text              = cat.Glyph,
                 FontFamily        = new FontFamily(IconFont),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -212,6 +215,7 @@ namespace LemoineTools.Framework
 
             var name = new TextBlock
             {
+                Uid                 = "cat-tab-" + cat.Id + "-label",
                 Text                = cat.Name,
                 VerticalAlignment   = VerticalAlignment.Center,
                 TextTrimming        = TextTrimming.CharacterEllipsis,
@@ -251,7 +255,9 @@ namespace LemoineTools.Framework
         // ═════════════════════════════════════════════════════════════════════
         // Selection
         // ═════════════════════════════════════════════════════════════════════
-        private void SelectCategory(string categoryId)
+        // internal (not private): the LemoinePreview design-twin parity CaptureRunner
+        // calls this to step through every category tab while capturing snapshots.
+        internal void SelectCategory(string categoryId)
         {
             var cat = ToolsOverviewCatalog.FindCategory(categoryId);
             if (cat == null) return;
@@ -295,19 +301,19 @@ namespace LemoineTools.Framework
         {
             if (_cardsHost == null) return;
 
-            var stack = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+            var stack = new StackPanel { Uid = "cards-stack", Margin = new Thickness(16, 14, 16, 14) };
 
             // Header: category name
             var headerDock = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 3) };
 
-            var title = new TextBlock { Text = cat.Name, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Uid = "cards-title", Text = cat.Name, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center };
             title.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             title.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_XL");
             title.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             headerDock.Children.Add(title);
             stack.Children.Add(headerDock);
 
-            var intro = new TextBlock { Text = cat.Intro, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+            var intro = new TextBlock { Uid = "cards-intro", Text = cat.Intro, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
             intro.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             intro.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             intro.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -331,10 +337,20 @@ namespace LemoineTools.Framework
             _cardsHost.Child = scroll;
         }
 
+        // Stable, twin-joinable id for a tool card — matches the design twin's
+        // data-id="card-<slug>" convention (see devtools/design-twin/pages/tools-overview.html).
+        private static string Slug(string name)
+        {
+            var chars = name.ToLowerInvariant().Where(c => char.IsLetterOrDigit(c) || c == ' ').ToArray();
+            return string.Join("-", new string(chars).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        }
+
         private Border BuildCard(OverviewTool tool)
         {
+            string slug = Slug(tool.Name);
             var card = new Border
             {
+                Uid             = "card-" + slug,
                 CornerRadius    = new CornerRadius(6),
                 BorderThickness = new Thickness(1),
                 Padding         = new Thickness(11, 10, 11, 11),
@@ -352,6 +368,7 @@ namespace LemoineTools.Framework
             {
                 var runBtn = ControlStyles.BuildSmallButton(AppStrings.T("overview.window.runButton"),
                     ControlStyles.ButtonVariant.Primary);
+                runBtn.Uid = "card-" + slug + "-run";
                 runBtn.VerticalAlignment = VerticalAlignment.Center;
                 runBtn.ToolTip = AppStrings.T("overview.window.runTooltip", tool.Name);
                 runBtn.Click += (s, e) => LaunchDemo(tool.Name);
@@ -363,6 +380,7 @@ namespace LemoineTools.Framework
 
             var iconBox = new Border
             {
+                Uid = "card-" + slug + "-icon",
                 Width = 26, Height = 26, CornerRadius = new CornerRadius(5),
                 BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 9, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -381,7 +399,7 @@ namespace LemoineTools.Framework
             iconBox.Child = icon;
             left.Children.Add(iconBox);
 
-            var name = new TextBlock { Text = tool.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { Uid = "card-" + slug + "-name", Text = tool.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
             name.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
             name.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
             name.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
@@ -390,22 +408,22 @@ namespace LemoineTools.Framework
             stack.Children.Add(top);
 
             // Blurb
-            var blurb = new TextBlock { Text = tool.Blurb, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 7) };
+            var blurb = new TextBlock { Uid = "card-" + slug + "-blurb", Text = tool.Blurb, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 7) };
             blurb.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextSub");
             blurb.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             blurb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             stack.Children.Add(blurb);
 
             // Relationships
-            var fedBy = BuildRelationship(AppStrings.T("overview.window.fedBy"), tool.FedBy, accent: false);
+            var fedBy = BuildRelationship(AppStrings.T("overview.window.fedBy"), tool.FedBy, accent: false, "card-" + slug + "-fedby");
             if (fedBy != null) stack.Children.Add(fedBy);
-            var feeds = BuildRelationship(AppStrings.T("overview.window.feeds"), tool.Feeds, accent: true);
+            var feeds = BuildRelationship(AppStrings.T("overview.window.feeds"), tool.Feeds, accent: true, "card-" + slug + "-feeds");
             if (feeds != null) stack.Children.Add(feeds);
 
             // Example
             if (!string.IsNullOrEmpty(tool.Example))
             {
-                var exBorder = new Border { BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(7, 0, 0, 0), Margin = new Thickness(0, 7, 0, 0) };
+                var exBorder = new Border { Uid = "card-" + slug + "-example", BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(7, 0, 0, 0), Margin = new Thickness(0, 7, 0, 0) };
                 exBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
                 var ex = new TextBlock { Text = tool.Example, TextWrapping = TextWrapping.Wrap };
                 ex.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -419,11 +437,11 @@ namespace LemoineTools.Framework
             return card;
         }
 
-        private FrameworkElement? BuildRelationship(string label, string[] items, bool accent)
+        private FrameworkElement? BuildRelationship(string label, string[] items, bool accent, string uid)
         {
             if (items == null || items.Length == 0) return null;
 
-            var wrap = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
+            var wrap = new WrapPanel { Uid = uid, Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
 
             var lbl = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 4) };
             lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
@@ -553,6 +571,7 @@ namespace LemoineTools.Framework
 
             var hint = new TextBlock
             {
+                Uid               = "footer-hint",
                 Text              = AppStrings.T("overview.window.footerHint"),
                 VerticalAlignment = VerticalAlignment.Center,
                 FontStyle         = FontStyles.Italic,
@@ -562,6 +581,7 @@ namespace LemoineTools.Framework
             hint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
 
             var closeBtn = BuildGhostButton(AppStrings.T("overview.window.close"));
+            closeBtn.Uid = "footer-close";
             closeBtn.Click += (s, e) => Close();
 
             var dp = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };

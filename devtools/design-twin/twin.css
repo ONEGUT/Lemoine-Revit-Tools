@@ -1,0 +1,270 @@
+/* Design-twin token layer.
+   Colors/fonts come from palette.css (generated from ThemePalette.cs — do not
+   duplicate them here). The tokens below are the scale-dependent values
+   AppSettings.ApplyScaleTo() writes at UiSize.Medium (Scale = 1.0); see
+   Source/Framework/AppSettings.cs for the formulas if Small/Large twins are
+   ever needed (font/height tokens = design px * scale, radii are unscaled). */
+@import url("palette.css");
+
+:root {
+  /* ── Font sizes (LemoineFS_*) ────────────────────────────────────────── */
+  --lemoine-fs-sm: 10.5px;
+  --lemoine-fs-md: 12px;
+  --lemoine-fs-lg: 13px;
+  --lemoine-fs-xl: 15px;
+  --lemoine-fs-chevron: 20px;
+
+  /* ── Heights (LemoineH_*) ─────────────────────────────────────────────── */
+  --lemoine-h-toolbar: 38px;
+  --lemoine-h-footer: 42px;
+  --lemoine-h-btn-min: 28px;
+  --lemoine-h-btn-sm: 26px;
+  --lemoine-h-input: 30px;
+  --lemoine-h-circle: 18px;
+
+  /* ── Corner radii (LemoineRadius_*) — design constants, not scaled ─────── */
+  --lemoine-radius-sm: 3px;
+  --lemoine-radius-md: 4px;
+  --lemoine-radius-chip: 10px;
+  --lemoine-radius-card: 10px;
+
+  /* ── Thickness (LemoineTh_*) — written as CSS shorthand L T R B → padding order T R B L */
+  --lemoine-th-footer-pad: 0px 12px 0px 12px;   /* Th(12,0,12,0) */
+  --lemoine-th-card-pad: 10px 11px 11px 11px;   /* card Padding(11,10,11,11) in BuildCard */
+  --lemoine-th-btn-pad: 0px 14px 0px 14px;      /* Th(14,0,14,0) */
+  --lemoine-th-btn-sm-pad: 3px 8px 3px 8px;     /* Th(8,3,8,3) */
+
+  /* Outer window chrome */
+  --lemoine-window-radius: 8px;   /* matches Windows 11 DWM rounding, set in OnLoaded */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--lemoine-page-bg);
+  font-family: var(--lemoine-ui-font);
+  color: var(--lemoine-text);
+}
+
+/* ── Window shell ─────────────────────────────────────────────────────────
+   Mirrors ToolsOverviewWindow.xaml: Border(_outerBorder) > Grid(_root) rows
+   [38 | Auto | * | 42]. Width/Height match the XAML Window Width/Height. */
+.lem-window {
+  width: 1080px;
+  height: 680px;
+  background: var(--lemoine-bg);
+  border: 1px solid var(--lemoine-border);
+  border-radius: var(--lemoine-window-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Toolbar (TitleBar control, row 0, 38px) ────────────────────────────── */
+.lem-toolbar {
+  height: var(--lemoine-h-toolbar);
+  flex: 0 0 var(--lemoine-h-toolbar);
+  background: var(--lemoine-surface);
+  border-bottom: 1px solid var(--lemoine-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;               /* LemoineTh_ToolbarMar = Th(14,0,14,0) */
+}
+.lem-toolbar-left { display: flex; align-items: center; }
+.lem-toolbar-icon {
+  font-family: "Segoe MDL2 Assets";
+  font-size: var(--lemoine-fs-lg);
+  color: var(--lemoine-text-dim);
+  margin-right: 8px;
+}
+.lem-toolbar-title {
+  font-family: var(--lemoine-mono-font);
+  font-size: var(--lemoine-fs-xl);
+  font-weight: 500;               /* FontWeights.Medium */
+  color: var(--lemoine-text);
+}
+.lem-ghost-btn {
+  cursor: pointer;
+  border: 1px solid var(--lemoine-border);
+  background: transparent;
+  color: var(--lemoine-text);
+  border-radius: var(--lemoine-radius-sm);
+  min-height: var(--lemoine-h-btn-min);
+  padding: var(--lemoine-th-btn-pad);
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lem-close-btn {
+  margin-left: 8px;
+  color: var(--lemoine-text-dim);
+}
+
+/* ── Category tab strip (row 1, Auto height) ────────────────────────────── */
+.lem-tabstrip {
+  padding: 8px 12px 0px 12px;     /* Th(12,8,12,0) */
+  border-bottom: 1px solid var(--lemoine-border);
+  display: flex;
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+.lem-tab {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 7px 10px;              /* Th(10,7,10,7) */
+  border: 1px solid var(--lemoine-border);
+  border-radius: 6px;
+  margin: 2px 4px 1px 0;
+  background: var(--lemoine-raised);
+  white-space: nowrap;
+}
+.lem-tab.active {
+  border-radius: 6px 6px 0 0;
+  border-width: 1px 1px 0 1px;
+  margin: 0 4px -1px 0;
+  background: var(--lemoine-bg);
+}
+.lem-tab-glyph {
+  font-family: "Segoe MDL2 Assets";
+  font-size: var(--lemoine-fs-md);
+  margin-right: 7px;
+  color: var(--lemoine-text-dim);
+}
+.lem-tab.active .lem-tab-glyph { color: var(--lemoine-accent); }
+.lem-tab-label {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-dim);
+  font-weight: 400;
+}
+.lem-tab.active .lem-tab-label {
+  color: var(--lemoine-text);
+  font-weight: 600;               /* FontWeights.SemiBold */
+}
+
+/* ── Body — cards pane (row 2, * height) ────────────────────────────────── */
+.lem-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.lem-cards-stack {
+  margin: 14px 16px;              /* Thickness(16,14,16,14) */
+}
+.lem-cards-title {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-xl);
+  font-weight: 500;                /* FontWeights.Medium */
+  color: var(--lemoine-text);
+  margin-bottom: 3px;
+}
+.lem-cards-intro {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-sub);
+  margin-bottom: 12px;
+}
+
+.lem-card {
+  border: 1px solid var(--lemoine-border);
+  border-radius: 6px;
+  background: var(--lemoine-raised);
+  padding: 10px 11px 11px 11px;    /* Th(11,10,11,11) */
+  margin-bottom: 9px;
+}
+.lem-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+.lem-card-left { display: flex; align-items: center; }
+.lem-card-icon {
+  width: 26px; height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--lemoine-accent);
+  background: var(--lemoine-accent-dim);
+  display: flex; align-items: center; justify-content: center;
+  margin-right: 9px;
+  font-family: "Segoe MDL2 Assets";
+  font-size: var(--lemoine-fs-lg);
+  color: var(--lemoine-accent);
+  flex: 0 0 26px;
+}
+.lem-card-name {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-md);
+  font-weight: 600;                /* FontWeights.SemiBold */
+  color: var(--lemoine-text);
+}
+.lem-card-run {
+  cursor: pointer;
+  border: 1px solid var(--lemoine-accent);
+  background: var(--lemoine-accent-dim);
+  color: var(--lemoine-accent);
+  border-radius: var(--lemoine-radius-sm);
+  height: var(--lemoine-h-btn-sm);
+  padding: var(--lemoine-th-btn-sm-pad);
+  font-family: var(--lemoine-mono-font);
+  font-size: var(--lemoine-fs-sm);
+}
+.lem-card-blurb {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-sub);
+  margin-bottom: 7px;
+}
+.lem-relationship {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 3px;
+}
+.lem-rel-label {
+  font-family: var(--lemoine-mono-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-dim);
+  margin: 0 6px 4px 0;
+}
+.lem-chip {
+  border-radius: var(--lemoine-radius-sm);
+  border: 1px solid;
+  padding: 2px 7px;
+  margin: 0 5px 4px 0;
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-sm);
+}
+.lem-chip.accent { border-color: var(--lemoine-accent); background: var(--lemoine-accent-dim); color: var(--lemoine-accent); }
+.lem-chip.green  { border-color: var(--lemoine-green);  background: var(--lemoine-green-dim);  color: var(--lemoine-green); }
+.lem-chip.linkable { text-decoration: underline; cursor: pointer; }
+
+.lem-example {
+  border-left: 2px solid var(--lemoine-border);
+  padding-left: 7px;
+  margin-top: 7px;
+  font-family: var(--lemoine-mono-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-dim);
+}
+
+/* ── Footer (row 3, 42px) ────────────────────────────────────────────────── */
+.lem-footer {
+  height: var(--lemoine-h-footer);
+  flex: 0 0 var(--lemoine-h-footer);
+  border-top: 1px solid var(--lemoine-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--lemoine-th-footer-pad);
+}
+.lem-footer-hint {
+  font-family: var(--lemoine-ui-font);
+  font-size: var(--lemoine-fs-sm);
+  color: var(--lemoine-text-dim);
+  font-style: italic;
+}

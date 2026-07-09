@@ -136,6 +136,27 @@
     </Reference>
   </ItemGroup>
 
+  <!-- WebView2 pilot (ToolsOverviewWebWindow) — see
+       plan-design-twin-parity-and-webview2-overview.md Part B. Valid for both
+       net48 (2024) and net8.0-windows (2025-2027); the package's build targets
+       copy the native WebView2Loader.dll into each year's DeployDir. Requires
+       the WebView2 Evergreen Runtime, which ships with Windows 10/11 and Edge —
+       ToolsOverviewWebWindow reports (never crashes) if it's somehow absent. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2592.51" />
+  </ItemGroup>
+
+  <!-- System.Drawing.Color is used only for WebView2.DefaultBackgroundColor
+       (the control's own API surface, not a general drawing dependency).
+       SDK-style net48 projects don't auto-reference the GAC assembly the way
+       old-style .csproj did, so it needs an explicit Reference. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="LemoineTools.addin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -147,6 +168,17 @@
        are already default 'None' items under the SDK glob; Update just adds the copy behavior. -->
   <ItemGroup>
     <None Update="Strings\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Web assets for the WebView2 Tools Overview pilot — loose files served via
+       CoreWebView2.SetVirtualHostNameToFolderMapping from the deploy folder
+       (no network access, no build-time bundling). Same reasoning as Strings\
+       above: these are already default 'None' items under the SDK glob; Update
+       just adds the copy behavior. -->
+  <ItemGroup>
+    <None Update="Source\Resources\Web\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

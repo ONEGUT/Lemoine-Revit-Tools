@@ -1,0 +1,244 @@
+{
+  "themes": [
+    {
+      "varName": "DarkMono",
+      "name": "Dark Mono",
+      "id": "dark-mono",
+      "colors": {
+        "Bg": "#1a1a1a",
+        "PageBg": "#111111",
+        "Surface": "#222222",
+        "Raised": "#2a2a2a",
+        "SelectBg": "#2a2a2a",
+        "Border": "#686868",
+        "BorderMid": "#747474",
+        "Text": "#d4d4d4",
+        "TextSub": "#8c8c8c",
+        "TextDim": "#919191",
+        "Accent": "#4f8fc4",
+        "AccentDim": "#1b2d3e",
+        "Green": "#4ec994",
+        "GreenDim": "#0e2219",
+        "Red": "#f47067",
+        "RedDim": "#2c1412",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#ffffff",
+        "Swatch": "#1a1a1a"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Segoe UI"
+      }
+    },
+    {
+      "varName": "DarkNavy",
+      "name": "Dark Navy",
+      "id": "dark-navy",
+      "colors": {
+        "Bg": "#0b0d14",
+        "PageBg": "#060810",
+        "Surface": "#111520",
+        "Raised": "#161b28",
+        "SelectBg": "#161b28",
+        "Border": "#5e6272",
+        "BorderMid": "#6a6f80",
+        "Text": "#e8eaf0",
+        "TextSub": "#8b90a0",
+        "TextDim": "#838899",
+        "Accent": "#5b8af0",
+        "AccentDim": "#131a30",
+        "Green": "#3ed598",
+        "GreenDim": "#0d2019",
+        "Red": "#f06060",
+        "RedDim": "#2a1212",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#ffffff",
+        "Swatch": "#0b0d14"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Segoe UI"
+      }
+    },
+    {
+      "varName": "LightClean",
+      "name": "Light Clean",
+      "id": "light-clean",
+      "colors": {
+        "Bg": "#ffffff",
+        "PageBg": "#f0f0ee",
+        "Surface": "#f6f8fa",
+        "Raised": "#eaeef2",
+        "SelectBg": "#ffffff",
+        "Border": "#8d8d8d",
+        "BorderMid": "#7a7a7a",
+        "Text": "#1f2328",
+        "TextSub": "#656d76",
+        "TextDim": "#5f6d78",
+        "Accent": "#0969da",
+        "AccentDim": "#dbeafe",
+        "Green": "#1a7f37",
+        "GreenDim": "#dcfce7",
+        "Red": "#cf222e",
+        "RedDim": "#fee2e2",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#333333",
+        "Swatch": "#ffffff"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Segoe UI"
+      }
+    },
+    {
+      "varName": "LightWarm",
+      "name": "Light Warm",
+      "id": "light-warm",
+      "colors": {
+        "Bg": "#fdf8f2",
+        "PageBg": "#ede8e0",
+        "Surface": "#f5efe6",
+        "Raised": "#ede5d8",
+        "SelectBg": "#f5efe6",
+        "Border": "#8c8379",
+        "BorderMid": "#7a7168",
+        "Text": "#2c2420",
+        "TextSub": "#6a5f57",
+        "TextDim": "#6e6159",
+        "Accent": "#b35500",
+        "AccentDim": "#fde8d4",
+        "Green": "#2a6e3f",
+        "GreenDim": "#d4edda",
+        "Red": "#b83232",
+        "RedDim": "#fde8e8",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#333333",
+        "Swatch": "#fdf8f2"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Segoe UI"
+      }
+    },
+    {
+      "varName": "Stone",
+      "name": "Stone Gray",
+      "id": "stone-gray",
+      "colors": {
+        "Bg": "#3c3c3c",
+        "PageBg": "#2e2e2e",
+        "Surface": "#444444",
+        "Raised": "#505050",
+        "SelectBg": "#505050",
+        "Border": "#888888",
+        "BorderMid": "#949494",
+        "Text": "#e0e0e0",
+        "TextSub": "#b3b3b3",
+        "TextDim": "#b5b5b5",
+        "Accent": "#9abdd4",
+        "AccentDim": "#243340",
+        "Green": "#7ec99a",
+        "GreenDim": "#1e3328",
+        "Red": "#f09090",
+        "RedDim": "#3a1f1e",
+        "KnobOn": "#2a2a2a",
+        "KnobOff": "#ffffff",
+        "Swatch": "#4a4a4a"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Segoe UI"
+      }
+    },
+    {
+      "varName": "Terra",
+      "name": "Terra",
+      "id": "terra",
+      "colors": {
+        "Bg": "#faf6f0",
+        "PageBg": "#ede8dc",
+        "Surface": "#f3ece0",
+        "Raised": "#e8e0d2",
+        "SelectBg": "#faf6f0",
+        "Border": "#8a8275",
+        "BorderMid": "#7a7268",
+        "Text": "#2a2520",
+        "TextSub": "#6b5f52",
+        "TextDim": "#7a6e60",
+        "Accent": "#4a7c59",
+        "AccentDim": "#d4e8da",
+        "Green": "#3d6b4a",
+        "GreenDim": "#c8e4d4",
+        "Red": "#b83030",
+        "RedDim": "#fde8e8",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#333333",
+        "Swatch": "#4a7c59"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Nunito Sans, Segoe UI"
+      }
+    },
+    {
+      "varName": "Sahara",
+      "name": "Sahara",
+      "id": "sahara",
+      "colors": {
+        "Bg": "#faf5ee",
+        "PageBg": "#ede8de",
+        "Surface": "#f2ece2",
+        "Raised": "#e8e0d4",
+        "SelectBg": "#ffffff",
+        "Border": "#8c8278",
+        "BorderMid": "#7c7268",
+        "Text": "#2c2218",
+        "TextSub": "#6e5e50",
+        "TextDim": "#7c6c5c",
+        "Accent": "#c2652a",
+        "AccentDim": "#f8dcc8",
+        "Green": "#2a6e3f",
+        "GreenDim": "#d4edda",
+        "Red": "#b03030",
+        "RedDim": "#fde8e8",
+        "KnobOn": "#ffffff",
+        "KnobOff": "#333333",
+        "Swatch": "#c2652a"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Manrope, Segoe UI"
+      }
+    },
+    {
+      "varName": "Obsidian",
+      "name": "Obsidian",
+      "id": "obsidian",
+      "colors": {
+        "Bg": "#09090b",
+        "PageBg": "#050507",
+        "Surface": "#0c0c0f",
+        "Raised": "#18181b",
+        "SelectBg": "#18181b",
+        "Border": "#565659",
+        "BorderMid": "#606063",
+        "Text": "#fafafa",
+        "TextSub": "#a1a1aa",
+        "TextDim": "#71717a",
+        "Accent": "#a78bfa",
+        "AccentDim": "#1c1033",
+        "Green": "#34d399",
+        "GreenDim": "#0a2e1e",
+        "Red": "#ef4444",
+        "RedDim": "#2c1010",
+        "KnobOn": "#09090b",
+        "KnobOff": "#fafafa",
+        "Swatch": "#a78bfa"
+      },
+      "fonts": {
+        "MonoFont": "Consolas",
+        "UiFont": "Geist, Segoe UI"
+      }
+    }
+  ]
+}

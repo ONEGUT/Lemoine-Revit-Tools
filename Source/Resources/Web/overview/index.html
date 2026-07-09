@@ -1,0 +1,61 @@
+<!doctype html>
+<html data-theme="dark-mono">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tools Overview</title>
+<link rel="stylesheet" href="overview.css">
+</head>
+<body>
+<div id="root"></div>
+
+<!--
+  Standalone-preview fallback only — used when this page is opened without a
+  WebView2 host (e.g. a browser, or the design-twin QA screenshot pipeline).
+  The real ToolsOverviewWebWindow always pushes live ToolsOverviewCatalog data
+  via postMessage instead; see overview.js.
+-->
+<script type="application/json" id="sample-state">
+{
+  "type": "state",
+  "theme": "dark-mono",
+  "activeCategoryId": "setup",
+  "windowTitle": "Lemoine Tools — Overview",
+  "footerHint": "A guide to every Lemoine tool and how they tie together.",
+  "runButtonLabel": "Dummy run ▶",
+  "categories": [
+    {
+      "id": "setup",
+      "name": "Setup",
+      "intro": "Get every linked model current and positioned correctly before anything else in the workflow depends on it: upgrade and link the files, align shared coordinates to a common point, then push that correction back into the link files themselves.",
+      "tools": [
+        {
+          "name": "Upgrade & Link Models",
+          "blurb": "Picks Revit files from any folder, lets you choose each file's link placement (Internal Origin, Project Base Point, Center to Center, or Survey Point), upgrades every file to the current Revit version, saves it, and links it into the active model — one file at a time to keep memory flat.",
+          "hasDemo": false
+        },
+        {
+          "name": "Align Coordinates",
+          "blurb": "Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, then rotates and translates each selected link so its same-named grid intersection lands on the host's. Repositions the host's copy of each link only.",
+          "hasDemo": true
+        },
+        {
+          "name": "Push Coordinates to Links",
+          "blurb": "Commits an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, saves in place, then publishes coordinates and re-places the link via Shared Coordinates.",
+          "hasDemo": false
+        }
+      ]
+    },
+    {
+      "id": "copy",
+      "name": "Copy",
+      "intro": "This sample only fills in the Setup tab — the WebView2 host pushes every category's real data at runtime.",
+      "tools": []
+    }
+  ]
+}
+</script>
+
+<script src="overview.js"></script>
+</body>
+</html>

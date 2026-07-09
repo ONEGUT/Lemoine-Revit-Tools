@@ -1,0 +1,182 @@
+<!doctype html>
+<html data-theme="dark-mono">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tools Overview — Design Twin</title>
+<link rel="stylesheet" href="../twin.css">
+<style>
+  /* Page chrome around the window mock — not part of the measured surface. */
+  html, body { height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+
+<!--
+  Twin of Source/Framework/ToolsOverviewWindow.xaml(.cs), "setup" category
+  selected (the window's default on open — SelectCategory(Categories[0].Id)).
+
+  Every data-id here must match the Uid the WPF SnapshotExporter reads off
+  the live ToolsOverviewWindow (see Source/Framework/ToolsOverviewWindow.xaml.cs
+  parity Uid tags) so compare.py can join the two measurement sets by id.
+-->
+<div class="lem-window" data-id="window-root">
+
+  <!-- Row 0: Toolbar -->
+  <div class="lem-toolbar" data-id="toolbar">
+    <div class="lem-toolbar-left">
+      <span class="lem-toolbar-icon">&#xE946;</span>
+      <span class="lem-toolbar-title" data-id="toolbar-title">Lemoine Tools — Overview</span>
+    </div>
+    <div class="lem-close-btn lem-ghost-btn" data-id="toolbar-close">&times;</div>
+  </div>
+
+  <!-- Row 1: Category tab strip -->
+  <div class="lem-tabstrip" data-id="tabstrip">
+    <div class="lem-tab active" data-id="cat-tab-setup">
+      <span class="lem-tab-glyph" data-id="cat-tab-setup-glyph">&#xE809;</span>
+      <span class="lem-tab-label" data-id="cat-tab-setup-label">Setup</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-copy">
+      <span class="lem-tab-glyph" data-id="cat-tab-copy-glyph">&#xE71B;</span>
+      <span class="lem-tab-label" data-id="cat-tab-copy-label">Copy</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-modify">
+      <span class="lem-tab-glyph" data-id="cat-tab-modify-glyph">&#xE8C6;</span>
+      <span class="lem-tab-label" data-id="cat-tab-modify-label">Modify</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-ceilings">
+      <span class="lem-tab-glyph" data-id="cat-tab-ceilings-glyph">&#xE81D;</span>
+      <span class="lem-tab-label" data-id="cat-tab-ceilings-label">Ceilings</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-views">
+      <span class="lem-tab-glyph" data-id="cat-tab-views-glyph">&#xE8B7;</span>
+      <span class="lem-tab-label" data-id="cat-tab-views-label">Views</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-filters">
+      <span class="lem-tab-glyph" data-id="cat-tab-filters-glyph">&#xE71C;</span>
+      <span class="lem-tab-label" data-id="cat-tab-filters-label">Filters &amp; Legends</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-dimensioning">
+      <span class="lem-tab-glyph" data-id="cat-tab-dimensioning-glyph">&#xE8FD;</span>
+      <span class="lem-tab-label" data-id="cat-tab-dimensioning-label">Dimensioning</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-sheets">
+      <span class="lem-tab-glyph" data-id="cat-tab-sheets-glyph">&#xE7C3;</span>
+      <span class="lem-tab-label" data-id="cat-tab-sheets-label">Sheets</span>
+    </div>
+    <div class="lem-tab" data-id="cat-tab-export">
+      <span class="lem-tab-glyph" data-id="cat-tab-export-glyph">&#xEDE1;</span>
+      <span class="lem-tab-label" data-id="cat-tab-export-label">Export</span>
+    </div>
+  </div>
+
+  <!-- Row 2: Body (cards) -->
+  <div class="lem-body" data-id="body">
+    <div class="lem-cards-stack" data-id="cards-stack">
+      <div class="lem-cards-title" data-id="cards-title">Setup</div>
+      <div class="lem-cards-intro" data-id="cards-intro">Get every linked model current and positioned correctly before anything else in the workflow depends on it: upgrade and link the files, align shared coordinates to a common point, then push that correction back into the link files themselves.</div>
+
+      <!-- Card: Upgrade & Link Models -->
+      <div class="lem-card" data-id="card-upgrade-link-models">
+        <div class="lem-card-top">
+          <div class="lem-card-left">
+            <div class="lem-card-icon" data-id="card-upgrade-link-models-icon">&#xE896;</div>
+            <div class="lem-card-name" data-id="card-upgrade-link-models-name">Upgrade &amp; Link Models</div>
+          </div>
+        </div>
+        <div class="lem-card-blurb" data-id="card-upgrade-link-models-blurb">Picks Revit files from any folder, lets you choose each file's link placement (Internal Origin, Project Base Point, Center to Center, or Survey Point), upgrades every file to the current Revit version, saves it, and links it into the active model — one file at a time to keep memory flat.</div>
+        <div class="lem-relationship" data-id="card-upgrade-link-models-feeds">
+          <span class="lem-rel-label">FEEDS</span>
+          <span class="lem-chip accent linkable">Align Coordinates &rarr;</span>
+        </div>
+        <div class="lem-example" data-id="card-upgrade-link-models-example">12 links across 3 Revit versions all come in current and placed at Survey Point</div>
+      </div>
+
+      <!-- Card: Align Coordinates (has a demo Run button) -->
+      <div class="lem-card" data-id="card-align-coordinates">
+        <div class="lem-card-top">
+          <div class="lem-card-left">
+            <div class="lem-card-icon" data-id="card-align-coordinates-icon">&#xE809;</div>
+            <div class="lem-card-name" data-id="card-align-coordinates-name">Align Coordinates</div>
+          </div>
+          <div class="lem-card-run" data-id="card-align-coordinates-run">Dummy run &#9654;</div>
+        </div>
+        <div class="lem-card-blurb" data-id="card-align-coordinates-blurb">Moves the host Survey Point and/or Project Base Point to a picked grid intersection and level, then rotates and translates each selected link so its same-named grid intersection lands on the host's. Repositions the host's copy of each link only.</div>
+        <div class="lem-relationship" data-id="card-align-coordinates-fedby">
+          <span class="lem-rel-label">FED BY</span>
+          <span class="lem-chip green linkable">&larr; Upgrade &amp; Link Models</span>
+        </div>
+        <div class="lem-relationship" data-id="card-align-coordinates-feeds">
+          <span class="lem-rel-label">FEEDS</span>
+          <span class="lem-chip accent linkable">Push Coordinates to Links &rarr;</span>
+          <span class="lem-chip accent">Copy from Link &rarr;</span>
+          <span class="lem-chip accent linkable">Dimensioning &rarr;</span>
+        </div>
+        <div class="lem-example" data-id="card-align-coordinates-example">Survey Point to A &cap; 1 at Level 1, 3 links aligned</div>
+      </div>
+
+      <!-- Card: Push Coordinates to Links -->
+      <div class="lem-card" data-id="card-push-coordinates-to-links">
+        <div class="lem-card-top">
+          <div class="lem-card-left">
+            <div class="lem-card-icon" data-id="card-push-coordinates-to-links-icon">&#xE896;</div>
+            <div class="lem-card-name" data-id="card-push-coordinates-to-links-name">Push Coordinates to Links</div>
+          </div>
+        </div>
+        <div class="lem-card-blurb" data-id="card-push-coordinates-to-links-blurb">Commits an already-aligned link's position into the link file itself: unloads it, opens it standalone, moves its own Project Base Point/Survey Point to match, saves in place, then publishes coordinates and re-places the link via Shared Coordinates.</div>
+        <div class="lem-relationship" data-id="card-push-coordinates-to-links-fedby">
+          <span class="lem-rel-label">FED BY</span>
+          <span class="lem-chip green linkable">&larr; Align Coordinates</span>
+        </div>
+        <div class="lem-example" data-id="card-push-coordinates-to-links-example">3 aligned links get their own coordinates corrected and saved</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Row 3: Footer -->
+  <div class="lem-footer" data-id="footer">
+    <span class="lem-footer-hint" data-id="footer-hint">A guide to every Lemoine tool and how they tie together.</span>
+    <div class="lem-ghost-btn" data-id="footer-close">Close</div>
+  </div>
+
+</div>
+
+<!--
+  Measurement hook — measure.py drives Chrome headless with --dump-dom and
+  reads this element's text back out. See devtools/design-twin/measure.py.
+  Keeping the measuring script in the page itself avoids any Node/Playwright
+  dependency (neither is installed in this environment; only the Chromium
+  binary is) — a pure `chrome --headless --dump-dom` + regex extraction works
+  everywhere the mockup screenshot recipe already works.
+-->
+<pre id="__measurements" style="display:none"></pre>
+<script>
+(function () {
+  var root = document.querySelector('.lem-window');
+  var rootBox = root.getBoundingClientRect();
+  var out = {};
+  document.querySelectorAll('[data-id]').forEach(function (el) {
+    var r = el.getBoundingClientRect();
+    var cs = getComputedStyle(el);
+    out[el.getAttribute('data-id')] = {
+      x: +(r.left - rootBox.left).toFixed(2),
+      y: +(r.top - rootBox.top).toFixed(2),
+      width: +r.width.toFixed(2),
+      height: +r.height.toFixed(2),
+      text: (el.children.length === 0) ? el.textContent : null,
+      fontSize: parseFloat(cs.fontSize),
+    };
+  });
+  document.getElementById('__measurements').textContent = JSON.stringify({
+    surface: "tools-overview.setup",
+    rootWidth: rootBox.width,
+    rootHeight: rootBox.height,
+    elements: out,
+  });
+})();
+</script>
+</body>
+</html>

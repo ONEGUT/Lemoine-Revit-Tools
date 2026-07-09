@@ -17,7 +17,7 @@
                             GlassFrameThickness="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 
-    <Border x:Name="_outerBorder" BorderThickness="1" ClipToBounds="True">
+    <Border x:Name="_outerBorder" Uid="window-root" BorderThickness="1" ClipToBounds="True">
         <Grid x:Name="_root">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38"   />
@@ -26,10 +26,10 @@
                 <RowDefinition Height="42"   />
             </Grid.RowDefinitions>
 
-            <Border x:Name="_toolbarBorder" Grid.Row="0" ClipToBounds="True" />
-            <Border x:Name="_flowBorder"    Grid.Row="1" />
-            <Border x:Name="_bodyBorder"    Grid.Row="2" />
-            <Border x:Name="_footerBorder"  Grid.Row="3" ClipToBounds="True" />
+            <Border x:Name="_toolbarBorder" Uid="toolbar"  Grid.Row="0" ClipToBounds="True" />
+            <Border x:Name="_flowBorder"    Uid="tabstrip" Grid.Row="1" />
+            <Border x:Name="_bodyBorder"    Uid="body"     Grid.Row="2" />
+            <Border x:Name="_footerBorder"  Uid="footer"   Grid.Row="3" ClipToBounds="True" />
         </Grid>
     </Border>
 </Window>

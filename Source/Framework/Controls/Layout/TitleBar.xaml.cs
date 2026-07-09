@@ -101,6 +101,7 @@ namespace LemoineTools.Framework.Controls
             // ── Left: icon + title ────────────────────────────────────────────
             _iconText = new TextBlock
             {
+                Uid               = "toolbar-icon",
                 FontFamily        = new FontFamily("Segoe MDL2 Assets"),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin            = new Thickness(0, 0, 8, 0),
@@ -114,6 +115,7 @@ namespace LemoineTools.Framework.Controls
 
             _titleText = new TextBlock
             {
+                Uid               = "toolbar-title",
                 Text              = Title,
                 FontWeight        = FontWeights.Medium,
                 VerticalAlignment = VerticalAlignment.Center,
