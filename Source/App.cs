@@ -615,10 +615,18 @@ namespace LemoineTools
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
 
-            // Developer panel: created on demand for future debug harnesses (see
-            // CLAUDE.md "Crashes & Large Ambiguous Issues"). None are active right now —
-            // the Scope Box Probe that lived here has been removed (its findings are
-            // captured in CLAUDE.md and in ScopeBoxCreatorRunHandler's comments).
+            // ── Developer ─────────────────────────────────────────────────────
+            // Debug harnesses only (see CLAUDE.md "Crashes & Large Ambiguous Issues").
+            // Currently hosts the WebView2 Test harness — remove or repoint the button
+            // once the WebView2 evaluation is done. Labels are hardcoded deliberately:
+            // developer-only UI is exempt from AppStrings externalization.
+            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
+
+            devPanel.AddItem(Btn(
+                "LT_WebView2Test", "WebView2\nTest", "WebView2TestCommand",
+                "Debug harness: probe WebView2 hosting inside Revit (runtime, loader, init, navigation) " +
+                "and exercise HTML recreations of common inputs over the JS bridge.",
+                char.ConvertFromUtf32(0xE774)));  // Globe
 
             return Result.Succeeded;
         }
