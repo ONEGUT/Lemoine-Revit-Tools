@@ -86,9 +86,16 @@ protocol (R17) instead of returning `FrameworkElement`s.
   `LemoineTools.csproj` drives both the PackageReference and the loader copy.
   Revit loads its own WebView2 assemblies; after the harness reports what Revit
   ships, keep the pin close to it and record the finding here.
-- **R5 — One process-wide environment, one control per window.** Share a single
-  lazily-created `CoreWebView2Environment` (all controls then share one browser
-  process tree). Each tool window owns exactly one `WebView2` control.
+- **R5 — One environment PER WINDOW (per STA thread), not process-wide.**
+  `CoreWebView2Environment` is an STA-thread-affine COM object; every tool window
+  runs on its own STA thread that dies on close, so a process-wide cached env
+  handed to a later window (new thread) throws `InvalidComObjectException` ("COM
+  object separated from its underlying RCW"). Cache it in a `[ThreadStatic]` field
+  (`WebHost`), so each window gets its own env (same user-data folder + identical
+  options, which WebView2 permits) and controls within one window share it. Await
+  `EnvironmentAsync()` on the window's dispatcher thread so the continuation stays
+  on that thread. *(Corrected from an earlier "one process-wide environment" — that
+  crashed on the second window open; confirmed on Windows/Revit 2026.)*
 - **R6 — Diagnostics events are always wired, before first navigation:**
   `CoreWebView2InitializationCompleted`, `NavigationCompleted`, `ProcessFailed`,
   and (dev) `WebMessageReceived` logging — each routed to `DiagnosticsLog` and,
@@ -385,5 +392,16 @@ scrollbars (all become CSS/JS in the shared lib).
   pickers/swatches, Legend components, DragGhost/ListReorder (HTML drag-drop), and
   the step-flow chrome set (accordion/toolbar/footer/progress/run log — assembled
   into the working shell in Phase 2).
+- **2026-07 (Phase 0/1 verified on Revit 2026, + 2 fixes):** after the deploy fix,
+  virtual-host navigation SUCCEEDS, pages render themed, and the JS→C# bridge
+  round-trips (`log`/`state` messages received). Two issues found and fixed:
+  (1) **`InvalidComObjectException` on reopening the harness** — the process-wide
+  static `CoreWebView2Environment` is STA-thread-affine and its RCW dies with the
+  first window's thread, so the second window crashed touching it; fixed by caching
+  the env `[ThreadStatic]` (R5 corrected). (2) **"no handler for message type" log
+  noise** — the harness listens via the `MessageReceived` event not `On()` handlers,
+  so every message tripped the R20 warning; now suppressed when a `MessageReceived`
+  subscriber exists. Bridge, navigation, theming all confirmed working before these
+  fixes; the fixes address reopen + noise only.
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

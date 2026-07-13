@@ -121,9 +121,12 @@ namespace LemoineTools.Framework.Web
                 try { handler(payload); }
                 catch (Exception ex) { DiagnosticsLog.Error($"WebBridge: handler for '{type}'", ex); }
             }
-            else if (type != "ready")
+            else if (type != "ready" && MessageReceived == null)
             {
-                DiagnosticsLog.Warn("WebBridge: no handler for message type", type); // R20 - never a silent drop
+                // R20 - a genuinely unhandled message must never be a silent drop. But when a
+                // consumer listens via the MessageReceived event (e.g. the harness/gallery),
+                // that IS the handler, so don't warn.
+                DiagnosticsLog.Warn("WebBridge: no handler for message type", type);
             }
 
             try { MessageReceived?.Invoke(type, payload); }

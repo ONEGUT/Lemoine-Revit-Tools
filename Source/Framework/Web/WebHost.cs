@@ -7,24 +7,34 @@ using Microsoft.Web.WebView2.Wpf;
 namespace LemoineTools.Framework.Web
 {
     /// <summary>
-    /// The single, shared WebView2 host layer. Every WebView2 control in the plugin is
-    /// created through here so the four historical silent-blank-control failure modes
-    /// (see plan-webview2-ui-migration.md rules R1-R8) can never be regressed piecemeal:
+    /// The shared WebView2 host layer. Every WebView2 control in the plugin is created
+    /// through here so the four historical silent-blank-control failure modes (see
+    /// plan-webview2-ui-migration.md rules R1-R8) can never be regressed piecemeal:
     ///
     ///   R1  the environment always uses an explicit, writable user-data folder
     ///       (%LocalAppData%\LemoineTools\WebView2) - never the default beside Revit.exe.
     ///   R3  nothing touches a control before EnsureCoreWebView2Async completes.
-    ///   R5  one process-wide environment; all controls share one browser process tree.
+    ///   R5  one environment PER WINDOW (per STA thread), shared by every control in that
+    ///       window - see below for why it can't be process-wide.
     ///   R7  production CoreWebView2Settings applied once a control is ready.
     ///   R8  DefaultBackgroundColor = active theme Bg, so there is no white flash.
     ///
     /// NEVER call CoreWebView2Environment.CreateAsync anywhere else (rule R36).
+    ///
+    /// Why per-thread, not process-wide: every tool window runs on its own dedicated STA
+    /// thread that shuts down when the window closes. CoreWebView2Environment is an STA
+    /// thread-affine COM object, so a single cached instance handed to a SECOND window
+    /// (a new STA thread, after the first window's thread died) throws
+    /// InvalidComObjectException ("COM object separated from its underlying RCW") the moment
+    /// it is touched. Caching the environment in a [ThreadStatic] field gives each window its
+    /// own environment (all pointing at the same user-data folder with identical options,
+    /// which WebView2 permits) and lets it die cleanly with its creating thread, while
+    /// controls WITHIN one window still share it.
     /// </summary>
     public static class WebHost
     {
-        private static CoreWebView2Environment? _env;
-        private static Task<CoreWebView2Environment>? _envTask;
-        private static readonly object _gate = new object();
+        [ThreadStatic] private static CoreWebView2Environment? _env;
+        [ThreadStatic] private static Task<CoreWebView2Environment>? _envTask;
 
         /// <summary>Absolute path of the shared, writable user-data folder (rule R1).</summary>
         public static string UserDataFolder => Path.Combine(
@@ -32,19 +42,19 @@ namespace LemoineTools.Framework.Web
             "LemoineTools", "WebView2");
 
         /// <summary>
-        /// The shared environment, created once on first use (rule R5). Safe to await from
-        /// multiple windows/threads: the first caller starts creation, the rest await the
-        /// same task. Throws if creation fails so the caller can surface it (never silent).
+        /// The environment for the CALLING window's STA thread, created once per thread on
+        /// first use (rule R5). Must be awaited on the window's dispatcher thread so the
+        /// continuation resumes there and the COM object stays thread-affine. Throws if
+        /// creation fails so the caller can surface it (never silent).
         /// </summary>
         public static Task<CoreWebView2Environment> EnvironmentAsync()
         {
-            lock (_gate)
-            {
-                if (_env != null) return Task.FromResult(_env);
-                if (_envTask != null) return _envTask;
-                _envTask = CreateEnvironmentAsync();
-                return _envTask;
-            }
+            // [ThreadStatic] fields are per-thread, so no lock is needed: a single STA thread
+            // runs this sequentially between awaits.
+            if (_env != null) return Task.FromResult(_env);
+            if (_envTask != null) return _envTask;
+            _envTask = CreateEnvironmentAsync();
+            return _envTask;
         }
 
         private static async Task<CoreWebView2Environment> CreateEnvironmentAsync()
@@ -54,7 +64,7 @@ namespace LemoineTools.Framework.Web
                 string folder = UserDataFolder;
                 Directory.CreateDirectory(folder);                   // R1 - guarantee writable target
                 var env = await CoreWebView2Environment.CreateAsync(null, folder, null);
-                lock (_gate) { _env = env; }
+                _env = env; // back on the same STA thread (dispatcher SynchronizationContext)
                 DiagnosticsLog.Info("WebHost: environment created", $"runtime {env.BrowserVersionString}, folder {folder}");
                 return env;
             }
@@ -62,7 +72,7 @@ namespace LemoineTools.Framework.Web
             {
                 // Don't cache a faulted task - a transient failure (e.g. runtime not yet
                 // installed) must be retryable on the next EnvironmentAsync() call.
-                lock (_gate) { _envTask = null; }
+                _envTask = null;
                 throw;
             }
         }
