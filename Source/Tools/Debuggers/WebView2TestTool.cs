@@ -414,6 +414,10 @@ namespace LemoineTools.Tools.Debuggers
             btnGallery.Click += async (s, e) => await LoadInputsPageAsync("gallery.html", "component gallery");
             row.Children.Add(btnGallery);
 
+            var btnStepFlow = MakeBtn("Load StepFlow shell demo");
+            btnStepFlow.Click += async (s, e) => await LoadInputsPageAsync("stepflow.html?demo", "stepflow shell");
+            row.Children.Add(btnStepFlow);
+
             panel.Children.Add(row);
 
             _inputsHost = MakeHost(300, "No page loaded yet — press one of the buttons above.");

@@ -403,5 +403,19 @@ scrollbars (all become CSS/JS in the shared lib).
   so every message tripped the R20 warning; now suppressed when a `MessageReceived`
   subscriber exists. Bridge, navigation, theming all confirmed working before these
   fixes; the fixes address reopen + noise only.
+- **2026-07 (Phase 2a — HTML StepFlow shell built):** `Source/Web/lib/stepflow.js`
+  + chrome CSS in `lemoine.css` + `Source/Web/stepflow.html`. The full tool-window
+  layout in HTML — toolbar, step accordion (numbered pips that go accent-when-active
+  / green-when-valid-done, collapsed summaries, required markers), per-step inputs
+  built from a serializable spec via the lemoine.js factories, Confirm-advances-step,
+  and a footer (Back / Reset / Run) plus an output log + progress bar that appear on
+  run. Driven entirely by the bridge message contract (C#→JS: `init`/`validation`/
+  `log`/`progress`/`complete`/`stepSummary`/`stepHidden`/`title`; JS→C#: `state`/
+  `action`). Verified standalone in headless Chromium with a Print-View mock driver
+  (R38); reachable in Revit from the harness ("Load StepFlow shell demo"). **Phase 2b
+  (next, Windows-gated):** the C# `WebStepFlowWindow` that emits this spec/messages
+  from an `IStepFlowTool`-shaped ViewModel, and migrating one pilot tool (Print View
+  or Duplicate Views) end-to-end so the real run lifecycle (cancel, 5% progress
+  cadence, RevitFailureCapture) round-trips through HTML.
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*
