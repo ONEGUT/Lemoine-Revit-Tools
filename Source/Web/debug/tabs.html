@@ -1,0 +1,161 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MultiSelectTabs recreation</title>
+<style>
+  /* Dark fallback so the page renders standalone (R14/R38); C# overrides live (R12). */
+  :root{
+    --l-bg:#1a1a1a; --l-raised:#2a2a2a; --l-border:#686868; --l-text:#d4d4d4;
+    --l-text-sub:#8c8c8c; --l-text-dim:#919191; --l-accent:#4f8fc4; --l-accent-dim:#1b2d3e;
+    --l-ui-font:'Segoe UI',sans-serif; --l-mono-font:'Consolas',monospace;
+    --l-fs-sm:10.5px; --l-fs-md:12px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--l-bg); color:var(--l-text); font-family:var(--l-ui-font); font-size:var(--l-fs-md); padding:14px; }
+  h1 { font-size:var(--l-fs-sm); font-weight:600; color:var(--l-text-sub); text-transform:uppercase; letter-spacing:.06em; margin-bottom:14px; }
+  .mst { display:flex; border:1px solid var(--l-border); background:var(--l-raised); height:232px; }
+  .tabs { width:152px; border-right:1px solid var(--l-border); overflow-y:auto; padding:4px 0; flex-shrink:0; }
+  .tab { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px 8px;
+         border-left:2px solid transparent; cursor:pointer; font-size:var(--l-fs-sm); color:var(--l-text); }
+  .tab:hover { background:var(--l-accent-dim); }
+  .tab.active { background:var(--l-accent-dim); border-left-color:var(--l-accent); }
+  .tab .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tab .badge { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); background:var(--l-raised);
+                border:1px solid var(--l-border); border-radius:10px; padding:1px 5px; flex-shrink:0; }
+  .tab.has .badge { color:var(--l-accent); border-color:var(--l-accent); background:var(--l-accent-dim); }
+  .tabsep { height:1px; background:var(--l-border); margin:4px 6px; }
+  .list { flex:1; overflow-y:auto; padding:8px; }
+  .item { display:flex; align-items:center; gap:6px; padding:3px 4px; margin-bottom:2px; cursor:pointer; }
+  .item:hover { background:var(--l-accent-dim); }
+  .item input { accent-color:var(--l-accent); margin:0; cursor:pointer; }
+  .item.all { font-weight:600; }
+  .divider { height:1px; background:var(--l-border); margin:3px 0 8px; }
+  .empty { color:var(--l-text-dim); font-style:italic; padding:4px; }
+  .log { margin-top:12px; }
+  .log .t { color:var(--l-text-sub); font-size:var(--l-fs-sm); text-transform:uppercase; letter-spacing:.06em;
+            border-top:1px solid var(--l-border); padding-top:10px; margin-bottom:6px; }
+  .log .lines { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); max-height:90px; overflow-y:auto; }
+  .log .lines div { margin-bottom:2px; }
+  .log .lines b { color:var(--l-accent); font-weight:normal; }
+</style></head>
+<body>
+<h1>MultiSelectTabs &mdash; HTML recreation</h1>
+<div class="mst">
+  <div class="tabs" id="tabs"></div>
+  <div class="list" id="list"></div>
+</div>
+<div class="log">
+  <div class="t">Bridge messages (JS &rarr; C#)</div>
+  <div class="lines" id="log"></div>
+</div>
+<script src="../lemoine-bridge.js"></script>
+<script>
+  var SELECTED_KEY = '__selected__';
+  var groups = {
+    'Ducts':     ['Supply Air', 'Return Air', 'Exhaust Air', 'Outside Air'],
+    'Equipment': ['Air Handling Unit', 'VAV Box', 'Fan Coil Unit', 'Circulation Pump'],
+    'Pipes':     ['CHW Supply', 'CHW Return', 'HHW Supply', 'HHW Return', 'Condensate Drain']
+  };
+  var groupKeys = Object.keys(groups); // already alphabetical; "Other" would pin last
+  var selected  = {};
+  ['Supply Air', 'Return Air', 'CHW Supply'].forEach(function (s) { selected[s] = true; });
+  var active = groupKeys[0];
+
+  function selCount()      { return Object.keys(selected).length; }
+  function isSel(item)     { return selected[item] === true; }
+  function post(msg) {
+    var line = document.createElement('div');
+    line.innerHTML = '<b>&rsaquo;</b> ';
+    line.appendChild(document.createTextNode(msg));
+    var log = document.getElementById('log');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+    Lemoine.send('state', { control: 'tabs', text: msg, selected: Object.keys(selected) });
+  }
+  function toggle(item, on) {
+    if (on) selected[item] = true; else delete selected[item];
+    post('tabs: ' + (on ? '+ ' : '- ') + item + '  (' + selCount() + ' selected)');
+    render();
+  }
+
+  function makeTab(key, label, count, total) {
+    var tab = document.createElement('div');
+    tab.className = 'tab' + (key === active ? ' active' : '') + (count > 0 ? ' has' : '');
+    var lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = label;
+    var badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = total < 0 ? String(count) : count + '/' + total;
+    tab.appendChild(lbl);
+    tab.appendChild(badge);
+    tab.addEventListener('click', function () { active = key; render(); });
+    return tab;
+  }
+
+  function makeItem(label, checked, indeterminate, bold, onToggle) {
+    var row = document.createElement('label');
+    row.className = 'item' + (bold ? ' all' : '');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked;
+    cb.indeterminate = indeterminate;
+    cb.addEventListener('change', function () { onToggle(cb.checked); });
+    var lbl = document.createElement('span');
+    lbl.textContent = label;
+    row.appendChild(cb);
+    row.appendChild(lbl);
+    return row;
+  }
+
+  function render() {
+    var tabs = document.getElementById('tabs');
+    tabs.innerHTML = '';
+    tabs.appendChild(makeTab(SELECTED_KEY, 'Selected', selCount(), -1));
+    var sep = document.createElement('div');
+    sep.className = 'tabsep';
+    tabs.appendChild(sep);
+    groupKeys.forEach(function (key) {
+      var items = groups[key];
+      var count = items.filter(isSel).length;
+      tabs.appendChild(makeTab(key, key, count, items.length));
+    });
+
+    var list = document.getElementById('list');
+    list.innerHTML = '';
+    if (active === SELECTED_KEY) {
+      var sel = Object.keys(selected);
+      if (sel.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'No items selected yet.';
+        list.appendChild(empty);
+        return;
+      }
+      sel.forEach(function (item) {
+        list.appendChild(makeItem(item, true, false, false, function (on) { toggle(item, on); }));
+      });
+      return;
+    }
+
+    var items = groups[active];
+    var checkedCount = items.filter(isSel).length;
+    var allChecked  = checkedCount === items.length;
+    var someChecked = checkedCount > 0 && !allChecked;
+    list.appendChild(makeItem('All ' + active, allChecked, someChecked, true, function (on) {
+      items.forEach(function (item) { if (on) selected[item] = true; else delete selected[item]; });
+      post('tabs: ' + (on ? 'all of ' : 'none of ') + active + '  (' + selCount() + ' selected)');
+      render();
+    }));
+    var divider = document.createElement('div');
+    divider.className = 'divider';
+    list.appendChild(divider);
+    items.forEach(function (item) {
+      list.appendChild(makeItem(item, isSel(item), false, false, function (on) { toggle(item, on); }));
+    });
+  }
+
+  render();
+  post('tabs page ready (' + selCount() + ' preselected)');
+</script>
+</body></html>

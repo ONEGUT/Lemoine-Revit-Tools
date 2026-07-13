@@ -191,6 +191,20 @@
     </None>
   </ItemGroup>
 
+  <!-- WebView2 HTML/CSS/JS assets. Loaded at runtime from a Web\ folder next to the DLL and
+       served to the control over a virtual host (WebAssets.MapVirtualHost). Authored under
+       Source\Web\ but must land at <DeployDir>\Web\ (root of the addins folder, not
+       <DeployDir>\Source\Web\), so TargetPath re-roots each file's copy destination while
+       %(RecursiveDir) preserves the debug\ / lib\ sub-structure. Loose + PreserveNewest means a
+       page can be edited and re-tested with only a Revit restart, no rebuild (rule R30). Every
+       year Configuration copies into its own DeployDir since the copy follows OutputPath. -->
+  <ItemGroup>
+    <None Update="Source\Web\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Web\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </None>
+  </ItemGroup>
+
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />

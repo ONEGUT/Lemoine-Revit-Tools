@@ -1,0 +1,92 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InlineStepper recreation</title>
+<style>
+  /* Dark fallback so the page renders standalone (R14/R38); C# overrides live (R12). */
+  :root{
+    --l-bg:#1a1a1a; --l-raised:#2a2a2a; --l-border:#686868; --l-text:#d4d4d4;
+    --l-text-sub:#8c8c8c; --l-text-dim:#919191; --l-accent:#4f8fc4; --l-accent-dim:#1b2d3e;
+    --l-ui-font:'Segoe UI',sans-serif; --l-mono-font:'Consolas',monospace;
+    --l-fs-sm:10.5px; --l-fs-md:12px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--l-bg); color:var(--l-text); font-family:var(--l-ui-font); font-size:var(--l-fs-md); padding:14px; }
+  h1 { font-size:var(--l-fs-sm); font-weight:600; color:var(--l-text-sub); text-transform:uppercase; letter-spacing:.06em; margin-bottom:14px; }
+  .row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .row label { width:190px; }
+  .stepper { display:inline-flex; align-items:stretch; height:26px; border:1px solid var(--l-border); background:var(--l-raised); }
+  .stepper button { border:0; background:var(--l-raised); color:var(--l-text); font-family:var(--l-mono-font);
+                    font-size:var(--l-fs-sm); padding:0 9px; cursor:pointer; }
+  .stepper button:hover { background:var(--l-accent-dim); }
+  .stepper .sep { width:1px; background:var(--l-border); }
+  .stepper input { width:46px; border:0; background:transparent; color:var(--l-text); font-family:var(--l-mono-font);
+                   font-size:var(--l-fs-sm); text-align:center; outline:none; }
+  .hint { color:var(--l-text-dim); font-size:var(--l-fs-sm); margin:6px 0 14px; max-width:420px; }
+  .log .t { color:var(--l-text-sub); font-size:var(--l-fs-sm); text-transform:uppercase; letter-spacing:.06em;
+            border-top:1px solid var(--l-border); padding-top:10px; margin-bottom:6px; }
+  .log .lines { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); max-height:110px; overflow-y:auto; }
+  .log .lines div { margin-bottom:2px; }
+  .log .lines b { color:var(--l-accent); font-weight:normal; }
+</style></head>
+<body>
+<h1>InlineStepper &mdash; HTML recreation</h1>
+<div class="row">
+  <label>Columns per row (integer, 1&ndash;12)</label>
+  <span class="stepper" data-id="columns" data-min="1" data-max="12" data-step="1" data-dec="0" data-val="4">
+    <button class="minus" type="button">&minus;</button><span class="sep"></span><input
+      spellcheck="false"><span class="sep"></span><button class="plus" type="button">+</button>
+  </span>
+</div>
+<div class="row">
+  <label>Paper gap (decimal, 0&ndash;5, step 0.25)</label>
+  <span class="stepper" data-id="paperGap" data-min="0" data-max="5" data-step="0.25" data-dec="2" data-val="0.75">
+    <button class="minus" type="button">&minus;</button><span class="sep"></span><input
+      spellcheck="false"><span class="sep"></span><button class="plus" type="button">+</button>
+  </span>
+</div>
+<div class="hint">Type in the centre field (Enter commits, Esc reverts) or use the &minus; / + buttons.
+Values clamp to min/max and round to the configured decimals. Every committed change is posted to C# over the bridge.</div>
+<div class="log">
+  <div class="t">Bridge messages (JS &rarr; C#)</div>
+  <div class="lines" id="log"></div>
+</div>
+<script src="../lemoine-bridge.js"></script>
+<script>
+  function post(msg) {
+    var line = document.createElement('div');
+    line.innerHTML = '<b>&rsaquo;</b> ';
+    line.appendChild(document.createTextNode(msg));
+    var log = document.getElementById('log');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+    Lemoine.send('state', { control: 'stepper', text: msg });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.stepper'), function (el) {
+    var min  = parseFloat(el.getAttribute('data-min'));
+    var max  = parseFloat(el.getAttribute('data-max'));
+    var step = parseFloat(el.getAttribute('data-step'));
+    var dec  = parseInt(el.getAttribute('data-dec'), 10);
+    var val  = parseFloat(el.getAttribute('data-val'));
+    var input = el.querySelector('input');
+    function fmt(v) { return v.toFixed(dec); }
+    function commit(v, from) {
+      if (isNaN(v)) { input.value = fmt(val); return; }              // revert unparseable input
+      var c = Math.min(max, Math.max(min, v));
+      c = parseFloat(c.toFixed(dec));
+      var changed = Math.abs(c - val) > 1e-9;
+      val = c;
+      input.value = fmt(val);
+      if (changed) post('stepper "' + el.getAttribute('data-id') + '" = ' + fmt(val) + ' (' + from + ')');
+    }
+    input.value = fmt(val);
+    el.querySelector('.minus').addEventListener('click', function () { commit(val - step, 'button'); });
+    el.querySelector('.plus') .addEventListener('click', function () { commit(val + step, 'button'); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter')  { commit(parseFloat(input.value), 'typed'); input.blur(); }
+      if (e.key === 'Escape') { input.value = fmt(val); input.blur(); }
+    });
+    input.addEventListener('blur', function () { commit(parseFloat(input.value), 'typed'); });
+  });
+</script>
+</body></html>

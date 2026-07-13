@@ -341,5 +341,19 @@ scrollbars (all become CSS/JS in the shared lib).
   a StepFlowWindow on its own STA thread; explicit user-data folder +
   loader-copy target sufficient; JS→C# bridge delivers; HTML stepper/tabs
   visually match WPF originals.
+- **2026-07 (Phase 0 landed — pending Windows verify):** shared host layer built
+  under `Source/Framework/Web/` — `WebHost` (env singleton + control factory,
+  R1/R3/R5/R7/R8/R36), `WebBridge` (JSON `{type,payload}` router with ready-queue
+  + unknown-message logging, R17-R21), `WebAssets` (virtual-host serving of the
+  deploy `Web\` folder + live `--l-*` CSS-variable injection, R12/R14/R16),
+  `WebJson` (dependency-free serializer, complements MiniJson). Debug pages moved
+  to loose files at `Source/Web/debug/*.html` + shared `Source/Web/lemoine-bridge.js`;
+  csproj copies `Source/Web/**` → `<DeployDir>\Web\` per year (R30/R31). Harness
+  repointed onto all of it (env via WebHost, pages served over `lemoine.app`
+  virtual host, messaging via WebBridge). Pages verified rendering STANDALONE in
+  headless Chromium from disk (CSS-variable fallbacks + `../lemoine-bridge.js`
+  resolves + bridge degrades gracefully) — R14/R38 confirmed off-Windows.
+  *Still to verify on Windows:* the harness runs end-to-end through the new layer;
+  virtual-host navigation + live theme-variable push work inside Revit.
 - *(append here: Revit-shipped WebView2 version from the assembly-dump probe;
   2025/2026 smoke results; focus/keyboard findings; anything that bites)*

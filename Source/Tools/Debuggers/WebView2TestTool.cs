@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -15,21 +17,17 @@ namespace LemoineTools.Tools.Debuggers
 {
     // =========================================================================
     // WebView2 Test — debug harness (see CLAUDE.md "Crashes & Large Ambiguous
-    // Issues" and plan-webview2-testing-menu.md).
+    // Issues" and plan-webview2-ui-migration.md).
     //
-    // Goal: prove WebView2 can host Lemoine UI inside Revit, with every known
-    // silent-failure mode surfaced as a visible log line:
-    //   1. unwritable default user-data folder → environment is always created
-    //      explicitly against %LocalAppData%\LemoineTools\WebView2
-    //   2. missing WebView2Loader.dll          → preflight file probe
-    //   3. navigating before init completes    → phases are separate buttons,
-    //      navigation only enabled logically after EnsureCoreWebView2Async
-    //   4. CLR binding to Revit's own WebView2 → preflight AppDomain dump
+    // Now also the proving ground for the Phase 0 shared host layer: environment
+    // creation goes through WebHost (rule R36 — never a bespoke CreateAsync),
+    // pages are served loose from the deploy Web\ folder over the virtual host
+    // (WebAssets), and the JS<->C# messaging runs through WebBridge. The manual,
+    // per-phase buttons remain so a failing phase still names itself.
     //
-    // Every suspect is lazily constructed behind a button: opening the window
-    // or navigating steps must never touch WebView2. All strings are hardcoded
-    // deliberately — this is developer-only tooling, removed once findings are
-    // captured (per the AppStrings "debug-only output" exception).
+    // Every suspect is lazily constructed behind a button: opening the window or
+    // navigating steps must never touch WebView2. All strings are hardcoded
+    // deliberately — developer-only tooling, exempt from AppStrings.
     // =========================================================================
     public class WebView2TestTool : IStepFlowTool, IToolCleanup
     {
@@ -46,31 +44,25 @@ namespace LemoineTools.Tools.Debuggers
         public event EventHandler? ValidationChanged;
         private void Fire() => ValidationChanged?.Invoke(this, EventArgs.Empty);
 
-        // Nothing is required to Run — the harness is all optional probes.
-        public bool IsValid(string stepId) => true;
+        public bool IsValid(string stepId) => true; // all probes optional
 
         // ── Probe state (drives collapsed summaries + the Run summary) ────────
-        private bool? _runtimeOk;   // Evergreen runtime found
-        private bool? _loaderOk;    // WebView2Loader.dll beside the plugin DLL
-        private bool? _envOk;       // CoreWebView2Environment created
-        private bool? _initOk;      // EnsureCoreWebView2Async completed
-        private bool? _navOk;       // a NavigationCompleted with IsSuccess
+        private bool? _runtimeOk;
+        private bool? _loaderOk;
+        private bool? _envOk;
+        private bool? _initOk;
+        private bool? _navOk;
         private int   _bridgeMessages;
 
         // ── WebView2 objects (all lazily created behind buttons) ─────────────
         private CoreWebView2Environment? _env;
-        private WebView2? _initView;    // lives in the step-2 host
-        private WebView2? _inputsView;  // lives in the step-3 host
+        private WebView2?  _initView;
+        private WebView2?  _inputsView;
+        private WebBridge? _initBridge;
+        private WebBridge? _inputsBridge;
         private bool _initEventsWired;
-        private bool _inputsEventsWired;
 
-        // ── Step content (buttons + host areas + per-step probe logs) ─────────
-        // The tool is constructed on Revit's main thread but the window (and all
-        // WPF visuals) live on the window's own STA thread, so every control —
-        // including these ProbeLogs — must be created inside GetStepContent,
-        // which StepFlowWindow calls on the window thread. Creating them in the
-        // constructor / field initializers would give them the wrong thread
-        // affinity and throw on first use in the visual tree.
+        // ── Step content (built on the window's STA thread in GetStepContent) ──
         private ProbeLog _preflightLog = null!;
         private ProbeLog _initLog      = null!;
         private ProbeLog _inputsLog    = null!;
@@ -138,9 +130,6 @@ namespace LemoineTools.Tools.Debuggers
             return panel;
         }
 
-        // Failure mode #2 half A: is the Evergreen runtime installed at all? NOTE this call
-        // itself P/Invokes into WebView2Loader.dll, so a missing loader also fails HERE —
-        // a DllNotFoundException from this probe means the loader, not the runtime.
         private void ProbeRuntime()
         {
             try
@@ -169,7 +158,6 @@ namespace LemoineTools.Tools.Debuggers
             Fire();
         }
 
-        // Failure mode #2 half B: is the native loader deployed next to LemoineTools.dll?
         private void ProbeLoaderFile()
         {
             try
@@ -204,6 +192,18 @@ namespace LemoineTools.Tools.Debuggers
                                        "Check the CopyWebView2Loader build step ran.");
                     DiagnosticsLog.Warn("WebView2Test: loader probe", "WebView2Loader.dll not deployed");
                 }
+
+                // Also confirm the Phase 0 web assets deployed (served over the virtual host).
+                string webRoot = WebAssets.WebRoot;
+                string smoke   = Path.Combine(webRoot, "debug", "smoke.html");
+                string bridge  = Path.Combine(webRoot, "lemoine-bridge.js");
+                if (File.Exists(smoke) && File.Exists(bridge))
+                    _preflightLog.Pass($"Web assets deployed at {webRoot}.");
+                else
+                {
+                    _preflightLog.Fail($"Web assets missing under {webRoot} — check the Source\\Web copy step.");
+                    DiagnosticsLog.Warn("WebView2Test: web assets probe", $"missing under {webRoot}");
+                }
             }
             catch (Exception ex)
             {
@@ -214,8 +214,6 @@ namespace LemoineTools.Tools.Debuggers
             Fire();
         }
 
-        // Failure mode #4: which Microsoft.Web.WebView2.* assemblies has the CLR already
-        // bound (possibly Revit's own copies), and which copy does OUR code get?
         private void ProbeLoadedAssemblies()
         {
             try
@@ -233,9 +231,6 @@ namespace LemoineTools.Tools.Debuggers
                     _preflightLog.Info($"  {a.GetName().Name} {a.GetName().Version}  @  {loc}");
                 }
 
-                // Force-bind the Core assembly our code compiles against and report which
-                // file actually won — if this points into Revit's install folder rather than
-                // the plugin folder, Revit's copy is being used.
                 var core = typeof(CoreWebView2Environment).Assembly;
                 _preflightLog.Info($"Our CoreWebView2Environment binds to: {core.GetName().Version}  @  {core.Location}");
                 _preflightLog.Pass("Assembly dump complete — compare the path above against the plugin folder.");
@@ -256,12 +251,13 @@ namespace LemoineTools.Tools.Debuggers
             var panel = new StackPanel();
             panel.Children.Add(Desc(
                 "The three init phases are separate buttons so the failing phase names itself. " +
-                "Run them in order. The environment always uses an explicit user-data folder in " +
-                "%LocalAppData%\\LemoineTools\\WebView2 (never Revit's Program Files folder)."));
+                "Run them in order. Environment creation goes through the shared WebHost (explicit " +
+                "user-data folder in %LocalAppData%\\LemoineTools\\WebView2), and pages are served " +
+                "from the deploy Web\\ folder over the lemoine.app virtual host."));
 
             var row = new WrapPanel { Margin = new Thickness(0, 8, 0, 8) };
 
-            var btnEnv = MakeBtn("1 · Create environment");
+            var btnEnv = MakeBtn("1 · Create environment (WebHost)");
             btnEnv.Click += async (s, e) => await CreateEnvironmentAsync(_initLog);
             row.Children.Add(btnEnv);
 
@@ -270,7 +266,7 @@ namespace LemoineTools.Tools.Debuggers
             row.Children.Add(btnInit);
 
             var btnSmoke = MakeBtn("3 · Load smoke page");
-            btnSmoke.Click += (s, e) => LoadSmokePage();
+            btnSmoke.Click += (s, e) => LoadInitPage("debug/smoke.html");
             row.Children.Add(btnSmoke);
 
             panel.Children.Add(row);
@@ -281,41 +277,31 @@ namespace LemoineTools.Tools.Debuggers
             return panel;
         }
 
-        // Failure mode #1: explicit writable user-data folder, created BEFORE anything else.
         private async Task<bool> CreateEnvironmentAsync(ProbeLog log)
         {
-            if (_env != null) { log.Info("Environment already created — reusing it."); return true; }
+            if (_env != null) { log.Info("Environment already created — reusing the shared WebHost environment."); return true; }
             try
             {
-                string folder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "LemoineTools", "WebView2");
-                Directory.CreateDirectory(folder);
-                log.Info($"User data folder: {folder}");
-                _env = await CoreWebView2Environment.CreateAsync(null, folder, null);
+                log.Info($"User data folder: {WebHost.UserDataFolder}");
+                _env = await WebHost.EnvironmentAsync();
                 _envOk = true;
-                log.Pass($"Environment created (runtime {_env.BrowserVersionString}).");
+                log.Pass($"Environment ready (runtime {_env.BrowserVersionString}).");
                 Fire();
                 return true;
             }
             catch (Exception ex)
             {
                 _envOk = false;
-                log.Fail($"CoreWebView2Environment.CreateAsync FAILED — {ex.GetType().Name}: {ex.Message}");
+                log.Fail($"WebHost.EnvironmentAsync FAILED — {ex.GetType().Name}: {ex.Message}");
                 DiagnosticsLog.Error("WebView2Test: create environment", ex);
                 Fire();
                 return false;
             }
         }
 
-        // Failure mode #3: everything after this await; navigation is a separate button.
         private async Task InitControlAsync()
         {
-            if (_env == null)
-            {
-                _initLog.Dim("Run '1 · Create environment' first.");
-                return;
-            }
+            if (_env == null) { _initLog.Dim("Run '1 · Create environment' first."); return; }
             try
             {
                 if (_initView == null)
@@ -324,11 +310,7 @@ namespace LemoineTools.Tools.Debuggers
                     if (_initHost != null) _initHost.Child = _initView;
                     _initLog.Info("WebView2 WPF control created and added to the host area.");
                 }
-                if (_initView.CoreWebView2 != null)
-                {
-                    _initLog.Info("Control already initialized.");
-                    return;
-                }
+                if (_initView.CoreWebView2 != null) { _initLog.Info("Control already initialized."); return; }
 
                 if (!_initEventsWired)
                 {
@@ -346,7 +328,11 @@ namespace LemoineTools.Tools.Debuggers
                     _initView.NavigationCompleted += (s, e) =>
                     {
                         _navOk = e.IsSuccess;
-                        if (e.IsSuccess) _initLog.Pass("NavigationCompleted: success — the page should be visible above.");
+                        if (e.IsSuccess)
+                        {
+                            WebAssets.ApplyVariablesLive(_initView!); // push live theme vars (R12)
+                            _initLog.Pass("NavigationCompleted: success — the page should be visible above.");
+                        }
                         else
                         {
                             _initLog.Fail($"NavigationCompleted: FAILED — WebErrorStatus = {e.WebErrorStatus}");
@@ -356,18 +342,20 @@ namespace LemoineTools.Tools.Debuggers
                     };
                 }
 
-                await _initView.EnsureCoreWebView2Async(_env);
+                await _initView.EnsureCoreWebView2Async(_env); // R3 — nothing below runs before this
 
-                // CoreWebView2-level wiring is only possible after the await above.
+                WebHost.ConfigureProductionSettings(_initView.CoreWebView2); // R7
+                WebAssets.MapVirtualHost(_initView.CoreWebView2);            // R16
                 _initView.CoreWebView2.ProcessFailed += (s, e) =>
                 {
                     _initLog.Fail($"ProcessFailed: {e.ProcessFailedKind} — the browser process died.");
                     DiagnosticsLog.Warn("WebView2Test: process failed", e.ProcessFailedKind.ToString());
                 };
-                _initView.CoreWebView2.WebMessageReceived += (s, e) => OnWebMessage(_initLog, e);
+                _initBridge = new WebBridge(_initView.CoreWebView2);
+                _initBridge.MessageReceived += (type, payload) => LogBridge(_initLog, type, payload, countIt: false);
 
                 _initOk = true;
-                _initLog.Pass("EnsureCoreWebView2Async completed — CoreWebView2 is ready.");
+                _initLog.Pass("EnsureCoreWebView2Async completed — CoreWebView2 ready, bridge attached.");
             }
             catch (Exception ex)
             {
@@ -378,7 +366,7 @@ namespace LemoineTools.Tools.Debuggers
             Fire();
         }
 
-        private void LoadSmokePage()
+        private void LoadInitPage(string relativePath)
         {
             if (_initView?.CoreWebView2 == null)
             {
@@ -387,14 +375,14 @@ namespace LemoineTools.Tools.Debuggers
             }
             try
             {
-                _initView.NavigateToString(WebView2TestPages.SmokePage(AppSettings.Instance.ActiveTheme));
-                _initLog.Info("NavigateToString(smoke page) issued — waiting for NavigationCompleted…");
+                _initView.CoreWebView2.Navigate(WebAssets.PageUrl(relativePath));
+                _initLog.Info($"Navigate({WebAssets.PageUrl(relativePath)}) issued — waiting for NavigationCompleted…");
             }
             catch (Exception ex)
             {
                 _navOk = false;
-                _initLog.Fail($"NavigateToString FAILED — {ex.GetType().Name}: {ex.Message}");
-                DiagnosticsLog.Error("WebView2Test: navigate smoke page", ex);
+                _initLog.Fail($"Navigate FAILED — {ex.GetType().Name}: {ex.Message}");
+                DiagnosticsLog.Error("WebView2Test: navigate init page", ex);
                 Fire();
             }
         }
@@ -407,20 +395,19 @@ namespace LemoineTools.Tools.Debuggers
             _inputsLog = new ProbeLog(110);
             var panel = new StackPanel();
             panel.Children.Add(Desc(
-                "HTML recreations of InlineStepper and MultiSelectTabs, styled from the live theme. " +
-                "Interacting with them posts messages over the JS→C# bridge into this log. " +
-                "These buttons run any missing init phase themselves (each phase still logged)."));
+                "The loose HTML recreations of InlineStepper and MultiSelectTabs, served from the " +
+                "deploy Web\\ folder and themed live from the active theme. Interacting with them " +
+                "posts messages over the WebBridge into this log. These buttons run any missing " +
+                "init phase themselves."));
 
             var row = new WrapPanel { Margin = new Thickness(0, 8, 0, 8) };
 
             var btnStepper = MakeBtn("Load stepper page");
-            btnStepper.Click += async (s, e) => await LoadInputsPageAsync(
-                () => WebView2TestPages.StepperPage(AppSettings.Instance.ActiveTheme), "stepper");
+            btnStepper.Click += async (s, e) => await LoadInputsPageAsync("debug/stepper.html", "stepper");
             row.Children.Add(btnStepper);
 
             var btnTabs = MakeBtn("Load multi-select tabs page");
-            btnTabs.Click += async (s, e) => await LoadInputsPageAsync(
-                () => WebView2TestPages.TabsPage(AppSettings.Instance.ActiveTheme), "multi-select tabs");
+            btnTabs.Click += async (s, e) => await LoadInputsPageAsync("debug/tabs.html", "multi-select tabs");
             row.Children.Add(btnTabs);
 
             panel.Children.Add(row);
@@ -431,7 +418,7 @@ namespace LemoineTools.Tools.Debuggers
             return panel;
         }
 
-        private async Task LoadInputsPageAsync(Func<string> buildHtml, string pageName)
+        private async Task LoadInputsPageAsync(string relativePath, string pageName)
         {
             try
             {
@@ -441,24 +428,28 @@ namespace LemoineTools.Tools.Debuggers
                 {
                     _inputsView = MakeWebView();
                     if (_inputsHost != null) _inputsHost.Child = _inputsView;
+                    _inputsView.NavigationCompleted += (s, e) =>
+                    {
+                        if (e.IsSuccess) WebAssets.ApplyVariablesLive(_inputsView!);
+                        else DiagnosticsLog.Warn("WebView2Test: inputs navigation", $"WebErrorStatus={e.WebErrorStatus}");
+                    };
                     _inputsLog.Info("Second WebView2 control created (shares the environment).");
                 }
                 if (_inputsView.CoreWebView2 == null)
                 {
                     await _inputsView.EnsureCoreWebView2Async(_env);
-                    _inputsLog.Pass("Inputs control initialized.");
-                }
-                if (!_inputsEventsWired)
-                {
-                    _inputsEventsWired = true;
-                    _inputsView.CoreWebView2.WebMessageReceived += (s, e) => OnWebMessage(_inputsLog, e);
+                    WebHost.ConfigureProductionSettings(_inputsView.CoreWebView2);
+                    WebAssets.MapVirtualHost(_inputsView.CoreWebView2);
                     _inputsView.CoreWebView2.ProcessFailed += (s, e) =>
                     {
                         _inputsLog.Fail($"ProcessFailed: {e.ProcessFailedKind}");
                         DiagnosticsLog.Warn("WebView2Test: inputs process failed", e.ProcessFailedKind.ToString());
                     };
+                    _inputsBridge = new WebBridge(_inputsView.CoreWebView2);
+                    _inputsBridge.MessageReceived += (type, payload) => LogBridge(_inputsLog, type, payload, countIt: true);
+                    _inputsLog.Pass("Inputs control initialized, bridge attached.");
                 }
-                _inputsView.NavigateToString(buildHtml());
+                _inputsView.CoreWebView2.Navigate(WebAssets.PageUrl(relativePath));
                 _inputsLog.Info($"Loaded the {pageName} page — interact with it and watch for bridge messages.");
             }
             catch (Exception ex)
@@ -468,20 +459,24 @@ namespace LemoineTools.Tools.Debuggers
             }
         }
 
-        private void OnWebMessage(ProbeLog log, CoreWebView2WebMessageReceivedEventArgs e)
+        // Renders one inbound bridge message. 'ready' is bridge bookkeeping (not counted);
+        // 'error' is a page-side script fault (rule R35) shown red.
+        private void LogBridge(ProbeLog log, string type, IReadOnlyDictionary<string, object?> payload, bool countIt)
         {
-            try
+            if (type == "ready") { log.Dim("bridge: page ready"); return; }
+
+            string text = payload.TryGetValue("text", out var t) && t != null
+                ? t.ToString() ?? ""
+                : string.Join(", ", payload.Select(kv => $"{kv.Key}={kv.Value}"));
+
+            if (type == "error")
             {
-                _bridgeMessages++;
-                log.Bridge($"JS -> C#: {e.TryGetWebMessageAsString()}");
-                Fire();
+                log.Fail($"page error: {text}");
+                return;
             }
-            catch (Exception ex)
-            {
-                // A non-string payload (unexpected — our pages only post strings).
-                log.Fail($"WebMessageReceived payload unreadable — {ex.Message}");
-                DiagnosticsLog.Swallowed("WebView2Test: read web message", ex);
-            }
+
+            if (countIt) { _bridgeMessages++; Fire(); }
+            log.Bridge($"JS -> C# [{type}] {text}");
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -522,9 +517,11 @@ namespace LemoineTools.Tools.Debuggers
             catch (Exception ex) { DiagnosticsLog.Swallowed("WebView2Test: dispose init control", ex); }
             try { _inputsView?.Dispose(); }
             catch (Exception ex) { DiagnosticsLog.Swallowed("WebView2Test: dispose inputs control", ex); }
-            _initView   = null;
-            _inputsView = null;
-            _env        = null;
+            _initView    = null;
+            _inputsView  = null;
+            _initBridge  = null;
+            _inputsBridge = null;
+            _env         = null; // the shared WebHost environment lives on (process lifetime, R5)
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -533,9 +530,7 @@ namespace LemoineTools.Tools.Debuggers
         private static WebView2 MakeWebView()
         {
             var view = new WebView2();
-            // Match the theme so a not-yet-navigated control doesn't flash white.
-            var c = AppSettings.Instance.ActiveTheme.Bg.Color;
-            view.DefaultBackgroundColor = System.Drawing.Color.FromArgb(c.R, c.G, c.B);
+            WebHost.ApplyThemeBackground(view); // R8 — no white flash before navigation
             return view;
         }
 
