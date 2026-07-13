@@ -194,16 +194,28 @@
   <!-- WebView2 HTML/CSS/JS assets. Loaded at runtime from a Web\ folder next to the DLL and
        served to the control over a virtual host (WebAssets.MapVirtualHost). Authored under
        Source\Web\ but must land at <DeployDir>\Web\ (root of the addins folder, not
-       <DeployDir>\Source\Web\), so TargetPath re-roots each file's copy destination while
-       %(RecursiveDir) preserves the debug\ / lib\ sub-structure. Loose + PreserveNewest means a
-       page can be edited and re-tested with only a Revit restart, no rebuild (rule R30). Every
-       year Configuration copies into its own DeployDir since the copy follows OutputPath. -->
-  <ItemGroup>
-    <None Update="Source\Web\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Web\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
-    </None>
-  </ItemGroup>
+       <DeployDir>\Source\Web\).
+
+       An explicit <Copy> target is used instead of `None Update ... TargetPath`, because
+       %(RecursiveDir) is NOT reliably populated on default-glob items re-targeted via Update
+       (it was empty, so nothing landed under Web\ and every virtual-host navigation aborted).
+       Here the items come from THIS Include's own `**` wildcard, so %(RecursiveDir) correctly
+       carries the debug\ / lib\ sub-path and DestinationFiles re-roots each file under Web\.
+       This mirrors the proven CopyWebView2Loader target above.
+
+       Runs per year Configuration (each has its own OutputPath = that year's DeployDir), so
+       every year gets its own Web\ (rules R30/R31). Loose + SkipUnchangedFiles means a page can
+       be edited and re-tested with only a Revit restart, no rebuild. -->
+  <Target Name="CopyWebAssets" AfterTargets="Build">
+    <ItemGroup>
+      <_WebAsset Include="$(MSBuildThisFileDirectory)Source\Web\**\*" />
+    </ItemGroup>
+    <Warning Condition="'@(_WebAsset)' == ''"
+             Text="No files found under Source\Web\ — WebView2 pages will not deploy and navigation will fail." />
+    <Copy SourceFiles="@(_WebAsset)"
+          DestinationFiles="@(_WebAsset->'$(OutputPath)Web\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>

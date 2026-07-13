@@ -355,5 +355,18 @@ scrollbars (all become CSS/JS in the shared lib).
   resolves + bridge degrades gracefully) — R14/R38 confirmed off-Windows.
   *Still to verify on Windows:* the harness runs end-to-end through the new layer;
   virtual-host navigation + live theme-variable push work inside Revit.
-- *(append here: Revit-shipped WebView2 version from the assembly-dump probe;
-  2025/2026 smoke results; focus/keyboard findings; anything that bites)*
+- **2026-07 (Phase 0, Revit 2026 Windows run):** `WebHost` created the shared
+  environment cleanly — **Evergreen runtime 150.0.4078.65** at
+  `%LocalAppData%\LemoineTools\WebView2` (R1 path confirmed writable in Revit).
+  The SDK NuGet pin (1.0.2210.55) drives a runtime two major versions newer with
+  no issue, so the pin does not need to chase the runtime. **Deploy bug found +
+  fixed:** `None Update="Source\Web\**" TargetPath="Web\%(RecursiveDir)..."` did
+  NOT re-root the copy (`%(RecursiveDir)` is empty on Update of default-glob
+  items), so `<DeployDir>\Web\` never appeared and every `https://lemoine.app/...`
+  navigation aborted (`WebErrorStatus=Unknown`/`ConnectionAborted`) against the
+  missing folder. Replaced with an explicit `<Copy>` target (items from its own
+  `**` wildcard → `%(RecursiveDir)` populated), mirroring `CopyWebView2Loader`.
+  Loader copy + preflight probes worked first try. *Re-verify after the deploy
+  fix:* virtual-host navigation renders; live theme-variable push; bridge messages.
+- *(append here: assembly-dump probe output — the SDK assembly version Revit's own
+  WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*
