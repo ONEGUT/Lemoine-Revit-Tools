@@ -164,6 +164,20 @@ Always read the relevant source files before recommending or writing code. Never
 
 ---
 
+## WebView2 UI Migration
+
+The UI is migrating from WPF to WebView2-hosted HTML. **`plan-webview2-ui-migration.md`
+is the authoritative rules + phase plan** — read it before any WebView2/host/bridge/HTML-page
+work, and append verified Windows findings to its §5 log. The WebView2 Test harness
+(Developer ribbon panel; `Source/Tools/Debuggers/`) is the proving ground: WebView2 renders
+inside Revit tool windows, the JS↔C# bridge works, and HTML recreations of the house inputs
+match the WPF originals. The four silent-blank-control failure modes (unwritable default
+user-data folder, missing `WebView2Loader.dll`, navigating before `EnsureCoreWebView2Async`
+completes, version clash with Revit's own WebView2) are encoded as rules R1–R4 there — never
+regress them, and never create a `CoreWebView2Environment` outside the shared host layer.
+
+---
+
 ## WPF UI Tasks
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
