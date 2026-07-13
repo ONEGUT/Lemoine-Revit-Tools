@@ -1,0 +1,140 @@
+/* =============================================================================
+   lemoine.css - the shared WebView2 design system (Phase 1, rule R22).
+
+   Every colour and size is a --l-* CSS custom property. The :root block below is
+   the DarkMono FALLBACK so any page that includes this file renders standalone in
+   a plain browser (headless-Chromium verification, rules R14/R38); at runtime C#
+   overrides every variable live from the active ThemePalette + AppSettings scale
+   via WebAssets.ApplyVariablesLive (rule R12), with no reload.
+
+   Variable names mirror WebAssets.Variables() exactly - keep the two in sync.
+   ============================================================================= */
+:root{
+  --l-bg:#1a1a1a; --l-page-bg:#111111; --l-surface:#222222; --l-raised:#2a2a2a; --l-select-bg:#2a2a2a;
+  --l-border:#686868; --l-border-mid:#747474;
+  --l-text:#d4d4d4; --l-text-sub:#8c8c8c; --l-text-dim:#919191;
+  --l-accent:#4f8fc4; --l-accent-dim:#1b2d3e;
+  --l-green:#4ec994; --l-green-dim:#0e2219; --l-red:#f47067; --l-red-dim:#2c1412;
+  --l-knob-on:#ffffff; --l-knob-off:#ffffff;
+  --l-ui-font:'Segoe UI',sans-serif; --l-mono-font:'Consolas',monospace;
+  --l-scale:1;
+  --l-fs-sm:10.5px; --l-fs-md:12px; --l-fs-lg:13px; --l-fs-xl:15px;
+  --l-h-input:30px; --l-h-btn:28px; --l-h-toolbar:38px; --l-h-footer:42px;
+  --l-radius-sm:3px; --l-radius-md:4px; --l-radius-card:10px;
+}
+
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing:border-box; }
+body { margin:0; background:var(--l-bg); color:var(--l-text);
+       font-family:var(--l-ui-font); font-size:var(--l-fs-md); }
+
+/* ── Typography helpers ───────────────────────────────────────────────────── */
+.l-label   { font-size:var(--l-fs-md); color:var(--l-text); }
+.l-sublabel{ font-size:var(--l-fs-sm); color:var(--l-text-sub); }
+.l-hint    { font-size:var(--l-fs-sm); color:var(--l-text-dim); }
+.l-section-title { font-size:var(--l-fs-sm); font-weight:600; color:var(--l-text-sub);
+                   text-transform:uppercase; letter-spacing:.06em; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.l-btn { display:inline-flex; align-items:center; justify-content:center;
+         min-height:var(--l-h-btn); padding:0 14px; gap:6px;
+         font-family:var(--l-ui-font); font-size:var(--l-fs-md);
+         border:1px solid var(--l-border); border-radius:var(--l-radius-md);
+         background:transparent; color:var(--l-text); cursor:pointer; }
+.l-btn:hover { background:var(--l-accent-dim); }
+.l-btn.primary { border-color:var(--l-accent); color:var(--l-accent); background:var(--l-accent-dim); }
+.l-btn.primary:hover { background:var(--l-accent); color:var(--l-bg); }
+.l-btn.danger  { border-color:var(--l-red); color:var(--l-red); }
+.l-btn.danger:hover { background:var(--l-red-dim); }
+.l-btn:disabled { opacity:.45; cursor:default; }
+.l-btn.ghost { border-color:transparent; }
+.l-btn.ghost:hover { border-color:var(--l-border); }
+
+/* ── InlineStepper ────────────────────────────────────────────────────────── */
+.l-stepper { display:inline-flex; align-items:stretch; height:26px;
+             border:1px solid var(--l-border); background:var(--l-raised); }
+.l-stepper button { border:0; background:var(--l-raised); color:var(--l-text);
+                    font-family:var(--l-mono-font); font-size:var(--l-fs-sm); padding:0 9px; cursor:pointer; }
+.l-stepper button:hover { background:var(--l-accent-dim); }
+.l-stepper .sep { width:1px; background:var(--l-border); }
+.l-stepper input { width:46px; border:0; background:transparent; color:var(--l-text);
+                   font-family:var(--l-mono-font); font-size:var(--l-fs-sm); text-align:center; outline:none; }
+
+/* ── TextField ────────────────────────────────────────────────────────────── */
+.l-field { display:flex; flex-direction:column; gap:4px; }
+.l-field > input, .l-field > textarea {
+  height:var(--l-h-input); padding:0 8px; color:var(--l-text); background:var(--l-select-bg);
+  border:1px solid var(--l-border); border-radius:var(--l-radius-sm);
+  font-family:var(--l-ui-font); font-size:var(--l-fs-md); outline:none; }
+.l-field > textarea { height:auto; padding:6px 8px; resize:vertical; min-height:56px; }
+.l-field > input:focus, .l-field > textarea:focus { border-color:var(--l-accent); }
+.l-field > input::placeholder, .l-field > textarea::placeholder { color:var(--l-text-dim); }
+.l-field.invalid > input, .l-field.invalid > textarea { border-color:var(--l-red); }
+
+/* ── SingleSelect (radio list) ────────────────────────────────────────────── */
+.l-single { display:flex; flex-direction:column; gap:2px; }
+.l-single .opt { display:flex; align-items:center; gap:8px; padding:5px 6px; cursor:pointer;
+                 border:1px solid transparent; border-radius:var(--l-radius-sm); }
+.l-single .opt:hover { background:var(--l-accent-dim); }
+.l-single .opt.sel { border-color:var(--l-accent); background:var(--l-accent-dim); }
+.l-single .dot { width:14px; height:14px; border-radius:50%; flex-shrink:0;
+                 border:1px solid var(--l-border); position:relative; }
+.l-single .opt.sel .dot { border-color:var(--l-accent); }
+.l-single .opt.sel .dot::after { content:''; position:absolute; inset:3px; border-radius:50%; background:var(--l-accent); }
+.l-single .opt.disabled { opacity:.45; cursor:default; }
+.l-single .opt.disabled:hover { background:transparent; }
+
+/* ── ToggleSwitch ─────────────────────────────────────────────────────────── */
+.l-toggle { display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.l-toggle .track { width:28px; height:15px; border-radius:8px; background:var(--l-border);
+                   position:relative; transition:background .15s; flex-shrink:0; }
+.l-toggle .knob { position:absolute; top:2px; left:2px; width:11px; height:11px; border-radius:50%;
+                  background:var(--l-knob-off); transition:left .15s, background .15s; }
+.l-toggle.on .track { background:var(--l-accent); }
+.l-toggle.on .knob { left:15px; background:var(--l-knob-on); }
+.l-toggle.disabled { opacity:.45; cursor:default; }
+
+/* ── Checkbox row (shared by MultiSelectTabs & lists) ─────────────────────── */
+.l-check { display:flex; align-items:center; gap:6px; padding:3px 4px; cursor:pointer; }
+.l-check:hover { background:var(--l-accent-dim); }
+.l-check input { accent-color:var(--l-accent); margin:0; cursor:pointer; }
+.l-check.bold { font-weight:600; }
+.l-check.disabled { opacity:.5; cursor:default; }
+.l-check.disabled:hover { background:transparent; }
+.l-check .kids-caret { width:16px; text-align:center; color:var(--l-text-dim); cursor:pointer; }
+.l-check.indent { margin-left:32px; }
+
+/* ── MultiSelectTabs ──────────────────────────────────────────────────────── */
+.l-mst { display:flex; border:1px solid var(--l-border); background:var(--l-raised); }
+.l-mst .tabs { width:152px; border-right:1px solid var(--l-border); overflow-y:auto; padding:4px 0; flex-shrink:0; }
+.l-mst .tab { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px 8px;
+              border-left:2px solid transparent; cursor:pointer; font-size:var(--l-fs-sm); color:var(--l-text); }
+.l-mst .tab:hover { background:var(--l-accent-dim); }
+.l-mst .tab.active { background:var(--l-accent-dim); border-left-color:var(--l-accent); }
+.l-mst .tab .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.l-mst .tab .badge { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim);
+                     background:var(--l-raised); border:1px solid var(--l-border); border-radius:10px;
+                     padding:1px 5px; flex-shrink:0; }
+.l-mst .tab.has .badge { color:var(--l-accent); border-color:var(--l-accent); background:var(--l-accent-dim); }
+.l-mst .tabsep { height:1px; background:var(--l-border); margin:4px 6px; }
+.l-mst .list { flex:1; overflow-y:auto; padding:8px; min-height:0; }
+.l-mst .divider { height:1px; background:var(--l-border); margin:3px 0 8px; }
+.l-mst .empty { color:var(--l-text-dim); font-style:italic; padding:4px; }
+
+/* ── SectionCard ──────────────────────────────────────────────────────────── */
+.l-card { border:1px solid var(--l-border); border-radius:var(--l-radius-card);
+          background:var(--l-surface); overflow:hidden; }
+.l-card > .head { display:flex; align-items:center; gap:8px; padding:9px 12px; cursor:default;
+                  background:var(--l-raised); border-bottom:1px solid var(--l-border); }
+.l-card.collapsible > .head { cursor:pointer; }
+.l-card > .head .title { font-weight:600; font-size:var(--l-fs-md); color:var(--l-text); flex:1; }
+.l-card > .head .caret { color:var(--l-text-dim); transition:transform .15s; }
+.l-card.collapsed > .head .caret { transform:rotate(-90deg); }
+.l-card > .body { padding:12px; }
+.l-card.collapsed > .body { display:none; }
+
+/* ── WarnBanner ───────────────────────────────────────────────────────────── */
+.l-warn { display:flex; align-items:flex-start; gap:8px; padding:8px 10px;
+          background:var(--l-red-dim); border:1px solid var(--l-red); border-radius:var(--l-radius-md);
+          color:var(--l-red); font-size:var(--l-fs-sm); }
+.l-warn .ico { flex-shrink:0; font-weight:700; }

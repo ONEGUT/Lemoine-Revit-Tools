@@ -1,0 +1,152 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lemoine component gallery</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+<style>
+  body { padding:16px; }
+  h1 { font-size:var(--l-fs-xl); font-weight:600; margin:0 0 4px; }
+  .sub { color:var(--l-text-sub); font-size:var(--l-fs-sm); margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; align-items:start; }
+  .demo { border:1px solid var(--l-border); border-radius:var(--l-radius-md); background:var(--l-surface); padding:12px; }
+  .demo > h2 { font-size:var(--l-fs-sm); font-weight:600; color:var(--l-text-sub);
+               text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
+  .demo .stack { display:flex; flex-direction:column; gap:10px; }
+  .demo .rowset { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .out { margin-top:16px; border-top:1px solid var(--l-border); padding-top:10px; }
+  .out .t { color:var(--l-text-sub); font-size:var(--l-fs-sm); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .out .lines { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); max-height:120px; overflow-y:auto; }
+  .out .lines div { margin-bottom:2px; }
+  .out .lines b { color:var(--l-accent); font-weight:normal; }
+</style></head>
+<body>
+<h1>Lemoine component gallery</h1>
+<div class="sub">Phase 1 shared library (lemoine.js / lemoine.css). Interacting posts state over the bridge.</div>
+<div class="grid" id="grid"></div>
+
+<div class="out">
+  <div class="t">Bridge / change log</div>
+  <div class="lines" id="log"></div>
+</div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script>
+  var U = Lemoine.ui;
+  function log(msg) {
+    var line = document.createElement('div');
+    line.innerHTML = '<b>&rsaquo;</b> ';
+    line.appendChild(document.createTextNode(msg));
+    var box = document.getElementById('log');
+    box.appendChild(line); box.scrollTop = box.scrollHeight;
+    Lemoine.send('state', { text: msg });
+  }
+  function demo(title, buildBody) {
+    var card = U.el('div', 'demo');
+    card.appendChild(U.el('h2', null, title));
+    var stack = U.el('div', 'stack');
+    buildBody(stack);
+    card.appendChild(stack);
+    document.getElementById('grid').appendChild(card);
+  }
+
+  // Buttons
+  demo('Buttons', function (s) {
+    var row = U.el('div', 'rowset');
+    row.appendChild(U.button({ label: 'Default', onClick: function () { log('button: Default'); } }).el);
+    row.appendChild(U.button({ label: 'Primary', variant: 'primary', onClick: function () { log('button: Primary'); } }).el);
+    row.appendChild(U.button({ label: 'Danger', variant: 'danger', onClick: function () { log('button: Danger'); } }).el);
+    row.appendChild(U.button({ label: 'Ghost', variant: 'ghost', onClick: function () { log('button: Ghost'); } }).el);
+    row.appendChild(U.button({ label: 'Disabled', disabled: true }).el);
+    s.appendChild(row);
+  });
+
+  // InlineStepper
+  demo('InlineStepper', function (s) {
+    var r1 = U.el('div', 'rowset');
+    r1.appendChild(U.el('span', 'l-sublabel', 'integer 1-12'));
+    r1.appendChild(U.stepper({ min: 1, max: 12, step: 1, decimals: 0, value: 4,
+      onChange: function (v) { log('stepper columns = ' + v); } }).el);
+    s.appendChild(r1);
+    var r2 = U.el('div', 'rowset');
+    r2.appendChild(U.el('span', 'l-sublabel', 'decimal 0-5 / .25'));
+    r2.appendChild(U.stepper({ min: 0, max: 5, step: 0.25, decimals: 2, value: 0.75,
+      onChange: function (v) { log('stepper gap = ' + v); } }).el);
+    s.appendChild(r2);
+  });
+
+  // TextField
+  demo('TextField', function (s) {
+    s.appendChild(U.textField({ label: 'Sheet prefix', value: 'A-', placeholder: 'e.g. A-',
+      onChange: function (v) { log('field prefix = "' + v + '"'); } }).el);
+    var invalid = U.textField({ label: 'Required (shown invalid)', placeholder: 'cannot be empty' });
+    invalid.setInvalid(true);
+    s.appendChild(invalid.el);
+    s.appendChild(U.textField({ label: 'Notes (multiline)', multiline: true, placeholder: 'free text...' }).el);
+  });
+
+  // SingleSelect
+  demo('SingleSelect', function (s) {
+    s.appendChild(U.singleSelect({ value: 'pdf', options: [
+      { value: 'pdf', label: 'PDF' }, { value: 'dwg', label: 'DWG' },
+      { value: 'nwc', label: 'NWC (3D only)', disabled: true }, { value: 'ifc', label: 'IFC (3D only)', disabled: true }
+    ], onChange: function (v) { log('format = ' + v); } }).el);
+  });
+
+  // ToggleSwitches
+  demo('ToggleSwitches', function (s) {
+    s.appendChild(U.toggle({ label: 'View links in blue', checked: true,
+      onChange: function (v) { log('toggle blue = ' + v); } }).el);
+    s.appendChild(U.toggle({ label: 'Replace halftone', checked: false,
+      onChange: function (v) { log('toggle halftone = ' + v); } }).el);
+    s.appendChild(U.toggle({ label: 'Locked (disabled)', checked: true, disabled: true }).el);
+  });
+
+  // SectionCard
+  demo('SectionCard', function (s) {
+    var card = U.sectionCard({ title: 'PDF settings', collapsible: true });
+    card.body.appendChild(U.toggle({ label: 'Colour', checked: true }).el);
+    s.appendChild(card.el);
+    var card2 = U.sectionCard({ title: 'Collapsed by default', collapsible: true, collapsed: true });
+    card2.body.appendChild(U.el('div', 'l-hint', 'Hidden until expanded.'));
+    s.appendChild(card2.el);
+  });
+
+  // WarnBanner
+  demo('WarnBanner', function (s) {
+    s.appendChild(U.warnBanner('2 links are not set to "By Host View" - their elements cannot be overridden.').el);
+  });
+
+  // MultiSelectTabs
+  demo('MultiSelectTabs', function (s) {
+    var mst = U.multiSelectTabs({
+      height: '232px',
+      groups: {
+        'Ducts': ['Supply Air', 'Return Air', 'Exhaust Air', 'Outside Air'],
+        'Equipment': ['Air Handling Unit', 'VAV Box', 'Fan Coil Unit', 'Circulation Pump'],
+        'Pipes': ['CHW Supply', 'CHW Return', 'HHW Supply', 'HHW Return', 'Condensate Drain']
+      },
+      selected: ['Supply Air', 'Return Air', 'CHW Supply'],
+      onChange: function (sel) { log('multiselect (' + sel.length + '): ' + sel.join(', ')); }
+    });
+    s.appendChild(mst.el);
+  });
+
+  // MultiSelectTabs - hierarchy (parent caret + indeterminate)
+  demo('MultiSelectTabs (hierarchy)', function (s) {
+    var mst = U.multiSelectTabs({
+      height: '232px',
+      hierarchy: { 'Roofs': ['Fascias', 'Gutters', 'Roof Soffits'] },
+      groups: {
+        'Model': ['Walls', 'Roofs', 'Fascias', 'Gutters', 'Roof Soffits', 'Doors'],
+        'Other': ['Lines', 'Text']
+      },
+      selected: ['Gutters'],
+      onChange: function (sel) { log('hierarchy select (' + sel.length + '): ' + sel.join(', ')); }
+    });
+    s.appendChild(mst.el);
+  });
+
+  log('gallery ready');
+</script>
+</body></html>

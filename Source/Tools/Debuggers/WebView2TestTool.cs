@@ -410,6 +410,10 @@ namespace LemoineTools.Tools.Debuggers
             btnTabs.Click += async (s, e) => await LoadInputsPageAsync("debug/tabs.html", "multi-select tabs");
             row.Children.Add(btnTabs);
 
+            var btnGallery = MakeBtn("Load component gallery");
+            btnGallery.Click += async (s, e) => await LoadInputsPageAsync("gallery.html", "component gallery");
+            row.Children.Add(btnGallery);
+
             panel.Children.Add(row);
 
             _inputsHost = MakeHost(300, "No page loaded yet — press one of the buttons above.");

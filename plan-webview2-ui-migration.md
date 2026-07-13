@@ -368,5 +368,22 @@ scrollbars (all become CSS/JS in the shared lib).
   `**` wildcard → `%(RecursiveDir)` populated), mirroring `CopyWebView2Loader`.
   Loader copy + preflight probes worked first try. *Re-verify after the deploy
   fix:* virtual-host navigation renders; live theme-variable push; bridge messages.
+- **2026-07 (Phase 1a — component library seeded):** built `Source/Web/lib/`
+  (`lemoine.css` with the DarkMono fallback `:root` so any page including it renders
+  standalone, + `lemoine.js` vanilla factories) and `Source/Web/gallery.html`. First
+  batch of components, contracts ported from WPF (R23): Button (default/primary/
+  danger/ghost/disabled), InlineStepper (int + decimal, clamp/round/revert),
+  TextField (normal/invalid/multiline), SingleSelect (with disabled options),
+  ToggleSwitch, SectionCard (collapsible), WarnBanner, and MultiSelectTabs
+  (pinned Selected tab, badges, All-row indeterminate, alphabetical + Other-last,
+  Hierarchy carets with indeterminate parent, DisabledItems). Gallery verified
+  rendering all states standalone in headless Chromium (R24/R38) and reachable from
+  the harness inputs step in Revit. `lemoine-bridge.js` is the shared bridge for
+  every page. **Pending Phase 1 components** (next increments): FileBrowser/
+  FolderBrowser rows, TagChipInput, SearchAutocomplete, NumberRange, DateField,
+  InlineEdit, MatrixInput, BrowserTreePicker (tree + right-click contract), color
+  pickers/swatches, Legend components, DragGhost/ListReorder (HTML drag-drop), and
+  the step-flow chrome set (accordion/toolbar/footer/progress/run log — assembled
+  into the working shell in Phase 2).
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*
