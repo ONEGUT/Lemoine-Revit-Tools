@@ -466,5 +466,20 @@ scrollbars (all become CSS/JS in the shared lib).
   Once confirmed, flip `PushCoordinatesToLinksCommand` to `WebStepFlowWindow` and retire
   `PushCoordinatesToLinksViewModel`. Then continue wave 1: Print View, Duplicate Views,
   Upgrade Links, Align Coordinates.
+- **2026-07 (Phase 3 — chrome parity pass):** made the HTML shell match the WPF
+  StepFlowWindow. Removed the OS title bar (`WindowStyle=None` + `WindowChrome`
+  CaptionHeight 0 / ResizeBorderThickness 8, mirroring the WPF window) and built the
+  designed top bar in HTML: mono title, "Step X / N" chip, minimize + close buttons,
+  and drag-to-move (HTML mousedown → `action:drag` → Win32 `ReleaseCapture` +
+  `WM_NCLBUTTONDOWN(HTCAPTION)` on the window handle, since `DragMove` is unreliable
+  under the WebView2 child HWND). Added the status/progress strip ("● Configuring…"
+  status dot + segmented progress + `N pass / N fail / N skip`), mono step-id prefixes
+  in step headers, the blue left-accent on the active card, outline active pip, and the
+  WPF "done-only-after-you-pass-it" pip rule (an unvisited valid step stays grey
+  "Waiting…", not green) plus the inline "✗ Required before proceeding" hint. Verified
+  in headless Chromium against the WPF reference (near-identical). *To verify on
+  Windows:* the borderless window drags from the title bar, minimize/close work, and
+  resize-by-edge still works over the WebView2 (if edges don't resize, the follow-up is
+  WebView2 non-client-region support or a small resize margin).
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -38,10 +41,26 @@ namespace LemoineTools.Framework.Web
         public WebStepFlowWindow(IWebTool tool)
         {
             _tool = tool ?? throw new ArgumentNullException(nameof(tool));
-            Title  = tool.Title;
-            Width  = 520;
-            Height = 660;
+            Title     = tool.Title;
+            Width     = 520;
+            Height    = 660;
+            MinWidth  = 380;
+            MinHeight = 520;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+            // Borderless: remove the OS title bar; the designed HTML top bar drives
+            // drag/minimize/close via the bridge. Mirrors WPF StepFlowWindow's chrome.
+            WindowStyle        = WindowStyle.None;
+            ResizeMode         = ResizeMode.CanResizeWithGrip;
+            AllowsTransparency = false;
+            ShowInTaskbar      = true;
+            WindowChrome.SetWindowChrome(this, new WindowChrome
+            {
+                CaptionHeight         = 0,                       // no OS drag caption; we drag from HTML
+                ResizeBorderThickness = new Thickness(8),        // keep resizable edges
+                GlassFrameThickness   = new Thickness(0),
+                UseAeroCaptionButtons = false,
+            });
 
             AppSettings.Instance.ApplyTo(Resources);
             Background = AppSettings.Instance.ActiveTheme.PageBg;
@@ -195,11 +214,35 @@ namespace LemoineTools.Framework.Web
                     if (_isRunning) RunState.RequestCancel();
                     else { SendInit(); SendValidationAndSummaries(); }
                     break;
+                // ── Window chrome (the HTML top bar replaces the OS title bar) ──────
+                case "drag":     BeginNativeDrag(); break;
+                case "minimize": WindowState = WindowState.Minimized; break;
+                case "close":    Close(); break;
                 default: // confirm / navigate
                     SendValidationAndSummaries();
                     break;
             }
         }
+
+        // Starts the OS window-move loop from the HTML title bar's mousedown. DragMove() is
+        // unreliable here because the WebView2 child HWND owns the mouse, so use the Win32
+        // ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION) technique on the window handle.
+        private void BeginNativeDrag()
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                ReleaseCapture();
+                SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("WebStepFlowWindow: begin drag", ex); }
+        }
+
+        private const uint WM_NCLBUTTONDOWN = 0x00A1;
+        private const int  HTCAPTION        = 0x0002;
+        [DllImport("user32.dll")] private static extern bool   ReleaseCapture();
+        [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
         // ── Run lifecycle (mirrors StepFlowWindow.StartRun) ──────────────────
         private void StartRun()

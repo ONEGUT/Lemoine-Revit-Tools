@@ -153,17 +153,49 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
 .l-review .l-warn { margin-top:10px; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   StepFlow shell chrome (Phase 2) - the full tool-window layout in HTML.
-   Root grid: toolbar | scrolling accordion | footer. The output log + progress
-   live at the bottom of the scroll area and appear once a run starts.
+   StepFlow shell chrome (Phase 2/3) - the full tool-window layout in HTML,
+   matching the WPF StepFlowWindow (borderless; the OS title bar is removed and
+   this designed bar drives drag/minimize/close via the bridge).
+   Root grid: toolbar | status strip | scrolling accordion | footer.
    ═══════════════════════════════════════════════════════════════════════════ */
 html, body { height:100%; }
-.l-flow { display:grid; grid-template-rows:var(--l-h-toolbar) 1fr auto; height:100%; }
+.l-flow { display:grid; grid-template-rows:var(--l-h-toolbar) auto 1fr auto; height:100%;
+          border:1px solid var(--l-border); }   /* 1px edge for the chromeless window */
 
-.l-flow > .toolbar { display:flex; align-items:center; gap:10px; padding:0 12px;
-                     background:var(--l-surface); border-bottom:1px solid var(--l-border); }
-.l-flow > .toolbar .title { font-weight:600; font-size:var(--l-fs-lg); color:var(--l-text); flex:1;
-                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Toolbar: mono title | step chip + minimize + close */
+.l-flow > .toolbar { display:flex; align-items:center; gap:10px; padding:0 10px;
+                     background:var(--l-surface); border-bottom:1px solid var(--l-border);
+                     user-select:none; }
+.l-flow > .toolbar .title { flex:1; font-family:var(--l-mono-font); font-weight:500; font-size:var(--l-fs-xl);
+                            color:var(--l-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.l-flow > .toolbar .tools { display:flex; align-items:center; gap:6px; }
+.l-flow > .toolbar .step-chip { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim);
+                                border:1px solid var(--l-border); border-radius:var(--l-radius-sm);
+                                padding:3px 8px; white-space:nowrap; }
+.l-flow > .toolbar .win-btn { min-width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
+                              border:1px solid var(--l-border); border-radius:var(--l-radius-sm); background:transparent;
+                              color:var(--l-text-dim); font-family:var(--l-ui-font); font-size:var(--l-fs-md);
+                              line-height:1; cursor:pointer; padding:0 6px; }
+.l-flow > .toolbar .win-btn:hover { background:var(--l-accent-dim); color:var(--l-text); }
+.l-flow > .toolbar .win-btn.close:hover { background:var(--l-red-dim); color:var(--l-red); border-color:var(--l-red); }
+
+/* Status / progress strip */
+.l-flow > .strip { display:flex; align-items:center; gap:12px; padding:8px 12px 4px; }
+.l-flow > .strip .status { display:flex; align-items:center; gap:6px; min-width:112px;
+                           font-family:var(--l-mono-font); font-size:var(--l-fs-md); }
+.l-flow > .strip .status .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.l-flow > .strip .status.accent { color:var(--l-accent); }  .l-flow > .strip .status.accent .dot { background:var(--l-accent); }
+.l-flow > .strip .status.pass   { color:var(--l-green); }   .l-flow > .strip .status.pass .dot   { background:var(--l-green); }
+.l-flow > .strip .status.fail   { color:var(--l-red); }     .l-flow > .strip .status.fail .dot   { background:var(--l-red); }
+.l-flow > .strip .segs { flex:1; display:flex; gap:4px; }
+.l-flow > .strip .segs .seg { flex:1; height:4px; border-radius:2px; background:var(--l-border); transition:background .2s; }
+.l-flow > .strip .segs .seg.on.accent { background:var(--l-accent); }
+.l-flow > .strip .segs .seg.on.pass   { background:var(--l-green); }
+.l-flow > .strip .segs .seg.on.fail   { background:var(--l-red); }
+.l-flow > .strip .counts { display:flex; gap:10px; font-family:var(--l-mono-font); font-size:var(--l-fs-sm); }
+.l-flow > .strip .counts .pass { color:var(--l-green); }
+.l-flow > .strip .counts .fail { color:var(--l-red); }
+.l-flow > .strip .counts .skip { color:var(--l-text-dim); }
 
 .l-flow > .content { overflow-y:auto; padding:12px; }
 
@@ -171,23 +203,28 @@ html, body { height:100%; }
 .l-steps { display:flex; flex-direction:column; gap:8px; }
 .l-step { border:1px solid var(--l-border); border-radius:var(--l-radius-card); background:var(--l-surface);
           overflow:hidden; }
+.l-step.active { border-left:3px solid var(--l-accent); }   /* blue left accent on the active card */
 .l-step > .head { display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; }
-.l-step > .head .pip { width:20px; height:20px; border-radius:50%; flex-shrink:0; display:flex;
+.l-step > .head .pip { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:flex;
                        align-items:center; justify-content:center; font-size:var(--l-fs-sm);
                        border:1px solid var(--l-border); color:var(--l-text-sub); background:var(--l-raised); }
 .l-step.active > .head .pip { border-color:var(--l-accent); color:var(--l-accent); background:var(--l-accent-dim); }
 .l-step.done > .head .pip   { border-color:var(--l-green); color:var(--l-bg); background:var(--l-green); }
 .l-step > .head .titles { flex:1; min-width:0; }
-.l-step > .head .title { font-weight:600; font-size:var(--l-fs-md); color:var(--l-text); }
-.l-step > .head .summary { font-size:var(--l-fs-sm); color:var(--l-text-dim); white-space:nowrap;
-                           overflow:hidden; text-overflow:ellipsis; }
-.l-step > .head .req { font-size:var(--l-fs-sm); color:var(--l-red); margin-left:6px; }
+.l-step > .head .title { display:flex; align-items:baseline; gap:8px; }
+.l-step > .head .title .idtag { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); }
+.l-step > .head .title .ttext { font-weight:600; font-size:var(--l-fs-md); color:var(--l-text); }
+.l-step > .head .title .req { font-size:var(--l-fs-sm); color:var(--l-red); }
+.l-step > .head .summary { font-size:var(--l-fs-sm); color:var(--l-text-dim); font-style:italic;
+                           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
 .l-step > .body { padding:0 12px 12px 44px; display:none; }
 .l-step.active > .body { display:block; }
 .l-step .inputs { display:flex; flex-direction:column; gap:12px; }
 .l-step .field-row { display:flex; flex-direction:column; gap:4px; }
 .l-step .field-row > .rlabel { font-size:var(--l-fs-sm); color:var(--l-text-sub); }
-.l-step .confirm-row { margin-top:12px; }
+.l-step .req-hint { color:var(--l-red); font-size:var(--l-fs-sm); margin-top:10px; display:none; }
+.l-step.show-req .req-hint { display:block; }
+.l-step .confirm-row { margin-top:12px; display:flex; justify-content:flex-end; }
 .l-step.hidden { display:none; }
 
 /* Footer */
@@ -195,14 +232,8 @@ html, body { height:100%; }
                     height:var(--l-h-footer); padding:0 12px;
                     background:var(--l-surface); border-top:1px solid var(--l-border); }
 
-/* Output log + progress */
+/* Output log (progress now lives in the top strip) */
 .l-run { margin-top:14px; }
-.l-run .progress { height:4px; background:var(--l-raised); border-radius:2px; overflow:hidden; margin-bottom:8px; }
-.l-run .progress > .fill { height:100%; width:0%; background:var(--l-accent); transition:width .2s; }
-.l-run .counts { display:flex; gap:12px; font-size:var(--l-fs-sm); margin-bottom:6px; }
-.l-run .counts .pass { color:var(--l-green); }
-.l-run .counts .fail { color:var(--l-red); }
-.l-run .counts .skip { color:var(--l-text-dim); }
 .l-log { border:1px solid var(--l-border); border-radius:var(--l-radius-sm); background:var(--l-bg);
          font-family:var(--l-mono-font); font-size:var(--l-fs-sm); max-height:180px; overflow-y:auto; padding:6px 8px; }
 .l-log div { margin-bottom:2px; }

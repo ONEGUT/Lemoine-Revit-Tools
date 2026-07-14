@@ -23,7 +23,9 @@ Lemoine.stepflow = function (container, opts) {
   var activeId = null;
   var valid = {};             // stepId -> bool (from C#)
   var canRun = false;
-  var runEl = null, logEl = null, fillEl = null, countsEl = null, runBtn = null, backBtn = null;
+  var running = false;
+  var runEl = null, logEl = null, runBtn = null, backBtn = null;
+  var chipEl = null, statusEl = null, segsEl = null, countsEl = null; // top-strip chrome
 
   // ── Public API (driven by inbound bridge messages) ─────────────────────────
   function init(newSpec) {
@@ -33,12 +35,23 @@ Lemoine.stepflow = function (container, opts) {
   function applyValidation(v) {
     valid = (v && v.steps) || {};
     canRun = !!(v && v.canRun);
+    steps.forEach(function (s) { if (s.confirmBtn) s.confirmBtn.disabled = valid[s.def.id] === false; });
+    refreshStepStates();
+    if (runBtn) runBtn.disabled = !canRun || running;
+  }
+  // Pip / accent / required-hint state. A step is "done" (green) only once you've moved PAST it
+  // (matches WPF: an unvisited valid step stays grey "Waiting", not green). The active required
+  // step shows an inline "Required before proceeding" hint while invalid.
+  function refreshStepStates() {
+    var vis = visibleSteps();
+    var aIdx = vis.findIndex(function (s) { return s.def.id === activeId; });
     steps.forEach(function (s) {
-      var ok = valid[s.def.id] !== false; // undefined = not gated = ok
-      s.el.classList.toggle('done', ok && s.def.id !== activeId && isRequired(s.def));
-      if (s.confirmBtn) s.confirmBtn.disabled = !ok;
+      var vIdx = vis.indexOf(s);
+      var ok = valid[s.def.id] !== false;
+      var passed = vIdx >= 0 && aIdx >= 0 && vIdx < aIdx;
+      s.el.classList.toggle('done', passed && ok && isRequired(s.def));
+      s.el.classList.toggle('show-req', s.def.id === activeId && isRequired(s.def) && !ok);
     });
-    if (runBtn) runBtn.disabled = !canRun;
   }
   function pushLog(text, status) {
     showRun();
@@ -46,22 +59,48 @@ Lemoine.stepflow = function (container, opts) {
     logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
   }
   function setProgress(p) {
-    showRun();
-    if (fillEl) fillEl.style.width = Math.max(0, Math.min(100, p.pct || 0)) + '%';
-    if (countsEl) countsEl.innerHTML = '';
-    if (countsEl && (p.pass != null)) {
-      countsEl.appendChild(U.el('span', 'pass', 'pass ' + (p.pass || 0)));
-      countsEl.appendChild(U.el('span', 'fail', 'fail ' + (p.fail || 0)));
-      countsEl.appendChild(U.el('span', 'skip', 'skip ' + (p.skip || 0)));
-    }
+    running = true; setStatus('Running...', 'accent');
+    var pct = Math.max(0, Math.min(100, p.pct || 0));
+    renderSegments(Math.round(pct / 100 * (visibleSteps().length || 1)), 'accent');
+    setCounts(p.pass, p.fail, p.skip);
+    if (runBtn) runBtn.disabled = true;
   }
   function complete(r) {
-    showRun();
-    setProgress({ pct: 100, pass: r.pass, fail: r.fail, skip: r.skip });
-    pushLog('Done - ' + (r.pass || 0) + ' passed, ' + (r.fail || 0) + ' failed, ' + (r.skip || 0) + ' skipped.',
-            (r.fail > 0) ? 'fail' : 'pass');
+    running = false;
+    var cls = (r.fail > 0) ? 'fail' : 'pass';
+    setStatus((r.fail > 0) ? 'Stopped' : 'Done', cls);
+    renderSegments(visibleSteps().length, cls);
+    setCounts(r.pass, r.fail, r.skip);
+    pushLog('Done - ' + (r.pass || 0) + ' passed, ' + (r.fail || 0) + ' failed, ' + (r.skip || 0) + ' skipped.', cls);
+    if (runBtn) runBtn.disabled = !canRun;
   }
   function setTitle(t) { var el = container.querySelector('.toolbar .title'); if (el) el.textContent = t; }
+
+  // ── Top-strip chrome helpers ───────────────────────────────────────────────
+  function setStatus(text, cls) {
+    if (!statusEl) return;
+    statusEl.className = 'status ' + (cls || 'accent');
+    var txt = statusEl.querySelector('.txt'); if (txt) txt.textContent = text;
+  }
+  function renderSegments(filled, cls) {
+    if (!segsEl) return;
+    var n = visibleSteps().length || 1;
+    segsEl.innerHTML = '';
+    for (var i = 0; i < n; i++) segsEl.appendChild(U.el('div', 'seg' + (i < filled ? ' on ' + (cls || 'accent') : '')));
+  }
+  function setCounts(pass, fail, skip) {
+    if (!countsEl) return;
+    countsEl.innerHTML = '';
+    countsEl.appendChild(U.el('span', 'pass', (pass || 0) + ' pass'));
+    countsEl.appendChild(U.el('span', 'fail', (fail || 0) + ' fail'));
+    countsEl.appendChild(U.el('span', 'skip', (skip || 0) + ' skip'));
+  }
+  function updateChip() {
+    if (!chipEl) return;
+    var vis = visibleSteps();
+    var idx = vis.findIndex(function (s) { return s.def.id === activeId; });
+    chipEl.textContent = 'Step ' + (idx < 0 ? 1 : idx + 1) + ' / ' + (vis.length || 1);
+  }
 
   // ── Build ──────────────────────────────────────────────────────────────────
   function isRequired(def) { return def.required !== false; }
@@ -71,12 +110,37 @@ Lemoine.stepflow = function (container, opts) {
     container.innerHTML = '';
     container.className = 'l-flow';
 
-    // Toolbar
+    // ── Toolbar: mono title | step chip + minimize + close ───────────────────
     var toolbar = U.el('div', 'toolbar');
     toolbar.appendChild(U.el('span', 'title', spec.title || ''));
+    var tools = U.el('div', 'tools');
+    chipEl = U.el('div', 'step-chip', 'Step 1 / 1');
+    tools.appendChild(chipEl);
+    var minBtn = U.el('button', 'win-btn', '\u2013'); minBtn.type = 'button'; minBtn.title = 'Minimize';
+    minBtn.addEventListener('click', function () { send('action', { action: 'minimize' }); });
+    var closeBtn = U.el('button', 'win-btn close', '\u00D7'); closeBtn.type = 'button'; closeBtn.title = 'Close';
+    closeBtn.addEventListener('click', function () { send('action', { action: 'close' }); });
+    tools.appendChild(minBtn); tools.appendChild(closeBtn);
+    toolbar.appendChild(tools);
+    // Drag-to-move: mousedown on the bar (not a button) starts a native window move (C# side).
+    toolbar.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || (e.target.closest && e.target.closest('.win-btn'))) return;
+      send('action', { action: 'drag' });
+    });
     container.appendChild(toolbar);
 
-    // Content + steps
+    // ── Status / progress strip ──────────────────────────────────────────────
+    var strip = U.el('div', 'strip');
+    statusEl = U.el('div', 'status accent');
+    statusEl.appendChild(U.el('span', 'dot'));
+    statusEl.appendChild(U.el('span', 'txt', 'Configuring...'));
+    segsEl = U.el('div', 'segs');
+    countsEl = U.el('div', 'counts');
+    strip.appendChild(statusEl); strip.appendChild(segsEl); strip.appendChild(countsEl);
+    container.appendChild(strip);
+    setCounts(0, 0, 0);
+
+    // ── Content + steps ──────────────────────────────────────────────────────
     var content = U.el('div', 'content');
     var stepsEl = U.el('div', 'l-steps');
     steps = [];
@@ -84,20 +148,20 @@ Lemoine.stepflow = function (container, opts) {
     steps.forEach(function (s) { stepsEl.appendChild(s.el); });
     content.appendChild(stepsEl);
 
-    // Run area (log + progress), hidden until a run starts
+    // Run log (log only; progress now lives in the top strip), hidden until a run starts.
     runEl = U.el('div', 'l-run l-hidden');
-    var prog = U.el('div', 'progress'); fillEl = U.el('div', 'fill'); prog.appendChild(fillEl);
-    countsEl = U.el('div', 'counts');
     logEl = U.el('div', 'l-log');
-    runEl.appendChild(prog); runEl.appendChild(countsEl); runEl.appendChild(logEl);
+    runEl.appendChild(logEl);
     content.appendChild(runEl);
     container.appendChild(content);
 
-    // Footer
+    // ── Footer ───────────────────────────────────────────────────────────────
     var footer = U.el('div', 'footer');
     backBtn = U.button({ label: '← Back', variant: 'ghost', onClick: goBack }).el; // LEFTWARDS ARROW
     var resetBtn = U.button({ label: 'Reset', variant: 'ghost', onClick: function () { send('action', { action: 'reset' }); } }).el;
-    var runHandle = U.button({ label: spec.runLabel || 'Run', variant: 'primary', onClick: function () { send('action', { action: 'run' }); } });
+    var runHandle = U.button({ label: spec.runLabel || 'Run', variant: 'primary', onClick: function () {
+      running = true; setStatus('Running...', 'accent'); showRun(); send('action', { action: 'run' });
+    } });
     runBtn = runHandle.el; runBtn.disabled = true;
     footer.appendChild(backBtn);
     footer.appendChild(resetBtn);
@@ -113,7 +177,9 @@ Lemoine.stepflow = function (container, opts) {
     var head = U.el('div', 'head');
     var pip = U.el('div', 'pip', String(index + 1));
     var titles = U.el('div', 'titles');
-    var title = U.el('div', 'title', def.title || '');
+    var title = U.el('div', 'title');
+    title.appendChild(U.el('span', 'idtag', def.id));         // mono step id, like the WPF header
+    title.appendChild(U.el('span', 'ttext', def.title || ''));
     if (isRequired(def)) title.appendChild(U.el('span', 'req', '*'));
     var summary = U.el('div', 'summary', def.summary || '');
     titles.appendChild(title); titles.appendChild(summary);
@@ -128,6 +194,11 @@ Lemoine.stepflow = function (container, opts) {
       if (row) { inputs[inp.id] = row.handle; inputsEl.appendChild(row.el); }
     });
     body.appendChild(inputsEl);
+
+    // Auto "Required before proceeding" hint (shown by refreshStepStates when active + invalid).
+    var reqHint = U.el('div', 'req-hint');
+    reqHint.textContent = '\u2717 Required before proceeding'; // BALLOT X
+    body.appendChild(reqHint);
 
     // Non-last steps get a Confirm button that advances to the next visible step.
     var confirmBtn = null;
@@ -215,6 +286,9 @@ Lemoine.stepflow = function (container, opts) {
     var vis = visibleSteps();
     var idx = vis.findIndex(function (s) { return s.def.id === activeId; });
     if (backBtn) backBtn.disabled = idx <= 0;
+    updateChip();
+    refreshStepStates();
+    if (!running) renderSegments(idx < 0 ? 0 : idx + 1, 'accent');
   }
   function goNext() {
     var vis = visibleSteps();
