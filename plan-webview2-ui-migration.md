@@ -417,5 +417,23 @@ scrollbars (all become CSS/JS in the shared lib).
   from an `IStepFlowTool`-shaped ViewModel, and migrating one pilot tool (Print View
   or Duplicate Views) end-to-end so the real run lifecycle (cancel, 5% progress
   cadence, RevitFailureCapture) round-trips through HTML.
+- **2026-07 (Phase 2b — WebStepFlowWindow + pilot, pending Windows verify):** the
+  C# side of the HTML shell. `Source/Framework/Web/`: `WebTool.cs` (`IWebTool` +
+  serializable `WebStep`/`WebInput`/`WebOption` spec with typed factories), and
+  `WebStepFlowWindow.cs` (code-only WPF Window hosting one WebView2, loads
+  stepflow.html over the virtual host, drives an `IWebTool` via the bridge contract,
+  and runs it through the *exact* StepFlowWindow lifecycle — `RunState.Begin`,
+  `RevitFailureCapture.BeginRun`, `RunLogSink.Set`, marshalled log/progress/complete;
+  theme/size push live; STA + `Dispatcher.UnhandledException` net). Pilot in
+  `Source/Tools/Debuggers/`: `WebPilotTool` (`IWebTool` — pick a category) +
+  `WebPilotEventHandler` (read-only element count via `ExternalEvent`, 5% cadence,
+  cancel checkpoint, payload cleared in finally) + `WebPilotCommand` + App.cs
+  handler/event registration + a "Web Pilot" Developer-ribbon button. **Key fix
+  baked in:** `InitAsync` is kicked from `Loaded`, not the constructor — before
+  `Dispatcher.Run()` there is no SynchronizationContext, so constructor-time awaits
+  would resume off the STA thread and hit the same COM-affinity crash as R5.
+  *To verify on Windows:* open Web Pilot, pick a category, Run — the count, progress
+  cadence, and completion summary should round-trip through HTML identically to a
+  WPF tool; theme switch with it open should retheme live.
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

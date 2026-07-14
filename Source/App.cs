@@ -171,6 +171,10 @@ namespace LemoineTools
         internal static ExtendWallsEventHandler?           ExtendWallsHandler           { get; private set; }
         internal static ExternalEvent?                     ExtendWallsEvent             { get; private set; }
 
+        // Developer / WebView2 pilot (Phase 2b) — the first IWebTool run through WebStepFlowWindow.
+        internal static LemoineTools.Tools.Debuggers.WebPilotEventHandler? WebPilotHandler { get; private set; }
+        internal static ExternalEvent?                                     WebPilotEvent   { get; private set; }
+
         // Global settings window — singleton, stays open across tool windows
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
@@ -314,6 +318,10 @@ namespace LemoineTools
             SplitByReferencePlaneEvent   = ExternalEvent.Create(SplitByReferencePlaneHandler);
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
+
+            // Developer / WebView2 pilot (Phase 2b)
+            WebPilotHandler              = new LemoineTools.Tools.Debuggers.WebPilotEventHandler();
+            WebPilotEvent                = ExternalEvent.Create(WebPilotHandler);
 
             try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { DiagnosticsLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
@@ -627,6 +635,12 @@ namespace LemoineTools
                 "Debug harness: probe WebView2 hosting inside Revit (runtime, loader, init, navigation) " +
                 "and exercise HTML recreations of common inputs over the JS bridge.",
                 char.ConvertFromUtf32(0xE774)));  // Globe
+
+            devPanel.AddItem(Btn(
+                "LT_WebPilot", "Web\nPilot", "WebPilotCommand",
+                "Phase 2b pilot: the first IWebTool running end-to-end through the HTML StepFlow " +
+                "window (pick a category, count elements read-only).",
+                char.ConvertFromUtf32(0xE71D)));  // AllApps
 
             return Result.Succeeded;
         }
