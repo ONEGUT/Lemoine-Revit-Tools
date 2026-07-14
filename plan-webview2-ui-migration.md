@@ -481,5 +481,16 @@ scrollbars (all become CSS/JS in the shared lib).
   Windows:* the borderless window drags from the title bar, minimize/close work, and
   resize-by-edge still works over the WebView2 (if edges don't resize, the follow-up is
   WebView2 non-client-region support or a small resize margin).
+- **2026-07 (Phase 3 wave-1, 2nd tool + native dialogs):** added the **FolderBrowser/
+  FileBrowser** components (native OS dialogs opened by C# on the STA WebUiThread via
+  browseFolder/browseFile actions + a setInput message; rule R26) - needed by Print View,
+  Upgrade Links, Bulk Export. Migrated **Delete Filters from Project** onto IWebTool
+  (`DeleteFiltersWebTool`), reusing the same handler; first tool to exercise MultiSelectTabs
+  end-to-end (grouped-by-trade filter picker + warning + review). Both verified in headless
+  Chromium. Exposed via a parallel "Delete Filters (Web)" Developer button (rule R25). Tool
+  survey done: the remaining clean single-component tools are DeleteFilters (done), BulkViews
+  (SingleSelect), CopyDatums, the Split* family, MakeCeilingGrids (all MultiSelectTabs+toggles);
+  BrowserTreePicker and TokenInput are the two components still gating the view/sheet and
+  naming-pattern tools (Duplicate Views, Print View's naming, Bulk Export/Rename).
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

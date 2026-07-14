@@ -648,6 +648,12 @@ namespace LemoineTools
                 "(parallel to the WPF version while it is verified).",
                 char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
 
+            devPanel.AddItem(Btn(
+                "LT_WebDeleteFilters", "Delete Filters\n(Web)", "WebDeleteFiltersCommand",
+                "Phase 3 wave-1: Delete Filters from Project in the HTML StepFlow window " +
+                "(parallel to the WPF version while it is verified).",
+                char.ConvertFromUtf32(0xE74D)));  // Trash
+
             return Result.Succeeded;
         }
 
