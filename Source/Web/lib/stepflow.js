@@ -144,7 +144,21 @@ Lemoine.stepflow = function (container, opts) {
     }
 
     el.appendChild(head); el.appendChild(body);
-    return { def: def, el: el, bodyEl: body, pipEl: pip, summaryEl: summary, confirmBtn: confirmBtn, inputs: inputs };
+    return { def: def, el: el, bodyEl: body, inputsEl: inputsEl, pipEl: pip,
+             summaryEl: summary, confirmBtn: confirmBtn, inputs: inputs };
+  }
+
+  // Rebuild one step's inputs live (C# -> JS `stepInputs`), e.g. to refresh the review
+  // step's summary as earlier steps change. Only replaces the inputs container, leaving the
+  // step's Confirm button and the rest of the accordion untouched.
+  function setStepInputs(id, inputs) {
+    var s = steps.filter(function (x) { return x.def.id === id; })[0];
+    if (!s || !s.inputsEl) return;
+    s.inputsEl.innerHTML = '';
+    (inputs || []).forEach(function (inp) {
+      var row = buildInput(inp, id);
+      if (row) s.inputsEl.appendChild(row.el);
+    });
   }
 
   // Maps a spec input to a lemoine.js factory and wires its change to a `state` message.
@@ -171,6 +185,12 @@ Lemoine.stepflow = function (container, opts) {
                                      hierarchy: inp.hierarchy, disabledItems: inp.disabledItems,
                                      height: inp.height || '232px', onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
+      case 'checkList':
+        handle = U.checkList({ items: inp.items, onChange: onChange });
+        el = labeledRow(inp.label, handle.el, true); break;
+      case 'review':
+        handle = U.review({ items: inp.items, note: inp.note, warning: inp.warning });
+        el = handle.el; break;
       case 'warn':
         handle = U.warnBanner(inp.text); el = handle.el; break;
       default:
@@ -211,6 +231,7 @@ Lemoine.stepflow = function (container, opts) {
 
   return { init: init, applyValidation: applyValidation, pushLog: pushLog,
            setProgress: setProgress, complete: complete, setTitle: setTitle,
+           setStepInputs: setStepInputs,
            setStepSummary: function (id, text) {
              var s = steps.filter(function (x) { return x.def.id === id; })[0];
              if (s) s.summaryEl.textContent = text;

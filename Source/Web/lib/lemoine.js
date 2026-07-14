@@ -299,11 +299,56 @@ Lemoine.ui = (function () {
              setSelected: function (arr) { selected = {}; (arr || []).forEach(function (s) { selected[s] = true; }); render(); } };
   }
 
+  // ── CheckList (flat list of checkboxes) ─────────────────────────────────────
+  // opts: { items:[{value,label,checked,disabled}], onChange(selectedValuesArray) }
+  // The house "pick which of these" list (no tabs). onChange reports the checked values.
+  function checkList(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-checklist');
+    var sel = {};
+    (opts.items || []).forEach(function (it) { if (it.checked) sel[it.value] = true; });
+    function fire() { if (opts.onChange) opts.onChange(Object.keys(sel)); }
+    (opts.items || []).forEach(function (it) {
+      var row = el('label', 'l-check' + (it.disabled ? ' disabled' : ''));
+      var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!sel[it.value];
+      if (it.disabled) cb.disabled = true;
+      if (!it.disabled) cb.addEventListener('change', function () {
+        if (cb.checked) sel[it.value] = true; else delete sel[it.value];
+        fire();
+      });
+      row.appendChild(cb); row.appendChild(el('span', null, it.label));
+      root.appendChild(row);
+    });
+    return { el: root, getSelected: function () { return Object.keys(sel); } };
+  }
+
+  // ── Review (read-only summary block) ────────────────────────────────────────
+  // opts: { items:[{label,value}], note, warning }  - the last-step review of a tool run.
+  function review(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-review');
+    (opts.items || []).forEach(function (it) {
+      var r = el('div', 'row');
+      r.appendChild(el('span', 'k', it.label));
+      r.appendChild(el('span', 'v', it.value));
+      root.appendChild(r);
+    });
+    if (opts.note) root.appendChild(el('div', 'note', opts.note));
+    if (opts.warning) {
+      var w = el('div', 'l-warn');
+      w.appendChild(el('span', 'ico', '!'));
+      w.appendChild(el('span', null, opts.warning));
+      root.appendChild(w);
+    }
+    return { el: root };
+  }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
     el: el, button: button, stepper: stepper, textField: textField,
     singleSelect: singleSelect, toggle: toggle, sectionCard: sectionCard,
-    warnBanner: warnBanner, multiSelectTabs: multiSelectTabs
+    warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
+    checkList: checkList, review: review
   };
 })();

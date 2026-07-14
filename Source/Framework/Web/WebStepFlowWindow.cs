@@ -151,6 +151,24 @@ namespace LemoineTools.Framework.Web
                 _bridge?.Send("stepSummary", new Dictionary<string, object?> { ["stepId"] = s.Id, ["text"] = _tool.SummaryFor(s.Id) });
                 _bridge?.Send("stepHidden",  new Dictionary<string, object?> { ["stepId"] = s.Id, ["hidden"] = !_tool.IsStepVisible(s.Id) });
             }
+
+            // The last step is the review/run step (contract: hideable steps are never last). Its
+            // content (a review block) is derived from current selections, so refresh it live as
+            // earlier steps change. Editable inputs live on earlier steps, so this never disrupts typing.
+            if (_steps.Count > 0) SendStepInputs(_steps[_steps.Count - 1].Id);
+        }
+
+        // Re-sends one step's inputs, rebuilt from the tool's CURRENT state (BuildSteps reflects
+        // the latest selections), so a review block updates without a full page reload.
+        private void SendStepInputs(string stepId)
+        {
+            var fresh = _tool.BuildSteps().FirstOrDefault(s => s.Id == stepId);
+            if (fresh == null) return;
+            _bridge?.Send("stepInputs", new Dictionary<string, object?>
+            {
+                ["stepId"] = stepId,
+                ["inputs"] = fresh.Inputs.Select(i => i.ToPayload()).ToList(),
+            });
         }
 
         // ── Inbound (JS -> C#) - both arrive on this window's dispatcher thread ──

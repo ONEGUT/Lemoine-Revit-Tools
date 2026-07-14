@@ -155,6 +155,26 @@ namespace LemoineTools.Framework.Web
             return w;
         }
 
+        public static WebInput CheckList(string id, string label,
+            IEnumerable<(string Value, string Label, bool Checked)> items)
+        {
+            var w = new WebInput("checkList", id, label);
+            w._props["items"] = items.Select(it => new Dictionary<string, object?>
+            { ["value"] = it.Value, ["label"] = it.Label, ["checked"] = it.Checked }).ToList();
+            return w;
+        }
+
+        public static WebInput Review(string id, IEnumerable<(string Label, string Value)> items,
+                                     string? note = null, string? warning = null)
+        {
+            var w = new WebInput("review", id, null);
+            w._props["items"] = items.Select(it => new Dictionary<string, object?>
+            { ["label"] = it.Label, ["value"] = it.Value }).ToList();
+            if (note != null)    w._props["note"]    = note;
+            if (warning != null) w._props["warning"] = warning;
+            return w;
+        }
+
         public static WebInput Warn(string id, string text)
         {
             var w = new WebInput("warn", id, null);

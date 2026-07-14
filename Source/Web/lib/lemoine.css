@@ -139,6 +139,19 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
           color:var(--l-red); font-size:var(--l-fs-sm); }
 .l-warn .ico { flex-shrink:0; font-weight:700; }
 
+/* ── CheckList ────────────────────────────────────────────────────────────── */
+.l-checklist { border:1px solid var(--l-border-mid); border-radius:var(--l-radius-md); overflow:hidden; }
+.l-checklist .l-check { border-bottom:1px solid var(--l-border); padding:8px 10px; margin:0; }
+.l-checklist .l-check:last-child { border-bottom:0; }
+
+/* ── Review block ─────────────────────────────────────────────────────────── */
+.l-review .row { display:flex; gap:10px; padding:5px 0; border-bottom:1px solid var(--l-border); }
+.l-review .row:last-of-type { border-bottom:0; }
+.l-review .row .k { color:var(--l-text-sub); width:110px; flex-shrink:0; font-size:var(--l-fs-sm); }
+.l-review .row .v { color:var(--l-text); font-size:var(--l-fs-md); }
+.l-review .note { color:var(--l-text-dim); font-size:var(--l-fs-sm); margin:10px 0; }
+.l-review .l-warn { margin-top:10px; }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    StepFlow shell chrome (Phase 2) - the full tool-window layout in HTML.
    Root grid: toolbar | scrolling accordion | footer. The output log + progress

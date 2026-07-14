@@ -451,5 +451,20 @@ scrollbars (all become CSS/JS in the shared lib).
   A `WebStepFlowWindow` "Loading..." placeholder covers the first cold start.
   *(Trade-off accepted: one warm browser process + the web-UI thread persist from
   first web-tool use until Revit closes.)*
+- **2026-07 (Phase 3 wave-1, first real tool — pending Windows verify):** migrated
+  **Push Coordinates to Links** onto `IWebTool` (`PushCoordinatesWebTool`), reusing
+  the SAME `PushCoordinatesToLinksRunHandler` + `PushCoordinatesData` unchanged — only
+  the view layer differs. Built the reusable pieces it needed (now available to every
+  later tool): a **checkList** component (flat "pick which of these" list),  a
+  **review** block (label/value summary + note + warning for the run step), and a live
+  **stepInputs** message so the review refreshes from current selections without a page
+  reload (the window auto-refreshes the last step on every validation change). Verified
+  the tool's layout standalone in headless Chromium (checkList matches the WPF link
+  list). Exposed via a parallel **"Push Coords (Web)"** Developer button; the production
+  WPF command is untouched (rule R25). *To verify on Windows:* open it, pick links +
+  points, Run — should behave identically to the WPF Push Coordinates (same handler).
+  Once confirmed, flip `PushCoordinatesToLinksCommand` to `WebStepFlowWindow` and retire
+  `PushCoordinatesToLinksViewModel`. Then continue wave 1: Print View, Duplicate Views,
+  Upgrade Links, Align Coordinates.
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

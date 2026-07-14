@@ -642,6 +642,12 @@ namespace LemoineTools
                 "window (pick a category, count elements read-only).",
                 char.ConvertFromUtf32(0xE71D)));  // AllApps
 
+            devPanel.AddItem(Btn(
+                "LT_WebPushCoords", "Push Coords\n(Web)", "WebPushCoordinatesCommand",
+                "Phase 3 wave-1: Push Coordinates to Links running in the HTML StepFlow window " +
+                "(parallel to the WPF version while it is verified).",
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+
             return Result.Succeeded;
         }
 
