@@ -175,6 +175,22 @@ namespace LemoineTools.Framework.Web
             return w;
         }
 
+        public static WebInput FolderBrowser(string id, string label, string? value = null, string? placeholder = null)
+        {
+            var w = new WebInput("folderBrowser", id, label);
+            w._props["value"] = value ?? "";
+            if (placeholder != null) w._props["placeholder"] = placeholder;
+            return w;
+        }
+
+        public static WebInput FileBrowser(string id, string label, string? value = null, string? placeholder = null)
+        {
+            var w = new WebInput("fileBrowser", id, label);
+            w._props["value"] = value ?? "";
+            if (placeholder != null) w._props["placeholder"] = placeholder;
+            return w;
+        }
+
         public static WebInput Warn(string id, string text)
         {
             var w = new WebInput("warn", id, null);

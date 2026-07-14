@@ -276,6 +276,13 @@ Lemoine.stepflow = function (container, opts) {
                                      hierarchy: inp.hierarchy, disabledItems: inp.disabledItems,
                                      height: inp.height || '232px', onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
+      case 'folderBrowser':
+      case 'fileBrowser':
+        var browseAction = inp.kind === 'fileBrowser' ? 'browseFile' : 'browseFolder';
+        var mk = inp.kind === 'fileBrowser' ? U.fileBrowser : U.folderBrowser;
+        handle = mk({ value: inp.value, placeholder: inp.placeholder,
+                      onBrowse: function () { send('action', { action: browseAction, stepId: stepId, inputId: inp.id }); } });
+        el = labeledRow(inp.label, handle.el, true); break;
       case 'checkList':
         handle = U.checkList({ items: inp.items, onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
@@ -326,6 +333,11 @@ Lemoine.stepflow = function (container, opts) {
   return { init: init, applyValidation: applyValidation, pushLog: pushLog,
            setProgress: setProgress, complete: complete, setTitle: setTitle,
            setStepInputs: setStepInputs,
+           // Push a value into one input's display (e.g. a folder path chosen by the C# dialog).
+           setInput: function (stepId, inputId, value) {
+             var s = steps.filter(function (x) { return x.def.id === stepId; })[0];
+             if (s && s.inputs[inputId] && s.inputs[inputId].setValue) s.inputs[inputId].setValue(value);
+           },
            setStepSummary: function (id, text) {
              var s = steps.filter(function (x) { return x.def.id === id; })[0];
              if (s) { s.summaryText = text; refreshStepStates(); } // state decides Waiting vs summary

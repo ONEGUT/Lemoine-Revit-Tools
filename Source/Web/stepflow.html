@@ -23,6 +23,7 @@
   Lemoine.on('stepSummary',function (p) { sf.setStepSummary(p.stepId, p.text); });
   Lemoine.on('stepHidden', function (p) { sf.setStepHidden(p.stepId, p.hidden); });
   Lemoine.on('stepInputs', function (p) { sf.setStepInputs(p.stepId, p.inputs); });
+  Lemoine.on('setInput',   function (p) { sf.setInput(p.stepId, p.inputId, p.value); });
   Lemoine.on('title',      function (p) { sf.setTitle(p.text); });
 
   // Standalone demo driver: with no C# bridge (plain browser / headless screenshot),

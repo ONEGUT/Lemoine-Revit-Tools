@@ -346,12 +346,32 @@ Lemoine.ui = (function () {
     return { el: root };
   }
 
+  // ── Folder / File browser (read-only path + Browse button) ──────────────────
+  // opts: { value, placeholder, onBrowse() }. The actual OS dialog is opened by C#
+  // (rule R26 - JS never touches the filesystem); onBrowse posts the request and the
+  // result comes back via setValue.
+  function browseRow(opts, kind) {
+    opts = opts || {};
+    var root = el('div', 'l-browse');
+    var input = el('input');
+    input.readOnly = true;
+    input.value = opts.value || '';
+    input.setAttribute('placeholder', opts.placeholder || (kind === 'file' ? 'No file selected' : 'No folder selected'));
+    var btn = el('button', 'l-btn', 'Browse...'); btn.type = 'button';
+    btn.addEventListener('click', function () { if (opts.onBrowse) opts.onBrowse(); });
+    root.appendChild(input); root.appendChild(btn);
+    return { el: root, getValue: function () { return input.value; }, setValue: function (v) { input.value = v || ''; } };
+  }
+  function folderBrowser(opts) { return browseRow(opts, 'folder'); }
+  function fileBrowser(opts)   { return browseRow(opts, 'file'); }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
     el: el, button: button, stepper: stepper, textField: textField,
     singleSelect: singleSelect, toggle: toggle, sectionCard: sectionCard,
     warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
-    checkList: checkList, review: review
+    checkList: checkList, review: review,
+    folderBrowser: folderBrowser, fileBrowser: fileBrowser
   };
 })();

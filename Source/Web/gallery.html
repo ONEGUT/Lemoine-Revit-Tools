@@ -117,6 +117,28 @@
     s.appendChild(U.warnBanner('2 links are not set to "By Host View" - their elements cannot be overridden.').el);
   });
 
+  // Folder / File browser
+  demo('FolderBrowser / FileBrowser', function (s) {
+    s.appendChild(U.el('span', 'l-sublabel', 'Output folder'));
+    s.appendChild(U.folderBrowser({ value: 'C:\\Exports\\PrintView', onBrowse: function () { log('browse folder'); } }).el);
+    s.appendChild(U.el('span', 'l-sublabel', 'Source file'));
+    s.appendChild(U.fileBrowser({ placeholder: 'No file selected', onBrowse: function () { log('browse file'); } }).el);
+  });
+
+  // CheckList
+  demo('CheckList', function (s) {
+    s.appendChild(U.checkList({ items: [
+      { value: 's', label: '[Structure]', checked: true }, { value: 'a', label: '[Architecture]', checked: true },
+      { value: 'm', label: '[MEP]', checked: false }
+    ], onChange: function (sel) { log('checklist: ' + sel.join(', ')); } }).el);
+  });
+
+  // Review
+  demo('Review', function (s) {
+    s.appendChild(U.review({ items: [ { label: 'Links', value: '2 link(s)' }, { label: 'Points', value: 'Project Base + Survey' } ],
+      note: 'Each selected link is corrected and re-placed using Shared Coordinates.' }).el);
+  });
+
   // MultiSelectTabs
   demo('MultiSelectTabs', function (s) {
     var mst = U.multiSelectTabs({

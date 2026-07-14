@@ -144,6 +144,14 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
 .l-checklist .l-check { border-bottom:1px solid var(--l-border); padding:8px 10px; margin:0; }
 .l-checklist .l-check:last-child { border-bottom:0; }
 
+/* ── Folder / File browser ──────────────────────────────────────────────────── */
+.l-browse { display:flex; gap:6px; align-items:stretch; }
+.l-browse input { flex:1; min-width:0; height:var(--l-h-input); padding:0 8px; color:var(--l-text);
+                  background:var(--l-select-bg); border:1px solid var(--l-border); border-radius:var(--l-radius-sm);
+                  font-family:var(--l-mono-font); font-size:var(--l-fs-sm); outline:none; }
+.l-browse input::placeholder { color:var(--l-text-dim); }
+.l-browse .l-btn { flex-shrink:0; }
+
 /* ── Review summary (2-column card grid, mirrors WPF ReviewSummary) ─────────── */
 .l-review .rwarn { border:1px solid var(--l-red); background:var(--l-raised); border-radius:var(--l-radius-sm);
                    padding:7px 10px; color:var(--l-red); font-size:var(--l-fs-sm); margin-bottom:8px; }

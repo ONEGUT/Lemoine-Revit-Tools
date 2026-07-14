@@ -214,6 +214,9 @@ namespace LemoineTools.Framework.Web
                     if (_isRunning) RunState.RequestCancel();
                     else { SendInit(); SendValidationAndSummaries(); }
                     break;
+                // ── Native OS dialogs (rule R26 - JS never touches the filesystem) ──
+                case "browseFolder": BrowseFolder(Str(p, "stepId"), Str(p, "inputId")); break;
+                case "browseFile":   BrowseFile(Str(p, "stepId"), Str(p, "inputId")); break;
                 // ── Window chrome (the HTML top bar replaces the OS title bar) ──────
                 case "drag":     BeginNativeDrag(); break;
                 case "minimize": WindowState = WindowState.Minimized; break;
@@ -222,6 +225,40 @@ namespace LemoineTools.Framework.Web
                     SendValidationAndSummaries();
                     break;
             }
+        }
+
+        // Opens the OS folder/file picker on this (STA) thread and pushes the chosen path back
+        // to both the tool (OnState) and the page (setInput). Runs on the WebUiThread, which is
+        // STA, so the WinForms common dialogs are valid here. Never throws into the bridge.
+        private void BrowseFolder(string stepId, string inputId)
+        {
+            try
+            {
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog();
+                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    ApplyPickedPath(stepId, inputId, dlg.SelectedPath);
+            }
+            catch (Exception ex) { DiagnosticsLog.Error("WebStepFlowWindow: browse folder", ex); }
+        }
+
+        private void BrowseFile(string stepId, string inputId)
+        {
+            try
+            {
+                using var dlg = new System.Windows.Forms.OpenFileDialog { CheckFileExists = true };
+                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    ApplyPickedPath(stepId, inputId, dlg.FileName);
+            }
+            catch (Exception ex) { DiagnosticsLog.Error("WebStepFlowWindow: browse file", ex); }
+        }
+
+        private void ApplyPickedPath(string stepId, string inputId, string path)
+        {
+            try { _tool.OnState(stepId, inputId, path); }
+            catch (Exception ex) { DiagnosticsLog.Error($"WebStepFlowWindow: OnState (browse) '{inputId}'", ex); }
+            _bridge?.Send("setInput", new Dictionary<string, object?>
+            { ["stepId"] = stepId, ["inputId"] = inputId, ["value"] = path });
+            SendValidationAndSummaries();
         }
 
         // Starts the OS window-move loop from the HTML title bar's mousedown. DragMove() is
