@@ -1,6 +1,4 @@
 using System;
-using System.Threading;
-using System.Windows.Threading;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -13,7 +11,12 @@ namespace LemoineTools.Commands
     /// <summary>
     /// Opens the Phase 2b pilot in a WebStepFlowWindow: the first real IWebTool running
     /// end-to-end through the HTML StepFlow shell. Read-only run (element count), so
-    /// ReadOnly transaction mode. STA-thread window pattern mirrors the other tool commands.
+    /// ReadOnly transaction mode.
+    ///
+    /// The window is created on the shared <see cref="WebUiThread"/> (not a per-command STA
+    /// thread) so the WebView2 browser process stays warm across opens - only the first web-tool
+    /// open of the session is cold. The window's Closed handler just clears the static; it must
+    /// NOT shut down the dispatcher, which lives for the whole session.
     /// </summary>
     [Transaction(TransactionMode.ReadOnly)]
     [Regeneration(RegenerationOption.Manual)]
@@ -27,9 +30,10 @@ namespace LemoineTools.Commands
             {
                 try
                 {
-                    _window.Dispatcher.Invoke(() =>
+                    WebUiThread.Invoke(() =>
                     {
-                        if (_window.IsVisible) _window.Activate();
+                        var w = _window;
+                        if (w != null && w.IsVisible) w.Activate();
                         else _window = null;
                     });
                     if (_window != null) return Result.Succeeded;
@@ -41,24 +45,14 @@ namespace LemoineTools.Commands
                 }
             }
 
-            var vm    = new WebPilotTool(App.WebPilotHandler!, App.WebPilotEvent!);
-            var ready = new ManualResetEventSlim(false);
-            WebStepFlowWindow? win = null;
-
-            var thread = new Thread(() =>
+            var vm = new WebPilotTool(App.WebPilotHandler!, App.WebPilotEvent!);
+            WebUiThread.Invoke(() =>
             {
-                win = new WebStepFlowWindow(vm);
-                win.Closed += (s, e) => { _window = null; Dispatcher.CurrentDispatcher.InvokeShutdown(); };
+                var win = new WebStepFlowWindow(vm);
+                win.Closed += (s, e) => { _window = null; }; // thread persists - no InvokeShutdown
                 win.Show();
-                ready.Set();
-                Dispatcher.Run();
+                _window = win;
             });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.IsBackground = true;
-            thread.Start();
-
-            ready.Wait();
-            _window = win;
             return Result.Succeeded;
         }
     }

@@ -435,5 +435,21 @@ scrollbars (all become CSS/JS in the shared lib).
   *To verify on Windows:* open Web Pilot, pick a category, Run — the count, progress
   cadence, and completion summary should round-trip through HTML identically to a
   WPF tool; theme switch with it open should retheme live.
+- **2026-07 (Phase 2b verified on Revit 2026 + latency fix):** the pilot runs
+  end-to-end through HTML — spec-driven steps, C#-authoritative validation, real
+  ExternalEvent run, live theme switching all confirmed working. Two follow-ups:
+  (1) **Shell doesn't yet pixel-match the WPF UI** — deferred polish (spacing/
+  typography tuning pass on the accordion + inputs). (2) **Per-open cold-start
+  latency** — because each per-window STA thread died on close and took the
+  WebView2 browser process with it, *every* open cold-started. Fixed with
+  `WebUiThread`: all `WebStepFlowWindow`s now open on ONE persistent STA thread,
+  created lazily on first web-tool open (no idle cost), which (a) reuses the one
+  `[ThreadStatic]` env and (b) holds a persistent hidden "warm" WebView2 so
+  `msedgewebview2.exe` stays alive for the session. Only the first open is cold;
+  every open after is instant. Web tool commands now route window creation through
+  `WebUiThread.Invoke` and their Closed handler no longer shuts the dispatcher down.
+  A `WebStepFlowWindow` "Loading..." placeholder covers the first cold start.
+  *(Trade-off accepted: one warm browser process + the web-UI thread persist from
+  first web-tool use until Revit closes.)*
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*
