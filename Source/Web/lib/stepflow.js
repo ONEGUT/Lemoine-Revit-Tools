@@ -23,9 +23,9 @@ Lemoine.stepflow = function (container, opts) {
   var activeId = null;
   var valid = {};             // stepId -> bool (from C#)
   var canRun = false;
-  var running = false;
+  var running = false, finished = false, finishCls = 'pass';
   var runEl = null, logEl = null, runBtn = null, backBtn = null;
-  var chipEl = null, statusEl = null, segsEl = null, countsEl = null; // top-strip chrome
+  var chipEl = null, statusEl = null, fillEl = null, pipsEl = null, countsEl = null; // top-strip chrome
 
   // ── Public API (driven by inbound bridge messages) ─────────────────────────
   function init(newSpec) {
@@ -49,8 +49,17 @@ Lemoine.stepflow = function (container, opts) {
       var vIdx = vis.indexOf(s);
       var ok = valid[s.def.id] !== false;
       var passed = vIdx >= 0 && aIdx >= 0 && vIdx < aIdx;
-      s.el.classList.toggle('done', passed && ok && isRequired(s.def));
+      var isDone = passed && ok && isRequired(s.def);
+      s.el.classList.toggle('done', isDone);
       s.el.classList.toggle('show-req', s.def.id === activeId && isRequired(s.def) && !ok);
+      if (s.pipEl) s.pipEl.textContent = isDone ? '\u2713' : s.pipNum; // WPF: done shows a check
+      // Collapsed summary line: hidden on the active step, "Waiting..." for future steps,
+      // the tool's summary for steps already passed (matches WPF).
+      if (s.summaryEl) {
+        if (s.def.id === activeId) { s.summaryEl.style.display = 'none'; }
+        else if (vIdx > aIdx)      { s.summaryEl.style.display = ''; s.summaryEl.textContent = 'Waiting...'; }
+        else                       { s.summaryEl.style.display = ''; s.summaryEl.textContent = s.summaryText || ''; }
+      }
     });
   }
   function pushLog(text, status) {
@@ -60,18 +69,16 @@ Lemoine.stepflow = function (container, opts) {
   }
   function setProgress(p) {
     running = true; setStatus('Running...', 'accent');
-    var pct = Math.max(0, Math.min(100, p.pct || 0));
-    renderSegments(Math.round(pct / 100 * (visibleSteps().length || 1)), 'accent');
+    setProgressBar(Math.max(0, Math.min(100, p.pct || 0)));
     setCounts(p.pass, p.fail, p.skip);
     if (runBtn) runBtn.disabled = true;
   }
   function complete(r) {
-    running = false;
-    var cls = (r.fail > 0) ? 'fail' : 'pass';
-    setStatus((r.fail > 0) ? 'Stopped' : 'Done', cls);
-    renderSegments(visibleSteps().length, cls);
+    running = false; finished = true; finishCls = (r.fail > 0) ? 'fail' : 'pass';
+    setStatus((r.fail > 0) ? 'Stopped' : 'Done', finishCls);
+    setProgressBar(100); renderPips();
     setCounts(r.pass, r.fail, r.skip);
-    pushLog('Done - ' + (r.pass || 0) + ' passed, ' + (r.fail || 0) + ' failed, ' + (r.skip || 0) + ' skipped.', cls);
+    pushLog('Done - ' + (r.pass || 0) + ' passed, ' + (r.fail || 0) + ' failed, ' + (r.skip || 0) + ' skipped.', finishCls);
     if (runBtn) runBtn.disabled = !canRun;
   }
   function setTitle(t) { var el = container.querySelector('.toolbar .title'); if (el) el.textContent = t; }
@@ -82,11 +89,21 @@ Lemoine.stepflow = function (container, opts) {
     statusEl.className = 'status ' + (cls || 'accent');
     var txt = statusEl.querySelector('.txt'); if (txt) txt.textContent = text;
   }
-  function renderSegments(filled, cls) {
-    if (!segsEl) return;
-    var n = visibleSteps().length || 1;
-    segsEl.innerHTML = '';
-    for (var i = 0; i < n; i++) segsEl.appendChild(U.el('div', 'seg' + (i < filled ? ' on ' + (cls || 'accent') : '')));
+  function setProgressBar(pct) { if (fillEl) fillEl.style.width = pct + '%'; }
+  // Step-completion pips: done (green) for passed steps, accent for the active step, grey for
+  // future ones; all green/red after a run finishes. Matches the WPF pip row.
+  function renderPips() {
+    if (!pipsEl) return;
+    var vis = visibleSteps();
+    var aIdx = vis.findIndex(function (s) { return s.def.id === activeId; });
+    pipsEl.innerHTML = '';
+    for (var i = 0; i < vis.length; i++) {
+      var cls = 'pip';
+      if (finished)      cls += (finishCls === 'fail') ? ' fail' : ' done';
+      else if (i < aIdx) cls += ' done';
+      else if (i === aIdx) cls += ' active';
+      pipsEl.appendChild(U.el('div', cls));
+    }
   }
   function setCounts(pass, fail, skip) {
     if (!countsEl) return;
@@ -129,14 +146,18 @@ Lemoine.stepflow = function (container, opts) {
     });
     container.appendChild(toolbar);
 
-    // ── Status / progress strip ──────────────────────────────────────────────
+    // ── Status / progress strip: status + progress bar + counts, then a pip row ──
+    finished = false;
     var strip = U.el('div', 'strip');
+    var statusRow = U.el('div', 'status-row');
     statusEl = U.el('div', 'status accent');
     statusEl.appendChild(U.el('span', 'dot'));
     statusEl.appendChild(U.el('span', 'txt', 'Configuring...'));
-    segsEl = U.el('div', 'segs');
+    var bar = U.el('div', 'bar'); fillEl = U.el('div', 'fill'); bar.appendChild(fillEl);
     countsEl = U.el('div', 'counts');
-    strip.appendChild(statusEl); strip.appendChild(segsEl); strip.appendChild(countsEl);
+    statusRow.appendChild(statusEl); statusRow.appendChild(bar); statusRow.appendChild(countsEl);
+    pipsEl = U.el('div', 'pips');
+    strip.appendChild(statusRow); strip.appendChild(pipsEl);
     container.appendChild(strip);
     setCounts(0, 0, 0);
 
@@ -178,13 +199,12 @@ Lemoine.stepflow = function (container, opts) {
     var pip = U.el('div', 'pip', String(index + 1));
     var titles = U.el('div', 'titles');
     var title = U.el('div', 'title');
-    title.appendChild(U.el('span', 'idtag', def.id));         // mono step id, like the WPF header
     title.appendChild(U.el('span', 'ttext', def.title || ''));
     if (isRequired(def)) title.appendChild(U.el('span', 'req', '*'));
     var summary = U.el('div', 'summary', def.summary || '');
     titles.appendChild(title); titles.appendChild(summary);
     head.appendChild(pip); head.appendChild(titles);
-    head.addEventListener('click', function () { activate(def.id); });
+    // Navigation is Confirm / Back only (matches the WPF step flow) - no free header jumping.
 
     var body = U.el('div', 'body');
     var inputsEl = U.el('div', 'inputs');
@@ -215,8 +235,8 @@ Lemoine.stepflow = function (container, opts) {
     }
 
     el.appendChild(head); el.appendChild(body);
-    return { def: def, el: el, bodyEl: body, inputsEl: inputsEl, pipEl: pip,
-             summaryEl: summary, confirmBtn: confirmBtn, inputs: inputs };
+    return { def: def, el: el, bodyEl: body, inputsEl: inputsEl, pipEl: pip, pipNum: String(index + 1),
+             summaryEl: summary, summaryText: def.summary || '', confirmBtn: confirmBtn, inputs: inputs };
   }
 
   // Rebuild one step's inputs live (C# -> JS `stepInputs`), e.g. to refresh the review
@@ -288,7 +308,7 @@ Lemoine.stepflow = function (container, opts) {
     if (backBtn) backBtn.disabled = idx <= 0;
     updateChip();
     refreshStepStates();
-    if (!running) renderSegments(idx < 0 ? 0 : idx + 1, 'accent');
+    renderPips();
   }
   function goNext() {
     var vis = visibleSteps();
@@ -308,7 +328,7 @@ Lemoine.stepflow = function (container, opts) {
            setStepInputs: setStepInputs,
            setStepSummary: function (id, text) {
              var s = steps.filter(function (x) { return x.def.id === id; })[0];
-             if (s) s.summaryEl.textContent = text;
+             if (s) { s.summaryText = text; refreshStepStates(); } // state decides Waiting vs summary
            },
            setStepHidden: function (id, hidden) {
              var s = steps.filter(function (x) { return x.def.id === id; })[0];

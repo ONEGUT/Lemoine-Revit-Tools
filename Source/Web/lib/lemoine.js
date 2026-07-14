@@ -322,24 +322,27 @@ Lemoine.ui = (function () {
     return { el: root, getSelected: function () { return Object.keys(sel); } };
   }
 
-  // ── Review (read-only summary block) ────────────────────────────────────────
-  // opts: { items:[{label,value}], note, warning }  - the last-step review of a tool run.
+  // ── Review (read-only summary) ──────────────────────────────────────────────
+  // opts: { items:[{label,value}], note, warning }  - mirrors the WPF ReviewSummary:
+  // an optional warning banner above, a 2-column grid of label/value cards (UPPERCASE dim
+  // label + mono value), and an optional italic note below.
   function review(opts) {
     opts = opts || {};
     var root = el('div', 'l-review');
-    (opts.items || []).forEach(function (it) {
-      var r = el('div', 'row');
-      r.appendChild(el('span', 'k', it.label));
-      r.appendChild(el('span', 'v', it.value));
-      root.appendChild(r);
-    });
-    if (opts.note) root.appendChild(el('div', 'note', opts.note));
     if (opts.warning) {
-      var w = el('div', 'l-warn');
-      w.appendChild(el('span', 'ico', '!'));
-      w.appendChild(el('span', null, opts.warning));
-      root.appendChild(w);
+      var wb = el('div', 'rwarn');
+      wb.appendChild(el('span', null, opts.warning));
+      root.appendChild(wb);
     }
+    var cards = el('div', 'cards');
+    (opts.items || []).forEach(function (it) {
+      var card = el('div', 'card');
+      card.appendChild(el('div', 'k', (it.label || '').toUpperCase()));
+      card.appendChild(el('div', 'v', it.value));
+      cards.appendChild(card);
+    });
+    root.appendChild(cards);
+    if (opts.note) root.appendChild(el('div', 'note', opts.note));
     return { el: root };
   }
 
