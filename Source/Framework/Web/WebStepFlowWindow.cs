@@ -32,6 +32,7 @@ namespace LemoineTools.Framework.Web
         private IReadOnlyList<WebStep> _steps = Array.Empty<WebStep>();
         private WebView2?  _view;
         private WebBridge? _bridge;
+        private TextBlock? _loading;
         private bool _isRunning;
 
         public WebStepFlowWindow(IWebTool tool)
@@ -54,6 +55,21 @@ namespace LemoineTools.Framework.Web
             _view = new WebView2();
             WebHost.ApplyThemeBackground(_view);                 // R8 - no white flash
             host.Children.Add(_view);
+
+            // Instant feedback while WebView2 cold-starts (the browser process spin-up is the
+            // dominant open cost). Sits on top of the control's themed DefaultBackgroundColor and
+            // is collapsed on the first successful navigation, so the user never sees a blank window.
+            _loading = new TextBlock
+            {
+                Text                = "Loading...",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+            };
+            _loading.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            _loading.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            _loading.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_MD");
+            host.Children.Add(_loading);
+
             Content = host;
 
             // Kick init from Loaded, NOT the constructor: the constructor runs before
@@ -82,7 +98,11 @@ namespace LemoineTools.Framework.Web
                 WebAssets.MapVirtualHost(_view.CoreWebView2);     // R16
                 _view.NavigationCompleted += (s, e) =>
                 {
-                    if (e.IsSuccess) WebAssets.ApplyVariablesLive(_view); // R12
+                    if (e.IsSuccess)
+                    {
+                        WebAssets.ApplyVariablesLive(_view);         // R12
+                        if (_loading != null) _loading.Visibility = Visibility.Collapsed;
+                    }
                     else DiagnosticsLog.Warn("WebStepFlowWindow: navigation", $"WebErrorStatus={e.WebErrorStatus}");
                 };
                 _view.CoreWebView2.ProcessFailed += (s, e) =>
