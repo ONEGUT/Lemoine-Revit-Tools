@@ -40,6 +40,11 @@ namespace LemoineTools.Tools.Ceilings
         { Face = face; Bounds = bounds; Elevation = elevation; }
     }
 
+    // Outcome of creating one projected grid curve: a real model curve, a detail-curve
+    // fallback (sketch plane rejected), or an outright failure. The caller counts each
+    // outcome honestly instead of treating every attempt as a success.
+    internal enum CurveCreateResult { Model, Detail, Failed }
+
     internal static class CeilingGridHelpers
     {
         public static IList<Element> GetCeilingsInView(Document doc, View view)
@@ -182,7 +187,7 @@ namespace LemoineTools.Tools.Ceilings
             catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingGrids: face containment test", __lex); return false; }
         }
 
-        public static void TryCreateModelCurve(Document doc, View view, Curve curve,
+        public static CurveCreateResult TryCreateModelCurve(Document doc, View view, Curve curve,
             Dictionary<double, SketchPlane> cache)
         {
             try
@@ -195,10 +200,16 @@ namespace LemoineTools.Tools.Ceilings
                     cache[key] = sp;
                 }
                 doc.Create.NewModelCurve(curve, sp);
+                return CurveCreateResult.Model;
             }
-            catch
+            catch (Exception mex)
             {
-                try { doc.Create.NewDetailCurve(view, curve); } catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingGrids: create detail curve", __lex); }
+                // Model curve rejected (e.g. non-planar sketch) — fall back to a view-only
+                // detail curve, but report both the fallback and any hard failure so a run
+                // where every curve failed can't still claim "N curves created".
+                DiagnosticsLog.Swallowed("CeilingGrids: model curve rejected — trying detail curve", mex);
+                try { doc.Create.NewDetailCurve(view, curve); return CurveCreateResult.Detail; }
+                catch (Exception dex) { DiagnosticsLog.Swallowed("CeilingGrids: create detail curve", dex); return CurveCreateResult.Failed; }
             }
         }
     }

@@ -33,6 +33,10 @@ namespace LemoineTools.Tools.Ceilings
         private string _dwgPath    = "";
         private string _folderPath = "";
 
+        // Active view captured at window open (single-file mode projects into it).
+        private readonly string _activeViewName;
+        private readonly bool   _activeViewIsPlan;
+
         // Dynamic picker host — replaced when mode changes
         private Border? _pickerHost;
 
@@ -55,10 +59,14 @@ namespace LemoineTools.Tools.Ceilings
 
         public ProjectedCeilingGridsViewModel(
             CeilingGridEventHandler handler,
-            Autodesk.Revit.UI.ExternalEvent externalEvent)
+            Autodesk.Revit.UI.ExternalEvent externalEvent,
+            string activeViewName = "",
+            bool   activeViewIsPlan = true)
         {
-            _handler = handler;
-            _event   = externalEvent;
+            _handler          = handler;
+            _event            = externalEvent;
+            _activeViewName   = activeViewName;
+            _activeViewIsPlan = activeViewIsPlan;
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -172,7 +180,11 @@ namespace LemoineTools.Tools.Ceilings
                         ? (string.IsNullOrEmpty(_folderPath) ? "—" : System.IO.Path.GetFileName(_folderPath))
                         : (string.IsNullOrEmpty(_dwgPath)    ? "—" : System.IO.Path.GetFileName(_dwgPath)),
                     ["mode"]   = _batchMode ? AppStrings.T("ceilings.projectGrids.review.modeBatch")   : AppStrings.T("ceilings.projectGrids.review.modeSingle"),
-                    ["target"] = _batchMode ? AppStrings.T("ceilings.projectGrids.review.targetBatch") : AppStrings.T("ceilings.projectGrids.review.targetSingle"),
+                    ["target"] = _batchMode
+                        ? AppStrings.T("ceilings.projectGrids.review.targetBatch")
+                        : (string.IsNullOrEmpty(_activeViewName)
+                            ? AppStrings.T("ceilings.projectGrids.review.targetSingle")
+                            : AppStrings.T("ceilings.projectGrids.review.targetSingleView", _activeViewName)),
                     ["output"] = AppStrings.T("ceilings.projectGrids.review.output"),
                 };
                 if (_batchMode) d["dwg"] = AppStrings.T("ceilings.projectGrids.review.dwgFound", CountDwgs());
@@ -186,7 +198,9 @@ namespace LemoineTools.Tools.Ceilings
             ? AppStrings.T("ceilings.projectGrids.review.noteBatch")
             : AppStrings.T("ceilings.projectGrids.review.noteSingle");
 
-        public string? ReviewWarning => _batchMode && CountDwgs() == 0 ? AppStrings.T("ceilings.projectGrids.review.warnNoDwg") : null;
+        public string? ReviewWarning => _batchMode
+            ? (CountDwgs() == 0 ? AppStrings.T("ceilings.projectGrids.review.warnNoDwg") : null)
+            : (!_activeViewIsPlan ? AppStrings.T("ceilings.projectGrids.review.warnNotPlan") : null);
 
         private int CountDwgs()
             => Directory.Exists(_folderPath)
@@ -202,7 +216,7 @@ namespace LemoineTools.Tools.Ceilings
             if (stepId == "S1")
                 return _batchMode
                     ? !string.IsNullOrWhiteSpace(_folderPath) && Directory.Exists(_folderPath)
-                    : !string.IsNullOrWhiteSpace(_dwgPath);
+                    : !string.IsNullOrWhiteSpace(_dwgPath) && File.Exists(_dwgPath);
             return true;
         }
 

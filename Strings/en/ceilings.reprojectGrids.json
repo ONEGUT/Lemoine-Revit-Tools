@@ -35,6 +35,6 @@
   },
 
   "log": {
-    "raising": "Raising Revit external event…"
+    "raising": "Starting run in Revit…"
   }
 }
