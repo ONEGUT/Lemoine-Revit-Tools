@@ -61,36 +61,6 @@ namespace LemoineTools.Tools.LinkViews
         private SourceViewEntry? SelectedSource =>
             _selectedSourceId.HasValue && _sourceById.TryGetValue(_selectedSourceId.Value, out var s) ? s : null;
 
-        // The WPF picker shows only eligible sources; mirror by pruning the shared browser tree
-        // to the given leaf ids (folders kept when they still contain an eligible leaf).
-        private static BrowserTree PruneTree(BrowserTree tree, HashSet<long> keepIds)
-        {
-            var pruned = new BrowserTree();
-            foreach (var root in tree.Roots)
-            {
-                var copy = PruneNode(root, keepIds);
-                if (copy != null) pruned.Roots.Add(copy);
-            }
-            return pruned;
-        }
-
-        private static BrowserNode? PruneNode(BrowserNode node, HashSet<long> keepIds)
-        {
-            var copy = new BrowserNode { Title = node.Title, Id = node.Id, IsSheet = node.IsSheet };
-            foreach (var child in node.Children)
-            {
-                var kept = PruneNode(child, keepIds);
-                if (kept != null) copy.Children.Add(kept);
-            }
-            bool selfEligible = node.Id.HasValue && keepIds.Contains(node.Id.Value);
-            if (selfEligible || copy.Children.Count > 0)
-            {
-                if (node.Id.HasValue && !selfEligible) copy.Id = null; // ineligible leaf demoted to folder
-                return copy;
-            }
-            return null;
-        }
-
         private List<TargetViewEntry> CompatibleTargets()
         {
             var source = SelectedSource;

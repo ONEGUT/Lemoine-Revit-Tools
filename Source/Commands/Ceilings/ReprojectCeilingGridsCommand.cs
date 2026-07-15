@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Ceilings;
 
 namespace LemoineTools.Commands
@@ -65,6 +66,36 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("reprojectCeilingGrids", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    var levelMap = new FilteredElementCollector(doc)
+                        .OfClass(typeof(Level))
+                        .Cast<Level>()
+                        .ToDictionary(l => l.Id, l => l.Name);
+                    var viewEntries = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ViewPlan))
+                        .Cast<ViewPlan>()
+                        .Where(v => v.ViewType == ViewType.CeilingPlan && !v.IsTemplate)
+                        .OrderBy(v => v.Name)
+                        .Select(v =>
+                        {
+                            string levelName = "";
+                            if (v.GenLevel != null && levelMap.TryGetValue(v.GenLevel.Id, out string? ln))
+                                levelName = ln;
+                            return new ReprojectCeilingGridsViewModel.CeilingPlanViewEntry(v.Id, v.Name, levelName);
+                        })
+                        .ToList();
+                    return new ReprojectCeilingGridsWebTool(
+                        App.ReprojectHandler!,
+                        App.ReprojectEvent!,
+                        viewEntries,
+                        BrowserTreeCapture.Capture(doc));
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready          = new ManualResetEventSlim(false);

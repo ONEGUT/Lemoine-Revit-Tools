@@ -4,6 +4,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Ceilings;
 
 namespace LemoineTools.Commands
@@ -41,6 +42,14 @@ namespace LemoineTools.Commands
 
             ProjectedCeilingGridsViewModel BuildTool()
                 => new ProjectedCeilingGridsViewModel(App.ProjectHandler!, App.ProjectEvent!);
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("projectedCeilingGrids", () =>
+                {
+                    return new ProjectedCeilingGridsWebTool(App.ProjectHandler!, App.ProjectEvent!);
+                });
+                return Result.Succeeded;
+            }
             var vm = BuildTool();
 
             // ManualResetEvent lets the main thread wait until the STA thread

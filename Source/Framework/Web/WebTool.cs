@@ -210,12 +210,15 @@ namespace LemoineTools.Framework.Web
 
         public static WebInput MultiSelectTabs(string id, string label,
             IDictionary<string, List<string>> groups, IEnumerable<string>? selected = null,
-            bool singleSelect = false)
+            bool singleSelect = false, IEnumerable<string>? disabledItems = null,
+            IDictionary<string, List<string>>? hierarchy = null)
         {
             var w = new WebInput("multiSelectTabs", id, label);
             w._props["groups"]       = groups.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
             w._props["selected"]     = (selected ?? Enumerable.Empty<string>()).Cast<object?>().ToList();
             w._props["singleSelect"] = singleSelect;
+            if (disabledItems != null) w._props["disabledItems"] = disabledItems.Cast<object?>().ToList();
+            if (hierarchy != null)     w._props["hierarchy"]     = hierarchy.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
             return w;
         }
 
@@ -247,10 +250,12 @@ namespace LemoineTools.Framework.Web
             return w;
         }
 
-        public static WebInput FileBrowser(string id, string label, string? value = null, string? placeholder = null)
+        public static WebInput FileBrowser(string id, string label, string? value = null, string? placeholder = null,
+            string? filter = null)
         {
             var w = new WebInput("fileBrowser", id, label);
             w._props["value"] = value ?? "";
+            if (filter != null) w._props["filter"] = filter;
             if (placeholder != null) w._props["placeholder"] = placeholder;
             return w;
         }

@@ -62,6 +62,42 @@ namespace LemoineTools.Framework.Web
             return (dfltMin, dfltMax);
         }
 
+        // ── BrowserTree eligible-leaf pruning ─────────────────────────────────
+
+        /// <summary>
+        /// Restricts a captured browser tree to the given eligible leaf ids, mirroring the WPF
+        /// BrowserTreePicker's eligibleIds parameter: folders are kept while they still contain
+        /// an eligible leaf, and an ineligible leaf that still has kept children is demoted to
+        /// a folder (its id cleared) so it can't be selected.
+        /// </summary>
+        protected static BrowserTree PruneTree(BrowserTree tree, HashSet<long> keepIds)
+        {
+            var pruned = new BrowserTree();
+            foreach (var root in tree.Roots)
+            {
+                var copy = PruneNode(root, keepIds);
+                if (copy != null) pruned.Roots.Add(copy);
+            }
+            return pruned;
+        }
+
+        private static BrowserNode? PruneNode(BrowserNode node, HashSet<long> keepIds)
+        {
+            var copy = new BrowserNode { Title = node.Title, Id = node.Id, IsSheet = node.IsSheet };
+            foreach (var child in node.Children)
+            {
+                var kept = PruneNode(child, keepIds);
+                if (kept != null) copy.Children.Add(kept);
+            }
+            bool selfEligible = node.Id.HasValue && keepIds.Contains(node.Id.Value);
+            if (selfEligible || copy.Children.Count > 0)
+            {
+                if (node.Id.HasValue && !selfEligible) copy.Id = null; // ineligible leaf demoted to folder
+                return copy;
+            }
+            return null;
+        }
+
         // ── Naming-token preview sample ───────────────────────────────────────
 
         /// <summary>

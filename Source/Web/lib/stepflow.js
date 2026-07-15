@@ -288,7 +288,7 @@ Lemoine.stepflow = function (container, opts) {
         var browseAction = inp.kind === 'fileBrowser' ? 'browseFile' : 'browseFolder';
         var mk = inp.kind === 'fileBrowser' ? U.fileBrowser : U.folderBrowser;
         handle = mk({ value: inp.value, placeholder: inp.placeholder,
-                      onBrowse: function () { send('action', { action: browseAction, stepId: stepId, inputId: inp.id }); } });
+                      onBrowse: function () { send('action', { action: browseAction, stepId: stepId, inputId: inp.id, filter: inp.filter || null }); } });
         el = labeledRow(inp.label, handle.el, true); break;
       case 'browserTree':
         handle = U.browserTree({ roots: inp.roots, selected: inp.selected, singleSelect: inp.singleSelect,

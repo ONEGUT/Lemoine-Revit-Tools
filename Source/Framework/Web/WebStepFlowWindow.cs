@@ -220,7 +220,7 @@ namespace LemoineTools.Framework.Web
                     break;
                 // ── Native OS dialogs (rule R26 - JS never touches the filesystem) ──
                 case "browseFolder": BrowseFolder(Str(p, "stepId"), Str(p, "inputId")); break;
-                case "browseFile":   BrowseFile(Str(p, "stepId"), Str(p, "inputId")); break;
+                case "browseFile":   BrowseFile(Str(p, "stepId"), Str(p, "inputId"), Str(p, "filter")); break;
                 // ── Tool-declared action buttons (scan / pick-in-Revit) ─────────────
                 case "tool":
                     try { (_tool as IWebToolAction)?.OnToolAction(Str(p, "stepId"), Str(p, "inputId")); }
@@ -258,11 +258,14 @@ namespace LemoineTools.Framework.Web
             catch (Exception ex) { DiagnosticsLog.Error("WebStepFlowWindow: browse folder", ex); }
         }
 
-        private void BrowseFile(string stepId, string inputId)
+        private void BrowseFile(string stepId, string inputId, string filter)
         {
             try
             {
                 using var dlg = new System.Windows.Forms.OpenFileDialog { CheckFileExists = true };
+                // A malformed filter string throws at assignment - fall back to no filter.
+                if (!string.IsNullOrWhiteSpace(filter))
+                    try { dlg.Filter = filter; } catch (Exception ex) { DiagnosticsLog.Swallowed($"WebStepFlowWindow: file filter '{filter}'", ex); }
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                     ApplyPickedPath(stepId, inputId, dlg.FileName);
             }
