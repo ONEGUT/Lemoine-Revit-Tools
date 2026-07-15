@@ -20,6 +20,16 @@ you want fixed and I'll apply them on a `review-fixes-setup` branch.
 > guard, PC-7-2's collateral count + review warning); the appendix test scripts T1–T6 remain
 > the runtime verification to do on a Windows machine.
 >
+> **Follow-up (Upgrade Links placement):** On a Windows run, Project Base Point and
+> Center-to-Center placements failed with "Placement isn't supported. Only Origin and Shared
+> placement is supported" — `RevitLinkInstance.Create` rejects `ImportPlacement.Centered`/`.Site`.
+> Fixed by always linking at Origin and translating afterward (the pattern Survey Point already
+> used): PBP moves the link's Project Base Point onto the host's; Center-to-Center moves the
+> link's extents centre onto the host model's extents centre (host centre computed once per run,
+> datums/links excluded, one regen per center link to read the placed bbox). `UpgradePlacementMap`
+> (which mapped to the unsupported values) was deleted. Center-to-center's exact parity with
+> Revit's UI needs a plot check (test T8).
+>
 > **Follow-up (Push reporting + optional publish):** After a Windows run corrected the base
 > points but failed at `PublishCoordinates` (a project not using shared coordinates), Push was
 > reworked: the "publish shared coordinates + re-place the instance" step is now **opt-in, off

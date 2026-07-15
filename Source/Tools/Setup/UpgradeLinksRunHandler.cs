@@ -57,6 +57,11 @@ namespace LemoineTools.Tools.Setup
         private UpgradePlacement       _cloudWaitPlacement;
         private long                   _cloudIssues0;
 
+        // Host model extents centre for Center-to-Center placement — computed once per run, reused
+        // across every file, and reset at each run start (the active host doc can differ per run).
+        private XYZ?                   _hostModelCenter;
+        private bool                   _hostCenterComputed;
+
         public string GetName() => "LemoineTools.Tools.Setup.UpgradeLinksRunHandler";
 
         private void Log(string t, string s) => PushLog?.Invoke(t, s);
@@ -103,6 +108,7 @@ namespace LemoineTools.Tools.Setup
                 }
             }
             CloudAbortRequested = false;   // stale flag from a close with no cloud run in flight
+            _hostCenterComputed = false;   // recompute the host extents centre for this run
 
             int pass = 0, fail = 0, skip = 0;
             long issues0 = DiagnosticsLog.IssueCount;
@@ -320,6 +326,7 @@ namespace LemoineTools.Tools.Setup
         private void StartCloudRun(UIApplication app, Document hostDoc, List<UpgradeFileItem> files)
         {
             _cloudActive    = true;
+            _hostCenterComputed = false;   // recompute the host extents centre for this run
             _cloudHostDoc   = hostDoc;
             _cloudFiles     = files;
             _cloudIndex     = 0;
@@ -599,8 +606,6 @@ namespace LemoineTools.Tools.Setup
 
         private LinkResult LinkIntoHost(Document hostDoc, ModelPath savedMp, string baseName, UpgradePlacement placement)
         {
-            var import = UpgradePlacementMap.ToImportPlacement(placement);
-
             // RevitLinkType.Create needs a transaction, but the reload-existing path
             // (ReloadExistingType → LoadFrom) must NOT be inside one — link-management calls throw
             // "operation is not permitted when there is any open transaction" (CLAUDE.md). So the
@@ -664,7 +669,10 @@ namespace LemoineTools.Tools.Setup
                 RevitLinkInstance? instance = null;
                 try
                 {
-                    instance = RevitLinkInstance.Create(hostDoc, typeId, import);
+                    // Only Origin and Shared are valid for RevitLinkInstance.Create — Centered /
+                    // Site (Project Base Point) throw "Placement isn't supported." So always link
+                    // at Origin, then translate to reproduce the chosen placement (ApplyPlacement).
+                    instance = RevitLinkInstance.Create(hostDoc, typeId, ImportPlacement.Origin);
                 }
                 catch (Exception ex)
                 {
@@ -677,10 +685,8 @@ namespace LemoineTools.Tools.Setup
                     return LinkResult.Failed;
                 }
 
-                // Survey Point has no ImportPlacement — the instance was just linked at Origin;
-                // translate it so the link's own Survey Point lands on the host's Survey Point.
-                if (placement == UpgradePlacement.SurveyPoint && instance != null)
-                    TranslateToSurveyPoint(hostDoc, instance, baseName);
+                if (instance != null)
+                    ApplyPlacement(hostDoc, instance, placement, baseName);
 
                 tx.Commit();
                 return LinkResult.Linked;
@@ -741,45 +747,125 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
-        // Moves a just-linked (Origin-placed) instance so its link document's Survey Point
-        // coincides with the host's Survey Point. Both points are read/moved in internal
-        // coordinates. Falls back to leaving the Origin placement (reported) when either
-        // base point can't be resolved — never throws out of the run.
-        private void TranslateToSurveyPoint(Document hostDoc, RevitLinkInstance instance, string baseName)
+        // Reproduces the chosen placement by translating a just-linked (Origin-placed) instance.
+        // InternalOrigin leaves it at Origin; the other three move it (base-point → base-point, or
+        // extents-center → extents-center). All helpers are best-effort: a failure leaves the
+        // Origin placement (reported) rather than throwing out of the run.
+        private void ApplyPlacement(Document hostDoc, RevitLinkInstance instance, UpgradePlacement placement, string baseName)
         {
+            switch (placement)
+            {
+                case UpgradePlacement.ProjectBasePoint:
+                    TranslateBasePointToBasePoint(hostDoc, instance, baseName, survey: false);
+                    break;
+                case UpgradePlacement.SurveyPoint:
+                    TranslateBasePointToBasePoint(hostDoc, instance, baseName, survey: true);
+                    break;
+                case UpgradePlacement.CenterToCenter:
+                    TranslateCenterToCenter(hostDoc, instance, baseName);
+                    break;
+                // InternalOrigin: already at Origin — nothing to do.
+            }
+        }
+
+        // Moves a just-linked (Origin-placed) instance so its link document's Project Base Point
+        // (survey: false) or Survey Point (survey: true) coincides with the host's same point.
+        // Both points are read/moved in internal coordinates.
+        private void TranslateBasePointToBasePoint(Document hostDoc, RevitLinkInstance instance, string baseName, bool survey)
+        {
+            string fallbackKey = survey ? "upgradeLinks.log.surveyFallback" : "upgradeLinks.log.pbpFallback";
             try
             {
                 var linkDoc = instance.GetLinkDocument();
-                if (linkDoc == null)
-                {
-                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
-                    return;
-                }
+                if (linkDoc == null) { Log(AppStrings.T(fallbackKey, baseName), "warn"); return; }
 
-                var hostSp = BasePoint.GetSurveyPoint(hostDoc);
-                var linkSp = BasePoint.GetSurveyPoint(linkDoc);
-                if (hostSp == null || linkSp == null)
-                {
-                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
-                    return;
-                }
+                var hostBp = survey ? BasePoint.GetSurveyPoint(hostDoc) : BasePoint.GetProjectBasePoint(hostDoc);
+                var linkBp = survey ? BasePoint.GetSurveyPoint(linkDoc) : BasePoint.GetProjectBasePoint(linkDoc);
+                if (hostBp == null || linkBp == null) { Log(AppStrings.T(fallbackKey, baseName), "warn"); return; }
 
-                // The link's own Survey Point position, expressed in the link's internal
-                // coordinates, projected through the just-created (Origin) instance transform
-                // to the host's internal coordinates.
-                XYZ linkSpInHost = instance.GetTotalTransform().OfPoint(linkSp.Position);
-                XYZ delta = hostSp.Position - linkSpInHost;
-
-                bool pinned = instance.Pinned;
-                if (pinned) instance.Pinned = false;
-                ElementTransformUtils.MoveElement(hostDoc, instance.Id, delta);
-                if (pinned) instance.Pinned = true;
+                // The link's own base-point position (link internal coords) projected through the
+                // just-created (Origin) instance transform into the host's internal coordinates.
+                XYZ linkBpInHost = instance.GetTotalTransform().OfPoint(linkBp.Position);
+                XYZ delta = hostBp.Position - linkBpInHost;
+                MoveInstance(hostDoc, instance, delta);
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed($"UpgradeLinks: translate to Survey Point for '{baseName}'", ex);
-                Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
+                DiagnosticsLog.Swallowed($"UpgradeLinks: base-point placement (survey={survey}) for '{baseName}'", ex);
+                Log(AppStrings.T(fallbackKey, baseName), "warn");
             }
+        }
+
+        // Moves a just-linked (Origin-placed) instance so the centre of the link's extents lands
+        // on the centre of the host model's extents — the API equivalent of "Center to Center".
+        private void TranslateCenterToCenter(Document hostDoc, RevitLinkInstance instance, string baseName)
+        {
+            try
+            {
+                var hostCenter = GetHostModelCenter(hostDoc);
+                // The instance was just created — regenerate so its bounding box reads true.
+                hostDoc.Regenerate();
+                var linkBox = instance.get_BoundingBox(null);
+                if (hostCenter == null || linkBox == null)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.centerFallback", baseName), "warn");
+                    return;
+                }
+                XYZ linkCenter = (linkBox.Min + linkBox.Max) * 0.5;
+                MoveInstance(hostDoc, instance, hostCenter - linkCenter);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"UpgradeLinks: center-to-center for '{baseName}'", ex);
+                Log(AppStrings.T("upgradeLinks.log.centerFallback", baseName), "warn");
+            }
+        }
+
+        private static void MoveInstance(Document hostDoc, RevitLinkInstance instance, XYZ delta)
+        {
+            if (delta.GetLength() < 1e-9) return;
+            bool pinned = instance.Pinned;
+            if (pinned) instance.Pinned = false;
+            ElementTransformUtils.MoveElement(hostDoc, instance.Id, delta);
+            if (pinned) instance.Pinned = true;
+        }
+
+        // Centre of the host model's extents (union of model-element bounding boxes, link
+        // instances excluded so they can't skew it), computed once per run and cached. Returns
+        // null when the model has no measurable geometry.
+        private XYZ? GetHostModelCenter(Document hostDoc)
+        {
+            if (_hostCenterComputed) return _hostModelCenter;
+            _hostCenterComputed = true;
+            try
+            {
+                XYZ? min = null, max = null;
+                int unreadable = 0;
+                var col = new FilteredElementCollector(hostDoc)
+                    .WhereElementIsNotElementType()
+                    .WhereElementIsViewIndependent();
+                foreach (var el in col)
+                {
+                    // Exclude links (would skew the host centre) and datums (grids/levels/reference
+                    // planes span far past the building geometry and would drag the centre off).
+                    if (el is RevitLinkInstance || el is Grid || el is Level || el is ReferencePlane) continue;
+                    BoundingBoxXYZ? bb;
+                    try { bb = el.get_BoundingBox(null); }
+                    catch { bb = null; unreadable++; }
+                    if (bb == null) continue;
+                    min = min == null ? bb.Min : new XYZ(Math.Min(min.X, bb.Min.X), Math.Min(min.Y, bb.Min.Y), Math.Min(min.Z, bb.Min.Z));
+                    max = max == null ? bb.Max : new XYZ(Math.Max(max.X, bb.Max.X), Math.Max(max.Y, bb.Max.Y), Math.Max(max.Z, bb.Max.Z));
+                }
+                if (unreadable > 0)
+                    DiagnosticsLog.Swallowed("UpgradeLinks: host model center", $"{unreadable} element(s) had no readable bounding box");
+                _hostModelCenter = (min != null && max != null) ? (min + max) * 0.5 : (XYZ?)null;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("UpgradeLinks: compute host model center", ex);
+                _hostModelCenter = null;
+            }
+            return _hostModelCenter;
         }
 
         private static ElementId ReloadExistingType(Document hostDoc, ModelPath savedMp, string baseName)

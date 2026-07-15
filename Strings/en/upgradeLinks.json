@@ -105,6 +105,8 @@
     "unloadedExisting": "{0} is already linked into this model — unloaded it so the file can be opened and upgraded.",
     "overwriteWarn":  "⚠ {0} already exists in the destination folder — it will be overwritten.",
     "surveyFallback": "{0}: could not resolve Survey Point on host and/or link — placed at Internal Origin instead.",
+    "pbpFallback":    "{0}: could not resolve Project Base Point on host and/or link — placed at Internal Origin instead.",
+    "centerFallback": "{0}: could not measure the model extents — placed at Internal Origin instead.",
     "fileFail":       "Failed on {0}: {1} — {2}",
     "progress":       "{0}% · {1}/{2} processed · {3} linked",
     "nonFatal":       "{0} non-fatal issue(s) logged during the run — see diagnostics.",
