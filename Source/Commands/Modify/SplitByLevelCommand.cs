@@ -77,6 +77,52 @@ namespace LemoineTools.Commands
 
                 return vm;
             }
+            if (LemoineTools.Framework.Web.WebToolLauncher.Enabled)
+            {
+                LemoineTools.Framework.Web.WebToolLauncher.Open("splitByLevel", () =>
+                {
+                        var uidoc        = uiApp.ActiveUIDocument;
+                        var doc          = uidoc.Document;
+                        var activeViewId = uidoc.ActiveView?.Id;
+
+                        // All categorised elements → discipline-grouped category picker.
+                        var allElements = new FilteredElementCollector(doc)
+                            .WhereElementIsNotElementType()
+                            .Where(e => e.Category?.Name != null &&
+                                       (e.Category.CategoryType == CategoryType.Model ||
+                                        e.Category.CategoryType == CategoryType.Annotation))
+                            .ToList();
+                        var categoryGroups = CategoryDisciplineHelper.GroupByDiscipline(allElements);
+                        int totalElements  = allElements.Count;
+
+                        // Pre-selection: any selected element with a recognisable category.
+                        var rawSelection = uidoc.Selection.GetElementIds()
+                            .Select(id => doc.GetElement(id))
+                            .Where(e => e?.Category?.Name != null &&
+                                       (e.Category.CategoryType == CategoryType.Model ||
+                                        e.Category.CategoryType == CategoryType.Annotation))
+                            .ToList();
+                        var preSelectedIds  = rawSelection.Select(e => e.Id).ToList();
+                        var preSelectedCats = rawSelection
+                            .Select(e => e.Category!.Name)
+                            .Distinct().ToList();
+
+                        var allLevels = new FilteredElementCollector(doc)
+                            .OfClass(typeof(Level))
+                            .Cast<Level>()
+                            .OrderBy(l => l.Elevation)
+                            .ToList();
+
+                        var vm = new LemoineTools.Tools.ModifyElements.SplitByLevelWebTool(
+                            App.SplitByLevelHandler!, App.SplitByLevelEvent!,
+                            allLevels, categoryGroups, totalElements, activeViewId,
+                            preSelectedIds, preSelectedCats);
+
+                        return vm;
+                });
+                return Result.Succeeded;
+            }
+
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
