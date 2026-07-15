@@ -56,6 +56,8 @@ namespace LemoineTools.Tools.Setup
         // label on every rebuild even though the rows themselves had been updated correctly.
         private UpgradePlacement?  _setAllSelection;
         private bool               _scanning;
+        private string?            _scanError;   // whole-scan failure shown in the files table
+        private int                _dupCount;    // files skipped by the last add because they were already listed
 
         // Live UI handles
         private StackPanel? _filesContainer, _destContainer;
@@ -101,6 +103,17 @@ namespace LemoineTools.Tools.Setup
             {
                 _runHandler.PushLog = null; _runHandler.OnProgress = null; _runHandler.OnComplete = null;
                 _runHandler.OnAwaitingUser = null;
+
+                // Closing the window during a Cloud pause would otherwise strand the handler's
+                // continuation state for the rest of the session (every later run would be
+                // swallowed) and leave the paused upgrade document open. Tell the handler to
+                // abort and clean up on its next Execute.
+                if (_runEvent != null && _runHandler.IsCloudRunActive)
+                {
+                    _runHandler.CloudAbortRequested = true;
+                    try { _runEvent.Raise(); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: raise cloud abort on window close", ex); }
+                }
             }
         }
 
@@ -137,6 +150,8 @@ namespace LemoineTools.Tools.Setup
             _filesContainer.Children.Clear();
 
             if (_scanning) _filesContainer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.scanning")));
+            if (_scanError != null) _filesContainer.Children.Add(Warn(AppStrings.T("upgradeLinks.labels.scanFailed", _scanError)));
+            if (_dupCount > 0) _filesContainer.Children.Add(Dim(AppStrings.T("upgradeLinks.labels.dupSkipped", _dupCount)));
 
             if (_rows.Count == 0)
             {
@@ -177,7 +192,7 @@ namespace LemoineTools.Tools.Setup
             {
                 var clear = ControlStyles.BuildSmallButton(AppStrings.T("upgradeLinks.labels.clearList"));
                 clear.Margin = new Thickness(8, 0, 0, 0);
-                clear.Click += (s, e) => { _rows.Clear(); RebuildFilesTable(); Changed(); };
+                clear.Click += (s, e) => { _rows.Clear(); _dupCount = 0; _scanError = null; RebuildFilesTable(); Changed(); };
                 bar.Children.Add(clear);
             }
             _filesContainer.Children.Add(bar);
@@ -194,7 +209,7 @@ namespace LemoineTools.Tools.Setup
                 setAll.SelectedItem = PlacementLabel(_setAllSelection ?? _defaultPlacement);
                 setAll.SelectionChanged += lblSel =>
                 {
-                    if (lblSel != null && LabelToPlacement.TryGetValue(lblSel, out var p))
+                    if (TryLabelToPlacement(lblSel, out var p))
                     {
                         _setAllSelection = p;
                         foreach (var r in _rows) r.Placement = p;
@@ -215,6 +230,7 @@ namespace LemoineTools.Tools.Setup
                 {
                     if (st.TryGetValue("audit",  out var a)) _audit  = a;
                     if (st.TryGetValue("reload", out var b)) _reload = b;
+                    Changed();   // the review step shows these as chips — keep it current
                 };
                 _filesContainer.Children.Add(toggles);
             }
@@ -272,7 +288,7 @@ namespace LemoineTools.Tools.Setup
             pick.SelectedItem = PlacementLabel(row.Placement);
             pick.SelectionChanged += lblSel =>
             {
-                if (lblSel != null && LabelToPlacement.TryGetValue(lblSel, out var p)) { row.Placement = p; Changed(); }
+                if (TryLabelToPlacement(lblSel, out var p)) { row.Placement = p; Changed(); }
             };
             Grid.SetColumn(pick, 3);
             g.Children.Add(pick);
@@ -357,9 +373,11 @@ namespace LemoineTools.Tools.Setup
 
             var existing = new HashSet<string>(_rows.Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
             var added = new List<UpgradeFileRow>();
+            _dupCount = 0;
             foreach (var p in dlg.FileNames)
             {
-                if (string.IsNullOrWhiteSpace(p) || !existing.Add(p)) continue;
+                if (string.IsNullOrWhiteSpace(p)) continue;
+                if (!existing.Add(p)) { _dupCount++; continue; }
                 var row = new UpgradeFileRow
                 {
                     Path = p,
@@ -368,7 +386,13 @@ namespace LemoineTools.Tools.Setup
                 };
                 _rows.Add(row); added.Add(row);
             }
-            if (added.Count == 0) return;
+            if (added.Count == 0)
+            {
+                // Nothing new — but if everything picked was a duplicate, say so instead of
+                // silently doing nothing.
+                if (_dupCount > 0) RebuildFilesTable();
+                return;
+            }
 
             RebuildFilesTable();
             Changed();
@@ -378,8 +402,10 @@ namespace LemoineTools.Tools.Setup
         private void ScanNewRows(List<UpgradeFileRow> rows)
         {
             if (_scanHandler == null || _scanEvent == null) return;
-            _scanning = true;
+            _scanning  = true;
+            _scanError = null;
             RebuildFilesTable();
+            Changed();   // the files step is invalid while the scan is in flight
 
             _scanHandler.Paths = rows.Select(r => r.Path).ToList();
             _scanHandler.OnScanned = results => _disp?.BeginInvoke((Action)(() =>
@@ -404,9 +430,11 @@ namespace LemoineTools.Tools.Setup
             }));
             _scanHandler.OnError = err => _disp?.BeginInvoke((Action)(() =>
             {
-                _scanning = false;
+                _scanning  = false;
+                _scanError = string.IsNullOrEmpty(err) ? "?" : err;
                 DiagnosticsLog.Warn("UpgradeLinks: scan error", err ?? "");
                 RebuildFilesTable();
+                Changed();
             }));
             _scanEvent.Raise();
         }
@@ -547,7 +575,20 @@ namespace LemoineTools.Tools.Setup
             ["dest"]      = DestSummary(),
         };
 
-        public IList<string>? ReviewChips => null;
+        public IList<string>? ReviewChips
+        {
+            get
+            {
+                var chips = new List<string>
+                {
+                    AppStrings.T("upgradeLinks.review.chipAudit")  + (_audit  ? " ✓" : " ✗"),
+                    AppStrings.T("upgradeLinks.review.chipReload") + (_reload ? " ✓" : " ✗"),
+                };
+                if (_dest == UpgradeDestination.CurrentLocation)
+                    chips.Add(AppStrings.T("upgradeLinks.review.chipNamesIgnored"));
+                return chips;
+            }
+        }
         public string?        ReviewNote  => null;
         public string?        ReviewWarning
         {
@@ -568,7 +609,9 @@ namespace LemoineTools.Tools.Setup
         {
             switch (stepId)
             {
-                case "files": return ReadableCount() > 0;
+                // Invalid while the version scan is in flight — a not-yet-scanned row defaults to
+                // readable, so running early could include a file the scan would have flagged.
+                case "files": return !_scanning && ReadableCount() > 0;
                 case "dest":  return DestValid();
                 default:      return true;
             }
@@ -685,8 +728,22 @@ namespace LemoineTools.Tools.Setup
         internal static string PlacementLabel(UpgradePlacement p) => AppStrings.T("upgradeLinks.placement." + PlacementKey(p));
         internal static List<string> PlacementLabels() => PlacementOrder.Select(PlacementLabel).ToList();
 
-        internal static readonly Dictionary<string, UpgradePlacement> LabelToPlacement =
-            PlacementOrder.ToDictionary(PlacementLabel, p => p, StringComparer.Ordinal);
+        // Resolved per call (never a cached static dictionary): a static map keyed by display
+        // labels freezes the first-touched language, so after a language switch every placement
+        // pick in a newly opened window would silently miss the lookup.
+        internal static bool TryLabelToPlacement(string? label, out UpgradePlacement placement)
+        {
+            foreach (var p in PlacementOrder)
+            {
+                if (string.Equals(PlacementLabel(p), label, StringComparison.Ordinal))
+                {
+                    placement = p;
+                    return true;
+                }
+            }
+            placement = UpgradePlacement.InternalOrigin;
+            return false;
+        }
 
         // ── Small WPF helpers (theme via resource refs only) ──────────────────────
         private static TextBlock Label(string text)

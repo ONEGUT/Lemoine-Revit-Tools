@@ -1,0 +1,94 @@
+// setup.alignCoordinates.json — Align Coordinates tool (AlignCoordinatesViewModel /
+// AlignCoordinatesRunHandler / AlignCoordinatesCommand). AnchorSource enum tokens stay in code;
+// only display labels live here. The anchor picker labels double as SingleSelect item values —
+// the ViewModel builds and compares them through the same AppStrings lookup per instance, so
+// they are safe to translate.
+{
+  "title": "Align Coordinates",
+  "runLabel": "Align in Revit →",
+  "steps": {
+    "host":  "Host Reference",
+    "links": "Links to Align",
+    "run":   "Review & Run"
+  },
+  "anchor": {
+    "internalOrigin":   "Internal Origin",
+    "projectBasePoint": "Project Base Point",
+    "surveyPoint":      "Survey Point",
+    "gridIntersection": "Grid Intersection"
+  },
+  "labels": {
+    "hostReference":    "Align everything to",
+    "hostReferenceHint": "Pick the host feature that links line up on. Grid Intersection also needs a level for elevation; Internal Origin, Project Base Point, and Survey Point each carry their own elevation.",
+    "needTwoGrids":     "This document needs at least two grids to define an intersection.",
+    "grid1":            "Grid 1",
+    "grid2":            "Grid 2",
+    "noCrossing":       "No grids cross '{0}' — pick a different Grid 1.",
+    "level":            "Level (elevation)",
+    "noLevels":         "This document has no levels — elevation will fall back to Internal Origin (Z = 0).",
+    "hostPoints":       "Which host points should move onto it?",
+    "surveyPoint":      "Survey Point",
+    "projectBasePoint": "Project Base Point",
+    "hostPointsHint":   "Moves the chosen host point(s) onto the reference above.",
+    "anchorIsReference": "{0} is the reference — it stays put.",
+    "linksCount":       "Links ({0} loaded)",
+    "noLinks":          "No loaded links in this model. You can still run to move the host points.",
+    "linksHint":        "For each link, pick which of ITS features moves onto the host reference. Uncheck a link to leave it out.",
+    "alignBy":          "Align by",
+    "linkNoLevels":     "{0} has no levels — Grid Intersection elevation falls back to Z = 0.",
+    "linkNeedsTwoGrids": "{0} needs at least two grids for a Grid Intersection.",
+    "linkNoCrossing":   "No grids in {0} cross '{1}' — pick a different Grid 1.",
+    "rotateLabel":      "Rotate to align orientation",
+    "rotateDesc":       "Turns each link so its direction matches the host's. Only applies when the host AND the link both use Grid Intersection or Survey Point (the two that carry a direction).",
+    "pushNote":         "This only moves the copies in this model. To make it stick in the link files themselves, run Push Coordinates to Links after."
+  },
+  "review": {
+    "itemAnchor":     "Reference",
+    "itemPoints":     "Host Points",
+    "itemLinks":      "Links",
+    "gridPair":       "{0} × {1} @ {2}",
+    "pointsBoth":     "Survey + Project Base",
+    "pointsSurvey":   "Survey Point",
+    "pointsPbp":      "Project Base Point",
+    "pointsNone":     "None",
+    "linksNone":      "None",
+    "linksValue":     "{0} link(s)",
+    "chipRotate":     "rotate",
+    "warnSameGrids":  "Host Grid 1 and Grid 2 are the same — pick two different grids.",
+    "warnLinkSameGrids": "{0}: Grid 1 and Grid 2 are the same — pick two different grids.",
+    "warnNothing":    "Nothing will move — select at least one link or one host point."
+  },
+  "summaries": {
+    "host":  "{0} · {1}",
+    "links": "{0} · rotate {1}",
+    "run":   "Ready to run"
+  },
+  "log": {
+    "handlerMissing":  "Internal error: run handler not registered.",
+    "starting":        "Starting alignment…",
+    "noDoc":           "No active document.",
+    "hostRef":         "Host reference: {0}.",
+    "hostRefFail":     "Host reference could not be resolved: {0}",
+    "gridMissing":     "grid '{0}' not found",
+    "gridNotLine":     "grid '{0}' isn't a straight line in plan",
+    "gridsParallel":   "grids '{0}' and '{1}' are parallel — they don't intersect",
+    "pointMissing":    "{0} not found in this document",
+    "noSurveyDir":     "note: {0}'s survey rotation couldn't be read — aligning without rotation.",
+    "descOrigin":      "Internal Origin",
+    "descPbp":         "Project Base Point",
+    "descSurvey":      "Survey Point",
+    "descGrids":       "grid '{0}' × '{1}' @ '{2}'",
+    "descGridsNoLevel": "grid '{0}' × '{1}' (Z = 0)",
+    "linkSkip":        "⚠ {0}: {1} — skipped.",
+    "linkNotLoaded":   "⚠ {0} isn't loaded — skipped.",
+    "linkFail":        "✗ {0}: {1}",
+    "aligned":         "✓ {0}: aligned by {1}.",
+    "pointMoved":      "✓ {0} moved onto the host reference.",
+    "pointMoveFail":   "✗ Could not move {0}: {1}",
+    "nothingToMove":   "Nothing selected to move — pick at least one link or one host point.",
+    "nonFatal":        "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "done":            "Done — {0} aligned, {1} skipped, {2} failed.",
+    "doneHostOnly":    "Done — host points moved; no links selected.",
+    "aborted":         "Run aborted: {0}"
+  }
+}

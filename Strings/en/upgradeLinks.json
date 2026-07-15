@@ -19,7 +19,7 @@
     "run":                 "Ready to run"
   },
   "labels": {
-    "filesHint":     "Add Revit files from any folder — they accumulate into one list. Each is upgraded to the current version on save, then linked into this model. The saved version is read from the file; nothing is opened yet.",
+    "filesHint":     "Add Revit files from any folder — keep adding and they all collect in one list. Each is upgraded to the current version on save, then linked into this model. The saved version is read from the file; nothing is opened yet.",
     "empty":         "No files added yet. Click “Add files…” to pick Revit models from any folder.",
     "addFiles":      "＋ Add files…",
     "clearList":     "Clear list",
@@ -37,6 +37,8 @@
     "reloadLabel":   "Reload existing link if a name already exists",
     "reloadDesc":    "On = if a link with the same name is already in this model, re-point it at the upgraded copy. Off = skip that file and log it.",
     "scanning":      "Reading file versions…",
+    "scanFailed":    "Couldn't read the file versions ({0}) — you can still run, but unreadable files will fail when they're opened.",
+    "dupSkipped":    "{0} file(s) were already in the list.",
     "unreadableNote":"{0} file(s) could not be read and will be skipped.",
     "tooNewNote":    "{0} file(s) are saved in a newer Revit version and cannot be opened here — they will be skipped.",
     "futureVersionNote":        "Files saved in a Revit version newer than this one ({0}) cannot be opened, upgraded, or linked — Revit is not backwards compatible.",
@@ -53,7 +55,7 @@
     "saveLocationDialogTitle": "Choose a folder for the upgraded copies",
 
     "optCurrentLocationTitle": "Current location",
-    "optCurrentLocationDesc":  "Saves each upgraded model back over its own source path.",
+    "optCurrentLocationDesc":  "Saves each upgraded model back over its original file.",
     "optOverwriteWarn": "⚠ Destructive — originals become current-version files and can no longer open in older Revit.",
     "optOverwriteRenameNote": "\"Save as\" names from the Files step are ignored here — this always saves back to each file's own original name and path.",
 
@@ -74,6 +76,9 @@
     "filesValue": "{0} file(s), {1} to upgrade",
     "filesNone": "None",
     "placementMixed": "Mixed",
+    "chipAudit": "audit",
+    "chipReload": "reload existing",
+    "chipNamesIgnored": "save-as names ignored",
     "warnNoFiles": "Add at least one readable Revit file.",
     "warnOverwrite": "Current location is destructive — the original files will be replaced with current-version copies.",
     "warnUnreadable": "{0} unreadable file(s) will be skipped.",
@@ -95,7 +100,13 @@
     "renameInvalid":  "{0}: the \"save as\" name had no usable characters — kept the original name instead.",
     "linkExistsSkip": "Skipped {0} — a link with that name already exists (reload is off).",
     "linkReloaded":   "Reloaded existing link {0} from the upgraded copy.",
+    "typeInvalid":    "✗ {0}: the link type couldn't be created — file was upgraded and saved, but not linked.",
+    "placeFail":      "✗ {0}: the link couldn't be placed ({1}) — file was upgraded and saved, but not linked.",
+    "unloadedExisting": "{0} is already linked into this model — unloaded it so the file can be opened and upgraded.",
+    "overwriteWarn":  "⚠ {0} already exists in the destination folder — it will be overwritten.",
     "surveyFallback": "{0}: could not resolve Survey Point on host and/or link — placed at Internal Origin instead.",
+    "pbpFallback":    "{0}: could not resolve Project Base Point on host and/or link — placed at Internal Origin instead.",
+    "centerFallback": "{0}: could not measure the model extents — placed at Internal Origin instead.",
     "fileFail":       "Failed on {0}: {1} — {2}",
     "progress":       "{0}% · {1}/{2} processed · {3} linked",
     "nonFatal":       "{0} non-fatal issue(s) logged during the run — see diagnostics.",
@@ -106,7 +117,8 @@
     "cloudWaiting":       "{0}/{1}: waiting for you to finish Save As Cloud Model for {2} in Revit…",
     "cloudContinueLabel": "I've saved it — Continue",
     "cloudSkipLabel":     "Skip this file",
-    "cloudSkipped":       "Skipped {0} by request.",
+    "cloudSkipped":       "Skipped {0} — you chose to skip it.",
+    "cloudStaleAborted":  "The previous Cloud run was left waiting and has been cancelled — starting fresh.",
     "cloudNotSavedYet":   "{0} doesn't look like it's been saved to the cloud yet — finish in Revit, then click Continue again (or Skip).",
     "cloudCloseFail":     "{0} was saved and linked successfully, but couldn't be closed automatically — you can close that tab in Revit yourself."
   }

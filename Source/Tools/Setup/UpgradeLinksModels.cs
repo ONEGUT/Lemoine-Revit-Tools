@@ -7,10 +7,13 @@ namespace LemoineTools.Tools.Setup
 {
     /// <summary>How a freshly-linked instance is positioned in the host. Enum tokens are
     /// persisted/compared, so they never get externalized; only the display labels live in
-    /// <c>upgradeLinks.json</c>. Three map 1:1 to <see cref="ImportPlacement"/>;
-    /// <see cref="SurveyPoint"/> has no ImportPlacement equivalent — it links at
-    /// <see cref="ImportPlacement.Origin"/> and is then translated by the run handler so the
-    /// link's Survey Point lands on the host's Survey Point (see UpgradeLinksRunHandler.LinkIntoHost).</summary>
+    /// <c>upgradeLinks.json</c>. <see cref="RevitLinkInstance.Create"/> only accepts
+    /// <see cref="ImportPlacement.Origin"/> and <see cref="ImportPlacement.Shared"/> — the Centered
+    /// / Site placements throw "Placement isn't supported." So every mode links at Origin and the
+    /// run handler then translates: <see cref="InternalOrigin"/> stays put, <see cref="ProjectBasePoint"/>
+    /// / <see cref="SurveyPoint"/> move so the link's own base point lands on the host's, and
+    /// <see cref="CenterToCenter"/> moves so the models' extents centers coincide
+    /// (see UpgradeLinksRunHandler.ApplyPlacement).</summary>
     public enum UpgradePlacement { InternalOrigin, ProjectBasePoint, CenterToCenter, SurveyPoint }
 
     /// <summary>Where the upgraded copy is written before it is linked. The UI groups the first
@@ -79,19 +82,4 @@ namespace LemoineTools.Tools.Setup
         public bool CloudReady { get; set; }
     }
 
-    public static class UpgradePlacementMap
-    {
-        // SurveyPoint has no ImportPlacement equivalent — it links at Origin and the run
-        // handler then translates the instance so the link's Survey Point lands on the
-        // host's Survey Point (see UpgradeLinksRunHandler.LinkIntoHost).
-        public static ImportPlacement ToImportPlacement(UpgradePlacement p)
-        {
-            switch (p)
-            {
-                case UpgradePlacement.CenterToCenter:    return ImportPlacement.Centered;
-                case UpgradePlacement.ProjectBasePoint:  return ImportPlacement.Site;
-                default:                                 return ImportPlacement.Origin;
-            }
-        }
-    }
 }

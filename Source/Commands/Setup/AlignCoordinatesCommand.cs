@@ -31,13 +31,13 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("AlignCoordinatesCommand: activate existing window", ex); _window = null; }
             }
 
             var uiApp = commandData.Application;
             AlignCoordinatesViewModel BuildTool()
             {
-                var doc  = uiApp.ActiveUIDocument.Document;
+                var doc  = uiApp.ActiveUIDocument?.Document;
                 var data = CollectData(doc);
                 return new AlignCoordinatesViewModel(App.AlignCoordinatesRunHandler, App.AlignCoordinatesRunEvent, data);
             }
@@ -62,7 +62,7 @@ namespace LemoineTools.Commands
             return Result.Succeeded;
         }
 
-        private static AlignCoordinatesData CollectData(Document doc)
+        private static AlignCoordinatesData CollectData(Document? doc)
         {
             var data = new AlignCoordinatesData();
             if (doc == null) return data;
@@ -105,6 +105,14 @@ namespace LemoineTools.Commands
                     }
                 }
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinatesCommand: read grids in {info.Name}", ex); }
+
+                try
+                {
+                    // Level names feed the per-link "level to move" picker (Matched Level Z method).
+                    info.LevelNames = new FilteredElementCollector(ld).OfClass(typeof(Level)).Cast<Level>()
+                        .OrderBy(l => l.ProjectElevation).Select(l => l.Name).ToList();
+                }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinatesCommand: read levels in {info.Name}", ex); }
 
                 // Every loaded link is selectable — grids are optional metadata for that link's own
                 // Grid Intersection override, never a filter on whether the link can be aligned.

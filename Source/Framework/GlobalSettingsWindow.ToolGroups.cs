@@ -95,7 +95,7 @@ namespace LemoineTools.Framework
                 };
                 placementPicker.SelectionChanged += sel =>
                 {
-                    if (sel != null && UpgradeLinksViewModel.LabelToPlacement.TryGetValue(sel, out var p))
+                    if (UpgradeLinksViewModel.TryLabelToPlacement(sel, out var p))
                     {
                         ul.DefaultPlacement = p;
                         ul.Save();

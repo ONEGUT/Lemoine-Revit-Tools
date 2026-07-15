@@ -35,6 +35,16 @@ namespace LemoineTools.Tools.Setup
         public bool CloudContinueRequested { get; set; }
         public bool CloudSkipRequested     { get; set; }
 
+        // Set by the ViewModel's OnWindowClosed when the window closes during a Cloud pause
+        // (then the event is raised once more). Without this, the stale _cloudActive state
+        // would swallow every future run of the tool for the rest of the Revit session and
+        // leave the paused upgrade document open.
+        public bool CloudAbortRequested    { get; set; }
+
+        /// <summary>True while a Cloud run is paused/spanning Execute() calls — the ViewModel
+        /// checks this on window close to know whether a cloud abort needs to be raised.</summary>
+        public bool IsCloudRunActive => _cloudActive;
+
         // ── Cloud continuation state — spans multiple Execute() calls for one Cloud run ─────
         private bool                   _cloudActive;
         private List<UpgradeFileItem>  _cloudFiles = new List<UpgradeFileItem>();
@@ -47,6 +57,11 @@ namespace LemoineTools.Tools.Setup
         private UpgradePlacement       _cloudWaitPlacement;
         private long                   _cloudIssues0;
 
+        // Host model extents centre for Center-to-Center placement — computed once per run, reused
+        // across every file, and reset at each run start (the active host doc can differ per run).
+        private XYZ?                   _hostModelCenter;
+        private bool                   _hostCenterComputed;
+
         public string GetName() => "LemoineTools.Tools.Setup.UpgradeLinksRunHandler";
 
         private void Log(string t, string s) => PushLog?.Invoke(t, s);
@@ -55,21 +70,45 @@ namespace LemoineTools.Tools.Setup
         {
             if (_cloudActive)
             {
-                try { ContinueCloudRun(app); }
-                catch (Exception ex)
+                // A raise with neither Continue nor Skip set is either an explicit abort (window
+                // closed mid-pause) or a brand-new run started after the old window was closed
+                // mid-pause (fresh Spec, no flags). Both mean the paused cloud run is dead —
+                // clean it up instead of letting the stale state swallow the event forever.
+                bool freshRun = !CloudContinueRequested && !CloudSkipRequested &&
+                                (Spec.Files?.Count ?? 0) > 0;
+                if (CloudAbortRequested || freshRun)
                 {
-                    DiagnosticsLog.Error("UpgradeLinksRunHandler.ContinueCloudRun", ex);
-                    Log(AppStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
-                    int p = _cloudPass, f = _cloudFail + 1, s = _cloudSkip;
-                    _cloudActive = false;
-                    CloseCloudWaitDoc(app);
-                    OnAwaitingUser?.Invoke(false, null, null);
-                    Spec = new UpgradeLinksSpec();
-                    HostFolder = null;
-                    OnComplete?.Invoke(p, f, s);
+                    CloudAbortRequested = false;
+                    AbortStaleCloudRun(app);
+                    if (!freshRun)
+                    {
+                        // Abort-only (window closed) — nothing new to run.
+                        Spec = new UpgradeLinksSpec();
+                        HostFolder = null;
+                        return;
+                    }
+                    // Fall through: Spec holds the fresh run's payload — start it below.
                 }
-                return;
+                else
+                {
+                    try { ContinueCloudRun(app); }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Error("UpgradeLinksRunHandler.ContinueCloudRun", ex);
+                        Log(AppStrings.T("upgradeLinks.log.aborted", ex.Message), "fail");
+                        int p = _cloudPass, f = _cloudFail + 1, s = _cloudSkip;
+                        _cloudActive = false;
+                        CloseCloudWaitDoc(app);
+                        OnAwaitingUser?.Invoke(false, null, null);
+                        Spec = new UpgradeLinksSpec();
+                        HostFolder = null;
+                        OnComplete?.Invoke(p, f, s);
+                    }
+                    return;
+                }
             }
+            CloudAbortRequested = false;   // stale flag from a close with no cloud run in flight
+            _hostCenterComputed = false;   // recompute the host extents centre for this run
 
             int pass = 0, fail = 0, skip = 0;
             long issues0 = DiagnosticsLog.IssueCount;
@@ -174,6 +213,12 @@ namespace LemoineTools.Tools.Setup
                             oo.SetOpenWorksetsConfiguration(new WorksetConfiguration(WorksetConfigurationOption.CloseAllWorksets));
                         }
 
+                        // A file currently loaded as a link in this host can't be opened as a
+                        // standalone document (OpenDocumentFile hands back the linked doc, whose
+                        // SaveAs then throws — same constraint Push Coordinates works around).
+                        // Unload it first; the post-save LinkIntoHost reload re-points it.
+                        UnloadIfCurrentlyLinked(hostDoc, srcPath, fileName);
+
                         // Opening upgrades the file in memory. Background open ONLY — an activated view
                         // pins its graphics in native RAM for the whole session (CLAUDE.md).
                         linkDoc = appApp.OpenDocumentFile(srcMp, oo);
@@ -188,6 +233,10 @@ namespace LemoineTools.Tools.Setup
                         string destPath = Spec.Destination == UpgradeDestination.CurrentLocation
                             ? srcPath
                             : Path.Combine(destFolder!, UniqueFileName(effectiveBaseName + Path.GetExtension(srcPath), usedNames));
+                        // Overwriting a pre-existing file in the chosen folder is allowed (re-runs
+                        // refresh the upgraded copies) but never silent.
+                        if (Spec.Destination == UpgradeDestination.SelectedFolder && File.Exists(destPath))
+                            Log(AppStrings.T("upgradeLinks.log.overwriteWarn", Path.GetFileName(destPath)), "warn");
                         SaveLocal(linkDoc, destPath, isWs);
                         var savedMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(destPath);
 
@@ -196,7 +245,8 @@ namespace LemoineTools.Tools.Setup
                         catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: close", ex); }
                         linkDoc = null;
 
-                        if (LinkIntoHost(hostDoc, savedMp, effectiveBaseName, item.Placement))
+                        var linkResult = LinkIntoHost(hostDoc, savedMp, effectiveBaseName, item.Placement);
+                        if (linkResult == LinkResult.Linked)
                         {
                             pass++;
                             if (!string.Equals(effectiveBaseName, baseName, StringComparison.Ordinal))
@@ -204,9 +254,13 @@ namespace LemoineTools.Tools.Setup
                             else
                                 Log(AppStrings.T("upgradeLinks.log.linked", done, total, fileName), "info");
                         }
-                        else
+                        else if (linkResult == LinkResult.SkippedExisting)
                         {
                             skip++;
+                        }
+                        else
+                        {
+                            fail++;
                         }
                     }
                     catch (Exception ex)
@@ -252,10 +306,27 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
+        // Cleans up a Cloud run that can no longer continue (window closed mid-pause, or a new
+        // run superseding it). Closes the waiting document, drops the continuation state, and
+        // tells any still-wired UI the pause is over. Logs to the run log when one is attached
+        // (a fresh run's PushLog is already set) and always to diagnostics.
+        private void AbortStaleCloudRun(UIApplication app)
+        {
+            DiagnosticsLog.Warn("UpgradeLinks: stale cloud run aborted",
+                $"file {_cloudIndex} of {_cloudFiles.Count} was awaiting the user");
+            Log(AppStrings.T("upgradeLinks.log.cloudStaleAborted"), "warn");
+            _cloudActive = false;
+            _cloudFiles  = new List<UpgradeFileItem>();
+            CloseCloudWaitDoc(app);
+            _cloudHostDoc = null;
+            OnAwaitingUser?.Invoke(false, null, null);
+        }
+
         // ── Cloud — native "Save As Cloud Model" per file, paused on the user between files ────
         private void StartCloudRun(UIApplication app, Document hostDoc, List<UpgradeFileItem> files)
         {
             _cloudActive    = true;
+            _hostCenterComputed = false;   // recompute the host extents centre for this run
             _cloudHostDoc   = hostDoc;
             _cloudFiles     = files;
             _cloudIndex     = 0;
@@ -321,6 +392,11 @@ namespace LemoineTools.Tools.Setup
                     // the Local-mode background open) so the user sees the real model, not an empty one.
                     oo.SetOpenWorksetsConfiguration(new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
                 }
+
+                // A file currently loaded as a link in this host can't be opened standalone —
+                // unload it first (same constraint as the Local path; the link reload after the
+                // cloud save re-points it).
+                if (_cloudHostDoc != null) UnloadIfCurrentlyLinked(_cloudHostDoc, srcPath, fileName);
 
                 // PostCommand operates on the ACTIVE document, so this file must be opened AND
                 // activated in the UI (RAM cost accepted — see CLAUDE.md memory-discipline note;
@@ -412,14 +488,21 @@ namespace LemoineTools.Tools.Setup
             {
                 var savedMp = doc.GetCloudModelPath();
                 CloseCloudWaitDoc(app);
-                if (_cloudHostDoc != null && LinkIntoHost(_cloudHostDoc, savedMp, _cloudWaitBaseName, _cloudWaitPlacement))
+                var linkResult = _cloudHostDoc != null
+                    ? LinkIntoHost(_cloudHostDoc, savedMp, _cloudWaitBaseName, _cloudWaitPlacement)
+                    : LinkResult.Failed;
+                if (linkResult == LinkResult.Linked)
                 {
                     _cloudPass++;
                     Log(AppStrings.T("upgradeLinks.log.linked", _cloudIndex, _cloudFiles.Count, _cloudWaitFileName), "info");
                 }
-                else
+                else if (linkResult == LinkResult.SkippedExisting)
                 {
                     _cloudSkip++;
+                }
+                else
+                {
+                    _cloudFail++;
                 }
             }
             catch (Exception ex)
@@ -519,108 +602,270 @@ namespace LemoineTools.Tools.Setup
         }
 
         // ── Link ─────────────────────────────────────────────────────────────────
-        private bool LinkIntoHost(Document hostDoc, ModelPath savedMp, string baseName, UpgradePlacement placement)
+        private enum LinkResult { Linked, SkippedExisting, Failed }
+
+        private LinkResult LinkIntoHost(Document hostDoc, ModelPath savedMp, string baseName, UpgradePlacement placement)
         {
-            var import = UpgradePlacementMap.ToImportPlacement(placement);
-            using (var tx = new Transaction(hostDoc, "Link upgraded model"))
+            // RevitLinkType.Create needs a transaction, but the reload-existing path
+            // (ReloadExistingType → LoadFrom) must NOT be inside one — link-management calls throw
+            // "operation is not permitted when there is any open transaction" (CLAUDE.md). So the
+            // type step and the instance step each get their own transaction, and any LoadFrom runs
+            // between them with no transaction open.
+            ElementId typeId = ElementId.InvalidElementId;
+            bool createdFresh = false;
+            using (var tx = new Transaction(hostDoc, "Create Link Type"))
             {
                 tx.Start();
                 ConfigureFailures(tx);
-
-                ElementId typeId;
                 try
                 {
                     var result = RevitLinkType.Create(hostDoc, savedMp, new RevitLinkOptions(false));
                     typeId = result.ElementId;
+                    createdFresh = true;
+                    tx.Commit();
                 }
                 catch (Exception ex)
                 {
                     // Most commonly: a link with this file/name already exists in the host.
                     DiagnosticsLog.Swallowed("UpgradeLinks: RevitLinkType.Create", ex);
-                    if (!Spec.ReloadExisting)
-                    {
-                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
-                        tx.RollBack();
-                        return false;
-                    }
+                    tx.RollBack();
+                }
+            }
 
-                    typeId = ReloadExistingType(hostDoc, savedMp, baseName);
-                    if (typeId == ElementId.InvalidElementId)
-                    {
-                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
-                        tx.RollBack();
-                        return false;
-                    }
-                    Log(AppStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
-
-                    // The reloaded type already points at the upgraded copy; if it carries instances,
-                    // leave them (adding another would duplicate the link on the model).
-                    if (HasInstances(hostDoc, typeId)) { tx.Commit(); return true; }
+            if (!createdFresh)
+            {
+                if (!Spec.ReloadExisting)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                    return LinkResult.SkippedExisting;
                 }
 
-                if (typeId == ElementId.InvalidElementId) { tx.RollBack(); return false; }
+                // LoadFrom OUTSIDE any transaction — repoints the existing type at the upgraded copy.
+                typeId = ReloadExistingType(hostDoc, savedMp, baseName);
+                if (typeId == ElementId.InvalidElementId)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                    return LinkResult.SkippedExisting;
+                }
+                Log(AppStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
+
+                // The reloaded type already points at the upgraded copy; if it carries instances,
+                // leave them (adding another would duplicate the link on the model).
+                if (HasInstances(hostDoc, typeId)) return LinkResult.Linked;
+            }
+
+            if (typeId == ElementId.InvalidElementId)
+            {
+                // The file was upgraded and saved but never linked — a real failure, not a skip.
+                Log(AppStrings.T("upgradeLinks.log.typeInvalid", baseName), "fail");
+                return LinkResult.Failed;
+            }
+
+            using (var tx = new Transaction(hostDoc, "Place Link Instance"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
 
                 RevitLinkInstance? instance = null;
                 try
                 {
-                    instance = RevitLinkInstance.Create(hostDoc, typeId, import);
+                    // Only Origin and Shared are valid for RevitLinkInstance.Create — Centered /
+                    // Site (Project Base Point) throw "Placement isn't supported." So always link
+                    // at Origin, then translate to reproduce the chosen placement (ApplyPlacement).
+                    instance = RevitLinkInstance.Create(hostDoc, typeId, ImportPlacement.Origin);
                 }
                 catch (Exception ex)
                 {
                     DiagnosticsLog.Error("UpgradeLinks: instance placement", ex);
+                    Log(AppStrings.T("upgradeLinks.log.placeFail", baseName, ex.Message), "fail");
                     tx.RollBack();
-                    return false;
+                    // A freshly-created type with no instance is an orphan (loaded but unplaced) —
+                    // drop it so a re-run starts clean instead of falling into the reload path.
+                    if (createdFresh) DeleteOrphanType(hostDoc, typeId);
+                    return LinkResult.Failed;
                 }
 
-                // Survey Point has no ImportPlacement — the instance was just linked at Origin;
-                // translate it so the link's own Survey Point lands on the host's Survey Point.
-                if (placement == UpgradePlacement.SurveyPoint && instance != null)
-                    TranslateToSurveyPoint(hostDoc, instance, baseName);
+                if (instance != null)
+                    ApplyPlacement(hostDoc, instance, placement, baseName);
 
                 tx.Commit();
-                return true;
+                return LinkResult.Linked;
             }
         }
 
-        // Moves a just-linked (Origin-placed) instance so its link document's Survey Point
-        // coincides with the host's Survey Point. Both points are read/moved in internal
-        // coordinates. Falls back to leaving the Origin placement (reported) when either
-        // base point can't be resolved — never throws out of the run.
-        private void TranslateToSurveyPoint(Document hostDoc, RevitLinkInstance instance, string baseName)
+        private static void DeleteOrphanType(Document hostDoc, ElementId typeId)
         {
             try
             {
-                var linkDoc = instance.GetLinkDocument();
-                if (linkDoc == null)
+                using (var tx = new Transaction(hostDoc, "Remove Unplaced Link Type"))
                 {
-                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
-                    return;
+                    tx.Start();
+                    ConfigureFailures(tx);
+                    hostDoc.Delete(typeId);
+                    tx.Commit();
                 }
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: delete orphan link type", ex); }
+        }
 
-                var hostSp = BasePoint.GetSurveyPoint(hostDoc);
-                var linkSp = BasePoint.GetSurveyPoint(linkDoc);
-                if (hostSp == null || linkSp == null)
+        // A source file that is currently loaded as a link in the host can't be opened as a
+        // standalone document — unload its link type first (the post-save reload in LinkIntoHost
+        // re-points it at the upgraded copy). No-op when the file isn't linked or isn't loaded.
+        private void UnloadIfCurrentlyLinked(Document hostDoc, string srcPath, string fileName)
+        {
+            try
+            {
+                RevitLinkType? loadedType = null;
+                foreach (var t in new FilteredElementCollector(hostDoc).OfClass(typeof(RevitLinkType)).Cast<RevitLinkType>())
                 {
-                    Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
-                    return;
+                    try
+                    {
+                        var er = t.GetExternalFileReference();
+                        if (er == null) continue;
+                        string p = ModelPathUtils.ConvertModelPathToUserVisiblePath(er.GetAbsolutePath());
+                        if (string.Equals(p, srcPath, StringComparison.OrdinalIgnoreCase) &&
+                            er.GetLinkedFileStatus() == LinkedFileStatus.Loaded)
+                        {
+                            loadedType = t;
+                            break;
+                        }
+                    }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: probe link type path", ex); }
                 }
+                if (loadedType == null) return;
 
-                // The link's own Survey Point position, expressed in the link's internal
-                // coordinates, projected through the just-created (Origin) instance transform
-                // to the host's internal coordinates.
-                XYZ linkSpInHost = instance.GetTotalTransform().OfPoint(linkSp.Position);
-                XYZ delta = hostSp.Position - linkSpInHost;
-
-                bool pinned = instance.Pinned;
-                if (pinned) instance.Pinned = false;
-                ElementTransformUtils.MoveElement(hostDoc, instance.Id, delta);
-                if (pinned) instance.Pinned = true;
+                // Unload is a link-management call — it must run OUTSIDE any transaction, or it
+                // throws "operation is not permitted when there is any open transaction" (confirmed
+                // on a Windows run). No Transaction here.
+                loadedType.Unload(null);
+                Log(AppStrings.T("upgradeLinks.log.unloadedExisting", fileName), "info");
             }
             catch (Exception ex)
             {
-                DiagnosticsLog.Swallowed($"UpgradeLinks: translate to Survey Point for '{baseName}'", ex);
-                Log(AppStrings.T("upgradeLinks.log.surveyFallback", baseName), "warn");
+                // Not fatal here — the open/save that follows will report its own failure.
+                DiagnosticsLog.Error("UpgradeLinks: unload existing link before upgrade", ex);
             }
+        }
+
+        // Reproduces the chosen placement by translating a just-linked (Origin-placed) instance.
+        // InternalOrigin leaves it at Origin; the other three move it (base-point → base-point, or
+        // extents-center → extents-center). All helpers are best-effort: a failure leaves the
+        // Origin placement (reported) rather than throwing out of the run.
+        private void ApplyPlacement(Document hostDoc, RevitLinkInstance instance, UpgradePlacement placement, string baseName)
+        {
+            switch (placement)
+            {
+                case UpgradePlacement.ProjectBasePoint:
+                    TranslateBasePointToBasePoint(hostDoc, instance, baseName, survey: false);
+                    break;
+                case UpgradePlacement.SurveyPoint:
+                    TranslateBasePointToBasePoint(hostDoc, instance, baseName, survey: true);
+                    break;
+                case UpgradePlacement.CenterToCenter:
+                    TranslateCenterToCenter(hostDoc, instance, baseName);
+                    break;
+                // InternalOrigin: already at Origin — nothing to do.
+            }
+        }
+
+        // Moves a just-linked (Origin-placed) instance so its link document's Project Base Point
+        // (survey: false) or Survey Point (survey: true) coincides with the host's same point.
+        // Both points are read/moved in internal coordinates.
+        private void TranslateBasePointToBasePoint(Document hostDoc, RevitLinkInstance instance, string baseName, bool survey)
+        {
+            string fallbackKey = survey ? "upgradeLinks.log.surveyFallback" : "upgradeLinks.log.pbpFallback";
+            try
+            {
+                var linkDoc = instance.GetLinkDocument();
+                if (linkDoc == null) { Log(AppStrings.T(fallbackKey, baseName), "warn"); return; }
+
+                var hostBp = survey ? BasePoint.GetSurveyPoint(hostDoc) : BasePoint.GetProjectBasePoint(hostDoc);
+                var linkBp = survey ? BasePoint.GetSurveyPoint(linkDoc) : BasePoint.GetProjectBasePoint(linkDoc);
+                if (hostBp == null || linkBp == null) { Log(AppStrings.T(fallbackKey, baseName), "warn"); return; }
+
+                // The link's own base-point position (link internal coords) projected through the
+                // just-created (Origin) instance transform into the host's internal coordinates.
+                XYZ linkBpInHost = instance.GetTotalTransform().OfPoint(linkBp.Position);
+                XYZ delta = hostBp.Position - linkBpInHost;
+                MoveInstance(hostDoc, instance, delta);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"UpgradeLinks: base-point placement (survey={survey}) for '{baseName}'", ex);
+                Log(AppStrings.T(fallbackKey, baseName), "warn");
+            }
+        }
+
+        // Moves a just-linked (Origin-placed) instance so the centre of the link's extents lands
+        // on the centre of the host model's extents — the API equivalent of "Center to Center".
+        private void TranslateCenterToCenter(Document hostDoc, RevitLinkInstance instance, string baseName)
+        {
+            try
+            {
+                var hostCenter = GetHostModelCenter(hostDoc);
+                // The instance was just created — regenerate so its bounding box reads true.
+                hostDoc.Regenerate();
+                var linkBox = instance.get_BoundingBox(null);
+                if (hostCenter == null || linkBox == null)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.centerFallback", baseName), "warn");
+                    return;
+                }
+                XYZ linkCenter = (linkBox.Min + linkBox.Max) * 0.5;
+                MoveInstance(hostDoc, instance, hostCenter - linkCenter);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"UpgradeLinks: center-to-center for '{baseName}'", ex);
+                Log(AppStrings.T("upgradeLinks.log.centerFallback", baseName), "warn");
+            }
+        }
+
+        private static void MoveInstance(Document hostDoc, RevitLinkInstance instance, XYZ delta)
+        {
+            if (delta.GetLength() < 1e-9) return;
+            bool pinned = instance.Pinned;
+            if (pinned) instance.Pinned = false;
+            ElementTransformUtils.MoveElement(hostDoc, instance.Id, delta);
+            if (pinned) instance.Pinned = true;
+        }
+
+        // Centre of the host model's extents (union of model-element bounding boxes, link
+        // instances excluded so they can't skew it), computed once per run and cached. Returns
+        // null when the model has no measurable geometry.
+        private XYZ? GetHostModelCenter(Document hostDoc)
+        {
+            if (_hostCenterComputed) return _hostModelCenter;
+            _hostCenterComputed = true;
+            try
+            {
+                XYZ? min = null, max = null;
+                int unreadable = 0;
+                var col = new FilteredElementCollector(hostDoc)
+                    .WhereElementIsNotElementType()
+                    .WhereElementIsViewIndependent();
+                foreach (var el in col)
+                {
+                    // Exclude links (would skew the host centre) and datums (grids/levels/reference
+                    // planes span far past the building geometry and would drag the centre off).
+                    if (el is RevitLinkInstance || el is Grid || el is Level || el is ReferencePlane) continue;
+                    BoundingBoxXYZ? bb;
+                    try { bb = el.get_BoundingBox(null); }
+                    catch { bb = null; unreadable++; }
+                    if (bb == null) continue;
+                    min = min == null ? bb.Min : new XYZ(Math.Min(min.X, bb.Min.X), Math.Min(min.Y, bb.Min.Y), Math.Min(min.Z, bb.Min.Z));
+                    max = max == null ? bb.Max : new XYZ(Math.Max(max.X, bb.Max.X), Math.Max(max.Y, bb.Max.Y), Math.Max(max.Z, bb.Max.Z));
+                }
+                if (unreadable > 0)
+                    DiagnosticsLog.Warn("UpgradeLinks: host model center", $"{unreadable} element(s) had no readable bounding box");
+                _hostModelCenter = (min != null && max != null) ? (min + max) * 0.5 : (XYZ?)null;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("UpgradeLinks: compute host model center", ex);
+                _hostModelCenter = null;
+            }
+            return _hostModelCenter;
         }
 
         private static ElementId ReloadExistingType(Document hostDoc, ModelPath savedMp, string baseName)
