@@ -1,0 +1,124 @@
+# Web Migration — Status & Remaining Work
+
+Snapshot of the WebView2 UI migration on branch `claude/webview2-testing-menu-9i6jz2`.
+Cross-reference with `plan-webview2-ui-migration.md` (the authoritative rules + phases)
+and `web-migration-questions.md` (open decisions). Last updated 2026-07-15.
+
+---
+
+## 1. Step-flow tools — 34 / 34 ported to `IWebTool`
+
+**Every `IStepFlowTool` in the app now has a parallel web port.** Production commands
+open the web version when the machine-wide **Web UI** flag is ON (Developer panel),
+the WPF version when OFF (rule R25 — both stacks coexist until each is verified).
+
+| Tool | Web port | Windows-verified? |
+|------|----------|-------------------|
+| Push Coordinates to Links | ✅ | ✅ confirmed (Revit 2026, pilot) |
+| Web Pilot (harness) | ✅ | ✅ confirmed |
+| Delete Filters from Project | ✅ | ⏳ pending |
+| Print View | ✅ | ⏳ pending |
+| Bulk Export | ✅ | ⏳ pending |
+| Bulk Rename | ✅ | ⏳ pending |
+| Bulk Views | ✅ | ⏳ pending |
+| Views By Link / By Template / Bulk Duplicate | ✅ | ⏳ pending |
+| Link Views to Level | ✅ | ⏳ pending |
+| Replicate Dependent Views | ✅ | ⏳ pending |
+| Place Dependent Views | ✅ | ⏳ pending |
+| Align Sheet Views | ✅ | ⏳ pending |
+| Explode View By Trade | ✅ | ⏳ pending |
+| Scope Box Creator | ✅ | ⏳ pending |
+| Make / Reproject / Projected Ceiling Grids | ✅ | ⏳ pending |
+| Ceiling Heatmap | ✅ | ⏳ pending |
+| Clash Finder / Clash Elevation Finder | ✅ | ⏳ pending |
+| Refine Dimensions | ✅ | ⏳ pending |
+| Copy Datums / Linear / From Link | ✅ | ⏳ pending |
+| Compare Grids | ✅ | ⏳ pending |
+| Align Coordinates | ✅ | ⏳ pending |
+| Upgrade Links | ✅ | ⏳ pending |
+| Discover | ✅ | ⏳ pending |
+| Split By Cell / Grid / Level / Reference Plane | ✅ | ⏳ pending |
+| Extend Walls | ✅ | ⏳ pending |
+
+> The bulk of the pass is **code-complete but unverified on Windows** (this repo
+> cannot compile on Linux). Verification is the current gating activity, not more porting.
+
+### Known step-flow divergences from WPF (logged in `web-migration-questions.md`)
+- **Bulk Rename** live preview moved to the review step (no partial "update one input" channel).
+- **Discover** dropped the live per-line scan log + auto-advance (no tool-driven "navigate to step N" bridge message).
+- **Ceiling Heatmap** shows three colour swatches instead of the combined Low→Mid→High gradient bar.
+- **Discover** rule rows stack three inputs instead of one grid row.
+
+---
+
+## 2. Component library (`Source/Web/lib/`) — coverage
+
+Every WPF input control has a web twin, verified rendering in headless Chromium:
+
+Button · InlineStepper · TextField · SingleSelect · ToggleSwitch · SectionCard ·
+WarnBanner · MultiSelectTabs (Hierarchy carets / indeterminate / DisabledItems / All-row) ·
+CheckList · Review · FolderBrowser · FileBrowser · TokenInput · **BrowserTree** (Project
+Browser view/sheet tree — folders, nested dependents, right-click-selects-descendants,
+single-select) · NumberRange · SearchSelect · ColorPicker.
+
+**View/sheet picker audit result:** every WPF tool that uses `BrowserTreePicker` maps to
+`WebInput.BrowserTree`, fed by the real `BrowserTreeCapture` Project-Browser hierarchy. The
+tab-style pickers that remain (Views-By-Link *levels*, Link-Views *levels*, template / trade /
+category pickers) use `MultiSelectTabs` in the WPF originals too — they are faithful, not
+regressions. No view/sheet tree was downgraded to a flat checkbox list.
+
+### Not yet built as web components (needed only by unported windows below)
+- Drag-reorderable rule-row editor (Filters settings)
+- Token-CRUD editor (Naming settings)
+- Legend drag/drop lane grid (Legend Creator)
+- Colour ramp / gradient strip (standalone; inline colour input already exists)
+
+---
+
+## 3. Bespoke (non-step-flow) windows — remaining
+
+| Window | Status | Notes |
+|--------|--------|-------|
+| **Global Settings** | 🟡 General tab web-backed; 8 tabs remain | See §4 |
+| Filters Settings (standalone) | ❌ WPF only | Shares the Filters-tab editor (~3620 lines) |
+| Legend Settings / Legend Creator | ❌ WPF only | Drag/drop lane grid — hardest surface (Phase 3 wave 5) |
+| Clash Definitions | ❌ WPF only | Clash-rule CRUD; most-opened after settings |
+| Tools Overview | ❌ WPF only | Tool gallery/launcher — already a "fake UI", natural HTML fit |
+| Link Audit | ❌ WPF only | Link display-mode audit table |
+| Scope Box Manager | ❌ WPF only | Uses BrowserTreePicker |
+| Color Picker (standalone) | ❌ WPF only | Inline web colour input may already cover most uses |
+
+---
+
+## 4. Global Settings tabs — buildout status
+
+| Tab | WPF source (lines) | Status | Shape |
+|-----|--------------------|--------|-------|
+| General | General.cs (394) | ✅ web | theme cards, size, language, diagnostics |
+| Naming | Naming.cs (877) | ❌ | user-token CRUD + per-tool default patterns — **bespoke** |
+| Filters | Filters.cs (3620) | ❌ | AutoFilters trade editor + clash defs + colour ramps — **bespoke, largest** |
+| Dimensioning | Dimensions.cs (263) | ❌ | field rows — **spec-portable** |
+| Setup (ToolGroups) | ToolGroups.cs (379) | ❌ | field rows — **spec-portable** |
+| Ceilings (Heatmap) | CeilingHeatmap.cs (197) | ❌ | field rows — **spec-portable** |
+| Views (LinkViews) | LinkViews.cs (30) | ❌ | field rows — **spec-portable** |
+| Export | (in xaml.cs) | ❌ | field rows — **spec-portable** |
+| Copy | (in xaml.cs) | ❌ | field rows — **spec-portable** |
+
+**Proposed approach (see §5):** add a *settings-tab spec model* (a tab = a list of
+`WebInput` rows, reusing the step-flow factories) so the 6 field-row tabs batch-port
+cheaply; treat **Naming** and **Filters** as their own focused efforts because they need
+new bespoke web components.
+
+---
+
+## 5. Recommended next sequence
+
+1. ✅ **Fix web settings click bug** (done — payload double-unwrap in `WebSettingsWindow`).
+2. **Verify the 34-tool pass on Windows** (turn on Web UI flag, smoke each; log results to
+   `plan-webview2-ui-migration.md` §5). This is the real gate before deleting any WPF.
+3. **Settings spec model + 6 field-row tabs** (Dimensioning, Setup, Ceilings, Views, Export, Copy).
+4. **Naming tab** (token-CRUD web component).
+5. **Filters tab** (drag-reorderable rule editor) + fold in the standalone Filters Settings window.
+6. **Other bespoke windows**, usage-ranked: Tools Overview, Clash Definitions, Link Audit,
+   Scope Box Manager, Color Picker, Legend Creator.
+7. **Phase 5 decommission** per the master plan once each tool/window is verified at zero WPF consumers.
