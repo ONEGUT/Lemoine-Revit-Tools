@@ -237,7 +237,8 @@ namespace LemoineTools.Tools.AutoFilters
                     s2.Add(WebInput.MultiSelectTabs($"cats_{link.Id.Value}",
                         AppStrings.T("autofilters.discover.labels.selectCats"),
                         CategoryGroups, link.SelectedCategories,
-                        hierarchy: AutoFiltersSettings.CategorySubcategories));
+                        hierarchy: AutoFiltersSettings.CategorySubcategories
+                            .ToDictionary(kv => kv.Key, kv => kv.Value.ToList())));
 
                     foreach (var row in link.ConfigRows)
                     {

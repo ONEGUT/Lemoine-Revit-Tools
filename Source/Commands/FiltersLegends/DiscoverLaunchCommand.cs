@@ -120,7 +120,7 @@ namespace LemoineTools.Commands
                         App.DiscoverHandler!, App.DiscoverEvent!, links,
                         App.AutoFiltersHandler, App.AutoFiltersEvent);
                 });
-                return Result.Succeeded;
+                return;
             }
 
             var vm = BuildTool();

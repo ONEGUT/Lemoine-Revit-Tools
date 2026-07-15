@@ -120,7 +120,7 @@ namespace LemoineTools.Framework.Web
         private void SendInit() =>
             _bridge?.Send("init", WebSettings.BuildPayload(_activeTab));
 
-        private void OnActionMessage(Dictionary<string, object?> msg)
+        private void OnActionMessage(IReadOnlyDictionary<string, object?> msg)
         {
             if (!(msg.TryGetValue("payload", out var pObj) && pObj is Dictionary<string, object?> p)) return;
             string action = Str(p, "action");
