@@ -125,6 +125,84 @@ namespace LemoineTools.Commands
                 return new BulkViewsViewModel(byLevel, duplicate, byTemplate, replicateDeps, byLink);
             }
 
+            // ── Web UI branch (flag ON): same data collection, web inner tools ──
+            if (LemoineTools.Framework.Web.WebToolLauncher.Enabled)
+            {
+                LemoineTools.Framework.Web.WebToolLauncher.Open("bulkViews", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    var browserTree = BrowserTreeCapture.Capture(doc);
+
+                    var levels = new FilteredElementCollector(doc)
+                        .OfClass(typeof(Level)).Cast<Level>()
+                        .OrderBy(l => l.Elevation)
+                        .Select(l => new LinkViewsLevelViewModel.LevelEntry
+                        {
+                            Id = l.Id, Name = l.Name,
+                            ElevationFt = Math.Round(UnitUtils.ConvertFromInternalUnits(l.Elevation, UnitTypeId.Feet), 2),
+                        }).ToList();
+                    var scopeBoxes   = ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc);
+                    var templates3D  = CollectViewTemplates(doc, ViewType.ThreeD);
+                    var templatesFP  = CollectViewTemplates(doc, ViewType.FloorPlan);
+                    var templatesRCP = CollectViewTemplates(doc, ViewType.CeilingPlan);
+                    var byLevelW = new LinkViewsLevelWebTool(
+                        App.LinkViewsLevelRunHandler!, App.LinkViewsLevelRunEvent!,
+                        levels, scopeBoxes, templates3D, templatesFP, templatesRCP);
+
+                    var duplicateW = new ViewsBulkDuplicateWebTool(
+                        App.ViewsBulkDuplicateRunHandler!, App.ViewsBulkDuplicateRunEvent!,
+                        CollectDuplicatableViews(doc), browserTree);
+
+                    var eligibleForTemplate = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View)).Cast<View>()
+                        .Where(v => !v.IsTemplate
+                                 && v.ViewType != ViewType.Schedule
+                                 && v.ViewType != ViewType.Legend
+                                 && v.ViewType != ViewType.DrawingSheet
+                                 && v.ViewType != ViewType.ProjectBrowser
+                                 && v.ViewType != ViewType.SystemBrowser
+                                 && v.ViewType != ViewType.Internal
+                                 && v.ViewType != ViewType.Undefined
+                                 && v.CanViewBeDuplicated(ViewDuplicateOption.WithDetailing))
+                        .Select(v => new ViewsByTemplateViewModel.ViewEntry
+                            { Id = v.Id, Name = v.Name, TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType) })
+                        .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name).ToList();
+                    var viewTemplates = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View)).Cast<View>()
+                        .Where(v => v.IsTemplate)
+                        .Select(v => new ViewsByTemplateViewModel.TemplateEntry
+                            { Id = v.Id, Name = v.Name, TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType) })
+                        .OrderBy(t => t.TypeLabel).ThenBy(t => t.Name).ToList();
+                    var byTemplateW = new ViewsByTemplateWebTool(
+                        App.ViewsByTemplateRunHandler!, App.ViewsByTemplateRunEvent!,
+                        eligibleForTemplate, viewTemplates, browserTree);
+
+                    var (allSources, allTargets, basisXMap) = CollectReplicateDependentsData(doc);
+                    var replicateDepsW = new ReplicateDependentViewsWebTool(
+                        App.ReplicateDependentViewsRunHandler!, App.ReplicateDependentViewsRunEvent!,
+                        allSources, allTargets, browserTree)
+                    { TargetBasisXMap = basisXMap };
+
+                    var linkEntries = new FilteredElementCollector(doc)
+                        .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>()
+                        .Select(li => new ViewsByLinkViewModel.LinkEntry
+                        {
+                            Id = li.Id,
+                            Name = li.GetLinkDocument() != null
+                                ? System.IO.Path.GetFileNameWithoutExtension(li.GetLinkDocument().Title)
+                                : li.Name,
+                        })
+                        .OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase).ToList();
+                    var byLinkTemplates = templates3D
+                        .Select(t => new ViewsByLinkViewModel.TemplateEntry { Id = t.Id, Name = t.Name }).ToList();
+                    var byLinkW = new ViewsByLinkWebTool(
+                        App.ViewsByLinkRunHandler!, App.ViewsByLinkRunEvent!, linkEntries, byLinkTemplates);
+
+                    return new BulkViewsWebTool(byLevelW, duplicateW, byTemplateW, replicateDepsW, byLinkW);
+                });
+                return Result.Succeeded;
+            }
+
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
