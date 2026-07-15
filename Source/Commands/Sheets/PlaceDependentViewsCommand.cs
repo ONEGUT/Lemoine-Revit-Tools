@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Sheets.PlaceDependentViews;
 
 namespace LemoineTools.Commands
@@ -98,6 +99,48 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("placeDependentViews", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+
+                    var titleblocks = new FilteredElementCollector(doc)
+                        .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                        .WhereElementIsElementType()
+                        .Cast<FamilySymbol>()
+                        .OrderBy(tb => tb.FamilyName)
+                        .ThenBy(tb => tb.Name)
+                        .ToList();
+
+                    var parents    = new List<ParentViewEntry>();
+                    var composites = new List<ParentViewEntry>();
+                    foreach (var v in new FilteredElementCollector(doc)
+                                 .OfClass(typeof(View)).Cast<View>()
+                                 .Where(v => !v.IsTemplate))
+                    {
+                        string level = "";
+                        try { level = v.GenLevel?.Name ?? ""; }
+                        catch (System.Exception ex) { DiagnosticsLog.Swallowed($"PlaceDependentViews: read GenLevel on view {v.Id.Value}", ex); }
+
+                        if (v.GetPrimaryViewId() == ElementId.InvalidElementId)
+                        {
+                            var deps = v.GetDependentViewIds();
+                            if (deps != null && deps.Count > 0)
+                                parents.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, deps.Count));
+                        }
+
+                        if (CompositeSourceTypes.Contains(v.ViewType))
+                            composites.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
+                    }
+
+                    return new PlaceDependentViewsWebTool(
+                        App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
+                        parents, composites, titleblocks,
+                        BrowserTreeCapture.Capture(doc));
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

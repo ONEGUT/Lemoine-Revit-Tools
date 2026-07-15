@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.LinkViews;
 using LemoineTools.Tools.LinkViews.BulkRename;
 
@@ -82,6 +83,49 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("bulkRename", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+
+                    var sheets = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ViewSheet))
+                        .Cast<ViewSheet>()
+                        .Where(s => !s.IsTemplate)
+                        .OrderBy(s => s.SheetNumber)
+                        .Select(s => new BulkRenameViewModel.SheetEntry
+                        {
+                            Id     = s.Id,
+                            Number = s.SheetNumber ?? "",
+                            Name   = s.Name ?? "",
+                        })
+                        .ToList();
+
+                    var views = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View))
+                        .Cast<View>()
+                        .Where(v => !v.IsTemplate
+                                 && !(v is ViewSheet)
+                                 && v.ViewType != ViewType.ProjectBrowser
+                                 && v.ViewType != ViewType.SystemBrowser
+                                 && v.ViewType != ViewType.Internal
+                                 && v.ViewType != ViewType.Undefined)
+                        .Select(v => new BulkRenameViewModel.ViewEntry
+                        {
+                            Id        = v.Id,
+                            Name      = v.Name,
+                            TypeLabel = ViewsByTemplateRunHandler.ViewTypeLabel(v.ViewType),
+                        })
+                        .OrderBy(v => v.TypeLabel).ThenBy(v => v.Name)
+                        .ToList();
+
+                    return new BulkRenameWebTool(
+                        App.BulkRenameRunHandler!, App.BulkRenameRunEvent!, sheets, views,
+                        BrowserTreeCapture.Capture(doc));
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
