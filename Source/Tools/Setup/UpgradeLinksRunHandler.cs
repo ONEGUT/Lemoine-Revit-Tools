@@ -857,7 +857,7 @@ namespace LemoineTools.Tools.Setup
                     max = max == null ? bb.Max : new XYZ(Math.Max(max.X, bb.Max.X), Math.Max(max.Y, bb.Max.Y), Math.Max(max.Z, bb.Max.Z));
                 }
                 if (unreadable > 0)
-                    DiagnosticsLog.Swallowed("UpgradeLinks: host model center", $"{unreadable} element(s) had no readable bounding box");
+                    DiagnosticsLog.Warn("UpgradeLinks: host model center", $"{unreadable} element(s) had no readable bounding box");
                 _hostModelCenter = (min != null && max != null) ? (min + max) * 0.5 : (XYZ?)null;
             }
             catch (Exception ex)
