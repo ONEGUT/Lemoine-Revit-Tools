@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.CopyFromLink;
 
@@ -51,6 +52,20 @@ namespace LemoineTools.Commands
                     links);
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("copyFromLink", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    AutoFiltersSettings.CaptureFilterableCategories(doc);
+                    var links = CollectLinks(doc);
+                    return new CopyFromLinkWebTool(
+                        App.CopyFromLinkScanHandler, App.CopyFromLinkScanEvent,
+                        App.CopyFromLinkRunHandler,  App.CopyFromLinkRunEvent,
+                        links);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
