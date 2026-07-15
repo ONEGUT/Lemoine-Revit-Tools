@@ -25,6 +25,7 @@ Lemoine.stepflow = function (container, opts) {
   var canRun = false;
   var running = false, finished = false, finishCls = 'pass';
   var runEl = null, logEl = null, runBtn = null, backBtn = null;
+  var continueBtn = null, skipBtn = null; // pausable-run footer buttons
   var chipEl = null, statusEl = null, fillEl = null, pipsEl = null, countsEl = null; // top-strip chrome
 
   // ── Public API (driven by inbound bridge messages) ─────────────────────────
@@ -179,13 +180,19 @@ Lemoine.stepflow = function (container, opts) {
     // ── Footer ───────────────────────────────────────────────────────────────
     var footer = U.el('div', 'footer');
     backBtn = U.button({ label: '← Back', variant: 'ghost', onClick: goBack }).el; // LEFTWARDS ARROW
+    var mid = U.el('div', 'mid');
     var resetBtn = U.button({ label: 'Reset', variant: 'ghost', onClick: function () { send('action', { action: 'reset' }); } }).el;
+    // Pausable-run buttons (IWebRunPausable) - hidden until a `pause` message arrives.
+    continueBtn = U.button({ label: 'Continue', variant: 'primary', onClick: function () { send('action', { action: 'continueRun' }); } }).el;
+    skipBtn = U.button({ label: 'Skip', variant: 'ghost', onClick: function () { send('action', { action: 'skipItem' }); } }).el;
+    continueBtn.style.display = 'none'; skipBtn.style.display = 'none';
+    mid.appendChild(resetBtn); mid.appendChild(continueBtn); mid.appendChild(skipBtn);
     var runHandle = U.button({ label: spec.runLabel || 'Run', variant: 'primary', onClick: function () {
       running = true; setStatus('Running...', 'accent'); showRun(); send('action', { action: 'run' });
     } });
     runBtn = runHandle.el; runBtn.disabled = true;
     footer.appendChild(backBtn);
-    footer.appendChild(resetBtn);
+    footer.appendChild(mid);
     footer.appendChild(runBtn);
     container.appendChild(footer);
 
@@ -225,7 +232,7 @@ Lemoine.stepflow = function (container, opts) {
     var isLast = index === (spec.steps.length - 1);
     if (!isLast) {
       var crow = U.el('div', 'confirm-row');
-      var handle = U.button({ label: 'Confirm →', variant: 'primary', onClick: function () { // RIGHTWARDS ARROW
+      var handle = U.button({ label: def.confirmLabel || 'Confirm →', variant: 'primary', onClick: function () { // RIGHTWARDS ARROW
         send('action', { action: 'confirm', stepId: def.id });
         goNext();
       } });
@@ -287,6 +294,20 @@ Lemoine.stepflow = function (container, opts) {
         handle = U.browserTree({ roots: inp.roots, selected: inp.selected, singleSelect: inp.singleSelect,
                                  onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
+      case 'numberRange':
+        handle = U.numberRange({ min: inp.min, max: inp.max, lo: inp.lo, hi: inp.hi,
+                                 step: inp.step, decimals: inp.decimals, onChange: onChange });
+        el = labeledRow(inp.label, handle.el, true); break;
+      case 'searchSelect':
+        handle = U.searchSelect({ options: inp.options, value: inp.value, placeholder: inp.placeholder,
+                                  onChange: onChange });
+        el = labeledRow(inp.label, handle.el, true); break;
+      case 'actionButton':
+        handle = U.button({ label: inp.label, variant: inp.variant,
+                            onClick: function () { send('action', { action: 'tool', stepId: stepId, inputId: inp.id }); } });
+        el = handle.el; break;
+      case 'hint':
+        el = U.el('div', 'l-hint', inp.text); handle = { el: el }; break;
       case 'tokenInput':
         handle = U.tokenInput({ value: inp.value, defaultPattern: inp.defaultPattern,
                                 groups: inp.groups, sample: inp.sample, onChange: onChange });
@@ -341,6 +362,16 @@ Lemoine.stepflow = function (container, opts) {
   return { init: init, applyValidation: applyValidation, pushLog: pushLog,
            setProgress: setProgress, complete: complete, setTitle: setTitle,
            setStepInputs: setStepInputs,
+           setPause: function (p) {
+             if (!continueBtn) return;
+             var on = !!(p && p.awaiting);
+             continueBtn.style.display = on ? '' : 'none';
+             skipBtn.style.display     = on ? '' : 'none';
+             if (on) {
+               continueBtn.textContent = (p.continueLabel || 'Continue');
+               skipBtn.textContent     = (p.skipLabel || 'Skip');
+             }
+           },
            // Push a value into one input's display (e.g. a folder path chosen by the C# dialog).
            setInput: function (stepId, inputId, value) {
              var s = steps.filter(function (x) { return x.def.id === stepId; })[0];

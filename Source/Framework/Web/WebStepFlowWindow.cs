@@ -131,6 +131,8 @@ namespace LemoineTools.Framework.Web
                 _bridge.On("state",  OnStateMessage);
                 _bridge.On("action", OnActionMessage);
                 _tool.ValidationChanged += OnToolValidationChanged;
+                if (_tool is IWebRunPausable pausable) pausable.AwaitingUserChanged += OnAwaitingUserChanged;
+                if (_tool is IWebStepRefresh refresh)  refresh.StepInputsChanged    += OnStepInputsChanged;
 
                 _steps = _tool.BuildSteps();
                 _view.CoreWebView2.Navigate(WebAssets.PageUrl("stepflow.html"));
@@ -147,7 +149,9 @@ namespace LemoineTools.Framework.Web
         // ── Outbound (C# -> JS) ──────────────────────────────────────────────
         private void SendInit()
         {
-            var steps = _steps.Select(s => s.ToPayload(_tool.SummaryFor(s.Id), _tool.IsStepVisible(s.Id))).ToList();
+            var confirmable = _tool as IWebConfirmable;
+            var steps = _steps.Select(s => s.ToPayload(
+                _tool.SummaryFor(s.Id), _tool.IsStepVisible(s.Id), confirmable?.ConfirmLabelFor(s.Id))).ToList();
             _bridge?.Send("init", new Dictionary<string, object?>
             {
                 ["title"]    = _tool.Title,
@@ -217,11 +221,24 @@ namespace LemoineTools.Framework.Web
                 // ── Native OS dialogs (rule R26 - JS never touches the filesystem) ──
                 case "browseFolder": BrowseFolder(Str(p, "stepId"), Str(p, "inputId")); break;
                 case "browseFile":   BrowseFile(Str(p, "stepId"), Str(p, "inputId")); break;
+                // ── Tool-declared action buttons (scan / pick-in-Revit) ─────────────
+                case "tool":
+                    try { (_tool as IWebToolAction)?.OnToolAction(Str(p, "stepId"), Str(p, "inputId")); }
+                    catch (Exception ex) { DiagnosticsLog.Error("WebStepFlowWindow: tool action", ex); }
+                    break;
+                // ── Pausable run (mirrors IRunPausable) ─────────────────────────────
+                case "continueRun": (_tool as IWebRunPausable)?.ContinueRun(); break;
+                case "skipItem":    (_tool as IWebRunPausable)?.SkipCurrentItem(); break;
                 // ── Window chrome (the HTML top bar replaces the OS title bar) ──────
                 case "drag":     BeginNativeDrag(); break;
                 case "minimize": WindowState = WindowState.Minimized; break;
                 case "close":    Close(); break;
-                default: // confirm / navigate
+                case "confirm":
+                    try { (_tool as IWebConfirmable)?.OnStepConfirm(Str(p, "stepId")); }
+                    catch (Exception ex) { DiagnosticsLog.Error("WebStepFlowWindow: step confirm", ex); }
+                    SendValidationAndSummaries();
+                    break;
+                default: // navigate
                     SendValidationAndSummaries();
                     break;
             }
@@ -313,6 +330,22 @@ namespace LemoineTools.Framework.Web
 
         private void OnToolValidationChanged(object? sender, EventArgs e) => SafeUi(SendValidationAndSummaries);
 
+        // IWebRunPausable — raised from any thread; show/hide the Continue/Skip footer buttons.
+        private void OnAwaitingUserChanged(bool awaiting, string? continueLabel, string? skipLabel) =>
+            SafeUi(() => _bridge?.Send("pause", new Dictionary<string, object?>
+            {
+                ["awaiting"]      = awaiting,
+                ["continueLabel"] = continueLabel,
+                ["skipLabel"]     = skipLabel,
+            }));
+
+        // IWebStepRefresh — tool signals a step's inputs are stale (async scan/pick landed).
+        private void OnStepInputsChanged(string stepId) => SafeUi(() =>
+        {
+            SendStepInputs(stepId);
+            SendValidationAndSummaries();
+        });
+
         // ── Theme / lifetime ─────────────────────────────────────────────────
         private void OnThemeChanged(ThemePalette t) => SafeUi(() =>
         {
@@ -338,6 +371,8 @@ namespace LemoineTools.Framework.Web
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Dispatcher.UnhandledException      -= OnUnhandled;
             _tool.ValidationChanged            -= OnToolValidationChanged;
+            if (_tool is IWebRunPausable pausable) pausable.AwaitingUserChanged -= OnAwaitingUserChanged;
+            if (_tool is IWebStepRefresh refresh)  refresh.StepInputsChanged    -= OnStepInputsChanged;
             RunLogSink.Clear();
             (_tool as IWebToolCleanup)?.OnWindowClosed();
             try { _view?.Dispose(); }

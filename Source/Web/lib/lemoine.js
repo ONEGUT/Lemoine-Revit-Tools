@@ -490,6 +490,71 @@ Lemoine.ui = (function () {
     return { el: root, getSelected: function () { return Object.keys(selected); } };
   }
 
+  // ── NumberRange (min/max stepper pair) ──────────────────────────────────────
+  // opts: { min, max, lo, hi, step, decimals, onChange({min,max}) } - lo/hi are the
+  // current values; commit keeps lo <= hi (mirrors the WPF NumberRange contract).
+  function numberRange(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-range');
+    var lo = num(opts.lo, num(opts.min, 0)), hi = num(opts.hi, num(opts.max, 100));
+    function fire() { if (opts.onChange) opts.onChange({ min: lo, max: hi }); }
+    var loS = stepper({ min: opts.min, max: opts.max, step: opts.step, decimals: opts.decimals, value: lo,
+      onChange: function (v) { lo = v; if (lo > hi) { hi = lo; hiS.setValue(hi); } fire(); } });
+    var hiS = stepper({ min: opts.min, max: opts.max, step: opts.step, decimals: opts.decimals, value: hi,
+      onChange: function (v) { hi = v; if (hi < lo) { lo = hi; loS.setValue(lo); } fire(); } });
+    root.appendChild(loS.el);
+    root.appendChild(el('span', 'to', 'to'));
+    root.appendChild(hiS.el);
+    return { el: root, getValue: function () { return { min: lo, max: hi }; } };
+  }
+
+  // ── SearchSelect (filterable single-pick dropdown) ──────────────────────────
+  // opts: { options:[string], value, placeholder, onChange(value) }. In-page list popup
+  // (never a native/WPF popup - R27); commits on click or Enter, filters as you type.
+  function searchSelect(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-search');
+    var input = el('input'); input.type = 'text'; input.spellcheck = false;
+    input.value = opts.value || '';
+    if (opts.placeholder) input.setAttribute('placeholder', opts.placeholder);
+    var list = el('div', 'list'); list.style.display = 'none';
+    root.appendChild(input); root.appendChild(list);
+    var all = (opts.options || []).slice();
+    var committed = input.value;
+
+    function commit(v) {
+      committed = v; input.value = v; hide();
+      if (opts.onChange) opts.onChange(v);
+    }
+    function hide() { list.style.display = 'none'; }
+    function show(items) {
+      list.innerHTML = '';
+      if (!items.length) { hide(); return; }
+      items.slice(0, 50).forEach(function (o) {
+        var row = el('div', 'opt', o);
+        row.addEventListener('mousedown', function (e) { e.preventDefault(); commit(o); });
+        list.appendChild(row);
+      });
+      list.style.display = '';
+    }
+    input.addEventListener('input', function () {
+      var q = input.value.toLowerCase();
+      show(all.filter(function (o) { return o.toLowerCase().indexOf(q) >= 0; }));
+    });
+    input.addEventListener('focus', function () { show(all); });
+    input.addEventListener('blur', function () { setTimeout(function () { input.value = committed; hide(); }, 120); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        var q = input.value.toLowerCase();
+        var m = all.filter(function (o) { return o.toLowerCase().indexOf(q) >= 0; });
+        if (m.length) commit(m[0]);
+      }
+      if (e.key === 'Escape') { input.value = committed; hide(); }
+    });
+    return { el: root, getValue: function () { return committed; },
+             setValue: function (v) { committed = v || ''; input.value = committed; } };
+  }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
@@ -498,6 +563,7 @@ Lemoine.ui = (function () {
     warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
     checkList: checkList, review: review,
     folderBrowser: folderBrowser, fileBrowser: fileBrowser,
-    tokenInput: tokenInput, browserTree: browserTree
+    tokenInput: tokenInput, browserTree: browserTree,
+    numberRange: numberRange, searchSelect: searchSelect
   };
 })();

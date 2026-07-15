@@ -52,6 +52,40 @@ namespace LemoineTools.Framework.Web
         void OnWindowClosed();
     }
 
+    /// <summary>Optional: custom per-step Confirm label + confirm hook (mirrors IStepConfirmable).</summary>
+    public interface IWebConfirmable
+    {
+        /// <summary>Custom Confirm label for the step, or null for the default.</summary>
+        string? ConfirmLabelFor(string stepId);
+        /// <summary>Called when the user clicks Confirm on the step, before navigation.</summary>
+        void OnStepConfirm(string stepId);
+    }
+
+    /// <summary>Optional: a run that pauses on a manual step (mirrors IRunPausable). While
+    /// awaiting, the shell shows Continue/Skip footer buttons.</summary>
+    public interface IWebRunPausable
+    {
+        /// <summary>(awaiting, continueLabel?, skipLabel?) — raised from any thread; the window marshals.</summary>
+        event Action<bool, string?, string?>? AwaitingUserChanged;
+        void ContinueRun();
+        void SkipCurrentItem();
+    }
+
+    /// <summary>Optional: tool-initiated step content refresh (mirrors IStepAware's refresh
+    /// callback). Raise with a step id after async data lands (scan results, Revit picks) and
+    /// the window re-sends that step's inputs rebuilt from current state.</summary>
+    public interface IWebStepRefresh
+    {
+        event Action<string>? StepInputsChanged;
+    }
+
+    /// <summary>Optional: receives clicks from <see cref="WebInput.Button"/> inputs (scan /
+    /// pick-in-Revit style actions). Runs on the window thread; raise ExternalEvents from here.</summary>
+    public interface IWebToolAction
+    {
+        void OnToolAction(string stepId, string inputId);
+    }
+
     // ── Spec DTOs ────────────────────────────────────────────────────────────
 
     /// <summary>One accordion step. Fluent <see cref="Add"/> builds the input list.</summary>
@@ -69,8 +103,9 @@ namespace LemoineTools.Framework.Web
 
         public WebStep Add(WebInput input) { Inputs.Add(input); return this; }
 
-        public Dictionary<string, object?> ToPayload(string summary, bool visible) =>
-            new Dictionary<string, object?>
+        public Dictionary<string, object?> ToPayload(string summary, bool visible, string? confirmLabel = null)
+        {
+            var d = new Dictionary<string, object?>
             {
                 ["id"]       = Id,
                 ["title"]    = Title,
@@ -79,6 +114,9 @@ namespace LemoineTools.Framework.Web
                 ["hidden"]   = !visible,
                 ["inputs"]   = Inputs.Select(i => i.ToPayload()).ToList(),
             };
+            if (!string.IsNullOrEmpty(confirmLabel)) d["confirmLabel"] = confirmLabel;
+            return d;
+        }
     }
 
     /// <summary>An option in a single/multi select.</summary>
@@ -261,6 +299,47 @@ namespace LemoineTools.Framework.Web
 
             w._props["sample"] = (sample ?? new Dictionary<string, string>())
                 .ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
+            return w;
+        }
+
+        /// <summary>An action button inside a step ("Scan folder", "Pick in Revit"). Clicks route
+        /// to <see cref="IWebToolAction.OnToolAction"/>; no value travels.</summary>
+        public static WebInput Button(string id, string label, string? variant = null)
+        {
+            var w = new WebInput("actionButton", id, label);
+            if (variant != null) w._props["variant"] = variant;
+            return w;
+        }
+
+        /// <summary>A min/max pair of steppers (mirrors NumberRange). Value arrives as
+        /// {"min":x,"max":y} in OnState.</summary>
+        public static WebInput NumberRange(string id, string label,
+            double min, double max, double lo, double hi, double step, int decimals)
+        {
+            var w = new WebInput("numberRange", id, label);
+            w._props["min"] = min; w._props["max"] = max;
+            w._props["lo"] = lo;   w._props["hi"] = hi;
+            w._props["step"] = step; w._props["decimals"] = decimals;
+            return w;
+        }
+
+        /// <summary>A filterable single-pick dropdown (mirrors SearchAutocomplete /
+        /// editable combo). Value is the chosen option string.</summary>
+        public static WebInput SearchSelect(string id, string label, IEnumerable<string> options,
+            string? value = null, string? placeholder = null)
+        {
+            var w = new WebInput("searchSelect", id, label);
+            w._props["options"] = options.Cast<object?>().ToList();
+            w._props["value"]   = value ?? "";
+            if (placeholder != null) w._props["placeholder"] = placeholder;
+            return w;
+        }
+
+        /// <summary>Read-only informational text block (hint/description line).</summary>
+        public static WebInput Hint(string id, string text)
+        {
+            var w = new WebInput("hint", id, null);
+            w._props["text"] = text;
             return w;
         }
 

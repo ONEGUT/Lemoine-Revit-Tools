@@ -164,6 +164,22 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
 .l-tree .lbl { font-size:var(--l-fs-md); color:var(--l-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .l-tree .lbl.folder { color:var(--l-text-sub); font-weight:600; }
 
+/* ── NumberRange ────────────────────────────────────────────────────────────── */
+.l-range { display:flex; align-items:center; gap:8px; }
+.l-range .to { color:var(--l-text-dim); font-size:var(--l-fs-sm); }
+
+/* ── SearchSelect (filterable dropdown, in-page popup) ──────────────────────── */
+.l-search { position:relative; }
+.l-search input { width:100%; height:var(--l-h-input); padding:0 8px; background:var(--l-select-bg);
+                  color:var(--l-text); border:1px solid var(--l-border); border-radius:var(--l-radius-sm);
+                  font-family:var(--l-ui-font); font-size:var(--l-fs-md); outline:none; }
+.l-search input:focus { border-color:var(--l-accent); }
+.l-search .list { position:absolute; left:0; right:0; top:100%; z-index:10; max-height:180px; overflow-y:auto;
+                  background:var(--l-raised); border:1px solid var(--l-border); border-radius:var(--l-radius-sm);
+                  margin-top:2px; }
+.l-search .opt { padding:5px 8px; font-size:var(--l-fs-md); color:var(--l-text); cursor:pointer; }
+.l-search .opt:hover { background:var(--l-accent-dim); }
+
 /* ── TokenInput (naming-pattern editor) ─────────────────────────────────────── */
 .l-token .ghead { font-size:var(--l-fs-sm); color:var(--l-text-dim); text-transform:uppercase; margin:8px 0 4px; }
 .l-token .chips > .ghead:first-child { margin-top:0; }
@@ -275,6 +291,7 @@ html, body { height:100%; }
 .l-flow > .footer { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px;
                     height:var(--l-h-footer); padding:0 12px;
                     background:var(--l-surface); border-top:1px solid var(--l-border); }
+.l-flow > .footer .mid { display:flex; justify-content:center; gap:8px; }
 
 /* Output log (progress now lives in the top strip) */
 .l-run { margin-top:14px; }

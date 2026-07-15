@@ -654,6 +654,12 @@ namespace LemoineTools
                 "(parallel to the WPF version while it is verified).",
                 char.ConvertFromUtf32(0xE74D)));  // Trash
 
+            devPanel.AddItem(Btn(
+                "LT_ToggleWebUi", "Web UI\nOn/Off", "ToggleWebUiCommand",
+                "Toggle the machine-wide Web UI flag: ON = every migrated tool opens its WebView2 " +
+                "window; OFF (default) = the WPF windows. The parallel-verify switch for the migration.",
+                char.ConvertFromUtf32(0xE8AB)));  // Switch
+
             return Result.Succeeded;
         }
 
