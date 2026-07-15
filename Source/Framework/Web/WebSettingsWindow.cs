@@ -120,9 +120,11 @@ namespace LemoineTools.Framework.Web
         private void SendInit() =>
             _bridge?.Send("init", WebSettings.BuildPayload(_activeTab));
 
-        private void OnActionMessage(IReadOnlyDictionary<string, object?> msg)
+        // WebBridge already unwraps the message envelope and invokes handlers with the payload
+        // dict directly (see WebStepFlowWindow.OnActionMessage) — there is no nested "payload"
+        // key here, so read the action/args straight off p.
+        private void OnActionMessage(IReadOnlyDictionary<string, object?> p)
         {
-            if (!(msg.TryGetValue("payload", out var pObj) && pObj is Dictionary<string, object?> p)) return;
             string action = Str(p, "action");
             switch (action)
             {
@@ -182,7 +184,7 @@ namespace LemoineTools.Framework.Web
             catch (Exception ex) { DiagnosticsLog.Swallowed("WebSettingsWindow: SafeUi", ex); }
         }
 
-        private static string Str(Dictionary<string, object?> d, string key) =>
+        private static string Str(IReadOnlyDictionary<string, object?> d, string key) =>
             d.TryGetValue(key, out var v) ? v as string ?? "" : "";
 
         // ── Native window drag from the HTML title bar (mirrors WebStepFlowWindow) ──
