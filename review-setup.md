@@ -12,6 +12,14 @@ you want fixed and I'll apply them on a `review-fixes-setup` branch.
 
 **Totals: 0 Critical · 9 High · 8 Medium · 12 Low.**
 
+> **Resolution (2026-07-15):** All findings fixed on this branch, with the two decisions
+> resolved as: UL-1-2 — pre-existing destination files are warned about in the run log but
+> still overwritten; AC-4-1 — redesigned so each link carries its own "level to move" picker
+> and that picked level is what lands on the host target elevation. The Needs-Windows-test
+> items got their code-side fixes (UL-1-1's unload-before-open, PC-7-1's one-instance-per-file
+> guard, PC-7-2's collateral count + review warning); the appendix test scripts T1–T6 remain
+> the runtime verification to do on a Windows machine.
+
 The headline: Upgrade Links is in strong shape mechanically (memory posture, progress
 cadence, cancellation, externalized text) but has two deep run-lifecycle holes.
 Align and Push are mechanically decent but **neither is externalized at all** —

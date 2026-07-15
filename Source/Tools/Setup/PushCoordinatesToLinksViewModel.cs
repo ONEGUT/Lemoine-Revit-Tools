@@ -19,14 +19,14 @@ namespace LemoineTools.Tools.Setup
     /// </summary>
     public class PushCoordinatesToLinksViewModel : IStepFlowTool, IReviewableTool, IToolCleanup
     {
-        public string Title    => "Push Coordinates to Links";
-        public string RunLabel => "Push in Revit →";
+        public string Title    => AppStrings.T("setup.pushCoordinates.title");
+        public string RunLabel => AppStrings.T("setup.pushCoordinates.runLabel");
 
         public StepDefinition[] Steps => new[]
         {
-            new StepDefinition("links",    "Links to Push",       required: true),
-            new StepDefinition("settings", "Correction Settings",  required: true),
-            new StepDefinition("run",      "Review & Run",         required: false),
+            new StepDefinition("links",    AppStrings.T("setup.pushCoordinates.steps.links"),    required: true),
+            new StepDefinition("settings", AppStrings.T("setup.pushCoordinates.steps.settings"), required: true),
+            new StepDefinition("run",      AppStrings.T("setup.pushCoordinates.steps.run"),      required: false),
         };
 
         private readonly PushCoordinatesToLinksRunHandler? _runHandler;
@@ -74,11 +74,11 @@ namespace LemoineTools.Tools.Setup
         {
             var outer = new StackPanel();
 
-            outer.Children.Add(Label($"Links ({_data.Links.Count} loaded)"));
+            outer.Children.Add(Label(AppStrings.T("setup.pushCoordinates.labels.linksCount", _data.Links.Count)));
 
             if (_data.Links.Count == 0)
             {
-                outer.Children.Add(Dim("No loaded links found."));
+                outer.Children.Add(Dim(AppStrings.T("setup.pushCoordinates.labels.noLinks")));
                 return outer;
             }
 
@@ -91,7 +91,7 @@ namespace LemoineTools.Tools.Setup
             listBorder.Child = list;
 
             outer.Children.Add(listBorder);
-            outer.Children.Add(Dim("Every loaded link is listed — uncheck a link to leave it out of this run."));
+            outer.Children.Add(Dim(AppStrings.T("setup.pushCoordinates.labels.linksHint")));
 
             return outer;
         }
@@ -125,12 +125,12 @@ namespace LemoineTools.Tools.Setup
         {
             var outer = new StackPanel();
 
-            outer.Children.Add(Label("Correct which point(s) in each link"));
-            var toggles = new ToggleSwitches { AccessibleName = "Points to correct" };
+            outer.Children.Add(Label(AppStrings.T("setup.pushCoordinates.labels.pointsQuestion")));
+            var toggles = new ToggleSwitches { AccessibleName = AppStrings.T("setup.pushCoordinates.labels.pointsQuestion") };
             toggles.SetItems(new List<ToggleItem>
             {
-                new ToggleItem { Id = "pbp",    Label = "Project Base Point", DefaultOn = _movePbp },
-                new ToggleItem { Id = "survey", Label = "Survey Point",       DefaultOn = _moveSurvey },
+                new ToggleItem { Id = "pbp",    Label = AppStrings.T("setup.pushCoordinates.labels.projectBasePoint"), DefaultOn = _movePbp },
+                new ToggleItem { Id = "survey", Label = AppStrings.T("setup.pushCoordinates.labels.surveyPoint"),      DefaultOn = _moveSurvey },
             });
             toggles.StateChanged += st =>
             {
@@ -140,7 +140,7 @@ namespace LemoineTools.Tools.Setup
             };
             outer.Children.Add(toggles);
 
-            outer.Children.Add(Dim("Every source is corrected and saved in place. A workshared source is Synchronized With Central so the team's actual central model is corrected — never a copy."));
+            outer.Children.Add(Dim(AppStrings.T("setup.pushCoordinates.labels.savedHint")));
 
             return outer;
         }
@@ -148,7 +148,8 @@ namespace LemoineTools.Tools.Setup
         // ── Review ──────────────────────────────────────────────────────────────
         public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
         {
-            ("links", "Links"), ("points", "Points"),
+            ("links",  AppStrings.T("setup.pushCoordinates.review.itemLinks")),
+            ("points", AppStrings.T("setup.pushCoordinates.review.itemPoints")),
         };
 
         public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
@@ -158,23 +159,24 @@ namespace LemoineTools.Tools.Setup
         };
 
         public IList<string>? ReviewChips => null;
-        public string? ReviewNote =>
-            "Each selected link's own file is corrected and saved, then re-placed in the host using Shared Coordinates.";
+        public string? ReviewNote => AppStrings.T("setup.pushCoordinates.review.note");
         public string? ReviewWarning =>
-            (!_movePbp && !_moveSurvey) ? "Pick at least one point to correct." : null;
+            (!_movePbp && !_moveSurvey) ? AppStrings.T("setup.pushCoordinates.review.warnNoPoints") : null;
 
         private string LinksSummary()
         {
             var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
-            return selected.Count == 0 ? "None" : $"{selected.Count} link(s)";
+            return selected.Count == 0
+                ? AppStrings.T("setup.pushCoordinates.review.linksNone")
+                : AppStrings.T("setup.pushCoordinates.review.linksValue", selected.Count);
         }
 
         private string PointsSummary()
         {
-            if (_movePbp && _moveSurvey) return "Project Base + Survey";
-            if (_movePbp)    return "Project Base Point";
-            if (_moveSurvey) return "Survey Point";
-            return "None";
+            if (_movePbp && _moveSurvey) return AppStrings.T("setup.pushCoordinates.review.pointsBoth");
+            if (_movePbp)    return AppStrings.T("setup.pushCoordinates.review.pointsPbp");
+            if (_moveSurvey) return AppStrings.T("setup.pushCoordinates.review.pointsSurvey");
+            return AppStrings.T("setup.pushCoordinates.review.pointsNone");
         }
 
         public bool IsValid(string stepId)
@@ -191,16 +193,23 @@ namespace LemoineTools.Tools.Setup
         {
             switch (stepId)
             {
-                case "links":    return LinksSummary() == "None" ? "—" : LinksSummary();
+                case "links":
+                    var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
+                    return selected.Count == 0 ? "—" : LinksSummary();
                 case "settings": return PointsSummary();
-                case "run":      return "Ready to run";
+                case "run":      return AppStrings.T("setup.pushCoordinates.summaries.run");
                 default:         return "—";
             }
         }
 
         public void Run(Action<string, string> pushLog, Action<int, int, int, int> onProgress, Action<int, int, int> onComplete)
         {
-            if (_runHandler == null || _runEvent == null) { pushLog("Run handler not registered.", "fail"); onComplete(0, 1, 0); return; }
+            if (_runHandler == null || _runEvent == null)
+            {
+                pushLog(AppStrings.T("setup.pushCoordinates.log.handlerMissing"), "fail");
+                onComplete(0, 1, 0);
+                return;
+            }
 
             _runHandler.MovePbp    = _movePbp;
             _runHandler.MoveSurvey = _moveSurvey;
@@ -214,7 +223,7 @@ namespace LemoineTools.Tools.Setup
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog("Raising Revit ExternalEvent…", "info");
+            pushLog(AppStrings.T("setup.pushCoordinates.log.starting"), "info");
             _runEvent.Raise();
         }
 

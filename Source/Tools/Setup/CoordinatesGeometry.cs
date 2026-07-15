@@ -15,7 +15,7 @@ namespace LemoineTools.Tools.Setup
         private const double Eps = 1e-9;
 
         /// <summary>
-        /// A grid as a flat XY line: a point on it and a normalised XY direction.
+        /// A grid as a flat XY line: a point on it and a normalized XY direction.
         /// Returns false for a grid with no straight curve or a degenerate (vertical-in-XY) line.
         /// </summary>
         public static bool TryGridLine(Grid g, out XYZ point, out XYZ dir)

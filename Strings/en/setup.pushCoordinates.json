@@ -1,0 +1,66 @@
+// setup.pushCoordinates.json — Push Coordinates to Links tool
+// (PushCoordinatesToLinksViewModel / PushCoordinatesToLinksRunHandler). The
+// Synchronize-With-Central history comment stays hardcoded in the handler — it is
+// written into other teams' central files and is treated as a logic token.
+{
+  "title": "Push Coordinates to Links",
+  "runLabel": "Push in Revit →",
+  "steps": {
+    "links":    "Links to Push",
+    "settings": "Correction Settings",
+    "run":      "Review & Run"
+  },
+  "labels": {
+    "linksCount":      "Links ({0} loaded)",
+    "noLinks":         "No loaded links found.",
+    "linksHint":       "Every loaded link is listed — uncheck a link to leave it out of this run.",
+    "pointsQuestion":  "Correct which point(s) in each link",
+    "projectBasePoint": "Project Base Point",
+    "surveyPoint":     "Survey Point",
+    "savedHint":       "Every source is corrected and saved in place. A workshared source is Synchronized With Central so the team's actual central model is corrected — never a copy."
+  },
+  "review": {
+    "itemLinks":    "Links",
+    "itemPoints":   "Points",
+    "linksNone":    "None",
+    "linksValue":   "{0} link(s)",
+    "pointsBoth":   "Project Base + Survey",
+    "pointsPbp":    "Project Base Point",
+    "pointsSurvey": "Survey Point",
+    "pointsNone":   "None",
+    "note":         "Each selected link's own file is corrected and saved, then re-placed in the host using Shared Coordinates. Dimensions, tags, or overrides attached to the old link placement may not survive the re-place.",
+    "warnNoPoints": "Pick at least one point to correct."
+  },
+  "summaries": {
+    "run": "Ready to run"
+  },
+  "log": {
+    "handlerMissing":   "Internal error: run handler not registered.",
+    "starting":         "Starting push…",
+    "noDoc":            "No active document.",
+    "noLinksSelected":  "No links selected.",
+    "hostPbpMissing":   "⚠ Host Project Base Point not found — Project Base Point correction skipped for every link.",
+    "hostSurveyMissing": "⚠ Host Survey Point not found — Survey Point correction skipped for every link.",
+    "noPoints":         "No host reference point available — nothing to push.",
+    "instanceGone":     "⚠ {0}: that link isn't in the model anymore — skipped.",
+    "typeMissing":      "⚠ {0}: could not resolve its link type — skipped.",
+    "noExternalRef":    "⚠ {0}: has no external file reference — skipped.",
+    "pathFail":         "⚠ {0}: could not resolve its source file ({1}) — skipped.",
+    "fileMissing":      "⚠ {0}: source file not found on disk ({1}) — skipped.",
+    "multiInstance":    "⚠ {0}: this file is placed {1} times in the model — pushing it through this instance only; reposition the other placements manually afterward.",
+    "multiInstanceSkipped": "⚠ {0}: skipped — this file was already pushed through another instance this run.",
+    "linkFail":         "✗ {0}: {1}",
+    "unloadFail":       "✗ {0}: could not unload the link ({1}) — skipped.",
+    "openFail":         "✗ {0}: could not open its source file — skipped.",
+    "notCorrected":     "✗ {0}: the base points couldn't be corrected — nothing was saved for this link.",
+    "pointMissing":     "⚠ {0} not found in the link's own document.",
+    "pointFail":        "⚠ Could not move the link's own {0}: {1}",
+    "publishFail":      "✗ {0}: reloaded the corrected file but could not publish shared coordinates ({1}) — link left as-is.",
+    "collateral":       "⚠ {0}: {1} dependent element(s) (dimensions, tags, or overrides) were removed along with the old link placement.",
+    "pushed":           "✓ {0}: corrected in its own file and re-placed via Shared Coordinates.",
+    "recoveryFail":     "⚠ {0}: left unloaded after a failure — reload it manually via Manage Links.",
+    "nonFatal":         "{0} non-fatal issue(s) recorded — see diagnostics log.",
+    "done":             "Done — {0} pushed, {1} skipped, {2} failed.",
+    "aborted":          "Run aborted: {0}"
+  }
+}

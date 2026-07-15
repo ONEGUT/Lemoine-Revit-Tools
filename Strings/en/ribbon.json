@@ -21,7 +21,7 @@
   "buttons": {
     "upgradeLinks": {
       "label": "Upgrade &\nLink Models",
-      "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat."
+      "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (to a folder you choose, back over the original, or as a cloud model), and link it into the active model. Files are processed one at a time to keep memory flat."
     },
     "linkAudit": {
       "label": "Link\nAudit",

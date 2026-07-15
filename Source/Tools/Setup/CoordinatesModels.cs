@@ -34,7 +34,7 @@ namespace LemoineTools.Tools.Setup
     /// cross each other, so the Grid 2 picker can be filtered to grids that actually intersect
     /// the chosen Grid 1 (see AlignCoordinatesViewModel.GridsCross). A grid whose curve isn't a
     /// straight Line (arc/spline) has <see cref="IsLine"/> false and is treated as always
-    /// crossing — never filtered out, since curved-grid intersection isn't worth modelling here.
+    /// crossing — never filtered out, since curved-grid intersection isn't worth modeling here.
     /// </summary>
     public sealed class GridGeom
     {
@@ -46,7 +46,9 @@ namespace LemoineTools.Tools.Setup
     /// <summary>
     /// A loaded Revit link, with the grids it contains (offered for that link's own
     /// Grid Intersection override — no longer required to match the host's grid names, and no
-    /// longer used to filter which links are selectable).
+    /// longer used to filter which links are selectable) and its level names (offered for the
+    /// per-link "level to move to the target elevation" picker when the host Z method is
+    /// Matched Level).
     /// </summary>
     public sealed class AlignLinkInfo
     {
@@ -54,6 +56,7 @@ namespace LemoineTools.Tools.Setup
         public long            LinkInstId { get; set; }
         public HashSet<string> GridNames  { get; set; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
         public List<GridGeom>  Grids      { get; set; } = new List<GridGeom>();
+        public List<string>    LevelNames { get; set; } = new List<string>();
     }
 
     /// <summary>
@@ -71,6 +74,10 @@ namespace LemoineTools.Tools.Setup
         public AnchorSource  AnchorSource { get; set; } = AnchorSource.InternalOrigin;
         public string        Grid1Name    { get; set; } = "";
         public string        Grid2Name    { get; set; } = "";
+
+        /// <summary>The level in THIS link that the run moves to the host target elevation
+        /// (Matched Level Z method only). Empty = the link has no levels; Z is left alone.</summary>
+        public string        LevelName    { get; set; } = "";
     }
 
     /// <summary>
