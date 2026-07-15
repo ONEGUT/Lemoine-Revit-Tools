@@ -35,8 +35,9 @@ namespace LemoineTools.Tools.Setup
 
         private readonly Dictionary<long, PushLinkSpec> _linkSpecs = new Dictionary<long, PushLinkSpec>();
 
-        private bool _movePbp    = true;
-        private bool _moveSurvey = true;
+        private bool _movePbp        = true;
+        private bool _moveSurvey     = true;
+        private bool _publishReplace = false;   // opt-in — shared-coordinate workflows only
 
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
@@ -142,21 +143,57 @@ namespace LemoineTools.Tools.Setup
 
             outer.Children.Add(Dim(AppStrings.T("setup.pushCoordinates.labels.savedHint")));
 
+            // Shared-coordinate publish + instance re-place — opt-in (off by default). This is the
+            // step that republishes coordinates and deletes/recreates the instance (dropping any
+            // dependent dimensions/tags/overrides); most non-shared-coordinate projects leave it off.
+            var pubToggle = new ToggleSwitches { AccessibleName = AppStrings.T("setup.pushCoordinates.labels.publishLabel"), Margin = new Thickness(0, 10, 0, 0) };
+            pubToggle.SetItems(new List<ToggleItem>
+            {
+                new ToggleItem { Id = "publish", Label = AppStrings.T("setup.pushCoordinates.labels.publishLabel"), Desc = AppStrings.T("setup.pushCoordinates.labels.publishDesc"), DefaultOn = _publishReplace },
+            });
+            pubToggle.StateChanged += st => { _publishReplace = st.TryGetValue("publish", out var pub) && pub; Changed(); };
+            outer.Children.Add(pubToggle);
+
             return outer;
         }
 
         // ── Review ──────────────────────────────────────────────────────────────
-        public IList<(string id, string label)> ReviewItems { get; } = new List<(string, string)>
+        // Two global cards (what points, shared-coords on/off) plus one card PER selected link
+        // showing exactly what will and won't change in that link — read fresh each render.
+        public IList<(string id, string label)> ReviewItems
         {
-            ("links",  AppStrings.T("setup.pushCoordinates.review.itemLinks")),
-            ("points", AppStrings.T("setup.pushCoordinates.review.itemPoints")),
-        };
+            get
+            {
+                var items = new List<(string, string)>
+                {
+                    ("points", AppStrings.T("setup.pushCoordinates.review.itemPoints")),
+                    ("shared", AppStrings.T("setup.pushCoordinates.review.itemShared")),
+                };
+                foreach (var spec in _linkSpecs.Values.Where(s => s.Selected))
+                    items.Add(("link_" + spec.LinkInstId, spec.LinkName));
+                return items;
+            }
+        }
 
-        public IDictionary<string, string> ReviewValues => new Dictionary<string, string>
+        public IDictionary<string, string> ReviewValues
         {
-            ["links"]  = LinksSummary(),
-            ["points"] = PointsSummary(),
-        };
+            get
+            {
+                var vals = new Dictionary<string, string>
+                {
+                    ["points"] = PointsSummary(),
+                    ["shared"] = _publishReplace
+                        ? AppStrings.T("setup.pushCoordinates.review.sharedOn")
+                        : AppStrings.T("setup.pushCoordinates.review.sharedOff"),
+                };
+                string effect = _publishReplace
+                    ? AppStrings.T("setup.pushCoordinates.review.linkEffectPublish", PointsSummary())
+                    : AppStrings.T("setup.pushCoordinates.review.linkEffectNoPublish", PointsSummary());
+                foreach (var spec in _linkSpecs.Values.Where(s => s.Selected))
+                    vals["link_" + spec.LinkInstId] = effect;
+                return vals;
+            }
+        }
 
         public IList<string>? ReviewChips => null;
         public string? ReviewNote => AppStrings.T("setup.pushCoordinates.review.note");
@@ -196,7 +233,7 @@ namespace LemoineTools.Tools.Setup
                 case "links":
                     var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
                     return selected.Count == 0 ? "—" : LinksSummary();
-                case "settings": return PointsSummary();
+                case "settings": return AppStrings.T("setup.pushCoordinates.summaries.settings", PointsSummary(), _publishReplace ? "✓" : "✗");
                 case "run":      return AppStrings.T("setup.pushCoordinates.summaries.run");
                 default:         return "—";
             }
@@ -211,8 +248,9 @@ namespace LemoineTools.Tools.Setup
                 return;
             }
 
-            _runHandler.MovePbp    = _movePbp;
-            _runHandler.MoveSurvey = _moveSurvey;
+            _runHandler.MovePbp        = _movePbp;
+            _runHandler.MoveSurvey     = _moveSurvey;
+            _runHandler.PublishReplace = _publishReplace;
             _runHandler.LinkSpecs  = _linkSpecs.Values.Select(s => new PushLinkSpec
             {
                 LinkInstId = s.LinkInstId,

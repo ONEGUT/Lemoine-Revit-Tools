@@ -51,6 +51,10 @@ namespace LemoineTools.Tools.Setup
         // ── Run payload (set by the ViewModel before Raise) ──────────────────────
         public bool MovePbp    { get; set; } = true;
         public bool MoveSurvey { get; set; } = true;
+        // Opt-in: republish the host's shared coordinates to the link and delete/recreate the
+        // instance. Off by default — most projects only want the link's base points corrected and
+        // saved, and the re-place drops dependent dimensions/tags/overrides.
+        public bool PublishReplace { get; set; } = false;
 
         public List<PushLinkSpec> LinkSpecs { get; set; } = new List<PushLinkSpec>();
 
@@ -249,22 +253,22 @@ namespace LemoineTools.Tools.Setup
                         return PushResult.Failed;
                     }
 
-                    // All-or-nothing: a link whose points can't ALL be corrected must not be
-                    // saved (or synced) at all — otherwise the run would sync a central file
-                    // with a history comment claiming a correction that never happened.
-                    bool corrected;
+                    // Correct each requested point independently and report it per point. Save
+                    // only if at least one requested point actually moved — never sync a central
+                    // file with a history comment claiming a correction that never happened.
+                    bool anyCorrected;
                     using (var tx = new Transaction(linkedOpen, "Correct Base Points"))
                     {
                         tx.Start();
                         ConfigureFailures(tx);
-                        bool pbpOk = pbpTargetInternal == null ||
-                            MoveBasePoint(linkedOpen, BasePoint.GetProjectBasePoint(linkedOpen), pbpTargetInternal, T("labels.projectBasePoint"));
-                        bool surveyOk = surveyTargetInternal == null ||
-                            MoveBasePoint(linkedOpen, BasePoint.GetSurveyPoint(linkedOpen), surveyTargetInternal, T("labels.surveyPoint"));
-                        corrected = pbpOk && surveyOk;
-                        if (corrected) tx.Commit(); else tx.RollBack();
+                        bool pbpMoved = pbpTargetInternal != null &&
+                            MoveBasePoint(linkedOpen, BasePoint.GetProjectBasePoint(linkedOpen), pbpTargetInternal, T("labels.projectBasePoint"), spec.LinkName) == PointResult.Moved;
+                        bool surveyMoved = surveyTargetInternal != null &&
+                            MoveBasePoint(linkedOpen, BasePoint.GetSurveyPoint(linkedOpen), surveyTargetInternal, T("labels.surveyPoint"), spec.LinkName) == PointResult.Moved;
+                        anyCorrected = pbpMoved || surveyMoved;
+                        if (anyCorrected) tx.Commit(); else tx.RollBack();
                     }
-                    if (!corrected)
+                    if (!anyCorrected)
                     {
                         Log(T("log.notCorrected", spec.LinkName), "fail");
                         return PushResult.Failed;   // finally closes without saving; recovery reload restores the link
@@ -302,6 +306,15 @@ namespace LemoineTools.Tools.Setup
                 linkType.LoadFrom(srcMpForReload, new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
                 unloaded = false;   // reloaded — no longer needs the recovery reload below
 
+                // The base points are corrected and saved — the core goal is done. Publishing
+                // shared coordinates + re-placing the instance is an opt-in extra for shared-
+                // coordinate workflows only; skip it entirely otherwise.
+                if (!PublishReplace)
+                {
+                    Log(T("log.pushedCorrectOnly", spec.LinkName), "pass");
+                    return PushResult.Pushed;
+                }
+
                 // ── Publish shared coordinates, then re-place the instance to pick them up ──
                 bool published = false;
                 using (var tx = new Transaction(hostDoc, "Publish Shared Coordinates"))
@@ -316,11 +329,14 @@ namespace LemoineTools.Tools.Setup
                     catch (Exception ex)
                     {
                         DiagnosticsLog.Swallowed($"PushCoordinatesToLinks: publish coordinates for {spec.LinkName}", ex);
-                        Log(T("log.publishFail", spec.LinkName, ex.Message), "fail");
+                        Log(T("log.publishFail", spec.LinkName, ex.Message), "warn");
                     }
                     tx.Commit();
                 }
-                if (!published) return PushResult.Failed;
+                // Publishing is a bonus step — the correction already succeeded and saved, so a
+                // publish failure is a warning (logged above), not a link failure. Leave the
+                // instance in place (no delete/recreate) and count the link as pushed.
+                if (!published) return PushResult.Pushed;
 
                 using (var tx = new Transaction(hostDoc, "Reposition Link via Shared Coordinates"))
                 {
@@ -347,7 +363,7 @@ namespace LemoineTools.Tools.Setup
                     tx.Commit();
                 }
 
-                Log(T("log.pushed", spec.LinkName), "pass");
+                Log(T("log.pushedPublished", spec.LinkName), "pass");
                 return PushResult.Pushed;
             }
             finally
@@ -371,15 +387,17 @@ namespace LemoineTools.Tools.Setup
             }
         }
 
+        private enum PointResult { Moved, NotFound, Failed }
+
         /// <summary>
-        /// Move a base point in the opened link document to <paramref name="targetInternal"/>.
-        /// Returns false when the point is missing or the move throws — the caller treats any
-        /// false as "this link was not corrected" and rolls the whole correction back. The pin
-        /// state is restored in a finally so a failed move can't leave the point unpinned.
+        /// Move a base point in the opened link document to <paramref name="targetInternal"/>,
+        /// logging the per-point outcome under the link's name. <see cref="PointResult.Moved"/>
+        /// includes the already-at-target case (no move needed). The pin state is restored in a
+        /// finally so a failed move can't leave the point unpinned.
         /// </summary>
-        private bool MoveBasePoint(Document doc, BasePoint? bp, XYZ targetInternal, string label)
+        private PointResult MoveBasePoint(Document doc, BasePoint? bp, XYZ targetInternal, string label, string linkName)
         {
-            if (bp == null) { Log(T("log.pointMissing", label), "warn"); return false; }
+            if (bp == null) { Log(T("log.pointMissing", linkName, label), "warn"); return PointResult.NotFound; }
 
             bool wasPinned = false;
             try
@@ -390,13 +408,15 @@ namespace LemoineTools.Tools.Setup
                 var delta = targetInternal - bp.Position;
                 if (delta.GetLength() > Eps)
                     ElementTransformUtils.MoveElement(doc, bp.Id, delta);
-                return true;
+
+                Log(T("log.pointMoved", linkName, label), "pass");
+                return PointResult.Moved;
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error($"PushCoordinatesToLinks: move {label}", ex);
-                Log(T("log.pointFail", label, ex.Message), "warn");
-                return false;
+                Log(T("log.pointFail", linkName, label, ex.Message), "warn");
+                return PointResult.Failed;
             }
             finally
             {

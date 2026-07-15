@@ -20,6 +20,16 @@ you want fixed and I'll apply them on a `review-fixes-setup` branch.
 > guard, PC-7-2's collateral count + review warning); the appendix test scripts T1–T6 remain
 > the runtime verification to do on a Windows machine.
 >
+> **Follow-up (Push reporting + optional publish):** After a Windows run corrected the base
+> points but failed at `PublishCoordinates` (a project not using shared coordinates), Push was
+> reworked: the "publish shared coordinates + re-place the instance" step is now **opt-in, off
+> by default** (it's the step that deletes/recreates the instance and drops dependent
+> dimensions/tags). The default run just corrects the base points and saves. `MoveBasePoint`
+> now reports **per point, per link** ("Project Base Point corrected ✓" / "not found" / "failed"),
+> and a publish failure is a **warning**, not a link failure, since the correction already
+> succeeded. The Review step lists, per selected link, exactly what will and won't change. This
+> refines PC-3-1/PC-7-2 — the destructive/failing path is no longer on by default.
+>
 > **Follow-up (anchor redesign):** Align Coordinates was reworked past AC-4-1's original
 > shape — the host and every link now pick from a four-way reference dropdown (Internal Origin,
 > Project Base Point, Survey Point, Grid Intersection + level). Each source carries its own Z;
