@@ -20,6 +20,15 @@ you want fixed and I'll apply them on a `review-fixes-setup` branch.
 > guard, PC-7-2's collateral count + review warning); the appendix test scripts T1–T6 remain
 > the runtime verification to do on a Windows machine.
 >
+> **Follow-up (anchor redesign):** Align Coordinates was reworked past AC-4-1's original
+> shape — the host and every link now pick from a four-way reference dropdown (Internal Origin,
+> Project Base Point, Survey Point, Grid Intersection + level). Each source carries its own Z;
+> a level picker appears only for Grid Intersection. Rotation fires only when both the host and
+> the link carry a direction (Grid or Survey Point). The host's "move which points" toggles
+> stay, minus whichever point is itself the reference (it stays put). Survey-point direction is
+> read from `ActiveProjectLocation.GetProjectPosition().Angle` — self-consistent for
+> survey↔survey; grid↔survey mixes need a plot check (new test T7).
+>
 > **Follow-up (Windows run):** Push Coordinates failed at `Unload` with *"operation is not
 > permitted when there is any open transaction."* Root cause: `RevitLinkType.Unload/LoadFrom`
 > are link-management calls that must run OUTSIDE a transaction — the code had wrapped them in

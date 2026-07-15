@@ -3,28 +3,20 @@ using System.Collections.Generic;
 namespace LemoineTools.Tools.Setup
 {
     /// <summary>
-    /// How a document's (host or a link's) alignment anchor point + direction is resolved.
-    /// <see cref="InternalOrigin"/> is the default — it reproduces Revit's native "Auto – Origin
-    /// to Origin" link positioning, which matches how these projects are normally set up (every
-    /// discipline modeled off its own Internal Origin). <see cref="GridIntersection"/> is the
-    /// legacy named-grid-pair mechanism, kept as an override for the exceptional link that
-    /// wasn't modeled on-origin.
+    /// Which feature of a document (host or a link) defines its alignment reference point — and,
+    /// for the directional ones, its orientation. Each carries its own elevation: Internal Origin
+    /// is Z = 0, Project Base Point / Survey Point take their marker's own elevation, and Grid
+    /// Intersection pairs a grid∩ (XY) with a picked level (Z). Grid Intersection and Survey Point
+    /// carry a direction (grid-line bearing / survey true-north angle) so a link using either can
+    /// be rotated to match the host; Internal Origin and Project Base Point carry no direction, so
+    /// a link (or host) using them is only translated, never rotated.
     /// </summary>
     public enum AnchorSource
     {
         InternalOrigin,
+        ProjectBasePoint,
+        SurveyPoint,
         GridIntersection,
-    }
-
-    /// <summary>
-    /// How a document's Z (elevation) anchor is resolved. Independent of <see cref="AnchorSource"/>
-    /// — a link can use Grid Intersection for its XY anchor while Z still targets the host's
-    /// Internal Origin (Z = 0), or vice versa.
-    /// </summary>
-    public enum ZSource
-    {
-        InternalOriginZ,
-        MatchedLevel,
     }
 
     /// <summary>
@@ -60,9 +52,10 @@ namespace LemoineTools.Tools.Setup
     }
 
     /// <summary>
-    /// Per-link alignment method for a run. Defaults to the run-level <see cref="AnchorSource.InternalOrigin"/>
-    /// (that link's own Internal Origin is the point moved onto the resolved host anchor); when
-    /// <see cref="Overridden"/> the link uses its own named grid pair instead.
+    /// Per-link alignment for a run: which of the link's own features (<see cref="AnchorSource"/>)
+    /// is moved onto the resolved host reference. Defaults to <see cref="AnchorSource.InternalOrigin"/>.
+    /// <see cref="LevelName"/> / <see cref="Grid1Name"/> / <see cref="Grid2Name"/> apply only when
+    /// <see cref="AnchorSource"/> is <see cref="AnchorSource.GridIntersection"/>.
     /// </summary>
     public sealed class LinkAlignSpec
     {
@@ -70,13 +63,12 @@ namespace LemoineTools.Tools.Setup
         public string LinkName   { get; set; } = "";
         public bool   Selected   { get; set; } = true;
 
-        public bool          Overridden   { get; set; }
         public AnchorSource  AnchorSource { get; set; } = AnchorSource.InternalOrigin;
         public string        Grid1Name    { get; set; } = "";
         public string        Grid2Name    { get; set; } = "";
 
-        /// <summary>The level in THIS link that the run moves to the host target elevation
-        /// (Matched Level Z method only). Empty = the link has no levels; Z is left alone.</summary>
+        /// <summary>For a Grid Intersection anchor: the level in THIS link that supplies the Z
+        /// (elevation) of the reference point. Empty = the link has no levels; Z falls back to 0.</summary>
         public string        LevelName    { get; set; } = "";
     }
 

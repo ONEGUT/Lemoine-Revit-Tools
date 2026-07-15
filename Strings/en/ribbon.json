@@ -29,7 +29,7 @@
     },
     "alignCoordinates": {
       "label": "Align\nCoordinates",
-      "tip":   "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."
+      "tip":   "Pick a host reference — Internal Origin, Project Base Point, Survey Point, or a grid intersection + level — move the host Survey Point and/or Project Base Point onto it, then align every selected link by its own chosen origin, rotating to match where both sides use a grid or survey point. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."
     },
     "compareGrids": {
       "label": "Compare\nGrids",

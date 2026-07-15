@@ -8,18 +8,20 @@ using LemoineTools.Framework;
 namespace LemoineTools.Tools.Setup
 {
     /// <summary>
-    /// Aligns the host project to a resolved anchor (Internal Origin by default, or a picked grid
-    /// intersection), then aligns every selected link to that same anchor:
-    ///   1. Move the Survey Point and/or Project Base Point to the resolved host anchor.
-    ///   2. For each selected link: resolve that link's own point + direction (its own Internal
-    ///      Origin by default, or its own named grid intersection when overridden), rotate
-    ///      (vertical axis) so it runs parallel to the host's anchor direction, then translate so
-    ///      it coincides with the host anchor. With the Matched Level Z method, the link's own
-    ///      user-picked level (<see cref="LinkAlignSpec.LevelName"/>) is what gets moved to the
-    ///      host target elevation; a link without that level keeps its current Z (reported).
+    /// Aligns the host project and its links to a resolved host reference.
+    ///   1. Resolve the host reference point (and, for Grid Intersection / Survey Point, a
+    ///      direction) from <see cref="HostAnchorSource"/>. Each source carries its own elevation:
+    ///      Internal Origin = 0, Project Base Point / Survey Point = the marker's own elevation,
+    ///      Grid Intersection = the picked level's elevation.
+    ///   2. Move the host Survey Point and/or Project Base Point onto that reference (the point
+    ///      that IS the reference is excluded upstream in the ViewModel, so it never moves).
+    ///   3. For each selected link: resolve that link's own reference (its own <see cref="AnchorSource"/>),
+    ///      rotate it (vertical axis) to match the host's direction when BOTH sides carry one
+    ///      (Grid Intersection or Survey Point), then translate so the link's reference point
+    ///      lands on the host reference — full 3D, since each side supplies its own Z.
     ///
-    /// Each link's rotate+translate runs inside its own <see cref="SubTransaction"/> so a failure
-    /// mid-link rolls that link back to untouched instead of committing a half-transformed state.
+    /// Each link's rotate + translate runs in its own <see cref="SubTransaction"/> so a mid-link
+    /// failure rolls that link back to untouched instead of committing a half-transformed state.
     ///
     /// This only repositions the host's copy of each link instance. Use the separate "Push
     /// Coordinates to Links" tool to commit the correction into the linked files themselves.
@@ -30,10 +32,9 @@ namespace LemoineTools.Tools.Setup
         public AnchorSource HostAnchorSource { get; set; } = AnchorSource.InternalOrigin;
         public string       HostGrid1Name    { get; set; } = "";
         public string       HostGrid2Name    { get; set; } = "";
-        public ZSource      HostZSource      { get; set; } = ZSource.InternalOriginZ;
         public string       HostLevelName    { get; set; } = "";
 
-        public bool MoveSurvey { get; set; } = true;
+        public bool MoveSurvey { get; set; } = true;   // already excludes the reference point
         public bool MovePbp    { get; set; } = true;
         public bool Rotate     { get; set; } = true;
 
@@ -59,61 +60,29 @@ namespace LemoineTools.Tools.Setup
                 var doc = app.ActiveUIDocument?.Document;
                 if (doc == null) { Log(T("log.noDoc"), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
 
-                // ── Resolve the host anchor: point (XY) + direction, and Z ───────
-                XYZ hostXY; double hostBearing;
-                if (HostAnchorSource == AnchorSource.GridIntersection)
+                // ── Resolve the host reference (point + direction) ──────────────
+                var hostRes = ResolveAnchor(doc, HostAnchorSource, HostGrid1Name, HostGrid2Name, HostLevelName);
+                if (!hostRes.Ok)
                 {
-                    var g1 = FindGrid(doc, HostGrid1Name);
-                    var g2 = FindGrid(doc, HostGrid2Name);
-                    if (g1 == null || g2 == null)
-                    {
-                        Log(T("log.hostGridMissing", g1 == null ? HostGrid1Name : HostGrid2Name), "fail");
-                        OnComplete?.Invoke(0, 1, 0); return;
-                    }
-                    if (!CoordinatesGeometry.TryGridLine(g1, out var hp1, out var hd1))
-                    {
-                        Log(T("log.hostGridNotLine", HostGrid1Name), "fail");
-                        OnComplete?.Invoke(0, 1, 0); return;
-                    }
-                    if (!CoordinatesGeometry.TryGridLine(g2, out var hp2, out var hd2))
-                    {
-                        Log(T("log.hostGridNotLine", HostGrid2Name), "fail");
-                        OnComplete?.Invoke(0, 1, 0); return;
-                    }
-                    var xy = CoordinatesGeometry.Intersect(hp1, hd1, hp2, hd2);
-                    if (xy == null)
-                    {
-                        Log(T("log.hostParallel", HostGrid1Name, HostGrid2Name), "fail");
-                        OnComplete?.Invoke(0, 1, 0); return;
-                    }
-                    hostXY = xy;
-                    hostBearing = CoordinatesGeometry.Bearing(hd1);
-                    Log(T("log.hostAnchorGrids", HostGrid1Name, HostGrid2Name), "info");
+                    Log(T("log.hostRefFail", hostRes.Fail), "fail");
+                    OnComplete?.Invoke(0, 1, 0); return;
                 }
-                else
+                var pHost = hostRes.Point;                       // host internal == host world
+                bool hostHasDir = hostRes.Dir != null;
+                double hostBearing = hostHasDir ? CoordinatesGeometry.Bearing(hostRes.Dir!) : 0.0;
+                if (HostAnchorSource == AnchorSource.SurveyPoint && hostRes.Dir == null)
+                    Log(T("log.noSurveyDir", T("log.descSurvey")), "warn");
+                Log(T("log.hostRef", hostRes.Desc), "info");
+
+                var toRun = (LinkSpecs ?? new List<LinkAlignSpec>()).Where(s => s.Selected).ToList();
+
+                if (!MoveSurvey && !MovePbp && toRun.Count == 0)
                 {
-                    hostXY = XYZ.Zero;
-                    hostBearing = 0.0;
-                    Log(T("log.hostAnchorOrigin"), "info");
+                    Log(T("log.nothingToMove"), "warn");
+                    OnComplete?.Invoke(0, 0, 0); return;
                 }
 
-                double hostZ;
-                if (HostZSource == ZSource.MatchedLevel)
-                {
-                    var level = FindLevel(doc, HostLevelName);
-                    if (level == null) { Log(T("log.levelMissing", HostLevelName), "fail"); OnComplete?.Invoke(0, 1, 0); return; }
-                    hostZ = level.ProjectElevation;
-                    Log(T("log.hostElevLevel", level.Name), "info");
-                }
-                else
-                {
-                    hostZ = 0.0;
-                    Log(T("log.hostElevOrigin"), "info");
-                }
-
-                var pHost = new XYZ(hostXY.X, hostXY.Y, hostZ);
-
-                // ── Transaction 1: move the host point(s) ────────────────────────
+                // ── Transaction 1: move the host point(s) onto the reference ─────
                 using (var tx = new Transaction(doc, "Align Host Coordinate Points"))
                 {
                     tx.Start();
@@ -124,7 +93,6 @@ namespace LemoineTools.Tools.Setup
                 }
 
                 // ── Transaction 2: rotate + translate each selected link ─────────
-                var toRun = (LinkSpecs ?? new List<LinkAlignSpec>()).Where(s => s.Selected).ToList();
                 using (var tx = new Transaction(doc, "Align Linked Models"))
                 {
                     tx.Start();
@@ -143,7 +111,7 @@ namespace LemoineTools.Tools.Setup
 
                         try
                         {
-                            var res = AlignOneLink(doc, spec, pHost, hostBearing);
+                            var res = AlignOneLink(doc, spec, pHost, hostHasDir, hostBearing);
                             if (res == AlignResult.Aligned) pass++;
                             else if (res == AlignResult.Skipped) skip++;
                             else fail++;
@@ -183,17 +151,94 @@ namespace LemoineTools.Tools.Setup
 
         private enum AlignResult { Aligned, Skipped, Failed }
 
+        /// <summary>A resolved reference: a point in the document's internal coordinates, plus an
+        /// optional direction (null = no orientation, so no rotation).</summary>
+        private sealed class AnchorResolution
+        {
+            public XYZ    Point = XYZ.Zero;
+            public XYZ?   Dir;
+            public string Desc = "";
+            public bool   Ok;
+            public string Fail = "";
+        }
+
         /// <summary>
-        /// Rotate + translate a single link instance so its resolved reference point matches the
-        /// host anchor. The reference point/direction come from <paramref name="spec"/>: that
-        /// link's own Internal Origin by default, or its own named grid intersection when
-        /// overridden. Z: with Internal Origin Z the reference point lands at Z = 0; with Matched
-        /// Level, the link's user-picked level (<see cref="LinkAlignSpec.LevelName"/>) is moved to
-        /// the host target elevation — a link without that level keeps its current Z (reported).
-        /// The rotate + translate run in a SubTransaction so a mid-link failure rolls the link
-        /// back to untouched; the pin state is restored in a finally either way.
+        /// Resolve a document's reference point (internal coords) and optional direction from an
+        /// <see cref="AnchorSource"/>. Internal Origin / Project Base Point carry no direction;
+        /// Survey Point carries the project's true-north rotation; Grid Intersection carries the
+        /// first grid's line bearing. Each carries its own Z.
         /// </summary>
-        private AlignResult AlignOneLink(Document doc, LinkAlignSpec spec, XYZ pHost, double hostBearing)
+        private AnchorResolution ResolveAnchor(Document doc, AnchorSource src, string grid1, string grid2, string levelName)
+        {
+            switch (src)
+            {
+                case AnchorSource.ProjectBasePoint:
+                {
+                    var bp = BasePoint.GetProjectBasePoint(doc);
+                    if (bp == null) return new AnchorResolution { Ok = false, Fail = T("log.pointMissing", T("log.descPbp")) };
+                    return new AnchorResolution { Ok = true, Point = bp.Position, Dir = null, Desc = T("log.descPbp") };
+                }
+
+                case AnchorSource.SurveyPoint:
+                {
+                    var sp = BasePoint.GetSurveyPoint(doc);
+                    if (sp == null) return new AnchorResolution { Ok = false, Fail = T("log.pointMissing", T("log.descSurvey")) };
+                    return new AnchorResolution { Ok = true, Point = sp.Position, Dir = SurveyDir(doc), Desc = T("log.descSurvey") };
+                }
+
+                case AnchorSource.GridIntersection:
+                {
+                    var g1 = FindGrid(doc, grid1);
+                    var g2 = FindGrid(doc, grid2);
+                    if (g1 == null) return new AnchorResolution { Ok = false, Fail = T("log.gridMissing", grid1) };
+                    if (g2 == null) return new AnchorResolution { Ok = false, Fail = T("log.gridMissing", grid2) };
+                    if (!CoordinatesGeometry.TryGridLine(g1, out var p1, out var d1))
+                        return new AnchorResolution { Ok = false, Fail = T("log.gridNotLine", grid1) };
+                    if (!CoordinatesGeometry.TryGridLine(g2, out var p2, out var d2))
+                        return new AnchorResolution { Ok = false, Fail = T("log.gridNotLine", grid2) };
+                    var xy = CoordinatesGeometry.Intersect(p1, d1, p2, d2);
+                    if (xy == null) return new AnchorResolution { Ok = false, Fail = T("log.gridsParallel", grid1, grid2) };
+
+                    var level = FindLevel(doc, levelName);
+                    double z = level?.ProjectElevation ?? 0.0;
+                    string desc = level != null
+                        ? T("log.descGrids", grid1, grid2, level.Name)
+                        : T("log.descGridsNoLevel", grid1, grid2);
+                    return new AnchorResolution { Ok = true, Point = new XYZ(xy.X, xy.Y, z), Dir = d1, Desc = desc };
+                }
+
+                default: // InternalOrigin
+                    return new AnchorResolution { Ok = true, Point = XYZ.Zero, Dir = null, Desc = T("log.descOrigin") };
+            }
+        }
+
+        // The document's survey/true-north direction in its own internal coordinates, from the
+        // active project location's rotation. ⚠ Convention (sign of the angle) is unverified on
+        // Windows — but the SAME convention is used for host and link, so a survey↔survey rotation
+        // is self-consistent regardless; a grid↔survey mix is the case that needs a plot check.
+        private static XYZ? SurveyDir(Document doc)
+        {
+            try
+            {
+                var pos = doc.ActiveProjectLocation?.GetProjectPosition(XYZ.Zero);
+                if (pos == null) return null;
+                double a = pos.Angle;
+                return new XYZ(Math.Cos(a), Math.Sin(a), 0);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("AlignCoordinates: read survey rotation", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Rotate + translate a single link so its resolved reference point lands on the host
+        /// reference. Rotation only happens when the run's Rotate flag is on AND both the host and
+        /// this link carry a direction (Grid Intersection or Survey Point). Runs in a SubTransaction
+        /// so a mid-link failure rolls the link back; the pin state is restored in a finally.
+        /// </summary>
+        private AlignResult AlignOneLink(Document doc, LinkAlignSpec spec, XYZ pHost, bool hostHasDir, double hostBearing)
         {
             var li = doc.GetElement(new ElementId(spec.LinkInstId)) as RevitLinkInstance;
             var ld = li?.GetLinkDocument();
@@ -201,49 +246,13 @@ namespace LemoineTools.Tools.Setup
 
             string linkName = SafeLinkName(ld);
 
-            XYZ refInternal; XYZ dirInternal; string methodNote;
+            var res = ResolveAnchor(ld, spec.AnchorSource, spec.Grid1Name, spec.Grid2Name, spec.LevelName);
+            if (!res.Ok) { Log(T("log.linkSkip", linkName, res.Fail), "warn"); return AlignResult.Skipped; }
+            if (spec.AnchorSource == AnchorSource.SurveyPoint && res.Dir == null)
+                Log(T("log.noSurveyDir", linkName), "warn");
 
-            if (spec.Overridden && spec.AnchorSource == AnchorSource.GridIntersection)
-            {
-                var lg1 = FindGrid(ld, spec.Grid1Name);
-                var lg2 = FindGrid(ld, spec.Grid2Name);
-                if (lg1 == null || lg2 == null)
-                {
-                    Log(T("log.linkGridMissing", linkName, lg1 == null ? spec.Grid1Name : spec.Grid2Name), "warn");
-                    return AlignResult.Skipped;
-                }
-                if (!CoordinatesGeometry.TryGridLine(lg1, out var lp1, out var ld1) ||
-                    !CoordinatesGeometry.TryGridLine(lg2, out var lp2, out var ld2))
-                {
-                    Log(T("log.linkGridNotLine", linkName), "warn");
-                    return AlignResult.Skipped;
-                }
-                var linkXY = CoordinatesGeometry.Intersect(lp1, ld1, lp2, ld2);
-                if (linkXY == null)
-                {
-                    Log(T("log.linkParallel", linkName, spec.Grid1Name, spec.Grid2Name), "warn");
-                    return AlignResult.Skipped;
-                }
-
-                refInternal = new XYZ(linkXY.X, linkXY.Y, 0);
-                dirInternal = ld1;
-                methodNote  = T("log.methodGrids", spec.Grid1Name, spec.Grid2Name);
-            }
-            else
-            {
-                refInternal = XYZ.Zero;
-                dirInternal = XYZ.BasisX;
-                methodNote  = T("log.methodOrigin");
-            }
-
-            // The link's Z anchor for Matched Level mode: the user-picked level in the link.
-            Level? linkLevel = null;
-            bool zSkipped = false;
-            if (HostZSource == ZSource.MatchedLevel)
-            {
-                linkLevel = FindLevel(ld, spec.LevelName);
-                zSkipped  = linkLevel == null;
-            }
+            XYZ refInternal = res.Point;
+            XYZ? dirInternal = res.Dir;
 
             bool wasPinned = false;
             try { wasPinned = li.Pinned; if (wasPinned) li.Pinned = false; }
@@ -260,7 +269,8 @@ namespace LemoineTools.Tools.Setup
                     var pivot = t0.OfPoint(refInternal);
 
                     // ── Rotation about the vertical axis through the pivot ──
-                    if (Rotate)
+                    // Only when both sides carry a direction (grid or survey) and Rotate is on.
+                    if (Rotate && hostHasDir && dirInternal != null)
                     {
                         var linkDirWorld = t0.OfVector(dirInternal);
                         double linkBearing = CoordinatesGeometry.Bearing(new XYZ(linkDirWorld.X, linkDirWorld.Y, 0));
@@ -272,31 +282,11 @@ namespace LemoineTools.Tools.Setup
                         }
                     }
 
-                    // ── Translation: move the (rotated) reference point onto the host anchor ──
+                    // ── Translation: move the (rotated) reference point onto the host reference ──
+                    // Full 3D — each side supplies its own Z.
                     var t1 = li.GetTotalTransform();
                     var refWorld = t1.OfPoint(refInternal);
-
-                    double dz;
-                    if (HostZSource == ZSource.MatchedLevel)
-                    {
-                        if (linkLevel != null)
-                        {
-                            // Move the picked level's elevation (rotation about Z preserves it)
-                            // onto the host target elevation — this is what moves the whole model.
-                            double worldLevelZ = t1.OfPoint(new XYZ(0, 0, linkLevel.ProjectElevation)).Z;
-                            dz = pHost.Z - worldLevelZ;
-                        }
-                        else
-                        {
-                            dz = 0;   // no such level in this link — leave Z alone, reported below
-                        }
-                    }
-                    else
-                    {
-                        dz = pHost.Z - refWorld.Z;
-                    }
-
-                    var delta = new XYZ(pHost.X - refWorld.X, pHost.Y - refWorld.Y, dz);
+                    var delta = pHost - refWorld;
                     if (delta.GetLength() > Eps)
                         ElementTransformUtils.MoveElement(doc, li.Id, delta);
 
@@ -316,8 +306,7 @@ namespace LemoineTools.Tools.Setup
                 catch (Exception ex) { DiagnosticsLog.Swallowed($"AlignCoordinates: re-pin {linkName}", ex); }
             }
 
-            if (zSkipped) Log(T("log.alignedPlanOnly", linkName, methodNote, string.IsNullOrEmpty(spec.LevelName) ? "—" : spec.LevelName), "pass");
-            else Log(T("log.aligned", linkName, methodNote), "pass");
+            Log(T("log.aligned", linkName, res.Desc), "pass");
             return AlignResult.Aligned;
         }
 
@@ -346,7 +335,7 @@ namespace LemoineTools.Tools.Setup
             catch (Exception ex)
             {
                 DiagnosticsLog.Error($"AlignCoordinates: move {label}", ex);
-                Log(T("log.pointFail", label, ex.Message), "fail");
+                Log(T("log.pointMoveFail", label, ex.Message), "fail");
             }
             finally
             {
