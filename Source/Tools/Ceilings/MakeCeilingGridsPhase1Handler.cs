@@ -79,6 +79,7 @@ namespace LemoineTools.Tools.Ceilings
             }
             catch (Exception ex)
             {
+                DiagnosticsLog.Error("MakeCeilingGridsPhase1: ceiling-type scan failed", ex);
                 OnError?.Invoke(ex.Message);
             }
             finally

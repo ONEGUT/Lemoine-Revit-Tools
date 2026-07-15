@@ -40,6 +40,10 @@ namespace LemoineTools.Tools.Ceilings
         /// <summary>Whether to place a ceiling tag at the centroid of each ceiling.</summary>
         public bool   PlaceTags     { get; set; } = false;
 
+        /// <summary>Whether to delete the project's existing heatmap filters before applying
+        /// the new set. Default: true.</summary>
+        public bool   DeleteExisting { get; set; } = true;
+
         // ── Persistence ───────────────────────────────────────────────────────
         private static string FilePath
         {

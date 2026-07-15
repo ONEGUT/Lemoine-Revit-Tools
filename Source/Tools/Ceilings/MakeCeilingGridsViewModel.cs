@@ -34,7 +34,8 @@ namespace LemoineTools.Tools.Ceilings
         {
             new StepDefinition("docs",    AppStrings.T("ceilings.makeGrids.steps.docs"),    required: true),
             new StepDefinition("filter",  AppStrings.T("ceilings.makeGrids.steps.filter"), required: false),
-            new StepDefinition("export",  AppStrings.T("ceilings.makeGrids.steps.export"),      required: true),
+            // Export location is optional — a blank folder creates the views without exporting.
+            new StepDefinition("export",  AppStrings.T("ceilings.makeGrids.steps.export"),      required: false),
             new StepDefinition("run",     AppStrings.T("ceilings.makeGrids.steps.run"),         required: false),
         };
 
@@ -171,7 +172,9 @@ namespace LemoineTools.Tools.Ceilings
                 _scanDone  = false;
                 _scanning  = false;
                 _ceilingTypes.Clear();
-                _excludedTypeKeys.Clear();
+                // Keep the user's type exclusions across a document change — they're name-based,
+                // so PopulateFilterPanel reconciles them against the fresh scan (IntersectWith)
+                // instead of forcing the user to re-exclude everything.
                 OnValidationChanged();
             };
             tabs.SetGroups(
@@ -405,6 +408,18 @@ namespace LemoineTools.Tools.Ceilings
             };
             outer.Children.Add(toggleSwitch);
 
+            var optionalHint = new TextBlock
+            {
+                Text         = AppStrings.T("ceilings.makeGrids.labels.folderOptionalHint"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin       = new Thickness(0, 12, 0, 0),
+                FontStyle    = FontStyles.Italic,
+            };
+            optionalHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            optionalHint.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
+            optionalHint.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(optionalHint);
+
             return outer;
         }
 
@@ -425,13 +440,14 @@ namespace LemoineTools.Tools.Ceilings
             {
                 int total    = DistinctTypeCount();
                 int excluded = _excludedTypeKeys.Count;
+                bool willExport = !string.IsNullOrWhiteSpace(_outputFolder);
                 return new Dictionary<string, string>
                 {
                     ["types"]     = total == 0 ? AppStrings.T("ceilings.makeGrids.review.typesPending") : AppStrings.T("ceilings.makeGrids.review.typesIncluded", total - excluded, total),
-                    ["folder"]    = string.IsNullOrEmpty(_outputFolder) ? "—"
+                    ["folder"]    = !willExport ? AppStrings.T("ceilings.makeGrids.review.folderNone")
                         : (_outputFolder.Length > 40 ? "…" + _outputFolder.Substring(_outputFolder.Length - 37) : _outputFolder),
                     ["subfolder"] = _useCeilingGridsSubfolder ? AppStrings.T("ceilings.makeGrids.review.subfolderOn") : AppStrings.T("ceilings.makeGrids.review.subfolderOff"),
-                    ["dwg"]       = AppStrings.T("ceilings.makeGrids.review.dwg"),
+                    ["dwg"]       = willExport ? AppStrings.T("ceilings.makeGrids.review.dwg") : AppStrings.T("ceilings.makeGrids.review.dwgNone"),
                     ["docs"]      = _selectedDocLabels.Count == 0 ? AppStrings.T("ceilings.makeGrids.review.docsNone")
                         : string.Join(", ", _selectedDocLabels.Take(2)) + (_selectedDocLabels.Count > 2 ? AppStrings.T("ceilings.makeGrids.review.docsMore", _selectedDocLabels.Count - 2) : ""),
                 };
@@ -449,7 +465,7 @@ namespace LemoineTools.Tools.Ceilings
         public bool IsValid(string stepId)
         {
             if (stepId == "docs")   return _selectedDocLabels.Count > 0;
-            if (stepId == "export") return !string.IsNullOrWhiteSpace(_outputFolder);
+            // Export location is optional — a blank folder means "create views only".
             return true;
         }
 

@@ -104,12 +104,14 @@ namespace LemoineTools.Tools.Ceilings
             var createdViews = new List<(ViewPlan view, string name)>();
             int total = Math.Max(1, levels.Count);
             int done  = 0;
+            bool cancelledInPhase1 = false;
 
             foreach (var level in levels)
             {
                 if (RunState.CancelRequested)
                 {
                     Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
+                    cancelledInPhase1 = true;
                     break;
                 }
 
@@ -157,7 +159,16 @@ namespace LemoineTools.Tools.Ceilings
                 return;
             }
 
+            // Cancelled while creating views → bail out BEFORE deleting hide filters or
+            // rebuilding the trade, so a cancel can't wipe the previous run's hide-filter set.
+            // The views created so far are kept.
+            if (cancelledInPhase1)
+                return;
+
             var viewIds = createdViews.Select(cv => cv.view.Id).ToList();
+
+            // ── Phase 1b: scope the RCPs to the selected documents (per-document hide) ──
+            ApplyDocumentScope(doc, createdViews);
 
             // ── Phase 2: hide excluded types via filters + trade rules (40–70%) ──────
             if (excluded.Count > 0)
@@ -172,10 +183,12 @@ namespace LemoineTools.Tools.Ceilings
 
                 var cgRules = CreateAndApplyHideFilters(doc, viewIds, excluded, ref pass, ref fail);
 
-                // Mirror the created filters into the "Ceiling Grids — Hidden" trade so
-                // they appear (grouped) in the rules list and the generic Create-Filters
-                // engine never regenerates them.
-                RegisterHideTrade(cgRules);
+                // Mirror the created filters into the "Ceiling Grids — Hidden" trade so they
+                // appear (grouped) in the rules list and the generic Create-Filters engine never
+                // regenerates them. Skip the rebuild if the create loop was cancelled — cgRules
+                // is then partial and would drop rules from the trade.
+                if (!RunState.CancelRequested)
+                    RegisterHideTrade(cgRules);
 
                 Log(AppStrings.T("ceilings.makeGrids.log.hidTypes", cgRules.Count, viewIds.Count), "info");
             }
@@ -187,7 +200,25 @@ namespace LemoineTools.Tools.Ceilings
             Progress(70, pass, fail, skip);
 
             // ── Phase 3: export each view to DWG (70–100%) ───────────────────────────
-            int exported = 0;
+            // Resolve and create the output folder ONCE (not per view). A blank folder means
+            // "create the views only, no export". If the folder can't be created, fall back to
+            // create-only rather than failing every view with the same directory error.
+            bool   exportEnabled = !string.IsNullOrWhiteSpace(OutputFolder);
+            string outDir        = "";
+            if (exportEnabled)
+            {
+                outDir = UseCeilingGridsSubfolder
+                    ? Path.Combine(OutputFolder, "Ceiling Grids")
+                    : OutputFolder;
+                try { EnsureDir(outDir); }
+                catch (Exception ex)
+                {
+                    Log(AppStrings.T("ceilings.makeGrids.log.exportDirFailed", outDir, ex.Message), "fail");
+                    fail++;
+                    exportEnabled = false;
+                }
+            }
+
             for (int i = 0; i < createdViews.Count; i++)
             {
                 if (RunState.CancelRequested)
@@ -199,15 +230,12 @@ namespace LemoineTools.Tools.Ceilings
                 var (view, name) = createdViews[i];
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(OutputFolder))
+                    if (exportEnabled)
                     {
-                        string outDir = UseCeilingGridsSubfolder
-                            ? Path.Combine(OutputFolder, "Ceiling Grids")
-                            : OutputFolder;
-                        EnsureDir(outDir);
+                        bool overwrite = File.Exists(Path.Combine(outDir, name + ".dwg"));
                         ExportDwg(doc, view, name, outDir);
-                        Log(AppStrings.T("ceilings.makeGrids.log.exported", name), "pass");
-                        exported++;
+                        Log(AppStrings.T(overwrite ? "ceilings.makeGrids.log.overwrote"
+                                                   : "ceilings.makeGrids.log.exported", name), "pass");
                     }
                     else
                     {
@@ -223,6 +251,76 @@ namespace LemoineTools.Tools.Ceilings
 
                 Progress(70 + (int)((i + 1) * 30.0 / createdViews.Count), pass, fail, skip);
             }
+        }
+
+        // ── Scope each RCP to the selected documents ─────────────────────────────────
+        //
+        // The document selection (host + links) now actually controls what the created
+        // ceiling plans show, not just which types the scan lists:
+        //   • Every visible link NOT selected is hidden in the view. Because the RCP shows
+        //     only ceilings, hiding the link removes its ceilings from the plan.
+        //   • If the host is not selected, host ceilings are hidden individually — a category
+        //     hide can't be used, because links displayed "By Host View" cascade the host's
+        //     OST_Ceilings visibility and would lose the selected links' ceilings too.
+        // With everything selected (the default) nothing is hidden — behaviour is unchanged.
+        private void ApplyDocumentScope(Document doc, List<(ViewPlan view, string name)> views)
+        {
+            var selectedLinkIds = new HashSet<long>(LinkInstIds.Select(id => id.Value));
+            var hiddenLinkViews = new Dictionary<string, int>(StringComparer.Ordinal);
+            int hostHiddenViews = 0;
+
+            using (var tx = new Transaction(doc, "Scope Ceiling Grid Views"))
+            {
+                ConfigureFailures(tx);
+                tx.Start();
+
+                foreach (var (view, name) in views)
+                {
+                    try
+                    {
+                        var toHide = new List<ElementId>();
+
+                        foreach (RevitLinkInstance link in new FilteredElementCollector(doc, view.Id)
+                            .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+                        {
+                            if (selectedLinkIds.Contains(link.Id.Value)) continue;
+                            if (!link.CanBeHidden(view)) continue;
+                            toHide.Add(link.Id);
+                            hiddenLinkViews[link.Name] = hiddenLinkViews.TryGetValue(link.Name, out int c) ? c + 1 : 1;
+                        }
+
+                        if (!IncludeHost)
+                        {
+                            var hostCeilings = new FilteredElementCollector(doc, view.Id)
+                                .OfCategory(BuiltInCategory.OST_Ceilings)
+                                .WhereElementIsNotElementType()
+                                .Where(e => e.CanBeHidden(view))
+                                .Select(e => e.Id)
+                                .ToList();
+                            if (hostCeilings.Count > 0)
+                            {
+                                toHide.AddRange(hostCeilings);
+                                hostHiddenViews++;
+                            }
+                        }
+
+                        if (toHide.Count > 0)
+                            view.HideElements(toHide);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log(AppStrings.T("ceilings.makeGrids.log.scopeFailed", name, ex.Message), "warn");
+                        DiagnosticsLog.Swallowed($"MakeCeilingGrids: scope view '{name}'", ex);
+                    }
+                }
+
+                tx.Commit();
+            }
+
+            foreach (var kv in hiddenLinkViews)
+                Log(AppStrings.T("ceilings.makeGrids.log.scopeHiddenLink", kv.Key, kv.Value), "info");
+            if (hostHiddenViews > 0)
+                Log(AppStrings.T("ceilings.makeGrids.log.scopeHiddenHost", hostHiddenViews), "info");
         }
 
         // ── Create one filter per excluded type and apply (hidden) to every view ──────
@@ -298,7 +396,8 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         catch (Exception ex)
                         {
-                            Log(AppStrings.T("ceilings.makeGrids.log.filterApplyError", ex.Message), "fail");
+                            Log(AppStrings.T("ceilings.makeGrids.log.filterApplyError", vp.Name, ex.Message), "fail");
+                            fail++;
                         }
                     }
 
@@ -330,23 +429,27 @@ namespace LemoineTools.Tools.Ceilings
                 .Where(v => !v.IsTemplate)
                 .ToList();
 
+            var hideIds = new HashSet<long>(hideFilters.Select(f => f.Id.Value));
+
             using (var tx = new Transaction(doc, "Delete Ceiling Grids Hide Filters"))
             {
                 ConfigureFailures(tx);
                 tx.Start();
 
+                // Iterate views once, reading each view's filter list a single time, instead of
+                // scanning every view for every hide filter (filters × views GetFilters calls).
+                foreach (View v in allViews)
+                {
+                    try
+                    {
+                        foreach (ElementId fid in v.GetFilters().Where(id => hideIds.Contains(id.Value)).ToList())
+                            v.RemoveFilter(fid);
+                    }
+                    catch (Exception __lex) { DiagnosticsLog.Swallowed("MakeCeilingGrids: remove filter from view (may not support filters)", __lex); }
+                }
+
                 foreach (var pfe in hideFilters)
                 {
-                    foreach (View v in allViews)
-                    {
-                        try
-                        {
-                            if (v.GetFilters().Contains(pfe.Id))
-                                v.RemoveFilter(pfe.Id);
-                        }
-                        catch (Exception __lex) { DiagnosticsLog.Swallowed("MakeCeilingGrids: remove filter from view (may not support filters)", __lex); }
-                    }
-
                     try   { doc.Delete(pfe.Id); }
                     catch (Exception ex)
                     {

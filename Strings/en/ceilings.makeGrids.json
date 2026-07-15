@@ -31,7 +31,8 @@
     "browse":        "Browse…",
     "browseDialog":  "Select export output folder",
     "subfolderLabel":"Place in a 'Ceiling Grids' subfolder",
-    "subfolderDesc": "Creates a 'Ceiling Grids' folder inside the selected location. Off = files go directly into the selected folder."
+    "subfolderDesc": "Creates a 'Ceiling Grids' folder inside the selected location. Off = files go directly into the selected folder.",
+    "folderOptionalHint": "Leave the output folder blank to create the ceiling plan views in Revit without exporting any DWGs."
   },
 
   "review": {
@@ -46,28 +47,35 @@
     "subfolderOn":   "'Ceiling Grids' subfolder",
     "subfolderOff":  "Direct to folder",
     "dwg":           "DWG 2018",
+    "dwgNone":       "Create only (no export)",
+    "folderNone":    "None — create only",
     "docsNone":      "None",
     "docsMore":      " +{0}"                  // {0} = count of documents beyond the first two
   },
 
   "log": {
-    "raising":           "Raising Revit external event…",
+    "raising":           "Starting run in Revit…",
     "runHandlerMissing": "Run handler not registered.",
 
     "error":             "Error: {0}",
     "nonFatalIssues":    "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "foundLevels":       "Found {0} level(s).",
-    "noRcpType":         "No Ceiling Plan view family type found in this project.",
-    "rcpFailed":         "Could not create RCP for {0}.",          // {0} = level name
+    "noRcpType":         "No ceiling plan view type exists in this project — create one in Revit first.",
+    "rcpFailed":         "Couldn't create a ceiling plan for level {0}.",  // {0} = level name
     "levelFailed":       "Level {0} failed: {1}.",                 // {0}=level name {1}=error
     "noViewsCreated":    "No ceiling plan views were created — nothing to do.",
     "hidTypes":          "Hid {0} ceiling type(s) across {1} view(s).",
     "noExclusions":      "No ceiling types excluded — all ceilings shown.",
+    "scopeHiddenLink":   "Hid unselected link \"{0}\" in {1} view(s).",     // {0}=link name {1}=view count
+    "scopeHiddenHost":   "Hid host ceilings in {0} view(s) (host document not selected).",  // {0}=view count
+    "scopeFailed":       "Could not apply document scope to view \"{0}\": {1}.",  // {0}=view name {1}=error
     "exported":          "Exported: {0}.dwg",                      // {0} = view/file name
+    "overwrote":         "Overwrote: {0}.dwg",                     // {0} = view/file name
     "created":           "Created: {0}",                           // {0} = view name
     "exportFailed":      "Export of {0} failed: {1}.",             // {0}=name {1}=error
+    "exportDirFailed":   "Could not create output folder '{0}': {1}. Created the views without exporting.",  // {0}=folder {1}=error
     "filterCreateError": "Error creating hide filter '{0}': {1}.", // {0}=filter name {1}=error
-    "filterApplyError":  "Error applying hide filter to view: {0}.",
+    "filterApplyError":  "Error applying hide filter to view \"{0}\": {1}.",  // {0}=view name {1}=error
     "filterDeleteError": "Could not delete filter '{0}': {1}.",
     "tradeRegistered":   "Registered '{0}' trade with {1} rule(s).",
     "rulesUpdateFailed": "Filters applied, but could not update the rules list: {0}.",
