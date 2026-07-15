@@ -76,6 +76,51 @@ namespace LemoineTools.Commands
 
                 return vm;
             }
+            if (LemoineTools.Framework.Web.WebToolLauncher.Enabled)
+            {
+                LemoineTools.Framework.Web.WebToolLauncher.Open("splitByCell", () =>
+                {
+                        var uidoc      = uiApp.ActiveUIDocument;
+                        var doc        = uidoc.Document;
+                        var activeViewId = uidoc.ActiveView?.Id;
+
+                        // ── Element counts (A) — active view scope matches Cell's runtime scope ──
+                        var counts = new Dictionary<string, int>();
+                        if (activeViewId != null)
+                        {
+                            foreach (var bic in SplitByCellHelpers.SupportedCategories)
+                            {
+                                if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
+                                counts[label] = new FilteredElementCollector(doc, activeViewId)
+                                    .OfCategoryId(new ElementId(bic))
+                                    .WhereElementIsNotElementType()
+                                    .ToList().Count;
+                            }
+                        }
+
+                        // ── Pre-selection (E) ──────────────────────────────────────────────
+                        var supportedBics = new HashSet<BuiltInCategory>(SplitByCellHelpers.SupportedCategories);
+                        var rawSelection  = uidoc.Selection.GetElementIds()
+                            .Select(id => doc.GetElement(id))
+                            .Where(e => e?.Category?.Id != null &&
+                                        supportedBics.Contains((BuiltInCategory)(int)e.Category.Id.Value))
+                            .ToList();
+                        var preSelectedIds = rawSelection.Select(e => e.Id).ToList();
+                        var preSelectedCats = rawSelection
+                            .Select(e => (BuiltInCategory)(int)e.Category.Id.Value)
+                            .Where(bic => SplitByCellViewModel.CatLabels.ContainsKey(bic))
+                            .Select(bic => SplitByCellViewModel.CatLabels[bic])
+                            .Distinct().ToList();
+
+                        var vm    = new LemoineTools.Tools.ModifyElements.SplitByCellWebTool(
+                            App.SplitByCellHandler!, App.SplitByCellEvent!,
+                            counts, preSelectedIds, preSelectedCats);
+
+                        return vm;
+                });
+                return Result.Succeeded;
+            }
+
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;
