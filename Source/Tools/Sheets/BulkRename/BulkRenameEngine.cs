@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews.BulkRename
 {
@@ -114,12 +114,10 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
                     return (cfg.Prefix ?? "") + oldValue + (cfg.Suffix ?? "");
 
                 case RenameMode.Sequential:
-                    return TokenInput.Resolve(cfg.SeqPattern,
-                        WithSeq(tokens, cfg, index));
+                    return TokenResolver.Resolve(cfg.SeqPattern, ToContext(WithSeq(tokens, cfg, index)));
 
                 case RenameMode.Token:
-                    return TokenInput.Resolve(cfg.TokenPattern,
-                        WithSeq(tokens, cfg, index));
+                    return TokenResolver.Resolve(cfg.TokenPattern, ToContext(WithSeq(tokens, cfg, index)));
             }
             return oldValue;
         }
@@ -189,6 +187,18 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
             var t = new Dictionary<string, string>(tokens) { ["Seq"] = seq };
             return t;
+        }
+
+        // Wraps a flat token dictionary (built-ins the caller already resolved, plus any
+        // pre-resolved user-token values keyed "u:Name") as a TokenContext with no live
+        // Document/Element — TokenResolver.Resolve only ever does dictionary lookups for
+        // these keys, so this stays fully Revit-free despite the Autodesk.Revit.DB-typed
+        // TokenContext fields (they're simply left null).
+        private static TokenContext ToContext(Dictionary<string, string> tokens)
+        {
+            var ctx = new TokenContext();
+            foreach (var kvp in tokens) ctx.Computed[kvp.Key] = kvp.Value;
+            return ctx;
         }
 
         private static string ReplaceSubstring(string input, string find, string repl, bool caseSensitive)

@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews.BulkRename
 {
@@ -107,7 +108,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             _sheets      = sheets ?? new List<SheetEntry>();
             _views       = views  ?? new List<ViewEntry>();
             _browserTree = browserTree ?? new BrowserTree();
+
+            _config.SeqPattern   = NamingPatternStore.Instance.GetOrDefault(ToolIdSeq,   _config.SeqPattern);
+            _config.TokenPattern = NamingPatternStore.Instance.GetOrDefault(ToolIdToken, _config.TokenPattern);
         }
+
+        // ── Naming pattern persistence ───────────────────────────────────
+        private const string ToolIdSeq   = "sheets.bulkRename.seq";
+        private const string ToolIdToken = "sheets.bulkRename.token";
 
         // ═══════════════════════════════════════════════════════════════
         // IStepAware — S2 depends on target; S3 depends on selection/target/field
@@ -316,8 +324,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 case RenameMode.Sequential:
                 {
-                    var tokens = new TokenInput(FieldTokens(includeSeq: true), "{Seq}") { Text = _config.SeqPattern };
-                    tokens.TextChanged += (s, e) => { _config.SeqPattern = tokens.Text; RebuildPreview(); OnValidationChanged(); };
+                    var tokens = new TokenInput(FieldTokens(), "{Seq}") { Text = _config.SeqPattern };
+                    tokens.TextChanged += (s, e) =>
+                    {
+                        _config.SeqPattern = tokens.Text;
+                        NamingPatternStore.Instance.Set(ToolIdSeq, _config.SeqPattern);
+                        RebuildPreview();
+                        OnValidationChanged();
+                    };
                     _modeHost.Children.Add(tokens);
                     _modeHost.Children.Add(BuildSeqSteppers());
                     break;
@@ -325,8 +339,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
                 case RenameMode.Token:
                 {
-                    var tokens = new TokenInput(FieldTokens(includeSeq: true), DefaultTokenPattern()) { Text = _config.TokenPattern };
-                    tokens.TextChanged += (s, e) => { _config.TokenPattern = tokens.Text; RebuildPreview(); OnValidationChanged(); };
+                    var tokens = new TokenInput(FieldTokens(), DefaultTokenPattern()) { Text = _config.TokenPattern };
+                    tokens.TextChanged += (s, e) =>
+                    {
+                        _config.TokenPattern = tokens.Text;
+                        NamingPatternStore.Instance.Set(ToolIdToken, _config.TokenPattern);
+                        RebuildPreview();
+                        OnValidationChanged();
+                    };
                     _modeHost.Children.Add(tokens);
                     _modeHost.Children.Add(BuildSeqSteppers());
                     break;
@@ -360,15 +380,12 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             return col;
         }
 
-        // ── Token vocabulary (mode-aware) ──────────────────────────────
-        private (string Label, string Token)[] FieldTokens(bool includeSeq)
-        {
-            var list = _target == RenameTarget.Sheets
-                ? new List<(string, string)> { (AppStrings.T("linkviews.bulkRename.labels.fieldSheetNumber"), "{SheetNumber}"), (AppStrings.T("linkviews.bulkRename.labels.fieldSheetName"), "{SheetName}") }
-                : new List<(string, string)> { (AppStrings.T("linkviews.bulkRename.labels.fieldViewName"), "{ViewName}"), (AppStrings.T("linkviews.bulkRename.labels.tokViewType"), "{ViewType}") };
-            if (includeSeq) list.Add((AppStrings.T("linkviews.bulkRename.labels.tokSeq"), "{Seq}"));
-            return list.ToArray();
-        }
+        // ── Token vocabulary (mode-aware, registry-fed — includes {Seq} and any
+        // matching user-defined tokens automatically) ──────────────────
+        private IReadOnlyList<TokenDefinition> FieldTokens() =>
+            NamingTokenRegistry.TokensFor(
+                _target == RenameTarget.Sheets ? TokenEntity.Sheet : TokenEntity.View,
+                hasSource: false);
 
         private string DefaultTokenPattern() =>
             _target == RenameTarget.Sheets ? "{SheetNumber} - {SheetName}" : "{ViewName}";

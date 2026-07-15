@@ -24,7 +24,10 @@
     "colorLabel":   "Apply trade color overrides",
     "colorDesc":    "Apply each trade's AutoFilters color/line overrides to the trade shown in its view.",
     "hideLabel":    "Hide all other elements",
-    "hideDesc":     "Hide every model category that isn't part of the isolated trade, so only that trade is visible. Off keeps the rest of the model as light background context. (Cascades onto links shown \"By Host View\".)"
+    "hideDesc":     "Hide every model category that isn't part of the isolated trade, so only that trade is visible. Off keeps the rest of the model as light background context. (Cascades onto links shown \"By Host View\".)",
+    "namePattern":  "NAME PATTERN",
+    "exSource":     "Coordination 3D",
+    "exTrade":      "Mechanical"
   },
   "review": {
     "itemSource": "Source View", "itemTrades": "Trades", "itemOrder": "Order by Elevation",

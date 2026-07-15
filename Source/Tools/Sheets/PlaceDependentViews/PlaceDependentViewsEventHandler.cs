@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.Sheets.PlaceDependentViews
 {
@@ -241,8 +241,14 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                             onProgress(Pct(i + 1, total), pass, fail, skip);
                             continue;
                         }
-                        string sheetName = TokenInput.Resolve(
-                            NamingPattern, BuildTokens(parent, doc, sheetNumber));
+                        var namingCtx = new TokenContext { Doc = doc, Source = parent };
+                        namingCtx.Computed["ViewType"]    = parent.ViewType.ToString();
+                        namingCtx.Computed["SheetNumber"] = sheetNumber;
+                        try { namingCtx.Computed["Level"] = parent.GenLevel?.Name ?? ""; }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed("PlaceDependentViews: read GenLevel", ex); namingCtx.Computed["Level"] = ""; }
+
+                        string sheetName = TokenResolver.Resolve(NamingPattern, namingCtx, msg => Log(msg, "warn"));
+                        sheetName = TokenResolver.GuardDegenerate(sheetName, namingCtx, parent.Name, msg => Log(msg, "warn"));
 
                         ViewSheet sheet;
                         try
@@ -646,22 +652,6 @@ namespace LemoineTools.Tools.Sheets.PlaceDependentViews
                 DiagnosticsLog.Swallowed($"PlaceDependentViews: read viewport outline {vp.Id.Value}", ex);
                 return false;
             }
-        }
-
-        // ── Naming ────────────────────────────────────────────────────────────
-        private static Dictionary<string, string> BuildTokens(View parent, Document doc, string sheetNumber)
-        {
-            string level = "";
-            try { level = parent.GenLevel?.Name ?? ""; }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("PlaceDependentViews: read GenLevel", ex); }
-
-            return new Dictionary<string, string>
-            {
-                ["ParentViewName"] = parent.Name ?? "",
-                ["ViewType"]       = parent.ViewType.ToString(),
-                ["Level"]          = level,
-                ["SheetNumber"]    = sheetNumber,
-            };
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Naming;
 using static LemoineTools.Tools.LinkViews.LinkViewsLevelHelpers;
 
 namespace LemoineTools.Tools.LinkViews
@@ -33,16 +34,8 @@ namespace LemoineTools.Tools.LinkViews
         public bool CreateFP  { get; set; } = true;
         public bool CreateRCP { get; set; } = true;
 
-        // Naming slots. Token values are logic identifiers:
-        // "Level" | "Scope Box" | "View Type" | "Custom" | "None".
-        public string NamingFront        { get; set; } = "Level";
-        public string NamingFrontCustom  { get; set; } = "";
-        public string NamingCenter       { get; set; } = "Scope Box";
-        public string NamingCenterCustom { get; set; } = "";
-        public string NamingEnd          { get; set; } = "None";
-        public string NamingEndCustom    { get; set; } = "";
-        /// <summary>When true, the view-type token (3D/FP/RCP) is appended as the final name segment.</summary>
-        public bool   AppendViewType     { get; set; } = true;
+        /// <summary>Naming pattern, e.g. "L{LevelName} - {ScopeBox} - {ViewType}".</summary>
+        public string NamePattern { get; set; } = "L{LevelName} - {ViewType}";
 
         /// <summary>Sub Discipline parameter values per view type. Empty = skip.</summary>
         public string SubDisc3D  { get; set; } = "";
@@ -288,44 +281,17 @@ namespace LemoineTools.Tools.LinkViews
             }
         }
 
-        /// <summary>
-        /// Assembles the final view name from the three naming slots.
-        /// typeLabel (3D/FP/RCP) is appended only when <see cref="AppendViewType"/> is true.
-        /// </summary>
+        /// <summary>Resolves the naming pattern against this view's Level/ScopeBox/ViewType.</summary>
         private string BuildViewName(string levelName, string? boxName, string typeLabel)
         {
-            string ResolveSlot(string slot, string custom)
-            {
-                switch (slot)
-                {
-                    case "Level":     return $"L{levelName}";
-                    case "Scope Box": return boxName ?? "";
-                    case "View Type": return typeLabel;
-                    case "Custom":    return string.IsNullOrWhiteSpace(custom) ? "" : custom.Trim();
-                    default:          return "";
-                }
-            }
+            var ctx = new TokenContext();
+            ctx.Computed["LevelName"] = levelName;
+            ctx.Computed["ScopeBox"]  = boxName ?? "";
+            ctx.Computed["ViewType"]  = typeLabel;
 
-            bool anySet = NamingFront != "None" || NamingCenter != "None" || NamingEnd != "None";
-
-            var parts = anySet
-                ? new[] { ResolveSlot(NamingFront,  NamingFrontCustom),
-                          ResolveSlot(NamingCenter, NamingCenterCustom),
-                          ResolveSlot(NamingEnd,    NamingEndCustom) }
-                  .Where(s => !string.IsNullOrEmpty(s)).ToList()
-                : new List<string>();
-
-            if (parts.Count == 0)
-            {
-                // Nothing resolved — fall back to level (+ box) so names stay meaningful.
-                parts.Add($"L{levelName}");
-                if (!string.IsNullOrEmpty(boxName)) parts.Add(boxName!);
-            }
-
-            if (AppendViewType) parts.Add(typeLabel);
-            if (parts.Count == 0) parts.Add(typeLabel);
-
-            return string.Join(" - ", parts);
+            string resolved = TokenResolver.Resolve(NamePattern, ctx, msg => Log(msg, "warn"));
+            string fallback = string.IsNullOrEmpty(boxName) ? $"L{levelName} - {typeLabel}" : $"L{levelName} - {boxName} - {typeLabel}";
+            return TokenResolver.GuardDegenerate(resolved, ctx, fallback, msg => Log(msg, "warn"));
         }
 
         private static void ApplyTemplate(View view, ElementId templateId)

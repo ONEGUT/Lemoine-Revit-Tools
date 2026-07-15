@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.ScopeBoxes
 {
@@ -33,14 +34,8 @@ namespace LemoineTools.Tools.ScopeBoxes
         /// <summary>The existing scope box duplicated for every created box.</summary>
         public ElementId       SeedBoxId        { get; set; } = ElementId.InvalidElementId;
 
-        // Naming slots (token values are logic identifiers, same contract as Bulk Views):
-        // "Building Letter" | "Level" | "Level Range" | "Model Name" | "Custom" | "None".
-        public string NamingFront        { get; set; } = "Building Letter";
-        public string NamingFrontCustom  { get; set; } = "";
-        public string NamingCenter       { get; set; } = "Level Range";
-        public string NamingCenterCustom { get; set; } = "";
-        public string NamingEnd          { get; set; } = "None";
-        public string NamingEndCustom    { get; set; } = "";
+        /// <summary>Naming pattern, e.g. "{BuildingLetter} - {LevelRange}".</summary>
+        public string NamePattern { get; set; } = "{BuildingLetter} - {LevelRange}";
 
         // ── Callbacks ─────────────────────────────────────────────────
         public Action<string, string>?     PushLog    { get; set; }
@@ -421,35 +416,18 @@ namespace LemoineTools.Tools.ScopeBoxes
                 .OrderByDescending(g => g.Count())
                 .First().Key;
 
-            string ResolveSlot(string slot, string custom)
-            {
-                switch (slot)
-                {
-                    case "Building Letter": return letter;
-                    case "Level":           return levelToken;
-                    case "Level Range":     return rangeToken;
-                    case "Model Name":      return model;
-                    case "Custom":          return string.IsNullOrWhiteSpace(custom) ? "" : custom.Trim();
-                    default:                return "";
-                }
-            }
+            var ctx = new TokenContext();
+            ctx.Computed["BuildingLetter"] = letter;
+            ctx.Computed["LevelName"]      = levelToken;
+            ctx.Computed["LevelRange"]     = rangeToken;
+            ctx.Computed["ModelName"]      = model;
 
-            var parts = new[]
-                {
-                    ResolveSlot(NamingFront,  NamingFrontCustom),
-                    ResolveSlot(NamingCenter, NamingCenterCustom),
-                    ResolveSlot(NamingEnd,    NamingEndCustom),
-                }
-                .Where(p => !string.IsNullOrEmpty(p)).ToList();
+            string resolved = TokenResolver.Resolve(NamePattern, ctx, msg => Log(msg, "warn"));
+            string name = TokenResolver.GuardDegenerate(resolved, ctx, $"{letter} - {rangeToken}", msg => Log(msg, "warn"));
 
-            // Safety: nothing resolved (all slots None / blank Custom) → letter + range.
-            if (parts.Count == 0) { parts.Add(letter); parts.Add(rangeToken); }
-
-            // Single cluster: a bare letter slot adds noise only when it's the sole
-            // distinguisher — keep it regardless for stable re-runs (A stays A).
             return new BoxSpec
             {
-                Name = string.Join(" - ", parts),
+                Name = name,
                 X0 = x0, Y0 = y0, X1 = x1, Y1 = y1,
                 ZBot = zBot, ZTop = zTop,
             };

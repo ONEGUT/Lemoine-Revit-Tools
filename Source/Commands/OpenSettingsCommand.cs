@@ -2,6 +2,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Commands
 {
@@ -17,7 +18,13 @@ namespace LemoineTools.Commands
                 return Result.Succeeded;
             }
 
-            App.GlobalSettings = new GlobalSettingsWindow();
+            // Main-thread-only capture, same pattern as
+            // AutoFiltersSettings.CaptureFilterableCategories(doc) — the window itself never
+            // touches Revit. No document open still opens the page (manual entry only).
+            var doc = commandData.Application.ActiveUIDocument?.Document;
+            var namingSnapshot = ParameterCatalog.Capture(doc);
+
+            App.GlobalSettings = new GlobalSettingsWindow(namingSnapshot);
             App.GlobalSettings.Closed += (s, e) => App.GlobalSettings = null;
             App.GlobalSettings.Show();
             return Result.Succeeded;

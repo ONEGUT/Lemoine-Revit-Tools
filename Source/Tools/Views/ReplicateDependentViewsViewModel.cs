@@ -7,11 +7,10 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 using WpfGrid     = System.Windows.Controls.Grid;
 using WpfPoint    = System.Windows.Point;
-using WpfComboBox = System.Windows.Controls.ComboBox;
-using WpfTextBox  = System.Windows.Controls.TextBox;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -167,13 +166,10 @@ namespace LemoineTools.Tools.LinkViews
         private string?      _selectedSourceKey;
         private List<string> _selectedTargetKeys = new List<string>();
 
-        // S4 naming state — Front/Center/End, each with optional inline custom text
-        private string _namingFront        = "Host Level";
-        private string _namingFrontCustom  = "";
-        private string _namingCenter       = "Source View Name";
-        private string _namingCenterCustom = "";
-        private string _namingEnd          = "None";
-        private string _namingEndCustom    = "";
+        // ── Naming ──────────────────────────────────────────────────────
+        private const string ToolId         = "views.replicateDependents";
+        private const string DefaultPattern = "{HostLevel} - {SourceViewName} - {DepSuffix}";
+        private string _namePattern = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
 
         /// <summary>
         /// Optional lookup from target view element id (as <see cref="ElementId.Value"/>) to the view's
@@ -447,31 +443,31 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         // ── S4: View Naming ────────────────────────────────────────────
-        // Naming token options for RDV
-        private static readonly string[] RdvNamingOptions =
+        // HostLevel/TargetViewName aren't registry built-ins (RDV works from plan-time DTOs,
+        // not live Elements); SourceViewName/ViewType already are and are picked up by the
+        // registry query below. DepSuffix used to be force-appended after every resolved
+        // name — now it's a real placeable token like any other.
+        private static readonly TokenDefinition[] RdvComputedTokens =
         {
-            "None", "Host Level", "Source View Name", "Target View Name",
-            "View Type", "Dep Suffix", "Custom"
+            new TokenDefinition("HostLevel",      AppStrings.T("naming.computed.replicateDependent.hostLevel.label"),      TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+            new TokenDefinition("TargetViewName", AppStrings.T("naming.computed.replicateDependent.targetViewName.label"), TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+            new TokenDefinition("DepSuffix",      AppStrings.T("naming.computed.replicateDependent.depSuffix.label"),      TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
         };
 
         private FrameworkElement BuildS4Naming()
         {
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-            // Preview declared early so closures can capture it
-            var previewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            previewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            previewText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            previewText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            void UpdatePreview()
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: true, RdvComputedTokens);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namePattern };
+            tokenInput.SetPreview(pattern =>
             {
-                var source  = SelectedSource;
-                string srcName    = source?.Name ?? AppStrings.T("linkviews.replicateDependent.labels.exSource");
-                string levelEx    = AppStrings.T("linkviews.replicateDependent.labels.exLevel");
-                string typeEx     = AppStrings.T("linkviews.replicateDependent.labels.exType");
-                string targetEx   = AppStrings.T("linkviews.replicateDependent.labels.exTarget");
-                string suffixEx   = source?.Deps?.FirstOrDefault()?.Suffix ?? AppStrings.T("linkviews.replicateDependent.labels.exSuffix");
+                var source = SelectedSource;
+                string srcName  = source?.Name ?? AppStrings.T("linkviews.replicateDependent.labels.exSource");
+                string levelEx  = AppStrings.T("linkviews.replicateDependent.labels.exLevel");
+                string typeEx   = AppStrings.T("linkviews.replicateDependent.labels.exType");
+                string targetEx = AppStrings.T("linkviews.replicateDependent.labels.exTarget");
+                string suffixEx = source?.Deps?.FirstOrDefault()?.Suffix ?? AppStrings.T("linkviews.replicateDependent.labels.exSuffix");
 
                 var firstTarget = _selectedTargetKeys
                     .Where(k => _targetByKey.ContainsKey(k))
@@ -483,110 +479,23 @@ namespace LemoineTools.Tools.LinkViews
                     targetEx = firstTarget.Name;
                 }
 
-                string? ResolveSlot(string slot, string custom)
-                {
-                    switch (slot)
-                    {
-                        case "Host Level":        return levelEx;
-                        case "Source View Name":  return srcName;
-                        case "Target View Name":  return targetEx;
-                        case "View Type":         return typeEx;
-                        case "Dep Suffix":        return suffixEx;
-                        case "Custom":            return string.IsNullOrWhiteSpace(custom) ? AppStrings.T("linkviews.replicateDependent.labels.customPlaceholder") : custom.Trim();
-                        default:                  return null;
-                    }
-                }
-
-                var parts = new[] { _namingFront, _namingCenter, _namingEnd }
-                    .Select((slot, i) => ResolveSlot(slot,
-                        i == 0 ? _namingFrontCustom :
-                        i == 1 ? _namingCenterCustom : _namingEndCustom))
-                    .Where(s => !string.IsNullOrEmpty(s)).ToList();
-                parts.Add(suffixEx);
-                previewText.Text = parts.Count > 1
-                    ? string.Join(" - ", parts)
-                    : AppStrings.T("linkviews.replicateDependent.labels.noNameComponents");
-            }
-
-            // Helper: one slot row — [label] [combo] [textbox shown only when Custom]
-            void AddSlotRow(string label,
-                            string curVal,    Action<string> setVal,
-                            string curCustom, Action<string> setCustom)
+                var ctx = new TokenContext();
+                ctx.Computed["HostLevel"]      = levelEx;
+                ctx.Computed["SourceViewName"] = srcName;
+                ctx.Computed["TargetViewName"] = targetEx;
+                ctx.Computed["ViewType"]       = typeEx;
+                ctx.Computed["DepSuffix"]      = suffixEx;
+                return TokenResolver.Resolve(pattern, ctx);
+            });
+            tokenInput.TextChanged += (s, e) =>
             {
-                var row = new StackPanel { Orientation = Orientation.Horizontal,
-                                           Margin = new Thickness(0, 0, 0, 8) };
-
-                var lbl = new TextBlock { Text = label, Width = 58,
-                                          VerticalAlignment = VerticalAlignment.Center };
-                lbl.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-                lbl.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-                lbl.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-                row.Children.Add(lbl);
-
-                var cb = new WpfComboBox { Width = 150 };
-                cb.SetResourceReference(FrameworkElement.HeightProperty,  "LemoineH_Input");
-                cb.SetResourceReference(WpfComboBox.FontSizeProperty,     "LemoineFS_SM");
-                cb.SetResourceReference(WpfComboBox.FontFamilyProperty,   "LemoineUiFont");
-                cb.SetResourceReference(WpfComboBox.ForegroundProperty,   "LemoineText");
-                foreach (string opt in RdvNamingOptions) cb.Items.Add(opt);
-                cb.SelectedItem = curVal;
-                row.Children.Add(cb);
-
-                var tb = new WpfTextBox
-                {
-                    Text       = curCustom,
-                    Width      = 130,
-                    Margin     = new Thickness(6, 0, 0, 0),
-                    Visibility = curVal == "Custom" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed,
-                };
-                tb.SetResourceReference(FrameworkElement.HeightProperty,                   "LemoineH_Input");
-                tb.SetResourceReference(System.Windows.Controls.Control.PaddingProperty,   "LemoineTh_InputPad");
-                tb.SetResourceReference(WpfTextBox.ForegroundProperty,   "LemoineText");
-                tb.SetResourceReference(WpfTextBox.BackgroundProperty,   "LemoineSelectBg");
-                tb.SetResourceReference(WpfTextBox.FontSizeProperty,     "LemoineFS_SM");
-                tb.SetResourceReference(WpfTextBox.FontFamilyProperty,   "LemoineMonoFont");
-                tb.SetResourceReference(WpfTextBox.BorderBrushProperty,  "LemoineBorder");
-                row.Children.Add(tb);
-
-                cb.SelectionChanged += (s, e) =>
-                {
-                    if (!(cb.SelectedItem is string v)) return;
-                    setVal(v);
-                    tb.Visibility = v == "Custom" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                    UpdatePreview();
-                    OnValidationChanged();
-                };
-                tb.TextChanged += (s, e) => { setCustom(tb.Text); UpdatePreview(); };
-
-                outer.Children.Add(row);
-            }
-
-            AddSlotRow(AppStrings.T("linkviews.replicateDependent.labels.slotFront"),  _namingFront,  v => _namingFront  = v, _namingFrontCustom,  v => _namingFrontCustom  = v);
-            AddSlotRow(AppStrings.T("linkviews.replicateDependent.labels.slotCenter"), _namingCenter, v => _namingCenter = v, _namingCenterCustom, v => _namingCenterCustom = v);
-            AddSlotRow(AppStrings.T("linkviews.replicateDependent.labels.slotEnd"),    _namingEnd,    v => _namingEnd    = v, _namingEndCustom,    v => _namingEndCustom    = v);
-
-            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 4, 0, 10) };
-            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            outer.Children.Add(sep);
-
-            var previewHeader = new TextBlock { Text = AppStrings.T("linkviews.replicateDependent.labels.previewHeader"), Margin = new Thickness(0, 0, 0, 4) };
-            previewHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            previewHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            previewHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(previewHeader);
-
-            var previewBorder = new Border
-            {
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(10, 6, 10, 6),
+                _namePattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ToolId, _namePattern);
+                OnValidationChanged();
             };
-            previewBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            previewBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            previewBorder.Child = previewText;
-            outer.Children.Add(previewBorder);
+            ValidationChanged += (s, e) => tokenInput.RefreshPreview();
+            outer.Children.Add(tokenInput);
 
-            UpdatePreview();
-            ValidationChanged += (s, e) => UpdatePreview();
             return outer;
         }
 
@@ -672,11 +581,7 @@ namespace LemoineTools.Tools.LinkViews
             if (stepId == "S3") return _selectedTargetKeys.Count > 0
                 ? AppStrings.T("linkviews.replicateDependent.summaries.targetCount", _selectedTargetKeys.Count) : "—";
             if (stepId == "S4")
-            {
-                var set = new[] { _namingFront, _namingCenter, _namingEnd }
-                    .Where(s => s != "None").ToList();
-                return set.Count > 0 ? string.Join(" / ", set) : AppStrings.T("linkviews.replicateDependent.summaries.s4Defaults");
-            }
+                return string.IsNullOrWhiteSpace(_namePattern) ? "—" : _namePattern;
             if (stepId == "S5") return AppStrings.T("linkviews.replicateDependent.summaries.S5");
             return "—";
         }
@@ -705,12 +610,7 @@ namespace LemoineTools.Tools.LinkViews
 
             _runHandler.SourceEntry   = source;
             _runHandler.TargetEntries = targetEntries;
-            _runHandler.NamingFront        = _namingFront;
-            _runHandler.NamingFrontCustom  = _namingFrontCustom;
-            _runHandler.NamingCenter       = _namingCenter;
-            _runHandler.NamingCenterCustom = _namingCenterCustom;
-            _runHandler.NamingEnd          = _namingEnd;
-            _runHandler.NamingEndCustom    = _namingEndCustom;
+            _runHandler.NamePattern   = _namePattern;
             _runHandler.PushLog       = pushLog;
             _runHandler.OnProgress    = onProgress;
             _runHandler.OnComplete    = onComplete;

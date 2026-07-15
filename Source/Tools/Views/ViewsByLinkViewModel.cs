@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -42,17 +43,14 @@ namespace LemoineTools.Tools.LinkViews
             public string    Name { get; set; } = "";
         }
 
-        private static readonly (string Label, string Token)[] NamingTokens =
-        {
-            ("Link Name", "{LinkName}"),
-        };
+        private const string ToolId         = "views.byLink";
         private const string DefaultPattern = "{LinkName}";
 
         private readonly List<LinkEntry>     _links;
         private readonly List<TemplateEntry> _templates;
 
         private List<ElementId> _selectedLinkIds = new List<ElementId>();
-        private string          _namePattern     = DefaultPattern;
+        private string          _namePattern     = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
         private ElementId       _templateId      = ElementId.InvalidElementId;
 
         private readonly ViewsByLinkRunHandler? _runHandler;
@@ -114,8 +112,23 @@ namespace LemoineTools.Tools.LinkViews
             var outer = new StackPanel();
 
             outer.Children.Add(Label(AppStrings.T("linkviews.bulkViews.byLink.labels.namePattern")));
-            var tokenInput = new TokenInput(NamingTokens, DefaultPattern) { Text = _namePattern };
-            tokenInput.TextChanged += (s, e) => { _namePattern = tokenInput.Text; Fire(); };
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: true);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namePattern };
+            tokenInput.SetPreview(pattern =>
+            {
+                string linkName = _links.FirstOrDefault(l => _selectedLinkIds.Any(id => id.Value == l.Id.Value))?.Name
+                    ?? AppStrings.T("linkviews.bulkViews.byLink.labels.exLink");
+                var ctx = new TokenContext();
+                ctx.Computed["LinkName"] = linkName;
+                return TokenResolver.Resolve(pattern, ctx);
+            });
+            tokenInput.TextChanged += (s, e) =>
+            {
+                _namePattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ToolId, _namePattern);
+                Fire();
+            };
+            ValidationChanged += (s, e) => tokenInput.RefreshPreview();
             outer.Children.Add(tokenInput);
 
             outer.Children.Add(new FrameworkElement { Height = 10 });

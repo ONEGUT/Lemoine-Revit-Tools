@@ -18,8 +18,7 @@
     "S5":          "Ready to run",
     "depCount":    "{0} dependent(s)",
     "noDeps":      "No deps",
-    "targetCount": "{0} target(s)",
-    "s4Defaults":  "Defaults"
+    "targetCount": "{0} target(s)"
   },
 
   "labels": {
@@ -34,18 +33,12 @@
     "depName":         "— {0} - {1}",                       // {0}=source name {1}=suffix
     "noOtherViews":    "No other {0} views found in this project.",   // {0} = type label
     "orientationWarn": "⚠  {0} target(s) have a different view orientation and may not receive correct crop regions.",
-    "slotFront":       "Front",
-    "slotCenter":      "Center",
-    "slotEnd":         "End",
-    "customPlaceholder":"(custom)",
-    "noNameComponents":"(no name components set)",
     "noLevel":         "No Level",
     "exSource":        "Corridor Plan",
     "exLevel":         "Level 2",
     "exType":          "Floor Plan",
     "exTarget":        "Area Plan - L2",
-    "exSuffix":        "N",
-    "previewHeader":   "PREVIEW  (suffix always appended last)"
+    "exSuffix":        "N"
   },
 
   "review": {

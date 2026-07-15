@@ -9,6 +9,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfTextBox    = System.Windows.Controls.TextBox;
@@ -97,35 +98,11 @@ namespace LemoineTools.Tools.BulkExport
         }
 
         // ── Token definitions ─────────────────────────────────────────────────
-        // Two vocabularies so the picker only ever offers tokens that are valid for what
-        // is being exported. Sheet-only tokens (number/revision/issue date) do not exist
-        // on a view, so offering them in Views mode would produce empty/degenerate names.
+        // Registry-fed per mode so the picker only ever offers tokens that are valid for
+        // what is being exported. Sheet-only tokens (number/revision/issue date) do not
+        // exist on a view, so offering them in Views mode would produce empty/degenerate names.
         private const string SheetDefaultPattern = "{SheetNumber}-{SheetName}";
         private const string ViewDefaultPattern  = "{ViewName}";
-
-        private static readonly (string Label, string Token)[] SheetTokens =
-        {
-            ("Sheet Number",  "{SheetNumber}"),
-            ("Sheet Name",    "{SheetName}"),
-            ("Revision",      "{Revision}"),
-            ("Issue Date",    "{IssueDate}"),
-            ("Project No.",   "{ProjectNumber}"),
-            ("Project Name",  "{ProjectName}"),
-            ("Year",          "{Year}"),
-            ("Month",         "{Month}"),
-            ("Day",           "{Day}"),
-        };
-
-        private static readonly (string Label, string Token)[] ViewTokens =
-        {
-            ("View Name",     "{ViewName}"),
-            ("View Type",     "{ViewType}"),
-            ("Project No.",   "{ProjectNumber}"),
-            ("Project Name",  "{ProjectName}"),
-            ("Year",          "{Year}"),
-            ("Month",         "{Month}"),
-            ("Day",           "{Day}"),
-        };
 
         private bool ViewsMode => _exportMode == "Views";
 
@@ -621,7 +598,9 @@ namespace LemoineTools.Tools.BulkExport
             // tokens are ever offered (sheet tokens for sheets, view tokens for views).
             AddSectionLabel(outer, ViewsMode ? AppStrings.T("export.bulkExport.labels.patternViews") : AppStrings.T("export.bulkExport.labels.patternSheets"));
 
-            _tokenInput      = new TokenInput(ViewsMode ? ViewTokens : SheetTokens,
+            var patternTokens = NamingTokenRegistry.TokensFor(
+                ViewsMode ? TokenEntity.View : TokenEntity.Sheet, hasSource: false);
+            _tokenInput      = new TokenInput(patternTokens,
                                                      ViewsMode ? ViewDefaultPattern : SheetDefaultPattern);
             _tokenInput.Text = ActivePattern;
             outer.Children.Add(_tokenInput);
@@ -735,7 +714,9 @@ namespace LemoineTools.Tools.BulkExport
                     ["Day"]           = DateTime.Now.Day.ToString("D2"),
                 };
             }
-            string resolved = TokenInput.Resolve(ActivePattern, tokens);
+            var ctx = new TokenContext();
+            foreach (var kvp in tokens) ctx.Computed[kvp.Key] = kvp.Value;
+            string resolved = TokenResolver.Resolve(ActivePattern, ctx);
             preview.Text = AppStrings.T("export.bulkExport.labels.preview", SanitiseFilenamePreview(resolved), PreviewExtension());
         }
 
@@ -1296,7 +1277,7 @@ namespace LemoineTools.Tools.BulkExport
                         Settings = new List<SettingDef>
                         {
                             new SettingDef { Id = "pattern", Kind = "text", Label = "Default filename pattern",
-                                Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day}",
+                                Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day} + any custom tokens defined in Naming settings",
                                 Options = new TextOpts { Mono = true, Placeholder = "{SheetNumber}-{SheetName}" },
                                 Default = s.FilenamePattern },
                         }

@@ -5,7 +5,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -312,7 +312,7 @@ namespace LemoineTools.Tools.BulkExport
                     {
                         string outDir = SplitByFormat ? EnsureSubfolder(OutputFolder, "PDF") : OutputFolder;
                         string setName = string.IsNullOrWhiteSpace(ps.PatternOverride)
-                            ? SanitizeFilename(ps.Name)
+                            ? TokenResolver.SanitizeFilename(ps.Name)
                             : ResolveExportName(doc.GetElement(memberIds[0]), projNumber, projName, "PDF", pushLog);
                         var opts = BuildPdfOptions(setName, combine: true);
                         bool ok  = doc.Export(outDir, memberIds, opts);
@@ -660,77 +660,22 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        // Tokens are resolved against whatever is being exported. A ViewSheet exposes the
-        // sheet parameters; any other View has none of them, so its name/type drive the
-        // tokens and the sheet tokens fall back to the view name (so a stray sheet pattern
-        // still yields a non-empty name instead of silently producing "-").
-        private static Dictionary<string, string> BuildTokens(Element? element, string projNumber, string projName)
-        {
-            var tokens = new Dictionary<string, string>
-            {
-                ["ProjectNumber"] = projNumber,
-                ["ProjectName"]   = projName,
-                ["Year"]          = DateTime.Now.Year.ToString(),
-                ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                ["Day"]           = DateTime.Now.Day.ToString("D2"),
-            };
-
-            if (element is ViewSheet sheet)
-            {
-                tokens["SheetNumber"] = sheet.SheetNumber ?? "";
-                tokens["SheetName"]   = sheet.Name ?? "";
-                tokens["Revision"]    = element.get_Parameter(BuiltInParameter.SHEET_CURRENT_REVISION)?.AsString() ?? "";
-                tokens["IssueDate"]   = element.get_Parameter(BuiltInParameter.SHEET_ISSUE_DATE)?.AsString()       ?? "";
-                tokens["ViewName"]    = sheet.Name ?? "";
-                tokens["ViewType"]    = "Sheet";
-            }
-            else if (element is View view)
-            {
-                string viewName = view.Name ?? "";
-                tokens["ViewName"]    = viewName;
-                tokens["ViewType"]    = view.ViewType.ToString();
-                tokens["SheetName"]   = viewName;   // fallback so a sheet pattern still resolves
-                tokens["SheetNumber"] = "";
-                tokens["Revision"]    = "";
-                tokens["IssueDate"]   = "";
-            }
-
-            return tokens;
-        }
-
-        // Resolves the export filename and never silently emits a junk name. If the pattern
-        // resolves to something with no usable character (e.g. an all-empty-token pattern
-        // collapsing to "-"), the failure is reported to the run log AND diagnostics.log,
-        // and a deterministic fallback (element name, else element id) is used instead.
+        // Resolves the export filename through the shared TokenResolver and never silently
+        // emits a junk name — GuardDegenerate reports (run log + diagnostics.log) and falls
+        // back to the element's own name, else its id, when the pattern resolves to nothing
+        // usable (e.g. a stale sheet-token pattern applied in Views mode).
         private string ResolveExportName(Element? element, string projNumber, string projName,
                                          string fmt, Action<string, string> pushLog)
         {
-            var    tokens   = BuildTokens(element, projNumber, projName);
-            string resolved = TokenInput.Resolve(FilenamePattern, tokens);
+            var ctx = new TokenContext { Target = element };
+            ctx.Computed["ProjectNumber"] = projNumber;
+            ctx.Computed["ProjectName"]   = projName;
+            if (element is View view && !(element is ViewSheet))
+                ctx.Computed["ViewType"] = view.ViewType.ToString();
 
-            if (resolved.Any(char.IsLetterOrDigit))
-                return SanitizeFilename(resolved);
-
-            // Degenerate — report loudly and fall back.
-            string label    = element?.Name ?? "";
-            string fallback = SanitizeFilename(label);
-            if (!fallback.Any(char.IsLetterOrDigit))
-                fallback = "export-" + (element?.Id.Value.ToString() ?? "0");
-
-            pushLog(AppStrings.T("export.bulkExport.log.nameFallback", fmt, FilenamePattern, label, (element is ViewSheet ? AppStrings.T("export.bulkExport.words.sheet") : AppStrings.T("export.bulkExport.words.view")), fallback), "warn");
-            DiagnosticsLog.Warn("BulkExport.ResolveExportName",
-                $"Degenerate filename. fmt={fmt} pattern='{FilenamePattern}' resolved='{resolved}' " +
-                $"element={element?.Id} name='{label}' fallback='{fallback}'");
-            return fallback;
-        }
-
-        private static string SanitizeFilename(string name)
-        {
-            foreach (char c in Path.GetInvalidFileNameChars())
-                name = name.Replace(c, '_');
-            name = name.Trim();
-            // Guard against an entirely-illegal pattern resolving to an empty string
-            return name.Length > 0 ? name : "export";
+            string resolved = TokenResolver.Resolve(FilenamePattern, ctx, msg => pushLog(msg, "warn"));
+            resolved = TokenResolver.GuardDegenerate(resolved, ctx, "", msg => pushLog(msg, "warn"));
+            return TokenResolver.SanitizeFilename(resolved);
         }
 
         private static string EnsureSubfolder(string parent, string sub)

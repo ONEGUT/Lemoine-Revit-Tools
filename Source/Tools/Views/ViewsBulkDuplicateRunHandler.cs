@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -104,22 +104,14 @@ namespace LemoineTools.Tools.LinkViews
                         break;   // falls through to the existing tx.Commit() below
                     }
 
-                    string name = TokenInput.Resolve(NamePattern,
-                        new Dictionary<string, string>
-                        {
-                            ["ViewName"] = view.Name,
-                            ["ViewType"] = ViewsByTemplateRunHandler.ViewTypeLabel(view.ViewType),
-                        }).Trim();
+                    var ctx = new TokenContext { Doc = doc, Target = view };
+                    ctx.Computed["ViewType"] = ViewsByTemplateRunHandler.ViewTypeLabel(view.ViewType);
+                    string name = TokenResolver.Resolve(NamePattern, ctx, msg => Log(msg, "warn")).Trim();
+                    name = TokenResolver.GuardDegenerate(name, ctx, view.Name, msg => Log(msg, "warn"));
 
                     done++;
                     Progress((int)(done * 95.0 / Math.Max(total, 1)), pass, fail, skip);
 
-                    if (string.IsNullOrWhiteSpace(name))
-                    {
-                        Log(AppStrings.T("linkviews.duplicate.log.skipEmpty", view.Name), "info");
-                        skip++;
-                        continue;
-                    }
                     if (usedNames.Contains(name))
                     {
                         Log(AppStrings.T("linkviews.duplicate.log.skipExists", name), "info");

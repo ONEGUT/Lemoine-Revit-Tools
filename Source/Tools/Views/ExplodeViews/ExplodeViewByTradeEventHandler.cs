@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Naming;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Tools.ExplodeViews
@@ -31,7 +32,7 @@ namespace LemoineTools.Tools.ExplodeViews
         // When true, every model category that does not belong to the isolated trade is hidden
         // in its exploded view (full isolation). When false, non-trade elements stay as context.
         public bool          HideOthers         { get; set; } = false;
-        public string        NamePattern        { get; set; } = "{nn}_{Source} - {Trade}";
+        public string        NamePattern        { get; set; } = "{Counter}_{SourceView} - {Trade}";
 
         // ── Callbacks (BeginInvoke-wrapped by StepFlowWindow) ─────────────────
         public Action<string, string>?            PushLog       { get; set; }
@@ -295,15 +296,17 @@ namespace LemoineTools.Tools.ExplodeViews
                         }
 
                         // Name + number prefix; enforce View.Name uniqueness (it throws on a dup).
-                        string nn       = NumberPrefix ? (i + 1).ToString("00") : "";
-                        string baseName = (NamePattern ?? "{nn}_{Source} - {Trade}")
-                            .Replace("{nn}",     nn)
-                            .Replace("{Source}", srcName)
-                            .Replace("{Trade}",  plan.Label)
-                            .Trim()
-                            .TrimStart('_', ' ', '-')
-                            .Trim();
-                        if (baseName.Length == 0) baseName = $"{srcName} - {plan.Label}";
+                        string counter = NumberPrefix ? (i + 1).ToString("00") : "";
+                        var namingCtx = new TokenContext { Doc = doc, Target = dup, Source = source };
+                        namingCtx.Computed["Counter"]    = counter;
+                        namingCtx.Computed["SourceView"] = srcName;
+                        namingCtx.Computed["Trade"]      = plan.Label;
+
+                        string resolved = TokenResolver.Resolve(NamePattern, namingCtx, msg => Log(msg, "warn"));
+                        // The pattern's leading {Counter}_ collapses to a stray "_"/"-" when
+                        // numbering is off — trim it rather than treat it as a real fallback case.
+                        string baseName = resolved.Trim().TrimStart('_', ' ', '-').Trim();
+                        baseName = TokenResolver.GuardDegenerate(baseName, namingCtx, $"{srcName} - {plan.Label}", msg => Log(msg, "warn"));
                         string uniqueName = MakeUniqueName(baseName, usedNames);
                         try { dup.Name = uniqueName; }
                         catch (Exception ex)
