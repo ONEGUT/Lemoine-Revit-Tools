@@ -221,13 +221,11 @@ namespace LemoineTools.Tools.Setup
             bool unloaded = false;
             try
             {
-                using (var tx = new Transaction(hostDoc, "Unload Link"))
-                {
-                    tx.Start();
-                    ConfigureFailures(tx);
-                    linkType.Unload(null);
-                    tx.Commit();
-                }
+                // RevitLinkType.Unload/Load/Reload/LoadFrom are link-management calls that must run
+                // OUTSIDE any transaction — they manage the document themselves and throw "The
+                // operation is not permitted when there is any open transaction phase started by API
+                // client" if one is open (confirmed on a Windows run). NO Transaction here.
+                linkType.Unload(null);
                 unloaded = true;
             }
             catch (Exception ex)
@@ -299,13 +297,9 @@ namespace LemoineTools.Tools.Setup
 
                 var srcMpForReload = ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath);
 
-                using (var tx = new Transaction(hostDoc, "Reload Link From Corrected File"))
-                {
-                    tx.Start();
-                    ConfigureFailures(tx);
-                    linkType.LoadFrom(srcMpForReload, new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
-                    tx.Commit();
-                }
+                // LoadFrom is a link-management call — OUTSIDE any transaction (same rule as Unload
+                // above). Wrapping it in a Transaction throws the same "open transaction" error.
+                linkType.LoadFrom(srcMpForReload, new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
                 unloaded = false;   // reloaded — no longer needs the recovery reload below
 
                 // ── Publish shared coordinates, then re-place the instance to pick them up ──
@@ -364,14 +358,9 @@ namespace LemoineTools.Tools.Setup
                 {
                     try
                     {
-                        using (var tx = new Transaction(hostDoc, "Reload Link (recovery)"))
-                        {
-                            tx.Start();
-                            ConfigureFailures(tx);
-                            linkType.LoadFrom(ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath),
-                                new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
-                            tx.Commit();
-                        }
+                        // LoadFrom OUTSIDE any transaction (link-management call — see the unload note).
+                        linkType.LoadFrom(ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath),
+                            new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
                     }
                     catch (Exception ex)
                     {

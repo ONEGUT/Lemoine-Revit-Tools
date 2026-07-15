@@ -19,6 +19,15 @@ you want fixed and I'll apply them on a `review-fixes-setup` branch.
 > items got their code-side fixes (UL-1-1's unload-before-open, PC-7-1's one-instance-per-file
 > guard, PC-7-2's collateral count + review warning); the appendix test scripts T1–T6 remain
 > the runtime verification to do on a Windows machine.
+>
+> **Follow-up (Windows run):** Push Coordinates failed at `Unload` with *"operation is not
+> permitted when there is any open transaction."* Root cause: `RevitLinkType.Unload/LoadFrom`
+> are link-management calls that must run OUTSIDE a transaction — the code had wrapped them in
+> one. Fixed in Push (unload + both reloads) and UpgradeLinks (the `UnloadIfCurrentlyLinked`
+> helper and the `LinkIntoHost`/`ReloadExistingType` reload path, now split so type-create and
+> instance-create each get their own transaction with `LoadFrom` between them). Rule recorded
+> in CLAUDE.md. This supersedes PC-4-1's framing — the unload itself was the blocker; PC-4-1's
+> *other* assumptions (standalone open, background sync) still need T4.
 
 The headline: Upgrade Links is in strong shape mechanically (memory posture, progress
 cadence, cancellation, externalized text) but has two deep run-lifecycle holes.

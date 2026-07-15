@@ -600,49 +600,66 @@ namespace LemoineTools.Tools.Setup
         private LinkResult LinkIntoHost(Document hostDoc, ModelPath savedMp, string baseName, UpgradePlacement placement)
         {
             var import = UpgradePlacementMap.ToImportPlacement(placement);
-            using (var tx = new Transaction(hostDoc, "Link upgraded model"))
+
+            // RevitLinkType.Create needs a transaction, but the reload-existing path
+            // (ReloadExistingType → LoadFrom) must NOT be inside one — link-management calls throw
+            // "operation is not permitted when there is any open transaction" (CLAUDE.md). So the
+            // type step and the instance step each get their own transaction, and any LoadFrom runs
+            // between them with no transaction open.
+            ElementId typeId = ElementId.InvalidElementId;
+            bool createdFresh = false;
+            using (var tx = new Transaction(hostDoc, "Create Link Type"))
             {
                 tx.Start();
                 ConfigureFailures(tx);
-
-                ElementId typeId;
                 try
                 {
                     var result = RevitLinkType.Create(hostDoc, savedMp, new RevitLinkOptions(false));
                     typeId = result.ElementId;
+                    createdFresh = true;
+                    tx.Commit();
                 }
                 catch (Exception ex)
                 {
                     // Most commonly: a link with this file/name already exists in the host.
                     DiagnosticsLog.Swallowed("UpgradeLinks: RevitLinkType.Create", ex);
-                    if (!Spec.ReloadExisting)
-                    {
-                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
-                        tx.RollBack();
-                        return LinkResult.SkippedExisting;
-                    }
+                    tx.RollBack();
+                }
+            }
 
-                    typeId = ReloadExistingType(hostDoc, savedMp, baseName);
-                    if (typeId == ElementId.InvalidElementId)
-                    {
-                        Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
-                        tx.RollBack();
-                        return LinkResult.SkippedExisting;
-                    }
-                    Log(AppStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
-
-                    // The reloaded type already points at the upgraded copy; if it carries instances,
-                    // leave them (adding another would duplicate the link on the model).
-                    if (HasInstances(hostDoc, typeId)) { tx.Commit(); return LinkResult.Linked; }
+            if (!createdFresh)
+            {
+                if (!Spec.ReloadExisting)
+                {
+                    Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                    return LinkResult.SkippedExisting;
                 }
 
+                // LoadFrom OUTSIDE any transaction — repoints the existing type at the upgraded copy.
+                typeId = ReloadExistingType(hostDoc, savedMp, baseName);
                 if (typeId == ElementId.InvalidElementId)
                 {
-                    // The file was upgraded and saved but never linked — a real failure, not a skip.
-                    Log(AppStrings.T("upgradeLinks.log.typeInvalid", baseName), "fail");
-                    tx.RollBack();
-                    return LinkResult.Failed;
+                    Log(AppStrings.T("upgradeLinks.log.linkExistsSkip", baseName), "warn");
+                    return LinkResult.SkippedExisting;
                 }
+                Log(AppStrings.T("upgradeLinks.log.linkReloaded", baseName), "info");
+
+                // The reloaded type already points at the upgraded copy; if it carries instances,
+                // leave them (adding another would duplicate the link on the model).
+                if (HasInstances(hostDoc, typeId)) return LinkResult.Linked;
+            }
+
+            if (typeId == ElementId.InvalidElementId)
+            {
+                // The file was upgraded and saved but never linked — a real failure, not a skip.
+                Log(AppStrings.T("upgradeLinks.log.typeInvalid", baseName), "fail");
+                return LinkResult.Failed;
+            }
+
+            using (var tx = new Transaction(hostDoc, "Place Link Instance"))
+            {
+                tx.Start();
+                ConfigureFailures(tx);
 
                 RevitLinkInstance? instance = null;
                 try
@@ -654,6 +671,9 @@ namespace LemoineTools.Tools.Setup
                     DiagnosticsLog.Error("UpgradeLinks: instance placement", ex);
                     Log(AppStrings.T("upgradeLinks.log.placeFail", baseName, ex.Message), "fail");
                     tx.RollBack();
+                    // A freshly-created type with no instance is an orphan (loaded but unplaced) —
+                    // drop it so a re-run starts clean instead of falling into the reload path.
+                    if (createdFresh) DeleteOrphanType(hostDoc, typeId);
                     return LinkResult.Failed;
                 }
 
@@ -665,6 +685,21 @@ namespace LemoineTools.Tools.Setup
                 tx.Commit();
                 return LinkResult.Linked;
             }
+        }
+
+        private static void DeleteOrphanType(Document hostDoc, ElementId typeId)
+        {
+            try
+            {
+                using (var tx = new Transaction(hostDoc, "Remove Unplaced Link Type"))
+                {
+                    tx.Start();
+                    ConfigureFailures(tx);
+                    hostDoc.Delete(typeId);
+                    tx.Commit();
+                }
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinks: delete orphan link type", ex); }
         }
 
         // A source file that is currently loaded as a link in the host can't be opened as a
@@ -693,13 +728,10 @@ namespace LemoineTools.Tools.Setup
                 }
                 if (loadedType == null) return;
 
-                using (var tx = new Transaction(hostDoc, "Unload Link Before Upgrade"))
-                {
-                    tx.Start();
-                    ConfigureFailures(tx);
-                    loadedType.Unload(null);
-                    tx.Commit();
-                }
+                // Unload is a link-management call — it must run OUTSIDE any transaction, or it
+                // throws "operation is not permitted when there is any open transaction" (confirmed
+                // on a Windows run). No Transaction here.
+                loadedType.Unload(null);
                 Log(AppStrings.T("upgradeLinks.log.unloadedExisting", fileName), "info");
             }
             catch (Exception ex)
