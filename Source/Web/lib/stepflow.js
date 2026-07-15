@@ -283,6 +283,10 @@ Lemoine.stepflow = function (container, opts) {
         handle = mk({ value: inp.value, placeholder: inp.placeholder,
                       onBrowse: function () { send('action', { action: browseAction, stepId: stepId, inputId: inp.id }); } });
         el = labeledRow(inp.label, handle.el, true); break;
+      case 'browserTree':
+        handle = U.browserTree({ roots: inp.roots, selected: inp.selected, singleSelect: inp.singleSelect,
+                                 onChange: onChange });
+        el = labeledRow(inp.label, handle.el, true); break;
       case 'tokenInput':
         handle = U.tokenInput({ value: inp.value, defaultPattern: inp.defaultPattern,
                                 groups: inp.groups, sample: inp.sample, onChange: onChange });

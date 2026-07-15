@@ -492,5 +492,17 @@ scrollbars (all become CSS/JS in the shared lib).
   (SingleSelect), CopyDatums, the Split* family, MakeCeilingGrids (all MultiSelectTabs+toggles);
   BrowserTreePicker and TokenInput are the two components still gating the view/sheet and
   naming-pattern tools (Duplicate Views, Print View's naming, Bulk Export/Rename).
+- **2026-07 (Phase 3 - two gating components + naming merge):** merged the
+  naming-tokens rework branch in (conflict-free) so the new `Source/Framework/Naming/`
+  registry/resolver is present, then built the two components that gate the rest of the
+  view/sheet + naming tools: **TokenInput** (grouped chips Target/Source/Project/Date/User,
+  insert-at-cursor `{Token}`, Reset, live sample-substitution preview - mirrors the WPF
+  TokenInput fed by `NamingTokenRegistry.TokensFor`) and **BrowserTreePicker** (Project
+  Browser tree from a `BrowserTree` snapshot - folders/leaves, dependents nested, checkboxes,
+  expand carets, right-click-selects-descendants + singleSelect per R23). `WebInput.TokenInput`
+  groups TokenDefinitions like the WPF; `WebInput.BrowserTree` serializes the node tree (ids as
+  strings). Both verified in headless Chromium and in the gallery. These unblock Duplicate
+  Views, Views By Link/Template, Place Dependent Views, Bulk Rename, Bulk Export, and Print
+  View's naming - the largest remaining slice of wave 1+.
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

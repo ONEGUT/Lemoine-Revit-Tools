@@ -152,6 +152,18 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
 .l-browse input::placeholder { color:var(--l-text-dim); }
 .l-browse .l-btn { flex-shrink:0; }
 
+/* ── BrowserTreePicker (Project Browser view/sheet tree) ────────────────────── */
+.l-tree { border:1px solid var(--l-border); background:var(--l-raised); border-radius:var(--l-radius-sm);
+          max-height:300px; overflow:auto; padding:4px 0; }
+.l-tree .row { display:flex; align-items:center; gap:6px; padding:3px 6px; }
+.l-tree .row:hover { background:var(--l-accent-dim); }
+.l-tree .caret { width:14px; flex-shrink:0; text-align:center; color:var(--l-text-dim);
+                 font-size:var(--l-fs-sm); cursor:pointer; }
+.l-tree .nocb { width:13px; flex-shrink:0; }
+.l-tree .row input { accent-color:var(--l-accent); margin:0; flex-shrink:0; cursor:pointer; }
+.l-tree .lbl { font-size:var(--l-fs-md); color:var(--l-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.l-tree .lbl.folder { color:var(--l-text-sub); font-weight:600; }
+
 /* ── TokenInput (naming-pattern editor) ─────────────────────────────────────── */
 .l-token .ghead { font-size:var(--l-fs-sm); color:var(--l-text-dim); text-transform:uppercase; margin:8px 0 4px; }
 .l-token .chips > .ghead:first-child { margin-top:0; }

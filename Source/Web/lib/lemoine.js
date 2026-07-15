@@ -423,6 +423,73 @@ Lemoine.ui = (function () {
              setValue: function (v) { input.value = v == null ? '' : v; onInput(); } };
   }
 
+  // ── BrowserTreePicker (Project Browser view/sheet tree) ─────────────────────
+  // opts: { roots:[node], selected:[id], singleSelect, onChange(idsArray) }
+  // node: { title, id (string|null; null=org folder), isSheet, children:[node] }
+  // Contract (ported from WPF BrowserTreePicker, R23): a leaf's checkbox selects only that
+  // leaf (a parent view's dependents are separate child leaves); RIGHT-CLICK any row selects
+  // only the descendant leaves beneath it (dependents), additive, leaving the clicked node
+  // unchecked; a no-op in singleSelect. SingleSelect makes checking clear all prior selection.
+  function browserTree(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-tree');
+    var single = !!opts.singleSelect;
+    var selected = {};
+    (opts.selected || []).forEach(function (id) { selected[String(id)] = true; });
+    var expanded = {}; // node key -> false when collapsed (default expanded)
+    var seq = 0;
+
+    function descendantLeaves(node, includeSelf) {
+      var out = [];
+      if (node.id != null && includeSelf) out.push(String(node.id));
+      (node.children || []).forEach(function (c) { out = out.concat(descendantLeaves(c, true)); });
+      return out;
+    }
+    function fire() { if (opts.onChange) opts.onChange(Object.keys(selected)); }
+    function setLeaf(id, on) {
+      if (single) { selected = {}; if (on) selected[id] = true; }
+      else { if (on) selected[id] = true; else delete selected[id]; }
+      render(); fire();
+    }
+    function selectDescendants(node) {
+      if (single) return; // right-click is a no-op in single-select mode
+      descendantLeaves(node, false).forEach(function (id) { selected[id] = true; });
+      render(); fire();
+    }
+
+    function renderNode(node, depth, container) {
+      if (!node.__k) node.__k = 'n' + (seq++);
+      var isFolder = node.id == null;
+      var kids = node.children || [];
+      var hasKids = kids.length > 0;
+      var open = expanded[node.__k] !== false;
+
+      var row = el('div', 'row'); row.style.paddingLeft = (depth * 16 + 6) + 'px';
+      if (hasKids) {
+        var caret = el('span', 'caret', open ? '\u25BE' : '\u25B8');
+        caret.addEventListener('click', function (e) { e.stopPropagation(); expanded[node.__k] = !open; render(); });
+        row.appendChild(caret);
+      } else { row.appendChild(el('span', 'caret')); }
+
+      if (!isFolder) {
+        var cb = el('input'); cb.type = 'checkbox'; cb.checked = selected[String(node.id)] === true;
+        cb.addEventListener('change', function () { setLeaf(String(node.id), cb.checked); });
+        row.appendChild(cb);
+      } else { row.appendChild(el('span', 'nocb')); }
+
+      row.appendChild(el('span', 'lbl' + (isFolder ? ' folder' : ''), node.title));
+      row.addEventListener('contextmenu', function (e) { e.preventDefault(); selectDescendants(node); });
+      container.appendChild(row);
+
+      if (hasKids && open) kids.forEach(function (c) { renderNode(c, depth + 1, container); });
+    }
+    function render() { root.innerHTML = ''; seq = 0; (opts.roots || []).forEach(function (n) { renderNode(n, 0, root); }); }
+
+    render();
+    fire(); // fires once at end of setup (contract)
+    return { el: root, getSelected: function () { return Object.keys(selected); } };
+  }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
@@ -431,6 +498,6 @@ Lemoine.ui = (function () {
     warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
     checkList: checkList, review: review,
     folderBrowser: folderBrowser, fileBrowser: fileBrowser,
-    tokenInput: tokenInput
+    tokenInput: tokenInput, browserTree: browserTree
   };
 })();

@@ -133,6 +133,25 @@
     ], onChange: function (sel) { log('checklist: ' + sel.join(', ')); } }).el);
   });
 
+  // BrowserTreePicker
+  demo('BrowserTreePicker (right-click = dependents)', function (s) {
+    s.appendChild(U.browserTree({
+      selected: ['101'],
+      roots: [
+        { title: 'Views (Discipline)', id: null, children: [
+          { title: 'Floor Plans', id: null, children: [
+            { title: 'Level 1', id: '101', children: [
+              { title: 'Level 1 - Area A (dependent)', id: '111' },
+              { title: 'Level 1 - Area B (dependent)', id: '112' } ] },
+            { title: 'Level 2', id: '102' } ] } ] },
+        { title: 'Sheets (all)', id: null, children: [
+          { title: 'A-101 - Level 1 Plan', id: '201', isSheet: true },
+          { title: 'A-102 - Level 2 Plan', id: '202', isSheet: true } ] }
+      ],
+      onChange: function (ids) { log('tree (' + ids.length + '): ' + ids.join(', ')); }
+    }).el);
+  });
+
   // TokenInput
   demo('TokenInput (naming pattern)', function (s) {
     s.appendChild(U.tokenInput({

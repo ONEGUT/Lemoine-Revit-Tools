@@ -145,6 +145,31 @@ namespace LemoineTools.Framework.Web
             return w;
         }
 
+        /// <summary>
+        /// The Project Browser view/sheet tree picker, fed a Revit-free <see cref="BrowserTree"/>
+        /// snapshot (folders + view/sheet leaves, dependents nested). Ids travel as strings; the
+        /// tool's OnState parses them back to <c>long</c>. See the R23 contract for the checkbox /
+        /// right-click behaviour.
+        /// </summary>
+        public static WebInput BrowserTree(string id, string label, LemoineTools.Framework.BrowserTree tree,
+            IEnumerable<long>? selected = null, bool singleSelect = false)
+        {
+            var w = new WebInput("browserTree", id, label);
+            w._props["roots"]        = tree.Roots.Select(BrowserNodePayload).ToList();
+            w._props["selected"]     = (selected ?? Enumerable.Empty<long>()).Select(x => (object?)x.ToString()).ToList();
+            w._props["singleSelect"] = singleSelect;
+            return w;
+        }
+
+        private static Dictionary<string, object?> BrowserNodePayload(LemoineTools.Framework.BrowserNode n) =>
+            new Dictionary<string, object?>
+            {
+                ["title"]    = n.Title,
+                ["id"]       = n.Id.HasValue ? (object?)n.Id.Value.ToString() : null,
+                ["isSheet"]  = n.IsSheet,
+                ["children"] = n.Children.Select(BrowserNodePayload).ToList(),
+            };
+
         public static WebInput MultiSelectTabs(string id, string label,
             IDictionary<string, List<string>> groups, IEnumerable<string>? selected = null,
             bool singleSelect = false)
