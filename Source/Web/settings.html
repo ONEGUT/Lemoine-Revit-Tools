@@ -1,0 +1,52 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Global Settings</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-settings"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script src="lib/settings.js"></script>
+<script>
+  var app = document.getElementById('app');
+  var st = Lemoine.settings(app, { send: function (type, payload) { Lemoine.send(type, payload); } });
+
+  Lemoine.on('init', function (p) { st.init(p); });
+
+  // Standalone demo driver for a plain browser / headless screenshot (no C# bridge).
+  var demoMode = !Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search);
+  if (demoMode) {
+    st.init({
+      title: 'Global Settings', close: 'Close', build: 'demo build', active: 'general',
+      notMigrated: 'These settings are managed in the classic settings window for now.',
+      tabs: [
+        { id: 'general', label: 'General', migrated: true },
+        { id: 'naming', label: 'Naming', migrated: false },
+        { id: 'filters', label: 'Filters', migrated: false }
+      ],
+      general: {
+        header: 'General', themeLabel: 'Colour theme', darkLabel: 'Dark', lightLabel: 'Light',
+        sizeLabel: 'UI size', langLabel: 'Language', langHint: 'Open windows keep their language.',
+        diagLabel: 'Diagnostics', diagDesc: 'Durable log of best-effort failures.',
+        logPath: 'C:\\Users\\me\\AppData\\Roaming\\LemoineTools\\diagnostics.log',
+        openLog: 'Open log', activeBadge: 'Active',
+        themes: [
+          { name: 'Midnight', active: true, dark: true, bg: '#1b1d22', raised: '#25282f', border: '#33373f', text: '#e6e8ec', accent: '#5aa0ff', green: '#57c97a', red: '#e2606a' },
+          { name: 'Paper', active: false, dark: false, bg: '#f6f6f4', raised: '#ffffff', border: '#dcdcd6', text: '#22242a', accent: '#2f6bd6', green: '#2f9e57', red: '#c8404a' }
+        ],
+        sizes: [
+          { id: 'Small', name: 'Small', desc: 'Compact', active: false },
+          { id: 'Medium', name: 'Medium', desc: 'Default', active: true },
+          { id: 'Large', name: 'Large', desc: 'Roomier', active: false }
+        ],
+        languages: [
+          { culture: 'en', name: 'English', active: true }
+        ]
+      }
+    });
+  }
+</script>
+</body></html>

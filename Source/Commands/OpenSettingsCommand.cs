@@ -1,8 +1,10 @@
+using System;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Naming;
+using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Commands
 {
@@ -10,8 +12,45 @@ namespace LemoineTools.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class OpenSettingsCommand : IExternalCommand
     {
+        // The web settings window lives on the shared WebUiThread (never disposed for the
+        // session), so track it there rather than on App.GlobalSettings (which is the WPF one).
+        private static WebSettingsWindow? _webWindow;
+
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            // Feature-flagged web settings surface (General tab). Other tabs still render a
+            // placeholder — the classic WPF window remains the fallback when the flag is off.
+            if (WebUiSettings.Instance.Enabled)
+            {
+                if (_webWindow != null)
+                {
+                    try
+                    {
+                        WebUiThread.Invoke(() =>
+                        {
+                            var w = _webWindow;
+                            if (w != null && w.IsVisible) w.Activate();
+                            else _webWindow = null;
+                        });
+                        if (_webWindow != null) return Result.Succeeded;
+                    }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed("OpenSettingsCommand: activate web settings window", ex);
+                        _webWindow = null;
+                    }
+                }
+
+                WebUiThread.Invoke(() =>
+                {
+                    var win = new WebSettingsWindow();
+                    win.Closed += (s, e) => { _webWindow = null; };
+                    win.Show();
+                    _webWindow = win;
+                });
+                return Result.Succeeded;
+            }
+
             if (App.GlobalSettings != null && App.GlobalSettings.IsVisible)
             {
                 App.GlobalSettings.Activate();

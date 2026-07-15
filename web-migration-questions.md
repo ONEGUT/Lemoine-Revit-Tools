@@ -63,3 +63,38 @@ inline-editable name · category · count). The web port stacks three inputs per
 rule (include toggle, colour picker, name field) under a per-trade group hint.
 Functionally identical; visually taller. A future compound "rule row" web
 component could restore the single-line layout.
+
+## Global Settings window — General tab migrated; other tabs deferred (review)
+Built a web settings surface (settings.html + lib/settings.js + WebSettingsWindow +
+WebSettings payload builder), gated by the same WebUi flag. The General tab is fully
+web-backed (theme cards with live colour previews + active badge, UI-size choice rows,
+language rows, diagnostics log path + Open Log). Theme/size/language route through the
+same AppSettings setters, so they persist and propagate live to every open web window
+via ThemeChanged/UiSizeChanged. The other 8 ribbon-group tabs render a "managed in the
+classic window" placeholder and still open the WPF window's content when the flag is off.
+
+REMAINING SETTINGS TABS (deferred — each is its own sizeable effort):
+- Filters (globalSettings.Filters.cs, ~3620 lines): AutoFilters trade editor, per-trade
+  rule rows, clash-definition management, colour ramps. The largest single surface in the
+  app; needs a drag-reorderable rule editor web component.
+- Naming (~877 lines): user-token editor (bind to Revit parameter GUID-first), per-tool
+  default-pattern rows. Needs a token-CRUD web surface.
+- Dimensions (~263), ToolGroups per-tool settings (~379), CeilingHeatmap (~197),
+  LinkViews (~30): mostly spec-driven field rows — portable with the existing WebInput
+  factories once a "settings tab = list of WebInput rows" spec is added to WebSettings.
+
+Question: proceed tab-by-tab in a follow-up pass, or is a settings-tab spec model
+(reusing WebInput rows, like the step-flow tools) preferred so the simpler tabs
+(Dimensions/ToolGroups/CeilingHeatmap/LinkViews) can be batch-ported first?
+
+## Other static windows — not yet migrated (review)
+These bespoke WPF windows are outside the step-flow + settings surfaces and were not
+touched this pass. Each needs its own web surface decision:
+- FiltersSettingsWindow / LegendSettingsWindow (standalone editors)
+- ClashDefinitionsWindow (clash-rule CRUD)
+- ToolsOverviewWindow (tool gallery/launcher)
+- LinkAuditWindow (link display-mode audit table)
+- ColorPickerWindow (the shared swatch/hex picker — note: the web colorPicker input
+  added for CeilingHeatmap already covers the inline-swatch use; a full standalone
+  picker window may not be needed).
+Recommend prioritising by usage; ClashDefinitions and ToolsOverview are the most-opened.
