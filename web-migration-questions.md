@@ -35,3 +35,15 @@ logged via DiagnosticsLog.Swallowed). Used by Projected Ceiling Grids.
 ## PruneTree promoted to WebToolBase
 The eligible-leaf BrowserTree pruning (WPF picker's eligibleIds) is now a shared
 protected helper on WebToolBase; ReplicateDependentViews' private copy removed.
+
+## ClashFinder — window re-activation after slab pick (open)
+The WPF wizard implements IWindowActivatable so a slab pick (which pulls Revit's
+main window forward) re-activates the tool window when the pick resolves. The web
+shell has no activate hook yet — after a pick the user clicks back to the tool
+window manually. If this matters, WebStepFlowWindow can expose an Activate
+callback wired through WebToolLauncher's keyed-window map.
+
+## CeilingHeatmap — gradient preview (divergence)
+The WPF ramp step draws a live Low→Mid→High gradient bar. The web port shows the
+three color swatches (native color inputs) without the combined gradient strip.
+A CSS linear-gradient preview could be added to the colorPicker row group later.
