@@ -17,3 +17,21 @@ you want changed.
 ## Open questions
 
 *(appended as encountered)*
+
+## BulkRename — live preview placement (divergence)
+The WPF S3 panel rebuilds a 12-row rename preview on every keystroke. The web shell
+can only rebuild a whole step's inputs (which would steal focus from the text field
+being typed in), so the preview rows render on the review step S4 — which the shell
+already auto-refreshes — and S3's summary line shows the live change count.
+Question: acceptable, or should the shell gain a partial "update one input" channel
+so the preview can live inside S3 like WPF?
+
+## File-dialog filters
+WebInput.FileBrowser now carries an optional Windows dialog filter string
+("CAD files|*.dwg"); stepflow.js passes it through the browseFile action and the
+C# side applies it to OpenFileDialog (malformed strings fall back to no filter,
+logged via DiagnosticsLog.Swallowed). Used by Projected Ceiling Grids.
+
+## PruneTree promoted to WebToolBase
+The eligible-leaf BrowserTree pruning (WPF picker's eligibleIds) is now a shared
+protected helper on WebToolBase; ReplicateDependentViews' private copy removed.
