@@ -303,3 +303,14 @@ html, body { height:100%; }
 .l-log .warn { color:var(--l-red); }
 .l-log .info { color:var(--l-text-dim); }
 .l-hidden { display:none; }
+
+/* ── ColorPicker ── */
+.l-color { display: block; }
+.l-color-row { display: flex; align-items: center; gap: 8px; }
+.l-color-row input[type="color"] {
+  width: 44px; height: 28px; padding: 0; border: 1px solid var(--l-border-mid);
+  border-radius: var(--l-radius-sm); background: var(--l-select-bg); cursor: pointer;
+}
+.l-color-row input.hex {
+  width: 92px; font-family: var(--l-mono); font-size: var(--l-fs-sm);
+}

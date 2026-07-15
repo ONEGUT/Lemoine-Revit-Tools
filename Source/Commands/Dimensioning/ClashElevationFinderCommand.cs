@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Commands
@@ -81,6 +82,46 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("clashElevationFinder", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+
+                    var allViews = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View)).Cast<View>()
+                        .Where(v => !v.IsTemplate
+                                 && (v.ViewType == ViewType.Section
+                                  || v.ViewType == ViewType.Elevation))
+                        .OrderBy(v => v.Name)
+                        .ToList();
+
+                    var spotTypes = new FilteredElementCollector(doc)
+                        .OfCategory(BuiltInCategory.OST_SpotElevations)
+                        .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
+                        .OrderBy(t => t.Name)
+                        .Select(t => (Name: t.Name, Id: t.Id))
+                        .ToList();
+
+                    if (spotTypes.Count == 0)
+                    {
+                        spotTypes = new FilteredElementCollector(doc)
+                            .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
+                            .OrderBy(t => t.Name)
+                            .Select(t => (Name: t.Name, Id: t.Id))
+                            .ToList();
+                    }
+
+                    var definitions = ClashDefinitionsSettings.Instance.Definitions
+                        ?? new List<ClashDefinition>();
+
+                    return new ClashElevationFinderWebTool(
+                        App.ClashElevationFinderHandler, App.ClashElevationFinderEvent,
+                        allViews, definitions, spotTypes,
+                        BrowserTreeCapture.Capture(doc));
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

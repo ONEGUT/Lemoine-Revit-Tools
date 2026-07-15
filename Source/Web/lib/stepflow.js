@@ -275,6 +275,9 @@ Lemoine.stepflow = function (container, opts) {
         handle = U.textField({ label: inp.label, value: inp.value, placeholder: inp.placeholder,
                                multiline: inp.multiline, onChange: onChange });
         el = handle.el; break;
+      case 'colorPicker':
+        handle = U.colorPicker({ label: inp.label, value: inp.value, onChange: onChange });
+        el = handle.el; break;
       case 'singleSelect':
         handle = U.singleSelect({ options: inp.options, value: inp.value, onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;

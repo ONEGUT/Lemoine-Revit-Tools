@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Ceilings;
 
 namespace LemoineTools.Commands
@@ -91,6 +92,55 @@ namespace LemoineTools.Commands
                 var vm    = new CeilingHeatmapViewModel(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
                                                         BrowserTreeCapture.Capture(doc), levels, rcpTemplates);
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("ceilingHeatmap", () =>
+                {
+                    Document doc = uiApp.ActiveUIDocument.Document;
+
+                    var viewsByLevel = new Dictionary<string, List<(string Name, ElementId Id)>>();
+                    var rcpViews = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ViewPlan))
+                        .Cast<ViewPlan>()
+                        .Where(v =>
+                        {
+                            if (v.IsTemplate) return false;
+                            var vft = doc.GetElement(v.GetTypeId()) as ViewFamilyType;
+                            return vft?.ViewFamily == ViewFamily.CeilingPlan;
+                        })
+                        .OrderBy(v => v.Name)
+                        .ToList();
+                    foreach (ViewPlan vp in rcpViews)
+                    {
+                        string levelName = vp.GenLevel?.Name ?? "No Level";
+                        if (!viewsByLevel.ContainsKey(levelName))
+                            viewsByLevel[levelName] = new List<(string, ElementId)>();
+                        viewsByLevel[levelName].Add((vp.Name, vp.Id));
+                    }
+                    var sortedByLevel = viewsByLevel
+                        .OrderBy(kvp => kvp.Key)
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                    var levels = new FilteredElementCollector(doc)
+                        .OfClass(typeof(Level)).Cast<Level>()
+                        .Select(l => new CeilingHeatmapViewModel.HeatmapLevelEntry
+                        {
+                            Id = l.Id, Name = l.Name, ElevationFt = l.Elevation,
+                        })
+                        .ToList();
+
+                    var rcpTemplates = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View)).Cast<View>()
+                        .Where(v => v.IsTemplate && v.ViewType == ViewType.CeilingPlan)
+                        .Select(v => new CeilingHeatmapViewModel.HeatmapTemplateEntry { Id = v.Id, Name = v.Name })
+                        .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    return new CeilingHeatmapWebTool(App.CeilingHeatmapHandler!, App.CeilingHeatmapEvent!, sortedByLevel,
+                                                     BrowserTreeCapture.Capture(doc), levels, rcpTemplates);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

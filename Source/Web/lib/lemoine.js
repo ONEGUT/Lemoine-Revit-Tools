@@ -87,6 +87,37 @@ Lemoine.ui = (function () {
              setInvalid: function (bad) { root.classList.toggle('invalid', !!bad); } };
   }
 
+  // ── ColorPicker (native swatch + hex text) ───────────────────────────────────────
+  // opts: { label, value('#RRGGBB'), onChange(hex) }
+  function colorPicker(opts) {
+    opts = opts || {};
+    var root = el('label', 'l-color');
+    if (opts.label) root.appendChild(el('span', 'l-sublabel', opts.label));
+    var row = el('span', 'l-color-row');
+    var swatch = el('input'); swatch.type = 'color';
+    var hex = el('input'); hex.type = 'text'; hex.className = 'hex'; hex.maxLength = 7;
+    function norm(v) {
+      v = (v || '').trim();
+      if (v && v.charAt(0) !== '#') v = '#' + v;
+      return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : null;
+    }
+    var value = norm(opts.value) || '#000000';
+    swatch.value = value; hex.value = value;
+    function commit(v) {
+      value = v; swatch.value = v; hex.value = v;
+      if (opts.onChange) opts.onChange(v);
+    }
+    swatch.addEventListener('input', function () { commit(swatch.value); });
+    hex.addEventListener('change', function () {
+      var v = norm(hex.value);
+      if (v) commit(v); else hex.value = value;
+    });
+    row.appendChild(swatch); row.appendChild(hex);
+    root.appendChild(row);
+    return { el: root, getValue: function () { return value; },
+             setValue: function (v) { var n = norm(v); if (n) { value = n; swatch.value = n; hex.value = n; } } };
+  }
+
   // ── SingleSelect (radio list) ─────────────────────────────────────────────
   // opts: { options:[{value,label,disabled}], value, onChange(value) }
   function singleSelect(opts) {
@@ -559,6 +590,7 @@ Lemoine.ui = (function () {
 
   return {
     el: el, button: button, stepper: stepper, textField: textField,
+    colorPicker: colorPicker,
     singleSelect: singleSelect, toggle: toggle, sectionCard: sectionCard,
     warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
     checkList: checkList, review: review,

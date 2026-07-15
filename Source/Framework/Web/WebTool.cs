@@ -341,6 +341,13 @@ namespace LemoineTools.Framework.Web
         }
 
         /// <summary>Read-only informational text block (hint/description line).</summary>
+        public static WebInput Color(string id, string label, string hexValue)
+        {
+            var w = new WebInput("colorPicker", id, label);
+            w._props["value"] = hexValue ?? "";
+            return w;
+        }
+
         public static WebInput Hint(string id, string text)
         {
             var w = new WebInput("hint", id, null);
