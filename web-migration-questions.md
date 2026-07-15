@@ -47,3 +47,19 @@ callback wired through WebToolLauncher's keyed-window map.
 The WPF ramp step draws a live Low→Mid→High gradient bar. The web port shows the
 three color swatches (native color inputs) without the combined gradient strip.
 A CSS linear-gradient preview could be added to the colorPicker row group later.
+
+## Discover — live scan log dropped (divergence)
+The WPF Discover S3 step shows a per-line colour-coded scan log (✓/✗/·) plus a
+progress bar, and auto-navigates S2→S3→S4 as the scan runs and completes. The web
+port shows a single status + percentage line on S3 (rebuilt on progress and
+completion) and relies on the user pressing Confirm to walk S3→S4→S5 — the web
+shell has no tool-driven "navigate to step N" channel (WPF's IStepNavigable
+NavigateRequested). If the auto-advance matters, WebStepFlowWindow could grow a
+"navigate" bridge message the tool raises alongside StepInputsChanged.
+
+## Discover — per-rule row layout (divergence)
+The WPF S4 lays each discovered rule as one grid row (checkbox · colour swatch ·
+inline-editable name · category · count). The web port stacks three inputs per
+rule (include toggle, colour picker, name field) under a per-trade group hint.
+Functionally identical; visually taller. A future compound "rule row" web
+component could restore the single-line layout.
