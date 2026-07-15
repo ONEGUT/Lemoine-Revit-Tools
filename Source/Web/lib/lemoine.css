@@ -152,6 +152,24 @@ body { margin:0; background:var(--l-bg); color:var(--l-text);
 .l-browse input::placeholder { color:var(--l-text-dim); }
 .l-browse .l-btn { flex-shrink:0; }
 
+/* ── TokenInput (naming-pattern editor) ─────────────────────────────────────── */
+.l-token .ghead { font-size:var(--l-fs-sm); color:var(--l-text-dim); text-transform:uppercase; margin:8px 0 4px; }
+.l-token .chips > .ghead:first-child { margin-top:0; }
+.l-token .crow { display:flex; flex-wrap:wrap; gap:4px; }
+.l-token .chip { border:1px solid var(--l-border); background:var(--l-raised); color:var(--l-text);
+                 border-radius:var(--l-radius-sm); font-family:var(--l-ui-font); font-size:var(--l-fs-sm);
+                 padding:3px 8px; cursor:pointer; }
+.l-token .chip:hover { background:var(--l-select-bg); border-color:var(--l-accent); }
+.l-token .chip.user { border-color:var(--l-accent); color:var(--l-accent); }
+.l-token .irow { display:flex; gap:6px; margin-top:8px; }
+.l-token .pat { flex:1; min-width:0; height:var(--l-h-input); padding:0 8px; background:var(--l-select-bg);
+                color:var(--l-text); border:1px solid var(--l-border-mid); border-radius:var(--l-radius-sm);
+                font-family:var(--l-mono-font); font-size:var(--l-fs-md); outline:none; }
+.l-token .pat:focus { border-color:var(--l-accent); }
+.l-token .reset { flex-shrink:0; }
+.l-token .preview { margin-top:6px; font-style:italic; font-family:var(--l-mono-font);
+                    font-size:var(--l-fs-sm); color:var(--l-text); }
+
 /* ── Review summary (2-column card grid, mirrors WPF ReviewSummary) ─────────── */
 .l-review .rwarn { border:1px solid var(--l-red); background:var(--l-raised); border-radius:var(--l-radius-sm);
                    padding:7px 10px; color:var(--l-red); font-size:var(--l-fs-sm); margin-bottom:8px; }

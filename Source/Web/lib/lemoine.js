@@ -365,6 +365,64 @@ Lemoine.ui = (function () {
   function folderBrowser(opts) { return browseRow(opts, 'folder'); }
   function fileBrowser(opts)   { return browseRow(opts, 'file'); }
 
+  // ── TokenInput (naming-pattern editor) ──────────────────────────────────────
+  // opts: { value, defaultPattern, groups:[{header, chips:[{key,label,braced,user,tooltip}]}],
+  //         sample:{key:value}, onChange(pattern) }. Chips insert {Token} at the caret; the
+  //         preview substitutes the sample map (unknown tokens stay literal, like the resolver).
+  //         Mirrors the WPF TokenInput (grouped Target/Source/Project/Date/User chips).
+  function tokenInput(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-token');
+    var sample = opts.sample || {};
+    var def = opts.defaultPattern || '';
+
+    var chips = el('div', 'chips');
+    (opts.groups || []).forEach(function (g) {
+      if (!g.chips || !g.chips.length) return;
+      chips.appendChild(el('div', 'ghead', (g.header || '').toUpperCase()));
+      var row = el('div', 'crow');
+      g.chips.forEach(function (c) {
+        var chip = el('button', 'chip' + (c.user ? ' user' : ''), c.label); chip.type = 'button';
+        if (c.tooltip) chip.title = c.tooltip;
+        chip.addEventListener('click', function () { insertAtCursor(c.braced || ('{' + c.key + '}')); });
+        row.appendChild(chip);
+      });
+      chips.appendChild(row);
+    });
+    root.appendChild(chips);
+
+    var irow = el('div', 'irow');
+    var input = el('input', 'pat'); input.type = 'text'; input.spellcheck = false; input.value = opts.value || '';
+    if (def) input.title = def;
+    var reset = el('button', 'l-btn reset', '\u21BA Reset'); reset.type = 'button'; reset.style.display = 'none';
+    reset.addEventListener('click', function () { input.value = def; onInput(); input.focus(); });
+    irow.appendChild(input); irow.appendChild(reset);
+    root.appendChild(irow);
+
+    var preview = el('div', 'preview');
+    root.appendChild(preview);
+
+    function insertAtCursor(s) {
+      var a = input.selectionStart || 0, b = input.selectionEnd || 0;
+      input.value = input.value.slice(0, a) + s + input.value.slice(b);
+      input.selectionStart = input.selectionEnd = a + s.length;
+      input.focus(); onInput();
+    }
+    function resolve(pat) {
+      return (pat || '').replace(/\{([^}]+)\}/g, function (m, k) { return (k in sample) ? sample[k] : m; });
+    }
+    function onInput() {
+      reset.style.display = (input.value.trim() === def.trim()) ? 'none' : '';
+      var r = resolve(input.value);
+      preview.textContent = 'Preview: ' + (r.trim() ? r : '(empty)');
+      if (opts.onChange) opts.onChange(input.value);
+    }
+    input.addEventListener('input', onInput);
+    onInput();
+    return { el: root, getValue: function () { return input.value; },
+             setValue: function (v) { input.value = v == null ? '' : v; onInput(); } };
+  }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
@@ -372,6 +430,7 @@ Lemoine.ui = (function () {
     singleSelect: singleSelect, toggle: toggle, sectionCard: sectionCard,
     warnBanner: warnBanner, multiSelectTabs: multiSelectTabs,
     checkList: checkList, review: review,
-    folderBrowser: folderBrowser, fileBrowser: fileBrowser
+    folderBrowser: folderBrowser, fileBrowser: fileBrowser,
+    tokenInput: tokenInput
   };
 })();

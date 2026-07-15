@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Framework.Web
 {
@@ -188,6 +189,53 @@ namespace LemoineTools.Framework.Web
             var w = new WebInput("fileBrowser", id, label);
             w._props["value"] = value ?? "";
             if (placeholder != null) w._props["placeholder"] = placeholder;
+            return w;
+        }
+
+        /// <summary>
+        /// A naming-pattern editor fed the new naming-token registry. <paramref name="tokens"/> is
+        /// what the tool got from <see cref="NamingTokenRegistry.TokensFor"/>; they are grouped here
+        /// (Target/Source/Project/Date/User) exactly like the WPF <c>TokenInput</c>. <paramref name="sample"/>
+        /// maps token key → sample value for the live preview (the tool computes it via TokenResolver
+        /// against a representative element).
+        /// </summary>
+        public static WebInput TokenInput(string id, string label, string value, string defaultPattern,
+            IReadOnlyList<TokenDefinition> tokens, IDictionary<string, string>? sample = null)
+        {
+            var w = new WebInput("tokenInput", id, label);
+            w._props["value"]          = value ?? "";
+            w._props["defaultPattern"] = defaultPattern ?? "";
+
+            var groups = new List<Dictionary<string, object?>>();
+            void AddGroup(string header, IEnumerable<TokenDefinition> items)
+            {
+                var list = items.ToList();
+                if (list.Count == 0) return;
+                groups.Add(new Dictionary<string, object?>
+                {
+                    ["header"] = header,
+                    ["chips"]  = list.Select(t => new Dictionary<string, object?>
+                    {
+                        ["key"]     = t.Key,
+                        ["label"]   = t.Label,
+                        ["braced"]  = t.Braced,
+                        ["user"]    = t.Origin == TokenOrigin.UserParameter,
+                        ["tooltip"] = t.Description ?? "",
+                    }).ToList(),
+                });
+            }
+
+            var builtin = tokens.Where(t => t.Origin != TokenOrigin.UserParameter).ToList();
+            var user    = tokens.Where(t => t.Origin == TokenOrigin.UserParameter).ToList();
+            AddGroup(AppStrings.T("naming.input.groupTarget"),  builtin.Where(t => t.Subject == TokenSubject.Target));
+            AddGroup(AppStrings.T("naming.input.groupSource"),  builtin.Where(t => t.Subject == TokenSubject.Source));
+            AddGroup(AppStrings.T("naming.input.groupProject"), builtin.Where(t => t.Subject == TokenSubject.ProjectInfo));
+            AddGroup(AppStrings.T("naming.input.groupDate"),    builtin.Where(t => t.Subject == TokenSubject.Environment));
+            AddGroup(AppStrings.T("naming.input.groupUser"),    user);
+            w._props["groups"] = groups;
+
+            w._props["sample"] = (sample ?? new Dictionary<string, string>())
+                .ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
             return w;
         }
 

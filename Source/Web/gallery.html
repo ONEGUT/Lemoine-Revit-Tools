@@ -133,6 +133,26 @@
     ], onChange: function (sel) { log('checklist: ' + sel.join(', ')); } }).el);
   });
 
+  // TokenInput
+  demo('TokenInput (naming pattern)', function (s) {
+    s.appendChild(U.tokenInput({
+      value: '{ViewName} - Copy', defaultPattern: '{ViewName} - Copy',
+      groups: [
+        { header: 'This View', chips: [
+          { key: 'ViewName', label: 'View Name', braced: '{ViewName}' },
+          { key: 'ViewType', label: 'View Type', braced: '{ViewType}' } ] },
+        { header: 'Project', chips: [
+          { key: 'ProjectNumber', label: 'Project Number', braced: '{ProjectNumber}' } ] },
+        { header: 'Date & Counter', chips: [
+          { key: 'Year', label: 'Year', braced: '{Year}' }, { key: 'Seq', label: 'Sequence', braced: '{Seq}' } ] },
+        { header: 'Your Tokens', chips: [
+          { key: 'u:Sheet Series', label: 'Sheet Series', braced: '{u:Sheet Series}', user: true } ] }
+      ],
+      sample: { ViewName: 'Level 1', ViewType: 'Floor Plan', ProjectNumber: '21-045', Year: '2026', Seq: '01', 'u:Sheet Series': 'A' },
+      onChange: function (p) { log('pattern = ' + p); }
+    }).el);
+  });
+
   // Review
   demo('Review', function (s) {
     s.appendChild(U.review({ items: [ { label: 'Links', value: '2 link(s)' }, { label: 'Points', value: 'Project Base + Survey' } ],
