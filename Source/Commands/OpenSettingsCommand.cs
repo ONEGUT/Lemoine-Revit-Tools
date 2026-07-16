@@ -41,9 +41,13 @@ namespace LemoineTools.Commands
                     }
                 }
 
+                // Capture the parameter catalog on the Revit main thread (same as the WPF branch);
+                // the web window is Revit-free and only reads this snapshot for the Naming tab.
+                var webDoc = commandData.Application.ActiveUIDocument?.Document;
+                var webSnapshot = ParameterCatalog.Capture(webDoc);
                 WebUiThread.Invoke(() =>
                 {
-                    var win = new WebSettingsWindow();
+                    var win = new WebSettingsWindow(webSnapshot);
                     win.Closed += (s, e) => { _webWindow = null; };
                     win.Show();
                     _webWindow = win;

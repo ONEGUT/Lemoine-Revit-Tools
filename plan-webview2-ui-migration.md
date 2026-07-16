@@ -504,5 +504,22 @@ scrollbars (all become CSS/JS in the shared lib).
   strings). Both verified in headless Chromium and in the gallery. These unblock Duplicate
   Views, Views By Link/Template, Place Dependent Views, Bulk Rename, Bulk Export, and Print
   View's naming - the largest remaining slice of wave 1+.
+- **2026-07 (full migration pass + web Settings — Windows-verified):** the whole
+  Phase-3 pass builds and runs on Windows. All 34 step-flow tools now have `IWebTool`
+  ports reachable behind the machine-wide **Web UI** flag (production commands branch on
+  it; three legacy parallel Web dev buttons remain). Confirmed working end-to-end this
+  session. **Web Settings window:** the General tab plus six spec-model tabs
+  (Dimensioning, Setup, Ceilings, Views, Export, Copy) are live. **Bug found + fixed:**
+  `WebSettingsWindow.OnActionMessage` double-unwrapped the bridge payload (looked for a
+  nested `payload` key that `WebBridge.On` never delivers — it hands handlers the
+  already-unwrapped payload), so every settings click no-op'd while native scroll still
+  worked ("looks right, scrolls, nothing clickable"); fixed to read the payload directly,
+  matching `WebStepFlowWindow`. **Settings-tab spec model:** `WebSettings.BuildTab`/`TabSpec`
+  renders a tab as an ordered list of `WebInput` rows via the shared lemoine.js factories,
+  each auto-saving to the same tool settings singleton the WPF tab wrote to (same AppStrings
+  keys, same value transforms) — the reusable path for the remaining simple tabs. Snapshot in
+  `web-migration-status.md`. **Still WPF-only:** Settings' Naming + Filters tabs (bespoke
+  editors), and the other bespoke windows (Tools Overview, Clash Definitions, Link Audit,
+  Scope Box Manager, Color Picker, Legend Creator).
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*

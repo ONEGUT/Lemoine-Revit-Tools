@@ -54,7 +54,9 @@ namespace LemoineTools.Framework.Web
                 {
                     ["id"]       = t.Id,
                     ["label"]    = AppStrings.T(t.LabelKey),
-                    ["migrated"] = t.Id == "general" || SpecTabs.Contains(t.Id),
+                    // "naming" is web-backed too, but its payload (parameter snapshot) is merged
+                    // in by WebSettingsWindow, which owns the snapshot — not built here.
+                    ["migrated"] = t.Id == "general" || t.Id == "naming" || SpecTabs.Contains(t.Id),
                 }).ToList(),
                 ["general"] = BuildGeneral(),
                 ["notMigrated"] = AppStrings.T("globalSettings.web.notMigrated"),

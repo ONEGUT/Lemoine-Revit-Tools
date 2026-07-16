@@ -101,14 +101,17 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | Views | ScopeBox group | ✅ web (spec) | field rows |
 | Export | Bulk Export group | ✅ web (spec) | field rows |
 | Copy | Copy group | ✅ web (spec) | field rows |
-| Naming | Naming.cs (877) | ❌ | user-token CRUD + per-tool default patterns — **bespoke** |
+| Naming | Naming.cs (877) | ✅ web (bespoke) | token-CRUD master/detail editor (`lib/naming.js` + `WebNaming`) |
 | Filters | Filters.cs (3620) | ❌ | AutoFilters trade editor + clash defs + colour ramps — **bespoke, largest** |
 
 **Done:** a *settings-tab spec model* (`WebSettings.BuildTab` / `TabSpec`) renders each tab
 as an ordered list of `WebInput` rows via the shared lemoine.js factories, each auto-saving
 to the same tool settings singleton the WPF tab wrote to (same AppStrings keys, same value
-transforms). The 6 field-row tabs are ported; **Naming** and **Filters** remain bespoke
-follow-ups. ⏳ All spec tabs pending a Windows build + click-through verification.
+transforms). The 6 field-row tabs plus the bespoke **Naming** token-CRUD editor are ported;
+only **Filters** remains (its own follow-up — the largest single surface, needs a
+drag-reorderable rule editor). The Naming tab needed the Revit parameter snapshot plumbed
+into `WebSettingsWindow` (captured on the main thread in `OpenSettingsCommand`, exactly like
+the WPF window). ⏳ Naming + spec tabs pending a Windows build + click-through verification.
 
 ---
 

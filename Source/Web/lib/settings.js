@@ -16,6 +16,12 @@
     var send = opts.send || function () {};
     var state = null;
 
+    // Naming tab is a bespoke master/detail editor (lib/naming.js). It owns its own state; a
+    // failed save comes back as a namingError message which the controller shows inline.
+    var naming = (window.Lemoine && window.Lemoine.namingTab) ? window.Lemoine.namingTab({ send: send }) : null;
+    if (naming && window.Lemoine && window.Lemoine.on)
+      window.Lemoine.on('namingError', function (p) { naming.showError(p && p.message); });
+
     function action(a, extra) {
       var payload = { action: a };
       if (extra) for (var k in extra) payload[k] = extra[k];
@@ -33,6 +39,7 @@
       root.appendChild(buildTabNav());
       var content = el('div', 'l-set-content');
       if (state.active === 'general')                          buildGeneral(content);
+      else if (state.active === 'naming' && state.naming && naming) naming.render(content, state.naming, state.namingSelectKey);
       else if (state.tab && state.tab.id === state.active)     buildSpecTab(content);
       else                                                     buildPlaceholder(content);
       root.appendChild(content);

@@ -27,9 +27,11 @@ namespace LemoineTools.Framework.Web
         private WebBridge? _bridge;
         private TextBlock? _loading;
         private string     _activeTab = "general";
+        private readonly WebNaming _naming;
 
-        public WebSettingsWindow()
+        public WebSettingsWindow(Naming.ParameterCatalogSnapshot? namingSnapshot = null)
         {
+            _naming = new WebNaming(namingSnapshot);
             Title     = AppStrings.T("globalSettings.window.title");
             Width     = 760;
             Height    = 640;
@@ -117,8 +119,12 @@ namespace LemoineTools.Framework.Web
             }
         }
 
-        private void SendInit() =>
-            _bridge?.Send("init", WebSettings.BuildPayload(_activeTab));
+        private void SendInit()
+        {
+            var payload = WebSettings.BuildPayload(_activeTab);
+            if (_activeTab == "naming") payload["naming"] = _naming.BuildPayload();
+            _bridge?.Send("init", payload);
+        }
 
         // WebBridge already unwraps the message envelope and invokes handlers with the payload
         // dict directly (see WebStepFlowWindow.OnActionMessage) — there is no nested "payload"
@@ -142,10 +148,42 @@ namespace LemoineTools.Framework.Web
                     WebSettings.SetField(_activeTab, Str(p, "fieldId"),
                         p.TryGetValue("value", out var fieldVal) ? fieldVal : null);
                     break;
+                case "namingSave":  OnNamingSave(p); break;
+                case "namingDelete": _naming.Delete(Str(p, "key")); SendInit(); break;
                 case "openLog":    WebSettings.OpenLog(); break;
                 case "drag":       BeginNativeDrag(); break;
                 case "minimize":   WindowState = WindowState.Minimized; break;
                 case "close":      Close(); break;
+            }
+        }
+
+        // Build the DTO from the page's editor form, validate + persist. On success re-send init
+        // (the token list refreshes and the page reloads the editor with the saved token); on a
+        // validation error, send it back for inline display without losing the in-progress form.
+        private void OnNamingSave(IReadOnlyDictionary<string, object?> p)
+        {
+            string? originalKey = string.IsNullOrEmpty(Str(p, "originalKey")) ? null : Str(p, "originalKey");
+            var dto = new Naming.UserTokenDto
+            {
+                Key           = Str(p, "key"),
+                Label         = Str(p, "label"),
+                Subject       = Str(p, "subject"),
+                Entity        = Str(p, "entity"),
+                ParameterName = Str(p, "paramName"),
+                ParameterGuid = Str(p, "paramGuid"),
+                FallbackText  = Str(p, "fallback"),
+                Description   = Str(p, "description"),
+            };
+            string? error = _naming.Save(dto, originalKey);
+            if (error != null)
+                _bridge?.Send("namingError", new Dictionary<string, object?> { ["message"] = error });
+            else
+            {
+                // Re-send with a hint so the page reopens the editor on the just-saved token.
+                var payload = WebSettings.BuildPayload(_activeTab);
+                payload["naming"] = _naming.BuildPayload();
+                payload["namingSelectKey"] = dto.Key;
+                _bridge?.Send("init", payload);
             }
         }
 
