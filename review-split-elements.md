@@ -11,7 +11,42 @@ test** (script in the appendix). Nothing has been changed — pick the findings 
 want fixed and I'll apply them on this branch.
 
 **Totals: 0 Critical · 8 High · 8 Medium · 6 Low.** *(two High findings added by the
-resolution below)*
+resolution below; Shared-1 later withdrawn as not-a-bug.)*
+
+> **Resolution (2026-07-16, full pass): all findings fixed except the two noted.**
+> After the Cell-4-5 crash fix landed, every confirmed finding here was implemented on
+> this branch. Highlights:
+> - **Delete-then-log swept for the whole family (Shared-6):** the wall and column
+>   level-split paths captured `wall.Id`/`col.Id` before `doc.Delete`, so the same crash
+>   that hit By Cell can't hit By Level. The per-element catches in `SplitByLevel` /
+>   `SplitByPlanesCore` now use an id captured before the split, removing the
+>   double-throw-in-catch that could roll back the entire run.
+> - **By Cell no longer all-or-nothing (Cell-4-1):** a cell that can't be recreated is
+>   skipped and logged (with a dropped-cell count surfaced in the run log, Cell-4-4);
+>   the original is deleted only if at least one cell persisted.
+> - **Sloped elements reported honestly (Cell-4-2):** a new `Sloped` status replaces the
+>   misleading "boolean intersection returned no cells" for pitched roofs / sloped slabs.
+> - **Scope is now the view captured at open time (Cell-1-3),** not whatever's active
+>   when Run is clicked; the run names the view it searched. Stale pre-selection ids,
+>   grouped elements, and other-user-owned elements are skip-and-logged with a reason
+>   (Cell-1-2/4-3). The count strip and the run share one collector (Cell-1-4).
+> - **Project-origin alignment reads `BasePoint.Position` (Cell-1-5),** not the
+>   shared-coordinate parameters.
+> - **NumberRange (NR-1/2/3):** values set before layout now actually appear (was: blank
+>   fields while the tool silently ran 10×10); input is clamped to `[AbsMin,AbsMax]` and
+>   parsed invariant-first so "10.5" works on comma-decimal locales; the duplicate build
+>   call is gone.
+> - **Shared engine:** segment-0 curve failures abort the element cleanly instead of
+>   leaving overlapping duplicates (Shared-2); `CopyTimes` routes its root exception to
+>   diagnostics (Shared-3); the "failed" tally counts elements, not log lines, via a new
+>   log-only `FailNote` (Shared-5); per-element outcomes stream to the log live during the
+>   run (Shared-4).
+>
+> **Not changed:** **Shared-1** — withdrawn (see below), it was not a bug. **Cell-1-1's**
+> "require reload after a successful from-selection run" behavior change was left out;
+> the silent-skip half is fixed (stale ids are now logged), but forcing a reload is a UX
+> decision for you. All fixes still need a **Windows build + the appendix test scripts**
+> to verify — this project can't compile on Linux.
 
 > **Resolution (2026-07-16): root cause confirmed and fixed (Cell-4-5).** A Windows run
 > produced `Found 2 element(s)` → both elements
@@ -229,15 +264,13 @@ as fallback; on parse failure mark the box (red border) instead of silently igno
 
 ## Shared engine & siblings (Split by Grid / Level / Reference Plane)
 
-### Shared-1 — Category matching by localized `Category.Name` against English labels
-**Medium · Confirmed · Pass 1**
-`SplitByGridEventHandler.cs:130-140`, `SplitByLevelEventHandler.cs:131-141`, and the
-Reference Plane twin match `e.Category?.Name` against the hardcoded English labels
-("Walls", "Ducts", …). Non-English Revit finds zero elements in every category. Split
-by Cell was deliberately keyed by `BuiltInCategory` for exactly this reason
-(`SplitByCellHelpers.cs:567-571` comment) — the siblings never got the fix.
-**Fix:** carry the BIC alongside the label (the `(Cat, Label, Note)` tuples already
-exist in `SplitElementsShared`) and collect with `OfCategory`.
+### Shared-1 — ~~Category matching by localized name~~ WITHDRAWN (not a bug)
+**Withdrawn on re-check.** The Grid/Level/Reference-Plane pickers are built from the
+document's own `Category.Name` values (`CategoryDisciplineHelper.GroupByDiscipline`) and
+matched back against those same localized names, so they round-trip correctly in any
+language. The English-labelled `LevelSplitCategories`/`GridSplitCategories` tuples in
+`SplitElementsShared.cs` are dead code (no consumers) — they are *not* what the pickers
+use. No fix needed.
 
 ### Shared-2 — Partial curve-split failure on segment 0 leaves overlapping duplicates, reported as "a gap"
 **Medium · Confirmed · Pass 4**

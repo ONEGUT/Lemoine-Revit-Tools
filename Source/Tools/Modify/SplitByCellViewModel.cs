@@ -46,6 +46,7 @@ namespace LemoineTools.Tools.ModifyElements
         private bool         _useProjectOrigin = false;
 
         private readonly IReadOnlyDictionary<string, int> _elementCounts;
+        private readonly ElementId?                       _activeViewId;
         private readonly IReadOnlyList<ElementId>         _preSelectedIds;
         private readonly IReadOnlyList<string>            _preSelectedCats;
 
@@ -70,12 +71,14 @@ namespace LemoineTools.Tools.ModifyElements
             SplitByCellEventHandler          handler,
             ExternalEvent                    externalEvent,
             IReadOnlyDictionary<string, int> elementCounts,
+            ElementId?                       activeViewId,
             IReadOnlyList<ElementId>         preSelectedIds,
             IReadOnlyList<string>            preSelectedCats)
         {
             _handler         = handler;
             _event           = externalEvent;
             _elementCounts   = elementCounts;
+            _activeViewId    = activeViewId;
             _preSelectedIds  = preSelectedIds;
             _preSelectedCats = preSelectedCats;
 
@@ -125,12 +128,14 @@ namespace LemoineTools.Tools.ModifyElements
                 .ToList();
             var groups = new Dictionary<string, List<string>> { { "Categories", catLabels } };
             var tabs = new MultiSelectTabs();
-            tabs.SetGroups(groups);
+            // Subscribe BEFORE SetGroups — the MultiSelectTabs contract fires SelectionChanged
+            // once at the end of SetGroups, and that callback is what populates _selectedCats.
             tabs.SelectionChanged += selected =>
             {
                 _selectedCats = new List<string>(selected);
                 OnValidationChanged();
             };
+            tabs.SetGroups(groups);
             outer.Children.Add(tabs);
 
             return outer;
@@ -290,6 +295,7 @@ namespace LemoineTools.Tools.ModifyElements
             Action<int, int, int>      onComplete)
         {
             _handler.PreSelectedIds         = _preSelectedIds.Count > 0 ? new List<ElementId>(_preSelectedIds) : null;
+            _handler.ActiveViewId           = _activeViewId;
             _handler.SelectedCategoryLabels = new List<string>(_selectedCats);
             _handler.CellX                  = _cellX;
             _handler.CellY                  = _cellY;
