@@ -116,62 +116,133 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             var existing = enforceUnique ? ExistingValuesNotSelected(doc) : Enumerable.Empty<string>();
             var plan = BulkRenameEngine.Plan(Config, entries, existing, enforceUnique);
 
-            int total = plan.Count;
-            int done  = 0;
+            // Log & count the skipped outcomes; collect the actual renames to apply.
+            var changes = new List<RenamePlanItem>();
+            foreach (var item in plan)
+            {
+                switch (item.Status)
+                {
+                    case RenameStatus.Unchanged:
+                        Log(AppStrings.T("linkviews.bulkRename.log.skipNoChange", item.OldValue), "info");
+                        skip++;
+                        break;
+                    case RenameStatus.Empty:
+                        Log(AppStrings.T("linkviews.bulkRename.log.skipEmpty", item.OldValue), "info");
+                        skip++;
+                        break;
+                    case RenameStatus.Collision:
+                        Log(AppStrings.T("linkviews.bulkRename.log.skipInUse", item.OldValue, item.NewValue), "info");
+                        skip++;
+                        break;
+                    default:
+                        changes.Add(item);
+                        break;
+                }
+            }
 
             using (var tx = new Transaction(doc, "Lemoine — Bulk Rename"))
             {
                 ConfigureFailures(tx);
                 tx.Start();
 
-                foreach (var item in plan)
-                {
-                    if (RunState.CancelRequested)
-                    {
-                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
-                        break;   // per-item boundary: each applied rename is a final plan value, so committed state stays consistent; falls through to tx.Commit()
-                    }
-
-                    done++;
-                    Progress((int)(done * 95.0 / Math.Max(total, 1)), pass, fail, skip);
-
-                    var id = item.Tag as ElementId;
-                    if (id == null) { skip++; continue; }
-
-                    switch (item.Status)
-                    {
-                        case RenameStatus.Unchanged:
-                            Log(AppStrings.T("linkviews.bulkRename.log.skipNoChange", item.OldValue), "info");
-                            skip++;
-                            continue;
-                        case RenameStatus.Empty:
-                            Log(AppStrings.T("linkviews.bulkRename.log.skipEmpty", item.OldValue), "info");
-                            skip++;
-                            continue;
-                        case RenameStatus.Collision:
-                            Log(AppStrings.T("linkviews.bulkRename.log.skipInUse", item.OldValue, item.NewValue), "info");
-                            skip++;
-                            continue;
-                    }
-
-                    try
-                    {
-                        ApplyRename(doc, id, item.NewValue);
-                        Log(AppStrings.T("linkviews.bulkRename.log.renamed", item.OldValue, item.NewValue), "pass");
-                        pass++;
-                    }
-                    catch (Exception e)
-                    {
-                        DiagnosticsLog.Swallowed($"Bulk rename: set value on {id.Value}", e);
-                        Log(AppStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
-                        fail++;
-                    }
-                }
+                if (enforceUnique)
+                    ApplyTwoPhase(doc, changes, skip, ref pass, ref fail);
+                else
+                    ApplySinglePhase(doc, changes, skip, ref pass, ref fail);
 
                 tx.Commit();
             }
 
             Log(AppStrings.T("linkviews.bulkRename.log.complete", pass, skip, fail), "pass");
+        }
+
+        // Sheet-name renames (no uniqueness): each new value is final, so apply directly and
+        // allow per-item cancellation — committed renames stay consistent.
+        private void ApplySinglePhase(Document doc, List<RenamePlanItem> changes, int skip, ref int pass, ref int fail)
+        {
+            int total = changes.Count, done = 0;
+            foreach (var item in changes)
+            {
+                if (RunState.CancelRequested)
+                {
+                    Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
+                    break;
+                }
+                done++;
+                Progress((int)(done * 95.0 / Math.Max(total, 1)), pass, fail, skip);
+
+                if (!(item.Tag is ElementId id)) { fail++; continue; }
+                try
+                {
+                    ApplyRename(doc, id, item.NewValue);
+                    Log(AppStrings.T("linkviews.bulkRename.log.renamed", item.OldValue, item.NewValue), "pass");
+                    pass++;
+                }
+                catch (Exception e)
+                {
+                    DiagnosticsLog.Swallowed($"Bulk rename: set value on {id.Value}", e);
+                    Log(AppStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
+                    fail++;
+                }
+            }
+        }
+
+        // Unique fields (sheet numbers, view names): park every item on a unique temporary value
+        // first, then assign finals. Without this, a shift (101→102, 102→103) or a swap (A↔B)
+        // trips Revit's mid-batch duplicate check and only the last item renames. Because the
+        // Set calls are cheap and only the single commit is costly, the whole apply is treated
+        // as one unit — cancellation is honoured up front so a cancel can never leave an element
+        // stranded on a temporary name.
+        private void ApplyTwoPhase(Document doc, List<RenamePlanItem> changes, int skip, ref int pass, ref int fail)
+        {
+            if (changes.Count == 0) return;
+
+            if (RunState.CancelRequested)
+            {
+                Log(AppStrings.T("common.log.stoppedByUser", 0, changes.Count), "warn");
+                return;
+            }
+
+            // Phase 1 — temporary unique values.
+            var staged = new List<RenamePlanItem>();
+            foreach (var item in changes)
+            {
+                if (!(item.Tag is ElementId id)) { fail++; continue; }
+                string temp = "TMP_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + id.Value;
+                try
+                {
+                    ApplyRename(doc, id, temp);
+                    staged.Add(item);
+                }
+                catch (Exception e)
+                {
+                    DiagnosticsLog.Swallowed($"Bulk rename: stage temp value on {id.Value}", e);
+                    Log(AppStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
+                    fail++;
+                }
+            }
+
+            // Phase 2 — final values (targets were pre-checked unique by the planner).
+            int total = staged.Count, done = 0;
+            foreach (var item in staged)
+            {
+                done++;
+                Progress((int)(done * 95.0 / Math.Max(total, 1)), pass, fail, skip);
+
+                var id = (ElementId)item.Tag!;
+                try
+                {
+                    ApplyRename(doc, id, item.NewValue);
+                    Log(AppStrings.T("linkviews.bulkRename.log.renamed", item.OldValue, item.NewValue), "pass");
+                    pass++;
+                }
+                catch (Exception e)
+                {
+                    DiagnosticsLog.Swallowed($"Bulk rename: set final value on {id.Value}", e);
+                    Log(AppStrings.T("linkviews.bulkRename.log.failed", item.OldValue, item.NewValue, e.Message), "fail");
+                    fail++;
+                }
+            }
         }
 
         private void ApplyRename(Document doc, ElementId id, string newValue)

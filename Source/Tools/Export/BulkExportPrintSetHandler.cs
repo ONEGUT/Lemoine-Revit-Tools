@@ -25,9 +25,15 @@ namespace LemoineTools.Tools.BulkExport
 
         public void Execute(UIApplication app)
         {
-            var doc = app.ActiveUIDocument.Document;
             try
             {
+                var doc = app.ActiveUIDocument?.Document;
+                if (doc == null)
+                {
+                    OnError?.Invoke(AppStrings.T("export.bulkExport.log.noDoc"));
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(Name))
                 {
                     OnError?.Invoke(AppStrings.T("export.bulkExport.log.printSetNameRequired"));

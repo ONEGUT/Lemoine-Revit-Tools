@@ -25,14 +25,26 @@ namespace LemoineTools.Tools.BulkExport
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
-        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close.
         public void OnWindowClosed()
         {
-            if (_handler == null) return;
-            _handler.PushLog       = null;
-            _handler.OnProgress    = null;
-            _handler.OnComplete    = null;
-            _handler.OnResultChips = null;
+            if (_handler != null)
+            {
+                _handler.PushLog       = null;
+                _handler.OnProgress    = null;
+                _handler.OnComplete    = null;
+                _handler.OnResultChips = null;
+            }
+
+            // The print-set handler is session-long too, and SaveCurrentSelectionAsPrintSet parks
+            // an OnCreated closure that captures this VM and its live step UI — clear it, or a
+            // window that saved a print set stays rooted until the next save (or forever this session).
+            var psHandler = App.BulkExportPrintSetHandler;
+            if (psHandler != null)
+            {
+                psHandler.OnCreated = null;
+                psHandler.OnError   = null;
+            }
         }
 
         // ── IStepFlowTool ──────────────────────────────────────────────────────
@@ -143,6 +155,10 @@ namespace LemoineTools.Tools.BulkExport
         private readonly Dictionary<long, bool?>   _pdfOverrides     = new Dictionary<long, bool?>();
         private readonly Dictionary<long, bool?>   _dwgOverrides     = new Dictionary<long, bool?>();
         private string _newPrintSetName = "";
+        // Live handles into the S2 "Save as print set" row so the create callback can clear
+        // the name box and show a success/error message (rebuilt each time S2 is activated).
+        private WpfTextBox? _printSetNameBox;
+        private TextBlock?  _printSetSaveStatus;
 
         // ── S3 state (filename & formats) ────────────────────────────────────
         // Separate patterns per mode so each carries a default built from its own valid
@@ -343,7 +359,14 @@ namespace LemoineTools.Tools.BulkExport
                     .ToList();
                 Fire();
             };
-            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)));
+            // Carry the current selection forward — SetTree keeps only the ids still eligible,
+            // so a Sheets↔Views switch clears (no old id is eligible in the new mode) while a
+            // "Show all" toggle preserves the views that remain pickable.
+            var currentSel = _selectedNames
+                .Where(_nameToId.ContainsKey)
+                .Select(n => _nameToId[n].Value)
+                .ToList();
+            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), currentSel);
             return picker;
         }
 
@@ -365,7 +388,8 @@ namespace LemoineTools.Tools.BulkExport
             var newPicker = BuildTreePicker(showAllCb ?? new CheckBox { Tag = false });
             newPicker.Tag = "multiselect";
             outer.Children.Add(newPicker);
-            _selectedNames.Clear();
+            // BuildTreePicker's end-of-SetTree callback already re-seeded _selectedNames with
+            // the surviving selection and fired validation; nothing to clear here.
             Fire();
         }
 
@@ -453,6 +477,7 @@ namespace LemoineTools.Tools.BulkExport
             nameBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
             nameBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
             nameBox.TextChanged += (s, e) => _newPrintSetName = nameBox.Text;
+            _printSetNameBox = nameBox;
 
             saveBtn.Click += (s, e) => SaveCurrentSelectionAsPrintSet(RebuildList);
 
@@ -470,26 +495,60 @@ namespace LemoineTools.Tools.BulkExport
             saveHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             outer.Children.Add(saveHint);
 
+            // Inline status for the save action — a blank name or a duplicate-name failure
+            // previously went only to diagnostics.log, so the button appeared to do nothing.
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+            status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            status.Visibility = WpfVisibility.Collapsed;
+            _printSetSaveStatus = status;
+            outer.Children.Add(status);
+
             return outer;
+        }
+
+        private void SetPrintSetStatus(string text, bool isError)
+        {
+            var status = _printSetSaveStatus;
+            if (status == null) return;
+            status.Text = text;
+            status.SetResourceReference(TextBlock.ForegroundProperty, isError ? "LemoineRed" : "LemoineTextDim");
+            status.Visibility = WpfVisibility.Visible;
         }
 
         private void SaveCurrentSelectionAsPrintSet(Action rebuildList)
         {
-            if (string.IsNullOrWhiteSpace(_newPrintSetName)) return;
+            if (string.IsNullOrWhiteSpace(_newPrintSetName))
+            {
+                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetNameRequired"), isError: true);
+                return;
+            }
             var handler = App.BulkExportPrintSetHandler;
             var evt     = App.BulkExportPrintSetEvent;
             if (handler == null || evt == null) return;
 
+            // The handler runs on Revit's main thread, so its callbacks must marshal back to
+            // this window's dispatcher before touching any WPF element.
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            void OnUi(Action a)
+            {
+                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+                dispatcher.BeginInvoke(a);
+            }
+
             handler.Name      = _newPrintSetName.Trim();
             handler.MemberIds = _selectedNames.Where(_nameToId.ContainsKey).Select(n => _nameToId[n]).ToList();
-            handler.OnCreated = sets =>
+            handler.OnCreated = sets => OnUi(() =>
             {
+                string saved       = _newPrintSetName.Trim();
                 _availablePrintSets = sets;
                 _newPrintSetName    = "";
+                if (_printSetNameBox != null) _printSetNameBox.Text = "";
                 rebuildList();
+                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetSaved", saved), isError: false);
                 Fire();
-            };
-            handler.OnError = msg => DiagnosticsLog.Warn("BulkExport: save print set", msg ?? "");
+            });
+            handler.OnError = msg => OnUi(() => SetPrintSetStatus(msg ?? "", isError: true));
             evt.Raise();
         }
 
@@ -727,7 +786,7 @@ namespace LemoineTools.Tools.BulkExport
                     ["SheetNumber"]   = _previewSheetNumber,
                     ["SheetName"]     = _previewSheetName,
                     ["Revision"]      = "3",
-                    ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
+                    ["IssueDate"]     = DateTime.Now.ToString("M/d/yy"),
                     ["ProjectNumber"] = "2024-001",
                     ["ProjectName"]   = "Sample Project",
                     ["Year"]          = DateTime.Now.Year.ToString(),
@@ -1025,12 +1084,15 @@ namespace LemoineTools.Tools.BulkExport
             var outer = new StackPanel();
             AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secDwgOptions"));
 
-            var setupNames = _dwgSetupNames.Count > 0
+            bool hasSetups = _dwgSetupNames.Count > 0;
+            var setupNames = hasSetups
                 ? _dwgSetupNames.ToArray()
                 : new[] { AppStrings.T("export.bulkExport.labels.dwgNoSetups") };
             int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
+            // Don't let the "(No DWG setups found)" placeholder be stored as a setup name —
+            // the run would then report it as a missing setup.
             AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblExportSetup"), setupNames, initIdx,
-                val => { _dwgSetup = val; Fire(); });
+                val => { if (hasSetups) { _dwgSetup = val; Fire(); } });
 
             var note = new TextBlock
             {
@@ -1122,7 +1184,20 @@ namespace LemoineTools.Tools.BulkExport
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => null;
-        public string?        ReviewWarning => null;
+
+        // NWC/IFC only export 3D views (Views mode). If either is enabled while in Sheets mode
+        // it produces nothing — say so on the final step, not just in the S3 hint.
+        public string? ReviewWarning
+        {
+            get
+            {
+                if (ViewsMode || !(_nwcOn || _ifcOn)) return null;
+                var fmts = new List<string>();
+                if (_nwcOn) fmts.Add("NWC");
+                if (_ifcOn) fmts.Add("IFC");
+                return AppStrings.T("export.bulkExport.review.warnSheetsMode", string.Join(" & ", fmts));
+            }
+        }
 
         public bool IsValid(string stepId)
         {
@@ -1170,7 +1245,8 @@ namespace LemoineTools.Tools.BulkExport
 
             _resultChips = null;   // clear any breakdown from a previous run
 
-            // Persist settings (paths/patterns are Settings-window-only now — see ApplySettings)
+            // Persist settings (paths/patterns are Settings-window-only now — the
+            // GlobalSettingsWindow Export tab writes them directly to BulkExportSettings).
             var s = BulkExportSettings.Instance;
             s.ExportPdf                    = _pdfOn;
             s.ExportDwg                    = _dwgOn;
@@ -1263,173 +1339,6 @@ namespace LemoineTools.Tools.BulkExport
             _handler.OnResultChips            = chips => _resultChips = chips;
 
             _event.Raise();
-        }
-
-        // ═════════════════════════════════════════════════════════════════════
-        //  IToolSettings
-        // ═════════════════════════════════════════════════════════════════════
-        public ToolSettingsSpec? GetSettingsSpec()
-        {
-            var s = BulkExportSettings.Instance;
-            return new ToolSettingsSpec
-            {
-                Id          = "tx",
-                Label       = "Bulk Export",
-                Icon        = "Tx",
-                Description = "Export sheets and views to PDF, DWG, NWC and IFC with parametric filenames.",
-                Groups      = new List<SettingsGroup>
-                {
-                    new SettingsGroup
-                    {
-                        Id = "G1", Title = "Output", OpenByDefault = true,
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "outdir",      Kind = "file",   Label = "Default output folder",
-                                Options = new FileOpts { Placeholder = @"C:\Projects\Exports\" }, Default = s.OutputFolder },
-                            new SettingDef { Id = "splitformat", Kind = "toggle", Label = "Split output by file format",
-                                Hint = "Creates PDF\\, DWG\\ subfolders automatically.", Default = s.SplitByFormat },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G2", Title = "Filename",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "pattern", Kind = "text", Label = "Default filename pattern",
-                                Hint = "Tokens: {SheetNumber} {SheetName} {Revision} {IssueDate} {ProjectNumber} {Year} {Month} {Day}",
-                                Options = new TextOpts { Mono = true, Placeholder = "{SheetNumber}-{SheetName}" },
-                                Default = s.FilenamePattern },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G3", Title = "Default Formats",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "defpdf", Kind = "toggle", Label = "PDF on by default", Default = s.ExportPdf },
-                            new SettingDef { Id = "defdwg", Kind = "toggle", Label = "DWG on by default", Default = s.ExportDwg },
-                            new SettingDef { Id = "defnwc", Kind = "toggle", Label = "NWC on by default (Views mode only)", Default = s.ExportNwc },
-                            new SettingDef { Id = "defifc", Kind = "toggle", Label = "IFC on by default (Views mode only)", Default = s.ExportIfc },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G4", Title = "PDF Options",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "combinepdf",  Kind = "toggle", Label = "Combine into single PDF by default", Default = s.CombinePdf },
-                            new SettingDef { Id = "placement",   Kind = "single", Label = "Paper placement",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Center", "Offset from Corner" } },
-                                Default = s.PdfPaperPlacement },
-                            new SettingDef { Id = "hiddenlines", Kind = "single", Label = "Hidden line views",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Vector Processing", "Raster Processing" } },
-                                Default = s.HiddenLinesVector ? "Vector Processing" : "Raster Processing" },
-                            new SettingDef { Id = "colordepth",  Kind = "single", Label = "Color depth",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Color", "Grayscale", "Black & White" } },
-                                Default = s.ColorDepth },
-                            new SettingDef { Id = "rasterquality", Kind = "single", Label = "Raster quality",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Draft", "Low", "Medium", "High", "Presentation" } },
-                                Default = s.RasterQuality },
-                            new SettingDef { Id = "zoomsetting", Kind = "single", Label = "Zoom",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Fit to Page", "Scale %" } },
-                                Default = s.ZoomSetting },
-                            new SettingDef { Id = "zoompercent",  Kind = "number", Label = "Zoom percent (when Scale % mode)", Default = s.ZoomPercent },
-                            new SettingDef { Id = "viewlinksblue",    Kind = "toggle", Label = "View links in blue",               Default = s.ViewLinksInBlue },
-                            new SettingDef { Id = "replacehalftone",  Kind = "toggle", Label = "Replace halftone with thin lines", Default = s.ReplaceHalftoneWithThinLines },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G5", Title = "DWG Options",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "dwgsetup", Kind = "text", Label = "Default DWG export setup name",
-                                Hint = "Must match a setup created in Revit via File → Export → DWG.",
-                                Options = new TextOpts { Placeholder = "Standard DWG" }, Default = s.DwgExportSetupName },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G7", Title = "NWC Options",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "nwccoords",    Kind = "single", Label = "Coordinate system",
-                                Options = new SingleSelectOpts { Items = new List<string> { "Shared", "Internal" } }, Default = s.NwcCoordinates },
-                            new SettingDef { Id = "nwcparams",    Kind = "single", Label = "Element parameters",
-                                Options = new SingleSelectOpts { Items = new List<string> { "All", "Elements", "None" } }, Default = s.NwcParameters },
-                            new SettingDef { Id = "nwcfaceting",  Kind = "single", Label = "Mesh quality (faceting factor)",
-                                Options = new SingleSelectOpts { Items = new List<string>(NwcFacetingLabels) }, Default = NwcFacetingLabels[1] },
-                            new SettingDef { Id = "nwcconvelemprop",  Kind = "toggle", Label = "Convert element properties",     Default = s.NwcConvertElementProps },
-                            new SettingDef { Id = "nwcdivide",        Kind = "toggle", Label = "Divide file into levels",         Default = s.NwcDivideByLevel },
-                            new SettingDef { Id = "nwclinks",         Kind = "toggle", Label = "Include linked Revit models",     Default = s.NwcExportLinks },
-                            new SettingDef { Id = "nwcparts",         Kind = "toggle", Label = "Include Revit parts",             Default = s.NwcExportParts },
-                            new SettingDef { Id = "nwcelementids",    Kind = "toggle", Label = "Include element IDs",             Default = s.NwcExportElementIds },
-                            new SettingDef { Id = "nwcurls",          Kind = "toggle", Label = "Include URL parameters",          Default = s.NwcExportUrls },
-                            new SettingDef { Id = "nwcmissingmats",   Kind = "toggle", Label = "Find missing materials",          Default = s.NwcFindMissingMaterials },
-                            new SettingDef { Id = "nwcroomgeo",       Kind = "toggle", Label = "Export room geometry",            Default = s.NwcExportRoomGeometry },
-                            new SettingDef { Id = "nwcroomattr",      Kind = "toggle", Label = "Attach room data as attributes",  Default = s.NwcExportRoomAsAttribute },
-                            new SettingDef { Id = "nwclights",        Kind = "toggle", Label = "Convert Revit lights",            Default = s.NwcConvertLights },
-                            new SettingDef { Id = "nwclinkedcad",     Kind = "toggle", Label = "Convert linked CAD formats",      Default = s.NwcConvertLinkedCad },
-                        }
-                    },
-                    new SettingsGroup
-                    {
-                        Id = "G6", Title = "IFC Options",
-                        Settings = new List<SettingDef>
-                        {
-                            new SettingDef { Id = "ifcversion", Kind = "single", Label = "Default IFC version",
-                                Options = new SingleSelectOpts { Items = new List<string> { "IFC2x3", "IFC4" } },
-                                Default = s.IfcVersion },
-                        }
-                    },
-                }
-            };
-        }
-
-        public void ApplySettings(string groupId, string settingId, object value)
-        {
-            var s = BulkExportSettings.Instance;
-            switch (settingId)
-            {
-                case "outdir":          s.OutputFolder               = value as string ?? "";                      break;
-                case "splitformat":     s.SplitByFormat              = value is bool b1 && b1;                     break;
-                case "pattern":         s.FilenamePattern            = value as string ?? "";                      break;
-                case "defpdf":          s.ExportPdf                  = value is bool b2 && b2;                     break;
-                case "defdwg":          s.ExportDwg                  = value is bool b3 && b3;                     break;
-                case "defnwc":          s.ExportNwc                  = value is bool b5 && b5;                     break;
-                case "defifc":          s.ExportIfc                  = value is bool b6 && b6;                     break;
-                case "combinepdf":      s.CombinePdf                 = value is bool b4 && b4;                     break;
-                case "placement":       s.PdfPaperPlacement          = value as string ?? "Center";                break;
-                case "hiddenlines":     s.HiddenLinesVector          = value as string == "Vector Processing";     break;
-                case "colordepth":      s.ColorDepth                 = value as string ?? "Color";                 break;
-                case "rasterquality":   s.RasterQuality              = value as string ?? "High";                  break;
-                case "zoomsetting":     s.ZoomSetting                = value as string ?? "Fit to Page";           break;
-                case "zoompercent":     s.ZoomPercent                = value is int zi ? zi : 100;                 break;
-                case "viewlinksblue":   s.ViewLinksInBlue            = value is bool vl && vl;                     break;
-                case "replacehalftone": s.ReplaceHalftoneWithThinLines = value is bool rh && rh;                   break;
-                case "dwgsetup":        s.DwgExportSetupName         = value as string ?? "";                      break;
-                case "nwccoords":       s.NwcCoordinates             = value as string ?? "Shared";                break;
-                case "nwcparams":       s.NwcParameters              = value as string ?? "All";                   break;
-                case "nwcfaceting":
-                {
-                    int fi = Array.IndexOf(NwcFacetingLabels, value as string ?? "");
-                    s.NwcFacetingFactor = fi >= 0 ? NwcFacetingValues[fi] : 1.0;
-                    break;
-                }
-                case "nwcconvelemprop": s.NwcConvertElementProps    = value is bool c1 && c1; break;
-                case "nwcdivide":       s.NwcDivideByLevel          = value is bool c2 && c2; break;
-                case "nwclinks":        s.NwcExportLinks            = value is bool c3 && c3; break;
-                case "nwcparts":        s.NwcExportParts            = value is bool c4 && c4; break;
-                case "nwcelementids":   s.NwcExportElementIds       = value is bool c5 && c5; break;
-                case "nwcurls":         s.NwcExportUrls             = value is bool c6 && c6; break;
-                case "nwcmissingmats":  s.NwcFindMissingMaterials   = value is bool c7 && c7; break;
-                case "nwcroomgeo":      s.NwcExportRoomGeometry     = value is bool c8 && c8; break;
-                case "nwcroomattr":     s.NwcExportRoomAsAttribute  = value is bool c9 && c9; break;
-                case "nwclights":       s.NwcConvertLights          = value is bool d1 && d1; break;
-                case "nwclinkedcad":    s.NwcConvertLinkedCad       = value is bool d2 && d2; break;
-                case "ifcversion":      s.IfcVersion                = value as string ?? "IFC2x3"; break;
-            }
-            s.Save();
         }
 
         // ═════════════════════════════════════════════════════════════════════
