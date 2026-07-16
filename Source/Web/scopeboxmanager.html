@@ -1,0 +1,65 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scope Box Manager</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-sbm"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script src="lib/scopeboxmanager.js"></script>
+<script>
+  var app = document.getElementById('app');
+  var sbm = Lemoine.scopeBoxManager({ send: function (t, p) { Lemoine.send(t, p); } });
+  Lemoine.on('init', function (p) { sbm.render(app, p); });
+
+  // Standalone demo (plain browser / headless screenshot - no C# bridge).
+  if (!Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search)) {
+    var labels = {
+      refresh: '↺ Refresh', refreshTip: 'Re-scan the model.',
+      filterAll: 'All', filterUsed: 'Used', filterUnused: 'Unused', unusedBadge: 'unused',
+      renameChecked: 'Rename checked...', deleteUnused: 'Delete unused boxes...',
+      footNote: 'Check boxes for bulk rename/delete.', emptyBoxes: 'No scope boxes in this project.',
+      noSelection: 'Select a scope box on the left to manage it.',
+      deleteBox: 'Delete box', duplicateBox: 'Duplicate box', bindSides: 'Bind sides to grids...', splitBox: 'Split...',
+      assignViews: 'Assign to views...', clearChecked: 'Clear from checked',
+      viewsEmpty: 'No views use this scope box.', viewsHint: 'Assign opens the project-browser tree.',
+      assignDatums: 'Assign datums...', datumsEmpty: 'No datums follow this scope box.',
+      datumsHint: 'A scope box on a grid/level makes its 2D extents follow the box.',
+      cancel: 'Cancel', applyAssign: 'Apply', applyRename: 'Rename', applyDelete: 'Delete', applyBind: 'Apply', applySplit: 'Split',
+      assignDatumsHelp: 'Pick the host grids, levels and reference planes to follow this box.',
+      assignDatumsNone: 'No host datums cross this box.', bindNote: 'Moves the box center to the new sides.',
+      sideNorth: 'North', sideSouth: 'South', sideEast: 'East', sideWest: 'West', sideKeep: '(keep current edge)',
+      splitNote: 'Each half is a copy repositioned to its own half.', splitModeGrid: 'At a gridline', splitModeMiddle: 'In the middle',
+      splitGridLabel: 'Split at grid', splitAxisLabel: 'Split axis', splitAxisNS: 'North-South line (splits West / East)',
+      splitAxisEW: 'East-West line (splits South / North)', splitOverlap: 'Overlap (ft)',
+      splitDeleteOriginal: 'Delete original after split', splitNoGrid: 'Pick a grid that crosses this box.',
+      nothingChecked: 'Nothing is checked.', noUnused: 'There are no unused scope boxes.'
+    };
+    sbm.render(app, {
+      title: 'Scope Box Manager', labels: labels, status: '', filterMode: 'All',
+      sideHeader: 'SCOPE BOXES - 2 . 1 unused', empty: false,
+      boxes: [
+        { id: '1', name: 'SB-Level1', unused: false, usage: '3 views . 2 datums', active: true, checked: false },
+        { id: '2', name: 'SB-Roof', unused: true, usage: '0 views . 0 datums', active: false, checked: false }
+      ],
+      renameCount: 0, renameTitle: 'Rename 0 scope box(es)',
+      renameTokenInput: { value: '{CurrentName}', defaultPattern: '{CurrentName}', groups: [], sample: { CurrentName: 'SB-Level1', Number: '01' } },
+      unusedIds: ['2'], unusedCount: 1, deleteUnusedTitle: 'Delete 1 unused scope box(es)?',
+      editor: {
+        id: '1', name: 'SB-Level1', size: 'W 120 . D 80 . H 14 ft',
+        viewsHeader: 'Views using this box  (3)', datumsHeader: 'Grids, levels & ref planes  (2)',
+        views: [ { id: '10', name: 'Level 1 - Plan', tag: 'Floor Plan', checked: false } ],
+        datums: [ { id: '20', name: 'Level 1', tag: 'Level', checked: false } ],
+        assignViewsTitle: "Assign views to 'SB-Level1'", tree: { roots: [], selected: [], singleSelect: false },
+        assignDatumsTitle: "Assign datums to 'SB-Level1'", assignDatums: null, assignDatumsMap: {}, assignDatumsNone: false,
+        bindTitle: "Bind sides of 'SB-Level1' to grids", bindHorizontal: [], bindVertical: [],
+        splitTitle: "Split 'SB-Level1'", crossingGrids: [], hasCrossingGrids: false,
+        deleteBoxTitle: "Delete 'SB-Level1'?", deleteBoxLine: 'This box is used by 3 view(s) and 2 datum(s).'
+      }
+    });
+  }
+</script>
+</body></html>

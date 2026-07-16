@@ -97,8 +97,8 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | **Clash Definitions** | ✅ web | CRUD editor on `WebWindowBase` (`WebClashDefinitions`/`WebClashDefinitionsWindow` + `clashdefs.html`): definition sidebar, Group 1/2 editor (mode, source-doc tree, rules/categories tabs, element-pick via ExternalEvent), marking settings; auto-saves on close |
 | **Tools Overview** | ✅ web | Field guide on `WebWindowBase` (`WebToolsOverviewWindow` + `toolsoverview.html`); category tabs, feeds/fed-by chip navigation, demo launch |
 | **Link Audit** | ✅ web | Read-only report on `WebWindowBase` (`WebLinkAuditWindow` + `linkaudit.html`) |
-| Scope Box Manager | ❌ WPF only | Uses BrowserTreePicker |
-| Color Picker (standalone) | ❌ WPF only | Inline web colour input may already cover most uses |
+| **Scope Box Manager** | ✅ web | Master/detail on `WebWindowBase` (`WebScopeBoxManager`/`WebScopeBoxManagerWindow` + `scopeboxmanager.html`/`lib/scopeboxmanager.js`): sidebar (All/Used/Unused filter, usage, bulk rename/delete), per-box editor (inline rename, size, duplicate/delete/bind-sides/split), views + datums sections, and 6 in-page overlays (assign views = browserTree, assign datums = tabs, bind sides, split, rename = tokenInput, delete confirm). Reuses the SAME `ScopeBoxManager` scan/run ExternalEvents unchanged. Code-complete, pending Windows verify. |
+| Color Picker (standalone) | ✅ resolved | **No web port needed** — `ColorPickerWindow` is only an internal WPF helper (`PickColor`/`BuildColorPickerSwatch`) for CeilingHeatmap/Discover/ToolGroups/Filters, all already replaced by the inline `WebInput.Color` input (or the excluded Filters surface). |
 
 > **`WebWindowBase`** now encapsulates the WebView2 host/bridge/theme/borderless-chrome shell
 > for bespoke (non-step-flow) windows — Link Audit is the first consumer; Tools Overview and

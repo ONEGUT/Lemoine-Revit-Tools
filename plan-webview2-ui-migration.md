@@ -523,3 +523,20 @@ scrollbars (all become CSS/JS in the shared lib).
   Scope Box Manager, Color Picker, Legend Creator).
 - *(append here: assembly-dump probe output — the SDK assembly version Revit's own
   WebView2 loads; 2024/2025 smoke results; focus/keyboard findings)*
+- **2026-07 (Scope Box Manager web port + Color Picker resolved — pending Windows verify):**
+  ported the bespoke **Scope Box Manager** window onto `WebWindowBase`
+  (`WebScopeBoxManager` model + `WebScopeBoxManagerWindow` + `scopeboxmanager.html` /
+  `lib/scopeboxmanager.js` + `l-sbm-*` CSS), reusing the SAME `ScopeBoxManagerScanHandler` /
+  `ScopeBoxManagerRunHandler` + ExternalEvents unchanged (view layer only). Master/detail:
+  sidebar (All/Used/Unused filter, per-box usage, unused badge, bulk rename/delete-unused),
+  per-box editor (inline rename, size, duplicate/delete/bind-sides/split), views + datums
+  checklists, and 6 in-page modal overlays (assign views = pruned `browserTree`, assign datums
+  = `multiSelectTabs` with a key→id map, bind sides = 4 orientation-filtered `singleSelect`,
+  split = mode/grid/axis/overlap/delete, bulk rename = `tokenInput` resolved via `TokenResolver`,
+  delete confirm). `ScopeBoxManagerCommand` branches on the Web UI flag (WPF fallback per R25).
+  Verified rendering standalone in headless Chromium (matches the WPF layout). **Color Picker**
+  standalone needs no web port — `ColorPickerWindow` is only an internal WPF helper already
+  replaced by the inline `WebInput.Color` input in every web port. *To verify on Windows:* open
+  Scope Box Manager with the flag on; each overlay/action round-trips through the same handlers
+  as the WPF window. **Remaining WPF-only:** Auto Filters (Settings→Filters tab +
+  `FiltersSettingsWindow`) and Legend Creator — deliberately out of scope this pass.
