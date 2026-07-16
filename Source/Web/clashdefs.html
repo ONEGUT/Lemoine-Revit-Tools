@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clash Definitions</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-cd"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script src="lib/clashdefs.js"></script>
+<script>
+  var app = document.getElementById('app');
+  var cd = Lemoine.clashDefs({ send: function (t, p) { Lemoine.send(t, p); } });
+  Lemoine.on('init', function (p) { cd.render(app, p); });
+
+  // Standalone demo (plain browser / headless screenshot - no C# bridge).
+  if (!Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search)) {
+    var labels = {
+      unnamed: '(unnamed)', dupTooltip: 'Duplicate', delTooltip: 'Delete', dupGlyph: 'D', delGlyph: 'x',
+      noSelection: 'No definition selected.', name: 'Name',
+      group1Header: 'Group 1 (source)', group2Header: 'Group 2 (target)', markingSettings: 'Marking settings',
+      tolerance: 'Tolerance (mm)', toleranceDesc: 'Overlap under this counts as touching, not clashing.',
+      maxClashes: 'Max clashes', maxClashesDesc: 'Stop after this many per view.',
+      fillStyle: 'Fill style', markerReference: 'Marker reference', phase: 'Phase',
+      phaseDesc: 'Which phase the clash detection runs against.', hostPhase: 'Host phase', noHostPhases: 'No host phases.',
+      crossLineStyle: 'Cross-line style', lineDefault: '(default thin)', fallbackColor: 'Fallback colour',
+      modeLabel: 'Group definition mode', modeRules: 'Filter Rules', modeCategories: 'Categories', modeElements: 'Select Elements',
+      sourceDocs: 'Source documents (which models this group scans)',
+      sourceDocsDesc: 'Check a model to scan it. Expand its caret to include or exclude worksets.',
+      noDocs: 'No documents available.', rulesEmpty: 'No Auto Filters rules configured.', catsEmpty: 'No categories available.',
+      pickHost: '+ Pick host elements', pickLinks: '+ Pick linked elements', clear: 'Clear',
+      elemNone: 'No elements picked yet.', elemCount: '{0} element(s) picked.',
+      fillSolid: 'Solid', fillOutline: 'Outline', targetEdge: 'Edge', targetCentre: 'Centre',
+      phaseAll: 'All phases', phaseMatch: 'Match view', phaseSpecific: 'Specific phase'
+    };
+    var group = {
+      mode: 'Rules',
+      docs: [
+        { linkId: '0', name: '(Host) Tower-A-Central.rvt', selected: true, hasWorksets: true, worksets: [
+          { id: 1, name: 'Shared Levels and Grids', included: true, disabled: false },
+          { id: 2, name: 'Interiors', included: false, disabled: false } ] },
+        { linkId: '551', name: '[Tower-A-MEP]', selected: false, hasWorksets: false, worksets: [] }
+      ],
+      rules: { groups: { Mechanical: ['Supply Duct', 'Return Duct'], Piping: ['Chilled Water'] }, selected: ['Supply Duct'] },
+      categories: { groups: {}, hierarchy: {}, selected: [] },
+      elements: { count: 0 }
+    };
+    cd.render(app, {
+      title: 'Clash Definitions', close: 'Close', addPill: '+ Add definition',
+      definitions: [{ id: 'C1', name: 'Duct vs Structure' }, { id: 'C2', name: 'Pipe vs Duct' }],
+      activeId: 'C1',
+      editor: {
+        name: 'Duct vs Structure', group1: group, group2: JSON.parse(JSON.stringify(group)),
+        marking: { tolerance: 25.4, maxClashes: 500, fillStyle: 'Solid', dimTarget: 'Edge',
+          phaseMode: 'All', specificPhase: '', hostPhases: ['New Construction'], crossLine: '',
+          lineStyles: ['Thin Lines', 'Wide Lines'], fallbackColor: '#ff00ff' }
+      },
+      labels: labels
+    });
+  }
+</script>
+</body></html>

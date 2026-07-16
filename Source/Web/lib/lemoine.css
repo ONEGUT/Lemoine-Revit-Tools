@@ -362,6 +362,44 @@ html, body { height:100%; }
 .l-set-fieldwrap { display: flex; flex-direction: column; gap: 4px; }
 .l-set-fieldlabel { font-size: var(--l-fs-md); color: var(--l-text); }
 
+/* ═══ Clash Definitions (lib/clashdefs.js) ════════════════════════════════════ */
+.l-cd { display: grid; grid-template-rows: auto 1fr; height: 100vh; border: 1px solid var(--l-border);
+        box-sizing: border-box; background: var(--l-bg); color: var(--l-text); font-family: var(--l-ui-font); overflow: hidden; }
+.l-cd-body { display: flex; min-height: 0; }
+.l-cd-side { width: 250px; flex-shrink: 0; border-right: 1px solid var(--l-border); background: var(--l-surface);
+             overflow-y: auto; padding: 8px; }
+.l-cd-defrow { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+               padding: 7px 8px; margin-bottom: 4px; border: 1px solid var(--l-border);
+               border-radius: var(--l-radius-card); cursor: pointer; }
+.l-cd-defrow.active { background: var(--l-accent-dim); border-color: var(--l-accent); }
+.l-cd-defrow .nm { font-size: var(--l-fs-md); color: var(--l-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.l-cd-defrow .acts { display: flex; gap: 4px; flex-shrink: 0; }
+.l-cd-glyph { border: 1px solid var(--l-border); background: transparent; color: var(--l-text-dim);
+              border-radius: var(--l-radius-sm); cursor: pointer; padding: 3px 6px; font-size: var(--l-fs-sm); }
+.l-cd-glyph:hover { background: var(--l-raised); color: var(--l-text); }
+.l-cd-add { width: 100%; margin-top: 4px; }
+.l-cd-editor { flex: 1 1 auto; overflow-y: auto; padding: 16px; min-width: 0; }
+.l-cd-empty { font-size: var(--l-fs-sm); color: var(--l-text-dim); font-style: italic; }
+.l-cd-flabel { font-size: var(--l-fs-sm); color: var(--l-text); margin: 0 0 4px; }
+.l-cd-caption { font-size: var(--l-fs-sm); color: var(--l-text-dim); font-style: italic; margin: 2px 0 6px; }
+.l-cd-input { width: 100%; height: var(--l-h-input); padding: 0 8px; margin-bottom: 12px; color: var(--l-text);
+              background: var(--l-select-bg); border: 1px solid var(--l-border); border-radius: var(--l-radius-sm);
+              font-family: var(--l-ui-font); font-size: var(--l-fs-md); outline: none; }
+.l-cd-input:focus { border-color: var(--l-accent); }
+.l-cd-card { border: 1px solid var(--l-border); background: var(--l-surface); border-radius: var(--l-radius-card);
+             padding: 14px; margin-bottom: 14px; }
+.l-cd-cardhead { font-size: var(--l-fs-md); font-weight: 600; color: var(--l-text); margin-bottom: 10px; }
+.l-cd-divider { height: 1px; background: var(--l-border); margin: 10px 0; }
+.l-cd-doctree { margin: 2px 0 0; }
+.l-cd-docrow { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.l-cd-docrow .caret { width: 14px; text-align: center; color: var(--l-text-dim); cursor: pointer; font-size: var(--l-fs-sm); }
+.l-cd-docrow .nm { font-size: var(--l-fs-md); color: var(--l-text); }
+.l-cd-wsrow { display: flex; align-items: center; gap: 6px; padding: 1px 0 1px 34px; }
+.l-cd-wsrow .nm { font-size: var(--l-fs-sm); color: var(--l-text); }
+.l-cd-wsrow .nm.dim { color: var(--l-text-dim); }
+.l-cd-doctree input, .l-cd-docrow input { accent-color: var(--l-accent); }
+.l-cd-elembtns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+
 /* ═══ Report windows (linkaudit.html, etc.) ═══════════════════════════════════ */
 .l-report { display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
             border: 1px solid var(--l-border); box-sizing: border-box;

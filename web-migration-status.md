@@ -82,7 +82,7 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | **Global Settings** | 🟡 General tab web-backed; 8 tabs remain | See §4 |
 | Filters Settings (standalone) | ❌ WPF only | Shares the Filters-tab editor (~3620 lines) |
 | Legend Settings / Legend Creator | ❌ WPF only | Drag/drop lane grid — hardest surface (Phase 3 wave 5) |
-| Clash Definitions | ❌ WPF only | Clash-rule CRUD; most-opened after settings |
+| **Clash Definitions** | ✅ web | CRUD editor on `WebWindowBase` (`WebClashDefinitions`/`WebClashDefinitionsWindow` + `clashdefs.html`): definition sidebar, Group 1/2 editor (mode, source-doc tree, rules/categories tabs, element-pick via ExternalEvent), marking settings; auto-saves on close |
 | **Tools Overview** | ✅ web | Field guide on `WebWindowBase` (`WebToolsOverviewWindow` + `toolsoverview.html`); category tabs, feeds/fed-by chip navigation, demo launch |
 | **Link Audit** | ✅ web | Read-only report on `WebWindowBase` (`WebLinkAuditWindow` + `linkaudit.html`) |
 | Scope Box Manager | ❌ WPF only | Uses BrowserTreePicker |

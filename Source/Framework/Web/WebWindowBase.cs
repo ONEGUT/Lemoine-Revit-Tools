@@ -195,6 +195,11 @@ namespace LemoineTools.Framework.Web
             catch (Exception ex) { DiagnosticsLog.Swallowed($"{GetType().Name}: SafeUi", ex); }
         }
 
+        /// <summary>Marshal an action onto this window's dispatcher (STA), guarded against a
+        /// shut-down dispatcher — for callbacks arriving from Revit's main thread (e.g. an
+        /// ExternalEvent pick result). Never throws into the caller thread.</summary>
+        protected void RunOnUiThread(Action action) => SafeUi(action);
+
         protected static string Str(IReadOnlyDictionary<string, object?> d, string key) =>
             d.TryGetValue(key, out var v) ? v as string ?? "" : "";
 
