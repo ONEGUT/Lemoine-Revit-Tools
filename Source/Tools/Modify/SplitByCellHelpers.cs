@@ -6,7 +6,7 @@ using LemoineTools.Framework;
 
 namespace LemoineTools.Tools.ModifyElements
 {
-    internal enum CellSplitStatus { Split, FitsInOneCell, NoGeometry, NoCellsIntersected }
+    internal enum CellSplitStatus { Split, FitsInOneCell, NoGeometry, NoCellsIntersected, Sloped }
 
     /// <summary>
     /// Geometry helpers and element-recreation logic for SplitByCellEventHandler.
@@ -26,11 +26,13 @@ namespace LemoineTools.Tools.ModifyElements
 
         /// <summary>
         /// Splits one element into grid cells.
-        /// Returns the number of replacement cells and a status code.
-        /// Throws if any cell recreation fails so the caller's transaction rolls back cleanly,
-        /// leaving the original element intact with no partial cells in the model.
+        /// Returns the number of replacement cells created, the number of cells that were
+        /// dropped (boolean-intersect or recreation failures), and a status code.
+        /// A cell that can't be recreated is skipped and logged — the element still splits
+        /// from the cells that succeeded, and the original is deleted only once at least one
+        /// replacement cell exists. If NO cell survives, the original is left intact.
         /// </summary>
-        internal static (int CellCount, CellSplitStatus Status) SplitElement(
+        internal static (int CellCount, int DroppedCells, CellSplitStatus Status) SplitElement(
             Document doc,
             Element  el,
             double   cellX,
@@ -48,10 +50,17 @@ namespace LemoineTools.Tools.ModifyElements
 
             Solid? elementSolid = GetPrimarySolid(el);
             if (elementSolid == null || elementSolid.Volume < 1e-9)
-                return (0, CellSplitStatus.NoGeometry);
+                return (0, 0, CellSplitStatus.NoGeometry);
+
+            // A sloped/non-planar element has no horizontal top face, so cell extraction (which
+            // reads the intersection's up-facing face) can never return a loop — every cell would
+            // silently drop. Detect it up front and report it honestly as "sloped, not supported"
+            // rather than the misleading "boolean intersection returned no cells".
+            if (!HasHorizontalTopFace(elementSolid))
+                return (0, 0, CellSplitStatus.Sloped);
 
             BoundingBoxXYZ bb = el.get_BoundingBox(null);
-            if (bb == null) return (0, CellSplitStatus.NoGeometry);
+            if (bb == null) return (0, 0, CellSplitStatus.NoGeometry);
 
             double ox = gridOrigin?.X ?? bb.Min.X;
             double oy = gridOrigin?.Y ?? bb.Min.Y;
@@ -81,7 +90,7 @@ namespace LemoineTools.Tools.ModifyElements
             }
 
             if (cellsX.Count == 1 && cellsY.Count == 1)
-                return (0, CellSplitStatus.FitsInOneCell);
+                return (0, 0, CellSplitStatus.FitsInOneCell);
 
             double zMid    = (bb.Min.Z + bb.Max.Z) * 0.5;
             double halfH   = Math.Max((bb.Max.Z - bb.Min.Z) * 0.5, 0.5) + 1.0;
@@ -89,6 +98,7 @@ namespace LemoineTools.Tools.ModifyElements
             double zTop    = zMid + halfH;
 
             var newIds = new List<ElementId>();
+            int dropped = 0;   // cells lost to a boolean-intersect or recreation failure
 
             // ── Phase 1: compute all cell shapes BEFORE touching the document ────
             // RecreateElement modifies the document, which invalidates the elementSolid
@@ -112,10 +122,15 @@ namespace LemoineTools.Tools.ModifyElements
                     }
                     catch (Exception ex)
                     {
+                        // A cell that can't be intersected is a real dropped cell — count it so
+                        // the run log can tell the user cells were lost, not just diagnostics.log.
+                        dropped++;
                         DiagnosticsLog.Swallowed($"SplitByCell: cell boolean intersect failed on element {el.Id.Value}", ex);
                         continue;
                     }
 
+                    // An empty/zero-volume intersection is a cell the element doesn't reach
+                    // (a corner of the grid outside the slab) — expected, not a dropped cell.
                     if (intersection == null || intersection.Volume < 1e-9)
                         continue;
 
@@ -126,21 +141,57 @@ namespace LemoineTools.Tools.ModifyElements
                 }
             }
 
-            if (pendingLoops.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+            if (pendingLoops.Count == 0) return (0, dropped, CellSplitStatus.NoCellsIntersected);
 
             // ── Phase 2: create replacement elements (document modification) ──────
-            // RecreateElement propagates Revit API exceptions so the caller's transaction
-            // rolls back; InvalidElementId means unsupported/misconfigured element type.
+            // Skip-and-log a cell that can't be recreated (e.g. a sliver from a grid line
+            // landing on the slab edge) rather than throwing away the whole element — an
+            // element that splits 95% cleanly should not fail 100%. The original is deleted
+            // only if at least one replacement cell was actually created.
             foreach (var loops in pendingLoops)
             {
-                ElementId newId = RecreateElement(doc, el, loops);
+                ElementId newId;
+                try
+                {
+                    newId = RecreateElement(doc, el, loops);
+                }
+                catch (Exception ex)
+                {
+                    dropped++;
+                    DiagnosticsLog.Swallowed($"SplitByCell: cell recreation threw on element {el.Id.Value}", ex);
+                    continue;
+                }
+
                 if (newId == null || newId == ElementId.InvalidElementId)
-                    throw new InvalidOperationException("Cell element recreation failed.");
+                {
+                    dropped++;
+                    DiagnosticsLog.Swallowed(
+                        $"SplitByCell: cell recreation returned InvalidElementId on element {el.Id.Value}",
+                        new InvalidOperationException("RecreateElement returned InvalidElementId."));
+                    continue;
+                }
+
                 newIds.Add(newId);
             }
 
+            // Every cell failed to recreate — leave the original intact rather than deleting it.
+            if (newIds.Count == 0) return (0, dropped, CellSplitStatus.NoCellsIntersected);
+
             doc.Delete(el.Id);
-            return (newIds.Count, CellSplitStatus.Split);
+            return (newIds.Count, dropped, CellSplitStatus.Split);
+        }
+
+        // True when the element's solid has at least one horizontal (up-facing) planar face —
+        // the surface cell splitting reads to rebuild each cell. A sloped roof / ramp / sloped
+        // floor has none, so it can never cell-split with the current top-face extraction.
+        private static bool HasHorizontalTopFace(Solid solid)
+        {
+            foreach (Face face in solid.Faces)
+            {
+                if (face is PlanarFace pf && pf.FaceNormal.Z >= 1.0 - 1e-6)
+                    return true;
+            }
+            return false;
         }
 
         // ── Geometry ──────────────────────────────────────────────────────────
@@ -223,7 +274,7 @@ namespace LemoineTools.Tools.ModifyElements
         // FilledRegion has no 3D solid; clip its sketch boundary directly in XY using
         // Sutherland-Hodgman against each cell rectangle. Only line-segment boundaries
         // are supported — arcs/splines cause that region to be skipped gracefully.
-        private static (int CellCount, CellSplitStatus Status) SplitFilledRegion(
+        private static (int CellCount, int DroppedCells, CellSplitStatus Status) SplitFilledRegion(
             Document      doc,
             FilledRegion  fr,
             double        cellX,
@@ -232,7 +283,7 @@ namespace LemoineTools.Tools.ModifyElements
         {
             IList<CurveLoop> boundaries = fr.GetBoundaries();
             if (boundaries == null || boundaries.Count == 0)
-                return (0, CellSplitStatus.NoGeometry);
+                return (0, 0, CellSplitStatus.NoGeometry);
 
             CurveLoop outerLoop = boundaries[0];
 
@@ -266,7 +317,7 @@ namespace LemoineTools.Tools.ModifyElements
             for (int j = 0; j < ny; j++) { double y = startY + j * cellY; cellsY.Add((y, y + cellY)); }
 
             if (cellsX.Count == 1 && cellsY.Count == 1)
-                return (0, CellSplitStatus.FitsInOneCell);
+                return (0, 0, CellSplitStatus.FitsInOneCell);
 
             // Phase 1: clip outer boundary + any holes against each cell rectangle.
             var pending = new List<IList<CurveLoop>>();
@@ -296,12 +347,13 @@ namespace LemoineTools.Tools.ModifyElements
                 }
             }
 
-            if (pending.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+            if (pending.Count == 0) return (0, 0, CellSplitStatus.NoCellsIntersected);
 
             // Phase 2: create replacement FilledRegions. A single degenerate cell (e.g. a sliver from
             // a grid line coincident with the region edge) must not abort the whole split — log it and
             // skip, keeping the good cells.
             var newIds = new List<ElementId>();
+            int dropped = 0;
             foreach (var loops in pending)
             {
                 try
@@ -311,15 +363,16 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 catch (Exception ex)
                 {
+                    dropped++;
                     DiagnosticsLog.Swallowed($"SplitByCell: skipped a degenerate cell of filled region {fr.Id.Value}", ex);
                 }
             }
 
             // If nothing valid was produced, leave the original intact rather than deleting it.
-            if (newIds.Count == 0) return (0, CellSplitStatus.NoCellsIntersected);
+            if (newIds.Count == 0) return (0, dropped, CellSplitStatus.NoCellsIntersected);
 
             doc.Delete(fr.Id);
-            return (newIds.Count, CellSplitStatus.Split);
+            return (newIds.Count, dropped, CellSplitStatus.Split);
         }
 
         // Sutherland-Hodgman clip of a CurveLoop against an axis-aligned rectangle.
@@ -544,17 +597,16 @@ namespace LemoineTools.Tools.ModifyElements
         {
             try
             {
-                var bp = new FilteredElementCollector(doc)
-                    .OfClass(typeof(BasePoint))
-                    .Cast<BasePoint>()
-                    .FirstOrDefault(p => !p.IsShared);
-
+                // BasePoint.Position is the point's INTERNAL-coordinate location — the frame the
+                // cell grid math runs in. The BASEPOINT_EASTWEST/NORTHSOUTH parameters are the
+                // point's SHARED-coordinate readout, which diverges from internal on any project
+                // with shared coordinates set (rotated/offset site), so using them anchored the
+                // grid to a meaningless point. Snap only X/Y; the grid is 2D in plan.
+                BasePoint? bp = BasePoint.GetProjectBasePoint(doc);
                 if (bp != null)
                 {
-                    return new XYZ(
-                        bp.get_Parameter(BuiltInParameter.BASEPOINT_EASTWEST_PARAM)?.AsDouble()  ?? 0,
-                        bp.get_Parameter(BuiltInParameter.BASEPOINT_NORTHSOUTH_PARAM)?.AsDouble() ?? 0,
-                        0);
+                    XYZ pos = bp.Position;
+                    return new XYZ(pos.X, pos.Y, 0);
                 }
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitByCell: read project base point", __lex); }
@@ -567,13 +619,22 @@ namespace LemoineTools.Tools.ModifyElements
         /// <summary>
         /// Builds a map from BuiltInCategory to element IDs visible in the given view.
         /// Keyed by BIC enum (not Category.Name) so matching works in non-English Revit.
+        /// FilledRegion uses a class filter, not a category filter, because category filters
+        /// miss FilledRegion elements — so this is the single source of truth for both the
+        /// pre-open count strip and the run, keeping the two in agreement.
         /// </summary>
+        /// <param name="only">If supplied, only these categories are collected (the rest are
+        /// skipped) — lets the run collect just the selected categories instead of all five.</param>
         internal static Dictionary<BuiltInCategory, List<ElementId>> BuildCategoryMap(
-            Document doc, View view)
+            Document doc, View view, ICollection<BuiltInCategory>? only = null)
         {
             var map = new Dictionary<BuiltInCategory, List<ElementId>>();
 
-            foreach (BuiltInCategory bic in SupportedCategories)
+            IEnumerable<BuiltInCategory> cats = only != null
+                ? SupportedCategories.Where(only.Contains)
+                : SupportedCategories;
+
+            foreach (BuiltInCategory bic in cats)
             {
                 List<ElementId> ids;
 

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -28,6 +29,13 @@ namespace LemoineTools.Framework.Controls
         private TextBox? _minBox;
         private TextBox? _maxBox;
 
+        // Values requested via SetValues before Build() ran (Loaded hasn't fired yet, so the
+        // text boxes don't exist). Applied once Build() creates them — otherwise the fields
+        // render blank while the owner silently holds these values.
+        private bool    _built;
+        private double? _pendingMin;
+        private double? _pendingMax;
+
         public event Action<double?, double?>? RangeChanged;
 
         /// <summary>Accessible name announced by screen readers when the control receives focus.</summary>
@@ -41,8 +49,15 @@ namespace LemoineTools.Framework.Controls
 
         public void SetValues(double? min, double? max)
         {
-            if (_minBox != null) _minBox.Text = min.HasValue ? min.Value.ToString() : "";
-            if (_maxBox != null) _maxBox.Text = max.HasValue ? max.Value.ToString() : "";
+            _pendingMin = min;
+            _pendingMax = max;
+            if (_built) ApplyPending();
+        }
+
+        private void ApplyPending()
+        {
+            if (_minBox != null) _minBox.Text = _pendingMin.HasValue ? _pendingMin.Value.ToString(CultureInfo.InvariantCulture) : "";
+            if (_maxBox != null) _maxBox.Text = _pendingMax.HasValue ? _pendingMax.Value.ToString(CultureInfo.InvariantCulture) : "";
         }
 
         private void Build()
@@ -52,13 +67,12 @@ namespace LemoineTools.Framework.Controls
             _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _root.ColumnDefinitions.Add(new ColumnDefinition());
 
-            Grid.SetColumn(BuildSide(MinLabel, ref _minBox, isMin: true), 0);
             _root.Children.Add(CreateChild(BuildSide(MinLabel, ref _minBox, isMin: true), 0));
 
             var dash = new TextBlock
             {
                 Text = "–",
-                
+
                 VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(10, 0, 10, 7),
             };
@@ -66,6 +80,9 @@ namespace LemoineTools.Framework.Controls
             _root.Children.Add(CreateChild(dash, 1));
 
             _root.Children.Add(CreateChild(BuildSide(MaxLabel, ref _maxBox, isMin: false), 2));
+
+            _built = true;
+            ApplyPending();   // apply any values set before the control was laid out (NR-1)
         }
 
         private UIElement CreateChild(UIElement el, int col)
@@ -107,6 +124,9 @@ namespace LemoineTools.Framework.Controls
 
             box = tb;
             tb.TextChanged += (s, e) => FireChange();
+            // On leaving the field, snap the visible text to the clamped value so what the user
+            // sees always matches what the tool receives (no silent out-of-range or stale value).
+            tb.LostFocus += (s, e) => SnapBox(tb);
 
             row.Children.Add(tb);
 
@@ -127,11 +147,41 @@ namespace LemoineTools.Framework.Controls
             return sp;
         }
 
+        // Parse a box invariant-first (decimal '.'), then the active culture, so "10.5" is
+        // accepted on a comma-decimal locale instead of silently failing and keeping the old value.
+        private static double? ParseBox(TextBox? box)
+        {
+            string? t = box?.Text;
+            if (string.IsNullOrWhiteSpace(t)) return null;
+            if (double.TryParse(t, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var v)) return v;
+            if (double.TryParse(t, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture,  out v))      return v;
+            return null;
+        }
+
+        // Clamp to the declared [AbsMin, AbsMax] so a typo (e.g. 0.01 ft) can't drive the owner
+        // into a runaway range — AbsMin/AbsMax were previously declared but never enforced.
+        private double Clamp(double v)
+        {
+            if (AbsMin.HasValue && v < AbsMin.Value) v = AbsMin.Value;
+            if (AbsMax.HasValue && v > AbsMax.Value) v = AbsMax.Value;
+            return v;
+        }
+
+        private void SnapBox(TextBox tb)
+        {
+            var v = ParseBox(tb);
+            if (!v.HasValue) return;
+            string snapped = Clamp(v.Value).ToString(CultureInfo.InvariantCulture);
+            if (tb.Text != snapped) tb.Text = snapped;   // re-fires TextChanged → emits the clamped value
+        }
+
         private void FireChange()
         {
-            double? min = double.TryParse(_minBox?.Text, out var mn) ? (double?)mn : null;
-            double? max = double.TryParse(_maxBox?.Text, out var mx) ? (double?)mx : null;
-            RangeChanged?.Invoke(min, max);
+            double? min = ParseBox(_minBox);
+            double? max = ParseBox(_maxBox);
+            RangeChanged?.Invoke(
+                min.HasValue ? (double?)Clamp(min.Value) : null,
+                max.HasValue ? (double?)Clamp(max.Value) : null);
         }
     }
 }
