@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.UI;
+using LemoineTools.Framework;
 using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Tools.Setup
@@ -21,11 +22,14 @@ namespace LemoineTools.Tools.Setup
         private readonly PushCoordinatesData               _data;
         private readonly Dictionary<long, PushLinkSpec>    _linkSpecs = new Dictionary<long, PushLinkSpec>();
 
-        private bool _movePbp    = true;
-        private bool _moveSurvey = true;
+        private bool _movePbp        = true;
+        private bool _moveSurvey     = true;
+        private bool _publishReplace = false;   // opt-in - shared-coordinate workflows only
 
         public event EventHandler? ValidationChanged;
         private void Changed() => ValidationChanged?.Invoke(this, EventArgs.Empty);
+
+        private static string T(string key, params object[] args) => AppStrings.T("setup.pushCoordinates." + key, args);
 
         public PushCoordinatesWebTool(PushCoordinatesToLinksRunHandler? runHandler, ExternalEvent? runEvent, PushCoordinatesData? data)
         {
@@ -36,24 +40,31 @@ namespace LemoineTools.Tools.Setup
                 _linkSpecs[l.LinkInstId] = new PushLinkSpec { LinkInstId = l.LinkInstId, LinkName = l.Name };
         }
 
-        public string Title    => "Push Coordinates to Links";
-        public string RunLabel => "Push in Revit →";
+        public string Title    => T("title");
+        public string RunLabel => T("runLabel");
 
         public IReadOnlyList<WebStep> BuildSteps()
         {
-            var links = new WebStep("links", "Links to Push").Add(
-                WebInput.CheckList("links", $"Links ({_data.Links.Count} loaded)",
+            var links = new WebStep("links", T("steps.links")).Add(
+                WebInput.CheckList("links", T("labels.linksCount", _data.Links.Count),
                     _data.Links.Select(l => (l.LinkInstId.ToString(), l.Name, _linkSpecs[l.LinkInstId].Selected))));
 
-            var settings = new WebStep("settings", "Correction Settings")
-                .Add(WebInput.Toggle("pbp",    "Project Base Point", _movePbp))
-                .Add(WebInput.Toggle("survey", "Survey Point",       _moveSurvey));
+            // Shared-coordinate publish + instance re-place - opt-in (off by default). Publishing
+            // republishes the host's coordinates to the link, then deletes/recreates the instance
+            // (dropping any dependent dimensions/tags/overrides); most non-shared-coordinate
+            // projects leave it off. Toggle has no description slot, so the caveat rides on a Hint.
+            var settings = new WebStep("settings", T("steps.settings"))
+                .Add(WebInput.Toggle("pbp",    T("labels.projectBasePoint"), _movePbp))
+                .Add(WebInput.Toggle("survey", T("labels.surveyPoint"),       _moveSurvey))
+                .Add(WebInput.Hint("savedHint", T("labels.savedHint")))
+                .Add(WebInput.Toggle("publish", T("labels.publishLabel"), _publishReplace))
+                .Add(WebInput.Hint("publishDesc", T("labels.publishDesc")));
 
-            var run = new WebStep("run", "Review & Run", required: false).Add(
+            var run = new WebStep("run", T("steps.run"), required: false).Add(
                 WebInput.Review("review",
-                    new[] { ("Links", LinksSummary()), ("Points", PointsSummary()) },
-                    note: "Each selected link's own file is corrected and saved, then re-placed in the host using Shared Coordinates.",
-                    warning: (!_movePbp && !_moveSurvey) ? "Pick at least one point to correct." : null));
+                    new[] { (T("review.itemPoints"), PointsSummary()), (T("review.itemShared"), SharedSummary()) },
+                    note: T("review.note"),
+                    warning: (!_movePbp && !_moveSurvey) ? T("review.warnNoPoints") : null));
 
             return new List<WebStep> { links, settings, run };
         }
@@ -72,8 +83,9 @@ namespace LemoineTools.Tools.Setup
                         Changed();
                     }
                     break;
-                case "pbp":    if (value is bool p) { _movePbp    = p; Changed(); } break;
-                case "survey": if (value is bool s) { _moveSurvey = s; Changed(); } break;
+                case "pbp":     if (value is bool p)   { _movePbp        = p;   Changed(); } break;
+                case "survey":  if (value is bool s)   { _moveSurvey     = s;   Changed(); } break;
+                case "publish": if (value is bool pub) { _publishReplace = pub; Changed(); } break;
             }
         }
 
@@ -93,10 +105,10 @@ namespace LemoineTools.Tools.Setup
         {
             switch (stepId)
             {
-                case "links":    return LinksSummary() == "None" ? "-" : LinksSummary();
-                case "settings": return PointsSummary();
-                case "run":      return "Ready to run";
-                default:         return "-";
+                case "links":    return LinksSummary();
+                case "settings": return T("summaries.settings", PointsSummary(), _publishReplace ? "✓" : "✗");
+                case "run":      return T("summaries.run");
+                default:         return "—";
             }
         }
 
@@ -106,13 +118,14 @@ namespace LemoineTools.Tools.Setup
         {
             if (_runHandler == null || _runEvent == null)
             {
-                pushLog("Run handler not registered.", "fail");
+                pushLog(T("log.handlerMissing"), "fail");
                 onComplete(0, 1, 0);
                 return;
             }
 
-            _runHandler.MovePbp    = _movePbp;
-            _runHandler.MoveSurvey = _moveSurvey;
+            _runHandler.MovePbp        = _movePbp;
+            _runHandler.MoveSurvey     = _moveSurvey;
+            _runHandler.PublishReplace = _publishReplace;
             _runHandler.LinkSpecs  = _linkSpecs.Values.Select(s => new PushLinkSpec
             {
                 LinkInstId = s.LinkInstId,
@@ -123,7 +136,7 @@ namespace LemoineTools.Tools.Setup
             _runHandler.OnProgress = onProgress;
             _runHandler.OnComplete = onComplete;
 
-            pushLog("Raising Revit ExternalEvent...", "info");
+            pushLog(T("log.starting"), "info");
             _runEvent.Raise();
         }
 
@@ -138,15 +151,18 @@ namespace LemoineTools.Tools.Setup
         private string LinksSummary()
         {
             int n = _linkSpecs.Values.Count(s => s.Selected);
-            return n == 0 ? "None" : $"{n} link(s)";
+            return n == 0 ? "—" : T("review.linksValue", n);
         }
 
         private string PointsSummary()
         {
-            if (_movePbp && _moveSurvey) return "Project Base + Survey";
-            if (_movePbp)    return "Project Base Point";
-            if (_moveSurvey) return "Survey Point";
-            return "None";
+            if (_movePbp && _moveSurvey) return T("review.pointsBoth");
+            if (_movePbp)    return T("review.pointsPbp");
+            if (_moveSurvey) return T("review.pointsSurvey");
+            return T("review.pointsNone");
         }
+
+        private string SharedSummary() =>
+            _publishReplace ? T("review.sharedOn") : T("review.sharedOff");
     }
 }
