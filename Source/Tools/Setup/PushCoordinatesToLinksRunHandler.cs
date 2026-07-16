@@ -246,6 +246,18 @@ namespace LemoineTools.Tools.Setup
                 {
                     var srcMp = ModelPathUtils.ConvertUserVisiblePathToModelPath(srcPath);
                     var oo = new OpenOptions { Audit = false };
+                    if (isWs)
+                    {
+                        // Close all worksets so the file's own nested Revit links (which sit on
+                        // USER worksets) are never loaded off disk — the dominant cost of opening a
+                        // large central model, and pointless here since we only touch the base
+                        // points. CloseAllWorksets leaves Revit's SYSTEM worksets (base points,
+                        // levels, grids) open and editable, and we do NOT detach, so the later
+                        // SynchronizeWithCentral still writes the correction back to the team's
+                        // central model.
+                        oo.SetOpenWorksetsConfiguration(
+                            new WorksetConfiguration(WorksetConfigurationOption.CloseAllWorksets));
+                    }
                     linkedOpen = appApp.OpenDocumentFile(srcMp, oo);
                     if (linkedOpen == null)
                     {
