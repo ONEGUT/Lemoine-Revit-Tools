@@ -10,7 +10,39 @@ Every finding is tagged **Confirmed** (provable from the code) or **Needs Window
 test** (script in the appendix). Nothing has been changed — pick the findings you
 want fixed and I'll apply them on this branch.
 
-**Totals: 0 Critical · 6 High · 8 Medium · 6 Low.**
+**Totals: 0 Critical · 8 High · 8 Medium · 6 Low.** *(two High findings added by the
+resolution below)*
+
+> **Resolution (2026-07-16): root cause confirmed and fixed (Cell-4-5).** A Windows run
+> produced `Found 2 element(s)` → both elements
+> `✗ … The referenced object is not valid, possibly because it has been deleted from the
+> database…` → `Done — 1794 cell(s) created, 0 skipped, 2 failed` — with **no geometry
+> changed**. That combination is only reachable one way: the split **succeeded** (only
+> the success branch increments `created`), and the very next statement — the ✓ log
+> line — evaluated `el.Category?.Name` on the original element that `SplitElement` had
+> just **deleted**. Accessing a deleted element throws `InvalidObjectException`, the
+> throw landed before `tx.Commit()`, and the catch rolled back the entire successful
+> split (which is also why the ✗ line could then print the element's identity — the
+> rollback restored it). The counter was incremented before the commit, so the done
+> line reported 1794 cells that no longer existed.
+>
+> Fix applied in `SplitByCellEventHandler.cs`: element category/id are captured
+> **before** the split and used in every log line; the success branch now commits
+> **before** counting and logging (a log failure can never destroy committed work, and
+> `created` only counts persisted cells); the catch only rolls back a transaction still
+> in `Started` state. This bug has been present since the tool was introduced — the ✓
+> path could never survive a successful multi-cell split.
+>
+> **New finding Shared-6 (High · Confirmed · not yet fixed):** the identical
+> delete-then-log pattern exists in `SplitElementsShared.cs` — the wall and column
+> level-split success paths call `doc.Delete(wall.Id)` /`doc.Delete(col.Id)` and then
+> log `$"Wall {wall.Id} → …"` (`SplitElementsShared.cs:321-325, 373-377`). If `Id`
+> access on a deleted element throws the same way, the exception escapes to the
+> per-element catch, whose own `el?.Id?.ToString()` throws **again**, unwinding into
+> the handler's outer catch — aborting the single run-wide transaction and rolling back
+> *every* element's split. Cache the id string before the delete, and make the
+> per-element catch use a pre-captured identity. Awaiting approval with the other
+> findings.
 
 ---
 

@@ -110,6 +110,14 @@ namespace LemoineTools.Tools.ModifyElements
                             continue;
                         }
 
+                        // A successful SplitElement DELETES the original element, and any
+                        // property access on a deleted element throws InvalidObjectException
+                        // ("The referenced object is not valid…"). Capture the identity used
+                        // in log lines up front — logging el.Category after the split threw,
+                        // and that throw rolled back the entire (successful) split.
+                        string catName = el.Category?.Name ?? string.Empty;
+                        ElementId elId  = el.Id;
+
                         using (var tx = new Transaction(doc, $"Split {el.Name}"))
                         {
                             var fho = tx.GetFailureHandlingOptions();
@@ -124,34 +132,39 @@ namespace LemoineTools.Tools.ModifyElements
 
                                 if (cellStatus == CellSplitStatus.Split)
                                 {
-                                    created += n;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name ?? string.Empty, el.Id, n), "pass");
+                                    // Commit BEFORE counting/logging so the created tally only
+                                    // ever reflects cells that actually persisted, and a log
+                                    // failure can never roll back a completed split.
                                     tx.Commit();
+                                    created += n;
+                                    pushLog(AppStrings.T("modify.splitByCell.log.cellOk", catName, elId, n), "pass");
                                 }
                                 else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.fitsOneCell", catName, elId), "info");
                                 }
                                 else if (cellStatus == CellSplitStatus.NoGeometry)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.noSolid", catName, elId), "info");
                                 }
                                 else // NoCellsIntersected
                                 {
                                     tx.RollBack();
                                     failed++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name ?? string.Empty, el.Id), "fail");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.boolFail", catName, elId), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                tx.RollBack();
+                                // The transaction may already be committed (a throw after
+                                // tx.Commit()) — only roll back one that is still open.
+                                if (tx.GetStatus() == TransactionStatus.Started) tx.RollBack();
                                 failed++;
-                                pushLog(AppStrings.T("modify.splitByCell.log.cellError", el.Category?.Name ?? string.Empty, el.Id, ex.Message), "fail");
+                                pushLog(AppStrings.T("modify.splitByCell.log.cellError", catName, elId, ex.Message), "fail");
                             }
                         }
 
