@@ -297,7 +297,7 @@ namespace LemoineTools.Framework.Web
 
             t.Select("placement", AppStrings.T("globalSettings.groups.defaultPlacement"),
                 UpgradeLinksViewModel.PlacementLabels(), UpgradeLinksViewModel.PlacementLabel(ul.DefaultPlacement),
-                sel => { if (sel != null && UpgradeLinksViewModel.LabelToPlacement.TryGetValue(sel, out var p)) { ul.DefaultPlacement = p; ul.Save(); } });
+                sel => { if (UpgradeLinksViewModel.TryLabelToPlacement(sel, out var p)) { ul.DefaultPlacement = p; ul.Save(); } });
 
             string cur = AppStrings.T("globalSettings.groups.destCurrentLocation");
             string fld = AppStrings.T("globalSettings.groups.destSelectedFolder");

@@ -87,17 +87,11 @@ namespace LemoineTools.Tools.ModifyElements
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes, progress);
+                    // Pass pushLog so each element's outcome streams to the Output log live,
+                    // rather than dumping the whole list after the transaction commits.
+                    stats = SplitElementsShared.SplitByReferencePlane(doc, elements, refPlanes, progress, pushLog);
 
                     tx.Commit();
-                }
-
-                foreach (var entry in stats.Log)
-                {
-                    string status = entry.StartsWith("✓") ? "pass"
-                                  : entry.StartsWith("✗") ? "fail"
-                                  : "info";
-                    pushLog(entry, status);
                 }
 
                 if (RunState.CancelRequested)

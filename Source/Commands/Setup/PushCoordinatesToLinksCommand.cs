@@ -30,7 +30,7 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinksCommand: activate existing window", ex); _window = null; }
             }
 
             var uiApp = commandData.Application;
@@ -66,9 +66,10 @@ namespace LemoineTools.Commands
             var data = new PushCoordinatesData();
             if (doc == null) return data;
 
-            try
+            // Per-link guard so one unreadable link can't abort collecting the rest.
+            foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
             {
-                foreach (var li in new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+                try
                 {
                     var ld = li.GetLinkDocument();
                     if (ld == null) continue;
@@ -79,8 +80,8 @@ namespace LemoineTools.Commands
                         LinkInstId = li.Id.Value,
                     });
                 }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinksCommand: read link", ex); }
             }
-            catch (Exception ex) { DiagnosticsLog.Swallowed("PushCoordinatesToLinksCommand: read links", ex); }
 
             return data;
         }

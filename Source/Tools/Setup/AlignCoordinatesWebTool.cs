@@ -6,17 +6,33 @@ using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Tools.Setup
 {
-    /// <summary>Web port of <see cref="AlignCoordinatesViewModel"/> — move host base points to
-    /// a resolved anchor and reposition selected links. Same handler and display strings (this
-    /// tool pre-dates AppStrings externalization). Per-link rows become dynamic inputs keyed by
-    /// link instance id ("sel_&lt;id&gt;", "ovr_&lt;id&gt;", "g1_&lt;id&gt;", "g2_&lt;id&gt;"),
-    /// with conditional fields rebuilt via IWebStepRefresh.</summary>
+    /// <summary>Web port of <see cref="AlignCoordinatesViewModel"/> — move host base points onto a
+    /// resolved anchor and reposition selected links. Mirrors the redesigned four-way anchor model:
+    /// host and each link independently anchor to Internal Origin / Project Base Point / Survey
+    /// Point / Grid Intersection, with a Level supplying the Z (elevation) only for a Grid
+    /// Intersection. Per-link rows are dynamic inputs keyed by link instance id
+    /// ("sel_&lt;id&gt;", "anc_&lt;id&gt;", "g1_&lt;id&gt;", "g2_&lt;id&gt;", "lvl_&lt;id&gt;"),
+    /// rebuilt via IWebStepRefresh. (Pre-dates AppStrings externalization; strings stay inline.)</summary>
     public class AlignCoordinatesWebTool : WebToolBase, IWebToolCleanup, IWebStepRefresh
     {
-        private const string AnchorTokenOrigin = "origin";
-        private const string AnchorTokenGrid   = "grid";
-        private const string ZTokenOrigin      = "originZ";
-        private const string ZTokenLevel       = "level";
+        private static readonly WebOption[] AnchorOptions =
+        {
+            new WebOption("origin", "Internal Origin (default)"),
+            new WebOption("pbp",    "Project Base Point"),
+            new WebOption("survey", "Survey Point"),
+            new WebOption("grid",   "Grid Intersection"),
+        };
+
+        private static string       AnchorToken(AnchorSource a) =>
+            a == AnchorSource.ProjectBasePoint ? "pbp" :
+            a == AnchorSource.SurveyPoint      ? "survey" :
+            a == AnchorSource.GridIntersection ? "grid" : "origin";
+        private static AnchorSource AnchorFromToken(string t) =>
+            t == "pbp"    ? AnchorSource.ProjectBasePoint :
+            t == "survey" ? AnchorSource.SurveyPoint :
+            t == "grid"   ? AnchorSource.GridIntersection : AnchorSource.InternalOrigin;
+        private static string AnchorLabel(AnchorSource a) =>
+            AnchorOptions.First(o => o.Value == AnchorToken(a)).Label;
 
         private readonly AlignCoordinatesRunHandler? _runHandler;
         private readonly ExternalEvent?              _runEvent;
@@ -25,7 +41,6 @@ namespace LemoineTools.Tools.Setup
         private AnchorSource _hostAnchorSource = AnchorSource.InternalOrigin;
         private string? _hostGrid1;
         private string? _hostGrid2;
-        private ZSource _hostZSource = ZSource.InternalOriginZ;
         private string? _hostLevel;
         private bool _moveSurvey = true;
         private bool _movePbp    = true;
@@ -51,6 +66,10 @@ namespace LemoineTools.Tools.Setup
 
         public override string Title    => "Align Coordinates";
         public override string RunLabel => "Align in Revit →";
+
+        // Effective moves: don't move a point onto itself when it IS the anchor.
+        private bool EffectiveMoveSurvey => _moveSurvey && _hostAnchorSource != AnchorSource.SurveyPoint;
+        private bool EffectiveMovePbp    => _movePbp    && _hostAnchorSource != AnchorSource.ProjectBasePoint;
 
         // Grids that cross the named grid within the SAME document. Non-Line grids are
         // treated as always crossing (same rules as the WPF twin).
@@ -93,14 +112,9 @@ namespace LemoineTools.Tools.Setup
         {
             // ── host ──────────────────────────────────────────────────────────
             var host = new WebStep("host", "Alignment Method")
-                .Add(WebInput.SingleSelect("anchor", "Alignment method",
-                    _hostAnchorSource == AnchorSource.GridIntersection ? AnchorTokenGrid : AnchorTokenOrigin, new[]
-                    {
-                        new WebOption(AnchorTokenOrigin, "Internal Origin (default)"),
-                        new WebOption(AnchorTokenGrid,   "Grid Intersection"),
-                    }))
+                .Add(WebInput.SingleSelect("anchor", "Alignment method", AnchorToken(_hostAnchorSource), AnchorOptions))
                 .Add(WebInput.Hint("anchorHint",
-                    "Anchors the host and every link to their own Internal Origin — no picking needed when the project was modeled the normal way."));
+                    "Anchors the host to the chosen reference. Internal Origin needs no picking; Grid Intersection needs two crossing grids (and a level for the elevation)."));
 
             if (_hostAnchorSource == AnchorSource.GridIntersection)
             {
@@ -126,32 +140,25 @@ namespace LemoineTools.Tools.Setup
                         host.Add(WebInput.SingleSelect("hostGrid2", "Grid 2", _hostGrid2,
                             candidates.Select(n => new WebOption(n, n))));
                     }
+
+                    // Level supplies the Z for the grid intersection (falls back to Z=0 if absent).
+                    if (_data.HostLevelNames.Count == 0)
+                        host.Add(WebInput.Hint("hostNoLevels", "No levels — the elevation falls back to Z = 0."));
+                    else
+                    {
+                        if (_hostLevel == null || !_data.HostLevelNames.Contains(_hostLevel)) _hostLevel = _data.HostLevelNames[0];
+                        host.Add(WebInput.SingleSelect("hostLevel", "Level (elevation)", _hostLevel,
+                            _data.HostLevelNames.Select(n => new WebOption(n, n))));
+                    }
                 }
             }
 
-            host.Add(WebInput.SingleSelect("zSource", "Elevation (Z) method",
-                _hostZSource == ZSource.MatchedLevel ? ZTokenLevel : ZTokenOrigin, new[]
-                {
-                    new WebOption(ZTokenOrigin, "Internal Origin (Z = 0)"),
-                    new WebOption(ZTokenLevel,  "Matched Level"),
-                }));
-
-            if (_hostZSource == ZSource.MatchedLevel)
-            {
-                if (_data.HostLevelNames.Count == 0)
-                {
-                    host.Add(WebInput.Hint("hostNoLevels", "This document has no levels."));
-                }
-                else
-                {
-                    if (_hostLevel == null) _hostLevel = _data.HostLevelNames[0];
-                    host.Add(WebInput.SingleSelect("hostLevel", "Level", _hostLevel,
-                        _data.HostLevelNames.Select(n => new WebOption(n, n))));
-                }
-            }
-
-            host.Add(WebInput.Toggle("survey", "Survey Point",       _moveSurvey));
-            host.Add(WebInput.Toggle("pbp",    "Project Base Point", _movePbp));
+            host.Add(WebInput.Toggle("survey", "Move Survey Point",       _moveSurvey));
+            host.Add(WebInput.Toggle("pbp",    "Move Project Base Point", _movePbp));
+            if (_hostAnchorSource == AnchorSource.SurveyPoint)
+                host.Add(WebInput.Hint("surveyIsRef", "The Survey Point is the anchor here, so it stays put."));
+            if (_hostAnchorSource == AnchorSource.ProjectBasePoint)
+                host.Add(WebInput.Hint("pbpIsRef", "The Project Base Point is the anchor here, so it stays put."));
             host.Add(WebInput.Hint("pointsHint", "Moves the chosen point(s) to the resolved host anchor."));
 
             // ── links ─────────────────────────────────────────────────────────
@@ -170,16 +177,15 @@ namespace LemoineTools.Tools.Setup
                     string key = info.LinkInstId.ToString();
 
                     links.Add(WebInput.Toggle("sel_" + key, info.Name, spec.Selected));
-                    links.Add(WebInput.Toggle("ovr_" + key,
-                        "    Override: anchor to Grid Intersection (default: Internal Origin)", spec.Overridden));
+                    links.Add(WebInput.SingleSelect("anc_" + key, "    Anchor", AnchorToken(spec.AnchorSource), AnchorOptions));
 
-                    if (spec.Overridden)
+                    if (spec.AnchorSource == AnchorSource.GridIntersection)
                     {
                         var grids = info.GridNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
                         if (grids.Count < 2)
                         {
                             links.Add(WebInput.Hint("noGrids_" + key,
-                                $"{info.Name} needs at least two grids for a Grid Intersection override."));
+                                $"{info.Name} needs at least two grids for a Grid Intersection anchor."));
                         }
                         else
                         {
@@ -200,6 +206,17 @@ namespace LemoineTools.Tools.Setup
                                     spec.Grid2Name = candidates[0];
                                 links.Add(WebInput.SingleSelect("g2_" + key, $"{info.Name} — Grid 2", spec.Grid2Name,
                                     candidates.Select(n => new WebOption(n, n))));
+                            }
+
+                            if (info.LevelNames.Count == 0)
+                                spec.LevelName = "";
+                            else
+                            {
+                                if (string.IsNullOrEmpty(spec.LevelName) ||
+                                    !info.LevelNames.Any(n => string.Equals(n, spec.LevelName, StringComparison.OrdinalIgnoreCase)))
+                                    spec.LevelName = info.LevelNames[0];
+                                links.Add(WebInput.SingleSelect("lvl_" + key, $"{info.Name} — Level (elevation)", spec.LevelName,
+                                    info.LevelNames.Select(n => new WebOption(n, n))));
                             }
                         }
                     }
@@ -234,7 +251,8 @@ namespace LemoineTools.Tools.Setup
                 return "Host Grid 1 and Grid 2 are the same — pick two different grids.";
 
             foreach (var spec in _linkSpecs.Values)
-                if (spec.Selected && spec.Overridden && !string.IsNullOrEmpty(spec.Grid1Name) && spec.Grid1Name == spec.Grid2Name)
+                if (spec.Selected && spec.AnchorSource == AnchorSource.GridIntersection
+                    && !string.IsNullOrEmpty(spec.Grid1Name) && spec.Grid1Name == spec.Grid2Name)
                     return $"{spec.LinkName}: Grid 1 and Grid 2 are the same — pick two different grids.";
 
             return null;
@@ -246,7 +264,7 @@ namespace LemoineTools.Tools.Setup
             {
                 case "anchor":
                 {
-                    var a = AsString(value) == AnchorTokenGrid ? AnchorSource.GridIntersection : AnchorSource.InternalOrigin;
+                    var a = AnchorFromToken(AsString(value));
                     if (a != _hostAnchorSource) { _hostAnchorSource = a; StepInputsChanged?.Invoke("host"); }
                     Fire(); return;
                 }
@@ -255,12 +273,6 @@ namespace LemoineTools.Tools.Setup
                     StepInputsChanged?.Invoke("host"); // Grid 2 candidates depend on Grid 1
                     Fire(); return;
                 case "hostGrid2": _hostGrid2 = AsString(value, _hostGrid2 ?? ""); Fire(); return;
-                case "zSource":
-                {
-                    var z = AsString(value) == ZTokenLevel ? ZSource.MatchedLevel : ZSource.InternalOriginZ;
-                    if (z != _hostZSource) { _hostZSource = z; StepInputsChanged?.Invoke("host"); }
-                    Fire(); return;
-                }
                 case "hostLevel": _hostLevel = AsString(value, _hostLevel ?? ""); Fire(); return;
                 case "survey":    _moveSurvey = AsBool(value, _moveSurvey); Fire(); return;
                 case "pbp":       _movePbp    = AsBool(value, _movePbp);    Fire(); return;
@@ -279,9 +291,8 @@ namespace LemoineTools.Tools.Setup
                 case "sel":
                     spec.Selected = AsBool(value, spec.Selected);
                     Fire(); break;
-                case "ovr":
-                    spec.Overridden   = AsBool(value, spec.Overridden);
-                    spec.AnchorSource = spec.Overridden ? AnchorSource.GridIntersection : AnchorSource.InternalOrigin;
+                case "anc":
+                    spec.AnchorSource = AnchorFromToken(AsString(value));
                     StepInputsChanged?.Invoke("links");
                     Fire(); break;
                 case "g1":
@@ -291,25 +302,24 @@ namespace LemoineTools.Tools.Setup
                 case "g2":
                     spec.Grid2Name = AsString(value, spec.Grid2Name);
                     Fire(); break;
+                case "lvl":
+                    spec.LevelName = AsString(value, spec.LevelName);
+                    Fire(); break;
             }
         }
 
         private string AnchorSummary()
         {
-            string xy = _hostAnchorSource == AnchorSource.GridIntersection
-                ? $"{_hostGrid1 ?? "-"} × {_hostGrid2 ?? "-"}"
-                : "Internal Origin";
-            string z = _hostZSource == ZSource.MatchedLevel
-                ? $"Level '{_hostLevel ?? "-"}'"
-                : "Internal Origin (Z = 0)";
-            return $"{xy} · Z: {z}";
+            if (_hostAnchorSource != AnchorSource.GridIntersection) return AnchorLabel(_hostAnchorSource);
+            string z = _data.HostLevelNames.Count == 0 ? "Z = 0" : $"Level '{_hostLevel ?? "-"}'";
+            return $"{_hostGrid1 ?? "-"} × {_hostGrid2 ?? "-"} · {z}";
         }
 
         private string PointsSummary()
         {
-            if (_moveSurvey && _movePbp) return "Survey + Project Base";
-            if (_moveSurvey) return "Survey Point";
-            if (_movePbp)    return "Project Base Point";
+            if (EffectiveMoveSurvey && EffectiveMovePbp) return "Survey + Project Base";
+            if (EffectiveMoveSurvey) return "Survey Point";
+            if (EffectiveMovePbp)    return "Project Base Point";
             return "None";
         }
 
@@ -317,10 +327,10 @@ namespace LemoineTools.Tools.Setup
         {
             var selected = _linkSpecs.Values.Where(s => s.Selected).ToList();
             if (selected.Count == 0) return "None";
-            int overridden = selected.Count(s => s.Overridden);
-            return overridden == 0
-                ? $"{selected.Count} link(s) · Internal Origin"
-                : $"{selected.Count} link(s) · {overridden} overridden to Grid Intersection";
+            int grid = selected.Count(s => s.AnchorSource == AnchorSource.GridIntersection);
+            return grid == 0
+                ? $"{selected.Count} link(s)"
+                : $"{selected.Count} link(s) · {grid} anchored to Grid Intersection";
         }
 
         public override bool IsStepValid(string stepId)
@@ -328,11 +338,9 @@ namespace LemoineTools.Tools.Setup
             switch (stepId)
             {
                 case "host":
-                    if (!(_moveSurvey || _movePbp)) return false;
+                    if (!(EffectiveMoveSurvey || EffectiveMovePbp)) return false;
                     if (_hostAnchorSource == AnchorSource.GridIntersection &&
                         (_hostGrid1 == null || _hostGrid2 == null || _hostGrid1 == _hostGrid2))
-                        return false;
-                    if (_hostZSource == ZSource.MatchedLevel && string.IsNullOrEmpty(_hostLevel))
                         return false;
                     return true;
 
@@ -341,7 +349,8 @@ namespace LemoineTools.Tools.Setup
                     if (selected.Count == 0) return false;
                     foreach (var s in selected)
                     {
-                        if (s.Overridden && (string.IsNullOrEmpty(s.Grid1Name) || string.IsNullOrEmpty(s.Grid2Name) || s.Grid1Name == s.Grid2Name))
+                        if (s.AnchorSource == AnchorSource.GridIntersection &&
+                            (string.IsNullOrEmpty(s.Grid1Name) || string.IsNullOrEmpty(s.Grid2Name) || s.Grid1Name == s.Grid2Name))
                             return false;
                     }
                     return true;
@@ -375,20 +384,19 @@ namespace LemoineTools.Tools.Setup
             _runHandler.HostAnchorSource = _hostAnchorSource;
             _runHandler.HostGrid1Name    = _hostGrid1 ?? "";
             _runHandler.HostGrid2Name    = _hostGrid2 ?? "";
-            _runHandler.HostZSource      = _hostZSource;
             _runHandler.HostLevelName    = _hostLevel ?? "";
-            _runHandler.MoveSurvey       = _moveSurvey;
-            _runHandler.MovePbp          = _movePbp;
+            _runHandler.MoveSurvey       = EffectiveMoveSurvey;
+            _runHandler.MovePbp          = EffectiveMovePbp;
             _runHandler.Rotate           = _rotate;
             _runHandler.LinkSpecs        = _linkSpecs.Values.Select(s => new LinkAlignSpec
             {
                 LinkInstId   = s.LinkInstId,
                 LinkName     = s.LinkName,
                 Selected     = s.Selected,
-                Overridden   = s.Overridden,
                 AnchorSource = s.AnchorSource,
                 Grid1Name    = s.Grid1Name,
                 Grid2Name    = s.Grid2Name,
+                LevelName    = s.LevelName,
             }).ToList();
             _runHandler.PushLog    = pushLog;
             _runHandler.OnProgress = onProgress;

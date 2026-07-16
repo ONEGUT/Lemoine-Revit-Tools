@@ -127,9 +127,10 @@ namespace LemoineTools.Tools.ModifyElements
             Document             doc,
             IEnumerable<Element> elements,
             List<Level>          levels,
-            RunProgressReporter? progress = null)
+            RunProgressReporter? progress = null,
+            Action<string, string>? liveLog = null)
         {
-            var stats = new SplitStats();
+            var stats = new SplitStats(liveLog);
 
             foreach (Element el in elements)
             {
@@ -138,9 +139,14 @@ namespace LemoineTools.Tools.ModifyElements
                 // handler logs the "Stopped by user" warn notice after this returns.
                 if (RunState.CancelRequested) break;
 
+                // Capture the id string up front: a successful split DELETES the source
+                // element, and any property access on a deleted element (including .Id)
+                // throws. The catch below must not touch a possibly-deleted element.
+                string elId = "?";
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
+                    elId = el.Id.ToString();
 
                     // Property-based dispatch: works for any category.
                     // Wall is checked first because walls also have a LocationCurve.
@@ -151,11 +157,11 @@ namespace LemoineTools.Tools.ModifyElements
                     else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByLevel(doc, el, levels, stats);
                     else
-                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable level-split strategy (not a wall, no level params, no linear curve)");
+                        stats.Skip($"{el.Category.Name} {elId}: no applicable level-split strategy (not a wall, no level params, no linear curve)");
                 }
                 catch (Exception ex)
                 {
-                    stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                    stats.Fail(elId, ex.Message);
                 }
                 finally
                 {
@@ -188,7 +194,8 @@ namespace LemoineTools.Tools.ModifyElements
             Document             doc,
             IEnumerable<Element> elements,
             List<Grid?>          grids,
-            RunProgressReporter? progress = null)
+            RunProgressReporter? progress = null,
+            Action<string, string>? liveLog = null)
         {
             var planes = grids
                 .Where(g => g != null)
@@ -196,7 +203,7 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "grids", progress);
+            return SplitByPlanesCore(doc, elements, planes, "grids", progress, liveLog);
         }
 
         /// <summary>
@@ -209,7 +216,8 @@ namespace LemoineTools.Tools.ModifyElements
             Document              doc,
             IEnumerable<Element>  elements,
             List<ReferencePlane?> refPlanes,
-            RunProgressReporter?  progress = null)
+            RunProgressReporter?  progress = null,
+            Action<string, string>? liveLog = null)
         {
             var planes = refPlanes
                 .Where(r => r != null)
@@ -217,7 +225,7 @@ namespace LemoineTools.Tools.ModifyElements
                 .Where(p => p.HasValue)
                 .Select(p => p!.Value)
                 .ToList();
-            return SplitByPlanesCore(doc, elements, planes, "reference planes", progress);
+            return SplitByPlanesCore(doc, elements, planes, "reference planes", progress, liveLog);
         }
 
         private static SplitStats SplitByPlanesCore(
@@ -225,9 +233,10 @@ namespace LemoineTools.Tools.ModifyElements
             IEnumerable<Element>           elements,
             List<(XYZ Normal, XYZ Origin)> planes,
             string                         contextLabel,
-            RunProgressReporter?           progress = null)
+            RunProgressReporter?           progress = null,
+            Action<string, string>?        liveLog  = null)
         {
-            var stats = new SplitStats();
+            var stats = new SplitStats(liveLog);
 
             if (!planes.Any())
             {
@@ -242,9 +251,13 @@ namespace LemoineTools.Tools.ModifyElements
                 // handler logs the "Stopped by user" warn notice after this returns.
                 if (RunState.CancelRequested) break;
 
+                // Capture the id string up front (see SplitByLevel) so the catch never
+                // touches a possibly-deleted element.
+                string elId = "?";
                 try
                 {
                     if (el?.Category?.Id == null) { stats.Skip("No category"); continue; }
+                    elId = el.Id.ToString();
 
                     // Property-based dispatch: works for any category.
                     // Wall is checked first because walls also have a LocationCurve.
@@ -253,11 +266,11 @@ namespace LemoineTools.Tools.ModifyElements
                     else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByGrid(doc, el, planes, stats);
                     else
-                        stats.Skip($"{el.Category.Name} {el.Id}: no applicable plane-split strategy (not a wall, no linear curve)");
+                        stats.Skip($"{el.Category.Name} {elId}: no applicable plane-split strategy (not a wall, no linear curve)");
                 }
                 catch (Exception ex)
                 {
-                    stats.Fail(el?.Id?.ToString() ?? "?", ex.Message);
+                    stats.Fail(elId, ex.Message);
                 }
                 finally
                 {
@@ -292,8 +305,12 @@ namespace LemoineTools.Tools.ModifyElements
             double baseOff = wall.get_Parameter(WallBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = wall.get_Parameter(WallTopOff)?.AsDouble()  ?? 0.0;
 
+            // Capture the id before any delete — logging wall.Id after doc.Delete(wall.Id)
+            // throws InvalidObjectException and would abort the whole run.
+            string wallId = wall.Id.ToString();
+
             var copies = CopyTimes(doc, wall.Id, spans.Count - 1);
-            if (copies == null) { stats.Fail(wall.Id.ToString(), "Copy failed"); return; }
+            if (copies == null) { stats.Fail(wallId, "Copy failed"); return; }
 
             DisallowWallJoins(doc, wall);
             foreach (var cid in copies)
@@ -315,18 +332,21 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(WallTopOff) ?.Set(k == copies.Count - 1    ? topOff  : 0.0);
                     successes++;
                 }
-                catch (Exception ex) { stats.Fail($"Wall {wall.Id} seg {k}", ex.Message); }
+                // Per-segment note: logged but NOT counted as a failed element (the element's
+                // single overall outcome is recorded below) so the "failed" tally can't exceed
+                // the number of elements processed.
+                catch (Exception ex) { stats.FailNote($"Wall {wallId} seg {k}: {ex.Message}"); }
             }
 
             if (successes == copies.Count)
             {
                 doc.Delete(wall.Id);
-                stats.Split(copies.Count, $"Wall {wall.Id} → {copies.Count} segments");
+                stats.Split(copies.Count, $"Wall {wallId} → {copies.Count} segments");
             }
             else
             {
                 foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused wall copy", __lex); }
-                stats.Fail(wall.Id.ToString(),
+                stats.Fail(wallId,
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
                         : $"Only {successes}/{copies.Count} segments configured; copies removed.");
@@ -351,8 +371,11 @@ namespace LemoineTools.Tools.ModifyElements
             double baseOff = col.get_Parameter(ColBaseOff)?.AsDouble() ?? 0.0;
             double topOff  = col.get_Parameter(ColTopOff)?.AsDouble()  ?? 0.0;
 
+            // Capture the id before any delete (see SplitWallByLevel).
+            string colId = col.Id.ToString();
+
             var copies = CopyTimes(doc, col.Id, spans.Count - 1);
-            if (copies == null) { stats.Fail(col.Id.ToString(), "Copy failed"); return; }
+            if (copies == null) { stats.Fail(colId, "Copy failed"); return; }
 
             int successes = 0;
             for (int k = 0; k < copies.Count; k++)
@@ -367,18 +390,18 @@ namespace LemoineTools.Tools.ModifyElements
                     seg.get_Parameter(ColTopOff) ?.Set(k == copies.Count - 1 ? topOff  : 0.0);
                     successes++;
                 }
-                catch (Exception ex) { stats.Fail($"Column {col.Id} seg {k}", ex.Message); }
+                catch (Exception ex) { stats.FailNote($"Column {colId} seg {k}: {ex.Message}"); }
             }
 
             if (successes == copies.Count)
             {
                 doc.Delete(col.Id);
-                stats.Split(copies.Count, $"Column {col.Id} → {copies.Count} segments");
+                stats.Split(copies.Count, $"Column {colId} → {copies.Count} segments");
             }
             else
             {
                 foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused column copy", __lex); }
-                stats.Fail(col.Id.ToString(),
+                stats.Fail(colId,
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
                         : $"Only {successes}/{copies.Count} segments configured; copies removed.");
@@ -517,6 +540,11 @@ namespace LemoineTools.Tools.ModifyElements
                 }
             }
 
+            // el is segIds[0] — the ORIGINAL element, re-curved (never deleted here), so
+            // el.Id/Category stay valid. Capture them once for the log lines regardless.
+            string  elId  = el.Id.ToString();
+            string? elCat = el.Category?.Name;
+
             int success = 0;
             for (int i = 0; i < segIds.Count; i++)
             {
@@ -528,8 +556,18 @@ namespace LemoineTools.Tools.ModifyElements
 
                 if (segA.DistanceTo(segB) < 0.01)
                 {
-                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete partial segment", __lex); } }
-                    stats.Fail(el.Id.ToString(), $"seg {i}: degenerate length, removed.");
+                    // Segment 0 IS the original element. If its own sub-segment is degenerate,
+                    // re-curving it would corrupt the original while the copies cover the real
+                    // sub-ranges — leaving overlapping duplicate geometry. Abort the whole
+                    // element instead: delete every copy and leave the original untouched.
+                    if (i == 0)
+                    {
+                        CleanupCopies(doc, segIds);
+                        stats.Fail(elId, "first segment is degenerate; element left intact.");
+                        return;
+                    }
+                    try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete partial segment", __lex); }
+                    stats.FailNote($"{elId} seg {i}: degenerate length, removed.");
                     continue;
                 }
 
@@ -547,21 +585,39 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 catch (Exception ex)
                 {
-                    // Remove orphaned copy; leave original (i==0) in place (#3)
-                    if (i > 0) { try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete orphaned segment copy", __lex); } }
-                    stats.Fail(el.Id.ToString(), $"seg {i} curve set failed: {ex.Message}");
+                    // Segment 0 failure = original couldn't take its sub-curve. Abort the whole
+                    // element (delete all copies) so the still-full-length original is never left
+                    // overlapping the copies.
+                    if (i == 0)
+                    {
+                        CleanupCopies(doc, segIds);
+                        stats.Fail(elId, $"first segment curve set failed: {ex.Message}; element left intact.");
+                        return;
+                    }
+                    // Remove orphaned copy; per-segment note (log-only, uncounted).
+                    try { doc.Delete(segIds[i]); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete orphaned segment copy", __lex); }
+                    stats.FailNote($"{elId} seg {i} curve set failed: {ex.Message}");
                 }
             }
 
             if (success == segIds.Count)
-                stats.Split(success, $"{el.Category?.Name} {el.Id} → {success} {splitKind} segment(s)");
+                stats.Split(success, $"{elCat} {elId} → {success} {splitKind} segment(s)");
             else if (success > 0)
                 // Some sub-segments failed and were removed — the run is incomplete and
                 // can leave a gap along the original curve. Report it as such rather than
                 // a clean success so the user knows to check the result.
-                stats.Split(success, $"{el.Category?.Name} {el.Id} → {success}/{segIds.Count} {splitKind} segment(s) (some failed — result may have a gap)");
+                stats.Split(success, $"{elCat} {elId} → {success}/{segIds.Count} {splitKind} segment(s) (some failed — result may have a gap)");
             else
-                stats.Fail(el.Id.ToString(), "All segment curve assignments failed.");
+                stats.Fail(elId, "All segment curve assignments failed.");
+        }
+
+        // Deletes every COPY made for a curve split (segIds[1..]), leaving the original
+        // (segIds[0]) untouched. Used when the original itself can't be re-curved.
+        private static void CleanupCopies(Document doc, List<ElementId> segIds)
+        {
+            foreach (var cid in segIds.Skip(1))
+                try { doc.Delete(cid); }
+                catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete copies after original-segment failure", __lex); }
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -688,8 +744,11 @@ namespace LemoineTools.Tools.ModifyElements
                     }
                     result.Add(c.First());
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // Surface the root cause to diagnostics — the caller only sees a generic
+                    // "Copy failed" line, so without this the real error would be lost entirely.
+                    DiagnosticsLog.Swallowed("SplitElements: CopyElement failed in CopyTimes", ex);
                     foreach (var cid in result) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: clean up copies after copy failure", __lex); }
                     return null;
                 }
@@ -747,6 +806,21 @@ namespace LemoineTools.Tools.ModifyElements
     /// </summary>
     public sealed class SplitStats
     {
+        // Optional live run-log sink. When supplied, every Split/Skip/Fail line is pushed to
+        // the Output log the moment it happens (status pass/info/fail) instead of the caller
+        // dumping the whole Log list after the transaction commits.
+        private readonly Action<string, string>? _live;
+
+        /// <summary>Creates a stats accumulator, optionally streaming each line live to a run log.</summary>
+        /// <param name="liveLog">Run-log callback (text, status); null buffers into <see cref="Log"/> only.</param>
+        public SplitStats(Action<string, string>? liveLog = null) { _live = liveLog; }
+
+        private void Emit(string line, string status)
+        {
+            _log.Add(line);
+            _live?.Invoke(line, status);
+        }
+
         /// <summary>
         /// The number of source elements that were successfully split into two or more segments.
         /// </summary>
@@ -788,14 +862,14 @@ namespace LemoineTools.Tools.ModifyElements
         {
             SplitCount++;
             SegmentsCreated += segments;
-            _log.Add($"✓ {msg}");
+            Emit($"✓ {msg}", "pass");
         }
 
         /// <summary>
         /// Records a skipped element and appends a —-prefixed message to <see cref="Log"/>.
         /// </summary>
         /// <param name="msg">Reason the element was skipped.</param>
-        public void Skip(string msg)  { SkipCount++;  _log.Add($"— {msg}"); }
+        public void Skip(string msg)  { SkipCount++;  Emit($"— {msg}", "info"); }
 
         /// <summary>
         /// Records a failure for a specific element and appends a ✗-prefixed message to <see cref="Log"/>.
@@ -805,8 +879,16 @@ namespace LemoineTools.Tools.ModifyElements
         public void Fail(string id, string reason)
         {
             FailCount++;
-            _log.Add($"✗ {id}: {reason}");
+            Emit($"✗ {id}: {reason}", "fail");
         }
+
+        /// <summary>
+        /// Logs a sub-element failure detail (e.g. one segment of a multi-segment split) WITHOUT
+        /// incrementing <see cref="FailCount"/>. The element's single overall outcome is recorded
+        /// separately via <see cref="Fail"/> or <see cref="Split"/>, so the failed tally counts
+        /// elements, not log lines, and never exceeds the number of elements processed.
+        /// </summary>
+        public void FailNote(string msg) { Emit($"✗ {msg}", "fail"); }
 
         /// <summary>
         /// Returns a multi-line human-readable summary of the operation, including counts

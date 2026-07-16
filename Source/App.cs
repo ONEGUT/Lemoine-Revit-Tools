@@ -33,8 +33,6 @@ namespace LemoineTools
         internal static ExternalEvent?           ReprojectEvent   { get; private set; }
         internal static CeilingHeatmapEventHandler? CeilingHeatmapHandler { get; private set; }
         internal static ExternalEvent?              CeilingHeatmapEvent   { get; private set; }
-        internal static CeilingHeatmapDebugHandler? CeilingHeatmapDebugHandler { get; private set; }
-        internal static ExternalEvent?              CeilingHeatmapDebugEvent   { get; private set; }
 
         // ── Make Ceiling Grids ──────────────────────────────────────────────────
         internal static MakeCeilingGridsPhase1Handler? MakeCeilingGridsPhase1Handler { get; private set; }
@@ -204,9 +202,6 @@ namespace LemoineTools
             ReprojectEvent   = ExternalEvent.Create(ReprojectHandler);
             CeilingHeatmapHandler = new CeilingHeatmapEventHandler();
             CeilingHeatmapEvent   = ExternalEvent.Create(CeilingHeatmapHandler);
-            CeilingHeatmapDebugHandler = new CeilingHeatmapDebugHandler();
-            CeilingHeatmapDebugEvent   = ExternalEvent.Create(CeilingHeatmapDebugHandler);
-            CeilingHeatmapViewModel.RegisterDebugEvent(CeilingHeatmapDebugHandler, CeilingHeatmapDebugEvent);
 
             // ── Make Ceiling Grids ────────────────────────────────────────────
             MakeCeilingGridsPhase1Handler = new MakeCeilingGridsPhase1Handler();

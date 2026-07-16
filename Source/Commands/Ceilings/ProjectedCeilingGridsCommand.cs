@@ -41,7 +41,14 @@ namespace LemoineTools.Commands
             }
 
             ProjectedCeilingGridsViewModel BuildTool()
-                => new ProjectedCeilingGridsViewModel(App.ProjectHandler!, App.ProjectEvent!);
+            {
+                // Capture the active view on the Revit main thread so the review can name the
+                // target and warn when it isn't a plan (single-file mode projects into it).
+                var av = commandData.Application.ActiveUIDocument?.Document?.ActiveView;
+                return new ProjectedCeilingGridsViewModel(
+                    App.ProjectHandler!, App.ProjectEvent!,
+                    av?.Name ?? "", av is ViewPlan);
+            }
             if (WebToolLauncher.Enabled)
             {
                 WebToolLauncher.Open("projectedCeilingGrids", () =>

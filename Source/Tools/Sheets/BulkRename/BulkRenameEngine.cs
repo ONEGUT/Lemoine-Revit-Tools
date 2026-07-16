@@ -127,7 +127,14 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
         /// field values of elements NOT in the batch (used for uniqueness when
         /// <paramref name="enforceUnique"/> is true — i.e. sheet numbers and view names).
         /// Uniqueness is compared case-insensitively to mirror Revit's behaviour.
-        /// A renamed element frees its old value for a later item in the same batch.
+        ///
+        /// The whole batch is renamed inside one transaction using temporary values
+        /// (see <c>BulkRenameRunHandler</c>), so a selected item's <em>current</em> value is
+        /// NOT an obstacle — it is being reassigned. This is what lets a shift (101→102,
+        /// 102→103) or a swap (A↔B) or a case-only change ("LEVEL 1"→"Level 1") plan as
+        /// <see cref="RenameStatus.Change"/> instead of a false collision. A value is a real
+        /// collision only when it is held by an element NOT in the batch, or when two selected
+        /// items resolve to the same target (the second one loses).
         /// </summary>
         public static List<RenamePlanItem> Plan(
             RenameConfig cfg,
@@ -135,45 +142,58 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             IEnumerable<string> existingValuesNotSelected,
             bool enforceUnique)
         {
-            var used = new HashSet<string>(
-                existingValuesNotSelected ?? Array.Empty<string>(),
-                StringComparer.OrdinalIgnoreCase);
-
-            // Each selected item still occupies its current value until reassigned.
-            foreach (var it in items) used.Add(it.oldValue ?? "");
-
             var results = new List<RenamePlanItem>(items.Count);
+
+            // First compute every new value and settle the terminal outcomes (empty/unchanged).
+            var newValues = new string[items.Count];
             for (int i = 0; i < items.Count; i++)
             {
                 var (oldValue, tokens, tag) = items[i];
                 oldValue ??= "";
                 string newValue = (Compute(cfg, oldValue, tokens, i) ?? "").Trim();
+                newValues[i] = newValue;
 
                 var r = new RenamePlanItem { OldValue = oldValue, NewValue = newValue, Tag = tag };
-
                 if (string.IsNullOrWhiteSpace(newValue))
-                {
                     r.Status = RenameStatus.Empty;
-                }
                 else if (string.Equals(newValue, oldValue, StringComparison.Ordinal))
-                {
                     r.Status = RenameStatus.Unchanged;
-                }
-                else if (enforceUnique && used.Contains(newValue))
+                else
+                    r.Status = RenameStatus.Change;   // provisional — refined below for unique fields
+                results.Add(r);
+            }
+
+            if (!enforceUnique) return results;
+
+            // Obstacles = values that WILL still be occupied after the run: every value held by
+            // an element outside the batch, plus the current value of any selected item that is
+            // NOT moving (empty/unchanged keeps its old value). Values of items that will change
+            // are vacated, so they are not obstacles.
+            var occupied = new HashSet<string>(
+                existingValuesNotSelected ?? Array.Empty<string>(),
+                StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < results.Count; i++)
+                if (results[i].Status != RenameStatus.Change)
+                    occupied.Add(results[i].OldValue);
+
+            // Claim each change's target in order; a target already occupied (fixed) or already
+            // claimed by an earlier change in this batch is a real collision.
+            for (int i = 0; i < results.Count; i++)
+            {
+                if (results[i].Status != RenameStatus.Change) continue;
+                string target = newValues[i];
+                if (occupied.Contains(target))
                 {
-                    r.Status = RenameStatus.Collision;
+                    results[i].Status = RenameStatus.Collision;
+                    // The item keeps its old value, so that value stays occupied for later items.
+                    occupied.Add(results[i].OldValue);
                 }
                 else
                 {
-                    r.Status = RenameStatus.Change;
-                    if (enforceUnique)
-                    {
-                        used.Remove(oldValue);
-                        used.Add(newValue);
-                    }
+                    occupied.Add(target);
                 }
-                results.Add(r);
             }
+
             return results;
         }
 

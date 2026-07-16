@@ -306,7 +306,7 @@ namespace LemoineTools.Tools.Setup
                 case "folder": _selectedFolder = AsString(value, _selectedFolder); Fire(); return;
                 case "setAll":
                 {
-                    if (UpgradeLinksViewModel.LabelToPlacement.TryGetValue(AsString(value), out var p))
+                    if (UpgradeLinksViewModel.TryLabelToPlacement(AsString(value), out var p))
                     {
                         _setAllSelection = p;
                         foreach (var r in _rows) r.Placement = p;
@@ -332,7 +332,7 @@ namespace LemoineTools.Tools.Setup
                 && int.TryParse(inputId.Substring(4), out var pi)
                 && pi >= 0 && pi < _rows.Count)
             {
-                if (UpgradeLinksViewModel.LabelToPlacement.TryGetValue(AsString(value), out var p))
+                if (UpgradeLinksViewModel.TryLabelToPlacement(AsString(value), out var p))
                 {
                     _rows[pi].Placement = p;
                     Fire();

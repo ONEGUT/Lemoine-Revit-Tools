@@ -14,6 +14,10 @@ namespace LemoineTools.Tools.ModifyElements
         public double                     CellY                  { get; set; } = 10.0;
         public bool                       UseProjectOrigin       { get; set; } = false;
         public List<ElementId>?           PreSelectedIds         { get; set; }  // E
+        // View to scope the category collection to — captured when the tool was OPENED, not
+        // read live from Revit at Run time, so switching to a sheet/other view before clicking
+        // Run can't silently empty the selection. Null falls back to the current active view.
+        public ElementId?                 ActiveViewId           { get; set; }
         public Action<string, string>?     OnLog                  { get; set; }
         public Action<int, int, int, int>? OnProgress            { get; set; }
         public Action<int, int, int>?      OnComplete            { get; set; }
@@ -29,7 +33,11 @@ namespace LemoineTools.Tools.ModifyElements
             try
             {
                 Document doc  = app.ActiveUIDocument.Document;
-                View     view = app.ActiveUIDocument.ActiveView;
+                // Prefer the view captured at open time (ActiveViewId); fall back to the live
+                // active view only when none was captured.
+                View? view = ActiveViewId != null
+                    ? doc.GetElement(ActiveViewId) as View
+                    : app.ActiveUIDocument.ActiveView;
 
                 if (view == null || view.IsTemplate)
                 {
@@ -50,17 +58,20 @@ namespace LemoineTools.Tools.ModifyElements
                 }
                 else
                 {
-                    var categoryMap  = SplitByCellHelpers.BuildCategoryMap(doc, view);
                     var labelToBic   = SplitByCellViewModel.CatLabels
                         .ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase);
                     var selectedBics = new HashSet<BuiltInCategory>(
                         SelectedCategoryLabels
                             .Where(l => labelToBic.ContainsKey(l))
                             .Select(l => labelToBic[l]));
+                    // Collect only the selected categories, and name the view being searched so a
+                    // "nothing found" result is diagnosable (wrong view active at open time, etc.).
+                    var categoryMap  = SplitByCellHelpers.BuildCategoryMap(doc, view, selectedBics);
                     targetIds = categoryMap
                         .Where(kvp => selectedBics.Contains(kvp.Key))
                         .SelectMany(kvp => kvp.Value)
                         .ToList();
+                    pushLog(AppStrings.T("modify.splitByCell.log.usingView", view.Name), "info");
                 }
 
                 if (!targetIds.Any())
@@ -104,10 +115,46 @@ namespace LemoineTools.Tools.ModifyElements
                         Element el = doc.GetElement(id);
                         if (el == null)
                         {
+                            // Pre-selected ids can go stale (the elements were split/deleted since
+                            // the tool was opened). Say so, don't skip silently.
                             skipped++;
+                            pushLog(AppStrings.T("modify.splitByCell.log.gone", id.Value), "info");
                             progress.Tick();
                             onProgress(progress.Percent, created, failed, skipped);
                             continue;
+                        }
+
+                        // A successful SplitElement DELETES the original element, and any
+                        // property access on a deleted element throws InvalidObjectException
+                        // ("The referenced object is not valid…"). Capture the identity used
+                        // in log lines up front — logging el.Category after the split threw,
+                        // and that throw rolled back the entire (successful) split.
+                        string catName = el.Category?.Name ?? string.Empty;
+                        ElementId elId  = el.Id;
+
+                        // A grouped element can't be deleted/recreated in place — the split would
+                        // throw a raw Revit error. Skip-and-log with a clear reason instead.
+                        if (el.GroupId != null && el.GroupId != ElementId.InvalidElementId)
+                        {
+                            skipped++;
+                            pushLog(AppStrings.T("modify.splitByCell.log.inGroup", catName, elId), "info");
+                            progress.Tick();
+                            onProgress(progress.Percent, created, failed, skipped);
+                            continue;
+                        }
+
+                        // In a workshared model, an element owned by another user can't be modified.
+                        if (doc.IsWorkshared)
+                        {
+                            var co = WorksharingUtils.GetCheckoutStatus(doc, elId);
+                            if (co == CheckoutStatus.OwnedByOtherUser)
+                            {
+                                skipped++;
+                                pushLog(AppStrings.T("modify.splitByCell.log.owned", catName, elId), "info");
+                                progress.Tick();
+                                onProgress(progress.Percent, created, failed, skipped);
+                                continue;
+                            }
                         }
 
                         using (var tx = new Transaction(doc, $"Split {el.Name}"))
@@ -119,39 +166,55 @@ namespace LemoineTools.Tools.ModifyElements
 
                             try
                             {
-                                var (n, cellStatus) = SplitByCellHelpers.SplitElement(
+                                var (n, droppedCells, cellStatus) = SplitByCellHelpers.SplitElement(
                                     doc, el, cellXft, cellYft, gridOrigin);
 
                                 if (cellStatus == CellSplitStatus.Split)
                                 {
-                                    created += n;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.cellOk", el.Category?.Name ?? string.Empty, el.Id, n), "pass");
+                                    // Commit BEFORE counting/logging so the created tally only
+                                    // ever reflects cells that actually persisted, and a log
+                                    // failure can never roll back a completed split.
                                     tx.Commit();
+                                    created += n;
+                                    // Surface dropped cells (recreation/intersect failures) in the
+                                    // run log — otherwise the loss lives only in diagnostics.log.
+                                    if (droppedCells > 0)
+                                        pushLog(AppStrings.T("modify.splitByCell.log.cellOkDropped", catName, elId, n, droppedCells), "warn");
+                                    else
+                                        pushLog(AppStrings.T("modify.splitByCell.log.cellOk", catName, elId, n), "pass");
                                 }
                                 else if (cellStatus == CellSplitStatus.FitsInOneCell)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.fitsOneCell", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.fitsOneCell", catName, elId), "info");
                                 }
                                 else if (cellStatus == CellSplitStatus.NoGeometry)
                                 {
                                     tx.RollBack();
                                     skipped++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.noSolid", el.Category?.Name ?? string.Empty, el.Id), "info");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.noSolid", catName, elId), "info");
+                                }
+                                else if (cellStatus == CellSplitStatus.Sloped)
+                                {
+                                    tx.RollBack();
+                                    skipped++;
+                                    pushLog(AppStrings.T("modify.splitByCell.log.sloped", catName, elId), "info");
                                 }
                                 else // NoCellsIntersected
                                 {
                                     tx.RollBack();
                                     failed++;
-                                    pushLog(AppStrings.T("modify.splitByCell.log.boolFail", el.Category?.Name ?? string.Empty, el.Id), "fail");
+                                    pushLog(AppStrings.T("modify.splitByCell.log.boolFail", catName, elId, droppedCells), "fail");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                tx.RollBack();
+                                // The transaction may already be committed (a throw after
+                                // tx.Commit()) — only roll back one that is still open.
+                                if (tx.GetStatus() == TransactionStatus.Started) tx.RollBack();
                                 failed++;
-                                pushLog(AppStrings.T("modify.splitByCell.log.cellError", el.Category?.Name ?? string.Empty, el.Id, ex.Message), "fail");
+                                pushLog(AppStrings.T("modify.splitByCell.log.cellError", catName, elId, ex.Message), "fail");
                             }
                         }
 

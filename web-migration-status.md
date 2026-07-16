@@ -1,5 +1,17 @@
 # Web Migration — Status & Remaining Work
 
+> **Merged `main` (2026-07-16).** Reconciled the branch with main's review-fix wave
+> (Align/Push Coordinates, Upgrade Links, Bulk Export/Rename, Splits, Ceilings). Conflicts
+> resolved in ProjectedCeilingGrids command + BulkExport handler/ViewModel (kept the
+> TokenResolver naming path and layered main's per-format uniqueness + loud degenerate
+> fallback). **API drift fixed:** `UpgradeLinksViewModel.LabelToPlacement` (removed) →
+> `TryLabelToPlacement`; **`AlignCoordinatesWebTool` re-ported** to main's redesigned four-way
+> anchor model (Internal Origin / PBP / Survey / Grid Intersection + per-anchor Level, no more
+> `ZSource`/`Overridden`). *Follow-up:* `PushCoordinatesWebTool` doesn't yet surface main's new
+> `PublishReplace` opt-in (compiles; feature parity pending). All changes are read-verified —
+> a Windows build is the confirmation step.
+
+
 Snapshot of the WebView2 UI migration on branch `claude/webview2-testing-menu-9i6jz2`.
 Cross-reference with `plan-webview2-ui-migration.md` (the authoritative rules + phases)
 and `web-migration-questions.md` (open decisions). Last updated 2026-07-15.

@@ -40,19 +40,20 @@ namespace LemoineTools.Commands
             {
                 var uidoc      = uiApp.ActiveUIDocument;
                 var doc        = uidoc.Document;
-                var activeViewId = uidoc.ActiveView?.Id;
+                var activeView = uidoc.ActiveView;
+                var activeViewId = activeView?.Id;
 
                 // ── Element counts (A) — active view scope matches Cell's runtime scope ──
+                // Use the same BuildCategoryMap the run uses (FilledRegion needs a class filter,
+                // not a category filter), so the strip and the run never disagree.
                 var counts = new Dictionary<string, int>();
-                if (activeViewId != null)
+                if (activeView != null && !activeView.IsTemplate)
                 {
+                    var countMap = SplitByCellHelpers.BuildCategoryMap(doc, activeView);
                     foreach (var bic in SplitByCellHelpers.SupportedCategories)
                     {
                         if (!SplitByCellViewModel.CatLabels.TryGetValue(bic, out string? label)) continue;
-                        counts[label] = new FilteredElementCollector(doc, activeViewId)
-                            .OfCategoryId(new ElementId(bic))
-                            .WhereElementIsNotElementType()
-                            .ToList().Count;
+                        counts[label] = countMap.TryGetValue(bic, out var ids) ? ids.Count : 0;
                     }
                 }
 
@@ -72,7 +73,7 @@ namespace LemoineTools.Commands
 
                 var vm    = new SplitByCellViewModel(
                     App.SplitByCellHandler!, App.SplitByCellEvent!,
-                    counts, preSelectedIds, preSelectedCats);
+                    counts, activeViewId, preSelectedIds, preSelectedCats);
 
                 return vm;
             }

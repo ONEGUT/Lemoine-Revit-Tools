@@ -23,8 +23,10 @@ namespace LemoineTools.Tools.Ceilings
         // IStepAware: framework callback that rebuilds a step's content widget in place.
         private Action<string>? _rebuildContent;
 
-        // Run strip: "tags" during the run, full filter/tag/failure breakdown on completion.
-        public string? ResultNoun => "tags";
+        // Run strip: a neutral "items" during the run — the pass total counts both filter
+        // buckets and tags, so labelling it "tags" was wrong. The completion chips carry the
+        // real filter/tag/failure/skip breakdown.
+        public string? ResultNoun => "items";
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
@@ -64,9 +66,10 @@ namespace LemoineTools.Tools.Ceilings
         // Live-update handles for S_RAMP step
         private WpfRectangle? _gradientRect;
         private SingleSelect?  _rampCombo;
+        private TextBlock?     _rampStatus;
 
         // ── Run options state ────────────────────────────────────────────────────
-        private bool   _deleteExisting = true;
+        private bool   _deleteExisting = CeilingHeatmapSettings.Instance.DeleteExisting;
         private bool   _placeTags      = CeilingHeatmapSettings.Instance.PlaceTags;
         private double _elevTolerance  = CeilingHeatmapSettings.Instance.ElevTolerance;
 
@@ -99,17 +102,6 @@ namespace LemoineTools.Tools.Ceilings
         private string          _generateSuffix           = "_Heatmap";
         private ElementId       _generateTemplateId       = ElementId.InvalidElementId;
         private Dictionary<string, ElementId> _levelKeyToId = new Dictionary<string, ElementId>(StringComparer.Ordinal);
-
-        // ── Debug wiring ─────────────────────────────────────────────────────────
-        private static CeilingHeatmapDebugHandler? _debugHandler;
-        private static ExternalEvent?              _debugEvent;
-
-        public static void RegisterDebugEvent(
-            CeilingHeatmapDebugHandler handler, ExternalEvent evt)
-        {
-            _debugHandler = handler;
-            _debugEvent   = evt;
-        }
 
         // ── Validation ───────────────────────────────────────────────────────────
         public event EventHandler? ValidationChanged;
@@ -240,7 +232,7 @@ namespace LemoineTools.Tools.Ceilings
             {
                 ["Levels"] = _levels.OrderBy(l => l.ElevationFt).Select(l =>
                 {
-                    string key = AppStrings.T("ceilings.heatmap.labels.levelRow", l.Name, l.ElevationFt);
+                    string key = AppStrings.T("ceilings.heatmap.labels.levelRow", l.Name, l.ElevationFt.ToString("0.##"));
                     _levelKeyToId[key] = l.Id;
                     return key;
                 }).ToList(),
@@ -366,15 +358,29 @@ namespace LemoineTools.Tools.Ceilings
             saveRow.Children.Add(nameBox);
             outer.Children.Add(saveRow);
 
+            // Inline status line for save/load/delete outcomes (rebuilt empty each time).
+            _rampStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
+            _rampStatus.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            _rampStatus.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            outer.Children.Add(_rampStatus);
+
             // ── Button wire-up ───────────────────────────────────────────────────
             saveBtn.Click += (s, e) =>
             {
                 string name = nameBox.Text.Trim();
                 if (string.IsNullOrEmpty(name)) return;
                 var ramp = new CeilingColorRamp { Low = _colorLow, Mid = _colorMid, High = _colorHigh };
-                _rampStore.Save(name, ramp, out _);
-                RefreshRampCombo();
-                nameBox.Text = "";
+                if (_rampStore.Save(name, ramp, out string? err))
+                {
+                    RefreshRampCombo();
+                    nameBox.Text = "";
+                    SetRampStatus(AppStrings.T("ceilings.heatmap.labels.rampSaved", name), false);
+                }
+                else
+                {
+                    DiagnosticsLog.Warn("CeilingHeatmap", $"ramp save failed: {err}");
+                    SetRampStatus(AppStrings.T("ceilings.heatmap.labels.rampSaveFailed", err ?? ""), true);
+                }
             };
 
             loadBtn.Click += (s, e) =>
@@ -382,7 +388,8 @@ namespace LemoineTools.Tools.Ceilings
                 if (_rampCombo.SelectedItem is string name && !string.IsNullOrEmpty(name))
                 {
                     var info = _rampStore.List().FirstOrDefault(t => t.Name == name);
-                    if (info != null && _rampStore.Load(info, out var ramp, out _) && ramp != null)
+                    if (info == null) return;
+                    if (_rampStore.Load(info, out var ramp, out string? err) && ramp != null)
                     {
                         _colorLow  = ramp.Low;
                         _colorMid  = ramp.Mid;
@@ -395,6 +402,11 @@ namespace LemoineTools.Tools.Ceilings
                         _rebuildContent?.Invoke("S_RAMP");
                         OnValidationChanged();
                     }
+                    else
+                    {
+                        DiagnosticsLog.Warn("CeilingHeatmap", $"ramp load failed: {err}");
+                        SetRampStatus(AppStrings.T("ceilings.heatmap.labels.rampLoadFailed", err ?? ""), true);
+                    }
                 }
             };
 
@@ -403,7 +415,13 @@ namespace LemoineTools.Tools.Ceilings
                 if (_rampCombo.SelectedItem is string name && !string.IsNullOrEmpty(name))
                 {
                     var info = _rampStore.List().FirstOrDefault(t => t.Name == name);
-                    if (info != null) { _rampStore.Delete(info, out _); RefreshRampCombo(); }
+                    if (info == null) return;
+                    if (_rampStore.Delete(info, out string? err)) RefreshRampCombo();
+                    else
+                    {
+                        DiagnosticsLog.Warn("CeilingHeatmap", $"ramp delete failed: {err}");
+                        SetRampStatus(AppStrings.T("ceilings.heatmap.labels.rampDeleteFailed", err ?? ""), true);
+                    }
                 }
             };
 
@@ -484,6 +502,14 @@ namespace LemoineTools.Tools.Ceilings
             _rampCombo.Items = names; // SingleSelect auto-selects the first entry
         }
 
+        private void SetRampStatus(string text, bool isError)
+        {
+            if (_rampStatus == null) return;
+            _rampStatus.Text = text;
+            _rampStatus.SetResourceReference(TextBlock.ForegroundProperty,
+                isError ? "LemoineRed" : "LemoineTextDim");
+        }
+
         private void UpdateGradientPreview()
         {
             if (_gradientRect == null) return;
@@ -561,7 +587,10 @@ namespace LemoineTools.Tools.Ceilings
             var tolStepper = new InlineStepper
             {
                 Value             = displayInches,
-                MinValue          = 0,
+                // A zero tolerance makes AddBucket require exact double equality (hundreds of
+                // one-off buckets) and the equals-rule never match a stored offset — floor it
+                // just below the 1/8" default so it can never reach 0.
+                MinValue          = 0.0625,
                 MaxValue          = 24,
                 Step              = 0.25,
                 Decimals          = 2,
@@ -621,7 +650,9 @@ namespace LemoineTools.Tools.Ceilings
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => AppStrings.T("ceilings.heatmap.review.note");
-        public string?        ReviewWarning => null;
+        // Placing tags deletes and replaces every existing ceiling tag in the views, so warn
+        // when the toggle is on.
+        public string?        ReviewWarning => _placeTags ? AppStrings.T("ceilings.heatmap.review.tagsWarning") : null;
 
         // ═════════════════════════════════════════════════════════════════════════
         // IsValid / SummaryFor / Run
@@ -664,9 +695,20 @@ namespace LemoineTools.Tools.Ceilings
         {
             _resultChips = null;   // clear any breakdown from a previous run
 
+            if (_handler == null || _event == null)
+            {
+                pushLog(AppStrings.T("ceilings.heatmap.log.runHandlerMissing"), "fail");
+                onComplete(0, 1, 0);
+                return;
+            }
+
+            // Guard against a persisted zero tolerance from an older settings file.
+            if (_elevTolerance < 1e-9) _elevTolerance = 1.0 / 96.0;
+
             // Persist run options back to settings
-            CeilingHeatmapSettings.Instance.PlaceTags     = _placeTags;
-            CeilingHeatmapSettings.Instance.ElevTolerance = _elevTolerance;
+            CeilingHeatmapSettings.Instance.PlaceTags      = _placeTags;
+            CeilingHeatmapSettings.Instance.ElevTolerance  = _elevTolerance;
+            CeilingHeatmapSettings.Instance.DeleteExisting = _deleteExisting;
             SaveColorsToSettings();
 
             if (_viewMode == ModeGenerate)

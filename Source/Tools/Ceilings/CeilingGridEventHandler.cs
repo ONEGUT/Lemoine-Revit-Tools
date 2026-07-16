@@ -15,11 +15,7 @@ namespace LemoineTools.Tools.Ceilings
         // ── Set by viewmodel before Raise() ───────────────────────────────────
         public ToolMode Mode           { get; set; }
         public string   DwgPath        { get; set; } = null!;
-        public string   ReprojectMode  { get; set; } = "all";   // "preselected" | "all"
         public string   BatchDwgFolder { get; set; } = "";      // non-empty → batch project mode
-
-        // Pre-selected element IDs — legacy single-reproject support
-        public IList<ElementId> PreSelectedIds { get; set; } = new List<ElementId>();
 
         // Batch reproject — set by ReprojectCeilingGridsViewModel
         public List<ElementId> SelectedViewIds { get; set; } = new List<ElementId>();
@@ -55,9 +51,11 @@ namespace LemoineTools.Tools.Ceilings
             }
             finally
             {
-                // Session-long static handler — drop the run's payload.
-                PreSelectedIds  = new List<ElementId>();
+                // Session-long static handler — drop the run's payload so nothing (view ids or
+                // file/folder paths) carries into the next run.
                 SelectedViewIds = new List<ElementId>();
+                DwgPath         = "";
+                BatchDwgFolder  = "";
             }
 
             Progress(100, pass, fail, skip);
@@ -96,6 +94,7 @@ namespace LemoineTools.Tools.Ceilings
 
             int total = dwgFiles.Length;
             int done  = 0;
+            int slice = Math.Max(1, (int)(90.0 / total));   // per-DWG share of the 0–90% band
 
             foreach (var dwgFile in dwgFiles)
             {
@@ -115,7 +114,9 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     Log(AppStrings.T("ceilings.grids.log.projectingDwg", Path.GetFileName(dwgFile), targetView.Name), "info");
                     DwgPath = dwgFile;
-                    RunProject(doc, targetView, ref pass, ref fail, ref skip);
+                    // Map the inner run's progress into this DWG's slice so the bar advances
+                    // monotonically instead of snapping back to ~0 for every file.
+                    RunProject(doc, targetView, ref pass, ref fail, ref skip, (int)(done * 90.0 / total), slice);
                 }
                 done++;
                 Progress((int)(done * 90.0 / total), pass, fail, skip);
@@ -133,6 +134,7 @@ namespace LemoineTools.Tools.Ceilings
 
             int total = SelectedViewIds.Count;
             int done  = 0;
+            int slice = Math.Max(1, (int)(90.0 / Math.Max(total, 1)));   // per-view share of the 0–90% band
 
             foreach (var viewId in SelectedViewIds)
             {
@@ -151,7 +153,8 @@ namespace LemoineTools.Tools.Ceilings
                 else
                 {
                     Log(AppStrings.T("ceilings.grids.log.reprojecting", view.Name), "info");
-                    RunReproject(doc, view, ref pass, ref fail, ref skip);
+                    // Map the inner run's progress into this view's slice (monotonic bar).
+                    RunReproject(doc, view, ref pass, ref fail, ref skip, (int)(done * 90.0 / Math.Max(total, 1)), slice);
                 }
                 done++;
                 Progress((int)(done * 90.0 / Math.Max(total, 1)), pass, fail, skip);
@@ -163,12 +166,21 @@ namespace LemoineTools.Tools.Ceilings
         // ═════════════════════════════════════════════════════════════════════
         // Project
         // ═════════════════════════════════════════════════════════════════════
-        private void RunProject(Document doc, View view, ref int pass, ref int fail, ref int skip)
+        private void RunProject(Document doc, View view, ref int pass, ref int fail, ref int skip,
+                                int progBase = 0, int progSpan = 90)
         {
             if (string.IsNullOrWhiteSpace(DwgPath))
             {
                 Log(AppStrings.T("ceilings.grids.log.noDwgPath"), "fail"); fail++; return;
             }
+            if (!(view is ViewPlan))
+            {
+                // Single-file mode projects into the active view; guard against a 3D view,
+                // sheet, or schedule where the import/collector behaviour is undefined.
+                Log(AppStrings.T("ceilings.grids.log.notPlanView", view.Name), "fail"); fail++; return;
+            }
+
+            int passBefore = pass;
 
             using (var tx = new Transaction(doc, "Project Ceiling Grids"))
             {
@@ -204,7 +216,7 @@ namespace LemoineTools.Tools.Ceilings
                 doc.Delete(importId);
 
                 var cache   = new Dictionary<double, SketchPlane>();
-                int noMatch = 0;
+                int noMatch = 0, detailCount = 0, failedCurves = 0;
                 int total   = cadCurves.Count;
                 int done    = 0;
                 var prog    = new RunProgressReporter(Log, total, "curves");
@@ -223,50 +235,34 @@ namespace LemoineTools.Tools.Ceilings
                     {
                         foreach (var proj in projected)
                         {
-                            try
-                            {
-                                CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
-                                pass++;
-                            }
-                            catch (Exception ex)
-                            {
-                                Log(AppStrings.T("ceilings.grids.log.curveCreateFailed", ex.Message), "fail");
-                                fail++;
-                            }
+                            var res = CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
+                            if (res == CurveCreateResult.Failed) { failedCurves++; fail++; }
+                            else { pass++; if (res == CurveCreateResult.Detail) detailCount++; }
                         }
                     }
                     done++;
-                    Progress((int)(done * 90.0 / total), pass, fail, skip);
+                    Progress(progBase + (int)(done * (double)progSpan / total), pass, fail, skip);
                     prog.Tick();
                 }
 
                 skip += noMatch;
                 tx.Commit();
 
-                Log(AppStrings.T("ceilings.grids.log.completeProject", pass, cache.Count), "pass");
-                if (noMatch > 0) Log(AppStrings.T("ceilings.grids.log.noOverlapSkipped", noMatch), "info");
+                Log(AppStrings.T("ceilings.grids.log.completeProject", pass - passBefore, cache.Count), "pass");
+                if (detailCount  > 0) Log(AppStrings.T("ceilings.grids.log.detailFallback", detailCount), "warn");
+                if (failedCurves > 0) Log(AppStrings.T("ceilings.grids.log.curveCreateFailed", failedCurves), "fail");
+                if (noMatch      > 0) Log(AppStrings.T("ceilings.grids.log.noOverlapSkipped", noMatch), "info");
             }
         }
 
         // ═════════════════════════════════════════════════════════════════════
         // Reproject
         // ═════════════════════════════════════════════════════════════════════
-        private void RunReproject(Document doc, View view, ref int pass, ref int fail, ref int skip)
+        private void RunReproject(Document doc, View view, ref int pass, ref int fail, ref int skip,
+                                  int progBase = 0, int progSpan = 90)
         {
-            IList<ModelCurve> sourceCurves;
-            if (ReprojectMode == "preselected" && PreSelectedIds?.Count > 0)
-            {
-                sourceCurves = PreSelectedIds
-                    .Select(id => doc.GetElement(id))
-                    .OfType<ModelCurve>()
-                    .ToList();
-                Log(AppStrings.T("ceilings.grids.log.usingPreselected", sourceCurves.Count), "info");
-            }
-            else
-            {
-                sourceCurves = CeilingGridHelpers.GetModelCurvesInView(doc, view);
-                Log(AppStrings.T("ceilings.grids.log.foundModelCurves", sourceCurves.Count, view.Name), "info");
-            }
+            IList<ModelCurve> sourceCurves = CeilingGridHelpers.GetModelCurvesInView(doc, view);
+            Log(AppStrings.T("ceilings.grids.log.foundModelCurves", sourceCurves.Count, view.Name), "info");
 
             if (sourceCurves.Count == 0)
             {
@@ -286,6 +282,8 @@ namespace LemoineTools.Tools.Ceilings
             }
             Log(AppStrings.T("ceilings.grids.log.foundCeilingsFaces", ceilings.Count, faces.Count), "info");
 
+            int passBefore = pass;
+
             using (var tx = new Transaction(doc, "Reproject Ceiling Grids"))
             {
                 ConfigureFailures(tx);
@@ -296,13 +294,18 @@ namespace LemoineTools.Tools.Ceilings
                     .Where(g => g.Curve != null)
                     .ToList();
 
-                var projected = new List<Curve>();
-                var toDelete  = new List<ElementId>();
-                int noMatch   = 0;
-                int total     = sourceGeom.Count;
-                int done      = 0;
-                var projProg  = new RunProgressReporter(Log, total, "source curves");
+                var cache = new Dictionary<double, SketchPlane>();
+                int noMatch = 0, detailCount = 0, failedCurves = 0;
+                int total   = sourceGeom.Count;
+                int done    = 0;
+                var prog    = new RunProgressReporter(Log, total, "source curves");
 
+                // Process one source curve at a time: create its replacement(s) FIRST, then
+                // delete the original. The old code bulk-deleted every matched curve up front
+                // and recreated them in a second cancellable loop — cancelling (or a creation
+                // failure) mid-recreate left curves deleted-but-not-replaced yet still committed,
+                // silently destroying grid lines. Pairing the delete with the create means a
+                // cancel commits only fully-swapped curves; every unprocessed original is kept.
                 foreach (var (id, src) in sourceGeom)
                 {
                     if (RunState.CancelRequested)
@@ -314,58 +317,38 @@ namespace LemoineTools.Tools.Ceilings
                     var projs = CeilingGridHelpers.ProjectCurveOntoCeilings(src, faces);
                     if (projs.Count == 0)
                     {
-                        // No ceiling under this curve — keep the original. Deleting it
-                        // would be destructive: a reproject that finds no overlap (wrong
-                        // active view, ceilings not in view) must not wipe the grid lines.
+                        // No ceiling under this curve — keep the original. A reproject that
+                        // finds no overlap (wrong active view, ceilings not in view) must not
+                        // wipe the grid lines.
                         noMatch++;
                     }
                     else
                     {
-                        projected.AddRange(projs);
-                        toDelete.Add(id);  // replaced by its projection below
+                        int madeForThis = 0;
+                        foreach (var proj in projs)
+                        {
+                            var res = CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
+                            if (res == CurveCreateResult.Failed) { failedCurves++; fail++; }
+                            else { pass++; madeForThis++; if (res == CurveCreateResult.Detail) detailCount++; }
+                        }
+                        // Remove the original only once at least one replacement exists, so a
+                        // failed recreate never destroys the source curve.
+                        if (madeForThis > 0)
+                            doc.Delete(id);
                     }
+
                     done++;
-                    Progress((int)(done * 60.0 / total), pass, fail, noMatch);
-                    projProg.Tick();
-                }
-
-                if (toDelete.Count > 0)
-                    doc.Delete(toDelete);
-
-                var cache = new Dictionary<double, SketchPlane>();
-                total = projected.Count;
-                done  = 0;
-                var createProg = new RunProgressReporter(Log, total, "new curves");
-
-                foreach (var proj in projected)
-                {
-                    if (RunState.CancelRequested)
-                    {
-                        Log(AppStrings.T("common.log.stoppedByUser", done, total), "warn");
-                        break;
-                    }
-
-                    try
-                    {
-                        CeilingGridHelpers.TryCreateModelCurve(doc, view, proj, cache);
-                        pass++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log(AppStrings.T("ceilings.grids.log.curveCreateFailed", ex.Message), "fail");
-                        fail++;
-                    }
-                    done++;
-                    Progress(60 + (int)(done * 30.0 / Math.Max(total, 1)), pass, fail, noMatch);
-                    createProg.Tick();
+                    Progress(progBase + (int)(done * (double)progSpan / Math.Max(total, 1)), pass, fail, noMatch);
+                    prog.Tick();
                 }
 
                 skip += noMatch;
                 tx.Commit();
 
-                Log(AppStrings.T("ceilings.grids.log.completeReproject", pass, cache.Count), "pass");
-                if (noMatch > 0)
-                    Log(AppStrings.T("ceilings.grids.log.noOverlapKept", noMatch), "info");
+                Log(AppStrings.T("ceilings.grids.log.completeReproject", pass - passBefore, cache.Count), "pass");
+                if (detailCount  > 0) Log(AppStrings.T("ceilings.grids.log.detailFallback", detailCount), "warn");
+                if (failedCurves > 0) Log(AppStrings.T("ceilings.grids.log.curveCreateFailed", failedCurves), "fail");
+                if (noMatch      > 0) Log(AppStrings.T("ceilings.grids.log.noOverlapKept", noMatch), "info");
             }
         }
 

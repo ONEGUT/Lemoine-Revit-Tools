@@ -18,16 +18,17 @@
     "batchCompleteReproject": "Batch complete — {0} curve(s) created across {1} view(s).",
 
     "noDwgPath":              "No DWG path set.",
+    "notPlanView":            "Active view '{0}' is not a plan view — activate a ceiling plan and try again.",  // {0} = view name
     "noCeilings":             "No ceiling elements in view '{0}'.",  // {0} = view name
     "foundCeilings":          "Found {0} ceiling(s).",             // {0} = count
-    "noSoffit":               "Could not extract soffit faces.",
+    "noSoffit":               "Couldn't find any ceiling soffit faces to project onto.",
     "noCurvesInDwg":          "No curves found in DWG.",
     "extractedCurves":        "Extracted {0} curve(s) from DWG.",  // {0} = count
-    "curveCreateFailed":      "Curve creation failed: {0}",        // {0} = exception message
+    "curveCreateFailed":      "{0} curve(s) could not be created — see diagnostics log.",  // {0} = count
+    "detailFallback":         "{0} curve(s) created as detail curves (model curve rejected).",  // {0} = count
     "completeProject":        "Complete — {0} model curve(s) created across {1} elevation(s).",
     "noOverlapSkipped":       "{0} CAD curve(s) had no ceiling overlap and were skipped.",
 
-    "usingPreselected":       "Using {0} pre-selected curve(s).",  // {0} = count
     "foundModelCurves":       "Found {0} model curve(s) in view '{1}'.",  // {0}=count {1}=view name
     "noSourceCurves":         "No source curves found.",
     "foundCeilingsFaces":     "Found {0} ceiling(s), {1} face(s).",
@@ -35,7 +36,7 @@
     "noOverlapKept":          "{0} curve(s) had no ceiling overlap and were kept unchanged.",
 
     "dwgImported":            "DWG imported: {0}",                 // {0} = file name
-    "dwgImportFalse":         "DWG import returned false — check the file path.",
+    "dwgImportFalse":         "Revit couldn't import the DWG — check the file path and format.",
     "dwgImportError":         "DWG import error: {0}"              // {0} = exception message
   }
 }

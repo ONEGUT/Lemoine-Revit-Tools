@@ -56,15 +56,19 @@ namespace LemoineTools.Tools.BulkExport
         // ── DWG ───────────────────────────────────────────────────────────────
         // Returns null when a named setup is specified but does not exist in the document
         // — the caller must skip-and-log rather than export with a wrong/default setup.
+        // When a setup IS found, its full option set (layer maps, units, colors, …) is
+        // returned via GetDWGExportOptions() — returning bare defaults would silently ignore
+        // everything the user configured in File → Export → DWG.
         public static DWGExportOptions? BuildDwgOptions(Document doc, string setupName)
         {
             if (!string.IsNullOrEmpty(setupName))
             {
-                bool found = new FilteredElementCollector(doc)
+                var settings = new FilteredElementCollector(doc)
                     .OfClass(typeof(ExportDWGSettings))
                     .Cast<ExportDWGSettings>()
-                    .Any(s => s.Name == setupName);
-                if (!found) return null;
+                    .FirstOrDefault(s => s.Name == setupName);
+                if (settings == null) return null;
+                return settings.GetDWGExportOptions();
             }
             return new DWGExportOptions { MergedViews = true };
         }

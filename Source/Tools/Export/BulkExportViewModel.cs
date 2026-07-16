@@ -26,14 +26,26 @@ namespace LemoineTools.Tools.BulkExport
         private System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? _resultChips;
         public System.Collections.Generic.IReadOnlyList<LemoineTools.Framework.ResultChip>? ResultChips => _resultChips;
 
-        // Null the callbacks parked on the static handler so this VM isn't retained after close.
+        // Null the callbacks parked on the static handlers so this VM isn't retained after close.
         public void OnWindowClosed()
         {
-            if (_handler == null) return;
-            _handler.PushLog       = null;
-            _handler.OnProgress    = null;
-            _handler.OnComplete    = null;
-            _handler.OnResultChips = null;
+            if (_handler != null)
+            {
+                _handler.PushLog       = null;
+                _handler.OnProgress    = null;
+                _handler.OnComplete    = null;
+                _handler.OnResultChips = null;
+            }
+
+            // The print-set handler is session-long too, and SaveCurrentSelectionAsPrintSet parks
+            // an OnCreated closure that captures this VM and its live step UI — clear it, or a
+            // window that saved a print set stays rooted until the next save (or forever this session).
+            var psHandler = App.BulkExportPrintSetHandler;
+            if (psHandler != null)
+            {
+                psHandler.OnCreated = null;
+                psHandler.OnError   = null;
+            }
         }
 
         // ── IStepFlowTool ──────────────────────────────────────────────────────
@@ -120,6 +132,10 @@ namespace LemoineTools.Tools.BulkExport
         private readonly Dictionary<long, bool?>   _pdfOverrides     = new Dictionary<long, bool?>();
         private readonly Dictionary<long, bool?>   _dwgOverrides     = new Dictionary<long, bool?>();
         private string _newPrintSetName = "";
+        // Live handles into the S2 "Save as print set" row so the create callback can clear
+        // the name box and show a success/error message (rebuilt each time S2 is activated).
+        private WpfTextBox? _printSetNameBox;
+        private TextBlock?  _printSetSaveStatus;
 
         // ── S3 state (filename & formats) ────────────────────────────────────
         // Separate patterns per mode so each carries a default built from its own valid
@@ -320,7 +336,14 @@ namespace LemoineTools.Tools.BulkExport
                     .ToList();
                 Fire();
             };
-            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)));
+            // Carry the current selection forward — SetTree keeps only the ids still eligible,
+            // so a Sheets↔Views switch clears (no old id is eligible in the new mode) while a
+            // "Show all" toggle preserves the views that remain pickable.
+            var currentSel = _selectedNames
+                .Where(_nameToId.ContainsKey)
+                .Select(n => _nameToId[n].Value)
+                .ToList();
+            picker.SetTree(_browserTree, BuildEligibleIds((bool)(showAllCb.Tag ?? false)), currentSel);
             return picker;
         }
 
@@ -342,7 +365,8 @@ namespace LemoineTools.Tools.BulkExport
             var newPicker = BuildTreePicker(showAllCb ?? new CheckBox { Tag = false });
             newPicker.Tag = "multiselect";
             outer.Children.Add(newPicker);
-            _selectedNames.Clear();
+            // BuildTreePicker's end-of-SetTree callback already re-seeded _selectedNames with
+            // the surviving selection and fired validation; nothing to clear here.
             Fire();
         }
 
@@ -430,6 +454,7 @@ namespace LemoineTools.Tools.BulkExport
             nameBox.SetResourceReference(WpfTextBox.FontSizeProperty,    "LemoineFS_SM");
             nameBox.SetResourceReference(WpfTextBox.MinHeightProperty,   "LemoineH_Input");
             nameBox.TextChanged += (s, e) => _newPrintSetName = nameBox.Text;
+            _printSetNameBox = nameBox;
 
             saveBtn.Click += (s, e) => SaveCurrentSelectionAsPrintSet(RebuildList);
 
@@ -447,26 +472,60 @@ namespace LemoineTools.Tools.BulkExport
             saveHint.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
             outer.Children.Add(saveHint);
 
+            // Inline status for the save action — a blank name or a duplicate-name failure
+            // previously went only to diagnostics.log, so the button appeared to do nothing.
+            var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+            status.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
+            status.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
+            status.Visibility = WpfVisibility.Collapsed;
+            _printSetSaveStatus = status;
+            outer.Children.Add(status);
+
             return outer;
+        }
+
+        private void SetPrintSetStatus(string text, bool isError)
+        {
+            var status = _printSetSaveStatus;
+            if (status == null) return;
+            status.Text = text;
+            status.SetResourceReference(TextBlock.ForegroundProperty, isError ? "LemoineRed" : "LemoineTextDim");
+            status.Visibility = WpfVisibility.Visible;
         }
 
         private void SaveCurrentSelectionAsPrintSet(Action rebuildList)
         {
-            if (string.IsNullOrWhiteSpace(_newPrintSetName)) return;
+            if (string.IsNullOrWhiteSpace(_newPrintSetName))
+            {
+                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetNameRequired"), isError: true);
+                return;
+            }
             var handler = App.BulkExportPrintSetHandler;
             var evt     = App.BulkExportPrintSetEvent;
             if (handler == null || evt == null) return;
 
+            // The handler runs on Revit's main thread, so its callbacks must marshal back to
+            // this window's dispatcher before touching any WPF element.
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            void OnUi(Action a)
+            {
+                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+                dispatcher.BeginInvoke(a);
+            }
+
             handler.Name      = _newPrintSetName.Trim();
             handler.MemberIds = _selectedNames.Where(_nameToId.ContainsKey).Select(n => _nameToId[n]).ToList();
-            handler.OnCreated = sets =>
+            handler.OnCreated = sets => OnUi(() =>
             {
+                string saved       = _newPrintSetName.Trim();
                 _availablePrintSets = sets;
                 _newPrintSetName    = "";
+                if (_printSetNameBox != null) _printSetNameBox.Text = "";
                 rebuildList();
+                SetPrintSetStatus(AppStrings.T("export.bulkExport.log.printSetSaved", saved), isError: false);
                 Fire();
-            };
-            handler.OnError = msg => DiagnosticsLog.Warn("BulkExport: save print set", msg ?? "");
+            });
+            handler.OnError = msg => OnUi(() => SetPrintSetStatus(msg ?? "", isError: true));
             evt.Raise();
         }
 
@@ -706,7 +765,7 @@ namespace LemoineTools.Tools.BulkExport
                     ["SheetNumber"]   = _previewSheetNumber,
                     ["SheetName"]     = _previewSheetName,
                     ["Revision"]      = "3",
-                    ["IssueDate"]     = DateTime.Now.ToString("dd/MM/yy"),
+                    ["IssueDate"]     = DateTime.Now.ToString("M/d/yy"),
                     ["ProjectNumber"] = "2024-001",
                     ["ProjectName"]   = "Sample Project",
                     ["Year"]          = DateTime.Now.Year.ToString(),
@@ -1006,12 +1065,15 @@ namespace LemoineTools.Tools.BulkExport
             var outer = new StackPanel();
             AddSectionLabel(outer, AppStrings.T("export.bulkExport.labels.secDwgOptions"));
 
-            var setupNames = _dwgSetupNames.Count > 0
+            bool hasSetups = _dwgSetupNames.Count > 0;
+            var setupNames = hasSetups
                 ? _dwgSetupNames.ToArray()
                 : new[] { AppStrings.T("export.bulkExport.labels.dwgNoSetups") };
             int initIdx = setupNames.Contains(_dwgSetup) ? Array.IndexOf(setupNames, _dwgSetup) : 0;
+            // Don't let the "(No DWG setups found)" placeholder be stored as a setup name —
+            // the run would then report it as a missing setup.
             AddLabeledComboBox(outer, AppStrings.T("export.bulkExport.labels.lblExportSetup"), setupNames, initIdx,
-                val => { _dwgSetup = val; Fire(); });
+                val => { if (hasSetups) { _dwgSetup = val; Fire(); } });
 
             var note = new TextBlock
             {
@@ -1103,7 +1165,20 @@ namespace LemoineTools.Tools.BulkExport
 
         public IList<string>? ReviewChips   => null;
         public string?        ReviewNote    => null;
-        public string?        ReviewWarning => null;
+
+        // NWC/IFC only export 3D views (Views mode). If either is enabled while in Sheets mode
+        // it produces nothing — say so on the final step, not just in the S3 hint.
+        public string? ReviewWarning
+        {
+            get
+            {
+                if (ViewsMode || !(_nwcOn || _ifcOn)) return null;
+                var fmts = new List<string>();
+                if (_nwcOn) fmts.Add("NWC");
+                if (_ifcOn) fmts.Add("IFC");
+                return AppStrings.T("export.bulkExport.review.warnSheetsMode", string.Join(" & ", fmts));
+            }
+        }
 
         public bool IsValid(string stepId)
         {
@@ -1151,7 +1226,8 @@ namespace LemoineTools.Tools.BulkExport
 
             _resultChips = null;   // clear any breakdown from a previous run
 
-            // Persist settings (paths/patterns are Settings-window-only now — see ApplySettings)
+            // Persist settings (paths/patterns are Settings-window-only now — the
+            // GlobalSettingsWindow Export tab writes them directly to BulkExportSettings).
             var s = BulkExportSettings.Instance;
             s.ExportPdf                    = _pdfOn;
             s.ExportDwg                    = _dwgOn;

@@ -90,17 +90,11 @@ namespace LemoineTools.Tools.ModifyElements
                     tx.SetFailureHandlingOptions(fho);
                     tx.Start();
 
-                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels, progress);
+                    // Pass pushLog so each element's outcome streams to the Output log live,
+                    // rather than dumping the whole list after the transaction commits.
+                    stats = SplitElementsShared.SplitByLevel(doc, elements, levels, progress, pushLog);
 
                     tx.Commit();
-                }
-
-                foreach (var entry in stats.Log)
-                {
-                    string status = entry.StartsWith("✓") ? "pass"
-                                  : entry.StartsWith("✗") ? "fail"
-                                  : "info";
-                    pushLog(entry, status);
                 }
 
                 if (RunState.CancelRequested)

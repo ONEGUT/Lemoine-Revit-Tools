@@ -59,6 +59,12 @@ namespace LemoineTools.Tools.Ceilings
                 DiagnosticsLog.Error("CeilingHeatmap: run aborted", ex); Log(AppStrings.T("ceilings.heatmap.log.error", ex.Message), "fail");
                 fail++;
             }
+            finally
+            {
+                // Session-long static handler (App.CeilingHeatmapHandler) — drop the run's payload.
+                SelectedViewIds     = new List<ElementId>();
+                GenerateForLevelIds = new List<ElementId>();
+            }
 
             Progress(100, pass, fail, skip);
             OnResultChips?.Invoke(new List<ResultChip>
@@ -69,10 +75,6 @@ namespace LemoineTools.Tools.Ceilings
                 new ResultChip("skipped", skip,                             "LemoineTextDim"),
             });
             Complete(pass, fail, skip);
-
-            // Session-long static handler (App.CeilingHeatmapHandler) — drop the run's payload.
-            SelectedViewIds     = new List<ElementId>();
-            GenerateForLevelIds = new List<ElementId>();
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -97,14 +99,20 @@ namespace LemoineTools.Tools.Ceilings
             Log(AppStrings.T("ceilings.heatmap.log.scanning"), "info");
 
             var heightBuckets = new List<double>();
-            int hostCeilings = 0, linkedCeilings = 0;
+            // A ceiling visible in several selected views must be counted once, not once
+            // per view — dedupe host ceilings by element id and linked ceilings by
+            // (link instance id, element id) so the scanned totals are honest.
+            var hostSeen   = new HashSet<long>();
+            var linkedSeen = new HashSet<(long link, long el)>();
 
             int viewCount = SelectedViewIds.Count;
+            bool cancelledInScan = false;
             for (int vi = 0; vi < viewCount; vi++)
             {
                 if (RunState.CancelRequested)
                 {
                     Log(AppStrings.T("common.log.stoppedByUser", vi, viewCount), "warn");
+                    cancelledInScan = true;
                     break;
                 }
 
@@ -118,21 +126,28 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
                     if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    if (!hostSeen.Add(el.Id.Value)) continue;  // already scanned in an earlier view
                     AddBucket(heightBuckets, hParam.AsDouble());
-                    hostCeilings++;
                 }
 
                 // Linked ceilings are always scanned — in this project ceilings
                 // typically live in linked architectural models, not the host.
-                linkedCeilings += ScanLinkedCeilings(doc, vp, heightBuckets);
+                ScanLinkedCeilings(doc, vp, heightBuckets, linkedSeen);
 
                 Progress((int)((vi + 1) * 20.0 / viewCount), pass, fail, skip);
             }
 
+            int hostCeilings = hostSeen.Count, linkedCeilings = linkedSeen.Count;
             Log(AppStrings.T("ceilings.heatmap.log.scanned", hostCeilings, linkedCeilings), "info");
             DiagnosticsLog.Info("CeilingHeatmap",
                 $"scan complete — {hostCeilings} host + {linkedCeilings} linked ceilings across "
                 + $"{viewCount} view(s); {heightBuckets.Count} height bucket(s).");
+
+            // Cancelled during the scan → bail out BEFORE deleting or creating anything,
+            // so an existing heatmap is left untouched (the previous behaviour deleted the
+            // current filters and rebuilt the trade from a partial/empty bucket list).
+            if (cancelledInScan)
+                return;   // nothing created yet — leave any existing heatmap in place
 
             if (heightBuckets.Count == 0)
             {
@@ -178,7 +193,45 @@ namespace LemoineTools.Tools.Ceilings
                 .Cast<ParameterFilterElement>()
                 .ToDictionary(f => f.Name);
 
+            // Pre-compute a unique rule/filter name per bucket. FormatFtIn rounds to whole
+            // inches, so two sub-inch-apart buckets could otherwise collide on one name — the
+            // second would silently reuse the first's filter (whose rule matches a different
+            // offset) and its ceilings would stay uncolored. Disambiguate any collision with
+            // the raw offset so every bucket gets its own filter.
+            var ruleNames = new string[heightBuckets.Count];
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < heightBuckets.Count; i++)
+            {
+                double ft = UnitUtils.ConvertFromInternalUnits(heightBuckets[i], UnitTypeId.Feet);
+                string baseName = $"{FormatFtIn(ft)} AFF";
+                string name = baseName;
+                if (usedNames.Contains(name))
+                {
+                    // Same whole-inch label as an earlier bucket — qualify with the raw offset.
+                    name = $"{baseName} ({heightBuckets[i]:0.####}')";
+                    int n = 2;
+                    while (usedNames.Contains(name))
+                        name = $"{baseName} ({heightBuckets[i]:0.####}' #{n++})";
+                }
+                usedNames.Add(name);
+                ruleNames[i] = name;
+            }
+
+            // Cache each selected view's current filter-id set once — the bucket loop below
+            // checks and updates the cache instead of calling GetFilters() per bucket × view.
+            var viewPlans     = new List<ViewPlan>();
+            var viewFilterIds = new List<HashSet<long>>();
+            foreach (ElementId viewId in SelectedViewIds)
+            {
+                if (doc.GetElement(viewId) is ViewPlan vp0)
+                {
+                    viewPlans.Add(vp0);
+                    viewFilterIds.Add(new HashSet<long>(vp0.GetFilters().Select(id => id.Value)));
+                }
+            }
+
             int created = 0, reused = 0;
+            bool cancelledInApply = false;
 
             // Buckets that yielded a valid filter — used to rebuild the Ceiling Heatmap
             // trade's rules after the transaction commits (rule ⇄ filter linked by name).
@@ -195,34 +248,34 @@ namespace LemoineTools.Tools.Ceilings
                     if (RunState.CancelRequested)
                     {
                         Log(AppStrings.T("common.log.stoppedByUser", i, total), "warn");
+                        cancelledInApply = true;
                         break;
                     }
 
                     double heightOffset = heightBuckets[i];
                     Autodesk.Revit.DB.Color color = rampColors[i];
 
-                    double heightFt    = UnitUtils.ConvertFromInternalUnits(heightOffset, UnitTypeId.Feet);
-                    // Friendly rule name (e.g. 10'-0" AFF); the filter name is derived from it
-                    // via the shared convention so the rule and filter stay linked.
-                    string ruleName    = $"{FormatFtIn(heightFt)} AFF";
+                    string ruleName    = ruleNames[i];
                     string filterName  = AutoFiltersSettings.MakeFilterName(CHTradeId, ruleName);
 
                     ParameterFilterElement? pfe;
                     if (existingFilters.TryGetValue(filterName, out pfe))
                     {
+                        // Rebuild the rule in place so a tolerance changed in the UI takes effect
+                        // on a reused filter. SetElementFilter keeps the ElementId, so existing
+                        // view assignments and legend links survive.
+                        try { pfe.SetElementFilter(BuildBucketFilter(heightParamId, heightOffset)); }
+                        catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: rebuild rule for reused filter '{filterName}'", ex); }
                         reused++;
                     }
                     else
                     {
                         try
                         {
-                            FilterRule rule = ParameterFilterRuleFactory.CreateEqualsRule(
-                                heightParamId, heightOffset, ElevTolerance);
-                            var epf = new ElementParameterFilter(rule);
                             pfe = ParameterFilterElement.Create(
                                 doc, filterName,
                                 new List<ElementId> { ceilingCatId },
-                                epf);
+                                BuildBucketFilter(heightParamId, heightOffset));
                             existingFilters[filterName] = pfe;
                             created++;
                         }
@@ -254,21 +307,21 @@ namespace LemoineTools.Tools.Ceilings
                         ogs.SetCutBackgroundPatternVisible(true);
                     }
 
-                    foreach (ElementId viewId in SelectedViewIds)
+                    for (int v = 0; v < viewPlans.Count; v++)
                     {
-                        var vp = doc.GetElement(viewId) as ViewPlan;
-                        if (vp == null) continue;
+                        var vp   = viewPlans[v];
+                        var have = viewFilterIds[v];
                         try
                         {
-                            var existing = new HashSet<long>(vp.GetFilters().Select(id => id.Value));
-                            if (!existing.Contains(pfe.Id.Value))
+                            if (have.Add(pfe.Id.Value))
                                 vp.AddFilter(pfe.Id);
                             vp.SetFilterVisibility(pfe.Id, true);
                             vp.SetFilterOverrides(pfe.Id, ogs);
                         }
                         catch (Exception ex)
                         {
-                            Log(AppStrings.T("ceilings.heatmap.log.filterApplyError", ex.Message), "fail");
+                            Log(AppStrings.T("ceilings.heatmap.log.filterApplyError", vp.Name, ex.Message), "fail");
+                            fail++;
                         }
                     }
 
@@ -280,12 +333,14 @@ namespace LemoineTools.Tools.Ceilings
                 tx.Commit();
             }
 
-            // Mirror the created filters into a "Ceiling Heatmap" trade so they appear in
-            // the rules list and group correctly in the filter pickers.
-            RegisterCeilingHeatmapTrade(chRules);
+            // Mirror the created filters into a "Ceiling Heatmap" trade so they appear in the
+            // rules list. Skip this when the apply loop was cancelled — chRules is then partial
+            // and rebuilding would drop the un-applied buckets' rules from the trade.
+            if (!cancelledInApply)
+                RegisterCeilingHeatmapTrade(chRules);
 
             // ── Phase 5: Place ceiling tags (90–98%) ──────────────────────────────
-            if (PlaceTags)
+            if (PlaceTags && !cancelledInApply)
                 PlaceCeilingTags(doc, ref pass, ref fail, ref skip);
 
             // ── Summary ───────────────────────────────────────────────────────────
@@ -388,9 +443,14 @@ namespace LemoineTools.Tools.Ceilings
 
                     foreach (Element el in hostCeilings)
                     {
+                        XYZ? tagPt = GetTagPoint(el as Ceiling, doc);
+                        if (tagPt == null)
+                        {
+                            Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", el.Id), "warn");
+                            skip++; tagProgress.Tick(); continue;
+                        }
                         try
                         {
-                            XYZ tagPt = GetTagPoint(el as Ceiling, doc);
                             IndependentTag.Create(
                                 doc, viewId, new Reference(el),
                                 false, TagMode.TM_ADDBY_CATEGORY,
@@ -407,10 +467,16 @@ namespace LemoineTools.Tools.Ceilings
 
                     foreach (var lc in linkedCeilings)
                     {
+                        XYZ? localPt = GetTagPoint(lc.El as Ceiling, lc.LinkDoc);
+                        if (localPt == null)
+                        {
+                            Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", lc.El.Id), "warn");
+                            skip++; tagProgress.Tick(); continue;
+                        }
                         try
                         {
                             Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
-                            XYZ tagPt = lc.Xform.OfPoint(GetTagPoint(lc.El as Ceiling, lc.LinkDoc));
+                            XYZ tagPt = lc.Xform.OfPoint(localPt);
 
                             IndependentTag.Create(
                                 doc, viewId, linkedRef,
@@ -498,9 +564,9 @@ namespace LemoineTools.Tools.Ceilings
             }
         }
 
-        private static XYZ GetTagPoint(Ceiling? ceiling, Document doc)
+        private static XYZ? GetTagPoint(Ceiling? ceiling, Document doc)
         {
-            if (ceiling == null) return XYZ.Zero;
+            if (ceiling == null) return null;
 
             var opts = new Options { ComputeReferences = false, IncludeNonVisibleObjects = false };
             GeometryElement? geom = ceiling.get_Geometry(opts);
@@ -561,7 +627,7 @@ namespace LemoineTools.Tools.Ceilings
                     (bb.Min.X + bb.Max.X) * 0.5,
                     (bb.Min.Y + bb.Max.Y) * 0.5,
                      bb.Min.Z);
-            return XYZ.Zero;
+            return null;   // no point found — caller skips-and-logs rather than tagging the origin
         }
 
         private static UV? ComputeOuterLoopCentroidUV(Face face)
@@ -691,23 +757,27 @@ namespace LemoineTools.Tools.Ceilings
                 .Where(v => !v.IsTemplate)
                 .ToList();
 
+            var heatmapIds = new HashSet<long>(heatmapFilters.Select(f => f.Id.Value));
+
             using (var tx = new Transaction(doc, "Delete Ceiling Heatmap Filters"))
             {
                 ConfigureFailures(tx);
                 tx.Start();
 
+                // Iterate views once, reading each view's filter list a single time, instead of
+                // scanning every view for every heatmap filter (filters × views GetFilters calls).
+                foreach (View v in allViews)
+                {
+                    try
+                    {
+                        foreach (ElementId fid in v.GetFilters().Where(id => heatmapIds.Contains(id.Value)).ToList())
+                            v.RemoveFilter(fid);
+                    }
+                    catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: remove filter from view (view type may not support filters)", __lex); }
+                }
+
                 foreach (var pfe in heatmapFilters)
                 {
-                    foreach (View v in allViews)
-                    {
-                        try
-                        {
-                            if (v.GetFilters().Contains(pfe.Id))
-                                v.RemoveFilter(pfe.Id);
-                        }
-                        catch (Exception __lex) { DiagnosticsLog.Swallowed("CeilingHeatmap: apply filter (view type may not support filters)", __lex); }
-                    }
-
                     try   { doc.Delete(pfe.Id); }
                     catch (Exception ex)
                     {
@@ -781,17 +851,36 @@ namespace LemoineTools.Tools.Ceilings
 
         private void AddBucket(List<double> buckets, double heightOffset)
         {
+            // Snap the offset to a fixed tolerance grid so the bucket anchor is independent
+            // of scan order and adjacent buckets never overlap. The old first-seen anchor was
+            // order-dependent (different filter names on re-run) and could place two buckets
+            // within one tolerance of each other, letting a view's filter order decide the
+            // color. ElevTolerance is clamped > 0 by the UI, but guard anyway.
+            double tol     = ElevTolerance > 1e-9 ? ElevTolerance : (1.0 / 96.0);
+            double snapped = Math.Round(heightOffset / tol) * tol;
             foreach (double b in buckets)
-                if (Math.Abs(b - heightOffset) <= ElevTolerance) return;
-            buckets.Add(heightOffset);
+                if (Math.Abs(b - snapped) < tol * 0.5) return;
+            buckets.Add(snapped);
+        }
+
+        // Builds the equals-rule filter for one height-offset bucket. The match tolerance is
+        // half the bucket grid spacing (AddBucket snaps to a spacing of ElevTolerance), so
+        // adjacent buckets' match ranges tile the elevation axis without overlapping — each
+        // ceiling maps to exactly one bucket.
+        private ElementParameterFilter BuildBucketFilter(ElementId heightParamId, double heightOffset)
+        {
+            double tol = ElevTolerance > 1e-9 ? ElevTolerance * 0.5 : (1.0 / 192.0);
+            return new ElementParameterFilter(
+                ParameterFilterRuleFactory.CreateEqualsRule(heightParamId, heightOffset, tol));
         }
 
         /// <summary>Scans every visible link in <paramref name="view"/> for ceilings,
-        /// adding their height offsets to <paramref name="buckets"/>. Returns the number
-        /// of linked ceilings scanned.</summary>
-        private int ScanLinkedCeilings(
+        /// adding their height offsets to <paramref name="buckets"/>. Each linked ceiling is
+        /// recorded in <paramref name="seen"/> as (link instance id, element id) so a ceiling
+        /// visible in more than one selected view is only counted once.</summary>
+        private void ScanLinkedCeilings(
             Document hostDoc, ViewPlan view,
-            List<double> buckets)
+            List<double> buckets, HashSet<(long link, long el)> seen)
         {
             var links = new FilteredElementCollector(hostDoc, view.Id)
                 .OfClass(typeof(RevitLinkInstance))
@@ -799,7 +888,6 @@ namespace LemoineTools.Tools.Ceilings
                 .Where(li => li.GetLinkDocument() != null)
                 .ToList();
 
-            int scanned = 0;
             foreach (RevitLinkInstance link in links)
             {
                 Document?  linkDoc   = link.GetLinkDocument();
@@ -815,11 +903,10 @@ namespace LemoineTools.Tools.Ceilings
                 {
                     var hParam = el.get_Parameter(BuiltInParameter.CEILING_HEIGHTABOVELEVEL_PARAM);
                     if (hParam == null) continue;   // no height-from-level value → skip, don't bucket as 0
+                    if (!seen.Add((link.Id.Value, el.Id.Value))) continue;  // already scanned
                     AddBucket(buckets, hParam.AsDouble());
-                    scanned++;
                 }
             }
-            return scanned;
         }
 
         /// <summary>
@@ -956,7 +1043,11 @@ namespace LemoineTools.Tools.Ceilings
                         {
                             view = ViewPlan.Create(doc, vft.Id, level.Id);
                             try { view.Name = viewName; }
-                            catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: name conflict for generated RCP '{viewName}'", ex); }
+                            catch (Exception ex)
+                            {
+                                DiagnosticsLog.Swallowed($"CeilingHeatmap: name conflict for generated RCP '{viewName}'", ex);
+                                Log(AppStrings.T("ceilings.heatmap.log.generateRenameConflict", viewName), "warn");
+                            }
                             created++;
                         }
                         else reused++;
@@ -964,7 +1055,11 @@ namespace LemoineTools.Tools.Ceilings
                         if (templateId != ElementId.InvalidElementId)
                         {
                             try { view.ViewTemplateId = templateId; }
-                            catch (Exception ex) { DiagnosticsLog.Swallowed($"CeilingHeatmap: apply template to generated RCP '{viewName}'", ex); }
+                            catch (Exception ex)
+                            {
+                                DiagnosticsLog.Swallowed($"CeilingHeatmap: apply template to generated RCP '{viewName}'", ex);
+                                Log(AppStrings.T("ceilings.heatmap.log.generateTemplateFailed", view.Name, ex.Message), "warn");
+                            }
                         }
 
                         result.Add(view.Id);

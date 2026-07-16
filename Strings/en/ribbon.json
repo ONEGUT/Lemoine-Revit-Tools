@@ -21,7 +21,7 @@
   "buttons": {
     "upgradeLinks": {
       "label": "Upgrade &\nLink Models",
-      "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (into a subfolder next to this model or over the original), and link it into the active model. Files are processed one at a time to keep memory flat."
+      "tip":   "Pick Revit files from any folder, choose each one's link placement, then upgrade every file to the current version, save it (to a folder you choose, back over the original, or as a cloud model), and link it into the active model. Files are processed one at a time to keep memory flat."
     },
     "linkAudit": {
       "label": "Link\nAudit",
@@ -29,7 +29,7 @@
     },
     "alignCoordinates": {
       "label": "Align\nCoordinates",
-      "tip":   "Move the host Survey Point and/or Project Base Point to a resolved anchor (Internal Origin by default, or a picked grid intersection), then rotate/translate every selected link to match. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."
+      "tip":   "Pick a host reference — Internal Origin, Project Base Point, Survey Point, or a grid intersection + level — move the host Survey Point and/or Project Base Point onto it, then align every selected link by its own chosen origin, rotating to match where both sides use a grid or survey point. Repositions the host's copy of each link only — use Push Coordinates to Links to commit the correction into the linked files."
     },
     "compareGrids": {
       "label": "Compare\nGrids",

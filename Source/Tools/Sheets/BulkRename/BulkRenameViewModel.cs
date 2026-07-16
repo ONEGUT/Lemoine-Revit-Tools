@@ -18,11 +18,15 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
     /// rewrite Name only. A live preview (shared with the run handler through
     /// <see cref="BulkRenameEngine.Plan"/>) shows exactly what will be written.
     /// </summary>
-    public class BulkRenameViewModel : IStepFlowTool, IReviewableTool, IStepAware, IToolCleanup
+    public class BulkRenameViewModel : IStepFlowTool, IReviewableTool, IStepAware, IToolCleanup, IRunResult
     {
         // ── Identity ──────────────────────────────────────────────────
         public string Title    => AppStrings.T("linkviews.bulkRename.title");
         public string RunLabel => AppStrings.T("linkviews.bulkRename.runLabel");
+
+        // Run strip: the pass count is a rename count; skipped/failed keep the generic labels.
+        public string? ResultNoun => "renamed";
+        public IReadOnlyList<ResultChip>? ResultChips => null;
 
         public StepDefinition[] Steps => new[]
         {
@@ -356,12 +360,20 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
 
         private FrameworkElement BuildSeqSteppers()
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            var col = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
 
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
             row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqStart"), _config.SeqStart, 0, 100000, v => _config.SeqStart = v));
             row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqIncrement"), _config.SeqIncrement, 1, 1000, v => _config.SeqIncrement = v));
             row.Children.Add(LabeledStepper(AppStrings.T("linkviews.bulkRename.labels.seqPad"), _config.SeqPad, 0, 8, v => _config.SeqPad = v));
-            return row;
+            col.Children.Add(row);
+
+            // The counter follows a fixed order the user can't reorder here — state it so the
+            // preview's numbering isn't a surprise.
+            col.Children.Add(BodyHint(_target == RenameTarget.Sheets
+                ? AppStrings.T("linkviews.bulkRename.labels.seqOrderSheets")
+                : AppStrings.T("linkviews.bulkRename.labels.seqOrderViews")));
+            return col;
         }
 
         private FrameworkElement LabeledStepper(string label, int value, int min, int max, Action<int> onSet)
@@ -581,7 +593,9 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             Action<int, int, int, int> onProgress,
             Action<int, int, int>      onComplete)
         {
-            _runHandler!.Target          = _target;
+            if (_runHandler == null || _runEvent == null) return;
+
+            _runHandler.Target          = _target;
             _runHandler.Field            = _field;
             _runHandler.OrderedIds       = OrderedEntries().Select(e => (ElementId)e.tag!).ToList();
             _runHandler.Config           = _config;
@@ -590,7 +604,7 @@ namespace LemoineTools.Tools.LinkViews.BulkRename
             _runHandler.OnComplete       = onComplete;
 
             pushLog(AppStrings.T("linkviews.bulkRename.log.raising"), "info");
-            _runEvent!.Raise();
+            _runEvent.Raise();
         }
 
         // ── Small themed helpers ───────────────────────────────────────

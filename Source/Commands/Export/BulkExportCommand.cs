@@ -35,7 +35,7 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (System.Exception ex) { DiagnosticsLog.Swallowed("BulkExportCommand: reuse open window", ex); _window = null; }
             }
 
             var uiApp = commandData.Application;
@@ -51,13 +51,21 @@ namespace LemoineTools.Commands
                     .OrderBy(s => s.SheetNumber)
                     .ToList();
 
-                // Collect non-template views including 3D views (required for NWC/IFC export)
+                // Collect non-template views including 3D views (required for NWC/IFC export).
+                // Sheets and the non-graphical system views must be excluded — they are in the
+                // captured browser tree, so "Show all" would otherwise let a sheet be picked as
+                // a "view" and exported under the view pattern.
                 var allViews = new FilteredElementCollector(doc)
                     .OfClass(typeof(View))
                     .Cast<View>()
                     .Where(v => !v.IsTemplate
+                             && !(v is ViewSheet)
                              && v.ViewType != ViewType.Schedule
-                             && v.ViewType != ViewType.Legend)
+                             && v.ViewType != ViewType.Legend
+                             && v.ViewType != ViewType.ProjectBrowser
+                             && v.ViewType != ViewType.SystemBrowser
+                             && v.ViewType != ViewType.Internal
+                             && v.ViewType != ViewType.Undefined)
                     .OrderBy(v => v.Name)
                     .ToList();
 

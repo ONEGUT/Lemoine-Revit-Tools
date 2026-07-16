@@ -45,16 +45,18 @@
     "modeSingle":  "Single file",
     "targetBatch": "Per DWG filename",
     "targetSingle":"Active view",
+    "targetSingleView": "Active view: {0}",  // {0} = active view name
     "output":      "Model curves",
     "dwgFound":    "{0} found",  // {0} = DWG file count
 
     "noteBatch":   "Each DWG in the selected folder is matched to a ceiling-plan view by filename (without its extension). Matched pairs are projected; unmatched DWGs are logged and skipped.",
     "noteSingle":  "The DWG is imported into the active view at the origin, all curves are extracted, then the import is deleted. Each curve is projected vertically onto matching ceiling soffit faces and recreated as a model curve at the correct elevation.",
-    "warnNoDwg":   "No DWG files found in folder."
+    "warnNoDwg":   "No DWG files found in folder.",
+    "warnNotPlan": "The active view is not a plan view — projection will fail. Activate a ceiling plan before running."
   },
 
   // log — this tool's own run-log lines
   "log": {
-    "raising": "Raising Revit external event…"
+    "raising": "Starting run in Revit…"
   }
 }
