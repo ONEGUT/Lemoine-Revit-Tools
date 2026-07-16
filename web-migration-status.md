@@ -84,9 +84,13 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | Legend Settings / Legend Creator | ❌ WPF only | Drag/drop lane grid — hardest surface (Phase 3 wave 5) |
 | Clash Definitions | ❌ WPF only | Clash-rule CRUD; most-opened after settings |
 | Tools Overview | ❌ WPF only | Tool gallery/launcher — already a "fake UI", natural HTML fit |
-| Link Audit | ❌ WPF only | Link display-mode audit table |
+| **Link Audit** | ✅ web | Read-only report on `WebWindowBase` (`WebLinkAuditWindow` + `linkaudit.html`) |
 | Scope Box Manager | ❌ WPF only | Uses BrowserTreePicker |
 | Color Picker (standalone) | ❌ WPF only | Inline web colour input may already cover most uses |
+
+> **`WebWindowBase`** now encapsulates the WebView2 host/bridge/theme/borderless-chrome shell
+> for bespoke (non-step-flow) windows — Link Audit is the first consumer; Tools Overview and
+> Clash Definitions will build on it too.
 
 ---
 
