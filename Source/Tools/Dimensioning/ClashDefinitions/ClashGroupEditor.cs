@@ -51,11 +51,15 @@ namespace LemoineTools.Tools.Dimensioning
         private readonly HashSet<string>           _catDisplays  = new HashSet<string>();
         private readonly List<(long lnk, long id)> _elemRefs     = new List<(long, long)>();
 
-        private static readonly string[] ModeDisplayItems = { "Filter Rules", "Categories", "Select Elements" };
+        // Display labels (externalized) mapped to the persisted mode tokens, which stay in code.
+        private static readonly string ModeRulesDisplay      = AppStrings.T("clashDefinitions.editor.modeRules");
+        private static readonly string ModeCategoriesDisplay = AppStrings.T("clashDefinitions.editor.modeCategories");
+        private static readonly string ModeElementsDisplay   = AppStrings.T("clashDefinitions.editor.modeElements");
+        private static readonly string[] ModeDisplayItems = { ModeRulesDisplay, ModeCategoriesDisplay, ModeElementsDisplay };
         private static string ModeToDisplay(string m) =>
-            m == "Categories" ? "Categories" : m == "Elements" ? "Select Elements" : "Filter Rules";
+            m == "Categories" ? ModeCategoriesDisplay : m == "Elements" ? ModeElementsDisplay : ModeRulesDisplay;
         private static string DisplayToMode(string? d) =>
-            d == "Categories" ? "Categories" : d == "Select Elements" ? "Elements" : "Rules";
+            d == ModeCategoriesDisplay ? "Categories" : d == ModeElementsDisplay ? "Elements" : "Rules";
 
         public ClashGroupEditor(
             ClashGroupSpec         spec,
@@ -80,9 +84,10 @@ namespace LemoineTools.Tools.Dimensioning
         // ── Source-document + workset state (restore / commit) ────────────────
         private void RestoreSourcesFromSpec()
         {
-            // Selected docs: the explicit SourceLinkIds, or every doc when unset ("scan all").
+            // Selected docs: the explicit SourceLinkIds; an empty list is "scan all" (legacy
+            // default) unless SourcesExplicit says the user genuinely unchecked everything.
             var src = _spec.SourceLinkIds ?? new List<long>();
-            if (src.Count == 0)
+            if (src.Count == 0 && !_spec.SourcesExplicit)
                 foreach (var d in _docs) _selectedDocs.Add(d.LinkInstId);
             else
                 foreach (var id in src) _selectedDocs.Add(id);
@@ -94,7 +99,16 @@ namespace LemoineTools.Tools.Dimensioning
 
         private void CommitSources()
         {
-            _spec.SourceLinkIds = _selectedDocs.OrderBy(x => x).ToList();
+            // "Every document checked" persists as the non-explicit empty list, so the
+            // definition keeps meaning "scan all documents, including links added later" —
+            // an explicit id list would silently pin it to the docs loaded today. Anything
+            // less than all is explicit, INCLUDING none: an explicit empty list means "scan
+            // nothing" (previously it round-tripped back to "scan everything").
+            bool allChecked = _docs.Count > 0 && _docs.All(d => _selectedDocs.Contains(d.LinkInstId));
+            _spec.SourcesExplicit = !allChecked;
+            _spec.SourceLinkIds = allChecked
+                ? new List<long>()
+                : _selectedDocs.OrderBy(x => x).ToList();
 
             // Worksets only matter for a document that is actually scanned, so emit a filter
             // entry only for selected docs that have unchecked worksets.
@@ -133,7 +147,7 @@ namespace LemoineTools.Tools.Dimensioning
 
             if (_docs.Count == 0)
             {
-                AddDim(_docTree, "No documents available.");
+                AddDim(_docTree, AppStrings.T("clashDefinitions.editor.noDocs"));
                 return;
             }
             foreach (var d in _docs)
@@ -374,9 +388,9 @@ namespace LemoineTools.Tools.Dimensioning
         {
             switch (_spec.Mode)
             {
-                case "Categories": return _catDisplays.Count == 0 ? "—" : $"{_catDisplays.Count} category(ies)";
-                case "Elements":   return _elemRefs.Count   == 0 ? "—" : $"{_elemRefs.Count} element(s)";
-                default:           return _ruleDisplays.Count == 0 ? "—" : $"{_ruleDisplays.Count} rule(s)";
+                case "Categories": return _catDisplays.Count == 0 ? "—" : AppStrings.T("clashDefinitions.editor.summaryCategories", _catDisplays.Count);
+                case "Elements":   return _elemRefs.Count   == 0 ? "—" : AppStrings.T("clashDefinitions.editor.summaryElements", _elemRefs.Count);
+                default:           return _ruleDisplays.Count == 0 ? "—" : AppStrings.T("clashDefinitions.editor.summaryRules", _ruleDisplays.Count);
             }
         }
 
@@ -400,7 +414,7 @@ namespace LemoineTools.Tools.Dimensioning
                 body.Dispatcher.BeginInvoke(new Action(() => Keyboard.ClearFocus()), DispatcherPriority.Input);
             };
 
-            AddLabel(outer, "Group definition mode");
+            AddLabel(outer, AppStrings.T("clashDefinitions.editor.modeLabel"));
             var modeSelect = new SingleSelect
             {
                 Items        = ModeDisplayItems,
@@ -416,8 +430,8 @@ namespace LemoineTools.Tools.Dimensioning
 
             AddDivider(outer);
 
-            AddLabel(outer, "Source documents (which models this group scans)");
-            AddDim(outer, "Check a model to scan it. Expand its caret to include or exclude individual worksets.");
+            AddLabel(outer, AppStrings.T("clashDefinitions.editor.sourcesLabel"));
+            AddDim(outer, AppStrings.T("clashDefinitions.editor.sourcesHint"));
             _docTree = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
             outer.Children.Add(_docTree);
             RebuildDocTree();
@@ -433,17 +447,20 @@ namespace LemoineTools.Tools.Dimensioning
         {
             if (_filterGroups.Count == 0)
             {
-                AddDim(body, "No Auto Filters rules configured. Switch to Categories or Select Elements, or set up Auto Filters first.");
+                AddDim(body, AppStrings.T("clashDefinitions.editor.noRules"));
                 return;
             }
             var tabs = new MultiSelectTabs();
-            tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), _ruleDisplays);
+            // Subscribe BEFORE SetGroups — its end-of-setup SelectionChanged seeds the mirror
+            // (the MultiSelectTabs contract; the mirror is also pre-seeded from the spec, so
+            // the initial callback is a harmless re-assignment).
             tabs.SelectionChanged += selected =>
             {
                 _ruleDisplays.Clear();
                 foreach (var s in selected) _ruleDisplays.Add(s);
                 CommitRules();
             };
+            tabs.SetGroups(new Dictionary<string, List<string>>(_filterGroups), _ruleDisplays.ToList());
             body.Children.Add(tabs);
         }
 
@@ -451,18 +468,19 @@ namespace LemoineTools.Tools.Dimensioning
         {
             if (_categoryGroups.Count == 0)
             {
-                AddDim(body, "No categories available.");
+                AddDim(body, AppStrings.T("clashDefinitions.editor.noCategories"));
                 return;
             }
             var tabs = new MultiSelectTabs();
             tabs.Hierarchy = AutoFiltersSettings.CategorySubcategories;
-            tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), _catDisplays);
+            // Subscribe BEFORE SetGroups (MultiSelectTabs contract) — see BuildRulesBody.
             tabs.SelectionChanged += selected =>
             {
                 _catDisplays.Clear();
                 foreach (var s in selected) _catDisplays.Add(s);
                 CommitCategories();
             };
+            tabs.SetGroups(new Dictionary<string, List<string>>(_categoryGroups), _catDisplays.ToList());
             body.Children.Add(tabs);
         }
 
@@ -470,9 +488,9 @@ namespace LemoineTools.Tools.Dimensioning
         {
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
 
-            var pickHost  = MakeButton("＋ Pick host elements");
-            var pickLinks = MakeButton("＋ Pick linked elements");
-            var clearBtn  = MakeButton("Clear");
+            var pickHost  = MakeButton(AppStrings.T("clashDefinitions.editor.pickHost"));
+            var pickLinks = MakeButton(AppStrings.T("clashDefinitions.editor.pickLinked"));
+            var clearBtn  = MakeButton(AppStrings.T("clashDefinitions.editor.clear"));
             clearBtn.Margin = new Thickness(0);
 
             btnRow.Children.Add(pickHost);
@@ -487,21 +505,30 @@ namespace LemoineTools.Tools.Dimensioning
             body.Children.Add(count);
 
             Action refresh = () => count.Text = _elemRefs.Count == 0
-                ? "No elements picked yet. Use the buttons above to pick in the model."
-                : $"{_elemRefs.Count} element(s) picked.";
+                ? AppStrings.T("clashDefinitions.editor.noElements")
+                : AppStrings.T("clashDefinitions.editor.elementsPicked", _elemRefs.Count);
             refresh();
 
-            pickHost.Click  += (s, e) => StartPick(false, (Button)s!, refresh);
-            pickLinks.Click += (s, e) => StartPick(true,  (Button)s!, refresh);
+            Action<string> showStatus = msg => count.Text = msg;
+
+            pickHost.Click  += (s, e) => StartPick(false, (Button)s!, refresh, showStatus);
+            pickLinks.Click += (s, e) => StartPick(true,  (Button)s!, refresh, showStatus);
             clearBtn.Click  += (s, e) => { _elemRefs.Clear(); refresh(); CommitElements(); };
         }
 
-        private void StartPick(bool inLinks, Button sourceBtn, Action refresh)
+        private void StartPick(bool inLinks, Button sourceBtn, Action refresh, Action<string> showStatus)
         {
             if (_pickHandler == null || _pickEvent == null) return;
             var disp = sourceBtn.Dispatcher;   // window's STA dispatcher
 
             _pickHandler.InLinks  = inLinks;
+            // This window has no run log, so a failed pick used to vanish ("click Pick,
+            // nothing happens"). Route the handler's report into the status text instead.
+            _pickHandler.PushLog = (text, status) =>
+            {
+                if (disp.HasShutdownStarted || disp.HasShutdownFinished) return;
+                disp.BeginInvoke(new Action(() => showStatus(text)));
+            };
             _pickHandler.OnPicked = picks =>
             {
                 // Runs on Revit's main thread and can outlive this window — an unguarded

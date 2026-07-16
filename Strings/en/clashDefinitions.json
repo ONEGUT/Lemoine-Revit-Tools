@@ -11,16 +11,47 @@
     "unnamed": "(unnamed)",
     "dupTooltip": "Duplicate",
     "delTooltip": "Delete",
+    "delConfirmTooltip": "Click again to delete",   // second stage of the two-click delete
     "copyDefault": "Definition (copy)",
     "copySuffix": " (copy)",
     "noSelection": "No definition selected. Use “＋ Add definition” on the left to create one."
   },
+  // Group editor (ClashGroupEditor) — the per-group mode/source/rule pickers.
+  "editor": {
+    "modeLabel": "Group definition mode",
+    "modeRules": "Filter Rules",          // display labels; the persisted mode tokens stay in code
+    "modeCategories": "Categories",
+    "modeElements": "Select Elements",
+    "sourcesLabel": "Source documents (which models this group scans)",
+    "sourcesHint": "Check a model to scan it. Expand its caret to include or exclude individual worksets.",
+    "noDocs": "No documents available.",
+    "noRules": "No Auto Filters rules configured. Switch to Categories or Select Elements, or set up Auto Filters first.",
+    "noCategories": "No categories available.",
+    "pickHost": "＋ Pick host elements",
+    "pickLinked": "＋ Pick linked elements",
+    "clear": "Clear",
+    "noElements": "No elements picked yet. Use the buttons above to pick in the model.",
+    "elementsPicked": "{0} element(s) picked.",
+    "summaryRules": "{0} rule(s)",
+    "summaryCategories": "{0} category(ies)",
+    "summaryElements": "{0} element(s)"
+  },
+  // In-canvas pick prompts + failure text (ClashPickEventHandler; the failure shows in the
+  // editor's element-count status line — this window has no run log).
+  "pick": {
+    "promptHost": "Select host elements for this clash group, then click Finish",
+    "promptLinked": "Select linked elements for this clash group, then click Finish",
+    "failed": "Element pick failed: {0}"
+  },
+  // Display labels for the persisted marking tokens (Solid/Outline, Edge/Centre stay in code).
+  "fill":   { "solid": "Solid", "outline": "Outline" },
+  "marker": { "edge": "Edge", "center": "Center" },
   "labels": {
     "name": "Name",
     "group1Header": "Group 1 — Source (sets marker color & size)",
     "group2Header": "Group 2 — Target (tested against Group 1)",
-    "tolerance": "Clash Tolerance (mm)",
-    "toleranceDesc": "Extra margin added to each side of the clash bounding box marker.",
+    "tolerance": "Clash Tolerance (in)",
+    "toleranceDesc": "Extra margin added to each side of the clash bounding box marker. Edited in inches; stored in millimeters.",
     "maxClashes": "Max Clashes",
     "maxClashesDesc": "Stop detecting after this many clashes. Raise if clashes are being missed.",
     "fillStyle": "Fill Style",

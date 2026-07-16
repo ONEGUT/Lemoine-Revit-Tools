@@ -57,37 +57,35 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Refine
 
                 Progress(5, 0, 0, 0);
 
-                // Destination is the only override; chaining, grouping, and spacing always come from
-                // the saved Settings → Dimensions values. Restore the snapshot in finally.
-                var dimCfg = AutoDimensionConfig.Instance;
-                string snapTarget = dimCfg.TargetType;
-                try
-                {
-                    dimCfg.TargetType = string.Equals(DimTargetType, "Grid", StringComparison.OrdinalIgnoreCase)
-                        ? "Grid" : "SlabEdge";
+                // Destination is the only override; chaining, grouping, and spacing always come
+                // from the saved Settings → Dimensions values. The override goes on a per-run
+                // CLONE so a concurrent settings save can never persist it.
+                var dimCfg = AutoDimensionConfig.Instance.CloneForRun();
+                dimCfg.TargetType = string.Equals(DimTargetType, "Grid", StringComparison.OrdinalIgnoreCase)
+                    ? "Grid" : "SlabEdge";
 
-                    Log(AppStrings.T("clash.refineDimensions.log.refining", ViewIds.Count, dimCfg.TargetType == "Grid" ? AppStrings.T("clash.refineDimensions.log.wordGrid") : AppStrings.T("clash.refineDimensions.log.wordSlabEdge")), "info");
+                Log(AppStrings.T("clash.refineDimensions.log.refining", ViewIds.Count, dimCfg.TargetType == "Grid" ? AppStrings.T("clash.refineDimensions.log.wordGrid") : AppStrings.T("clash.refineDimensions.log.wordSlabEdge")), "info");
 
-                    // Every selected view is crop-bounded: the resolvers reject any target whose
-                    // dimension landing point falls outside what the view shows, so each clash
-                    // dimensions to the NEAREST grid / slab edge visible in that view.
-                    var cropBounded = new HashSet<ElementId>(ViewIds);
+                // Every selected view is crop-bounded: the resolvers reject any target whose
+                // dimension landing point falls outside what the view shows, so each clash
+                // dimensions to the NEAREST grid / slab edge visible in that view.
+                var cropBounded = new HashSet<ElementId>(ViewIds);
 
-                    var result = AutoDimensionRunner.Run(
-                        doc, ViewIds, dimCfg,
-                        (t, s) => Log(t, s),
-                        p => Progress(Math.Min(95, 5 + (int)(p * 1.8)), 0, 0, 0),
-                        datums: null, slabScopes: null, excludeSourceKeys: null,
-                        cropBoundedViewIds: cropBounded);
+                // Runner progress now spans planning (0–50) AND committing (50–100); the
+                // runner also honors the cancel flag at its per-view boundaries, so the red
+                // Cancel button works mid-run (finished views are still committed).
+                var result = AutoDimensionRunner.Run(
+                    doc, ViewIds, dimCfg,
+                    (t, s) => Log(t, s),
+                    p => Progress(Math.Min(95, 5 + (int)(p * 0.9)), 0, 0, 0),
+                    datums: null, slabScopes: null, excludeSourceKeys: null,
+                    cropBoundedViewIds: cropBounded);
 
-                    placed   = result.Placed;
-                    failures = result.Failures;
-                    replaced = result.DeletedPrior + result.StaleDeleted;
-                }
-                finally
-                {
-                    dimCfg.TargetType = snapTarget;
-                }
+                placed   = result.Placed;
+                failures = result.Failures;
+                // DeletedPrior already includes the stale subset — adding StaleDeleted on top
+                // double-counted and made the log overstate the replacements.
+                replaced = result.DeletedPrior;
 
                 Log(AppStrings.T("clash.refineDimensions.log.done", placed, ViewIds.Count, replaced, failures),
                     placed > 0 ? "pass" : failures > 0 ? "fail" : "info");

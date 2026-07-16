@@ -1,0 +1,115 @@
+// clash.autoDim.json — run-log output of the shared clash-detection + auto-dimension
+// pipeline (ClashEngine, AutoDimensionRunner/Engine/Commit, resolvers, pickers), used by
+// Clash Finder & Dimension, Clash Finder & Elevation Tag, and Refine Dimensions.
+// NOTE: internal tokens (Grid/SlabEdge/ManualDatum, group modes) stay in code; the
+// DiagnoseSlabEdge diagnostic lines and the run-grouper/density tuning summaries stay
+// hardcoded (developer diagnostics, same policy as DiagnosticsLog).
+{
+  "words": { "on": "on", "off": "off" },
+  "pick": {
+    "datumPrompt":      "Pick the datum edge for view '{0}' (Esc to skip this view).",  // Revit status bar
+    "datumPicked":      "View '{0}': datum picked.",
+    "datumPickedNoDir": "View '{0}': datum picked (edge direction unread — serves every axis).",
+    "datumSkipped":     "View '{0}': datum pick skipped.",
+    "datumFailed":      "View '{0}': datum pick failed — {1}"
+  },
+  "log": {
+    // ── ClashEngine: scanning ──
+    "badCategory":      "Category token '{0}' is not recognized by this Revit — skipped.",
+    "badCategoryToken": "Rule '{0}': category token '{1}' is not recognized by this Revit — skipped.",
+    "noSourceDocs":     "{0}: no source documents selected — the group produced no elements.",
+    "groupCounts":      "Group 1: {0} element(s) ({1} rectangular)   Group 2: {2} element(s)",
+    "groupEmpty":       "Group {0} produced no elements — check its mode, selection, and source documents.",
+    "noRules":          "{0}: no filter rules resolved — check Auto Filters or switch mode.",
+    "ruleNoCategories": "Rule '{0}' has no categories configured — skipped.",
+    "ruleSourceCount":  "  [{0}] '{1}': {2} element(s)",
+    "ruleEmpty":        "  Rule '{0}': 0 matching elements — check categories/match criteria/source docs.",
+    "categoryCount":    "  Category {0}: {1} element(s)",
+    "pickedResolved":   "  Picked elements resolved: {0}",
+    // ── ClashEngine: phases ──
+    "phaseNotFound":    "Phase filter: host phase '{0}' not found in this document — phase filtering skipped for this run.",
+    "phaseKept":        "Phase '{0}': kept {1}/{2} Group 1 and {3}/{4} Group 2 element(s).",
+    "phaseEmpty":       "No Group {0} element exists in phase '{1}' — nothing to clash.",
+    "phaseUnmapped":    "Phase filter: phase '{0}' (from a linked model) has no same-named host phase — its elements pass through unfiltered.",
+    "viewNoPhase":      "View '{0}': no phase parameter — phase gate skipped for this view.",
+    "viewPhaseUnknown": "View '{0}': phase '{1}' not in the host phase sequence — phase gate skipped for this view.",
+    // ── ClashEngine: detection + marking ──
+    "noClashes":        "No solid intersections detected between the two groups.",
+    "found":            "Found {0} clash(es).",
+    "foundLimit":       "Found {0} clash(es) — limit of {1} reached. Increase Max Clashes to detect more.",
+    "unruled":          "{0} clash(es) matched no Auto Filter rule — shown in fallback color {1} with a solid fill.",
+    "booleanFallbacks": "  ({0} boolean op fallback(s) to bbox)",
+    "placingMarkers":   "Placing markers for {0} clash(es) across {1} view(s)…",
+    "markerError":      "Error in '{0}': {1}",
+    "volumeSkipped":    "View '{0}': {1} clash(es) outside the view volume — skipped.",
+    "phaseSkipped":     "View '{0}': {1} clash(es) not in this view's phase — skipped.",
+    "noRegionType":     "Clash marker: no filled region type for #{0} — circles skipped.",
+    // ── Runner (plans + commit orchestration) ──
+    "buildingPlans":    "Auto-dimension: building plans for {0} view(s)…",
+    "dimensioningView": "— Dimensioning '{0}' —",
+    "planFailed":       "View '{0}': plan failed ({1}) — skipped; other views continue.",
+    "committing":       "Committing dimensions for {0} view(s) in one transaction…",
+    "commitFailed":     "View '{0}': commit failed ({1}) — skipped; other views continue.",
+    "unresolved":       "Unresolved [{0}] source {1}: {2}",
+    "ambiguous":        "Ambiguous [{0}] source {1}: '{2}' vs '{3}' (Δscore {4:0.###}) — resolve manually.",
+    "missingLinkRef":   "Missing link ref [{0}]: {1}",
+    "viewNote":         "[{0}] {1}",
+    // ── Engine (plan building) ──
+    "cropConstrained":  "Targets constrained to the visible crop {0} — each clash dimensions to the nearest reference shown in this callout.",
+    "ingest":           "Ingest: {0} source line(s), {1} without a usable reference.",
+    "deferred":         "{0} clash(es) deferred to enlarged dense-area callout(s) — not dimensioned here.",
+    "textSize":         "Text size: {0:0.###}\" paper × 1:{1:0} → {2:0.##} ft model (cramped + stagger basis).",
+    "clustered":        "Clustered {0} clash(es) into {1} cluster(s) (link ≤{2:0.###}\" paper = {3:0.##} ft at 1:{4:0}).",
+    "grouped":          "Grouped into {0} run(s) within the clusters (off-line ≤{1:0.####}\" paper = {2:0.##} ft).",
+    "density":          "Density: {0} clash(es) in {1} oversaturated area(s) (link ≤{2:0.#} ft) — chaining per axis, split by nearest reference.",
+    "resolving":        "Resolving {0} clash(es) × {1} axis/axes to {2} target(s)…",
+    "resolveProgress":  "  …{0}/{1} clash(es) resolved",
+    "resolved":         "Resolved {0} dimension(s) over {1} axis/axes from {2} source(s) — {3} unresolved, {4} ambiguous.",
+    "buildingDims":     "Building run-aware dimensions (grouping {0})…",
+    "dimsToPlace":      "{0} dimension(s) to place ({1} chained).",
+    "layingOut":        "Collecting obstacles + laying out {0} dimension(s) (collision-aware, ≤{1} ms)…",
+    "layoutDone":       "Layout done ({0} obstacle(s) considered).",
+    "snapshotWritten":  "Layout snapshot written: {0}",
+    "snapshotFailed":   "Layout snapshot FAILED to write — see diagnostics.log.",
+    // ── Engine plan notes (surfaced through the runner's viewNote line) ──
+    "noteNoSources":       "No tagged source cross-lines found in the view (or all deferred to callouts).",
+    "noteNearMisses":      "{0} near-miss grouping pair(s) — the log shows which distance kept them apart (tune the grouping distances in Settings → Dimensions).",
+    "noteDenseAreas":      "{0} dense area(s) collapsed into per-axis chains.",
+    "noteChained":         "{0} chained string(s) grouping aligned clashes.",
+    "noteMovedTags":       "{0} value tag(s) wider than their crossbar pulled off into tag columns.",
+    "noteHardPenalty":     "Layout left {0:0} hard-constraint penalty — some strings may still overlap (unsatisfiable at this density).",
+    "noteMoreOmitted":     "…further unresolved strings omitted.",
+    "noteUnresolvedString":"Unresolved: {0} — {1}.",
+    "noteSnapshot":        "Layout snapshot: {0}",
+    // ── Dense-area callout survey ──
+    "denseRatio":       "Dense area: demand ratio {0:0.0} > {1:0.0} ({2} clashes) — callout tier.",
+    "denseUnderMin":    "Dense area with {0} clash(es) is under the callout minimum of {1} — kept on the chain tier in the parent view.",
+    "denseRooms":       "covers {0} plus a margin",
+    "denseNoRooms":     "no room found at its clashes — sized to the cluster extent",
+    "denseMerged":      ", merged from {0} overlapping dense areas",
+    "denseEmit":        "Dense area {0}: callout at 1:{1} {2}{3} — all {4} clash(es) inside it move to the callout.",
+    "denseSurveyFailed":"Dense-area survey failed ({0}) — callout tier skipped this view.",
+    // ── User-callout survey ──
+    "userNone":         "No user-drawn callouts found on '{0}'.",
+    "userFound":        "Found {0} user-drawn callout(s) on '{1}'.",
+    "userNoCrop":       "User callout '{0}': no readable crop — skipped.",
+    "userResized":      "User callout '{0}' was resized by hand — its group re-baselines to the new boundary.",
+    "userOverlap":      "User callout '{0}': {1} clash(es) already claimed by an earlier user callout — first containment wins.",
+    "userEmpty":        "User callout '{0}' contains no clash markers — left untouched.",
+    "userGroup":        "User callout '{0}': pre-defined group of {1} clash(es) at 1:{2} — crop kept at the boundary you drew plus a margin.",
+    "userSurveyFailed": "User-callout survey failed ({0}) — user callouts skipped this view.",
+    // ── Commit ──
+    "clearedPrior":     "Cleared {0} prior auto-dimension(s) ({1} stale).",
+    "placing":          "Placing {0} dimension(s) in '{1}'…",
+    "commitProgress":   "  …{0}/{1} dimension(s) committed",
+    "missingBundle":    "Source {0} → {1}: missing reference bundle ({2} ref) — skipped.",
+    "tooShort":         "Source {0} → {1}: dimension too short ({2:0.#} mm < {3:0.##} mm tol) — skipped.",
+    "nullDimension":    "Source {0} → {1}: NewDimension returned null ({2} refs) — the target edge may not be visible/dimensionable in this view (e.g. a linked element not shown by the host view).",
+    "stampFailed":      "Source {0}: placed but owner stamp failed (won't be reclaimed next run).",
+    "placeFailed":      "Source {0} → {1} ({2} refs, {3:0} mm, axis {4}): {5}",
+    // ── Target caches + pick-pass view guard ──
+    "gridCache":        "Target cache: {0} grid(s) available across {1} document(s).",
+    "slabCache":        "Target cache: {0} slab side-face(s) scanned across {1} document(s) — host {2}, linked {3}.",
+    "closedViews":      "Closed {0} view(s) the pick pass opened."
+  }
+}

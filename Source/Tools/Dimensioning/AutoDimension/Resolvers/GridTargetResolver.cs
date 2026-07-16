@@ -119,7 +119,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                 }
             }
 
-            ctx.Log($"Target cache: {list.Count} grid(s) available across {ctx.Sources.Count} document(s).", "info");
+            ctx.Log(AppStrings.T("clash.autoDim.log.gridCache", list.Count, ctx.Sources.Count), "info");
             _cache = list;
             _cacheCtx = ctx;
             return list;

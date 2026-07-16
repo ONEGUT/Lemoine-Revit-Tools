@@ -22,6 +22,15 @@ Shared-file findings are numbered `Shared-…` and attributed to the group.
 
 ## Summary
 
+> **Status: ALL FINDINGS FIXED** on this branch (user approved "fix it all").
+> Decision items were resolved as: two-click confirm for definition delete,
+> per-view marking transactions for the Elevation Finder, tolerance edited in
+> inches (stored mm unchanged), and `SourcesExplicit` flag for the
+> source-document semantics (empty stays "all docs" for existing files). The
+> `DiagnoseSlabEdge` diagnostics and grouping/density tuning summaries stay
+> hardcoded by policy (developer diagnostics). Windows-test items W1–W5 below
+> still need a Revit run to verify the fixes behave as intended.
+
 | Severity | Count |
 |---|---|
 | Critical | 0 |

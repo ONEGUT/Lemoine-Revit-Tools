@@ -29,7 +29,11 @@ namespace LemoineTools.Tools.Dimensioning
         // — and so a late slab pick can't marshal into this window's terminated dispatcher.
         public void OnWindowClosed()
         {
-            if (_slabPickHandler != null) _slabPickHandler.OnPicked = null;
+            if (_slabPickHandler != null)
+            {
+                _slabPickHandler.OnPicked = null;
+                _slabPickHandler.PushLog  = null;
+            }
             _activateWindow = null;
             if (_handler == null) return;
             _handler.PushLog       = null;
@@ -336,13 +340,17 @@ namespace LemoineTools.Tools.Dimensioning
                 : AppStrings.T("clash.finder.labels.slabOverride", _pickedSlabName);
             refreshSlab();
 
+            // Pick failures land in the status text — the wizard has no run log open at this
+            // step, so a swallowed failure used to read as "click Pick, nothing happens".
+            Action<string> showSlabStatus = msg => slabStatus.Text = msg;
+
             var slabRow = new StackPanel { Orientation = Orientation.Horizontal };
             var pickBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.pickHost"), ControlStyles.ButtonVariant.Primary);
             pickBtn.Margin = new Thickness(0, 0, 8, 0);
-            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: false);
+            pickBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, showSlabStatus, inLinks: false);
             var pickLinkBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.pickLinked"), ControlStyles.ButtonVariant.Primary);
             pickLinkBtn.Margin = new Thickness(0, 0, 8, 0);
-            pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, inLinks: true);
+            pickLinkBtn.Click += (s, e) => StartSlabPick(((Button)s!).Dispatcher, refreshSlab, showSlabStatus, inLinks: true);
             var clearBtn = ControlStyles.BuildButton(AppStrings.T("clash.finder.labels.clear"), ControlStyles.ButtonVariant.Ghost);
             clearBtn.Click += (s, e) => { _pickedSlab = null; _pickedSlabName = ""; refreshSlab(); Fire(); };
             slabRow.Children.Add(pickBtn);
@@ -483,10 +491,18 @@ namespace LemoineTools.Tools.Dimensioning
         // Raises the slab-pick external event; the picked floor (host or linked) comes back on
         // Revit's main thread and is marshalled to this window's dispatcher. The pick brings Revit's
         // main window forward, so we re-activate the wizard once it resolves (or is cancelled).
-        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh, bool inLinks)
+        private void StartSlabPick(System.Windows.Threading.Dispatcher disp, Action refresh,
+            Action<string> showStatus, bool inLinks)
         {
             if (_slabPickHandler == null || _slabPickEvent == null) return;
             _slabPickHandler.InLinks = inLinks;
+            // Surface "picked element is not a floor" / pick errors in the step's status text —
+            // this callback was never wired before, so those reports went nowhere.
+            _slabPickHandler.PushLog = (text, status) =>
+            {
+                if (disp.HasShutdownStarted || disp.HasShutdownFinished) return;
+                disp.BeginInvoke(new Action(() => showStatus(text)));
+            };
             _slabPickHandler.OnPicked = (scope, name) =>
             {
                 // The pick resolves on Revit's main thread and can outlive this window — an

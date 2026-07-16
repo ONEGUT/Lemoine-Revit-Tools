@@ -123,13 +123,12 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             {
                 ctx.TargetBounds = CropBounds2D(view, projection);
                 if (ctx.TargetBounds.HasValue)
-                    _log($"Targets constrained to the visible crop {ctx.TargetBounds.Value} — "
-                       + "each clash dimensions to the nearest reference shown in this callout.", "info");
+                    _log(AppStrings.T("clash.autoDim.log.cropConstrained", ctx.TargetBounds.Value), "info");
             }
 
             // ── 1. Ingest source cross-lines ──────────────────────────────────
             var sources = SourceIngest.Collect(doc, view, projection, plan.Unresolved);
-            _log($"Ingest: {sources.Count} source line(s), {plan.Unresolved.Count} without a usable reference.", "info");
+            _log(AppStrings.T("clash.autoDim.log.ingest", sources.Count, plan.Unresolved.Count), "info");
 
             // Callout tier: clashes deferred to enlarged dense-area callouts are not
             // dimensioned in this (parent) view — they keep their markers + the callout bubble.
@@ -139,11 +138,11 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 int before = sources.Count;
                 sources = sources.Where(s => !excl.Contains(s.SourceKey)).ToList();
                 if (before != sources.Count)
-                    _log($"{before - sources.Count} clash(es) deferred to enlarged dense-area callout(s) — not dimensioned here.", "info");
+                    _log(AppStrings.T("clash.autoDim.log.deferred", before - sources.Count), "info");
             }
             if (sources.Count == 0)
             {
-                plan.Notes.Add("No tagged source cross-lines found in the view (or all deferred to callouts).");
+                plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteNoSources"));
                 return output;
             }
 
@@ -163,7 +162,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             double textPaperFt = ReadDimTextSizeFt(doc, output.DimTypeId) ?? cfg.Layout.TextHeightFt;
             var coreCfg = BuildCoreConfig(cfg.Layout, scale, textPaperFt);
             output.CoreConfig = coreCfg;
-            _log($"Text size: {textPaperFt * 12.0:0.###}\" paper × 1:{scale:0} → {coreCfg.TextHeightFt:0.##} ft model (cramped + stagger basis).", "info");
+            _log(AppStrings.T("clash.autoDim.log.textSize", textPaperFt * 12.0, scale, coreCfg.TextHeightFt), "info");
 
             // Exact value formatter using the dimension type's own units format, so width estimation
             // counts the real glyphs (e.g. 0' - 11 5/8") in whatever units the type displays.
@@ -180,8 +179,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             double linkFt  = cfg.ClusterLinkFt(scale);
             double crossFt = cfg.RunCrossFt(scale);
             var clustering = ClashClusterer.Build(sources, linkFt);
-            _log($"Clustered {sources.Count} clash(es) into {clustering.Clusters.Count} cluster(s) "
-               + $"(link ≤{cfg.ClusterLinkPaperIn:0.###}\" paper = {linkFt:0.##} ft at 1:{scale:0}).", "info");
+            _log(AppStrings.T("clash.autoDim.log.clustered", sources.Count, clustering.Clusters.Count, cfg.ClusterLinkPaperIn, linkFt, scale), "info");
 
             // Collinear runs WITHIN each cluster — a run never spans clusters; run ids are
             // prefixed with the cluster id so the chainer never merges across a boundary.
@@ -215,12 +213,10 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     runCount += g.RunCount;
                     nearMisses.AddRange(g.NearMisses);
                 }
-                _log($"Grouped into {runCount} run(s) within the clusters "
-                   + $"(off-line ≤{cfg.RunCrossPaperIn:0.####}\" paper = {crossFt:0.##} ft).", "info");
+                _log(AppStrings.T("clash.autoDim.log.grouped", runCount, cfg.RunCrossPaperIn, crossFt), "info");
                 foreach (var miss in nearMisses) _log(miss, "info");
                 if (nearMisses.Count > 0)
-                    plan.Notes.Add($"{nearMisses.Count} near-miss grouping pair(s) — the log shows which "
-                                 + "distance kept them apart (tune the grouping distances in Settings → Dimensions).");
+                    plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteNearMisses", nearMisses.Count));
             }
 
             // ── 1c. Oversaturated areas: clashes packed tighter than their value texts get
@@ -233,17 +229,16 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 : new DensityClusterer.Result();
             if (cfg.DensityChaining && density.ClusterCount > 0)
             {
-                _log($"Density: {density.ClusterByKey.Count} clash(es) in {density.ClusterCount} oversaturated "
-                   + $"area(s) (link ≤{nominalTextFt:0.#} ft) — chaining per axis, split by nearest reference.", "info");
+                _log(AppStrings.T("clash.autoDim.log.density", density.ClusterByKey.Count, density.ClusterCount, nominalTextFt), "info");
                 foreach (var s in density.Summaries) _log(s, "info");
-                plan.Notes.Add($"{density.ClusterCount} dense area(s) collapsed into per-axis chains.");
+                plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteDenseAreas", density.ClusterCount));
             }
 
             var resolved        = new List<ResolvedItem>();
             var resolvedSources = new HashSet<string>();
             var firstFailReason = new Dictionary<string, string>();   // sourceKey → reason, used only if no axis resolved
 
-            _log($"Resolving {sources.Count} clash(es) × {axes.Length} axis/axes to {tt} target(s)…", "info");
+            _log(AppStrings.T("clash.autoDim.log.resolving", sources.Count, axes.Length, tt), "info");
             int processed = 0;
             foreach (var src in sources)
             {
@@ -287,25 +282,25 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     }
                 }
                 if (++processed % 200 == 0)
-                    _log($"  …{processed}/{sources.Count} clash(es) resolved", "info");
+                    _log(AppStrings.T("clash.autoDim.log.resolveProgress", processed, sources.Count), "info");
             }
 
             foreach (var kv in firstFailReason)
                 if (!resolvedSources.Contains(kv.Key))
                     plan.Unresolved.Add(new Core.UnresolvedTarget { SourceKey = kv.Key, TargetType = ttEnum, Reason = kv.Value });
 
-            _log($"Resolved {resolved.Count} dimension(s) over {axes.Length} axis/axes from {sources.Count} source(s) — {plan.Unresolved.Count} unresolved, {plan.Ambiguities.Count} ambiguous.",
+            _log(AppStrings.T("clash.autoDim.log.resolved", resolved.Count, axes.Length, sources.Count, plan.Unresolved.Count, plan.Ambiguities.Count),
                 resolved.Count > 0 ? "info" : "fail");
 
             // ── 2b. Build run-aware dimensions: chain along each run, single across it ──
-            _log($"Building run-aware dimensions (grouping {(cfg.ChainAligned ? "on" : "off")})…", "info");
+            _log(AppStrings.T("clash.autoDim.log.buildingDims", cfg.ChainAligned ? AppStrings.T("clash.autoDim.words.on") : AppStrings.T("clash.autoDim.words.off")), "info");
             var chained = DimensionChainer.Build(resolved, coreCfg, valueFmt);
             var dims = chained.Dims;
             output.Refs = chained.Refs;
 
             int chainedStrings = dims.Count(d => d.Segments.Count > 1);
-            _log($"{dims.Count} dimension(s) to place ({chainedStrings} chained).", "info");
-            if (chainedStrings > 0) plan.Notes.Add($"{chainedStrings} chained string(s) grouping aligned clashes.");
+            _log(AppStrings.T("clash.autoDim.log.dimsToPlace", dims.Count, chainedStrings), "info");
+            if (chainedStrings > 0) plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteChained", chainedStrings));
 
             // ── 2c. Cluster working regions ────────────────────────────────────
             // Each cluster's tight box grows to cover its dimensions' far side (the resolved
@@ -333,30 +328,30 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             }
 
             // ── 3–6. Abstract layout (Part B) ─────────────────────────────────
-            _log($"Collecting obstacles + laying out {dims.Count} dimension(s) (collision-aware, ≤{coreCfg.TimeCapMs} ms)…", "info");
+            _log(AppStrings.T("clash.autoDim.log.layingOut", dims.Count, coreCfg.TimeCapMs), "info");
             var obstacles = CollectObstacles(doc, view, projection);
             output.Obstacles = obstacles;
             var scorer = new Core.LayoutScorer(coreCfg, null /* crop scoring optional in Tier 1 */);
             var layout = new Core.GreedyLayoutEngine(coreCfg, scorer);
             layout.Arrange(dims, obstacles);
-            _log($"Layout done ({obstacles.Count} obstacle(s) considered).", "info");
+            _log(AppStrings.T("clash.autoDim.log.layoutDone", obstacles.Count), "info");
 
             int movedTags = Core.GreedyLayoutEngine.MovedTagCount(dims);
-            if (movedTags > 0) plan.Notes.Add($"{movedTags} value tag(s) wider than their crossbar pulled off into tag columns.");
+            if (movedTags > 0) plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteMovedTags", movedTags));
 
             var finalScore = scorer.ScoreAll(dims, obstacles);
             if (finalScore.Hard > 1e-6)
             {
-                plan.Notes.Add($"Layout left {finalScore.Hard:0} hard-constraint penalty — some strings may still overlap (unsatisfiable at this density).");
+                plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteHardPenalty", finalScore.Hard));
                 int noted = 0;
                 foreach (var d in dims)
                 {
-                    if (noted >= 8) { plan.Notes.Add("…further unresolved strings omitted."); break; }
+                    if (noted >= 8) { plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteMoreOmitted")); break; }
                     if (scorer.Score(d, obstacles, dims).Hard <= 1e-6) continue;
                     string why = scorer.DescribeHardViolations(d, obstacles, dims);
                     if (why.Length > 0)
                     {
-                        plan.Notes.Add($"Unresolved: {d.SourceKey} — {why}.");
+                        plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteUnresolvedString", d.SourceKey, why));
                         noted++;
                     }
                 }
@@ -370,9 +365,9 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     nearMisses, plan.Notes);
                 string? path = Core.LayoutSnapshotWriter.Write(snap);
                 _log(path != null
-                    ? $"Layout snapshot written: {path}"
-                    : "Layout snapshot FAILED to write — see diagnostics.log.", path != null ? "info" : "fail");
-                if (path != null) plan.Notes.Add($"Layout snapshot: {path}");
+                    ? AppStrings.T("clash.autoDim.log.snapshotWritten", path)
+                    : AppStrings.T("clash.autoDim.log.snapshotFailed"), path != null ? "info" : "fail");
+                if (path != null) plan.Notes.Add(AppStrings.T("clash.autoDim.log.noteSnapshot", path));
             }
 
             plan.Dimensions = dims;
@@ -442,8 +437,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 {
                     double ratio = DemandRatio(cluster, nominal, thModel);
                     if (ratio <= CalloutDemandRatio) continue;   // chain tier handles it
-                    log?.Invoke($"Dense area: demand ratio {ratio:0.0} > {CalloutDemandRatio:0.0} "
-                              + $"({cluster.MemberKeys.Count} clashes) — callout tier.", "info");
+                    log?.Invoke(AppStrings.T("clash.autoDim.log.denseRatio", ratio, CalloutDemandRatio, cluster.MemberKeys.Count), "info");
 
                     double minX = cluster.MinX, minY = cluster.MinY;
                     double maxX = cluster.MaxX, maxY = cluster.MaxY;
@@ -496,8 +490,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     // minimum never becomes a callout — it stays chained in the parent view.
                     if (swept.Count < minClashes)
                     {
-                        log?.Invoke($"Dense area with {swept.Count} clash(es) is under the callout minimum "
-                                  + $"of {minClashes} — kept on the chain tier in the parent view.", "info");
+                        log?.Invoke(AppStrings.T("clash.autoDim.log.denseUnderMin", swept.Count, minClashes), "info");
                         continue;
                     }
 
@@ -540,18 +533,17 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     requests.Add(req);
 
                     string roomsTxt = area.RoomLabels.Count > 0
-                        ? $"covers {string.Join(", ", area.RoomLabels)} plus a margin"
-                        : "no room found at its clashes — sized to the cluster extent";
+                        ? AppStrings.T("clash.autoDim.log.denseRooms", string.Join(", ", area.RoomLabels))
+                        : AppStrings.T("clash.autoDim.log.denseNoRooms");
                     string mergeTxt = area.MergedClusters > 1
-                        ? $", merged from {area.MergedClusters} overlapping dense areas" : "";
-                    log?.Invoke($"Dense area {id}: callout at 1:{chosen} {roomsTxt}{mergeTxt} — "
-                              + $"all {swept.Count} clash(es) inside it move to the callout.", "info");
+                        ? AppStrings.T("clash.autoDim.log.denseMerged", area.MergedClusters) : "";
+                    log?.Invoke(AppStrings.T("clash.autoDim.log.denseEmit", id, chosen, roomsTxt, mergeTxt, swept.Count), "info");
                 }
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("AutoDimensionEngine: survey dense areas", ex);
-                log?.Invoke($"Dense-area survey failed ({ex.Message}) — callout tier skipped this view.", "fail");
+                log?.Invoke(AppStrings.T("clash.autoDim.log.denseSurveyFailed", ex.Message), "fail");
             }
             return requests;
         }
@@ -585,10 +577,10 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 {
                     // Say so explicitly — a drawn callout the collector failed to see would
                     // otherwise be indistinguishable from "none drawn" in the run log.
-                    log?.Invoke($"No user-drawn callouts found on '{view.Name}'.", "info");
+                    log?.Invoke(AppStrings.T("clash.autoDim.log.userNone", view.Name), "info");
                     return requests;
                 }
-                log?.Invoke($"Found {callouts.Count} user-drawn callout(s) on '{view.Name}'.", "info");
+                log?.Invoke(AppStrings.T("clash.autoDim.log.userFound", callouts.Count, view.Name), "info");
 
                 var projection = new ViewProjection(view);
                 var sources = SourceIngest.Collect(doc, view, projection, new List<Core.UnresolvedTarget>());
@@ -609,7 +601,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     var cropRect = CropBounds2D(callout, projection);
                     if (cropRect == null)
                     {
-                        log?.Invoke($"User callout '{callout.Name}': no readable crop — skipped.", "info");
+                        log?.Invoke(AppStrings.T("clash.autoDim.log.userNoCrop", callout.Name), "info");
                         continue;
                     }
 
@@ -625,8 +617,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                             membership = Core.Box2.FromPoints(
                                 projection.To2D(stamped.MembershipMin), projection.To2D(stamped.MembershipMax));
                         else
-                            log?.Invoke($"User callout '{callout.Name}' was resized by hand — its group "
-                                      + "re-baselines to the new boundary.", "info");
+                            log?.Invoke(AppStrings.T("clash.autoDim.log.userResized", callout.Name), "info");
                     }
 
                     var members = sources
@@ -634,11 +625,10 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                         .ToList();
                     int overlapped = sources.Count(s => membership.Contains(s.Anchor2d)) - members.Count;
                     if (overlapped > 0)
-                        log?.Invoke($"User callout '{callout.Name}': {overlapped} clash(es) already claimed "
-                                  + "by an earlier user callout — first containment wins.", "info");
+                        log?.Invoke(AppStrings.T("clash.autoDim.log.userOverlap", callout.Name, overlapped), "info");
                     if (members.Count == 0)
                     {
-                        log?.Invoke($"User callout '{callout.Name}' contains no clash markers — left untouched.", "info");
+                        log?.Invoke(AppStrings.T("clash.autoDim.log.userEmpty", callout.Name), "info");
                         continue;
                     }
                     foreach (var m in members) claimed.Add(m.SourceKey);
@@ -691,14 +681,13 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     req.SourceKeys.AddRange(members.Select(m => m.SourceKey));
                     requests.Add(req);
 
-                    log?.Invoke($"User callout '{callout.Name}': pre-defined group of {members.Count} "
-                              + $"clash(es) at 1:{finalScale} — crop kept at the boundary you drew plus a margin.", "info");
+                    log?.Invoke(AppStrings.T("clash.autoDim.log.userGroup", callout.Name, members.Count, finalScale), "info");
                 }
             }
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("AutoDimensionEngine: survey user callouts", ex);
-                log?.Invoke($"User-callout survey failed ({ex.Message}) — user callouts skipped this view.", "fail");
+                log?.Invoke(AppStrings.T("clash.autoDim.log.userSurveyFailed", ex.Message), "fail");
             }
             return requests;
         }

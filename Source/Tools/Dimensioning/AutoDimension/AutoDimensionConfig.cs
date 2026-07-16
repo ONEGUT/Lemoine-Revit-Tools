@@ -117,6 +117,20 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
         /// <summary>Parameterless ctor required by <see cref="XmlSerializer"/>.</summary>
         public AutoDimensionConfig() { }
 
+        /// <summary>
+        /// Copy for a single run, so per-run overrides (TargetType, MaxCalloutScale) never touch
+        /// the shared singleton — a concurrent <see cref="Save"/> (e.g. the Dimensions settings
+        /// window auto-saving mid-run) used to persist the temporary override. MemberwiseClone
+        /// covers every value-typed property, present and future; Layout (all value fields) is
+        /// cloned the same way.
+        /// </summary>
+        public AutoDimensionConfig CloneForRun()
+        {
+            var c = (AutoDimensionConfig)MemberwiseClone();
+            c.Layout = Layout != null ? Layout.CloneShallow() : new CoreLayout();
+            return c;
+        }
+
         // ── Persistence (lazy singleton, mirrors ClashDefinitionsSettings) ──────
         private static readonly Lazy<AutoDimensionConfig> _lazy = new Lazy<AutoDimensionConfig>(Load);
         public static AutoDimensionConfig Instance => _lazy.Value;

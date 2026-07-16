@@ -34,8 +34,8 @@ namespace LemoineTools.Tools.Dimensioning
                 {
                     var ot = InLinks ? ObjectType.LinkedElement : ObjectType.Element;
                     string prompt = InLinks
-                        ? "Select linked elements for this clash group, then click Finish"
-                        : "Select host elements for this clash group, then click Finish";
+                        ? LemoineTools.Framework.AppStrings.T("clashDefinitions.pick.promptLinked")
+                        : LemoineTools.Framework.AppStrings.T("clashDefinitions.pick.promptHost");
 
                     IList<Reference> refs = uidoc.Selection.PickObjects(ot, prompt);
                     foreach (var r in refs)
@@ -53,7 +53,7 @@ namespace LemoineTools.Tools.Dimensioning
             }
             catch (Exception ex)
             {
-                PushLog?.Invoke($"Element pick failed: {ex.Message}", "fail");
+                PushLog?.Invoke(LemoineTools.Framework.AppStrings.T("clashDefinitions.pick.failed", ex.Message), "fail");
             }
 
             OnPicked?.Invoke(result);

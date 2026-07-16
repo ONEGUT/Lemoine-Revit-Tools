@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -35,7 +36,11 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("ClashElevationFinderCommand: reactivate existing window", ex);
+                    _window = null;
+                }
             }
 
             var uiApp = commandData.Application;
@@ -54,23 +59,16 @@ namespace LemoineTools.Commands
 
                 // Spot elevation types available to tag with. Filter via the collector's category
                 // filter (reading SpotDimensionType.Category directly can return null for annotation
-                // types, which silently dropped every type); fall back to every spot dimension type so
-                // the picker is never empty when the project does have types.
+                // types, which silently dropped every type). No uncategorized fallback: collecting
+                // every SpotDimensionType also listed spot COORDINATE / SLOPE types, and picking one
+                // of those either throws at ChangeTypeId or mis-tags — the tool's "no spot elevation
+                // type found" warning is the honest path when the project truly has none.
                 var spotTypes = new FilteredElementCollector(doc)
                     .OfCategory(BuiltInCategory.OST_SpotElevations)
                     .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
                     .OrderBy(t => t.Name)
                     .Select(t => (Name: t.Name, Id: t.Id))
                     .ToList();
-
-                if (spotTypes.Count == 0)
-                {
-                    spotTypes = new FilteredElementCollector(doc)
-                        .OfClass(typeof(SpotDimensionType)).Cast<SpotDimensionType>()
-                        .OrderBy(t => t.Name)
-                        .Select(t => (Name: t.Name, Id: t.Id))
-                        .ToList();
-                }
 
                 var definitions = ClashDefinitionsSettings.Instance.Definitions
                     ?? new List<ClashDefinition>();

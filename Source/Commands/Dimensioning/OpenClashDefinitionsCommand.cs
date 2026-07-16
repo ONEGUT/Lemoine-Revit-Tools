@@ -36,7 +36,11 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("OpenClashDefinitionsCommand: reactivate existing window", ex);
+                    _window = null;
+                }
             }
 
             var doc = commandData.Application.ActiveUIDocument?.Document;

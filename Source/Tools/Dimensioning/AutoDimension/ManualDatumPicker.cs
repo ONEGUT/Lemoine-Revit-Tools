@@ -37,22 +37,24 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     try
                     {
                         var r = uidoc.Selection.PickObject(ObjectType.Edge,
-                            $"Pick the datum edge for view '{view.Name}' (Esc to skip this view).");
+                            AppStrings.T("clash.autoDim.pick.datumPrompt", view.Name));
                         var datum = BuildDatum(doc, r);
                         if (datum != null)
                         {
                             map[viewId] = new List<ManualDatum> { datum };
-                            log($"View '{view.Name}': datum picked{(datum.WorldDir == null ? " (edge direction unread — serves every axis)" : "")}.", "info");
+                            log(datum.WorldDir == null
+                                ? AppStrings.T("clash.autoDim.pick.datumPickedNoDir", view.Name)
+                                : AppStrings.T("clash.autoDim.pick.datumPicked", view.Name), "info");
                         }
                     }
                     catch (Autodesk.Revit.Exceptions.OperationCanceledException)
                     {
-                        log($"View '{view.Name}': datum pick skipped.", "info");
+                        log(AppStrings.T("clash.autoDim.pick.datumSkipped", view.Name), "info");
                     }
                     catch (Exception ex)
                     {
                         DiagnosticsLog.Error("ManualDatumPicker: pick", ex);
-                        log($"View '{view.Name}': datum pick failed — {ex.Message}", "fail");
+                        log(AppStrings.T("clash.autoDim.pick.datumFailed", view.Name, ex.Message), "fail");
                     }
                 }
             }

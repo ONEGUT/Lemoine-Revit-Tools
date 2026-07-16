@@ -41,8 +41,8 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     // into a link requires ObjectType.LinkedElement (mirrors ClashPickEventHandler).
                     var ot = InLinks ? ObjectType.LinkedElement : ObjectType.Element;
                     string prompt = InLinks
-                        ? "Pick the linked slab/floor to dimension to."
-                        : "Pick the slab/floor to dimension to.";
+                        ? AppStrings.T("clash.finder.pick.slabPromptLinked")
+                        : AppStrings.T("clash.finder.pick.slabPromptHost");
                     var r = uidoc.Selection.PickObject(ot,
                         new SlabScopePicker.FloorFilter(uidoc.Document), prompt);
                     scope = SlabScopePicker.ResolveScope(uidoc.Document, r, out name);
@@ -56,7 +56,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             catch (Exception ex)
             {
                 DiagnosticsLog.Error("SlabPickEventHandler: pick", ex);
-                PushLog?.Invoke($"Slab pick failed: {ex.Message}", "fail");
+                PushLog?.Invoke(AppStrings.T("clash.finder.pick.slabFailed", ex.Message), "fail");
             }
 
             OnPicked?.Invoke(scope, name);

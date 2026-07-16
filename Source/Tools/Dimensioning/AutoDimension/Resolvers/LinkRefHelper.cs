@@ -42,7 +42,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
         private static string SafeName(RevitLinkInstance li)
         {
             try { return li.Name ?? li.Id.ToString(); }
-            catch { return "?"; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("LinkRefHelper: read link name", ex); return "?"; }
         }
     }
 }
