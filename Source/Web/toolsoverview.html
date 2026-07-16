@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tools Overview</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-ov"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script src="lib/toolsoverview.js"></script>
+<script>
+  var app = document.getElementById('app');
+  var ov = Lemoine.toolsOverview({ send: function (t, p) { Lemoine.send(t, p); } });
+  Lemoine.on('init', function (p) { ov.render(app, p); });
+
+  // Standalone demo (plain browser / headless screenshot - no C# bridge).
+  if (!Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search)) {
+    ov.render(app, {
+      title: 'Tools Overview', close: 'Close',
+      footerHint: 'A field guide to every tool and how they connect.',
+      runButton: 'Dummy run', fedByLabel: 'Fed by', feedsLabel: 'Feeds',
+      categories: [
+        { id: 'setup', name: 'Setup', glyph: '', intro: 'Get a model coordinated and ready to work.', tools: [
+          { name: 'Align Coordinates', glyph: '', blurb: 'Move host base points to a grid intersection, then coordinate links.',
+            fedBy: [], feeds: ['Upgrade Links'], example: 'Snap Tower A + B to shared grid A1.', hasDemo: true },
+          { name: 'Upgrade Links', glyph: '', blurb: 'Reload and re-path links, auditing display modes.',
+            fedBy: ['Align Coordinates'], feeds: ['Link Audit (report)'], example: '', hasDemo: false } ] },
+        { id: 'views', name: 'Views & Sheets', glyph: '', intro: 'Create, duplicate, and place views.', tools: [
+          { name: 'Place Dependent Views', glyph: '', blurb: 'Pack the dependents of a parent view onto one sheet each.',
+            fedBy: ['Views By Template'], feeds: ['Align Sheet Views'], example: 'One sheet per level plan.', hasDemo: true } ] }
+      ]
+    });
+  }
+</script>
+</body></html>

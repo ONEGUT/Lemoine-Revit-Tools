@@ -378,6 +378,44 @@ html, body { height:100%; }
 .l-la-field .v { font-size: var(--l-fs-sm); color: var(--l-text); text-align: right; word-break: break-word; }
 .l-la-field .v.warn { color: var(--l-red); }
 
+/* ═══ Tools Overview (lib/toolsoverview.js) ═══════════════════════════════════ */
+.l-ov { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh;
+        border: 1px solid var(--l-border); box-sizing: border-box;
+        background: var(--l-bg); color: var(--l-text); font-family: var(--l-ui-font); overflow: hidden; }
+.l-ov-tabs { display: flex; gap: 4px; padding: 8px 12px 0; background: var(--l-surface);
+             border-bottom: 1px solid var(--l-border); overflow-x: auto; }
+.l-ov-tab { display: flex; align-items: center; gap: 7px; padding: 7px 10px; cursor: pointer;
+            border: 1px solid var(--l-border); border-radius: var(--l-radius-md) var(--l-radius-md) 0 0;
+            background: var(--l-raised); color: var(--l-text-dim); white-space: nowrap; }
+.l-ov-tab .g { font-family: 'Segoe MDL2 Assets'; font-size: var(--l-fs-md); }
+.l-ov-tab .n { font-size: var(--l-fs-sm); }
+.l-ov-tab:hover:not(.active) { border-color: var(--l-border-mid); }
+.l-ov-tab.active { background: var(--l-bg); color: var(--l-text); margin-bottom: -1px; }
+.l-ov-tab.active .g { color: var(--l-accent); }
+.l-ov-tab.active .n { color: var(--l-text); font-weight: 600; }
+.l-ov-body { overflow-y: auto; padding: 14px 16px; }
+.l-ov-cattitle { font-size: var(--l-fs-xl); font-weight: 500; color: var(--l-text); margin-bottom: 3px; }
+.l-ov-intro { font-size: var(--l-fs-sm); color: var(--l-text-sub); margin-bottom: 12px; }
+.l-ov-card { border: 1px solid var(--l-border); background: var(--l-raised); border-radius: var(--l-radius-md);
+             padding: 11px; margin-bottom: 9px; }
+.l-ov-card.flash { border-color: var(--l-accent); }
+.l-ov-cardtop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.l-ov-cardleft { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.l-ov-icon { width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+             border: 1px solid var(--l-accent); background: var(--l-accent-dim); border-radius: 5px;
+             color: var(--l-accent); font-family: 'Segoe MDL2 Assets'; font-size: var(--l-fs-lg); }
+.l-ov-name { font-size: var(--l-fs-md); font-weight: 600; color: var(--l-text); }
+.l-ov-run { flex-shrink: 0; }
+.l-ov-blurb { font-size: var(--l-fs-sm); color: var(--l-text-sub); margin-bottom: 7px; }
+.l-ov-rel { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 3px; }
+.l-ov-rel .lbl { font-family: var(--l-mono-font); font-size: var(--l-fs-sm); color: var(--l-text-dim); margin-right: 2px; }
+.l-ov-chip { font-size: var(--l-fs-sm); padding: 2px 7px; border-radius: var(--l-radius-sm); border: 1px solid; }
+.l-ov-chip.feeds { color: var(--l-accent); background: var(--l-accent-dim); border-color: var(--l-accent); }
+.l-ov-chip.fedby { color: var(--l-green); background: var(--l-green-dim); border-color: var(--l-green); }
+.l-ov-chip.link { cursor: pointer; text-decoration: underline; }
+.l-ov-example { border-left: 2px solid var(--l-border); padding-left: 7px; margin-top: 7px;
+                font-family: var(--l-mono-font); font-size: var(--l-fs-sm); color: var(--l-text-dim); }
+
 /* ═══ Naming tab (lib/naming.js) ══════════════════════════════════════════════ */
 .l-nm-intro  { font-size: var(--l-fs-sm); color: var(--l-text-dim); font-style: italic; margin-bottom: 4px; }
 .l-nm-source { font-family: var(--l-mono-font); font-size: var(--l-fs-sm); color: var(--l-text-sub); margin-bottom: 16px; }
