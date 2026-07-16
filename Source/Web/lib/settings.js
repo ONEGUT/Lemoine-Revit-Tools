@@ -32,10 +32,51 @@
       root.appendChild(buildToolbar());
       root.appendChild(buildTabNav());
       var content = el('div', 'l-set-content');
-      if (state.active === 'general') buildGeneral(content);
-      else                            buildPlaceholder(content);
+      if (state.active === 'general')                          buildGeneral(content);
+      else if (state.tab && state.tab.id === state.active)     buildSpecTab(content);
+      else                                                     buildPlaceholder(content);
       root.appendChild(content);
       root.appendChild(buildFooter());
+    }
+
+    // ── Spec-driven tabs (WebInput rows built by WebSettings.BuildTab) ───────────
+    function buildSpecTab(content) {
+      var t = state.tab;
+      if (t.header) content.appendChild(el('div', 'l-set-header', t.header));
+      (t.rows || []).forEach(function (row) {
+        var node = buildField(row);
+        if (!node) return;
+        if (row.kind === 'settingsSection' || row.kind === 'settingsSep' || row.kind === 'hint') {
+          content.appendChild(node);                     // structural rows render bare
+        } else {
+          var w = el('div', 'l-set-row'); w.appendChild(node); content.appendChild(w);
+        }
+      });
+      if (t.note) content.appendChild(el('div', 'l-set-hint', t.note));
+    }
+
+    // Maps one spec row to a lemoine.js factory; every change auto-saves via a setField action.
+    function buildField(f) {
+      var ui = (window.Lemoine && window.Lemoine.ui) || {};
+      function change(value) { action('setField', { tabId: state.active, fieldId: f.id, value: value }); }
+      switch (f.kind) {
+        case 'settingsSection': return el('div', 'l-set-sub', f.text);
+        case 'settingsSep':     return el('div', 'l-set-hr');
+        case 'hint':            return el('div', 'l-set-hint', f.text);
+        case 'toggle':          return ui.toggle({ label: f.label, checked: f.checked, disabled: f.disabled, onChange: change }).el;
+        case 'textField':       return ui.textField({ label: f.label, value: f.value, placeholder: f.placeholder, onChange: change }).el;
+        case 'colorPicker':     return ui.colorPicker({ label: f.label, value: f.value, onChange: change }).el;
+        case 'stepper':         return labeledField(f.label, ui.stepper({ min: f.min, max: f.max, step: f.step, decimals: f.decimals, value: f.value, onChange: change }).el);
+        case 'singleSelect':    return labeledField(f.label, ui.singleSelect({ options: f.options, value: f.value, onChange: change }).el);
+        default:                return el('div', 'l-set-hint', 'Unknown field: ' + f.kind);
+      }
+    }
+
+    function labeledField(label, inner) {
+      var wrap = el('div', 'l-set-fieldwrap');
+      if (label) wrap.appendChild(el('div', 'l-set-fieldlabel', label));
+      wrap.appendChild(inner);
+      return wrap;
     }
 
     // ── Toolbar ──────────────────────────────────────────────────────────────

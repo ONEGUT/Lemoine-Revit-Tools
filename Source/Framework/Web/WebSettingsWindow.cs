@@ -136,6 +136,12 @@ namespace LemoineTools.Framework.Web
                     WebSettings.ApplyLanguage(Str(p, "culture"));
                     SendInit();
                     break;
+                case "setField":
+                    // A spec-tab field changed. The control keeps its own displayed value, so we
+                    // apply + save without re-sending init (that would steal focus mid-edit).
+                    WebSettings.SetField(_activeTab, Str(p, "fieldId"),
+                        p.TryGetValue("value", out var fieldVal) ? fieldVal : null);
+                    break;
                 case "openLog":    WebSettings.OpenLog(); break;
                 case "drag":       BeginNativeDrag(); break;
                 case "minimize":   WindowState = WindowState.Minimized; break;

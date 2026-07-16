@@ -95,19 +95,20 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | Tab | WPF source (lines) | Status | Shape |
 |-----|--------------------|--------|-------|
 | General | General.cs (394) | ✅ web | theme cards, size, language, diagnostics |
+| Dimensioning | Dimensions.cs (263) | ✅ web (spec) | field rows |
+| Setup | ToolGroups.cs (379) | ✅ web (spec) | field rows |
+| Ceilings | CeilingHeatmap group | ✅ web (spec) | colour + field rows |
+| Views | ScopeBox group | ✅ web (spec) | field rows |
+| Export | Bulk Export group | ✅ web (spec) | field rows |
+| Copy | Copy group | ✅ web (spec) | field rows |
 | Naming | Naming.cs (877) | ❌ | user-token CRUD + per-tool default patterns — **bespoke** |
 | Filters | Filters.cs (3620) | ❌ | AutoFilters trade editor + clash defs + colour ramps — **bespoke, largest** |
-| Dimensioning | Dimensions.cs (263) | ❌ | field rows — **spec-portable** |
-| Setup (ToolGroups) | ToolGroups.cs (379) | ❌ | field rows — **spec-portable** |
-| Ceilings (Heatmap) | CeilingHeatmap.cs (197) | ❌ | field rows — **spec-portable** |
-| Views (LinkViews) | LinkViews.cs (30) | ❌ | field rows — **spec-portable** |
-| Export | (in xaml.cs) | ❌ | field rows — **spec-portable** |
-| Copy | (in xaml.cs) | ❌ | field rows — **spec-portable** |
 
-**Proposed approach (see §5):** add a *settings-tab spec model* (a tab = a list of
-`WebInput` rows, reusing the step-flow factories) so the 6 field-row tabs batch-port
-cheaply; treat **Naming** and **Filters** as their own focused efforts because they need
-new bespoke web components.
+**Done:** a *settings-tab spec model* (`WebSettings.BuildTab` / `TabSpec`) renders each tab
+as an ordered list of `WebInput` rows via the shared lemoine.js factories, each auto-saving
+to the same tool settings singleton the WPF tab wrote to (same AppStrings keys, same value
+transforms). The 6 field-row tabs are ported; **Naming** and **Filters** remain bespoke
+follow-ups. ⏳ All spec tabs pending a Windows build + click-through verification.
 
 ---
 

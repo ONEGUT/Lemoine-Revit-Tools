@@ -357,6 +357,10 @@ html, body { height:100%; }
 .l-set-nav .tab:hover:not(.active) { border-color: var(--l-border-mid); }
 
 .l-set-content { overflow-y: auto; padding: 16px 20px; }
+/* Spec-driven settings tabs (rows built from WebInput specs) */
+.l-set-row { margin: 8px 0 10px; }
+.l-set-fieldwrap { display: flex; flex-direction: column; gap: 4px; }
+.l-set-fieldlabel { font-size: var(--l-fs-md); color: var(--l-text); }
 .l-set-header { font-size: var(--l-fs-xl); font-weight: 600; margin: 0 0 16px; }
 .l-set-sub { font-family: var(--l-mono-font); font-size: var(--l-fs-sm); color: var(--l-text-dim); margin: 0 0 8px; }
 .l-set-tag { font-family: var(--l-mono-font); font-size: var(--l-fs-sm); color: var(--l-text-dim); margin: 4px 0 8px; }
