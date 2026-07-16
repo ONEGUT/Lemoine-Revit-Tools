@@ -36,7 +36,7 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (System.Exception ex) { DiagnosticsLog.Swallowed("BulkRenameCommand: reuse open window", ex); _window = null; }
             }
 
             var uiApp = commandData.Application;

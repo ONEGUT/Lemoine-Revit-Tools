@@ -58,6 +58,8 @@
     "seqStart":       "Start",
     "seqIncrement":   "Increment",
     "seqPad":         "Pad digits",
+    "seqOrderSheets": "Numbered in current sheet-number order.",
+    "seqOrderViews":  "Numbered by view type, then view name.",
 
     "previewNone":    "No items selected.",
     "previewCounts":  "{0} change(s) · {1} collision(s) · {2} empty",
@@ -85,7 +87,7 @@
   },
 
   "log": {
-    "raising":     "Raising Revit external event…",
+    "raising":     "Starting rename…",
     "noDoc":       "No active Revit document.",
     "error":       "Error: {0}",
     "nonFatal":    "{0} non-fatal issue(s) recorded — see diagnostics log.",

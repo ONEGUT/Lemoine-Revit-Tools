@@ -17,6 +17,32 @@ Print View itself is out of scope (sibling tool, separate review).
 
 ---
 
+## Resolution (applied on this branch)
+
+All Confirmed, actionable findings below were fixed. Decisions taken:
+
+- **BulkExport-2-1** → option (a): the code now matches the note — NWC/IFC always
+  export from the Step 1 selection, even when print sets are checked. The
+  `nwcInPack`/`ifcInPack` skips are gone.
+- **BulkExport-4-3** → the temporary debug logger was removed entirely.
+- **BulkRename-7-1** → two-phase rename (temp values, then finals, in one
+  transaction). Shifts and swaps now work; the planner was rewritten so a
+  selected item's own value is no longer a false obstacle (this also fixes
+  **BulkRename-4-1**).
+
+Deferred by design (flagged for a separate decision, not fixed here):
+
+- **BulkExport-8-4** — externalizing result-strip nouns/chips is a project-wide
+  convention change across ~15 tools; out of scope for this fix set.
+- **BulkRename-8-1** — relocating the tool's namespace + string prefix touches
+  JSON key renames and every `AppStrings.T` call; best as its own change.
+- **BulkRename-2-1** — full reorder UI deferred; the minimum fix (a hint line
+  stating the numbering order) was applied.
+- **BulkRename-4-2 / BulkExport-4-1 / -4-4 / -5-1** carry Windows test scripts
+  (appendix) to confirm behaviour on a real Revit; the code fixes are in place.
+
+---
+
 ## Bulk Export
 
 ### Pass 1 — Inputs & validation
