@@ -25,8 +25,6 @@
     "fieldSheetName": "Sheet Name",
     "fieldSheetNumber":"Sheet Number",
     "fieldViewName":  "View Name",
-    "tokViewType":    "View Type",
-    "tokSeq":         "Sequence #",
 
     "modeFindReplace":  "Find & Replace",
     "modePrefixSuffix": "Add Prefix / Suffix",

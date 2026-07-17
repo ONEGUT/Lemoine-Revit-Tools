@@ -25,8 +25,6 @@
     "hintDetailing":   "Copies the view together with its view-specific annotations (dimensions, tags, detail lines).",
     "hintDependent":   "Creates a dependent view that shares the parent's crop region and stays linked to it.",
     "namePattern":     "NAME PATTERN",
-    "preview":         "PREVIEW",
-    "emptyName":       "(empty name)",
     "exView":          "Floor Plan 01",
     "exType":          "Floor Plan"
   },
@@ -49,7 +47,6 @@
     "error":      "Error: {0}",
     "nonFatal":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "nothingToDo":"Nothing to do — no valid views selected.",
-    "skipEmpty":  "Skip '{0}' — empty name.",                   // {0} = view name
     "skipExists": "Skip '{0}' (name already exists).",
     "skipMode":   "Skip '{0}' — cannot {1}.",                   // {0}=view {1}=mode (lowercased)
     "created":    "Created '{0}'",

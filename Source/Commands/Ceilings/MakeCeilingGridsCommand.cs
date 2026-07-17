@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Ceilings;
 
 namespace LemoineTools.Commands
@@ -74,6 +75,44 @@ namespace LemoineTools.Commands
                     availableDocs);
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("makeCeilingGrids", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    var availableDocs = new List<MakeCeilingGridsViewModel.DocEntry>
+                    {
+                        new MakeCeilingGridsViewModel.DocEntry
+                        {
+                            Label      = "(Host document)",
+                            IsHost     = true,
+                            LinkInstId = ElementId.InvalidElementId,
+                        }
+                    };
+                    var seenDocIds = new System.Collections.Generic.HashSet<string>
+                        { doc.PathName ?? doc.Title };
+                    foreach (var li in new FilteredElementCollector(doc)
+                        .OfClass(typeof(RevitLinkInstance))
+                        .Cast<RevitLinkInstance>()
+                        .Where(l => l.GetLinkDocument() != null))
+                    {
+                        var ld = li.GetLinkDocument();
+                        string key = ld.PathName ?? ld.Title;
+                        if (!seenDocIds.Add(key)) continue;
+                        availableDocs.Add(new MakeCeilingGridsViewModel.DocEntry
+                        {
+                            Label      = ld.Title ?? li.Name,
+                            IsHost     = false,
+                            LinkInstId = li.Id,
+                        });
+                    }
+                    return new MakeCeilingGridsWebTool(
+                        App.MakeCeilingGridsPhase1Handler!, App.MakeCeilingGridsPhase1Event!,
+                        App.MakeCeilingGridsRunHandler!,    App.MakeCeilingGridsRunEvent!,
+                        availableDocs);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready          = new ManualResetEventSlim(false);

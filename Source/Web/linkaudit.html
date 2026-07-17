@@ -1,0 +1,96 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link Audit</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-report"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script>
+  var app = document.getElementById('app');
+  function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
+  function action(a) { Lemoine.send('action', { action: a }); }
+
+  function winBtn(glyph, act, title) {
+    var b = el('button', 'win-btn', glyph); b.title = title;
+    b.addEventListener('click', function () { action(act); });
+    return b;
+  }
+
+  function render(p) {
+    app.innerHTML = '';
+
+    // Top bar (borderless window chrome: drag from the title, min/max/close buttons)
+    var bar = el('div', 'l-set-toolbar');
+    var title = el('div', 'title', p.title || 'Link Audit');
+    title.addEventListener('mousedown', function (e) { if (e.button === 0) action('drag'); });
+    bar.appendChild(title);
+    var tools = el('div', 'tools');
+    tools.appendChild(winBtn('\u2013', 'minimize', 'Minimize'));
+    tools.appendChild(winBtn('\u25A1', 'maximize', 'Maximize'));
+    tools.appendChild(winBtn('\u00d7', 'close', 'Close'));
+    bar.appendChild(tools);
+    app.appendChild(bar);
+
+    // Report body
+    var content = el('div', 'l-report-content');
+    if (p.empty) {
+      content.appendChild(el('div', 'l-la-empty', p.empty));
+    } else {
+      if (p.summary) content.appendChild(el('div', 'l-la-summary', p.summary));
+      (p.rows || []).forEach(function (r) {
+        var card = el('div', 'l-la-card');
+        card.appendChild(el('div', 'l-la-cardhead' + (r.warn ? ' warn' : ''), r.name));
+        (r.fields || []).forEach(function (f) {
+          var row = el('div', 'l-la-field');
+          row.appendChild(el('span', 'k', f.label));
+          row.appendChild(el('span', 'v' + (f.warn ? ' warn' : ''), f.value));
+          card.appendChild(row);
+        });
+        content.appendChild(card);
+      });
+    }
+    app.appendChild(content);
+
+    // Footer: hint + Close (nothing to run)
+    var footer = el('div', 'l-set-footer');
+    footer.appendChild(el('div', 'build', p.footerHint || ''));
+    var close = el('button', 'l-btn', p.close || 'Close');
+    close.addEventListener('click', function () { action('close'); });
+    footer.appendChild(close);
+    app.appendChild(footer);
+  }
+
+  Lemoine.on('init', render);
+
+  // Standalone demo (plain browser / headless screenshot - no C# bridge).
+  if (!Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search)) {
+    render({
+      title: 'Link Audit', close: 'Close',
+      footerHint: 'Links not set to "By Host View" cannot be overridden by host view filters.',
+      summary: '3 links \u00b7 1 flagged',
+      rows: [
+        { name: 'Tower-A-Structural.rvt', warn: false, fields: [
+          { label: 'Status', value: 'Loaded', warn: false },
+          { label: 'Positioning', value: 'Origin to Origin', warn: false },
+          { label: 'Display', value: 'By Host View', warn: false },
+          { label: 'Pinned', value: 'Yes', warn: false },
+          { label: 'Workset', value: 'Shared Levels and Grids', warn: false },
+          { label: 'Attachment', value: 'Overlay', warn: false },
+          { label: 'Last saved', value: '2026-07-14 16:02', warn: false } ] },
+        { name: 'Tower-A-MEP.rvt', warn: true, fields: [
+          { label: 'Status', value: 'Loaded', warn: false },
+          { label: 'Positioning', value: 'Shared', warn: false },
+          { label: 'Display', value: 'Custom', warn: true },
+          { label: 'Pinned', value: 'No', warn: false },
+          { label: 'Workset', value: '\u2014', warn: false },
+          { label: 'Attachment', value: 'Attachment', warn: false },
+          { label: 'Last saved', value: 'n/a (cloud)', warn: false } ] }
+      ]
+    });
+  }
+</script>
+</body></html>

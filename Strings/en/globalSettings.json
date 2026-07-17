@@ -3,6 +3,10 @@
 // tab's content partial. NOTE: tab ids, the "⚙"/"×" glyphs, theme/size enum tokens, and
 // any persisted combo VALUES stay in code; only the visible labels/prose live here.
 {
+  // Web (WebView2) settings surface — General tab is migrated; other tabs are placeholders.
+  "web": {
+    "notMigrated": "These settings are managed in the classic settings window for now."
+  },
   "window": {
     "automationName": "Manage Settings",
     "title": "Settings",
@@ -11,6 +15,7 @@
   },
   "nav": {
     "general": "General",
+    "naming": "Naming",
     "setup": "Setup",
     "filters": "Filters",
     "ceilings": "Ceilings",

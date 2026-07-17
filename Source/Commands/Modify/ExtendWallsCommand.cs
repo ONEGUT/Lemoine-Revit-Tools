@@ -54,6 +54,29 @@ namespace LemoineTools.Commands
                 var vm    = new ExtendWallsViewModel(App.ExtendWallsHandler!, App.ExtendWallsEvent!, processableLevels);
                 return vm;
             }
+            if (LemoineTools.Framework.Web.WebToolLauncher.Enabled)
+            {
+                LemoineTools.Framework.Web.WebToolLauncher.Open("extendWalls", () =>
+                {
+                        Document doc = uiApp.ActiveUIDocument.Document;
+
+                        // Collect levels that have another level above them (processable)
+                        var allLevels = new FilteredElementCollector(doc)
+                            .OfClass(typeof(Level))
+                            .Cast<Level>()
+                            .OrderBy(l => l.Elevation)
+                            .ToList();
+
+                        var processableLevels = allLevels
+                            .Where(l => allLevels.Any(other => other.Elevation > l.Elevation + 0.001))
+                            .ToList();
+
+                        var vm    = new LemoineTools.Tools.ModifyElements.ExtendWallsWebTool(App.ExtendWallsHandler!, App.ExtendWallsEvent!, processableLevels);
+                        return vm;
+                });
+                return Result.Succeeded;
+            }
+
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);
             StepFlowWindow? win = null;

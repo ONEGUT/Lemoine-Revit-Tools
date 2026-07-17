@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -61,6 +62,33 @@ namespace LemoineTools.Commands
                     App.UpgradeLinksScanHandler, App.UpgradeLinksScanEvent,
                     App.UpgradeLinksRunHandler,  App.UpgradeLinksRunEvent,
                     hostFolder, hostIsCloud);
+            }
+
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("upgradeLinks", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument?.Document;
+
+                    string? hostFolder  = null;
+                    bool    hostIsCloud = false;
+                    try
+                    {
+                        if (doc != null)
+                        {
+                            hostIsCloud = doc.IsModelInCloud;
+                            if (!hostIsCloud && !string.IsNullOrEmpty(doc.PathName))
+                                hostFolder = Path.GetDirectoryName(doc.PathName);
+                        }
+                    }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("UpgradeLinksCommand: read host folder", ex); }
+
+                    return new UpgradeLinksWebTool(
+                        App.UpgradeLinksScanHandler, App.UpgradeLinksScanEvent,
+                        App.UpgradeLinksRunHandler,  App.UpgradeLinksRunEvent,
+                        hostFolder, hostIsCloud);
+                });
+                return Result.Succeeded;
             }
 
             var vm = BuildTool();

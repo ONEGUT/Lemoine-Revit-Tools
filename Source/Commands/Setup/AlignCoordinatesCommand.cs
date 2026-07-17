@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -40,6 +41,16 @@ namespace LemoineTools.Commands
                 var doc  = uiApp.ActiveUIDocument?.Document;
                 var data = CollectData(doc);
                 return new AlignCoordinatesViewModel(App.AlignCoordinatesRunHandler, App.AlignCoordinatesRunEvent, data);
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("alignCoordinates", () =>
+                {
+                    var doc  = uiApp.ActiveUIDocument.Document;
+                    var data = CollectData(doc);
+                    return new AlignCoordinatesWebTool(App.AlignCoordinatesRunHandler, App.AlignCoordinatesRunEvent, data);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

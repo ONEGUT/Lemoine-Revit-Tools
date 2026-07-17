@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 using LemoineTools.Tools.ScopeBoxes;
 
 using WpfGrid       = System.Windows.Controls.Grid;
@@ -1248,9 +1249,12 @@ namespace LemoineTools.Framework
         }
 
         // ── Bulk rename overlay ───────────────────────────────────────────────
-        private static readonly string[] RenameTokens =
+        private const string RenameToolId         = "scopeBoxes.managerRename";
+        private const string RenameDefaultPattern  = "{CurrentName}";
+
+        private static readonly TokenDefinition[] RenameComputedTokens =
         {
-            "None", "Current Name", "Number", "Custom",
+            new TokenDefinition("Number", AppStrings.T("naming.computed.scopeBoxManagerRename.number.label"), TokenOrigin.Computed, TokenSubject.Target, TokenEntity.Any),
         };
 
         private void ShowRenameOverlay()
@@ -1268,7 +1272,7 @@ namespace LemoineTools.Framework
             var host = (DockPanel)card.Child;
 
             var body = new StackPanel();
-            var state = new NamingSlotsState { Front = "Current Name", Center = "None", End = "None" };
+            string pattern = NamingPatternStore.Instance.GetOrDefault(RenameToolId, RenameDefaultPattern);
 
             var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
             preview.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
@@ -1278,16 +1282,11 @@ namespace LemoineTools.Framework
             List<string> NewNames() =>
                 targets.Select((b, i) =>
                 {
-                    var parts = state.ResolveParts(token =>
-                    {
-                        switch (token)
-                        {
-                            case "Current Name": return b.Name;
-                            case "Number":       return (i + 1).ToString("00");
-                            default:             return "";
-                        }
-                    });
-                    return parts.Count == 0 ? b.Name : string.Join(" - ", parts);
+                    var ctx = new TokenContext();
+                    ctx.Computed["CurrentName"] = b.Name;
+                    ctx.Computed["Number"]      = (i + 1).ToString("00");
+                    string resolved = TokenResolver.Resolve(pattern, ctx);
+                    return TokenResolver.GuardDegenerate(resolved, ctx, b.Name, null);
                 }).ToList();
 
             void UpdatePreview()
@@ -1299,9 +1298,15 @@ namespace LemoineTools.Framework
                         names[0], names[1]);
             }
 
-            var slots = new NamingSlots(RenameTokens, state);
-            slots.Changed += UpdatePreview;
-            body.Children.Add(slots);
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.Any, hasSource: false, RenameComputedTokens);
+            var tokenInput = new TokenInput(tokens, RenameDefaultPattern) { Text = pattern };
+            tokenInput.TextChanged += (s, e) =>
+            {
+                pattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(RenameToolId, pattern);
+                UpdatePreview();
+            };
+            body.Children.Add(tokenInput);
             body.Children.Add(preview);
             UpdatePreview();
 

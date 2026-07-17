@@ -23,8 +23,6 @@
     "viewTemplates": "View templates",      // picker accessible name
     "noTemplates":   "No view templates found in this document.",
     "namePattern":   "NAME PATTERN",
-    "preview":       "PREVIEW",
-    "emptyName":     "(empty name)",
     "exView":        "Floor Plan 01",
     "exType":        "Floor Plan",
     "exTemplate":    "Coordination"
@@ -49,7 +47,6 @@
     "error":      "Error: {0}",
     "nonFatal":   "{0} non-fatal issue(s) recorded — see diagnostics log.",
     "nothingToDo":"Nothing to do — no valid views or templates selected.",
-    "skipEmpty":  "Skip '{0}' × '{1}' — empty name.",          // {0}=view {1}=template
     "skipExists": "Skip '{0}' (name already exists).",
     "skipNoDup":  "Skip '{0}' — view cannot be duplicated.",
     "created":    "Created '{0}'  ({1})",                       // {0}=name {1}=template

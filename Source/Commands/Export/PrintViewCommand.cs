@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.BulkExport;
 
 namespace LemoineTools.Commands
@@ -75,6 +76,35 @@ namespace LemoineTools.Commands
                 return new PrintViewViewModel(
                     App.PrintViewHandler!, App.PrintViewEvent!,
                     activeView.Id, displayName, isThreeD, dwgSetupNames);
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("printView", () =>
+                {
+                    var uidoc      = uiApp.ActiveUIDocument;
+                    var activeView = uidoc?.ActiveView;
+                    if (activeView == null || activeView.IsTemplate)
+                        throw new System.InvalidOperationException("No printable active view to reload.");
+
+                    string displayName = activeView is ViewSheet sheet
+                        ? $"{sheet.SheetNumber} — {sheet.Name}"
+                        : activeView.Name;
+
+                    bool isThreeD = activeView is View3D;
+
+                    var doc = uidoc!.Document;
+                    var dwgSetupNames = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ExportDWGSettings))
+                        .Cast<ExportDWGSettings>()
+                        .Select(setting => setting.Name)
+                        .OrderBy(n => n)
+                        .ToList();
+
+                    return new PrintViewWebTool(
+                        App.PrintViewHandler!, App.PrintViewEvent!,
+                        activeView.Id, displayName, isThreeD, dwgSetupNames);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
 

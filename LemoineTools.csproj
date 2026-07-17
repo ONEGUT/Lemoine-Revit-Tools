@@ -136,6 +136,46 @@
     </Reference>
   </ItemGroup>
 
+  <!--
+    WebView2 (used by the Developer-panel WebView2 Test harness).
+
+    The version is pinned in one property so the PackageReference and the loader-copy
+    step below can never drift apart. Pinned to an older stable close to what
+    Revit-era builds ship — Revit loads its own Microsoft.Web.WebView2 assemblies,
+    and a large version gap risks the CLR binding our code to Revit's copy with a
+    mismatched API surface. The harness's "Dump loaded WebView2 assemblies" probe
+    reports what Revit actually ships; adjust this pin from that finding if needed.
+  -->
+  <PropertyGroup>
+    <WebView2Version>1.0.2210.55</WebView2Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="$(WebView2Version)" />
+  </ItemGroup>
+
+  <!--
+    WebView2Loader.dll must sit NEXT TO LemoineTools.dll in the deploy folder.
+    The managed Microsoft.Web.WebView2.Core.dll P/Invokes into this native loader;
+    when it's missing, CoreWebView2 initialization fails SILENTLY (blank control,
+    no exception surfaced) — the known "builds fine but shows nothing" failure.
+    The NuGet package's own .targets does not reliably copy the native loader to
+    the output root for a class-library plugin (it can land only under
+    runtimes\win-x64\native\, which Revit's loader never probes), so copy it
+    explicitly. A missing source file is a loud build warning, not a silent skip.
+  -->
+  <Target Name="CopyWebView2Loader" AfterTargets="Build">
+    <PropertyGroup>
+      <_WV2LoaderSrc>$(NuGetPackageRoot)microsoft.web.webview2\$(WebView2Version)\runtimes\win-x64\native\WebView2Loader.dll</_WV2LoaderSrc>
+    </PropertyGroup>
+    <Warning Condition="!Exists('$(_WV2LoaderSrc)')"
+             Text="WebView2Loader.dll not found at $(_WV2LoaderSrc) — WebView2 init will fail silently in Revit. Check the NuGet restore." />
+    <Copy Condition="Exists('$(_WV2LoaderSrc)')"
+          SourceFiles="$(_WV2LoaderSrc)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
     <Content Include="LemoineTools.addin">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -150,6 +190,32 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- WebView2 HTML/CSS/JS assets. Loaded at runtime from a Web\ folder next to the DLL and
+       served to the control over a virtual host (WebAssets.MapVirtualHost). Authored under
+       Source\Web\ but must land at <DeployDir>\Web\ (root of the addins folder, not
+       <DeployDir>\Source\Web\).
+
+       An explicit <Copy> target is used instead of `None Update ... TargetPath`, because
+       %(RecursiveDir) is NOT reliably populated on default-glob items re-targeted via Update
+       (it was empty, so nothing landed under Web\ and every virtual-host navigation aborted).
+       Here the items come from THIS Include's own `**` wildcard, so %(RecursiveDir) correctly
+       carries the debug\ / lib\ sub-path and DestinationFiles re-roots each file under Web\.
+       This mirrors the proven CopyWebView2Loader target above.
+
+       Runs per year Configuration (each has its own OutputPath = that year's DeployDir), so
+       every year gets its own Web\ (rules R30/R31). Loose + SkipUnchangedFiles means a page can
+       be edited and re-tested with only a Revit restart, no rebuild. -->
+  <Target Name="CopyWebAssets" AfterTargets="Build">
+    <ItemGroup>
+      <_WebAsset Include="$(MSBuildThisFileDirectory)Source\Web\**\*" />
+    </ItemGroup>
+    <Warning Condition="'@(_WebAsset)' == ''"
+             Text="No files found under Source\Web\ — WebView2 pages will not deploy and navigation will fail." />
+    <Copy SourceFiles="@(_WebAsset)"
+          DestinationFiles="@(_WebAsset->'$(OutputPath)Web\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 
   <!-- Revit family embedded in the DLL, loaded at runtime by CeilingHeatmap -->
   <ItemGroup>

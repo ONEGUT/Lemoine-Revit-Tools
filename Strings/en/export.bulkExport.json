@@ -10,7 +10,6 @@
     "S4": "PDF Settings", "S5": "DWG Settings", "S6": "NWC Settings", "S7": "IFC Settings",
     "S8": "Output", "S9": "Review & Run"
   },
-  "words": { "sheet": "sheet", "view": "view" },
   "summaries": {
     "s1": "{0} {1} selected",
     "s2PrintSets": "{0} print set(s)", "s2Individual": "Individual export",
@@ -135,7 +134,6 @@
     "nwcFail":        "NWC failed — {0}: {1}",
     "ifcNot3d":       "IFC: Skipped {0} — not a 3D view.",
     "ifcOk":          "IFC: {0}.ifc",
-    "ifcFail":        "IFC failed — {0}: {1}",
-    "nameFallback":   "{0}: filename pattern '{1}' produced no usable name for '{2}' (its tokens were all empty for this {3}). Using '{4}' instead — check the pattern matches the export mode."
+    "ifcFail":        "IFC failed — {0}: {1}"
   }
 }

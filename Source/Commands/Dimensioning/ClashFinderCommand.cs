@@ -8,6 +8,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Commands
@@ -66,6 +67,27 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("clashFinder", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    var allViews = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View)).Cast<View>()
+                        .Where(v => !v.IsTemplate
+                                 && (v.ViewType == ViewType.FloorPlan
+                                  || v.ViewType == ViewType.CeilingPlan))
+                        .OrderBy(v => v.Name)
+                        .ToList();
+                    var definitions = ClashDefinitionsSettings.Instance.Definitions
+                        ?? new List<ClashDefinition>();
+                    return new ClashFinderWebTool(
+                        App.ClashFinderHandler, App.ClashFinderEvent, allViews, definitions,
+                        App.SlabPickHandler, App.SlabPickEvent,
+                        BrowserTreeCapture.Capture(doc));
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

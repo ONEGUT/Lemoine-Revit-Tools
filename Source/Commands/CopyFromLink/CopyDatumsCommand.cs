@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.CopyFromLink;
 
 namespace LemoineTools.Commands
@@ -43,6 +44,16 @@ namespace LemoineTools.Commands
                 var vm = new CopyDatumsViewModel(App.CopyDatumsRunHandler, App.CopyDatumsRunEvent, links);
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("copyDatums", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    var links = CollectDatumLinks(doc);
+                    return new CopyDatumsWebTool(App.CopyDatumsRunHandler, App.CopyDatumsRunEvent, links);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

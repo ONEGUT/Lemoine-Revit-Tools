@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Legend Creation</title>
+<link rel="stylesheet" href="lib/lemoine.css">
+</head>
+<body>
+<div id="app" class="l-lc"></div>
+
+<script src="lemoine-bridge.js"></script>
+<script src="lib/lemoine.js"></script>
+<script src="lib/legendcreator.js"></script>
+<script>
+  var app = document.getElementById('app');
+  var lc = Lemoine.legendCreator({ send: function (t, p) { Lemoine.send(t, p); } });
+  Lemoine.on('init', function (p) { lc.render(app, p); });
+
+  // Standalone demo (plain browser / headless screenshot - no C# bridge).
+  if (!Lemoine.hasBridge() || /(?:\?|&)demo\b/.test(location.search)) {
+    var labels = {
+      templates: 'Templates', addLegend: 'Add Legend', editLegendTip: 'Rename / delete',
+      preview: 'Preview', createLegend: 'Create Legend', updateLegend: 'Update Legend',
+      addGroup: 'Add New Group', toggleGroupVisTip: 'Show / hide group', addEntryTip: 'Add custom entry',
+      deleteGroupTip: 'Delete group', toggleEntryVisTip: 'Show / hide entry', deleteEntryTip: 'Remove entry',
+      sizing: 'Sizing', scale: 'Scale', swatchW: 'Swatch W', swatchH: 'Swatch H',
+      rowGap: 'Row Gap', colGap: 'Col Gap', swatchLabel: 'Swatch–Label',
+      textStyles: 'Text Styles', title: 'Title', subtitle: 'Subtitle', groupHeader: 'Group Header', label: 'Label',
+      palette: 'Palette', paletteAll: 'All', allTrades: 'All trades',
+      filtersHint: 'Filters — drag into a group', searchFilters: 'Search filters…'
+    };
+    var mkBlocks = function (list) {
+      return list.map(function (b, i) { return { id: 'b' + i + b[0], name: b[0], color: b[1], visible: true }; });
+    };
+    lc.render(app, {
+      title: 'Legend Creation', labels: labels, hasRevitView: true,
+      legends: [
+        { id: 'L1', name: 'SOD Legend', active: true },
+        { id: 'L2', name: 'Ceiling Heat Map', active: false },
+        { id: 'L3', name: '2-6 HM', active: false },
+        { id: 'L4', name: 'New Legend', active: false }
+      ],
+      rows: [
+        { groups: [{ id: 'G1', title: 'MECHANICAL PIPE', color: '#57b0e0', count: 5, collapsed: false, blocks: mkBlocks([
+          ['Chilled Water Return', '#f2a0c0'], ['Chilled Water Supply', '#a8c8f0'],
+          ['Condensate Drain (PVC)', '#5bc8d8'], ['Refrigerant Liquid', '#e8963c'], ['Refrigerant Suction', '#e8963c']]) }] },
+        { groups: [{ id: 'G2', title: 'PLUMBING', color: '#4f8fc4', count: 8, collapsed: false, blocks: mkBlocks([
+          ['Sanitary Waste', '#2e8b3e'], ['Sanitary Vent', '#8faa4b'], ['Grease Waste', '#3ecc30'],
+          ['Domestic Cold Water', '#57b0e0'], ['Domestic Hot Water', '#d94b40'], ['Natural Gas', '#f0c040'],
+          ['Storm Drain', '#c9a0e8'], ['Storm Drain Overflow', '#c98ab8']]) }] },
+        { groups: [{ id: 'G3', title: 'ELECTRICAL', color: '#e8d44d', count: 1, collapsed: false, blocks: mkBlocks([
+          ['Conduit', '#f5e642']]) }] }
+      ],
+      statusLine: '14 entries · 3 groups · 3 rows · 0 hidden',
+      sizing: {
+        scale: '1/4" = 1\'-0"', scaleOptions: ['1/8" = 1\'-0"', '1/4" = 1\'-0"', '1/2" = 1\'-0"'],
+        swatchW: 0.70, swatchH: 0.28, rowGap: 0.32, colGap: 0.40, swatchLabel: 0.15
+      },
+      textStyles: {
+        title: '1/4" Trebuchet MS', subtitle: '1/4" Trebuchet MS', groupHeader: '1/4" Trebuchet MS', label: '1/4" Trebuchet MS',
+        options: ['1/8" Trebuchet MS', '1/4" Trebuchet MS', '3/8" Trebuchet MS']
+      },
+      palette: {
+        tradeLabel: 'All trades',
+        chips: [
+          { key: 'T1|R1', name: 'Exhaust Air', tradeLabel: 'LSUSQ_A_MDUCT', color: '#9a6fa3' },
+          { key: 'T1|R2', name: 'Exhaust Air 2wg', tradeLabel: 'LSUSQ_A_MDUCT', color: '#9a6fa3' },
+          { key: 'T1|R3', name: 'Exhaust Air 2wg (combined)', tradeLabel: 'LSUSQ_A_MDUCT', color: '#9a6fa3' },
+          { key: 'T1|R4', name: 'Exhaust Air 3wg', tradeLabel: 'LSUSQ_A_MDUCT', color: '#9a6fa3' },
+          { key: 'T1|R5', name: 'Fire Dampers', tradeLabel: 'LSUSQ_A_MDUCT', color: '#d94b40' },
+          { key: 'T1|R6', name: 'Fire Dampers (copy)', tradeLabel: 'LSUSQ_A_MDUCT', color: '#d94b40' },
+          { key: 'T1|R7', name: 'Outside Air 2wg', tradeLabel: 'LSUSQ_A_MDUCT', color: '#e8963c' },
+          { key: 'T1|R8', name: 'Return Air', tradeLabel: 'LSUSQ_A_MDUCT', color: '#f2a9a2' },
+          { key: 'T1|R9', name: 'Return Air Duct', tradeLabel: 'LSUSQ_A_MDUCT', color: '#f2a9a2' }
+        ]
+      }
+    });
+  }
+</script>
+</body></html>

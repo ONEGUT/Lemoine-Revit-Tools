@@ -164,6 +164,31 @@ Always read the relevant source files before recommending or writing code. Never
 
 ---
 
+## WebView2 UI Migration
+
+The UI is migrating from WPF to WebView2-hosted HTML. **`plan-webview2-ui-migration.md`
+is the authoritative rules + phase plan** — read it before any WebView2/host/bridge/HTML-page
+work, and append verified Windows findings to its §5 log. The WebView2 Test harness
+(Developer ribbon panel; `Source/Tools/Debuggers/`) is the proving ground: WebView2 renders
+inside Revit tool windows, the JS↔C# bridge works, and HTML recreations of the house inputs
+match the WPF originals. The four silent-blank-control failure modes (unwritable default
+user-data folder, missing `WebView2Loader.dll`, navigating before `EnsureCoreWebView2Async`
+completes, version clash with Revit's own WebView2) are encoded as rules R1–R4 there — never
+regress them, and never create a `CoreWebView2Environment` outside the shared host layer.
+
+Porting rules (apply to any recreation of an existing surface, WPF→web or otherwise):
+
+- **Match the original by default; list deliberate deviations in chat for approval.** The user's
+  explicit instruction for the Auto Filters / Legend Creator ports: "build them as close as you
+  can to the original… if you see any [improvements] let me know what you change." Improvements
+  are welcome but must be called out as a numbered list, never slipped in silently.
+- **Never silently drop feature parity.** Any WPF feature deferred from a port must be listed
+  explicitly (in chat and in `web-migration-questions.md`) so the user can decide which get
+  built — when the batch-edit/merge and group-drag deferrals were surfaced, the immediate answer
+  was "one and two are important go ahead and build those."
+
+---
+
 ## WPF UI Tasks
 
 For any task that involves building, modifying, or debugging a WPF window or UserControl, invoke the `/revit-navisworks-ui` skill before writing any code. This applies even for small layout fixes.
@@ -179,6 +204,8 @@ The Edit tool cannot match C# string literals that contain `\uXXXX` escape seque
 The same failure applies to literal Private Use Area (PUA) characters already in source (e.g. Segoe MDL2 Assets glyphs stored directly as Unicode chars). Additionally, Segoe MDL2 `Text` fields can be silently empty strings `""` in source — not a corrupt escape sequence, just never written. Always verify Segoe MDL2 glyph fields with Python before assuming they render correctly. Use Python `str.replace()` for any edit that inserts or modifies a Segoe MDL2 glyph.
 
 When writing *new* code that needs a Segoe MDL2 glyph, prefer `char.ConvertFromUtf32(0xE74D)` (e.g. `Text = char.ConvertFromUtf32(0xE74D)` for the trash icon) over embedding the literal glyph. The codepoint is plain ASCII in source, so the Edit tool handles it normally and no Python pass is needed.
+
+**The same failure applies to the web JS under `Source/Web/`** — those files are ASCII-only (migration rule R13), so every glyph is stored as a `\uXXXX` escape, and the Edit tool's parser converts the escape before matching (the edit fails with "old_string and new_string are exactly the same" or a no-match). Any edit that touches a line carrying `\uXXXX` escapes — C# or JS — must go through a Python `str.replace()` script with count-checked `(old, new, expected_count)` tuples.
 
 ---
 
@@ -326,6 +353,7 @@ Discovered building **Align Coordinates** (move host points to a grid intersecti
 - **Numeric input:** `InlineStepper` is the house numeric field — a typeable centre plus ± buttons, `Decimals=0` for integers, clamped to `[MinValue, MaxValue]`, `ValueChanged` event. Use it for *every* numeric input; never a raw `TextBox` or the retired `LemoineNumberStepper`.
 - **Drag ghost / list reorder:** use `DragGhost` and `ListReorder` (see *WPF Drag Ghosts & Overlays*), never a bespoke Popup ghost or grip-handle reorder.
 - **View / sheet selection:** use `BrowserTreePicker` — it mirrors the source document's Project Browser tree (folder titles, nesting, ordering, dependents nested under their primary), is fed by `BrowserTreeCapture.Capture(doc)` captured on the Revit main thread and handed over via `SetTree`, exposes `SingleSelect` for one-pick, and fires `SelectionChanged` once at the end of `SetTree` (same contract as `MultiSelectTabs.SetGroups` — subscribe first). Never hand-roll a `MultiSelectTabs` + label→ElementId map for picking views/sheets. **Dependent-view selection contract:** a parent view's checkbox selects **only the parent**, never its dependents (the parent is an eligible leaf with the dependents nested as children, so its binary checkbox routes through `SetLeaf` — the parent id alone). To grab a parent's dependents, **right-click any row**: it selects **only the dependents** beneath it (descendant leaves), leaving the clicked node itself unchecked — additive to the current selection, and a no-op in `SingleSelect` mode.
+- **Naming patterns:** use `TokenInput` (`Source/Framework/Controls/Input/TokenInput.cs`) for *every* tool-generated or rewritten name — never a hand-rolled `{Token}` chip row or the retired Front/Center/End `NamingSlots` control (deleted; do not reintroduce). Build its chip list with `NamingTokenRegistry.TokensFor(entity, hasSource, extraComputed)` (`Source/Framework/Naming/`) so a picker only ever offers tokens valid for its context, and resolve patterns with `TokenResolver.Resolve` / `TokenResolver.GuardDegenerate` — never sequential `string.Replace`. A tool's own per-run values (e.g. `LevelName`, `Trade`) are declared as `TokenOrigin.Computed` `TokenDefinition`s beside the ViewModel and passed as `extraComputed`; they are not global registry entries. User-defined tokens (bound to a Revit parameter, GUID-first) are managed on the Global Settings **Naming** tab and persist machine-wide via `UserTokenStore`; each tool's last-used pattern persists via `NamingPatternStore` (Bulk Export keeps its own pre-existing settings file). See `LEMOINE_UI.md` §8.1 "TokenInput" for the full contract.
 
 ---
 

@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebView2 smoke test</title>
+<style>
+  /* Dark fallback so the page renders standalone in a plain browser (R14/R38);
+     C# overrides every --l-* live from the active theme after navigation (R12). */
+  :root{
+    --l-bg:#1a1a1a; --l-raised:#2a2a2a; --l-border:#686868; --l-text:#d4d4d4;
+    --l-text-sub:#8c8c8c; --l-text-dim:#919191; --l-green:#4ec994;
+    --l-accent:#4f8fc4; --l-accent-dim:#1b2d3e;
+    --l-ui-font:'Segoe UI',sans-serif; --l-mono-font:'Consolas',monospace;
+    --l-fs-sm:10.5px; --l-fs-md:12px; --l-fs-xl:15px; --l-radius-card:10px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; }
+  body { background:var(--l-bg); color:var(--l-text); font-family:var(--l-ui-font); font-size:var(--l-fs-md);
+         display:flex; align-items:center; justify-content:center; padding:14px; }
+  .card { background:var(--l-raised); border:1px solid var(--l-border); border-radius:var(--l-radius-card);
+          padding:22px 26px; text-align:center; max-width:340px; }
+  .ok { color:var(--l-green); font-size:30px; line-height:1; margin-bottom:10px; }
+  h1 { font-size:var(--l-fs-xl); font-weight:600; margin-bottom:8px; }
+  p { color:var(--l-text-sub); margin-bottom:6px; }
+  .dim { color:var(--l-text-dim); font-family:var(--l-mono-font); font-size:var(--l-fs-sm);
+         word-break:break-all; margin-bottom:14px; }
+  button { background:var(--l-accent-dim); color:var(--l-accent); border:1px solid var(--l-accent);
+           font-family:var(--l-ui-font); font-size:var(--l-fs-md); padding:6px 14px; cursor:pointer; }
+  button:hover { background:var(--l-accent); color:var(--l-bg); }
+  .sent { color:var(--l-green); font-size:var(--l-fs-sm); margin-top:8px; visibility:hidden; }
+</style></head>
+<body>
+<div class="card">
+  <div class="ok">&#10003;</div>
+  <h1>WebView2 renders</h1>
+  <p>If you can read this, environment creation, control initialization, navigation and rendering all work.</p>
+  <p class="dim" id="ua"></p>
+  <button id="ping">Post test message to C#</button>
+  <div class="sent" id="sent">message posted &#10003;</div>
+</div>
+<script src="../lemoine-bridge.js"></script>
+<script>
+  document.getElementById('ua').textContent = navigator.userAgent;
+  document.getElementById('ping').addEventListener('click', function () {
+    Lemoine.send('log', { text: 'smoke: ping from JS at ' + new Date().toISOString() });
+    var sent = document.getElementById('sent');
+    sent.textContent = Lemoine.hasBridge() ? 'message posted \u2713' : 'no bridge - chrome.webview missing';
+    sent.style.visibility = 'visible';
+  });
+  Lemoine.send('log', { text: 'smoke: page loaded, UA = ' + navigator.userAgent });
+</script>
+</body></html>

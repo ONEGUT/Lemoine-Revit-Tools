@@ -5,7 +5,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.BulkExport
 {
@@ -655,55 +655,21 @@ namespace LemoineTools.Tools.BulkExport
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        // Tokens are resolved against whatever is being exported. A ViewSheet exposes the
-        // sheet parameters; any other View has none of them, so its name/type drive the
-        // tokens and the sheet tokens fall back to the view name (so a stray sheet pattern
-        // still yields a non-empty name instead of silently producing "-").
-        private static Dictionary<string, string> BuildTokens(Element? element, string projNumber, string projName)
-        {
-            var tokens = new Dictionary<string, string>
-            {
-                ["ProjectNumber"] = projNumber,
-                ["ProjectName"]   = projName,
-                ["Year"]          = DateTime.Now.Year.ToString(),
-                ["Month"]         = DateTime.Now.Month.ToString("D2"),
-                ["Day"]           = DateTime.Now.Day.ToString("D2"),
-            };
-
-            if (element is ViewSheet sheet)
-            {
-                tokens["SheetNumber"] = sheet.SheetNumber ?? "";
-                tokens["SheetName"]   = sheet.Name ?? "";
-                tokens["Revision"]    = element.get_Parameter(BuiltInParameter.SHEET_CURRENT_REVISION)?.AsString() ?? "";
-                tokens["IssueDate"]   = element.get_Parameter(BuiltInParameter.SHEET_ISSUE_DATE)?.AsString()       ?? "";
-                tokens["ViewName"]    = sheet.Name ?? "";
-                tokens["ViewType"]    = "Sheet";
-            }
-            else if (element is View view)
-            {
-                string viewName = view.Name ?? "";
-                tokens["ViewName"]    = viewName;
-                tokens["ViewType"]    = view.ViewType.ToString();
-                tokens["SheetName"]   = viewName;   // fallback so a sheet pattern still resolves
-                tokens["SheetNumber"] = "";
-                tokens["Revision"]    = "";
-                tokens["IssueDate"]   = "";
-            }
-
-            return tokens;
-        }
-
-        // Resolves the export filename and never silently emits a junk name. If the pattern
-        // resolves to something with no usable character (e.g. an all-empty-token pattern
-        // collapsing to "-"), the failure is reported to the run log AND diagnostics.log,
-        // and a deterministic fallback (element name, else element id) is used instead.
-        // The final name is uniquified per format so two items can't overwrite one file.
+        // Resolves the export filename through the shared TokenResolver and never silently emits
+        // a junk name. If the pattern resolves to something with no usable character (e.g. a stale
+        // sheet-token pattern applied in Views mode collapsing to "-"), the failure is reported to
+        // the run log AND diagnostics.log and a deterministic fallback (element name, else id) is
+        // used. The final name is uniquified per format so two items can't overwrite one file.
         private string ResolveExportName(Element? element, string projNumber, string projName,
                                          string fmt, Action<string, string> pushLog)
         {
-            var    tokens   = BuildTokens(element, projNumber, projName);
-            string resolved = TokenInput.Resolve(FilenamePattern, tokens);
+            var ctx = new TokenContext { Target = element };
+            ctx.Computed["ProjectNumber"] = projNumber;
+            ctx.Computed["ProjectName"]   = projName;
+            if (element is View view && !(element is ViewSheet))
+                ctx.Computed["ViewType"] = view.ViewType.ToString();
 
+            string resolved = TokenResolver.Resolve(FilenamePattern, ctx, msg => pushLog(msg, "warn"));
             if (resolved.Any(char.IsLetterOrDigit))
                 return MakeUniqueName(fmt, SanitizeFilename(resolved), pushLog);
 

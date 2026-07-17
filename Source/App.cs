@@ -169,6 +169,10 @@ namespace LemoineTools
         internal static ExtendWallsEventHandler?           ExtendWallsHandler           { get; private set; }
         internal static ExternalEvent?                     ExtendWallsEvent             { get; private set; }
 
+        // Developer / WebView2 pilot (Phase 2b) — the first IWebTool run through WebStepFlowWindow.
+        internal static LemoineTools.Tools.Debuggers.WebPilotEventHandler? WebPilotHandler { get; private set; }
+        internal static ExternalEvent?                                     WebPilotEvent   { get; private set; }
+
         // Global settings window — singleton, stays open across tool windows
         internal static GlobalSettingsWindow? GlobalSettings { get; set; }
 
@@ -309,6 +313,10 @@ namespace LemoineTools
             SplitByReferencePlaneEvent   = ExternalEvent.Create(SplitByReferencePlaneHandler);
             ExtendWallsHandler           = new ExtendWallsEventHandler();
             ExtendWallsEvent             = ExternalEvent.Create(ExtendWallsHandler);
+
+            // Developer / WebView2 pilot (Phase 2b)
+            WebPilotHandler              = new LemoineTools.Tools.Debuggers.WebPilotEventHandler();
+            WebPilotEvent                = ExternalEvent.Create(WebPilotHandler);
 
             try { application.CreateRibbonTab("Lemoine Tools"); } catch (Exception __lex) { DiagnosticsLog.Swallowed("App: create ribbon tab", __lex); }
             var dll = Assembly.GetExecutingAssembly().Location;
@@ -610,10 +618,42 @@ namespace LemoineTools
                 L.T("ribbon.buttons.overview.tip"),
                 char.ConvertFromUtf32(0xE946)));  // Info
 
-            // Developer panel: created on demand for future debug harnesses (see
-            // CLAUDE.md "Crashes & Large Ambiguous Issues"). None are active right now —
-            // the Scope Box Probe that lived here has been removed (its findings are
-            // captured in CLAUDE.md and in ScopeBoxCreatorRunHandler's comments).
+            // ── Developer ─────────────────────────────────────────────────────
+            // Debug harnesses only (see CLAUDE.md "Crashes & Large Ambiguous Issues").
+            // Currently hosts the WebView2 Test harness — remove or repoint the button
+            // once the WebView2 evaluation is done. Labels are hardcoded deliberately:
+            // developer-only UI is exempt from AppStrings externalization.
+            var devPanel = application.CreateRibbonPanel("Lemoine Tools", "Developer");
+
+            devPanel.AddItem(Btn(
+                "LT_WebView2Test", "WebView2\nTest", "WebView2TestCommand",
+                "Debug harness: probe WebView2 hosting inside Revit (runtime, loader, init, navigation) " +
+                "and exercise HTML recreations of common inputs over the JS bridge.",
+                char.ConvertFromUtf32(0xE774)));  // Globe
+
+            devPanel.AddItem(Btn(
+                "LT_WebPilot", "Web\nPilot", "WebPilotCommand",
+                "Phase 2b pilot: the first IWebTool running end-to-end through the HTML StepFlow " +
+                "window (pick a category, count elements read-only).",
+                char.ConvertFromUtf32(0xE71D)));  // AllApps
+
+            devPanel.AddItem(Btn(
+                "LT_WebPushCoords", "Push Coords\n(Web)", "WebPushCoordinatesCommand",
+                "Phase 3 wave-1: Push Coordinates to Links running in the HTML StepFlow window " +
+                "(parallel to the WPF version while it is verified).",
+                char.ConvertFromUtf32(0xE896)));  // Download / Upgrade
+
+            devPanel.AddItem(Btn(
+                "LT_WebDeleteFilters", "Delete Filters\n(Web)", "WebDeleteFiltersCommand",
+                "Phase 3 wave-1: Delete Filters from Project in the HTML StepFlow window " +
+                "(parallel to the WPF version while it is verified).",
+                char.ConvertFromUtf32(0xE74D)));  // Trash
+
+            devPanel.AddItem(Btn(
+                "LT_ToggleWebUi", "Web UI\nOn/Off", "ToggleWebUiCommand",
+                "Toggle the machine-wide Web UI flag: ON = every migrated tool opens its WebView2 " +
+                "window; OFF (default) = the WPF windows. The parallel-verify switch for the migration.",
+                char.ConvertFromUtf32(0xE8AB)));  // Switch
 
             return Result.Succeeded;
         }

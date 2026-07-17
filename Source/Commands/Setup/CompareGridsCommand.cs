@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Setup;
 
 namespace LemoineTools.Commands
@@ -40,6 +41,16 @@ namespace LemoineTools.Commands
                 var doc  = uiApp.ActiveUIDocument.Document;
                 var data = CollectData(doc);
                 return new CompareGridsViewModel(App.CompareGridsRunHandler, App.CompareGridsRunEvent, data);
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("compareGrids", () =>
+                {
+                    var doc  = uiApp.ActiveUIDocument.Document;
+                    var data = CollectData(doc);
+                    return new CompareGridsWebTool(App.CompareGridsRunHandler, App.CompareGridsRunEvent, data);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

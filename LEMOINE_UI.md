@@ -585,6 +585,42 @@ Inline text that flips to an edit TextBox on click.
 
 Single or range date picker. Mode set via `DateOpts.Mode`.
 
+#### TokenInput
+**File:** `Controls/Input/TokenInput.cs` (code-behind only, no XAML)
+
+The one naming-pattern editor shared by every tool that generates or rewrites names
+(Bulk Export, Bulk Rename, Place Dependent Views, the Views-by-* family, Bulk Views by
+Level, Scope Box Creator/Manager, Replicate Dependent Views, Explode Views by Trade).
+Replaces the retired Front/Center/End `NamingSlots` control — see `Framework/Naming/`.
+
+```csharp
+var tokens = NamingTokenRegistry.TokensFor(TokenEntity.Sheet, hasSource: true);
+var input  = new TokenInput(tokens, defaultPattern: "{SheetNumber}-{SheetName}")
+{
+    Text = currentPattern,
+};
+input.SetPreview(pattern =>
+{
+    var ctx = new TokenContext { Doc = doc, Target = sampleElement };
+    return TokenResolver.Resolve(pattern, ctx);
+});
+input.TextChanged += (s, e) => currentPattern = input.Text;
+```
+
+- Chips render grouped by subject (This item / Source / Project / Date & Counter / Your
+  tokens) from the `TokenDefinition` list the caller passes in — always build that list
+  with `NamingTokenRegistry.TokensFor(entity, hasSource, extraComputed)` so a picker only
+  ever offers tokens valid for its context; never hand-roll a token vocabulary.
+  `extraComputed` is the tool's own per-run values (e.g. `LevelName`, `Trade`) declared as
+  `TokenOrigin.Computed` `TokenDefinition`s beside the ViewModel.
+  `SetPreview` is optional — a tool with a richer bespoke preview (e.g. Bulk Export's
+  filename + extension line, Place Dependent Views' `number | name` pair) builds its own
+  and calls `TokenResolver.Resolve` directly instead.
+  A reset-to-default button appears automatically once the text differs from
+  `defaultPattern`. Call `RefreshPreview()` when state outside the box changes (e.g. a
+  different sample element gets selected on another step) — `TextChanged` alone only
+  covers edits to the box itself.
+
 ### 8.2 Color controls
 
 #### ColorPickerWindow / ColorPickerPanel
@@ -860,6 +896,13 @@ Source/
 │   ├── BrushHelper.cs                  Brush utility helpers
 │   ├── Templates/
 │   │   └── TemplateStore.cs     Template storage/retrieval
+│   ├── Naming/                          Naming-token system (see below)
+│   │   ├── TokenModel.cs               TokenDefinition, TokenEntity/Subject/Origin
+│   │   ├── NamingTokenRegistry.cs      Built-in tokens + per-picker TokensFor() query
+│   │   ├── UserTokenStore.cs           User-defined tokens (global XML, GUID-first param binding)
+│   │   ├── TokenContext.cs / TokenResolver.cs   Single resolution engine + degenerate-name guard
+│   │   ├── NamingPatternStore.cs       Per-tool last-used pattern (global XML)
+│   │   └── ParameterCatalog.cs         Main-thread-only parameter capture for the settings page
 │   └── Controls/
 │       ├── Color/                      Color picker controls
 │       ├── Input/                      SingleSelect, ToggleSwitches,

@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.BulkExport;
 
 namespace LemoineTools.Commands
@@ -87,6 +88,44 @@ namespace LemoineTools.Commands
                     dwgSetupNames, allSheets, allViews, browserTree, printSets);
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("bulkExport", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+
+                    var allSheets = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ViewSheet))
+                        .Cast<ViewSheet>()
+                        .Where(s => !s.IsTemplate)
+                        .OrderBy(s => s.SheetNumber)
+                        .ToList();
+
+                    var allViews = new FilteredElementCollector(doc)
+                        .OfClass(typeof(View))
+                        .Cast<View>()
+                        .Where(v => !v.IsTemplate
+                                 && v.ViewType != ViewType.Schedule
+                                 && v.ViewType != ViewType.Legend)
+                        .OrderBy(v => v.Name)
+                        .ToList();
+
+                    var dwgSetupNames = new FilteredElementCollector(doc)
+                        .OfClass(typeof(ExportDWGSettings))
+                        .Cast<ExportDWGSettings>()
+                        .Select(x => x.Name)
+                        .OrderBy(n => n)
+                        .ToList();
+
+                    var browserTree = BrowserTreeCapture.Capture(doc);
+                    var printSets = LemoineTools.Tools.BulkExport.BulkExportPrintSetHandler.Collect(doc);
+
+                    return new BulkExportWebTool(
+                        App.BulkExportHandler!, App.BulkExportEvent!,
+                        dwgSetupNames, allSheets, allViews, browserTree, printSets);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

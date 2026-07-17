@@ -5,6 +5,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.AutoFilters;
 
 namespace LemoineTools.Commands
@@ -91,6 +92,35 @@ namespace LemoineTools.Commands
                     links,
                     App.AutoFiltersHandler,
                     App.AutoFiltersEvent);
+            }
+
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("discover", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+                    AutoFiltersSettings.CaptureFilterableCategories(doc);
+
+                    var links = new System.Collections.Generic.List<DiscoverViewModel.LinkEntry>
+                    {
+                        new DiscoverViewModel.LinkEntry(ElementId.InvalidElementId, "Host Model"),
+                    };
+                    foreach (RevitLinkInstance li in
+                        new FilteredElementCollector(doc)
+                            .OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>())
+                    {
+                        var ld = li.GetLinkDocument();
+                        if (ld == null) continue;
+                        string label = ld.Title ?? li.Name;
+                        if (!links.Any(x => x.Label == label))
+                            links.Add(new DiscoverViewModel.LinkEntry(li.Id, label));
+                    }
+
+                    return new DiscoverWebTool(
+                        App.DiscoverHandler!, App.DiscoverEvent!, links,
+                        App.AutoFiltersHandler, App.AutoFiltersEvent);
+                });
+                return;
             }
 
             var vm = BuildTool();

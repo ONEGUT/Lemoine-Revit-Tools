@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.ScopeBoxes;
 
 namespace LemoineTools.Commands
@@ -81,6 +82,50 @@ namespace LemoineTools.Commands
                     App.ScopeBoxCreatorScanHandler!, App.ScopeBoxCreatorScanEvent!,
                     App.ScopeBoxCreatorRunHandler!,  App.ScopeBoxCreatorRunEvent!,
                     availableDocs, scopeBoxes);
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("scopeBoxCreator", () =>
+                {
+                    var doc = uiApp.ActiveUIDocument.Document;
+
+                    var availableDocs = new List<ScopeBoxCreatorViewModel.DocEntry>
+                    {
+                        new ScopeBoxCreatorViewModel.DocEntry
+                        {
+                            Label      = "(Host document)",
+                            IsHost     = true,
+                            LinkInstId = ElementId.InvalidElementId,
+                        }
+                    };
+
+                    var seenDocIds = new HashSet<string> { doc.PathName ?? doc.Title };
+
+                    foreach (var li in new FilteredElementCollector(doc)
+                        .OfClass(typeof(RevitLinkInstance))
+                        .Cast<RevitLinkInstance>()
+                        .Where(l => l.GetLinkDocument() != null))
+                    {
+                        var ld = li.GetLinkDocument();
+                        string key = ld.PathName ?? ld.Title;
+                        if (!seenDocIds.Add(key)) continue;
+
+                        availableDocs.Add(new ScopeBoxCreatorViewModel.DocEntry
+                        {
+                            Label      = ld.Title ?? li.Name,
+                            IsHost     = false,
+                            LinkInstId = li.Id,
+                        });
+                    }
+
+                    var scopeBoxes = ScopeBoxCreatorScanHandler.CollectScopeBoxes(doc);
+
+                    return new ScopeBoxCreatorWebTool(
+                        App.ScopeBoxCreatorScanHandler!, App.ScopeBoxCreatorScanEvent!,
+                        App.ScopeBoxCreatorRunHandler!,  App.ScopeBoxCreatorRunEvent!,
+                        availableDocs, scopeBoxes);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

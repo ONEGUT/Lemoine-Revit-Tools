@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.AutoFilters;
 using LemoineTools.Tools.ExplodeViews;
 
@@ -77,6 +78,44 @@ namespace LemoineTools.Commands
                     eligibleViewIds, BrowserTreeCapture.Capture(doc), trades, viewNames);
 
                 return vm;
+            }
+            if (WebToolLauncher.Enabled)
+            {
+                WebToolLauncher.Open("explodeViewByTrade", () =>
+                {
+                    Document doc = uiApp.ActiveUIDocument.Document;
+
+                    var eligibleViewIds = new List<long>();
+                    var viewNames       = new Dictionary<long, string>();
+                    foreach (View3D v in new FilteredElementCollector(doc)
+                        .OfClass(typeof(View3D)).Cast<View3D>()
+                        .Where(v => !v.IsTemplate))
+                    {
+                        eligibleViewIds.Add(v.Id.Value);
+                        viewNames[v.Id.Value] = v.Name;
+                    }
+
+                    var existingFilterNames = new HashSet<string>(
+                        new FilteredElementCollector(doc)
+                            .OfClass(typeof(ParameterFilterElement)).Cast<ParameterFilterElement>()
+                            .Select(f => f.Name),
+                        System.StringComparer.OrdinalIgnoreCase);
+
+                    var trades = new List<(string Id, string Label, bool HasFilters)>();
+                    foreach (var trade in AutoFiltersSettings.Instance.Trades)
+                    {
+                        bool hasFilters = trade.Rules
+                            .Where(r => r.Enabled && AutoFiltersSettings.RuleProducesFilter(r))
+                            .Any(r => existingFilterNames.Contains(
+                                AutoFiltersSettings.MakeFilterName(trade.Id, r.Name)));
+                        trades.Add((trade.Id, string.IsNullOrWhiteSpace(trade.Label) ? trade.Id : trade.Label, hasFilters));
+                    }
+
+                    return new ExplodeViewByTradeWebTool(
+                        App.ExplodeViewByTradeHandler!, App.ExplodeViewByTradeEvent!,
+                        eligibleViewIds, BrowserTreeCapture.Capture(doc), trades, viewNames);
+                });
+                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

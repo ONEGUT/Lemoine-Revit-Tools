@@ -8,6 +8,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Dimensioning;
 
 namespace LemoineTools.Commands
@@ -21,11 +22,28 @@ namespace LemoineTools.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class OpenClashDefinitionsCommand : IExternalCommand
     {
-        private static ClashDefinitionsWindow? _window;
+        private static ClashDefinitionsWindow?    _window;
+        private static WebClashDefinitionsWindow? _webWindow;
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (_window != null)
+            bool web = WebUiSettings.Instance.Enabled;
+
+            if (web && _webWindow != null)
+            {
+                try
+                {
+                    WebUiThread.Invoke(() =>
+                    {
+                        var w = _webWindow;
+                        if (w != null && w.IsVisible) w.Activate();
+                        else _webWindow = null;
+                    });
+                    if (_webWindow != null) return Result.Succeeded;
+                }
+                catch (System.Exception ex) { DiagnosticsLog.Swallowed("OpenClashDefinitions: activate web window", ex); _webWindow = null; }
+            }
+            else if (!web && _window != null)
             {
                 try
                 {
@@ -97,6 +115,21 @@ namespace LemoineTools.Commands
                         Worksets   = ReadUserWorksets(ld),
                     });
                 }
+            }
+
+            // Web branch: open on the shared WebUiThread behind the Web UI flag (same pick
+            // handler + ExternalEvent as the WPF window). WPF window stays as the fallback.
+            if (web)
+            {
+                WebUiThread.Invoke(() =>
+                {
+                    var w = new WebClashDefinitionsWindow(lineStyleNames, docs, phaseNames,
+                        App.ClashPickHandler, App.ClashPickEvent);
+                    w.Closed += (s, e) => { _webWindow = null; };
+                    w.Show();
+                    _webWindow = w;
+                });
+                return Result.Succeeded;
             }
 
             var ready = new ManualResetEventSlim(false);

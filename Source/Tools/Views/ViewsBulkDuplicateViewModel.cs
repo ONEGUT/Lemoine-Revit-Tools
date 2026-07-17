@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 using WpfGrid       = System.Windows.Controls.Grid;
 using WpfPoint      = System.Windows.Point;
@@ -47,12 +48,8 @@ namespace LemoineTools.Tools.LinkViews
             ModeDuplicate, ModeWithDetailing, ModeAsDependent,
         };
 
-        // ── Naming tokens (same chip control as Bulk Export) ──────────
-        private static readonly (string Label, string Token)[] NamingTokens =
-        {
-            ("View Name", "{ViewName}"),
-            ("View Type", "{ViewType}"),
-        };
+        // ── Naming ──────────────────────────────────────────────────────
+        private const string ToolId         = "views.duplicate";
         private const string DefaultPattern = "{ViewName} - Copy";
 
         // ── Data type passed in from Command (main thread) ────────────
@@ -69,7 +66,7 @@ namespace LemoineTools.Tools.LinkViews
 
         private List<ElementId> _selectedViewIds = new List<ElementId>();
         private string          _mode            = ModeWithDetailing;
-        private string          _namePattern     = DefaultPattern;
+        private string          _namePattern     = NamingPatternStore.Instance.GetOrDefault(ToolId, DefaultPattern);
 
         // ── ExternalEvent wiring ───────────────────────────────────────
         private readonly ViewsBulkDuplicateRunHandler? _runHandler;
@@ -190,58 +187,26 @@ namespace LemoineTools.Tools.LinkViews
             header.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             outer.Children.Add(header);
 
-            var tokenInput = new TokenInput(NamingTokens, DefaultPattern) { Text = _namePattern };
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: false);
+            var tokenInput = new TokenInput(tokens, DefaultPattern) { Text = _namePattern };
             outer.Children.Add(tokenInput);
 
-            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 12, 0, 10) };
-            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            outer.Children.Add(sep);
-
-            var previewHeader = new TextBlock { Text = AppStrings.T("linkviews.duplicate.labels.preview"), Margin = new Thickness(0, 0, 0, 4) };
-            previewHeader.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            previewHeader.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            previewHeader.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
-            outer.Children.Add(previewHeader);
-
-            var previewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            previewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            previewText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            previewText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var previewBorder = new Border
-            {
-                BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(3),
-                Padding         = new Thickness(10, 6, 10, 6),
-            };
-            previewBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            previewBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            previewBorder.Child = previewText;
-            outer.Children.Add(previewBorder);
-
-            void UpdatePreview()
+            tokenInput.SetPreview(pattern =>
             {
                 var v = FirstSelectedView();
-                string viewName = v?.Name      ?? AppStrings.T("linkviews.duplicate.labels.exView");
-                string viewType = v?.TypeLabel ?? AppStrings.T("linkviews.duplicate.labels.exType");
-
-                string resolved = TokenInput.Resolve(_namePattern,
-                    new Dictionary<string, string>
-                    {
-                        ["ViewName"] = viewName,
-                        ["ViewType"] = viewType,
-                    });
-                previewText.Text = string.IsNullOrWhiteSpace(resolved) ? AppStrings.T("linkviews.duplicate.labels.emptyName") : resolved;
-            }
+                var ctx = new TokenContext();
+                ctx.Computed["ViewName"] = v?.Name      ?? AppStrings.T("linkviews.duplicate.labels.exView");
+                ctx.Computed["ViewType"] = v?.TypeLabel ?? AppStrings.T("linkviews.duplicate.labels.exType");
+                return TokenResolver.Resolve(pattern, ctx);
+            });
 
             tokenInput.TextChanged += (s, e) =>
             {
                 _namePattern = tokenInput.Text;
-                UpdatePreview();
+                NamingPatternStore.Instance.Set(ToolId, _namePattern);
                 OnValidationChanged();
             };
-            ValidationChanged += (s, e) => UpdatePreview();
-            UpdatePreview();
+            ValidationChanged += (s, e) => tokenInput.RefreshPreview();
 
             return outer;
         }

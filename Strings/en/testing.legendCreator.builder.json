@@ -73,6 +73,7 @@
     },
     "sidebar": {
       "templatesPill": "Templates",
+    "addLegend": "Add Legend",
       "editTooltip": "Edit legend title and subtitle"
     },
     "editPopup": {
@@ -167,6 +168,7 @@
   "palette": {
     "labels": {
       "header": "PALETTE",
+      "searchPlaceholder": "Search filters\u2026",
       "filtersHeader": "FILTERS — drag into a group"
     },
     "scope": {

@@ -25,7 +25,8 @@
     "confirmToScan":  "Confirm the Source step to scan for parameters.",
     "noParams":       "{0} element(s) found — no parameters with 2+ distinct values to filter on.",
     "paramsSummary":  "{0} element(s) · {1} filterable parameter(s).",
-    "addFilter":      "+ Add filter",
+    "addFilter": "+ Add filter",
+    "removeFilter": "Remove filter",   // filters step: removes this parameter filter row
     "parameter":      "Parameter",
     "operation":      "Operation",
     "modeSplit":      "Split into segments",

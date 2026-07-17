@@ -29,9 +29,15 @@ namespace LemoineTools.Framework
         private TextBlock? _fStatusText;
         private TextBlock? _fBuildInfoText;
 
+        // Naming tab's parameter picker source — captured once on the Revit main thread by
+        // OpenSettingsCommand (see AutoFiltersSettings.CaptureFilterableCategories for the
+        // same pattern) and handed in here; the window itself never touches Revit directly.
+        private readonly Naming.ParameterCatalogSnapshot _namingSnapshot;
+
         // ─────────────────────────────────────────────────────────────────────
-        public GlobalSettingsWindow()
+        public GlobalSettingsWindow(Naming.ParameterCatalogSnapshot? namingSnapshot = null)
         {
+            _namingSnapshot = namingSnapshot ?? new Naming.ParameterCatalogSnapshot();
             InitializeComponent();
             Loaded += OnLoaded;
 
@@ -145,6 +151,7 @@ namespace LemoineTools.Framework
         new (string, string)[]
         {
             ("general",       AppStrings.T("globalSettings.nav.general")),
+            ("naming",        AppStrings.T("globalSettings.nav.naming")),
             ("setup",         AppStrings.T("globalSettings.nav.setup")),
             ("copy",          AppStrings.T("globalSettings.nav.copy")),
             ("ceilings",      AppStrings.T("globalSettings.nav.ceilings")),
@@ -251,6 +258,7 @@ namespace LemoineTools.Framework
             switch (tabId)
             {
                 case "general":      content = BuildGeneralContent();       break;
+                case "naming":       content = BuildNamingContent();        break;
                 case "setup":        content = BuildSetupGroupContent();    break;
                 case "filters":      content = BuildFiltersGroupContent();  break;
                 case "ceilings":     content = BuildCeilingsGroupContent(); break;

@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
 using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 using LemoineTools.Tools.ScopeBoxes;
 
 using WpfVisibility = System.Windows.Visibility;
@@ -60,11 +61,15 @@ namespace LemoineTools.Tools.LinkViews
         private const string ModeByLevel = "ByLevel";
         private const string ModeByBox   = "ByScopeBox";
 
-        // Naming token vocabulary (logic identifiers, same contract as the run handler).
-        private static readonly string[] NamingTokens =
-        {
-            "None", "Level", "Scope Box", "View Type", "Custom",
-        };
+        // ── Naming ──────────────────────────────────────────────────────
+        // Mode-aware default (same idea as Bulk Export's Sheet/View patterns): "By Level"
+        // has no scope box, so its default omits the {ScopeBox} token entirely rather than
+        // leaving a stray "-  -" when it resolves empty (a flat pattern, unlike the old
+        // Front/Center/End slots, does not auto-drop empty segments).
+        private const string ToolIdByLevel        = "views.byLevel";
+        private const string ToolIdByBox          = "views.byLevel.byBox";
+        private const string DefaultPatternByLevel = "L{LevelName} - {ViewType}";
+        private const string DefaultPatternByBox   = "L{LevelName} - {ScopeBox} - {ViewType}";
 
         // ── State ──────────────────────────────────────────────────────
         private readonly List<LevelEntry>        _levels;
@@ -92,18 +97,20 @@ namespace LemoineTools.Tools.LinkViews
         private FrameworkElement? _subDiscRowFP;
         private FrameworkElement? _subDiscRowRCP;
 
-        private readonly NamingSlotsState _naming = new NamingSlotsState
+        private string _namePatternByLevel = NamingPatternStore.Instance.GetOrDefault(ToolIdByLevel, DefaultPatternByLevel);
+        private string _namePatternByBox   = NamingPatternStore.Instance.GetOrDefault(ToolIdByBox,   DefaultPatternByBox);
+
+        private string ActiveToolId         => _mode == ModeByBox ? ToolIdByBox          : ToolIdByLevel;
+        private string ActiveDefaultPattern => _mode == ModeByBox ? DefaultPatternByBox   : DefaultPatternByLevel;
+        private string ActiveNamePattern
         {
-            Front  = "Level",
-            Center = "Scope Box",
-            End    = "None",
-        };
-        private bool _appendViewType = true;
+            get => _mode == ModeByBox ? _namePatternByBox : _namePatternByLevel;
+            set { if (_mode == ModeByBox) _namePatternByBox = value; else _namePatternByLevel = value; }
+        }
 
         // S1 live-update handles
         private StackPanel? _boxSection;
         private TextBlock?  _plannedText;
-        private TextBlock?  _namePreviewText;
 
         // ── ExternalEvent wiring ───────────────────────────────────────
         private readonly LinkViewsLevelRunHandler? _runHandler;
@@ -452,87 +459,46 @@ namespace LemoineTools.Tools.LinkViews
         }
 
         // ── S3: View Naming ────────────────────────────────────────────
+        private static readonly TokenDefinition[] LevelComputedTokens =
+        {
+            new TokenDefinition("LevelName", AppStrings.T("naming.computed.byLevel.levelName.label"), TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+            new TokenDefinition("ScopeBox",  AppStrings.T("naming.computed.byLevel.scopeBox.label"),  TokenOrigin.Computed, TokenSubject.Target, TokenEntity.View),
+        };
+
         private FrameworkElement BuildS3Naming()
         {
             var outer = new StackPanel { Margin = new Thickness(0, 2, 0, 0) };
 
-            var slots = new NamingSlots(NamingTokens, _naming);
-            slots.Changed += () => { UpdateNamePreview(); OnValidationChanged(); };
-            outer.Children.Add(slots);
-
-            // ── Append view type suffix toggle ─────────────────────────
-            var appendTypeToggle = new ToggleSwitches();
-            appendTypeToggle.SetItems(new List<ToggleItem>
+            var tokens = NamingTokenRegistry.TokensFor(TokenEntity.View, hasSource: false, LevelComputedTokens);
+            var tokenInput = new TokenInput(tokens, ActiveDefaultPattern) { Text = ActiveNamePattern };
+            tokenInput.SetPreview(pattern =>
             {
-                new ToggleItem { Id = "appendType", Label = AppStrings.T("linkviews.level.labels.appendTypeLabel"),
-                                 Desc = AppStrings.T("linkviews.level.labels.appendTypeDesc"),
-                                 DefaultOn = _appendViewType },
+                string levelEx = _levels
+                    .Where(l => _selectedLevelIds.Any(id => id.Value == l.Id.Value))
+                    .OrderBy(l => l.ElevationFt)
+                    .FirstOrDefault()?.Name ?? "02";
+                string boxEx = _mode == ModeByBox
+                    ? (_scopeBoxes.FirstOrDefault(b => _selectedBoxIds.Any(id => id.Value == b.Id.Value))?.Name
+                       ?? _scopeBoxes.FirstOrDefault()?.Name ?? "")
+                    : "";
+                string typeEx = _create3D ? "3D" : _createFP ? "FP" : "RCP";
+
+                var ctx = new TokenContext();
+                ctx.Computed["LevelName"] = levelEx;
+                ctx.Computed["ScopeBox"]  = boxEx;
+                ctx.Computed["ViewType"]  = typeEx;
+                return TokenResolver.Resolve(pattern, ctx);
             });
-            appendTypeToggle.StateChanged += state =>
+            tokenInput.TextChanged += (s, e) =>
             {
-                _appendViewType = state.TryGetValue("appendType", out var v) && v;
-                UpdateNamePreview();
+                ActiveNamePattern = tokenInput.Text;
+                NamingPatternStore.Instance.Set(ActiveToolId, ActiveNamePattern);
+                OnValidationChanged();
             };
-            outer.Children.Add(appendTypeToggle);
-            outer.Children.Add(new FrameworkElement { Height = 6 });
+            ValidationChanged += (s, e) => tokenInput.RefreshPreview();
+            outer.Children.Add(tokenInput);
 
-            var sep = new System.Windows.Shapes.Rectangle { Height = 1, Margin = new Thickness(0, 4, 0, 10) };
-            sep.SetResourceReference(System.Windows.Shapes.Rectangle.FillProperty, "LemoineBorder");
-            outer.Children.Add(sep);
-
-            AddDimHeader(outer, AppStrings.T("linkviews.level.labels.previewHeader"));
-
-            _namePreviewText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            _namePreviewText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            _namePreviewText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineText");
-            _namePreviewText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
-            var previewBorder = new Border
-            {
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(10, 6, 10, 6),
-            };
-            previewBorder.SetResourceReference(Border.BackgroundProperty,  "LemoineRaised");
-            previewBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            previewBorder.Child = _namePreviewText;
-            outer.Children.Add(previewBorder);
-
-            UpdateNamePreview();
             return outer;
-        }
-
-        private void UpdateNamePreview()
-        {
-            if (_namePreviewText == null) return;
-
-            string levelEx = _levels
-                .Where(l => _selectedLevelIds.Any(id => id.Value == l.Id.Value))
-                .OrderBy(l => l.ElevationFt)
-                .FirstOrDefault()?.Name ?? "02";
-            string boxEx = _mode == ModeByBox
-                ? (_scopeBoxes.FirstOrDefault(b => _selectedBoxIds.Any(id => id.Value == b.Id.Value))?.Name
-                   ?? _scopeBoxes.FirstOrDefault()?.Name ?? "")
-                : "";
-            string typeEx = _create3D ? "3D" : _createFP ? "FP" : "RCP";
-
-            var parts = _naming.ResolveParts(token =>
-            {
-                switch (token)
-                {
-                    case "Level":     return $"L{levelEx}";
-                    case "Scope Box": return boxEx;
-                    case "View Type": return typeEx;
-                    default:          return "";
-                }
-            });
-            if (parts.Count == 0)
-            {
-                parts.Add($"L{levelEx}");
-                if (!string.IsNullOrEmpty(boxEx)) parts.Add(boxEx);
-            }
-            if (_appendViewType) parts.Add(typeEx);
-
-            _namePreviewText.Text = string.Join(" - ", parts);
         }
 
         // ── IReviewableTool (S4) ────────────────────────────────────
@@ -607,11 +573,7 @@ namespace LemoineTools.Tools.LinkViews
                 return t.Count > 0 ? string.Join("/", t) : "—";
             }
             if (stepId == "S3")
-            {
-                var set = new[] { _naming.Front, _naming.Center, _naming.End }
-                    .Where(s => s != "None").ToList();
-                return set.Count > 0 ? string.Join(" / ", set) : AppStrings.T("linkviews.level.summaries.s3Default");
-            }
+                return string.IsNullOrWhiteSpace(ActiveNamePattern) ? "—" : ActiveNamePattern;
             if (stepId == "S4") return AppStrings.T("linkviews.level.summaries.S4");
             return "—";
         }
@@ -629,13 +591,7 @@ namespace LemoineTools.Tools.LinkViews
             _runHandler.Create3D          = _create3D;
             _runHandler.CreateFP          = _createFP;
             _runHandler.CreateRCP         = _createRCP;
-            _runHandler.NamingFront        = _naming.Front;
-            _runHandler.NamingFrontCustom  = _naming.FrontCustom;
-            _runHandler.NamingCenter       = _naming.Center;
-            _runHandler.NamingCenterCustom = _naming.CenterCustom;
-            _runHandler.NamingEnd          = _naming.End;
-            _runHandler.NamingEndCustom    = _naming.EndCustom;
-            _runHandler.AppendViewType     = _appendViewType;
+            _runHandler.NamePattern        = ActiveNamePattern;
             _runHandler.SubDisc3D          = _subDisc3D;
             _runHandler.SubDiscFP          = _subDiscFP;
             _runHandler.SubDiscRCP         = _subDiscRCP;

@@ -4,7 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Controls;
+using LemoineTools.Framework.Naming;
 
 namespace LemoineTools.Tools.LinkViews
 {
@@ -93,9 +93,10 @@ namespace LemoineTools.Tools.LinkViews
 
                     try
                     {
-                        string viewName = TokenInput.Resolve(NamePattern,
-                            new Dictionary<string, string> { ["LinkName"] = linkName });
-                        if (string.IsNullOrWhiteSpace(viewName)) viewName = linkName;
+                        var ctx = new TokenContext { Doc = doc, Source = link };
+                        ctx.Computed["LinkName"] = linkName;
+                        string viewName = TokenResolver.Resolve(NamePattern, ctx, msg => Log(msg, "warn"));
+                        viewName = TokenResolver.GuardDegenerate(viewName, ctx, linkName, msg => Log(msg, "warn"));
 
                         var view = View3D.CreateIsometric(doc, all3dType.Id);
                         try { view.Name = viewName; }
