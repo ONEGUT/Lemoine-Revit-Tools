@@ -176,6 +176,17 @@ user-data folder, missing `WebView2Loader.dll`, navigating before `EnsureCoreWeb
 completes, version clash with Revit's own WebView2) are encoded as rules R1–R4 there — never
 regress them, and never create a `CoreWebView2Environment` outside the shared host layer.
 
+Porting rules (apply to any recreation of an existing surface, WPF→web or otherwise):
+
+- **Match the original by default; list deliberate deviations in chat for approval.** The user's
+  explicit instruction for the Auto Filters / Legend Creator ports: "build them as close as you
+  can to the original… if you see any [improvements] let me know what you change." Improvements
+  are welcome but must be called out as a numbered list, never slipped in silently.
+- **Never silently drop feature parity.** Any WPF feature deferred from a port must be listed
+  explicitly (in chat and in `web-migration-questions.md`) so the user can decide which get
+  built — when the batch-edit/merge and group-drag deferrals were surfaced, the immediate answer
+  was "one and two are important go ahead and build those."
+
 ---
 
 ## WPF UI Tasks
@@ -193,6 +204,8 @@ The Edit tool cannot match C# string literals that contain `\uXXXX` escape seque
 The same failure applies to literal Private Use Area (PUA) characters already in source (e.g. Segoe MDL2 Assets glyphs stored directly as Unicode chars). Additionally, Segoe MDL2 `Text` fields can be silently empty strings `""` in source — not a corrupt escape sequence, just never written. Always verify Segoe MDL2 glyph fields with Python before assuming they render correctly. Use Python `str.replace()` for any edit that inserts or modifies a Segoe MDL2 glyph.
 
 When writing *new* code that needs a Segoe MDL2 glyph, prefer `char.ConvertFromUtf32(0xE74D)` (e.g. `Text = char.ConvertFromUtf32(0xE74D)` for the trash icon) over embedding the literal glyph. The codepoint is plain ASCII in source, so the Edit tool handles it normally and no Python pass is needed.
+
+**The same failure applies to the web JS under `Source/Web/`** — those files are ASCII-only (migration rule R13), so every glyph is stored as a `\uXXXX` escape, and the Edit tool's parser converts the escape before matching (the edit fails with "old_string and new_string are exactly the same" or a no-match). Any edit that touches a line carrying `\uXXXX` escapes — C# or JS — must go through a Python `str.replace()` script with count-checked `(old, new, expected_count)` tuples.
 
 ---
 
