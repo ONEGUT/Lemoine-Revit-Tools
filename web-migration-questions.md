@@ -98,3 +98,18 @@ touched this pass. Each needs its own web surface decision:
   added for CeilingHeatmap already covers the inline-swatch use; a full standalone
   picker window may not be needed).
 Recommend prioritising by usage; ClashDefinitions and ToolsOverview are the most-opened.
+
+## Auto Filters web port — deferred WPF extras (review)
+The web Auto Filters window covers the full single-rule editing surface, history,
+templates and view application. Three WPF-only extras were deliberately deferred:
+multi-select over rule rows with batch field apply, the merge-selected-rules flow
+(merge into one / create combined), and drag-reorder across trades. If any of these
+is used day-to-day, they slot into the existing action vocabulary.
+
+## Legend Creator web port — preview + placement (review)
+The web preview is a client-side approximation (white page, groups in row lanes,
+swatch+label lines) rather than the WPF pixel-metric preview. Group placement is
+append-per-row + whole-card drops; the WPF single-live-insertion-marker lane grid
+(drag groups between/within rows) is not yet rebuilt — groups can be added, renamed,
+deleted and filled, but not dragged to reorder. Flag if row-level rearranging matters
+before the WPF window retires.

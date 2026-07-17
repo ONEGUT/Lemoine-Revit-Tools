@@ -1,10 +1,12 @@
 /* Legend Creator library (HTML analogue of LegendSettingsWindow).
    Three-column surface: legend sidebar (templates, legend tabs, Add Legend, Preview /
-   Update Legend), the builder (rows of group cards holding legend-entry blocks, with a
-   single live insertion marker for drags - never sliver drop zones), and the settings
-   rail (Sizing, Text Styles, Palette of Auto Filters rules to drag into groups).
-   Every change posts an action to C#, which owns LegendCreatorSettings and the Revit
-   create/update run. ASCII-only (rule R13). */
+   Update Legend), the builder (rows of group cards holding legend-entry blocks with
+   inline renaming and whole-card drop targets - never sliver drop zones), and the
+   settings rail (Sizing, Text Styles, Palette of Auto Filters rules to drag into groups).
+   In-page overlays: legend edit popup (title/subtitle/duplicate/delete), templates menu,
+   palette trade picker, and a client-side paper preview. Every change posts an action to
+   C#, which owns LegendCreatorSettings and the Revit create/update run.
+   ASCII-only (rule R13). */
 (function () {
   'use strict';
 
@@ -14,7 +16,7 @@
     var ui = (window.Lemoine && window.Lemoine.ui) || {};
     var el = ui.el || function (t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 
-    var payload = null, root = null;
+    var payload = null, root = null, overlayEl = null, statusTimer = null;
 
     function action(a, extra) { var p = { action: a }; if (extra) for (var k in extra) p[k] = extra[k]; send('action', p); }
     function L(k) { return (payload && payload.labels && payload.labels[k]) || ''; }
@@ -35,7 +37,7 @@
     var PENCIL = 'M11.5 2.5l2 2L5 13l-2.6.6L3 11l8.5-8.5z';
     var EYE = ['M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z', 'M8 9.8a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z'];
 
-    function render(host, p) { root = host; payload = p; draw(); }
+    function render(host, p) { root = host; payload = p; draw(); if (p && p.status) flashStatus(p.status); }
 
     function draw() {
       root.innerHTML = '';
@@ -45,6 +47,47 @@
       body.appendChild(buildBuilder());
       body.appendChild(buildRail());
       root.appendChild(body);
+      overlayEl = el('div', 'l-sbm-overlay'); overlayEl.style.display = 'none';
+      root.appendChild(overlayEl);
+      var pill = el('div', 'l-sbm-status'); pill.id = 'l-lc-status'; pill.style.display = 'none';
+      root.appendChild(pill);
+    }
+
+    // -- Overlay machinery ----------------------------------------------------------
+    function openOverlay(title, bodyEl, footerBtns) {
+      overlayEl.innerHTML = '';
+      var dim = el('div', 'l-sbm-dim');
+      dim.addEventListener('click', closeOverlay);
+      overlayEl.appendChild(dim);
+      var card = el('div', 'l-sbm-card');
+      card.appendChild(el('div', 'l-sbm-ohead', title));
+      var bodyWrap = el('div', 'l-sbm-obody');
+      bodyWrap.appendChild(bodyEl);
+      card.appendChild(bodyWrap);
+      var foot = el('div', 'l-sbm-ofoot');
+      var cancel = el('button', 'l-btn', L('cancel'));
+      cancel.addEventListener('click', closeOverlay);
+      foot.appendChild(cancel);
+      foot.appendChild(el('div', 'l-sbm-ospacer'));
+      (footerBtns || []).forEach(function (b) {
+        var btn = el('button', 'l-btn' + (b.variant ? ' ' + b.variant : ''), b.label);
+        btn.addEventListener('click', function () { closeOverlay(); b.onClick(); });
+        foot.appendChild(btn);
+      });
+      card.appendChild(foot);
+      overlayEl.appendChild(card);
+      overlayEl.style.display = '';
+    }
+    function closeOverlay() { overlayEl.innerHTML = ''; overlayEl.style.display = 'none'; }
+
+    function textRow(label, value) {
+      var wrap = el('div');
+      wrap.appendChild(el('div', 'l-cd-flabel', label));
+      var input = el('input', 'l-sbm-nameedit'); input.type = 'text';
+      input.style.width = '100%'; input.style.fontWeight = 'normal';
+      input.value = value || '';
+      wrap.appendChild(input);
+      return { el: wrap, input: input };
     }
 
     // -- Toolbar -----------------------------------------------------------------
@@ -67,7 +110,7 @@
 
       var top = el('div', 'l-lc-side-top');
       var tmpl = el('button', 'l-btn l-af-templates', L('templates') + ' \u25BE');
-      tmpl.addEventListener('click', function () { action('templates'); });
+      tmpl.addEventListener('click', openTemplatesOverlay);
       top.appendChild(tmpl);
       side.appendChild(top);
 
@@ -76,7 +119,7 @@
         var row = el('div', 'l-lc-tab' + (t.active ? ' active' : ''));
         row.appendChild(el('span', 'nm', t.name));
         var edit = el('button', 'l-lc-gbtn'); edit.title = L('editLegendTip'); edit.appendChild(svgIcon(PENCIL));
-        edit.addEventListener('click', function (e) { e.stopPropagation(); action('editLegend', { id: t.id }); });
+        edit.addEventListener('click', function (e) { e.stopPropagation(); openLegendEditOverlay(t); });
         row.appendChild(edit);
         row.addEventListener('click', function () { if (!t.active) action('selectLegend', { id: t.id }); });
         list.appendChild(row);
@@ -91,7 +134,7 @@
 
       var foot = el('div', 'l-lc-side-foot');
       var preview = el('button', 'l-btn', L('preview'));
-      preview.addEventListener('click', function () { action('preview'); });
+      preview.addEventListener('click', openPreviewOverlay);
       foot.appendChild(preview);
       var update = el('button', 'l-btn update', (payload.hasRevitView ? L('updateLegend') : L('createLegend')) + ' \u2192');
       update.addEventListener('click', function () { action('createOrUpdate'); });
@@ -106,9 +149,9 @@
       var mid = el('div', 'l-lc-mid');
       var scroll = el('div', 'l-lc-builder');
 
-      (payload.rows || []).forEach(function (row, rowIdx) {
+      (payload.rows || []).forEach(function (row) {
         var lane = el('div', 'l-lc-rowlane');
-        (row.groups || []).forEach(function (g) { lane.appendChild(buildGroup(g, rowIdx)); });
+        (row.groups || []).forEach(function (g) { lane.appendChild(buildGroup(g)); });
         scroll.appendChild(lane);
       });
       mid.appendChild(scroll);
@@ -133,16 +176,24 @@
       return /^#[0-9a-fA-F]{6}$/.test(hex || '') ? hex + '2e' : 'transparent';
     }
 
-    function buildGroup(g, rowIdx) {
+    function buildGroup(g) {
       var card = el('div', 'l-lc-group');
 
       var head = el('div', 'l-lc-ghead');
       head.style.background = tint(g.color);
       var caret = el('span', 'caret', g.collapsed ? '\u25B8' : '\u25BE');
+      caret.title = g.collapsed ? L('expandTip') : L('collapseTip');
       caret.addEventListener('click', function () { action('toggleGroup', { id: g.id, value: !g.collapsed }); });
       head.appendChild(caret);
       var dot = el('span', 'dot'); dot.style.background = g.color || 'transparent'; head.appendChild(dot);
-      head.appendChild(el('span', 'ttl', g.title));
+
+      // Inline-editable group title (change commits, Esc reverts via blur re-render).
+      var ttl = el('input', 'ttl l-lc-inline'); ttl.type = 'text'; ttl.value = g.title || '';
+      ttl.addEventListener('change', function () {
+        if (ttl.value.trim() && ttl.value !== g.title) action('renameGroup', { id: g.id, value: ttl.value.trim() });
+      });
+      head.appendChild(ttl);
+
       head.appendChild(el('span', 'cnt', String(g.count != null ? g.count : (g.blocks || []).length)));
       var eye = el('button', 'l-lc-gbtn'); eye.title = L('toggleGroupVisTip'); eye.appendChild(svgIcon(EYE));
       eye.addEventListener('click', function () { action('toggleGroupVisibility', { id: g.id }); });
@@ -157,6 +208,8 @@
 
       if (!g.collapsed) {
         var body = el('div', 'l-lc-gbody');
+        if (!g.blocks || g.blocks.length === 0)
+          body.appendChild(el('div', 'l-sbm-emptynote', L('dropHint')));
         (g.blocks || []).forEach(function (b) { body.appendChild(buildBlock(g, b)); });
         card.appendChild(body);
       }
@@ -181,7 +234,13 @@
     function buildBlock(g, b) {
       var row = el('div', 'l-lc-block' + (b.visible === false ? ' hidden-entry' : ''));
       var sw = el('span', 'sw'); sw.style.background = b.color; row.appendChild(sw);
-      row.appendChild(el('span', 'nm', b.name));
+
+      var nm = el('input', 'nm l-lc-inline'); nm.type = 'text'; nm.value = b.name || '';
+      nm.addEventListener('change', function () {
+        if (nm.value.trim() && nm.value !== b.name) action('renameBlock', { groupId: g.id, id: b.id, value: nm.value.trim() });
+      });
+      row.appendChild(nm);
+
       var eye = el('button', 'l-lc-gbtn'); eye.title = L('toggleEntryVisTip'); eye.appendChild(svgIcon(EYE));
       eye.addEventListener('click', function () { action('toggleBlockVisibility', { groupId: g.id, id: b.id }); });
       row.appendChild(eye);
@@ -222,7 +281,7 @@
       [['swatchW', 'SwatchW'], ['swatchH', 'SwatchH'], ['rowGap', 'RowGap'], ['colGap', 'ColGap'], ['swatchLabel', 'SwatchLabelGap']]
         .forEach(function (f) {
           frow(card, L(f[0]), ui.stepper({
-            value: s[f[0]], min: 0.01, max: 5, step: 0.01, decimals: 2,
+            value: s[f[0]], min: 0, max: 5, step: 0.01, decimals: 2,
             onChange: function (v) { action('setSizing', { field: f[1], value: v }); }
           }).el);
         });
@@ -232,6 +291,10 @@
     function buildTextStyles() {
       var card = el('div', 'l-lc-card');
       var t = payload.textStyles || {};
+      if (!t.options || t.options.length === 0) {
+        card.appendChild(el('div', 'l-sbm-help', L('noTypes')));
+        return card;
+      }
       [['title', 'Title'], ['subtitle', 'Subtitle'], ['groupHeader', 'GroupHeader'], ['label', 'Label']]
         .forEach(function (f) {
           frow(card, L(f[0]), ui.dropdown({
@@ -251,7 +314,7 @@
       all.addEventListener('click', function () { action('setPaletteTrade', { value: '' }); });
       head.appendChild(all);
       var trade = el('button', 'l-btn', (p.tradeLabel || L('allTrades')) + ' \u25BE');
-      trade.addEventListener('click', function () { action('pickPaletteTrade'); });
+      trade.addEventListener('click', function () { openTradePickerOverlay(p); });
       head.appendChild(trade);
       card.appendChild(head);
 
@@ -266,8 +329,10 @@
       function renderChips(filterText) {
         listWrap.innerHTML = '';
         var q = (filterText || '').toLowerCase();
+        var shown = 0;
         (p.chips || []).forEach(function (c) {
           if (q && c.name.toLowerCase().indexOf(q) < 0 && (c.tradeLabel || '').toLowerCase().indexOf(q) < 0) return;
+          shown++;
           var chip = el('div', 'l-lc-fchip');
           chip.draggable = true;
           var sw = el('span', 'sw'); sw.style.background = c.color; chip.appendChild(sw);
@@ -283,12 +348,126 @@
           chip.addEventListener('dragend', function () { chip.classList.remove('dragging'); });
           listWrap.appendChild(chip);
         });
+        if (shown === 0) listWrap.appendChild(el('div', 'l-sbm-emptynote', L('noMatches')));
       }
       search.addEventListener('input', function () { renderChips(search.value); });
       renderChips('');
       card.appendChild(listWrap);
 
       return card;
+    }
+
+    // -- Overlays ------------------------------------------------------------------
+    function openLegendEditOverlay(t) {
+      var body = el('div');
+      var title = textRow(L('editTitleLabel'), t.legendTitle || t.name);
+      body.appendChild(title.el);
+      var sub = textRow(L('editSubtitleLabel'), t.legendSubtitle || '');
+      body.appendChild(sub.el);
+      openOverlay(t.name, body, [
+        { label: L('editDelete'), variant: 'danger', onClick: function () { action('deleteLegend', { id: t.id }); } },
+        { label: L('editDuplicate'), onClick: function () { action('duplicateLegend', { id: t.id }); } },
+        { label: L('editSave'), variant: 'primary', onClick: function () {
+          action('applyLegendEdit', { id: t.id, title: title.input.value, subtitle: sub.input.value }); } }
+      ]);
+    }
+
+    function openTradePickerOverlay(p) {
+      var body = el('div');
+      var allRow = el('div', 'l-sbm-row');
+      allRow.appendChild(el('span', 'nm', L('allTrades')));
+      allRow.addEventListener('click', function () { closeOverlay(); action('setPaletteTrade', { value: '' }); });
+      body.appendChild(allRow);
+      (p.trades || []).forEach(function (t) {
+        var row = el('div', 'l-sbm-row');
+        var dot = el('span', 'dot'); dot.style.cssText = 'width:11px;height:11px;border-radius:3px;background:' + t.color + ';flex-shrink:0;';
+        row.appendChild(dot);
+        row.appendChild(el('span', 'nm', t.label));
+        row.addEventListener('click', function () { closeOverlay(); action('setPaletteTrade', { value: t.id }); });
+        body.appendChild(row);
+      });
+      openOverlay(L('palette'), body, []);
+    }
+
+    function openTemplatesOverlay() {
+      var body = el('div');
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplSavedHeader')));
+      if (!payload.templates || payload.templates.length === 0)
+        body.appendChild(el('div', 'l-af-caption', L('tmplNone')));
+      (payload.templates || []).forEach(function (name) {
+        var row = el('div', 'l-sbm-row');
+        row.appendChild(el('span', 'nm', name));
+        var del = el('button', 'l-lc-gbtn', '\u00d7'); del.title = L('tmplDeleteTip');
+        del.addEventListener('click', function (e) { e.stopPropagation(); closeOverlay(); action('templateDelete', { name: name }); });
+        row.appendChild(del);
+        row.addEventListener('click', function () { closeOverlay(); action('templateLoad', { name: name }); });
+        body.appendChild(row);
+      });
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplSaveAs')));
+      var saveRow = el('div', 'l-sbm-namerow');
+      var nameIn = el('input', 'l-sbm-nameedit'); nameIn.type = 'text'; nameIn.style.fontWeight = 'normal'; nameIn.style.flex = '1';
+      saveRow.appendChild(nameIn);
+      var saveBtn = el('button', 'l-btn', L('tmplSave'));
+      saveBtn.addEventListener('click', function () {
+        if (nameIn.value.trim()) { closeOverlay(); action('templateSave', { name: nameIn.value.trim() }); }
+      });
+      saveRow.appendChild(saveBtn);
+      body.appendChild(saveRow);
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplFileHeader')));
+      var fileRow = el('div', 'l-sbm-geomrow');
+      var imp = el('button', 'l-btn', L('tmplImport'));
+      imp.addEventListener('click', function () { closeOverlay(); action('importFile'); });
+      fileRow.appendChild(imp);
+      var exp = el('button', 'l-btn', L('tmplExport'));
+      exp.addEventListener('click', function () { closeOverlay(); action('exportFile'); });
+      fileRow.appendChild(exp);
+      body.appendChild(fileRow);
+
+      openOverlay(L('templates'), body, []);
+    }
+
+    // Client-side paper preview: a white sheet with the title/subtitle and each row's
+    // groups side by side (header + swatch/label lines). An approximation of the WPF
+    // preview - the authoritative output is the Revit legend itself.
+    function openPreviewOverlay() {
+      var page = el('div', 'l-lc-previewpage');
+      var active = null;
+      (payload.legends || []).forEach(function (t) { if (t.active) active = t; });
+      page.appendChild(el('div', 'pv-title', (active && active.legendTitle) || (active && active.name) || ''));
+      if (active && active.legendSubtitle) page.appendChild(el('div', 'pv-sub', active.legendSubtitle));
+
+      (payload.rows || []).forEach(function (row) {
+        var lane = el('div', 'pv-lane');
+        (row.groups || []).forEach(function (g) {
+          var col = el('div', 'pv-group');
+          col.appendChild(el('div', 'pv-ghead', g.title));
+          (g.blocks || []).forEach(function (b) {
+            if (b.visible === false) return;
+            var line = el('div', 'pv-line');
+            var sw = el('span', 'pv-sw'); sw.style.background = b.color;
+            line.appendChild(sw);
+            line.appendChild(el('span', 'pv-lbl', b.name));
+            col.appendChild(line);
+          });
+          lane.appendChild(col);
+        });
+        page.appendChild(lane);
+      });
+
+      openOverlay(L('preview'), page, []);
+    }
+
+    // -- Status pill -------------------------------------------------------------
+    function flashStatus(msg) {
+      var pill = document.getElementById('l-lc-status');
+      if (!pill) return;
+      pill.textContent = msg;
+      pill.style.display = '';
+      if (statusTimer) clearTimeout(statusTimer);
+      statusTimer = setTimeout(function () { pill.style.display = 'none'; pill.textContent = ''; }, 3500);
     }
 
     return { render: render };

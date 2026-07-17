@@ -92,8 +92,8 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | Window | Status | Notes |
 |--------|--------|-------|
 | **Global Settings** | 🟡 General tab web-backed; 8 tabs remain | See §4 |
-| Filters Settings (standalone) | ❌ WPF only | Shares the Filters-tab editor (~3620 lines) |
-| Legend Settings / Legend Creator | ❌ WPF only | Drag/drop lane grid — hardest surface (Phase 3 wave 5) |
+| **Filters Settings (Auto Filters)** | ✅ web | Three-column editor on `WebWindowBase` (`WebAutoFilters`/`WebAutoFiltersWindow` + `autofilters.html`/`lib/autofilters.js`): trades sidebar (templates, checkboxes, Discover/Add Trade, apply/remove footer), rule list (drag-reorder, Add Rule, apply-trade), rule editor (Filter Logic chips + pickers, Override Style FG/BG rows, transparency, Appearance toggles), undo/redo/history, templates (load/save/delete/import/export/restore), close-time auto-create — all through the SAME AutoFilters/DeleteFilters/Discover/DeleteFromProject events and `ComputeChanged*` diff logic as WPF. Code-complete, pending Windows verify. |
+| **Legend Creator** | ✅ web | Builder on `WebWindowBase` (`WebLegendCreator`/`WebLegendCreatorWindow` + `legendcreator.html`/`lib/legendcreator.js`): legend tabs + edit popup (title/subtitle/duplicate/delete), group cards with inline renaming + whole-card palette drops, sizing/text-style rail, palette with trade scope + search, templates, client-side paper preview, Create/Update through the SAME `LegendCreatorEventHandler`. Code-complete, pending Windows verify. |
 | **Clash Definitions** | ✅ web | CRUD editor on `WebWindowBase` (`WebClashDefinitions`/`WebClashDefinitionsWindow` + `clashdefs.html`): definition sidebar, Group 1/2 editor (mode, source-doc tree, rules/categories tabs, element-pick via ExternalEvent), marking settings; auto-saves on close |
 | **Tools Overview** | ✅ web | Field guide on `WebWindowBase` (`WebToolsOverviewWindow` + `toolsoverview.html`); category tabs, feeds/fed-by chip navigation, demo launch |
 | **Link Audit** | ✅ web | Read-only report on `WebWindowBase` (`WebLinkAuditWindow` + `linkaudit.html`) |
@@ -118,7 +118,7 @@ regressions. No view/sheet tree was downgraded to a flat checkbox list.
 | Export | Bulk Export group | ✅ web (spec) | field rows |
 | Copy | Copy group | ✅ web (spec) | field rows |
 | Naming | Naming.cs (877) | ✅ web (bespoke) | token-CRUD master/detail editor (`lib/naming.js` + `WebNaming`) |
-| Filters | Filters.cs (3620) | ❌ | AutoFilters trade editor + clash defs + colour ramps — **bespoke, largest** |
+| Filters | Filters.cs (3620) | ✅ web (standalone) | covered by the standalone web Auto Filters window (`WebAutoFiltersWindow`); the settings-tab placeholder stays until the tab is repointed |
 
 **Done:** a *settings-tab spec model* (`WebSettings.BuildTab` / `TabSpec`) renders each tab
 as an ordered list of `WebInput` rows via the shared lemoine.js factories, each auto-saving

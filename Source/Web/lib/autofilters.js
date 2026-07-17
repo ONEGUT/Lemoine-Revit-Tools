@@ -2,8 +2,10 @@
    Three-column surface: trades sidebar (templates, checkboxes, Discover/Add Trade,
    apply/remove footer), rule list for the active trade (color swatch + name + categories,
    drag-reorder, Add Rule, Apply-trade-to-view), and the rule editor (Filter Logic /
-   Override Style / Appearance & Visibility). Every change posts an action to C#, which
-   owns the settings buffer, history and Revit application. ASCII-only (rule R13). */
+   Override Style / Appearance & Visibility) - plus in-page modal overlays for the trade
+   editor, add-trade form, rule editor popup, category/parameter pickers, keyword prompt,
+   history list and templates menu. Every change posts an action to C#, which owns the
+   settings buffer, history and Revit application. ASCII-only (rule R13). */
 (function () {
   'use strict';
 
@@ -13,7 +15,7 @@
     var ui = (window.Lemoine && window.Lemoine.ui) || {};
     var el = ui.el || function (t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 
-    var payload = null, root = null;
+    var payload = null, root = null, overlayEl = null, statusTimer = null;
 
     function action(a, extra) { var p = { action: a }; if (extra) for (var k in extra) p[k] = extra[k]; send('action', p); }
     function L(k) { return (payload && payload.labels && payload.labels[k]) || ''; }
@@ -31,7 +33,7 @@
     }
     var PENCIL = 'M11.5 2.5l2 2L5 13l-2.6.6L3 11l8.5-8.5z';
 
-    function render(host, p) { root = host; payload = p; draw(); }
+    function render(host, p) { root = host; payload = p; draw(); if (p && p.status) flashStatus(p.status); }
 
     function draw() {
       root.innerHTML = '';
@@ -41,6 +43,80 @@
       body.appendChild(buildRuleList());
       body.appendChild(buildEditor());
       root.appendChild(body);
+      overlayEl = el('div', 'l-sbm-overlay'); overlayEl.style.display = 'none';
+      root.appendChild(overlayEl);
+      var pill = el('div', 'l-sbm-status'); pill.id = 'l-af-status'; pill.style.display = 'none';
+      root.appendChild(pill);
+    }
+
+    // -- Overlay machinery (shared modal card pattern) -----------------------------
+    function openOverlay(title, bodyEl, footerBtns) {
+      overlayEl.innerHTML = '';
+      var dim = el('div', 'l-sbm-dim');
+      dim.addEventListener('click', closeOverlay);
+      overlayEl.appendChild(dim);
+      var card = el('div', 'l-sbm-card');
+      card.appendChild(el('div', 'l-sbm-ohead', title));
+      var bodyWrap = el('div', 'l-sbm-obody');
+      bodyWrap.appendChild(bodyEl);
+      card.appendChild(bodyWrap);
+      var foot = el('div', 'l-sbm-ofoot');
+      var cancel = el('button', 'l-btn', L('cancel'));
+      cancel.addEventListener('click', closeOverlay);
+      foot.appendChild(cancel);
+      foot.appendChild(el('div', 'l-sbm-ospacer'));
+      (footerBtns || []).forEach(function (b) {
+        var btn = el('button', 'l-btn' + (b.variant ? ' ' + b.variant : ''), b.label);
+        btn.addEventListener('click', function () { if (b.keepOpen !== true) closeOverlay(); b.onClick(); });
+        foot.appendChild(btn);
+      });
+      card.appendChild(foot);
+      overlayEl.appendChild(card);
+      overlayEl.style.display = '';
+    }
+    function closeOverlay() { overlayEl.innerHTML = ''; overlayEl.style.display = 'none'; }
+
+    function textRow(label, value, placeholder) {
+      var wrap = el('div');
+      wrap.appendChild(el('div', 'l-cd-flabel', label));
+      var input = el('input', 'l-sbm-nameedit'); input.type = 'text';
+      input.style.width = '100%'; input.style.fontWeight = 'normal';
+      input.value = value || ''; if (placeholder) input.placeholder = placeholder;
+      wrap.appendChild(input);
+      return { el: wrap, input: input };
+    }
+
+    function colorRow(label, value) {
+      var wrap = el('div');
+      wrap.appendChild(el('div', 'l-cd-flabel', label));
+      var input = el('input', 'l-af-colorbox'); input.type = 'color';
+      input.value = /^#[0-9a-fA-F]{6}$/.test(value || '') ? value : '#569cd6';
+      wrap.appendChild(input);
+      return { el: wrap, input: input };
+    }
+
+    // Searchable pick-one list used by the category and parameter pickers.
+    function openPicker(title, options, onPick) {
+      var body = el('div');
+      var search = el('input', 'l-lc-search'); search.type = 'text';
+      body.appendChild(search);
+      var list = el('div');
+      list.style.maxHeight = '320px'; list.style.overflowY = 'auto';
+      function renderList(q) {
+        list.innerHTML = '';
+        q = (q || '').toLowerCase();
+        (options || []).forEach(function (o) {
+          if (q && o.toLowerCase().indexOf(q) < 0) return;
+          var row = el('div', 'l-sbm-row', o);
+          row.addEventListener('click', function () { closeOverlay(); onPick(o); });
+          list.appendChild(row);
+        });
+      }
+      search.addEventListener('input', function () { renderList(search.value); });
+      renderList('');
+      body.appendChild(list);
+      openOverlay(title, body, []);
+      search.focus();
     }
 
     // -- Toolbar -----------------------------------------------------------------
@@ -60,7 +136,7 @@
       tools.appendChild(redo);
 
       var hist = el('button', 'l-btn', L('history') + ' \u25BE');
-      hist.addEventListener('click', function () { action('history'); });
+      hist.addEventListener('click', openHistoryOverlay);
       tools.appendChild(hist);
 
       var del = el('button', 'l-btn danger-pill', L('deleteFromProject'));
@@ -80,11 +156,13 @@
 
       var top = el('div', 'l-af-side-top');
       var tmpl = el('button', 'l-btn l-af-templates', L('templates') + ' \u25BE');
-      tmpl.addEventListener('click', function () { action('templates'); });
+      tmpl.addEventListener('click', openTemplatesOverlay);
       top.appendChild(tmpl);
       side.appendChild(top);
 
       var list = el('div', 'l-af-tradelist');
+      if (!payload.trades || payload.trades.length === 0)
+        list.appendChild(el('div', 'l-sbm-empty', L('noTrades')));
       (payload.trades || []).forEach(function (t) {
         var row = el('div', 'l-af-trade' + (t.active ? ' active' : ''));
         var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!t.checked;
@@ -94,7 +172,7 @@
         var dot = el('span', 'dot'); dot.style.background = t.color; row.appendChild(dot);
         row.appendChild(el('span', 'nm', t.label));
         var edit = el('button', 'l-lc-gbtn'); edit.title = L('editTradeTip'); edit.appendChild(svgIcon(PENCIL));
-        edit.addEventListener('click', function (e) { e.stopPropagation(); action('editTrade', { id: t.id }); });
+        edit.addEventListener('click', function (e) { e.stopPropagation(); openTradeEditOverlay(t); });
         row.appendChild(edit);
         row.addEventListener('click', function () { if (!t.active) action('selectTrade', { id: t.id }); });
         list.appendChild(row);
@@ -106,7 +184,7 @@
       disc.addEventListener('click', function () { action('discover'); });
       acts.appendChild(disc);
       var add = el('button', 'l-btn', '+ ' + L('addTrade'));
-      add.addEventListener('click', function () { action('addTrade'); });
+      add.addEventListener('click', openAddTradeOverlay);
       acts.appendChild(add);
       side.appendChild(acts);
 
@@ -127,6 +205,8 @@
       var mid = el('div', 'l-af-mid');
       var list = el('div', 'l-af-rules');
 
+      if (!payload.rules || payload.rules.length === 0)
+        list.appendChild(el('div', 'l-sbm-empty', L('noRules')));
       (payload.rules || []).forEach(function (r, idx) {
         var row = el('div', 'l-af-rule' + (r.active ? ' active' : '') + (r.enabled === false ? ' disabled' : ''));
         row.draggable = true;
@@ -136,7 +216,7 @@
         txt.appendChild(el('div', 'cat', r.catLabel || ''));
         row.appendChild(txt);
         var edit = el('button', 'l-lc-gbtn'); edit.title = L('editRuleTip'); edit.appendChild(svgIcon(PENCIL));
-        edit.addEventListener('click', function (e) { e.stopPropagation(); action('editRulePopup', { id: r.id }); });
+        edit.addEventListener('click', function (e) { e.stopPropagation(); openRuleEditOverlay(r); });
         row.appendChild(edit);
         row.addEventListener('click', function () { if (!r.active) action('selectRule', { id: r.id }); });
 
@@ -205,8 +285,8 @@
       card.appendChild(chipRow(
         (r.categories || []).map(function (c) { return { label: c.label, ost: c.ost }; }),
         L('addCategoryTip'),
-        function (it) { action('removeCategory', { ost: it.ost }); },
-        function () { action('addCategory'); }));
+        function (it) { action('removeCategory', { value: it.label }); },
+        function () { openPicker(L('category'), r.categoryOptions || [], function (v) { action('addCategory', { value: v }); }); }));
 
       var allRow = el('div', 'l-af-allrow');
       var allBtn = el('button', 'l-af-toggle' + (r.matchType === 'all' ? ' on' : ''), L('all'));
@@ -221,15 +301,16 @@
         r.parameter ? [{ label: r.parameter }] : [],
         L('pickParameterTip'),
         function () { action('clearParameter'); },
-        function () { action('pickParameter'); }));
-      if (r.parameterBuiltIn) card.appendChild(el('div', 'l-af-caption', '\u2713 ' + L('builtInParam')));
+        function () { openPicker(L('parameter'), r.parameterOptions || [], function (v) { action('setParameter', { value: v }); }); }));
+      card.appendChild(el('div', 'l-af-caption',
+        r.parameterBuiltIn ? '\u2713 ' + L('builtInParam') : L('notLinkSafe')));
 
       card.appendChild(el('div', 'l-af-lbl', L('searchString')));
       card.appendChild(chipRow(
         (r.keywords || []).map(function (k) { return { label: k }; }),
         L('addKeywordTip'),
         function (it) { action('removeKeyword', { value: it.label }); },
-        function () { action('addKeyword'); }));
+        function () { openKeywordOverlay(); }));
 
       var match = ui.dropdown({
         value: r.matchType === 'equals' ? 'equals' : 'contains',
@@ -261,9 +342,11 @@
         row.appendChild(el('span'));
       }
 
-      var color = el('button', 'l-af-colorbox'); color.style.background = o.color;
+      // Native color input - WebView2 shows the OS picker; change posts the hex back.
+      var color = el('input', 'l-af-colorbox'); color.type = 'color';
+      color.value = /^#[0-9a-fA-F]{6}$/.test(o.color || '') ? o.color : '#888888';
       color.title = L('pickColorTip');
-      color.addEventListener('click', function () { action('pickColor', { layer: key }); });
+      color.addEventListener('change', function () { action('setColor', { layer: key, value: color.value }); });
       row.appendChild(color);
 
       if (key === 'lines') {
@@ -299,15 +382,12 @@
       return card;
     }
 
-    function visRow(card, key, on, capMain, capDim) {
+    function visRow(card, key, on, capMain) {
       var row = el('div', 'l-af-vrow');
       var tog = el('button', 'l-af-toggle' + (on ? ' on' : ''), L(key));
       tog.addEventListener('click', function () { action('setFlag', { flag: key, value: !on }); });
       row.appendChild(tog);
-      var cap = el('div', 'cap');
-      cap.appendChild(el('span', null, capMain));
-      if (capDim) { cap.appendChild(el('span', 'dim', ' ' + capDim)); }
-      row.appendChild(cap);
+      row.appendChild(el('div', 'cap', capMain));
       card.appendChild(row);
     }
 
@@ -317,6 +397,129 @@
       visRow(card, 'visible', r.visible, L('visibleDesc'));
       visRow(card, 'filterOn', r.filterOn, L('filterOnDesc'));
       return card;
+    }
+
+    // -- Overlays ------------------------------------------------------------------
+    function openTradeEditOverlay(t) {
+      var body = el('div');
+      var name = textRow(L('tradeNameLabel'), t.label);
+      body.appendChild(name.el);
+      body.appendChild(el('div', 'l-af-caption', L('tradeIdLabel') + ' ' + t.id));
+      var color = colorRow(L('addTradeColorLabel'), t.color);
+      body.appendChild(color.el);
+      openOverlay(t.label, body, [
+        { label: L('tradeDelete'), variant: 'danger', onClick: function () { action('deleteTrade', { id: t.id }); } },
+        { label: L('tradeDuplicate'), onClick: function () { action('duplicateTrade', { id: t.id }); } },
+        { label: L('save'), variant: 'primary', onClick: function () {
+          action('applyTradeEdit', { id: t.id, label: name.input.value, color: color.input.value }); } }
+      ]);
+    }
+
+    function openAddTradeOverlay() {
+      var body = el('div');
+      var name = textRow(L('addTradeNameLabel'), '');
+      body.appendChild(name.el);
+      var color = colorRow(L('addTradeColorLabel'), '#569cd6');
+      body.appendChild(color.el);
+      openOverlay('+ ' + L('addTrade'), body, [
+        { label: L('addTradeApply'), variant: 'primary', onClick: function () {
+          action('addTrade', { label: name.input.value, color: color.input.value }); } }
+      ]);
+    }
+
+    function openRuleEditOverlay(r) {
+      var body = el('div');
+      var name = textRow(L('ruleNameLabel'), r.name);
+      body.appendChild(name.el);
+      openOverlay(r.name, body, [
+        { label: L('ruleDelete'), variant: 'danger', onClick: function () { action('deleteRule', { id: r.id }); } },
+        { label: L('ruleCopy'), onClick: function () { action('duplicateRule', { id: r.id }); } },
+        { label: L('save'), variant: 'primary', onClick: function () {
+          action('applyRuleEdit', { id: r.id, name: name.input.value }); } }
+      ]);
+    }
+
+    function openKeywordOverlay() {
+      var body = el('div');
+      var kw = textRow(L('searchString'), '', L('addKeywordTip'));
+      body.appendChild(kw.el);
+      openOverlay(L('searchString'), body, [
+        { label: L('save'), variant: 'primary', onClick: function () {
+          if (kw.input.value.trim()) action('addKeyword', { value: kw.input.value.trim() }); } }
+      ]);
+      kw.input.focus();
+    }
+
+    function openHistoryOverlay() {
+      var body = el('div');
+      body.style.maxHeight = '380px'; body.style.overflowY = 'auto';
+      (payload.history || []).slice().reverse().forEach(function (h) {
+        var row = el('div', 'l-sbm-row' + (h.current ? ' active' : ''));
+        row.appendChild(el('span', 'nm', h.label + (h.current ? '  ' + L('historyNow') : '')));
+        row.addEventListener('click', function () { closeOverlay(); action('historyJump', { index: h.index }); });
+        body.appendChild(row);
+      });
+      openOverlay(L('historyHeader'), body, []);
+    }
+
+    function openTemplatesOverlay() {
+      var body = el('div');
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplSavedHeader')));
+      if (!payload.templates || payload.templates.length === 0)
+        body.appendChild(el('div', 'l-af-caption', L('tmplNone')));
+      (payload.templates || []).forEach(function (name) {
+        var row = el('div', 'l-sbm-row');
+        row.appendChild(el('span', 'nm', name));
+        var del = el('button', 'l-lc-gbtn', '\u00d7'); del.title = L('tmplDeleteTip');
+        del.addEventListener('click', function (e) { e.stopPropagation(); closeOverlay(); action('templateDelete', { name: name }); });
+        row.appendChild(del);
+        row.addEventListener('click', function () { closeOverlay(); action('templateLoad', { name: name }); });
+        body.appendChild(row);
+      });
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplSaveAs')));
+      var saveRow = el('div', 'l-sbm-namerow');
+      var nameIn = el('input', 'l-sbm-nameedit'); nameIn.type = 'text'; nameIn.style.fontWeight = 'normal'; nameIn.style.flex = '1';
+      saveRow.appendChild(nameIn);
+      var saveBtn = el('button', 'l-btn', L('save'));
+      saveBtn.addEventListener('click', function () {
+        if (nameIn.value.trim()) { closeOverlay(); action('templateSave', { name: nameIn.value.trim() }); }
+      });
+      saveRow.appendChild(saveBtn);
+      body.appendChild(saveRow);
+
+      body.appendChild(el('div', 'l-lc-filterhint', L('tmplFileHeader')));
+      var fileRow = el('div', 'l-sbm-geomrow');
+      var imp = el('button', 'l-btn', L('tmplImport'));
+      imp.addEventListener('click', function () { closeOverlay(); action('importFile'); });
+      fileRow.appendChild(imp);
+      var exp = el('button', 'l-btn', L('tmplExport'));
+      exp.addEventListener('click', function () { closeOverlay(); action('exportFile'); });
+      fileRow.appendChild(exp);
+      body.appendChild(fileRow);
+
+      // Restore defaults - inline confirm (second click within the same overlay applies).
+      var restore = el('button', 'l-btn danger wide', L('tmplRestore'));
+      restore.style.width = '100%'; restore.style.marginTop = '12px';
+      var armed = false;
+      restore.addEventListener('click', function () {
+        if (!armed) { armed = true; restore.textContent = L('tmplRestoreYes'); return; }
+        closeOverlay(); action('restoreDefaults');
+      });
+      body.appendChild(restore);
+
+      openOverlay(L('templates'), body, []);
+    }
+
+    // -- Status pill -------------------------------------------------------------
+    function flashStatus(msg) {
+      var pill = document.getElementById('l-af-status');
+      if (!pill) return;
+      pill.textContent = msg;
+      pill.style.display = '';
+      if (statusTimer) clearTimeout(statusTimer);
+      statusTimer = setTimeout(function () { pill.style.display = 'none'; pill.textContent = ''; }, 3500);
     }
 
     return { render: render };

@@ -806,3 +806,21 @@ html, body { height:100%; }
               border:1px solid var(--l-border); border-radius:var(--l-radius-md); width:100%;
               font-family:var(--l-ui-font); font-size:var(--l-fs-md); cursor:pointer; }
 .l-dropdown:focus { outline:none; border-color:var(--l-accent); }
+
+/* Legend Creator - inline edit fields + client-side paper preview */
+.l-lc-inline { background: transparent; border: 1px solid transparent; border-radius: var(--l-radius-sm);
+               color: var(--l-text); font-family: var(--l-ui-font); font-size: var(--l-fs-md);
+               padding: 2px 4px; min-width: 0; }
+.l-lc-inline:hover { border-color: var(--l-border); }
+.l-lc-inline:focus { outline: none; border-color: var(--l-accent); background: var(--l-raised); }
+.l-lc-ghead .ttl.l-lc-inline { flex: 1 1 auto; font-weight: 700; letter-spacing: .05em; font-size: var(--l-fs-md); }
+.l-lc-block .nm.l-lc-inline { flex: 1 1 auto; }
+.l-lc-previewpage { background: #ffffff; color: #111111; border-radius: 4px; padding: 22px 26px; }
+.l-lc-previewpage .pv-title { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+.l-lc-previewpage .pv-sub { font-size: 12px; color: #444; margin-bottom: 6px; }
+.l-lc-previewpage .pv-lane { display: flex; gap: 28px; margin-top: 14px; }
+.l-lc-previewpage .pv-group { min-width: 150px; }
+.l-lc-previewpage .pv-ghead { font-size: 12px; font-weight: 700; letter-spacing: .04em; margin-bottom: 6px; }
+.l-lc-previewpage .pv-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.l-lc-previewpage .pv-sw { width: 26px; height: 12px; border: 1px solid #333; flex-shrink: 0; }
+.l-lc-previewpage .pv-lbl { font-size: 11px; }

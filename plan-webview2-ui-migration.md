@@ -540,3 +540,24 @@ scrollbars (all become CSS/JS in the shared lib).
   Scope Box Manager with the flag on; each overlay/action round-trips through the same handlers
   as the WPF window. **Remaining WPF-only:** Auto Filters (Settings→Filters tab +
   `FiltersSettingsWindow`) and Legend Creator — deliberately out of scope this pass.
+- **2026-07 (Auto Filters + Legend Creator web ports — pending Windows verify):** the two
+  final surfaces are ported onto `WebWindowBase`. **Auto Filters** (`WebAutoFilters` model +
+  `WebAutoFiltersWindow` + `autofilters.html`/`lib/autofilters.js`): same working-buffer
+  discipline as the WPF window (deep-copy buffer, serialized dirty snapshot, close-time
+  save + auto-create over `ComputeChangedFilterNames`/`ComputeChangedOverrideFilterNames`),
+  in-window undo/redo/history (serialized snapshots), templates
+  (load/save/delete/import/export/restore via `AutoFiltersSettings.Templates` + Win32 file
+  dialogs on the window's STA thread), apply/remove/discover/delete-from-project through
+  the SAME App events, Activated-reload after Discover. Editor overlays: searchable
+  category/parameter pickers (`KnownCategoryDisplayNames` / `GetParametersFor`), keyword
+  prompt, trade/rule edit popups; native `<input type=color>` for override colours.
+  **Legend Creator** (`WebLegendCreator` + `WebLegendCreatorWindow` +
+  `legendcreator.html`/`lib/legendcreator.js`): edits `LegendCreatorSettings.Instance`
+  directly with save-per-mutation, Create/Update through the SAME
+  `LegendCreatorEventHandler` payload (incl. `OnLegendCreated` rebinding RevitViewId),
+  inline group/block renaming, whole-card palette drops, trade-scoped + searchable palette,
+  templates, and a client-side paper preview overlay. Both commands branch on the Web UI
+  flag (WPF fallback per R25); both pages verified rendering in headless Chromium.
+  **Deliberately deferred from the WPF feature set:** multi-select batch edit + merge-rules
+  (Filters), rule-level color-ramp popup, and the WPF preview overlay's exact metrics —
+  logged in `web-migration-questions.md`.

@@ -71,6 +71,7 @@
   "overrideStyle": {
     "surface": "Surface",
     "cut": "Cut",
+    "solidFill": "(solid fill)",
     "lines": "Lines",
     "fg": "FG",
     "bg": "BG"

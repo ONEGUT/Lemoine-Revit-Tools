@@ -6,6 +6,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
+using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Commands
 {
@@ -18,12 +19,29 @@ namespace LemoineTools.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class OpenLegendSettingsCommand : IExternalCommand
     {
-        private static LegendSettingsWindow? _window;
+        private static LegendSettingsWindow?    _window;
+        private static WebLegendCreatorWindow?  _webWindow;
 
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            // Bring existing window to front (STA-safe)
-            if (_window != null)
+            bool web = WebUiSettings.Instance.Enabled;
+
+            // Bring an existing window (of the active flavour) to front.
+            if (web && _webWindow != null)
+            {
+                try
+                {
+                    WebUiThread.Invoke(() =>
+                    {
+                        var w = _webWindow;
+                        if (w != null && w.IsVisible) w.Activate();
+                        else _webWindow = null;
+                    });
+                    if (_webWindow != null) return Result.Succeeded;
+                }
+                catch (System.Exception ex) { DiagnosticsLog.Swallowed("OpenLegendSettings: activate web window", ex); _webWindow = null; }
+            }
+            else if (!web && _window != null)
             {
                 try
                 {
@@ -78,6 +96,21 @@ namespace LemoineTools.Commands
                     .OrderBy(v => v.Name, System.StringComparer.OrdinalIgnoreCase)
                     .Select(v => (v.Id, v.Name))
                     .ToList();
+
+            // Web branch: open on the shared WebUiThread behind the Web UI flag; the WPF
+            // window stays as the flag-off fallback (rule R25).
+            if (web)
+            {
+                var webTextTypes = textTypes.Select(t => (t.Item1.Value, t.Item2)).ToList();
+                WebUiThread.Invoke(() =>
+                {
+                    var w = new WebLegendCreatorWindow(webTextTypes);
+                    w.Closed += (s2, e2) => { _webWindow = null; };
+                    w.Show();
+                    _webWindow = w;
+                });
+                return Result.Succeeded;
+            }
 
             var ready = new ManualResetEventSlim(false);
             LegendSettingsWindow? win = null;
