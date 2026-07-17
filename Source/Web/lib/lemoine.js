@@ -542,6 +542,23 @@ Lemoine.ui = (function () {
   // ── SearchSelect (filterable single-pick dropdown) ──────────────────────────
   // opts: { options:[string], value, placeholder, onChange(value) }. In-page list popup
   // (never a native/WPF popup - R27); commits on click or Enter, filters as you type.
+  // -- Dropdown (native select, themed) ---------------------------------------
+  // opts: { value, options:[{value,label}], onChange(value) } - a compact closed
+  // picker for dense editor rows, where the radio-list singleSelect is too tall.
+  function dropdown(opts) {
+    opts = opts || {};
+    var sel = el('select', 'l-dropdown');
+    (opts.options || []).forEach(function (o) {
+      var op = el('option', null, o.label != null ? o.label : String(o.value));
+      op.value = o.value;
+      if (o.value === opts.value) op.selected = true;
+      sel.appendChild(op);
+    });
+    sel.addEventListener('change', function () { if (opts.onChange) opts.onChange(sel.value); });
+    return { el: sel, getValue: function () { return sel.value; },
+             setValue: function (v) { sel.value = v; } };
+  }
+
   function searchSelect(opts) {
     opts = opts || {};
     var root = el('div', 'l-search');
@@ -596,6 +613,7 @@ Lemoine.ui = (function () {
     checkList: checkList, review: review,
     folderBrowser: folderBrowser, fileBrowser: fileBrowser,
     tokenInput: tokenInput, browserTree: browserTree,
-    numberRange: numberRange, searchSelect: searchSelect
+    numberRange: numberRange, searchSelect: searchSelect,
+    dropdown: dropdown
   };
 })();
