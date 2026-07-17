@@ -8,10 +8,11 @@ using LemoineTools.Framework.Web;
 namespace LemoineTools.Tools.Setup
 {
     /// <summary>Web port of <see cref="UpgradeLinksViewModel"/> — queue Revit files, upgrade
-    /// and link them. Same scan/run handlers, settings, and AppStrings keys. File rows become
-    /// dynamic inputs ("name_i"/"plc_i"/"rm_i"); Add Files opens the native multiselect dialog
-    /// from IWebToolAction (window thread); the Cloud per-file pause maps to IWebRunPausable.
-    /// The WPF destination cards flatten to a single-select list.</summary>
+    /// and link them. Same scan/run handlers, settings, and AppStrings keys. The file list is a
+    /// <see cref="WebInput.FileTable"/> whose cells carry dynamic ids ("name_i"/"plc_i"/"rm_i");
+    /// Add Files opens the native multiselect dialog from IWebToolAction (window thread); the
+    /// Cloud per-file pause maps to IWebRunPausable. The destination single-select carries the
+    /// WPF cards' descriptions on its options, and the review step passes the WPF ITEMS chips.</summary>
     public sealed class UpgradeLinksWebTool : WebToolBase, IWebToolCleanup, IWebStepRefresh, IWebToolAction, IWebRunPausable
     {
         private readonly UpgradeLinksScanHandler? _scanHandler;
@@ -29,6 +30,8 @@ namespace LemoineTools.Tools.Setup
         private readonly UpgradePlacement _defaultPlacement = UpgradeLinksSettings.Instance.DefaultPlacement;
         private UpgradePlacement?  _setAllSelection;
         private bool               _scanning;
+        private string?            _scanError;   // whole-scan failure shown in the files step
+        private int                _dupCount;    // files skipped by the last add (already listed)
 
         public event Action<string>? StepInputsChanged;
 
@@ -73,33 +76,43 @@ namespace LemoineTools.Tools.Setup
 
             var dest = new WebStep("dest", AppStrings.T("upgradeLinks.steps.dest"))
                 .Add(WebInput.Hint("destHint", AppStrings.T("upgradeLinks.labels.destHint")));
+            // Every option carries its description on the card (always visible, like the WPF
+            // destination cards); only the selected option's extras render below the list.
             var destOptions = new List<WebOption>
             {
-                new WebOption("selectedFolder",  AppStrings.T("upgradeLinks.labels.optSelectedFolderTitle")),
-                new WebOption("currentLocation", AppStrings.T("upgradeLinks.labels.optCurrentLocationTitle")),
+                new WebOption("selectedFolder",  AppStrings.T("upgradeLinks.labels.optSelectedFolderTitle"),
+                    desc: AppStrings.T("upgradeLinks.labels.optSelectedFolderDesc")),
+                new WebOption("currentLocation", AppStrings.T("upgradeLinks.labels.optCurrentLocationTitle"),
+                    desc: AppStrings.T("upgradeLinks.labels.optCurrentLocationDesc")),
             };
             if (_hostIsCloud)
-                destOptions.Add(new WebOption("cloud", AppStrings.T("upgradeLinks.labels.optCloudTitle")));
+                destOptions.Add(new WebOption("cloud", AppStrings.T("upgradeLinks.labels.optCloudTitle"),
+                    desc: AppStrings.T("upgradeLinks.labels.optCloudDesc")));
             dest.Add(WebInput.SingleSelect("dest", AppStrings.T("upgradeLinks.labels.destQuestion"),
                 DestToken(_dest), destOptions));
 
             switch (_dest)
             {
                 case UpgradeDestination.SelectedFolder:
-                    dest.Add(WebInput.Hint("selFolderDesc", AppStrings.T("upgradeLinks.labels.optSelectedFolderDesc")));
                     dest.Add(WebInput.FolderBrowser("folder",
                         AppStrings.T("upgradeLinks.labels.saveLocationLabel"), _selectedFolder));
                     break;
                 case UpgradeDestination.CurrentLocation:
-                    dest.Add(WebInput.Hint("curLocDesc", AppStrings.T("upgradeLinks.labels.optCurrentLocationDesc")));
                     dest.Add(WebInput.Warn("overwriteWarn", AppStrings.T("upgradeLinks.labels.optOverwriteWarn")));
                     dest.Add(WebInput.Hint("overwriteRename", AppStrings.T("upgradeLinks.labels.optOverwriteRenameNote")));
                     break;
                 case UpgradeDestination.Cloud:
-                    dest.Add(WebInput.Hint("cloudDesc", AppStrings.T("upgradeLinks.labels.optCloudDesc")));
                     dest.Add(WebInput.Hint("cloudNote", AppStrings.T("upgradeLinks.labels.optCloudNote")));
                     break;
             }
+
+            var chips = new List<string>
+            {
+                AppStrings.T("upgradeLinks.review.chipAudit")  + (_audit  ? " \u2713" : " \u2717"),
+                AppStrings.T("upgradeLinks.review.chipReload") + (_reload ? " \u2713" : " \u2717"),
+            };
+            if (_dest == UpgradeDestination.CurrentLocation)
+                chips.Add(AppStrings.T("upgradeLinks.review.chipNamesIgnored"));
 
             var run = new WebStep("run", AppStrings.T("upgradeLinks.steps.run"), required: false)
                 .Add(WebInput.Review("review", new[]
@@ -110,7 +123,9 @@ namespace LemoineTools.Tools.Setup
                     (AppStrings.T("upgradeLinks.review.itemPlacement"), PlacementSummary()),
                     (AppStrings.T("upgradeLinks.review.itemDest"),      DestSummary()),
                 },
-                warning: ReviewWarning()));
+                warning: ReviewWarning(),
+                chips: chips,
+                chipsLabel: AppStrings.T("controls.inputs.reviewSummary.itemsHeader")));
 
             return new List<WebStep> { files, dest, run };
         }
@@ -119,6 +134,10 @@ namespace LemoineTools.Tools.Setup
         {
             if (_scanning)
                 files.Add(WebInput.Hint("scanning", AppStrings.T("upgradeLinks.labels.scanning")));
+            if (_scanError != null)
+                files.Add(WebInput.Warn("scanFailed", AppStrings.T("upgradeLinks.labels.scanFailed", _scanError)));
+            if (_dupCount > 0)
+                files.Add(WebInput.Hint("dupSkipped", AppStrings.T("upgradeLinks.labels.dupSkipped", _dupCount)));
 
             if (_rows.Count == 0)
             {
@@ -126,21 +145,30 @@ namespace LemoineTools.Tools.Setup
             }
             else
             {
+                var tableRows = new List<WebFileRow>();
                 for (int i = 0; i < _rows.Count; i++)
                 {
                     var row = _rows[i];
-                    files.Add(WebInput.TextField($"name_{i}",
-                        $"{AppStrings.T("upgradeLinks.labels.colFile")} — {row.Folder}", row.SaveAsName));
-                    files.Add(WebInput.Hint($"ver_{i}",
-                        AppStrings.T("upgradeLinks.labels.colVersion") + ": " + VersionText(row)));
-                    if (Usable(row))
-                        files.Add(WebInput.SingleSelect($"plc_{i}",
-                            AppStrings.T("upgradeLinks.labels.colPlacement"),
-                            UpgradeLinksViewModel.PlacementLabel(row.Placement),
-                            UpgradeLinksViewModel.PlacementLabels().Select(l => new WebOption(l, l))));
-                    files.Add(WebInput.Button($"rm_{i}",
-                        "×  " + System.IO.Path.GetFileName(row.Path), variant: "ghost"));
+                    tableRows.Add(new WebFileRow
+                    {
+                        NameId      = $"name_{i}",
+                        Name        = row.SaveAsName,
+                        Ext         = ".rvt",
+                        Path        = row.Folder,
+                        Badge       = VersionText(row),
+                        BadgeTone   = BadgeTone(row),
+                        SelectId    = $"plc_{i}",
+                        SelectValue = UpgradeLinksViewModel.PlacementLabel(row.Placement),
+                        Options     = UpgradeLinksViewModel.PlacementLabels().Select(l => new WebOption(l, l)).ToList(),
+                        RemoveId    = $"rm_{i}",
+                        Disabled    = !Usable(row),
+                    });
                 }
+                files.Add(WebInput.FileTable("filesTable",
+                    AppStrings.T("upgradeLinks.labels.colFile"),
+                    AppStrings.T("upgradeLinks.labels.colVersion"),
+                    AppStrings.T("upgradeLinks.labels.colPlacement"),
+                    tableRows));
 
                 int unreadable = _rows.Count(r => !r.Readable && !r.IsFutureVersion && r.Scanned);
                 if (unreadable > 0) files.Add(WebInput.Warn("unreadableNote", AppStrings.T("upgradeLinks.labels.unreadableNote", unreadable)));
@@ -157,7 +185,7 @@ namespace LemoineTools.Tools.Setup
             if (_rows.Count > 0)
             {
                 files.Add(WebInput.Button("clearList", AppStrings.T("upgradeLinks.labels.clearList"), variant: "ghost"));
-                files.Add(WebInput.SingleSelect("setAll", AppStrings.T("upgradeLinks.labels.setAll"),
+                files.Add(WebInput.Dropdown("setAll", AppStrings.T("upgradeLinks.labels.setAll"),
                     UpgradeLinksViewModel.PlacementLabel(_setAllSelection ?? _defaultPlacement),
                     UpgradeLinksViewModel.PlacementLabels().Select(l => new WebOption(l, l))));
                 files.Add(WebInput.Toggle("audit", AppStrings.T("upgradeLinks.labels.auditLabel"), _audit));
@@ -165,6 +193,17 @@ namespace LemoineTools.Tools.Setup
                 files.Add(WebInput.Toggle("reload", AppStrings.T("upgradeLinks.labels.reloadLabel"), _reload));
                 files.Add(WebInput.Hint("reloadDesc", AppStrings.T("upgradeLinks.labels.reloadDesc")));
             }
+        }
+
+        // Mirrors the WPF VersionBadge color keys: red for unreadable/too-new, dim while
+        // unscanned, green when already current, accent when it will upgrade.
+        private static string BadgeTone(UpgradeFileRow row)
+        {
+            if (row.IsFutureVersion) return "bad";
+            if (!row.Readable)       return "bad";
+            if (!row.Scanned)        return "dim";
+            if (row.IsCurrent)       return "cur";
+            return "up";
         }
 
         private string VersionText(UpgradeFileRow row)
@@ -184,6 +223,7 @@ namespace LemoineTools.Tools.Setup
             if (inputId == "clearList")
             {
                 _rows.Clear();
+                _dupCount = 0; _scanError = null;
                 StepInputsChanged?.Invoke("files");
                 Fire();
                 return;
@@ -218,9 +258,11 @@ namespace LemoineTools.Tools.Setup
 
             var existing = new HashSet<string>(_rows.Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
             var added = new List<UpgradeFileRow>();
+            _dupCount = 0;
             foreach (var p in picked)
             {
-                if (string.IsNullOrWhiteSpace(p) || !existing.Add(p)) continue;
+                if (string.IsNullOrWhiteSpace(p)) continue;
+                if (!existing.Add(p)) { _dupCount++; continue; }
                 var row = new UpgradeFileRow
                 {
                     Path = p,
@@ -229,7 +271,13 @@ namespace LemoineTools.Tools.Setup
                 };
                 _rows.Add(row); added.Add(row);
             }
-            if (added.Count == 0) return;
+            if (added.Count == 0)
+            {
+                // Nothing new — but if everything picked was a duplicate, say so instead of
+                // silently doing nothing (matches WPF).
+                if (_dupCount > 0) StepInputsChanged?.Invoke("files");
+                return;
+            }
 
             StepInputsChanged?.Invoke("files");
             Fire();
@@ -239,8 +287,10 @@ namespace LemoineTools.Tools.Setup
         private void ScanNewRows(List<UpgradeFileRow> rows)
         {
             if (_scanHandler == null || _scanEvent == null) return;
-            _scanning = true;
+            _scanning  = true;
+            _scanError = null;
             StepInputsChanged?.Invoke("files");
+            Fire();   // the files step is invalid while the scan is in flight
 
             _scanHandler.Paths = rows.Select(r => r.Path).ToList();
             // Callbacks land on the Revit thread; the window marshals StepInputsChanged.
@@ -266,7 +316,8 @@ namespace LemoineTools.Tools.Setup
             };
             _scanHandler.OnError = err =>
             {
-                _scanning = false;
+                _scanning  = false;
+                _scanError = string.IsNullOrEmpty(err) ? "?" : err;
                 DiagnosticsLog.Warn("UpgradeLinksWebTool: scan error", err ?? "");
                 StepInputsChanged?.Invoke("files");
                 Fire();
@@ -360,13 +411,15 @@ namespace LemoineTools.Tools.Setup
         {
             switch (stepId)
             {
-                case "files": return ReadableCount() > 0;
+                // Invalid while the version scan is in flight — a not-yet-scanned row defaults
+                // to readable, so running early could include a file the scan would have flagged.
+                case "files": return !_scanning && ReadableCount() > 0;
                 case "dest":  return DestValid();
                 default:      return true;
             }
         }
 
-        public override bool CanRun() => ReadableCount() > 0 && DestValid();
+        public override bool CanRun() => !_scanning && ReadableCount() > 0 && DestValid();
 
         public override string SummaryFor(string stepId)
         {

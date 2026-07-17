@@ -119,7 +119,9 @@ Lemoine.ui = (function () {
   }
 
   // ── SingleSelect (radio list) ─────────────────────────────────────────────
-  // opts: { options:[{value,label,disabled}], value, onChange(value) }
+  // opts: { options:[{value,label,desc,disabled}], value, onChange(value) }
+  // A `desc` renders as a dim second line on the option card (always visible, so the
+  // user can compare choices before picking - mirrors the WPF destination cards).
   function singleSelect(opts) {
     opts = opts || {};
     var root = el('div', 'l-single');
@@ -127,7 +129,14 @@ Lemoine.ui = (function () {
     (opts.options || []).forEach(function (o) {
       var row = el('div', 'l-single opt'); row.className = 'opt' + (o.disabled ? ' disabled' : '');
       row.appendChild(el('span', 'dot'));
-      row.appendChild(el('span', 'l-label', o.label));
+      if (o.desc) {
+        var col = el('span', 'optcol');
+        col.appendChild(el('span', 'l-label', o.label));
+        col.appendChild(el('div', 'desc', o.desc));
+        row.appendChild(col);
+      } else {
+        row.appendChild(el('span', 'l-label', o.label));
+      }
       function paint() { row.classList.toggle('sel', value === o.value); }
       paint();
       if (!o.disabled) row.addEventListener('click', function () {
@@ -354,7 +363,7 @@ Lemoine.ui = (function () {
   }
 
   // ── Review (read-only summary) ──────────────────────────────────────────────
-  // opts: { items:[{label,value}], note, warning }  - mirrors the WPF ReviewSummary:
+  // opts: { items:[{label,value}], note, warning, chips:[string], chipsLabel }  - mirrors the WPF ReviewSummary:
   // an optional warning banner above, a 2-column grid of label/value cards (UPPERCASE dim
   // label + mono value), and an optional italic note below.
   function review(opts) {
@@ -373,6 +382,15 @@ Lemoine.ui = (function () {
       cards.appendChild(card);
     });
     root.appendChild(cards);
+    // Optional chip row below the cards (WPF ReviewSummary's ITEMS box).
+    if (opts.chips && opts.chips.length) {
+      var cb = el('div', 'chipbox');
+      cb.appendChild(el('div', 'k', (opts.chipsLabel || 'Items').toUpperCase()));
+      var crow = el('div', 'chips');
+      opts.chips.forEach(function (c) { crow.appendChild(el('span', 'chip', c)); });
+      cb.appendChild(crow);
+      root.appendChild(cb);
+    }
     if (opts.note) root.appendChild(el('div', 'note', opts.note));
     return { el: root };
   }
@@ -603,6 +621,55 @@ Lemoine.ui = (function () {
              setValue: function (v) { committed = v || ''; input.value = committed; } };
   }
 
+  // ── FileTable (file-queue rows) ───────────────────────────────────────────
+  // opts: { headers:{file,version,placement}, rows:[{nameId,name,ext,path,badge,
+  //         badgeTone('up'|'cur'|'bad'|'dim'), selectId, selectValue, options,
+  //         removeId, disabled}], onCell(inputId,value), onRemove(inputId) }
+  // Mirrors the WPF UpgradeLinks file table: header row + one aligned grid row per
+  // file (editable save-as + extension + source path, colored version badge, compact
+  // placement dropdown, per-row remove). Rebuilds arrive whole via `stepInputs`, so
+  // the handle carries no per-cell setters.
+  function fileTable(opts) {
+    opts = opts || {};
+    var root = el('div', 'l-ftable');
+    var h = opts.headers || {};
+    var hdr = el('div', 'frow hdr');
+    hdr.appendChild(el('div', null, ''));
+    hdr.appendChild(el('div', null, h.file || ''));
+    hdr.appendChild(el('div', null, h.version || ''));
+    hdr.appendChild(el('div', null, h.placement || ''));
+    hdr.appendChild(el('div', null, ''));
+    root.appendChild(hdr);
+    (opts.rows || []).forEach(function (r) {
+      var row = el('div', 'frow');
+      row.appendChild(el('div', null, ''));
+      var names = el('div', 'names');
+      var nb = el('div', 'nbox');
+      var input = el('input');
+      input.type = 'text'; input.spellcheck = false;
+      input.value = r.name || '';
+      input.disabled = !!r.disabled;
+      input.addEventListener('input', function () { if (opts.onCell) opts.onCell(r.nameId, input.value); });
+      nb.appendChild(input);
+      nb.appendChild(el('span', 'ext', r.ext || ''));
+      names.appendChild(nb);
+      names.appendChild(el('div', 'fpath', r.path || ''));
+      row.appendChild(names);
+      var bwrap = el('div');
+      bwrap.appendChild(el('span', 'badge ' + (r.badgeTone || 'dim'), r.badge || ''));
+      row.appendChild(bwrap);
+      var dd = dropdown({ options: r.options, value: r.selectValue,
+                          onChange: function (v) { if (opts.onCell) opts.onCell(r.selectId, v); } });
+      dd.el.disabled = !!r.disabled;
+      row.appendChild(dd.el);
+      var rm = el('button', 'rm', '\u00D7'); rm.type = 'button'; // MULTIPLICATION SIGN
+      rm.addEventListener('click', function () { if (opts.onRemove) opts.onRemove(r.removeId); });
+      row.appendChild(rm);
+      root.appendChild(row);
+    });
+    return { el: root };
+  }
+
   function num(v, dflt) { var n = parseFloat(v); return isNaN(n) ? dflt : n; }
 
   return {
@@ -614,6 +681,6 @@ Lemoine.ui = (function () {
     folderBrowser: folderBrowser, fileBrowser: fileBrowser,
     tokenInput: tokenInput, browserTree: browserTree,
     numberRange: numberRange, searchSelect: searchSelect,
-    dropdown: dropdown
+    dropdown: dropdown, fileTable: fileTable
   };
 })();

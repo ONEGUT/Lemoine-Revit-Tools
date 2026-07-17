@@ -3,7 +3,10 @@
 //
 // Builds the full tool-window chrome (toolbar, step accordion with pips, per-step
 // inputs, footer, output log + progress) from a serializable spec delivered in the
-// `init` bridge message, and drives it entirely by messages:
+// `init` bridge message. Navigation lives INSIDE the steps, matching WPF: every step
+// past the first carries a ghost Back button, non-last steps a Confirm button, and
+// the LAST step the Run button (plus the pausable-run Continue/Skip pair); the
+// footer holds only Reset. The window is driven entirely by messages:
 //   C# -> JS : init, validation, log, progress, complete, themeChanged
 //   JS -> C# : state (an input changed), action (confirm/run/reset/cancel/navigate)
 //
@@ -24,8 +27,8 @@ Lemoine.stepflow = function (container, opts) {
   var valid = {};             // stepId -> bool (from C#)
   var canRun = false;
   var running = false, finished = false, finishCls = 'pass';
-  var runEl = null, logEl = null, runBtn = null, backBtn = null;
-  var continueBtn = null, skipBtn = null; // pausable-run footer buttons
+  var runEl = null, logEl = null, runBtn = null;
+  var continueBtn = null, skipBtn = null; // pausable-run buttons (last step's nav row)
   var chipEl = null, statusEl = null, fillEl = null, pipsEl = null, countsEl = null; // top-strip chrome
 
   // ── Public API (driven by inbound bridge messages) ─────────────────────────
@@ -177,23 +180,12 @@ Lemoine.stepflow = function (container, opts) {
     content.appendChild(runEl);
     container.appendChild(content);
 
-    // ── Footer ───────────────────────────────────────────────────────────────
+    // ── Footer: Reset only (Back/Confirm/Run live inside the steps, like WPF) ──
     var footer = U.el('div', 'footer');
-    backBtn = U.button({ label: '← Back', variant: 'ghost', onClick: goBack }).el; // LEFTWARDS ARROW
     var mid = U.el('div', 'mid');
     var resetBtn = U.button({ label: 'Reset', variant: 'ghost', onClick: function () { send('action', { action: 'reset' }); } }).el;
-    // Pausable-run buttons (IWebRunPausable) - hidden until a `pause` message arrives.
-    continueBtn = U.button({ label: 'Continue', variant: 'primary', onClick: function () { send('action', { action: 'continueRun' }); } }).el;
-    skipBtn = U.button({ label: 'Skip', variant: 'ghost', onClick: function () { send('action', { action: 'skipItem' }); } }).el;
-    continueBtn.style.display = 'none'; skipBtn.style.display = 'none';
-    mid.appendChild(resetBtn); mid.appendChild(continueBtn); mid.appendChild(skipBtn);
-    var runHandle = U.button({ label: spec.runLabel || 'Run', variant: 'primary', onClick: function () {
-      running = true; setStatus('Running...', 'accent'); showRun(); send('action', { action: 'run' });
-    } });
-    runBtn = runHandle.el; runBtn.disabled = true;
-    footer.appendChild(backBtn);
+    mid.appendChild(resetBtn);
     footer.appendChild(mid);
-    footer.appendChild(runBtn);
     container.appendChild(footer);
 
     activeId = (spec.steps && spec.steps.length) ? spec.steps[0].id : null;
@@ -210,16 +202,15 @@ Lemoine.stepflow = function (container, opts) {
     if (isRequired(def)) title.appendChild(U.el('span', 'req', '*'));
     var summary = U.el('div', 'summary', def.summary || '');
     titles.appendChild(title); titles.appendChild(summary);
-    head.appendChild(pip); head.appendChild(titles);
+    head.appendChild(pip);
+    head.appendChild(U.el('span', 'sid', def.id)); // mono step-id tag, matching WPF
+    head.appendChild(titles);
     // Navigation is Confirm / Back only (matches the WPF step flow) - no free header jumping.
 
     var body = U.el('div', 'body');
     var inputsEl = U.el('div', 'inputs');
     var inputs = {};
-    (def.inputs || []).forEach(function (inp) {
-      var row = buildInput(inp, def.id);
-      if (row) { inputs[inp.id] = row.handle; inputsEl.appendChild(row.el); }
-    });
+    appendInputs(inputsEl, def.inputs, def.id, inputs);
     body.appendChild(inputsEl);
 
     // Auto "Required before proceeding" hint (shown by refreshStepStates when active + invalid).
@@ -227,23 +218,40 @@ Lemoine.stepflow = function (container, opts) {
     reqHint.textContent = '\u2717 Required before proceeding'; // BALLOT X
     body.appendChild(reqHint);
 
-    // Non-last steps get a Confirm button that advances to the next visible step.
+    // Nav row: ghost Back on the left (hidden while the step is first visible),
+    // Confirm on the right for non-last steps; the LAST step carries Run plus the
+    // pausable-run Continue/Skip pair - navigation and Run live inside the step,
+    // matching WPF (the footer holds only Reset).
     var confirmBtn = null;
     var isLast = index === (spec.steps.length - 1);
+    var crow = U.el('div', 'confirm-row');
+    var stepBackBtn = U.button({ label: '← Back', variant: 'ghost', onClick: goBack }).el; // LEFTWARDS ARROW
+    crow.appendChild(stepBackBtn);
+    crow.appendChild(U.el('div', 'spacer'));
     if (!isLast) {
-      var crow = U.el('div', 'confirm-row');
       var handle = U.button({ label: def.confirmLabel || 'Confirm →', variant: 'primary', onClick: function () { // RIGHTWARDS ARROW
         send('action', { action: 'confirm', stepId: def.id });
         goNext();
       } });
       confirmBtn = handle.el;
       crow.appendChild(confirmBtn);
-      body.appendChild(crow);
+    } else {
+      // Pausable-run buttons (IWebRunPausable) - hidden until a `pause` message arrives.
+      continueBtn = U.button({ label: 'Continue', variant: 'primary', onClick: function () { send('action', { action: 'continueRun' }); } }).el;
+      skipBtn = U.button({ label: 'Skip', variant: 'ghost', onClick: function () { send('action', { action: 'skipItem' }); } }).el;
+      continueBtn.style.display = 'none'; skipBtn.style.display = 'none';
+      var runHandle = U.button({ label: spec.runLabel || 'Run', variant: 'primary', onClick: function () {
+        running = true; setStatus('Running...', 'accent'); showRun(); send('action', { action: 'run' });
+      } });
+      runBtn = runHandle.el; runBtn.disabled = true;
+      crow.appendChild(continueBtn); crow.appendChild(skipBtn); crow.appendChild(runBtn);
     }
+    body.appendChild(crow);
 
     el.appendChild(head); el.appendChild(body);
     return { def: def, el: el, bodyEl: body, inputsEl: inputsEl, pipEl: pip, pipNum: String(index + 1),
-             summaryEl: summary, summaryText: def.summary || '', confirmBtn: confirmBtn, inputs: inputs };
+             summaryEl: summary, summaryText: def.summary || '', confirmBtn: confirmBtn,
+             backBtn: stepBackBtn, inputs: inputs };
   }
 
   // Rebuild one step's inputs live (C# -> JS `stepInputs`), e.g. to refresh the review
@@ -253,9 +261,26 @@ Lemoine.stepflow = function (container, opts) {
     var s = steps.filter(function (x) { return x.def.id === id; })[0];
     if (!s || !s.inputsEl) return;
     s.inputsEl.innerHTML = '';
-    (inputs || []).forEach(function (inp) {
-      var row = buildInput(inp, id);
-      if (row) s.inputsEl.appendChild(row.el);
+    s.inputs = {};
+    appendInputs(s.inputsEl, inputs, id, s.inputs);
+  }
+
+  // Appends built inputs to a container, grouping CONSECUTIVE actionButtons into one
+  // left-aligned .btn-row so button pairs (Add files... / Clear list) sit compactly on
+  // a single line like WPF, instead of stretching full-width one under another.
+  function appendInputs(containerEl, defs, stepId, map) {
+    var btnRow = null;
+    (defs || []).forEach(function (inp) {
+      var row = buildInput(inp, stepId);
+      if (!row) return;
+      if (map) map[inp.id] = row.handle;
+      if (inp.kind === 'actionButton') {
+        if (!btnRow) { btnRow = U.el('div', 'btn-row'); containerEl.appendChild(btnRow); }
+        btnRow.appendChild(row.el);
+      } else {
+        btnRow = null;
+        containerEl.appendChild(row.el);
+      }
     });
   }
 
@@ -281,6 +306,9 @@ Lemoine.stepflow = function (container, opts) {
       case 'singleSelect':
         handle = U.singleSelect({ options: inp.options, value: inp.value, onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
+      case 'dropdown':
+        handle = U.dropdown({ options: inp.options, value: inp.value, onChange: onChange });
+        el = labeledRow(inp.label, handle.el); break;
       case 'multiSelectTabs':
         handle = U.multiSelectTabs({ groups: inp.groups, selected: inp.selected, singleSelect: inp.singleSelect,
                                      hierarchy: inp.hierarchy, disabledItems: inp.disabledItems,
@@ -319,7 +347,13 @@ Lemoine.stepflow = function (container, opts) {
         handle = U.checkList({ items: inp.items, onChange: onChange });
         el = labeledRow(inp.label, handle.el, true); break;
       case 'review':
-        handle = U.review({ items: inp.items, note: inp.note, warning: inp.warning });
+        handle = U.review({ items: inp.items, note: inp.note, warning: inp.warning,
+                            chips: inp.chips, chipsLabel: inp.chipsLabel });
+        el = handle.el; break;
+      case 'fileTable':
+        handle = U.fileTable({ headers: inp.headers, rows: inp.rows,
+          onCell: function (cellId, value) { send('state', { stepId: stepId, inputId: cellId, value: value }); },
+          onRemove: function (rmId) { send('action', { action: 'tool', stepId: stepId, inputId: rmId }); } });
         el = handle.el; break;
       case 'warn':
         handle = U.warnBanner(inp.text); el = handle.el; break;
@@ -343,8 +377,9 @@ Lemoine.stepflow = function (container, opts) {
   function paintActive() {
     steps.forEach(function (s) { s.el.classList.toggle('active', s.def.id === activeId); });
     var vis = visibleSteps();
-    var idx = vis.findIndex(function (s) { return s.def.id === activeId; });
-    if (backBtn) backBtn.disabled = idx <= 0;
+    steps.forEach(function (s) {
+      if (s.backBtn) s.backBtn.style.display = (vis.indexOf(s) > 0) ? '' : 'none';
+    });
     updateChip();
     refreshStepStates();
     renderPips();

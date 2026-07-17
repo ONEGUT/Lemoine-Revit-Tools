@@ -47,7 +47,7 @@ the WPF version when OFF (rule R25 — both stacks coexist until each is verifie
 | Copy Datums / Linear / From Link | ✅ | ⏳ pending |
 | Compare Grids | ✅ | ⏳ pending |
 | Align Coordinates | ✅ | ⏳ pending |
-| Upgrade Links | ✅ | ⏳ pending |
+| Upgrade Links | ✅ aligned to WPF (file table, dest descs, review chips, scan/dup notices) | ⏳ pending |
 | Discover | ✅ | ⏳ pending |
 | Split By Cell / Grid / Level / Reference Plane | ✅ | ⏳ pending |
 | Extend Walls | ✅ | ⏳ pending |
@@ -67,7 +67,9 @@ the WPF version when OFF (rule R25 — both stacks coexist until each is verifie
 
 Every WPF input control has a web twin, verified rendering in headless Chromium:
 
-Button · InlineStepper · TextField · SingleSelect · ToggleSwitch · SectionCard ·
+Button · InlineStepper · TextField · SingleSelect (now with per-option `desc` lines) ·
+ToggleSwitch · SectionCard · Dropdown (compact native select) · FileTable (file-queue
+table: save-as + version badge + dropdown + remove) ·
 WarnBanner · MultiSelectTabs (Hierarchy carets / indeterminate / DisabledItems / All-row) ·
 CheckList · Review · FolderBrowser · FileBrowser · TokenInput · **BrowserTree** (Project
 Browser view/sheet tree — folders, nested dependents, right-click-selects-descendants,

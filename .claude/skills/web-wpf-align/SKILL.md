@@ -96,7 +96,20 @@ Also skim the WebTool for TODOs/deferred parity notes and check
 ## Step 4 — Report and wait
 
 Deliver one message, two numbered lists (per the porting rules in CLAUDE.md —
-improvements are welcome but must be called out, never slipped in):
+improvements are welcome but must be called out, never slipped in), **plus
+annotated mockups of the proposed result**:
+
+- Build one mockup page per step showing the layout WITH every proposed change
+  applied, on the real `lemoine.css` (link it via `file://`, reuse its `--l-*`
+  vars and classes). Tag each change in place with a small orange pill
+  (`background:#e8772e`, mono, e.g. "A3 new notice") beside the changed element,
+  and finish each page with a legend row per pill (pill + one-line description,
+  above a dashed `#e8772e` top border). Screenshot with the same headless-Chromium
+  flags the script uses and send them with the report (`SendUserFile`).
+- Iterate on the mockup images until the user approves — never on compiled code.
+  Size the window generously and re-shoot tighter afterwards; headless Chromium
+  clips (not scrolls) content past the window height, so a too-tight height
+  silently cuts off the legend/footer.
 
 **A. Parity gaps** — the web must match WPF; each item: what differs, where
 (`file:line`), and the fix. These are bugs unless a logged decision covers them.

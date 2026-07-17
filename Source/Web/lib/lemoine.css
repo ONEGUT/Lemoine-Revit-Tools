@@ -284,11 +284,11 @@ html, body { height:100%; }
 .l-step .field-row > .rlabel { font-size:var(--l-fs-sm); color:var(--l-text-sub); }
 .l-step .req-hint { color:var(--l-red); font-size:var(--l-fs-sm); margin-top:10px; display:none; }
 .l-step.show-req .req-hint { display:block; }
-.l-step .confirm-row { margin-top:12px; display:flex; justify-content:flex-end; }
+.l-step .confirm-row { margin-top:12px; display:flex; align-items:center; gap:8px; }
 .l-step.hidden { display:none; }
 
 /* Footer */
-.l-flow > .footer { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px;
+.l-flow > .footer { display:flex; justify-content:center; align-items:center; gap:8px;
                     height:var(--l-h-footer); padding:0 12px;
                     background:var(--l-surface); border-top:1px solid var(--l-border); }
 .l-flow > .footer .mid { display:flex; justify-content:center; gap:8px; }
@@ -833,3 +833,59 @@ html, body { height:100%; }
 /* Legend Creator - builder hosts the absolute insertion marker; headers are drag handles */
 .l-lc-builder { position: relative; }
 .l-lc-ghead { cursor: grab; }
+
+/* ── FileTable (file-queue rows: UpgradeLinks-style table) ────────────────── */
+.l-ftable { border:1px solid var(--l-border); border-radius:6px; overflow:hidden; }
+.l-ftable .frow { display:grid; grid-template-columns:4px 1fr 128px 168px 40px; gap:8px;
+                  padding:9px 12px; align-items:start; }
+.l-ftable .frow.hdr { background:var(--l-raised); padding:6px 12px; }
+.l-ftable .frow.hdr div { font-size:var(--l-fs-sm); color:var(--l-text-dim); }
+.l-ftable .frow + .frow { border-top:1px solid var(--l-border); }
+.l-ftable .nbox { display:flex; align-items:center; gap:4px; }
+.l-ftable .nbox input { flex:1; min-width:0; height:24px; padding:2px 6px; background:var(--l-select-bg);
+  color:var(--l-text); border:1px solid var(--l-border-mid); border-radius:var(--l-radius-sm);
+  font-family:var(--l-mono-font); font-size:var(--l-fs-sm); }
+.l-ftable .nbox input:focus { outline:none; border-color:var(--l-accent); }
+.l-ftable .nbox input:disabled { opacity:.45; }
+.l-ftable .nbox .ext { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim); }
+.l-ftable .fpath { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-dim);
+  margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.l-ftable .badge { display:inline-block; font-family:var(--l-mono-font); font-size:var(--l-fs-sm);
+  padding:2px 7px; border:1px solid var(--l-text-dim); border-radius:var(--l-radius-md);
+  color:var(--l-text-dim); }
+.l-ftable .badge.up  { color:var(--l-accent); border-color:var(--l-accent); }
+.l-ftable .badge.cur { color:var(--l-green);  border-color:var(--l-green); }
+.l-ftable .badge.bad { color:var(--l-red);    border-color:var(--l-red); }
+.l-ftable .l-dropdown { height:26px; width:100%; }
+.l-ftable .l-dropdown:disabled { opacity:.45; }
+.l-ftable .rm { width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid var(--l-red); color:var(--l-red);
+  border-radius:var(--l-radius-sm); cursor:pointer; font-size:12px; padding:0; }
+.l-ftable .rm:hover { background:var(--l-red-dim); }
+
+/* ── Step-header id tag + grouped action-button rows ──────────────────────── */
+.l-step > .head .sid { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-sub); }
+.l-flow .inputs .btn-row { display:flex; gap:8px; align-items:center; }
+.l-flow .inputs .btn-row .l-btn { flex:0 0 auto; }
+
+/* ── SingleSelect option descriptions (always-visible desc line) ──────────── */
+.l-single .opt .optcol { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.l-single .opt .optcol .desc { font-size:var(--l-fs-sm); color:var(--l-text-dim); line-height:1.45; }
+.l-single .opt:has(.optcol) { align-items:flex-start; padding:8px 10px; }
+.l-single .opt:has(.optcol) .dot { margin-top:2px; }
+
+/* ── Review chips box (WPF ReviewSummary ITEMS row) ───────────────────────── */
+.l-review .chipbox { margin-top:8px; border:1px solid var(--l-border); background:var(--l-raised);
+  border-radius:var(--l-radius-sm); padding:8px 10px; }
+.l-review .chipbox .k { font-size:var(--l-fs-sm); color:var(--l-text-dim);
+  text-transform:uppercase; margin-bottom:6px; }
+.l-review .chipbox .chips { display:flex; flex-wrap:wrap; gap:6px; }
+.l-review .chipbox .chip { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text);
+  border:1px solid var(--l-border-mid); border-radius:var(--l-radius-md); padding:2px 8px; }
+
+/* Nav row spacer (Back left, Confirm/Run right) */
+.l-step .confirm-row .spacer { flex:1; }
+
+/* A standalone dropdown input stays compact like the WPF 180px combo; the fileTable's
+   column-width dropdowns are exempt (they fill their 168px grid cell). */
+.l-flow .inputs > .field-row .l-dropdown { width:220px; }

@@ -61,7 +61,7 @@ sf.applyValidation(v);
 // ?step=k advances k times by clicking the active step's Confirm button.
 var k = parseInt((location.search.match(/step=(\\d+)/) || [0, '0'])[1], 10);
 for (var i = 0; i < k; i++) {{
-  var btn = document.querySelector('.l-step.active .confirm-row .l-btn');
+  var btn = document.querySelector('.l-step.active .confirm-row .l-btn.primary');
   if (btn) btn.click();
 }}
 </script></body></html>
