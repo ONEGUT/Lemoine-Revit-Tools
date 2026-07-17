@@ -202,9 +202,7 @@ Lemoine.stepflow = function (container, opts) {
     if (isRequired(def)) title.appendChild(U.el('span', 'req', '*'));
     var summary = U.el('div', 'summary', def.summary || '');
     titles.appendChild(title); titles.appendChild(summary);
-    head.appendChild(pip);
-    head.appendChild(U.el('span', 'sid', def.id)); // mono step-id tag, matching WPF
-    head.appendChild(titles);
+    head.appendChild(pip); head.appendChild(titles);
     // Navigation is Confirm / Back only (matches the WPF step flow) - no free header jumping.
 
     var body = U.el('div', 'body');

@@ -863,8 +863,7 @@ html, body { height:100%; }
   border-radius:var(--l-radius-sm); cursor:pointer; font-size:12px; padding:0; }
 .l-ftable .rm:hover { background:var(--l-red-dim); }
 
-/* ── Step-header id tag + grouped action-button rows ──────────────────────── */
-.l-step > .head .sid { font-family:var(--l-mono-font); font-size:var(--l-fs-sm); color:var(--l-text-sub); }
+/* ── Grouped action-button rows ───────────────────────────────────────────── */
 .l-flow .inputs .btn-row { display:flex; gap:8px; align-items:center; }
 .l-flow .inputs .btn-row .l-btn { flex:0 0 auto; }
 

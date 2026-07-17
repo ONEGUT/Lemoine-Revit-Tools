@@ -36,8 +36,10 @@ you want changed.
   (file-queue table: editable save-as + ext + path, colored version badge, compact
   dropdown, per-row remove), `WebInput.Dropdown` (compact native select, use where WPF
   shows a small combo instead of option cards), review `chips`/`chipsLabel` (WPF
-  ReviewSummary ITEMS box), mono step-id tags in step headers, and consecutive
-  actionButtons grouping into one left-aligned row.
+  ReviewSummary ITEMS box), and consecutive actionButtons grouping into one
+  left-aligned row. (Step-id header tags were briefly added for WPF parity, then
+  removed everywhere BY EXPLICIT REQUEST - the WPF window's own id tags are gone
+  too. Do not reintroduce them on either stack.)
 - **Upgrade Links parity fixes:** duplicate adds and scan failures now surface inline
   (were silent), and the files step is invalid while the version scan is in flight
   (was runnable mid-scan).
