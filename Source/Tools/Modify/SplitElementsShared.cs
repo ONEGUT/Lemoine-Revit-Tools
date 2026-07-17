@@ -96,6 +96,7 @@ namespace LemoineTools.Tools.ModifyElements
         private static readonly BuiltInParameter WallTop     = BuiltInParameter.WALL_HEIGHT_TYPE;
         private static readonly BuiltInParameter WallBaseOff = BuiltInParameter.WALL_BASE_OFFSET;
         private static readonly BuiltInParameter WallTopOff  = BuiltInParameter.WALL_TOP_OFFSET;
+        private static readonly BuiltInParameter WallHeight  = BuiltInParameter.WALL_USER_HEIGHT_PARAM;
 
         private static readonly BuiltInParameter ColBase    = BuiltInParameter.FAMILY_BASE_LEVEL_PARAM;
         private static readonly BuiltInParameter ColTop     = BuiltInParameter.FAMILY_TOP_LEVEL_PARAM;
@@ -265,8 +266,13 @@ namespace LemoineTools.Tools.ModifyElements
                         SplitWallByGrid(doc, (Wall)el, planes, stats);
                     else if (el.Location is LocationCurve lc0 && lc0.Curve is Line)
                         SplitCurveByGrid(doc, el, planes, stats);
+                    else if (SplitByCellHelpers.IsSupportedForRecreation(el))
+                        // Area-based elements (floors, ceilings, roofs, foundations, filled
+                        // regions) have no LocationCurve — divide their footprint by the cutting
+                        // planes and recreate one element per region.
+                        SplitAreaElementByPlanes(doc, el, planes, stats);
                     else
-                        stats.Skip($"{el.Category.Name} {elId}: no applicable plane-split strategy (not a wall, no linear curve)");
+                        stats.Skip($"{el.Category.Name} {elId}: no applicable plane-split strategy (not a wall, no linear curve, not an area element)");
                 }
                 catch (Exception ex)
                 {
@@ -295,8 +301,19 @@ namespace LemoineTools.Tools.ModifyElements
             Level? topLevel = doc.GetElement(
                 wall.get_Parameter(WallTop)?.AsElementId()) as Level;
 
-            if (baseLevel == null || topLevel == null)
+            if (baseLevel == null)
             { stats.Skip($"Wall {wall.Id}: not level-constrained"); return; }
+
+            // A wall whose Top Constraint is "Unconnected" has no top level — its extent is
+            // driven by its base level/offset plus the Unconnected Height. The level-to-level
+            // path can't handle it (it needs a top level), so route it to a dedicated method
+            // that keeps the top segment unconnected. This was the "split by level didn't work
+            // for unconnected walls" gap.
+            if (topLevel == null)
+            {
+                SplitWallByLevelUnconnected(doc, wall, baseLevel, levels, stats);
+                return;
+            }
 
             var spans = BuildLevelSpans(levels, baseLevel, topLevel);
             if (spans.Count < 3)
@@ -346,6 +363,96 @@ namespace LemoineTools.Tools.ModifyElements
             else
             {
                 foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused wall copy", __lex); }
+                stats.Fail(wallId,
+                    successes == 0
+                        ? "All segment parameter assignments failed; copies removed."
+                        : $"Only {successes}/{copies.Count} segments configured; copies removed.");
+            }
+        }
+
+        // Splits a wall whose top is "Unconnected" (no top level). The wall spans from its
+        // base level (+ base offset) up by its Unconnected Height. Every selected level that
+        // falls strictly inside that span becomes a cut. Lower/middle segments are re-constrained
+        // level-to-level; the TOP segment stays Unconnected, with its Unconnected Height reduced
+        // to the remaining distance above the highest cut level.
+        private static void SplitWallByLevelUnconnected(
+            Document doc, Wall wall, Level baseLevel, List<Level> levels, SplitStats stats)
+        {
+            double baseOff  = wall.get_Parameter(WallBaseOff)?.AsDouble() ?? 0.0;
+            double height   = wall.get_Parameter(WallHeight)?.AsDouble()  ?? 0.0;
+
+            if (height <= 1e-4)
+            { stats.Skip($"Wall {wall.Id}: unconnected height is not set"); return; }
+
+            double baseZ = baseLevel.Elevation + baseOff;
+            double topZ  = baseZ + height;
+
+            // Selected levels strictly interior to (baseZ, topZ), low → high.
+            var cutLevels = levels
+                .Where(l => l.Elevation > baseZ + 1e-4 && l.Elevation < topZ - 1e-4)
+                .OrderBy(l => l.Elevation)
+                .ToList();
+
+            if (cutLevels.Count == 0)
+            { stats.Skip($"Wall {wall.Id}: no selected levels fall within its unconnected height span"); return; }
+
+            // Lower bound of each segment: base level, then each cut level. There is one more
+            // segment than there are cut levels; the last segment's top stays Unconnected.
+            var lowerLevels = new List<Level> { baseLevel };
+            lowerLevels.AddRange(cutLevels);
+            int segCount = lowerLevels.Count;
+
+            string wallId = wall.Id.ToString();
+
+            var copies = CopyTimes(doc, wall.Id, segCount);
+            if (copies == null) { stats.Fail(wallId, "Copy failed"); return; }
+
+            DisallowWallJoins(doc, wall);
+            foreach (var cid in copies)
+            {
+                var cwall = doc.GetElement(cid) as Wall;
+                if (cwall != null) DisallowWallJoins(doc, cwall);
+            }
+
+            int successes = 0;
+            for (int k = 0; k < copies.Count; k++)
+            {
+                var seg = doc.GetElement(copies[k]) as Wall;
+                if (seg == null) continue;
+                try
+                {
+                    Level lower = lowerLevels[k];
+                    seg.get_Parameter(WallBase)?.Set(lower.Id);
+                    seg.get_Parameter(WallBaseOff)?.Set(k == 0 ? baseOff : 0.0);
+
+                    if (k < segCount - 1)
+                    {
+                        // Level-to-level segment: top constraint = next lower level.
+                        seg.get_Parameter(WallTop)?.Set(lowerLevels[k + 1].Id);
+                        seg.get_Parameter(WallTopOff)?.Set(0.0);
+                    }
+                    else
+                    {
+                        // Top segment: keep Unconnected. Setting the top constraint to
+                        // InvalidElementId is how Revit models "Unconnected"; the remaining
+                        // height carries the wall from the highest cut level up to the original
+                        // top elevation.
+                        seg.get_Parameter(WallTop)?.Set(ElementId.InvalidElementId);
+                        seg.get_Parameter(WallHeight)?.Set(topZ - lower.Elevation);
+                    }
+                    successes++;
+                }
+                catch (Exception ex) { stats.FailNote($"Wall {wallId} seg {k}: {ex.Message}"); }
+            }
+
+            if (successes == copies.Count)
+            {
+                doc.Delete(wall.Id);
+                stats.Split(copies.Count, $"Wall {wallId} → {copies.Count} segments (unconnected top)");
+            }
+            else
+            {
+                foreach (var cid in copies) try { doc.Delete(cid); } catch (Exception __lex) { DiagnosticsLog.Swallowed("SplitElements: delete unused unconnected wall copy", __lex); }
                 stats.Fail(wallId,
                     successes == 0
                         ? "All segment parameter assignments failed; copies removed."
@@ -485,6 +592,91 @@ namespace LemoineTools.Tools.ModifyElements
             { stats.Skip($"{el.Id}: no grid plane intersections along element"); return; }
 
             SplitCurveElement(doc, el, A, B, splitPts, "grid", stats);
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        //  Area-element plane split (floors, ceilings, roofs, foundations)
+        // ═════════════════════════════════════════════════════════════════════
+
+        private static void SplitAreaElementByPlanes(
+            Document doc, Element el,
+            List<(XYZ Normal, XYZ Origin)> planes, SplitStats stats)
+        {
+            string  elId  = el.Id.ToString();
+            string? elCat = el.Category?.Name;
+
+            // Only VERTICAL cutting planes divide a plan footprint. A grid always yields one;
+            // a reference plane counts only when its normal is horizontal.
+            var vplanes = planes.Where(p => Math.Abs(p.Normal.Z) < 1e-6).ToList();
+            if (vplanes.Count == 0)
+            { stats.Skip($"{elCat} {elId}: no vertical cutting planes apply to area elements"); return; }
+
+            Solid? solid = SplitByCellHelpers.GetPrimarySolid(el);
+            if (solid == null || solid.Volume < 1e-9)
+            { stats.Skip($"{elCat} {elId}: no solid geometry to split (filled regions use Split by Cell)"); return; }
+
+            // Incrementally slice the solid: each plane splits every current region into its two
+            // half-spaces. Empty halves are dropped; a plane that misses a region leaves it whole.
+            // This produces only the non-empty arrangement cells without enumerating 2^k combos.
+            var regions = new List<Solid> { solid };
+            foreach (var p in vplanes)
+            {
+                var next = new List<Solid>();
+                foreach (var region in regions)
+                {
+                    Solid? pos = SplitByCellHelpers.HalfSpaceIntersect(region, p.Normal, p.Origin, +1);
+                    Solid? neg = SplitByCellHelpers.HalfSpaceIntersect(region, p.Normal, p.Origin, -1);
+                    bool posOk = pos != null && pos.Volume > 1e-9;
+                    bool negOk = neg != null && neg.Volume > 1e-9;
+                    if (posOk) next.Add(pos!);
+                    if (negOk) next.Add(neg!);
+                    // Both halves empty means the boolean failed on this region — keep it whole
+                    // rather than silently losing it.
+                    if (!posOk && !negOk) next.Add(region);
+                }
+                regions = next;
+            }
+
+            if (regions.Count <= 1)
+            { stats.Skip($"{elCat} {elId}: no selected plane crosses the element"); return; }
+
+            // Extract each region's horizontal top-face loops — the footprint the recreate APIs need.
+            var pendingLoops = new List<IList<CurveLoop>>();
+            int dropped = 0;
+            foreach (var region in regions)
+            {
+                IList<CurveLoop>? loops = SplitByCellHelpers.ExtractTopFaceLoops(region);
+                if (loops == null || loops.Count == 0) { dropped++; continue; }
+                pendingLoops.Add(loops);
+            }
+
+            if (pendingLoops.Count <= 1)
+            { stats.Skip($"{elCat} {elId}: could not derive split footprints (element may be sloped — use Split by Cell)"); return; }
+
+            var newIds = new List<ElementId>();
+            foreach (var loops in pendingLoops)
+            {
+                try
+                {
+                    ElementId newId = SplitByCellHelpers.RecreateElement(doc, el, loops);
+                    if (newId == null || newId == ElementId.InvalidElementId) { dropped++; continue; }
+                    newIds.Add(newId);
+                }
+                catch (Exception ex)
+                {
+                    dropped++;
+                    DiagnosticsLog.Swallowed($"SplitElements: area plane-split recreation failed on {el.Id.Value}", ex);
+                }
+            }
+
+            if (newIds.Count == 0)
+            { stats.Fail(elId, "no split region could be recreated; element left intact."); return; }
+
+            doc.Delete(el.Id);
+            stats.Split(newIds.Count,
+                dropped > 0
+                    ? $"{elCat} {elId} → {newIds.Count} region(s) ({dropped} dropped)"
+                    : $"{elCat} {elId} → {newIds.Count} region(s)");
         }
 
         // ═════════════════════════════════════════════════════════════════════

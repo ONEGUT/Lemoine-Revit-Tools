@@ -54,10 +54,30 @@ namespace LemoineTools.Tools.ModifyElements
 
             // A sloped/non-planar element has no horizontal top face, so cell extraction (which
             // reads the intersection's up-facing face) can never return a loop — every cell would
-            // silently drop. Detect it up front and report it honestly as "sloped, not supported"
-            // rather than the misleading "boolean intersection returned no cells".
+            // silently drop.
+            //
+            // For a sloped FOOTPRINT ROOF we recover: cut a perfectly-flat proxy of the same
+            // footprint (which DOES have a horizontal top face), then re-slope each resulting cell
+            // roof back onto the original roof surface. Any other sloped element is still reported
+            // honestly as "sloped, not supported".
+            bool                             reslopeRoof  = false;
+            List<UpFace>?                    slopeFaces   = null;
             if (!HasHorizontalTopFace(elementSolid))
-                return (0, 0, CellSplitStatus.Sloped);
+            {
+                if (el is FootPrintRoof)
+                {
+                    slopeFaces   = CaptureUpwardFaces(elementSolid);
+                    Solid? proxy = BuildFlatProxySolid((FootPrintRoof)el, elementSolid);
+                    if (proxy == null || proxy.Volume < 1e-9 || slopeFaces.Count == 0)
+                        return (0, 0, CellSplitStatus.Sloped);
+                    elementSolid = proxy;   // cut the flat proxy; re-slope the results below
+                    reslopeRoof  = true;
+                }
+                else
+                {
+                    return (0, 0, CellSplitStatus.Sloped);
+                }
+            }
 
             BoundingBoxXYZ bb = el.get_BoundingBox(null);
             if (bb == null) return (0, 0, CellSplitStatus.NoGeometry);
@@ -177,8 +197,187 @@ namespace LemoineTools.Tools.ModifyElements
             // Every cell failed to recreate — leave the original intact rather than deleting it.
             if (newIds.Count == 0) return (0, dropped, CellSplitStatus.NoCellsIntersected);
 
+            // Sloped-roof path: the cells were cut from a FLAT proxy, so the new roofs are flat.
+            // Re-slope each one back onto the original roof surface before removing the original.
+            if (reslopeRoof && slopeFaces != null)
+            {
+                doc.Regenerate(); // slab-shape vertices only exist after the roofs regenerate
+                foreach (ElementId id in newIds)
+                    ReslopeRoofToFaces(doc, id, slopeFaces);
+            }
+
             doc.Delete(el.Id);
             return (newIds.Count, dropped, CellSplitStatus.Split);
+        }
+
+        // ── Sloped-roof re-slope support ──────────────────────────────────────
+
+        // An upward-facing planar face of the original roof solid, with its outer outline
+        // projected to XY so a cell vertex can be matched to the face it sits under.
+        internal sealed class UpFace
+        {
+            public XYZ        Normal = XYZ.BasisZ;
+            public XYZ        Origin = XYZ.Zero;
+            public List<XYZ>  PolyXY = new List<XYZ>();
+        }
+
+        // Captures every upward-facing (FaceNormal.Z > 0) planar face of the roof solid, keeping
+        // its plane and its outer loop in plan — used to sample the original roof height under
+        // each cell vertex when re-sloping.
+        private static List<UpFace> CaptureUpwardFaces(Solid solid)
+        {
+            var faces = new List<UpFace>();
+            foreach (Face f in solid.Faces)
+            {
+                if (!(f is PlanarFace pf) || pf.FaceNormal.Z <= 1e-3) continue;
+
+                var poly = new List<XYZ>();
+                IList<CurveLoop> loops = pf.GetEdgesAsCurveLoops();
+                if (loops.Count > 0)
+                    foreach (Curve c in loops[0])
+                        poly.Add(c.GetEndPoint(0));
+
+                if (poly.Count < 3) continue;
+                faces.Add(new UpFace { Normal = pf.FaceNormal.Normalize(), Origin = pf.Origin, PolyXY = poly });
+            }
+            return faces;
+        }
+
+        // Builds a perfectly-flat solid over the roof's footprint (same plan outline, negligible
+        // thickness) so the standard cell extraction — which needs a horizontal top face — works.
+        private static Solid? BuildFlatProxySolid(FootPrintRoof roof, Solid roofSolid)
+        {
+            // Footprint outline: prefer the largest upward face's plan outline (covers a
+            // single-slope roof exactly). Flatten it to a single Z.
+            List<XYZ>? outline = null;
+            double     bestArea = 0;
+            foreach (var up in CaptureUpwardFaces(roofSolid))
+            {
+                double area = PolygonAreaXY(up.PolyXY);
+                if (area > bestArea) { bestArea = area; outline = up.PolyXY; }
+            }
+            if (outline == null || outline.Count < 3) return null;
+
+            BoundingBoxXYZ? bb = roof.get_BoundingBox(null);
+            double z = bb?.Min.Z ?? outline[0].Z;
+
+            try
+            {
+                var loop = new CurveLoop();
+                for (int i = 0; i < outline.Count; i++)
+                {
+                    XYZ a = new XYZ(outline[i].X,                       outline[i].Y,                       z);
+                    XYZ b = new XYZ(outline[(i + 1) % outline.Count].X, outline[(i + 1) % outline.Count].Y, z);
+                    if (a.DistanceTo(b) < 1e-7) continue;
+                    loop.Append(Line.CreateBound(a, b));
+                }
+
+                Solid? s = TryExtrude2(loop, XYZ.BasisZ, 0.5);
+                return s;
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"SplitByCell: flat proxy build failed for roof {roof.Id.Value}", ex);
+                return null;
+            }
+        }
+
+        // CreateExtrusionGeometry rejects a loop wound against the extrusion direction; try the
+        // loop as given and, on failure, reversed.
+        private static Solid? TryExtrude2(CurveLoop loop, XYZ dir, double dist)
+        {
+            try { return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { loop }, dir, dist); }
+            catch { }
+            try
+            {
+                var pts = new List<XYZ>();
+                foreach (Curve c in loop) pts.Add(c.GetEndPoint(0));
+                pts.Reverse();
+                var rl = new CurveLoop();
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    if (pts[i].DistanceTo(pts[(i + 1) % pts.Count]) < 1e-7) continue;
+                    rl.Append(Line.CreateBound(pts[i], pts[(i + 1) % pts.Count]));
+                }
+                return GeometryCreationUtilities.CreateExtrusionGeometry(new List<CurveLoop> { rl }, dir, dist);
+            }
+            catch { return null; }
+        }
+
+        // Re-slopes one flat roof onto the original roof surface by offsetting each of its
+        // slab-shape vertices to the original height sampled under that vertex.
+        private static void ReslopeRoofToFaces(Document doc, ElementId roofId, List<UpFace> faces)
+        {
+            try
+            {
+                if (!(doc.GetElement(roofId) is RoofBase roof)) return;
+                SlabShapeEditor sse = roof.SlabShapeEditor;
+                if (sse == null) return;
+
+                // ResetSlabShape initialises the editor's vertices/creases from the (flat)
+                // boundary — it's the reliable way to populate SlabShapeVertices before editing.
+                try { sse.ResetSlabShape(); }
+                catch (Exception ex) { DiagnosticsLog.Swallowed($"SplitByCell: reset slab shape on roof {roofId.Value}", ex); }
+
+                foreach (SlabShapeVertex v in sse.SlabShapeVertices)
+                {
+                    XYZ p = v.Position;
+                    double? targetZ = SampleFaceZ(faces, p.X, p.Y);
+                    if (targetZ == null) continue;
+                    double offset = targetZ.Value - p.Z;
+                    if (Math.Abs(offset) < 1e-6) continue;
+                    try { sse.ModifySubElement(v, offset); }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed($"SplitByCell: re-slope vertex on roof {roofId.Value}", ex); }
+                }
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed($"SplitByCell: re-slope roof {roofId.Value} failed", ex);
+            }
+        }
+
+        // Height of the original roof surface under (x,y): the plane of whichever up-face contains
+        // the point in plan; falls back to the single face when there is exactly one.
+        private static double? SampleFaceZ(List<UpFace> faces, double x, double y)
+        {
+            foreach (var f in faces)
+                if (PointInPolygonXY(f.PolyXY, x, y))
+                    return PlaneZAt(f.Normal, f.Origin, x, y);
+
+            if (faces.Count == 1)
+                return PlaneZAt(faces[0].Normal, faces[0].Origin, x, y);
+
+            return null;
+        }
+
+        private static double PlaneZAt(XYZ n, XYZ o, double x, double y)
+        {
+            if (Math.Abs(n.Z) < 1e-9) return o.Z;
+            return o.Z - (n.X * (x - o.X) + n.Y * (y - o.Y)) / n.Z;
+        }
+
+        private static bool PointInPolygonXY(List<XYZ> poly, double x, double y)
+        {
+            bool inside = false;
+            int n = poly.Count;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+            {
+                double xi = poly[i].X, yi = poly[i].Y;
+                double xj = poly[j].X, yj = poly[j].Y;
+                bool intersects = ((yi > y) != (yj > y)) &&
+                                  (x < (xj - xi) * (y - yi) / (yj - yi + 1e-30) + xi);
+                if (intersects) inside = !inside;
+            }
+            return inside;
+        }
+
+        private static double PolygonAreaXY(List<XYZ> poly)
+        {
+            double a = 0;
+            int n = poly.Count;
+            for (int i = 0, j = n - 1; i < n; j = i++)
+                a += (poly[j].X + poly[i].X) * (poly[j].Y - poly[i].Y);
+            return Math.Abs(a) * 0.5;
         }
 
         // True when the element's solid has at least one horizontal (up-facing) planar face —
@@ -247,10 +446,71 @@ namespace LemoineTools.Tools.ModifyElements
             catch { return null; }
         }
 
+        // Intersects a solid with the half-space on one side of a plane. `side` is +1 for the
+        // plane-normal side, -1 for the opposite side. Used by the area-element plane split to
+        // slice a slab region in two. Returns null on failure (caller treats null as empty).
+        // Only meaningful for VERTICAL planes (horizontal normal), which is all the area split
+        // ever passes — the extruded half-space box below assumes a horizontal normal.
+        internal static Solid? HalfSpaceIntersect(Solid region, XYZ normal, XYZ origin, int side)
+        {
+            try
+            {
+                XYZ n   = normal.Normalize();
+                XYZ dir = side >= 0 ? n : n.Negate();
+
+                // In-plane horizontal axis (the plane is vertical, so this spans its width).
+                XYZ u = dir.CrossProduct(XYZ.BasisZ);
+                if (u.GetLength() < 1e-9) return null; // not a vertical plane — unsupported here
+                u = u.Normalize();
+
+                const double L = 1.0e4; // 10 000 ft: far larger than any real slab
+                const double H = 1.0e4;
+
+                // Rectangle lying IN the cutting plane (spans u and Z), wound so its normal points
+                // along +dir, then extruded along dir to sweep out the half-space box.
+                XYZ o  = origin;
+                XYZ p0 = o - u * L - XYZ.BasisZ * H;
+                XYZ p1 = o - u * L + XYZ.BasisZ * H;
+                XYZ p2 = o + u * L + XYZ.BasisZ * H;
+                XYZ p3 = o + u * L - XYZ.BasisZ * H;
+
+                Solid? box = TryExtrude(new[] { p0, p1, p2, p3 }, dir, L);
+                if (box == null) return null;
+
+                return BooleanOperationsUtils.ExecuteBooleanOperation(
+                    region, box, BooleanOperationsType.Intersect);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsLog.Swallowed("SplitByCell: half-space intersect failed", ex);
+                return null;
+            }
+        }
+
+        // Extrudes a 4-point planar rectangle along `dir`. CreateExtrusionGeometry rejects a loop
+        // wound against the extrusion direction, so try the given order and, on failure, the
+        // reverse before giving up.
+        private static Solid? TryExtrude(XYZ[] pts, XYZ dir, double dist)
+        {
+            foreach (var order in new[] { pts, new[] { pts[0], pts[3], pts[2], pts[1] } })
+            {
+                try
+                {
+                    var loop = new CurveLoop();
+                    for (int i = 0; i < order.Length; i++)
+                        loop.Append(Line.CreateBound(order[i], order[(i + 1) % order.Length]));
+                    return GeometryCreationUtilities.CreateExtrusionGeometry(
+                        new List<CurveLoop> { loop }, dir, dist);
+                }
+                catch { /* try the reversed winding */ }
+            }
+            return null;
+        }
+
         // Use the top face (normal = +Z) so GetEdgesAsCurveLoops returns CCW loops when
         // viewed from above — the orientation Floor.Create and Ceiling.Create require.
         // The bottom face (normal = -Z) returns CW loops, which those APIs reject.
-        private static IList<CurveLoop>? ExtractTopFaceLoops(Solid solid)
+        internal static IList<CurveLoop>? ExtractTopFaceLoops(Solid solid)
         {
             PlanarFace? topFace  = null;
             double      highestZ = double.MinValue;
@@ -470,12 +730,12 @@ namespace LemoineTools.Tools.ModifyElements
 
         // Floor, Ceiling, FilledRegion; OST_StructuralFoundation slabs are Floor instances.
         // RoofBase (FootPrintRoof only — ExtrusionRoof is rejected inside CreateRoof).
-        private static bool IsSupportedForRecreation(Element el) =>
+        internal static bool IsSupportedForRecreation(Element el) =>
             el is Floor || el is Ceiling || el is FilledRegion || el is RoofBase;
 
         // No outer try/catch: Revit API exceptions propagate to SplitElement's caller so
         // the per-element transaction can roll back atomically.
-        private static ElementId RecreateElement(
+        internal static ElementId RecreateElement(
             Document doc, Element source, IList<CurveLoop> loops)
         {
             if (source is Floor floor)
