@@ -575,23 +575,6 @@ namespace LemoineTools.Framework
 
             var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
 
-            // Step ID and title on the same baseline row
-            var idTitle = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            var idText = new TextBlock
-            {
-                Text = step.Id,
-                Margin = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            idText.SetResourceReference(TextBlock.FontSizeProperty,   "LemoineFS_SM");
-            idText.SetResourceReference(TextBlock.ForegroundProperty, "LemoineTextDim");
-            idText.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineMonoFont");
-
             var titleTb = new TextBlock
             {
                 Text = step.Title, FontWeight = FontWeights.Medium,
@@ -602,9 +585,7 @@ namespace LemoineTools.Framework
             titleTb.SetResourceReference(TextBlock.FontFamilyProperty, "LemoineUiFont");
             _stepTitles[idx] = titleTb;
 
-            idTitle.Children.Add(idText);
-            idTitle.Children.Add(titleTb);
-            textStack.Children.Add(idTitle);
+            textStack.Children.Add(titleTb);
 
             // Summary — shown when step is done. Italic, main text color
             var summaryTb = new TextBlock

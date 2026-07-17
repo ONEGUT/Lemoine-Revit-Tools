@@ -18,6 +18,32 @@ you want changed.
 
 *(appended as encountered)*
 
+## Upgrade Links web alignment + shell nav restructure (2026-07-17)
+
+- **DECIDED - step-flow shell navigation matches WPF.** Every step past the first
+  visible one carries a ghost "Back" button inside its nav row; non-last steps a
+  Confirm button; the LAST step carries the Run button plus the pausable-run
+  Continue/Skip pair. The footer holds only Reset (centered). Applies to all 34
+  step-flow web tools; explicit user request.
+- **DECIDED - Upgrade Links keeps the web's Add-files placement behavior.** New rows
+  adopt the user's current "Set all placement" choice instead of always the settings
+  default (WPF behavior). Kept as a deliberate improvement.
+- **DECIDED - destination descriptions live on the singleSelect options.** WebOption
+  gained `desc` (always-visible dim second line on the option card), replacing the
+  selected-only hint rows. The WPF "Local" grouping level (optLocalTitle/optLocalDesc)
+  is not represented in the web flat list.
+- **New shared pieces from the Upgrade Links parity pass:** `WebInput.FileTable`
+  (file-queue table: editable save-as + ext + path, colored version badge, compact
+  dropdown, per-row remove), `WebInput.Dropdown` (compact native select, use where WPF
+  shows a small combo instead of option cards), review `chips`/`chipsLabel` (WPF
+  ReviewSummary ITEMS box), and consecutive actionButtons grouping into one
+  left-aligned row. (Step-id header tags were briefly added for WPF parity, then
+  removed everywhere BY EXPLICIT REQUEST - the WPF window's own id tags are gone
+  too. Do not reintroduce them on either stack.)
+- **Upgrade Links parity fixes:** duplicate adds and scan failures now surface inline
+  (were silent), and the files step is invalid while the version scan is in flight
+  (was runnable mid-scan).
+
 ## BulkRename — live preview placement (divergence)
 The WPF S3 panel rebuilds a 12-row rename preview on every keystroke. The web shell
 can only rebuild a whole step's inputs (which would steal focus from the text field

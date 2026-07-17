@@ -119,20 +119,60 @@ namespace LemoineTools.Framework.Web
         }
     }
 
-    /// <summary>An option in a single/multi select.</summary>
+    /// <summary>An option in a single/multi select. <see cref="Desc"/> renders as a dim,
+    /// always-visible second line on the option card (singleSelect only) so the user can
+    /// compare choices before picking — mirrors the WPF destination-card descriptions.</summary>
     public sealed class WebOption
     {
-        public string Value    { get; }
-        public string Label    { get; }
-        public bool   Disabled { get; }
+        public string  Value    { get; }
+        public string  Label    { get; }
+        public bool    Disabled { get; }
+        public string? Desc     { get; }
 
-        public WebOption(string value, string label, bool disabled = false)
+        public WebOption(string value, string label, bool disabled = false, string? desc = null)
         {
-            Value = value; Label = label; Disabled = disabled;
+            Value = value; Label = label; Disabled = disabled; Desc = desc;
         }
 
-        public Dictionary<string, object?> ToPayload() =>
-            new Dictionary<string, object?> { ["value"] = Value, ["label"] = Label, ["disabled"] = Disabled };
+        public Dictionary<string, object?> ToPayload()
+        {
+            var d = new Dictionary<string, object?> { ["value"] = Value, ["label"] = Label, ["disabled"] = Disabled };
+            if (!string.IsNullOrEmpty(Desc)) d["desc"] = Desc;
+            return d;
+        }
+    }
+
+    /// <summary>One row of a <see cref="WebInput.FileTable"/>. Tones: "up" (accent — will
+    /// upgrade), "cur" (green — already current), "bad" (red — unreadable/too new),
+    /// "dim" (grey — not scanned yet).</summary>
+    public sealed class WebFileRow
+    {
+        public string NameId      { get; set; } = "";
+        public string Name        { get; set; } = "";
+        public string Ext         { get; set; } = "";
+        public string Path        { get; set; } = "";
+        public string Badge       { get; set; } = "";
+        public string BadgeTone   { get; set; } = "dim";
+        public string SelectId    { get; set; } = "";
+        public string SelectValue { get; set; } = "";
+        public List<WebOption> Options { get; set; } = new List<WebOption>();
+        public string RemoveId    { get; set; } = "";
+        public bool   Disabled    { get; set; }
+
+        public Dictionary<string, object?> ToPayload() => new Dictionary<string, object?>
+        {
+            ["nameId"]      = NameId,
+            ["name"]        = Name,
+            ["ext"]         = Ext,
+            ["path"]        = Path,
+            ["badge"]       = Badge,
+            ["badgeTone"]   = BadgeTone,
+            ["selectId"]    = SelectId,
+            ["selectValue"] = SelectValue,
+            ["options"]     = Options.Select(o => o.ToPayload()).ToList(),
+            ["removeId"]    = RemoveId,
+            ["disabled"]    = Disabled,
+        };
     }
 
     /// <summary>
@@ -151,6 +191,16 @@ namespace LemoineTools.Framework.Web
         public static WebInput SingleSelect(string id, string label, string? value, IEnumerable<WebOption> options)
         {
             var w = new WebInput("singleSelect", id, label);
+            w._props["value"]   = value;
+            w._props["options"] = options.Select(o => o.ToPayload()).ToList();
+            return w;
+        }
+
+        /// <summary>A compact closed dropdown (native styled select) — use instead of
+        /// <see cref="SingleSelect"/> where WPF shows a small combo, not option cards.</summary>
+        public static WebInput Dropdown(string id, string label, string? value, IEnumerable<WebOption> options)
+        {
+            var w = new WebInput("dropdown", id, label);
             w._props["value"]   = value;
             w._props["options"] = options.Select(o => o.ToPayload()).ToList();
             return w;
@@ -231,14 +281,42 @@ namespace LemoineTools.Framework.Web
             return w;
         }
 
+        /// <summary><paramref name="chips"/> renders as the WPF ReviewSummary's ITEMS box —
+        /// a bordered chip row under the cards. <paramref name="chipsLabel"/> is its heading
+        /// (pass the localized "controls.inputs.reviewSummary.itemsHeader" string).</summary>
         public static WebInput Review(string id, IEnumerable<(string Label, string Value)> items,
-                                     string? note = null, string? warning = null)
+                                     string? note = null, string? warning = null,
+                                     IEnumerable<string>? chips = null, string? chipsLabel = null)
         {
             var w = new WebInput("review", id, null);
             w._props["items"] = items.Select(it => new Dictionary<string, object?>
             { ["label"] = it.Label, ["value"] = it.Value }).ToList();
             if (note != null)    w._props["note"]    = note;
             if (warning != null) w._props["warning"] = warning;
+            var chipList = chips?.Cast<object?>().ToList();
+            if (chipList != null && chipList.Count > 0)
+            {
+                w._props["chips"] = chipList;
+                if (chipsLabel != null) w._props["chipsLabel"] = chipsLabel;
+            }
+            return w;
+        }
+
+        /// <summary>
+        /// A file-queue table (UpgradeLinks-style): header row + one aligned row per file with
+        /// an editable save-as name (+ fixed extension and dim source path), a colored version
+        /// badge, a compact dropdown, and a per-row remove button. Each cell carries its own
+        /// input id — name edits and dropdown picks arrive as normal <c>state</c> messages on
+        /// those ids; the remove button fires <see cref="IWebToolAction"/> with its id.
+        /// </summary>
+        public static WebInput FileTable(string id,
+            string fileHeader, string versionHeader, string selectHeader,
+            IEnumerable<WebFileRow> rows)
+        {
+            var w = new WebInput("fileTable", id, null);
+            w._props["headers"] = new Dictionary<string, object?>
+            { ["file"] = fileHeader, ["version"] = versionHeader, ["placement"] = selectHeader };
+            w._props["rows"] = rows.Select(r => r.ToPayload()).ToList();
             return w;
         }
 
