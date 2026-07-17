@@ -54,7 +54,7 @@ namespace LemoineTools.Framework.Web
                 case "deleteTrade":  _model.DeleteTrade(Str(p, "id")); SendInit(); return true;
 
                 // ── Rules ─────────────────────────────────────────────────────
-                case "selectRule":   _model.SelectRule(Str(p, "id")); SendInit(); return true;
+                case "selectRule":   _model.SelectRule(Str(p, "id"), GetBool(p, "shift"), GetBool(p, "ctrl")); SendInit(); return true;
                 case "addRule":      _model.AddRule(); SendInit(); return true;
                 case "reorderRule":  _model.ReorderRule(GetInt(p, "from"), GetInt(p, "to")); SendInit(); return true;
                 case "applyRuleEdit": _model.ApplyRuleEdit(Str(p, "id"), Str(p, "name")); SendInit(); return true;
@@ -77,6 +77,8 @@ namespace LemoineTools.Framework.Web
                 case "setLineWeight":  _model.SetLineWeight(GetInt(p, "value")); return true;
                 case "setTransparency": _model.SetTransparency(GetInt(p, "value")); return true;
                 case "setFlag":        _model.SetFlag(Str(p, "flag"), GetBool(p, "value")); SendInit(); return true;
+
+                case "applyMerge":     _model.ApplyMerge(GetBool(p, "destructive")); SendInit(); return true;
 
                 // ── History ───────────────────────────────────────────────────
                 case "undo":        _model.Undo(); SendInit(); return true;

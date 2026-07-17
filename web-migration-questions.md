@@ -99,17 +99,17 @@ touched this pass. Each needs its own web surface decision:
   picker window may not be needed).
 Recommend prioritising by usage; ClashDefinitions and ToolsOverview are the most-opened.
 
-## Auto Filters web port — deferred WPF extras (review)
-The web Auto Filters window covers the full single-rule editing surface, history,
-templates and view application. Three WPF-only extras were deliberately deferred:
-multi-select over rule rows with batch field apply, the merge-selected-rules flow
-(merge into one / create combined), and drag-reorder across trades. If any of these
-is used day-to-day, they slot into the existing action vocabulary.
+## Auto Filters web port — deferred WPF extras (RESOLVED, one remains)
+Multi-select (Shift range / Ctrl toggle, same contract as WPF) with batch field
+propagation and the merge-selected-rules flow (merge into one / create combined,
+with the WPF plan validation + confirm) are now built into the web window. The one
+remaining WPF-only extra is drag-reorder of rules ACROSS trades (within-trade
+reorder works); flag if that matters.
 
-## Legend Creator web port — preview + placement (review)
-The web preview is a client-side approximation (white page, groups in row lanes,
-swatch+label lines) rather than the WPF pixel-metric preview. Group placement is
-append-per-row + whole-card drops; the WPF single-live-insertion-marker lane grid
-(drag groups between/within rows) is not yet rebuilt — groups can be added, renamed,
-deleted and filled, but not dragged to reorder. Flag if row-level rearranging matters
-before the WPF window retires.
+## Legend Creator web port — preview + placement (RESOLVED, preview approximate)
+Group drag between/within row lanes is now built: group headers are drag handles
+and a single live insertion marker snaps to the nearest column gutter inside a
+lane, or shows a full-width lane marker between/above/below rows for a new row
+(per the CLAUDE.md lane-grid rule — no sliver drop zones, no reflow while aiming).
+The remaining divergence is the preview: a client-side approximation rather than
+the WPF pixel-metric one — the Revit legend itself is authoritative.

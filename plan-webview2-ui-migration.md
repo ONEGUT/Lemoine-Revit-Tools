@@ -561,3 +561,19 @@ scrollbars (all become CSS/JS in the shared lib).
   **Deliberately deferred from the WPF feature set:** multi-select batch edit + merge-rules
   (Filters), rule-level color-ramp popup, and the WPF preview overlay's exact metrics —
   logged in `web-migration-questions.md`.
+- **2026-07 (Filters batch/merge + Legend group drag — pending Windows verify):** the two
+  deferred items are built. **Auto Filters:** rule rows honour the WPF modifier contract
+  (Shift = contiguous range from the anchor, editor sources from the anchor; Ctrl =
+  toggle, seeded with the active rule; plain click = single + new anchor); while >= 2 are
+  selected the editor shows the Batch Edit header and every FG-layer/logic/appearance edit
+  propagates that ONE field to all selected rules (port of `ApplyBatchField`, BG-layer
+  edits stay anchor-only like WPF); the Merge section ports `MergePlan`/`ApplyMerge`
+  verbatim (shared-parameter + keyword-based validation, match-type widening, union with
+  case-insensitive dedupe, destructive merge-into-anchor vs non-destructive create-combined,
+  confirm overlay with keyword/category lines). Undo/redo clears the selection.
+  **Legend Creator:** group headers are drag handles; a SINGLE live insertion marker
+  (absolute, non-hit-testable, over the always-visible lane grid) snaps to the nearest
+  column gutter within a row or shows a full-width lane marker between/above/below rows
+  for a new row; drop posts `moveGroup` and `WebLegendCreator.MoveGroup` re-slots the
+  group with removal-adjusted indexes, deleting rows left empty. Batch/merge UI verified
+  in headless Chromium (multi-row highlight + Batch Edit/Merge cards render).

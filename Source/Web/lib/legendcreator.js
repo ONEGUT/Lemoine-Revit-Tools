@@ -154,6 +154,7 @@
         (row.groups || []).forEach(function (g) { lane.appendChild(buildGroup(g)); });
         scroll.appendChild(lane);
       });
+      wireGroupDrag(scroll);
       mid.appendChild(scroll);
 
       var addWrap = el('div', 'l-lc-addgroup');
@@ -170,6 +171,117 @@
       return mid;
     }
 
+    // -- Group drag: ONE live insertion marker over the lane grid (house rule: never
+    // sliver drop zones). Aiming inside a lane snaps a vertical marker to the nearest
+    // column gutter; aiming at a gap between rows (or above/below all rows) shows a
+    // full-width lane marker meaning "new row here". The marker is non-hit-testable,
+    // so cards never reflow while aiming.
+    var groupMarker = null, groupDropTarget = null;
+    var ROW_BAND = 14; // px band at a lane's top/bottom edge that reads as "between rows"
+
+    function hideGroupMarker() {
+      if (groupMarker) groupMarker.style.display = 'none';
+      groupDropTarget = null;
+    }
+
+    function wireGroupDrag(scroll) {
+      groupMarker = el('div', 'l-lc-marker');
+      groupMarker.style.display = 'none';
+      scroll.appendChild(groupMarker);
+
+      function isGroupDrag(ev) {
+        var t = ev.dataTransfer && ev.dataTransfer.types;
+        return t && Array.prototype.indexOf.call(t, 'text/l-lc-group') >= 0;
+      }
+
+      scroll.addEventListener('dragover', function (ev) {
+        if (!isGroupDrag(ev)) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        var target = computeGroupTarget(scroll, ev.clientX, ev.clientY);
+        groupDropTarget = target;
+        positionGroupMarker(scroll, target);
+      });
+      scroll.addEventListener('dragleave', function (ev) {
+        if (ev.target === scroll) hideGroupMarker();
+      });
+      scroll.addEventListener('drop', function (ev) {
+        if (!isGroupDrag(ev)) return;
+        ev.preventDefault();
+        var id = ev.dataTransfer.getData('text/l-lc-group');
+        var target = groupDropTarget;
+        hideGroupMarker();
+        if (id && target)
+          action('moveGroup', { id: id, rowIndex: target.rowIndex, colIndex: target.colIndex || 0, newRow: !!target.newRow });
+      });
+    }
+
+    function computeGroupTarget(scroll, cx, cy) {
+      var lanes = scroll.querySelectorAll(':scope > .l-lc-rowlane');
+      if (lanes.length === 0) return { newRow: true, rowIndex: 0 };
+
+      for (var i = 0; i < lanes.length; i++) {
+        var r = lanes[i].getBoundingClientRect();
+        if (cy < r.top + ROW_BAND) return { newRow: true, rowIndex: i };
+        if (cy <= r.bottom - ROW_BAND) {
+          // Inside lane i: snap to the nearest column gutter.
+          var cards = lanes[i].querySelectorAll(':scope > .l-lc-group');
+          var best = 0, bestDist = Infinity;
+          for (var j = 0; j <= cards.length; j++) {
+            var gx = j < cards.length
+              ? cards[j].getBoundingClientRect().left
+              : (cards.length ? cards[cards.length - 1].getBoundingClientRect().right : r.left);
+            var dist = Math.abs(cx - gx);
+            if (dist < bestDist) { bestDist = dist; best = j; }
+          }
+          return { newRow: false, rowIndex: i, colIndex: best };
+        }
+        if (i === lanes.length - 1 || cy < lanes[i + 1].getBoundingClientRect().top + ROW_BAND) {
+          if (cy <= r.bottom + ROW_BAND || i === lanes.length - 1)
+            return { newRow: true, rowIndex: i + 1 };
+        }
+      }
+      return { newRow: true, rowIndex: lanes.length };
+    }
+
+    function positionGroupMarker(scroll, target) {
+      if (!groupMarker || !target) return;
+      var sRect = scroll.getBoundingClientRect();
+      var lanes = scroll.querySelectorAll(':scope > .l-lc-rowlane');
+      function relY(clientY) { return clientY - sRect.top + scroll.scrollTop; }
+      function relX(clientX) { return clientX - sRect.left + scroll.scrollLeft; }
+
+      if (target.newRow) {
+        var y;
+        if (lanes.length === 0) y = 8;
+        else if (target.rowIndex <= 0) y = relY(lanes[0].getBoundingClientRect().top) - 8;
+        else if (target.rowIndex >= lanes.length) y = relY(lanes[lanes.length - 1].getBoundingClientRect().bottom) + 6;
+        else {
+          var above = lanes[target.rowIndex - 1].getBoundingClientRect().bottom;
+          var below = lanes[target.rowIndex].getBoundingClientRect().top;
+          y = relY((above + below) / 2) - 2;
+        }
+        groupMarker.style.left = '4px';
+        groupMarker.style.width = (scroll.clientWidth - 8) + 'px';
+        groupMarker.style.top = Math.max(0, y) + 'px';
+        groupMarker.style.height = '4px';
+      } else {
+        var lane = lanes[target.rowIndex];
+        if (!lane) { hideGroupMarker(); return; }
+        var lr = lane.getBoundingClientRect();
+        var cards = lane.querySelectorAll(':scope > .l-lc-group');
+        var x;
+        if (cards.length === 0) x = relX(lr.left);
+        else if (target.colIndex >= cards.length) x = relX(cards[cards.length - 1].getBoundingClientRect().right) + 5;
+        else x = relX(cards[target.colIndex].getBoundingClientRect().left) - 9;
+        groupMarker.style.left = Math.max(0, x) + 'px';
+        groupMarker.style.width = '4px';
+        groupMarker.style.top = relY(lr.top) + 'px';
+        groupMarker.style.height = lr.height + 'px';
+      }
+      groupMarker.style.display = '';
+    }
+
     function tint(hex) {
       // Group headers are tinted by the trade colour like the WPF cards - a translucent
       // wash so the header text stays readable on both themes.
@@ -181,6 +293,15 @@
 
       var head = el('div', 'l-lc-ghead');
       head.style.background = tint(g.color);
+      head.draggable = true;
+      head.addEventListener('dragstart', function (ev) {
+        if (ev.target && (ev.target.tagName === 'INPUT' || (ev.target.closest && ev.target.closest('button')))) {
+          ev.preventDefault(); return;
+        }
+        ev.dataTransfer.setData('text/l-lc-group', g.id);
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+      head.addEventListener('dragend', hideGroupMarker);
       var caret = el('span', 'caret', g.collapsed ? '\u25B8' : '\u25BE');
       caret.title = g.collapsed ? L('expandTip') : L('collapseTip');
       caret.addEventListener('click', function () { action('toggleGroup', { id: g.id, value: !g.collapsed }); });

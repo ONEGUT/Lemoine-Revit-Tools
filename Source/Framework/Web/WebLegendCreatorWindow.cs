@@ -49,6 +49,7 @@ namespace LemoineTools.Framework.Web
                 case "toggleBlockVisibility": _model.ToggleBlockVisibility(Str(p, "groupId"), Str(p, "id")); SendInit(); return true;
                 case "renameBlock":   _model.RenameBlock(Str(p, "groupId"), Str(p, "id"), Str(p, "value")); SendInit(); return true;
                 case "dropFilter":    _model.DropFilter(Str(p, "groupId"), Str(p, "key")); SendInit(); return true;
+                case "moveGroup":     _model.MoveGroup(Str(p, "id"), GetInt(p, "rowIndex"), GetInt(p, "colIndex"), GetBool(p, "newRow")); SendInit(); return true;
 
                 case "setSizing":     _model.SetSizing(Str(p, "field"), Get(p, "value")); return true;
                 case "setTextStyle":  _model.SetTextStyle(Str(p, "role"), Str(p, "value")); return true;
@@ -185,5 +186,15 @@ namespace LemoineTools.Framework.Web
 
         private static bool GetBool(IReadOnlyDictionary<string, object?> p, string key) =>
             p.TryGetValue(key, out var v) && (v is bool b ? b : bool.TryParse(v?.ToString(), out var r) && r);
+
+        private static int GetInt(IReadOnlyDictionary<string, object?> p, string key)
+        {
+            if (!p.TryGetValue(key, out var v) || v == null) return 0;
+            if (v is int i) return i;
+            if (v is long l) return (int)l;
+            if (v is double d) return (int)d;
+            return int.TryParse(v.ToString(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var r) ? r : 0;
+        }
     }
 }

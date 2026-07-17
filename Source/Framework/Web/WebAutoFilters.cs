@@ -21,6 +21,9 @@ namespace LemoineTools.Framework.Web
         private string  _snapshot;
         private string? _activeTradeId;
         private string? _activeRuleId;
+        private string? _shiftAnchorRuleId;
+        // Multi-select over rule rows (includes the active rule while >= 2 are selected).
+        private readonly HashSet<string> _selectedRuleIds = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _applyExcluded = new HashSet<string>(StringComparer.Ordinal);
         private string _surfLayer = "FG";
         private string _cutLayer  = "FG";
@@ -58,6 +61,8 @@ namespace LemoineTools.Framework.Web
             var trade = ActiveTrade();
             if (_activeRuleId == null || trade == null || trade.Rules.All(r => r.Id != _activeRuleId))
                 _activeRuleId = trade?.Rules.FirstOrDefault()?.Id;
+            _selectedRuleIds.RemoveWhere(id => trade == null || trade.Rules.All(r => r.Id != id));
+            if (_selectedRuleIds.Count < 2) _selectedRuleIds.Clear();
         }
 
         public FilterTradeConfig? ActiveTrade() => _trades.FirstOrDefault(t => t.Id == _activeTradeId);
@@ -141,6 +146,7 @@ namespace LemoineTools.Framework.Web
         {
             _historyIndex = index;
             _trades = Deserialize(_history[index].Snapshot);
+            _selectedRuleIds.Clear();
             EnsureActive();
         }
 
@@ -149,6 +155,8 @@ namespace LemoineTools.Framework.Web
         {
             _activeTradeId = id;
             _activeRuleId  = ActiveTrade()?.Rules.FirstOrDefault()?.Id;
+            _selectedRuleIds.Clear();
+            _shiftAnchorRuleId = null;
         }
 
         public void SetTradeChecked(string id, bool isChecked)
@@ -200,7 +208,41 @@ namespace LemoineTools.Framework.Web
         }
 
         // ── Rule mutations ────────────────────────────────────────────────────
-        public void SelectRule(string id) => _activeRuleId = id;
+        /// <summary>Row click with the WPF modifier contract: Shift = contiguous range from
+        /// the anchor (editor sources from the anchor), Ctrl = toggle in/out of the set
+        /// (seeding it with the active rule), plain = single select + new anchor.</summary>
+        public void SelectRule(string id, bool shift = false, bool ctrl = false)
+        {
+            var trade = ActiveTrade(); if (trade == null) return;
+            if (shift)
+            {
+                string anchorId = _shiftAnchorRuleId ?? _activeRuleId ?? id;
+                int anchorIdx  = trade.Rules.FindIndex(r => r.Id == anchorId);
+                int clickedIdx = trade.Rules.FindIndex(r => r.Id == id);
+                if (clickedIdx < 0) return;
+                if (anchorIdx < 0) anchorIdx = clickedIdx;
+                _selectedRuleIds.Clear();
+                for (int i = Math.Min(anchorIdx, clickedIdx); i <= Math.Max(anchorIdx, clickedIdx); i++)
+                    _selectedRuleIds.Add(trade.Rules[i].Id);
+                _activeRuleId = anchorId;   // editor sources from the anchor
+            }
+            else if (ctrl)
+            {
+                if (_selectedRuleIds.Contains(id)) _selectedRuleIds.Remove(id);
+                else
+                {
+                    if (_activeRuleId != null) _selectedRuleIds.Add(_activeRuleId);
+                    _selectedRuleIds.Add(id);
+                }
+                if (_selectedRuleIds.Count < 2) _selectedRuleIds.Clear();
+            }
+            else
+            {
+                _shiftAnchorRuleId = id;
+                _selectedRuleIds.Clear();
+                _activeRuleId = id;
+            }
+        }
 
         public void AddRule()
         {
@@ -254,12 +296,57 @@ namespace LemoineTools.Framework.Web
             Capture(TW("window.history.deleteRule", r.Name));
         }
 
+        // ── Batch propagation (multi-select) ──────────────────────────────────
+        // While >= 2 rules are selected, an edit to the anchor rule propagates that ONE
+        // field to every other selected rule — the exact key set the WPF ApplyBatchField
+        // supports. BG-layer colour/pattern edits are anchor-only there too, so callers
+        // pass null for those.
+        private void Batch(string? key)
+        {
+            if (key == null || _selectedRuleIds.Count < 2) return;
+            var trade  = ActiveTrade();
+            var source = ActiveRule();
+            if (trade == null || source == null) return;
+
+            foreach (var ruleId in _selectedRuleIds.Where(rid => rid != source.Id).ToList())
+            {
+                var target = trade.Rules.FirstOrDefault(r => r.Id == ruleId);
+                if (target == null) continue;
+                switch (key)
+                {
+                    case "logic.categories": target.BuiltInCategories = source.BuiltInCategories.ToList(); break;
+                    case "logic.parameter":  target.Parameter = source.Parameter; break;
+                    case "logic.match":      target.Match = source.Match.ToList(); break;
+                    case "logic.matchtype":  target.MatchType = source.MatchType; break;
+
+                    case "style.surf.enabled": target.OverrideSurf = source.OverrideSurf; break;
+                    case "style.surf.color":   target.SurfColor    = source.SurfColor;    break;
+                    case "style.surf.pattern": target.SurfPattern  = source.SurfPattern;  break;
+
+                    case "style.cut.enabled":  target.OverrideCut  = source.OverrideCut;  break;
+                    case "style.cut.color":    target.CutColor     = source.CutColor;     break;
+                    case "style.cut.pattern":  target.CutPattern   = source.CutPattern;   break;
+
+                    case "style.line.enabled": target.OverrideLine = source.OverrideLine; break;
+                    case "style.line.color":   target.LineColor    = source.LineColor;    break;
+                    case "style.line.weight":  target.LineWeight   = source.LineWeight;   break;
+
+                    case "appearance.halftone":     target.Halftone     = source.Halftone;     break;
+                    case "appearance.transparency": target.Transparency = source.Transparency; break;
+                    case "appearance.visible":      target.Visible      = source.Visible;      break;
+                    case "appearance.apply":        target.Enabled      = source.Enabled;
+                                                    target.FilterOn     = source.FilterOn;     break;
+                }
+            }
+        }
+
         // ── Rule editor setters (active rule) ─────────────────────────────────
         public void AddCategory(string displayName)
         {
             var r = ActiveRule(); if (r == null) return;
             if (!AutoFiltersSettings.TryResolveCategoryOst(displayName, out var ost)) return;
             if (!r.BuiltInCategories.Contains(ost)) r.BuiltInCategories.Add(ost);
+            Batch("logic.categories");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -270,6 +357,7 @@ namespace LemoineTools.Framework.Web
                 r.BuiltInCategories.Remove(ost);
             else
                 r.BuiltInCategories.Remove(displayName);
+            Batch("logic.categories");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -277,6 +365,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.MatchType = on ? "all" : "contains";
+            Batch("logic.matchtype");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -284,6 +373,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.MatchType = matchType == "equals" ? "equals" : "contains";
+            Batch("logic.matchtype");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -291,6 +381,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.Parameter = name ?? "";
+            Batch("logic.parameter");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -299,6 +390,7 @@ namespace LemoineTools.Framework.Web
             var r = ActiveRule(); if (r == null || string.IsNullOrWhiteSpace(keyword)) return;
             keyword = keyword.Trim();
             if (!r.Match.Contains(keyword)) r.Match.Add(keyword);
+            Batch("logic.match");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -306,6 +398,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.Match.Remove(keyword);
+            Batch("logic.match");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -324,6 +417,9 @@ namespace LemoineTools.Framework.Web
                 case "cut":     if (_cutLayer  == "BG") r.OverrideCutBg  = on; else r.OverrideCut  = on; break;
                 case "lines":   r.OverrideLine = on; break;
             }
+            Batch(row == "surface" ? (_surfLayer == "FG" ? "style.surf.enabled" : null)
+                : row == "cut"     ? (_cutLayer  == "FG" ? "style.cut.enabled"  : null)
+                : "style.line.enabled");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -336,6 +432,9 @@ namespace LemoineTools.Framework.Web
                 case "cut":     if (_cutLayer  == "BG") r.CutBgColor  = hex; else r.CutColor  = hex; break;
                 case "lines":   r.LineColor = hex; break;
             }
+            Batch(row == "surface" ? (_surfLayer == "FG" ? "style.surf.color" : null)
+                : row == "cut"     ? (_cutLayer  == "FG" ? "style.cut.color"  : null)
+                : "style.line.color");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -347,6 +446,8 @@ namespace LemoineTools.Framework.Web
                 case "surface": if (_surfLayer == "BG") r.SurfBgPattern = pattern; else r.SurfPattern = pattern; break;
                 case "cut":     if (_cutLayer  == "BG") r.CutBgPattern  = pattern; else r.CutPattern  = pattern; break;
             }
+            Batch(row == "surface" ? (_surfLayer == "FG" ? "style.surf.pattern" : null)
+                : _cutLayer == "FG" ? "style.cut.pattern" : null);
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -354,6 +455,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.LineWeight = Math.Max(1, Math.Min(14, weight));
+            Batch("style.line.weight");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -361,6 +463,7 @@ namespace LemoineTools.Framework.Web
         {
             var r = ActiveRule(); if (r == null) return;
             r.Transparency = Math.Max(0, Math.Min(100, value));
+            Batch("appearance.transparency");
             Capture(TW("window.history.edit", r.Name));
         }
 
@@ -374,7 +477,126 @@ namespace LemoineTools.Framework.Web
                 // "Apply" drives Enabled and keeps FilterOn in sync (same as the WPF toggle).
                 case "filterOn": r.Enabled = on; r.FilterOn = on; break;
             }
+            Batch(flag == "halftone" ? "appearance.halftone"
+                : flag == "visible"  ? "appearance.visible" : "appearance.apply");
             Capture(TW("window.history.edit", r.Name));
+        }
+
+        // ── Merge selected rules (port of the WPF MergePlan/ApplyMerge) ───────
+        // Merge into one: the anchor absorbs the union and the others are deleted.
+        // Create combined: a NEW rule with the unioned definition is appended; originals kept.
+        // Both require one shared parameter and keyword-based rules throughout.
+        private sealed class MergePlan
+        {
+            public bool         Ok;
+            public string?      Reason;
+            public string       Parameter  = "";
+            public string       MatchType  = "";
+            public List<string> Keywords   = new List<string>();
+            public List<string> Categories = new List<string>();
+            public static MergePlan Blocked(string reason) => new MergePlan { Ok = false, Reason = reason };
+        }
+
+        private static readonly HashSet<string> PositiveKeywordMatchTypes =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "contains", "equals", "begins with", "ends with" };
+
+        private MergePlan ComputeMergePlan()
+        {
+            var trade  = ActiveTrade();
+            var anchorRule = ActiveRule();
+            if (trade == null || anchorRule == null)
+                return MergePlan.Blocked(TF("merge.blockedNeedTwo"));
+
+            var selected = new List<FilterRuleConfig> { anchorRule };
+            selected.AddRange(trade.Rules.Where(r =>
+                r.Id != anchorRule.Id && _selectedRuleIds.Contains(r.Id)));
+
+            if (selected.Count < 2) return MergePlan.Blocked(TF("merge.blockedNeedTwo"));
+
+            string param = anchorRule.Parameter ?? "";
+            if (selected.Any(r => !string.Equals(r.Parameter ?? "", param, StringComparison.Ordinal)))
+                return MergePlan.Blocked(TF("merge.blockedSameParameter"));
+
+            foreach (var r in selected)
+            {
+                string mt = (r.MatchType ?? "contains").ToLowerInvariant();
+                if (mt == "all" || mt == "has a value" || mt == "has no value")
+                    return MergePlan.Blocked(TF("merge.blockedKeywordOnly"));
+            }
+
+            var matchTypes = selected
+                .Select(r => (r.MatchType ?? "contains").ToLowerInvariant())
+                .Distinct().ToList();
+            string resultType;
+            if (matchTypes.Count == 1) resultType = matchTypes[0];
+            else if (matchTypes.All(mt => PositiveKeywordMatchTypes.Contains(mt))) resultType = "contains";
+            else return MergePlan.Blocked(TF("merge.blockedMixedMatch"));
+
+            return new MergePlan
+            {
+                Ok         = true,
+                Parameter  = param,
+                MatchType  = resultType,
+                Keywords   = UnionStrings(selected.Select(r => r.Match ?? new List<string>())),
+                Categories = UnionStrings(selected.Select(r => r.BuiltInCategories ?? new List<string>())),
+            };
+        }
+
+        private static List<string> UnionStrings(IEnumerable<IEnumerable<string>> lists)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var outl = new List<string>();
+            foreach (var l in lists)
+                foreach (var x in l)
+                    if (!string.IsNullOrEmpty(x) && seen.Add(x)) outl.Add(x);
+            return outl;
+        }
+
+        public void ApplyMerge(bool destructive)
+        {
+            var trade  = ActiveTrade();
+            var anchorRule = ActiveRule();
+            var plan   = ComputeMergePlan();
+            if (trade == null || anchorRule == null || !plan.Ok) return;
+
+            if (destructive)
+            {
+                anchorRule.Parameter         = plan.Parameter;
+                anchorRule.MatchType         = plan.MatchType;
+                anchorRule.Match             = plan.Keywords;
+                anchorRule.BuiltInCategories = plan.Categories;
+
+                var others = _selectedRuleIds.Where(id => id != anchorRule.Id).ToList();
+                _selectedRuleIds.Clear();
+                foreach (var id in others)
+                    trade.Rules.RemoveAll(r => r.Id == id);
+                _activeRuleId = anchorRule.Id;
+            }
+            else
+            {
+                var combined = FilterRuleConfig.NewBlank();
+                combined.Name              = anchorRule.Name + TF("suffixes.combined");
+                combined.Parameter         = plan.Parameter;
+                combined.MatchType         = plan.MatchType;
+                combined.Match             = plan.Keywords;
+                combined.BuiltInCategories = plan.Categories;
+                combined.Enabled           = anchorRule.Enabled;
+                // Graphics come from the anchor so the combined rule looks like it.
+                combined.CutColor     = anchorRule.CutColor;     combined.CutPattern   = anchorRule.CutPattern;
+                combined.OverrideCut  = anchorRule.OverrideCut;
+                combined.SurfColor    = anchorRule.SurfColor;    combined.SurfPattern  = anchorRule.SurfPattern;
+                combined.OverrideSurf = anchorRule.OverrideSurf;
+                combined.LineColor    = anchorRule.LineColor;    combined.LinePattern  = anchorRule.LinePattern;
+                combined.LineWeight   = anchorRule.LineWeight;   combined.OverrideLine = anchorRule.OverrideLine;
+                combined.Halftone     = anchorRule.Halftone;     combined.Transparency = anchorRule.Transparency;
+                combined.Visible      = anchorRule.Visible;      combined.FilterOn     = anchorRule.FilterOn;
+
+                trade.Rules.Add(combined);
+                _selectedRuleIds.Clear();
+                _activeRuleId = combined.Id;
+            }
+            Capture(TW("window.history.editGeneric"));
         }
 
         // ── Templates ─────────────────────────────────────────────────────────
@@ -466,9 +688,11 @@ namespace LemoineTools.Framework.Web
                         ["id"] = r.Id, ["name"] = r.Name, ["color"] = r.SurfColor,
                         ["catLabel"] = CategorySummary(r),
                         ["active"]  = r.Id == _activeRuleId,
+                        ["selected"] = _selectedRuleIds.Contains(r.Id),
                         ["enabled"] = r.Enabled,
                     }).ToList(),
                 ["editor"]  = BuildEditor(),
+                ["batch"]   = BuildBatch(),
                 ["history"] = _history.Select((h, i) => (object?)new Dictionary<string, object?>
                 { ["label"] = h.Label, ["index"] = i, ["current"] = i == _historyIndex }).ToList(),
                 ["templates"] = TemplateNames().Cast<object?>().ToList(),
@@ -481,6 +705,42 @@ namespace LemoineTools.Framework.Web
             string names = string.Join(", ",
                 r.BuiltInCategories.Select(AutoFiltersSettings.DisplayNameForOst));
             return r.MatchType == "all" ? names + TF("ruleList.wholeCategorySuffix") : names;
+        }
+
+        // Batch-mode payload: present only while >= 2 rules are selected. Carries the
+        // pre-formatted batch header and the merge section (plan summary or blocked reason
+        // plus the confirm texts) so the page renders strings verbatim.
+        private Dictionary<string, object?>? BuildBatch()
+        {
+            var anchorRule = ActiveRule();
+            if (_selectedRuleIds.Count < 2 || anchorRule == null) return null;
+
+            var plan = ComputeMergePlan();
+            var d = new Dictionary<string, object?>
+            {
+                ["count"]       = _selectedRuleIds.Count,
+                ["header"]      = TF("sections.batchEdit"),
+                ["desc"]        = TF("batchEdit.editingDesc", _selectedRuleIds.Count),
+                ["mergeHeader"] = TF("sections.merge"),
+                ["ok"]          = plan.Ok,
+            };
+            if (!plan.Ok) { d["reason"] = plan.Reason; return d; }
+
+            string catWord = plan.Categories.Count == 1
+                ? TF("merge.categoryWordSingular") : TF("merge.categoryWordPlural");
+            string resultNameCombined = anchorRule.Name + TF("suffixes.combined");
+            d["summary"]       = TF("merge.summary", _selectedRuleIds.Count, plan.Keywords.Count, plan.Categories.Count, catWord, plan.MatchType);
+            d["mergeLabel"]    = TF("merge.mergeIntoOne");
+            d["combineLabel"]  = TF("merge.createCombined");
+            d["confirmMerge"]  = TF("merge.confirmMerge", anchorRule.Name, _selectedRuleIds.Count - 1);
+            d["confirmCreate"] = TF("merge.confirmCreate", resultNameCombined);
+            d["keywordsLine"]  = TF("merge.keywordsLine", plan.Keywords.Count > 0 ? string.Join(", ", plan.Keywords) : TF("merge.none"));
+            d["categoriesLine"] = TF("merge.categoriesLine", plan.Categories.Count > 0
+                ? string.Join(", ", plan.Categories.Select(AutoFiltersSettings.DisplayNameForOst))
+                : TF("merge.all"));
+            d["mergeBtn"]  = TF("merge.mergeBtn");
+            d["createBtn"] = TF("merge.createBtn");
+            return d;
         }
 
         private Dictionary<string, object?>? BuildEditor()

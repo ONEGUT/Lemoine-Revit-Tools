@@ -143,6 +143,60 @@ namespace LemoineTools.Framework.Web
             return null;
         }
 
+        /// <summary>
+        /// Move a group to a builder position expressed against the CURRENT (pre-move) layout:
+        /// either into row <paramref name="rowIndex"/> at column <paramref name="colIndex"/>, or —
+        /// when <paramref name="newRow"/> — into a brand-new row inserted at
+        /// <paramref name="rowIndex"/> (0 = above the first row, Rows.Count = below the last).
+        /// Indexes are adjusted here for the removal of the group's old slot, and a row left
+        /// empty by the move is deleted (the WPF lane-grid contract).
+        /// </summary>
+        public void MoveGroup(string groupId, int rowIndex, int colIndex, bool newRow)
+        {
+            var e = ActiveEntry(); if (e == null) return;
+            var g = FindGroup(groupId, out var srcRow);
+            if (g == null || srcRow == null) return;
+
+            int srcRowIdx = e.Rows.IndexOf(srcRow);
+            int srcColIdx = srcRow.Groups.IndexOf(g);
+
+            srcRow.Groups.Remove(g);
+            bool removedRow = srcRow.Groups.Count == 0;
+            if (removedRow) e.Rows.Remove(srcRow);
+
+            if (newRow)
+            {
+                if (removedRow && rowIndex > srcRowIdx) rowIndex--;
+                rowIndex = Math.Max(0, Math.Min(rowIndex, e.Rows.Count));
+                e.Rows.Insert(rowIndex, new LegendRowConfig
+                {
+                    Id     = "r_" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                    Groups = new List<LegendGroupConfig> { g },
+                });
+            }
+            else
+            {
+                if (removedRow && rowIndex > srcRowIdx) rowIndex--;
+                if (e.Rows.Count == 0 || rowIndex < 0)
+                {
+                    e.Rows.Add(new LegendRowConfig
+                    {
+                        Id     = "r_" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                        Groups = new List<LegendGroupConfig> { g },
+                    });
+                }
+                else
+                {
+                    rowIndex = Math.Min(rowIndex, e.Rows.Count - 1);
+                    var row = e.Rows[rowIndex];
+                    if (row == srcRow && colIndex > srcColIdx) colIndex--;
+                    colIndex = Math.Max(0, Math.Min(colIndex, row.Groups.Count));
+                    row.Groups.Insert(colIndex, g);
+                }
+            }
+            Save();
+        }
+
         public void DeleteGroup(string groupId)
         {
             var e = ActiveEntry(); if (e == null) return;

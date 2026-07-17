@@ -208,7 +208,7 @@
       if (!payload.rules || payload.rules.length === 0)
         list.appendChild(el('div', 'l-sbm-empty', L('noRules')));
       (payload.rules || []).forEach(function (r, idx) {
-        var row = el('div', 'l-af-rule' + (r.active ? ' active' : '') + (r.enabled === false ? ' disabled' : ''));
+        var row = el('div', 'l-af-rule' + (r.active ? ' active' : '') + (r.selected && !r.active ? ' multi' : '') + (r.enabled === false ? ' disabled' : ''));
         row.draggable = true;
         var sw = el('span', 'sw'); sw.style.background = r.color; row.appendChild(sw);
         var txt = el('div', 'txt');
@@ -218,7 +218,12 @@
         var edit = el('button', 'l-lc-gbtn'); edit.title = L('editRuleTip'); edit.appendChild(svgIcon(PENCIL));
         edit.addEventListener('click', function (e) { e.stopPropagation(); openRuleEditOverlay(r); });
         row.appendChild(edit);
-        row.addEventListener('click', function () { if (!r.active) action('selectRule', { id: r.id }); });
+        row.addEventListener('click', function (ev) {
+          // Shift/Ctrl multi-select mirrors the WPF row contract; a plain click on the
+          // active row is a no-op, but modifier clicks always post (they change the set).
+          if (ev.shiftKey || ev.ctrlKey || ev.metaKey || !r.active)
+            action('selectRule', { id: r.id, shift: ev.shiftKey, ctrl: ev.ctrlKey || ev.metaKey });
+        });
 
         // HTML5 drag reorder: the row being dragged carries its index; drop targets report theirs.
         row.addEventListener('dragstart', function (ev) { ev.dataTransfer.setData('text/l-af-rule', String(idx)); ev.dataTransfer.effectAllowed = 'move'; });
@@ -253,6 +258,15 @@
       var r = payload.editor;
       if (!r) { ed.appendChild(el('div', 'l-af-noselect', L('noRule'))); return ed; }
 
+      if (payload.batch) {
+        ed.appendChild(el('div', 'l-af-sechead', payload.batch.header));
+        var bcard = el('div', 'l-af-card');
+        bcard.appendChild(el('div', 'l-af-batchdesc', payload.batch.desc));
+        ed.appendChild(bcard);
+        ed.appendChild(el('div', 'l-af-sechead', payload.batch.mergeHeader));
+        ed.appendChild(buildMergeCard(payload.batch));
+      }
+
       ed.appendChild(el('div', 'l-af-sechead', L('filterLogic')));
       ed.appendChild(buildFilterLogic(r));
       ed.appendChild(el('div', 'l-af-sechead', L('overrideStyle')));
@@ -260,6 +274,35 @@
       ed.appendChild(el('div', 'l-af-sechead', L('appearance')));
       ed.appendChild(buildAppearance(r));
       return ed;
+    }
+
+    function buildMergeCard(b) {
+      var card = el('div', 'l-af-card');
+      if (!b.ok) {
+        card.appendChild(el('div', 'l-af-batchdesc', b.reason || ''));
+        return card;
+      }
+      card.appendChild(el('div', 'l-af-mergesummary', b.summary));
+      var row = el('div', 'l-sbm-geomrow');
+      var merge = el('button', 'l-btn', b.mergeLabel);
+      merge.addEventListener('click', function () { openMergeConfirm(b, true); });
+      row.appendChild(merge);
+      var combine = el('button', 'l-btn', b.combineLabel);
+      combine.addEventListener('click', function () { openMergeConfirm(b, false); });
+      row.appendChild(combine);
+      card.appendChild(row);
+      return card;
+    }
+
+    function openMergeConfirm(b, destructive) {
+      var body = el('div');
+      body.appendChild(el('div', 'l-af-mergesummary', destructive ? b.confirmMerge : b.confirmCreate));
+      body.appendChild(el('div', 'l-af-caption', b.keywordsLine));
+      body.appendChild(el('div', 'l-af-caption', b.categoriesLine));
+      openOverlay(destructive ? b.mergeLabel : b.combineLabel, body, [
+        { label: destructive ? b.mergeBtn : b.createBtn, variant: destructive ? 'danger' : 'primary',
+          onClick: function () { action('applyMerge', { destructive: destructive }); } }
+      ]);
     }
 
     function chipRow(items, addTip, onRemove, onAdd) {

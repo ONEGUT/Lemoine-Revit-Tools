@@ -50,7 +50,7 @@
       ],
       rules: [
         { id: 'R1', name: 'Fire Dampers (copy)', color: '#d94b40', catLabel: 'Duct Accessories', active: true, enabled: true },
-        { id: 'R2', name: 'Exhaust Air 2wg', color: '#9a6fa3', catLabel: 'MEP Fabrication Ductwork', active: false, enabled: true },
+        { id: 'R2', name: 'Exhaust Air 2wg', color: '#9a6fa3', catLabel: 'MEP Fabrication Ductwork', active: false, selected: true, enabled: true },
         { id: 'R3', name: 'Outside Air 2wg', color: '#e8963c', catLabel: 'MEP Fabrication Ductwork', active: false, enabled: true },
         { id: 'R4', name: 'Secondary Supply', color: '#2f6fd0', catLabel: 'MEP Fabrication Ductwork', active: false, enabled: true },
         { id: 'R5', name: 'Return Air Duct', color: '#f2a9a2', catLabel: 'MEP Fabrication Ductwork', active: false, enabled: true },
@@ -61,6 +61,16 @@
         { id: 'R10', name: 'Exhaust Air 2wg (combined)', color: '#9a6fa3', catLabel: 'MEP Fabrication Ductwork', active: false, enabled: true },
         { id: 'R11', name: 'Fire Dampers', color: '#d94b40', catLabel: 'Duct Accessories', active: false, enabled: true }
       ],
+      batch: {
+        count: 2, header: 'Batch Edit', desc: 'Editing 2 rules — changes to a field apply to every selected rule.',
+        mergeHeader: 'Merge', ok: true,
+        summary: '2 rules → 1 filter · 2 keywords · 1 category · contains',
+        mergeLabel: 'Merge into one', combineLabel: 'Create combined',
+        confirmMerge: "'Fire Dampers (copy)' absorbs 1 other rule (deleted).",
+        confirmCreate: "Creates 'Fire Dampers (copy) (combined)'; originals kept.",
+        keywordsLine: 'Keywords: Fire, Exhaust', categoriesLine: 'Categories: Duct Accessories',
+        mergeBtn: 'Merge', createBtn: 'Create'
+      },
       editor: {
         id: 'R1', name: 'Fire Dampers (copy)',
         categories: [{ ost: 'OST_DuctAccessory', label: 'Duct Accessories' }],

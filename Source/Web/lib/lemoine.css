@@ -824,3 +824,12 @@ html, body { height:100%; }
 .l-lc-previewpage .pv-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .l-lc-previewpage .pv-sw { width: 26px; height: 12px; border: 1px solid #333; flex-shrink: 0; }
 .l-lc-previewpage .pv-lbl { font-size: 11px; }
+
+/* Auto Filters - multi-select rows + batch/merge cards */
+.l-af-rule.multi { background: var(--l-accent-dim); }
+.l-af-batchdesc { font-size: var(--l-fs-sm); font-style: italic; color: var(--l-text-dim); line-height: 1.45; }
+.l-af-mergesummary { font-size: var(--l-fs-sm); color: var(--l-text); line-height: 1.45; margin-bottom: 8px; }
+
+/* Legend Creator - builder hosts the absolute insertion marker; headers are drag handles */
+.l-lc-builder { position: relative; }
+.l-lc-ghead { cursor: grab; }
