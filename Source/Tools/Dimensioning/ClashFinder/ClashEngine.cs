@@ -138,7 +138,7 @@ namespace LemoineTools.Tools.Dimensioning
             if (det.Failed) { result.Fails++; return result; }
             if (det.ClashCount == 0) return result;
 
-            Log($"Placing markers for {det.ClashCount} clash(es) across {viewIds.Count} view(s)…", "info");
+            Log(AppStrings.T("clash.autoDim.log.placingMarkers", det.ClashCount, viewIds.Count), "info");
             var regionTypeCache = new Dictionary<string, ElementId?>();
             foreach (var viewId in viewIds)
             {
@@ -184,16 +184,16 @@ namespace LemoineTools.Tools.Dimensioning
             var group1Elements = ScanGroupSpec(group1Spec, sources, "Group 1");
             var group2Elements = ScanGroupSpec(group2Spec, sources, "Group 2");
             int group1Rect = group1Elements.Count(e => e.IsRectangular);
-            Log($"Group 1: {group1Elements.Count} element(s) ({group1Rect} rectangular)   Group 2: {group2Elements.Count} element(s)", "info");
+            Log(AppStrings.T("clash.autoDim.log.groupCounts", group1Elements.Count, group1Rect, group2Elements.Count), "info");
 
             if (group1Elements.Count == 0)
             {
-                Log("Group 1 produced no elements — check its mode, selection, and source documents.", "fail");
+                Log(AppStrings.T("clash.autoDim.log.groupEmpty", 1), "fail");
                 det.Failed = true; return det;
             }
             if (group2Elements.Count == 0)
             {
-                Log("Group 2 produced no elements — check its mode, selection, and source documents.", "fail");
+                Log(AppStrings.T("clash.autoDim.log.groupEmpty", 2), "fail");
                 det.Failed = true; return det;
             }
 
@@ -204,20 +204,17 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 if (!det.HostPhaseSeq.TryGetValue(_opts.SpecificPhaseName ?? "", out int targetSeq))
                 {
-                    Log($"Phase filter: host phase '{_opts.SpecificPhaseName}' not found in this document — "
-                      + "phase filtering skipped for this run.", "fail");
+                    Log(AppStrings.T("clash.autoDim.log.phaseNotFound", _opts.SpecificPhaseName), "fail");
                 }
                 else
                 {
                     int b1 = group1Elements.Count, b2 = group2Elements.Count;
                     group1Elements = group1Elements.Where(e => PhasePresent(e, targetSeq, det)).ToList();
                     group2Elements = group2Elements.Where(e => PhasePresent(e, targetSeq, det)).ToList();
-                    Log($"Phase '{_opts.SpecificPhaseName}': kept {group1Elements.Count}/{b1} Group 1 and "
-                      + $"{group2Elements.Count}/{b2} Group 2 element(s).", "info");
+                    Log(AppStrings.T("clash.autoDim.log.phaseKept", _opts.SpecificPhaseName, group1Elements.Count, b1, group2Elements.Count, b2), "info");
                     if (group1Elements.Count == 0 || group2Elements.Count == 0)
                     {
-                        Log($"No {(group1Elements.Count == 0 ? "Group 1" : "Group 2")} element exists in phase "
-                          + $"'{_opts.SpecificPhaseName}' — nothing to clash.", "fail");
+                        Log(AppStrings.T("clash.autoDim.log.phaseEmpty", group1Elements.Count == 0 ? 1 : 2, _opts.SpecificPhaseName), "fail");
                         det.Failed = true; return det;
                     }
                 }
@@ -231,17 +228,17 @@ namespace LemoineTools.Tools.Dimensioning
 
             if (det.Clashes.Count == 0)
             {
-                Log("No solid intersections detected between the two groups.", "info");
+                Log(AppStrings.T("clash.autoDim.log.noClashes"), "info");
                 return det;
             }
 
             Log(hitLimit
-                ? $"Found {det.Clashes.Count} clash(es) — limit of {maxClashes} reached. Increase Max Clashes to detect more."
-                : $"Found {det.Clashes.Count} clash(es).", "info");
+                ? AppStrings.T("clash.autoDim.log.foundLimit", det.Clashes.Count, maxClashes)
+                : AppStrings.T("clash.autoDim.log.found", det.Clashes.Count), "info");
 
             int unruled = det.Clashes.Count(c => !c.Group1.RuleColored);
             if (unruled > 0)
-                Log($"{unruled} clash(es) matched no Auto Filter rule — shown in fallback colour {_opts.FallbackColorHex} with a solid fill.", "info");
+                Log(AppStrings.T("clash.autoDim.log.unruled", unruled, _opts.FallbackColorHex), "info");
 
             // Per-view gating context, resolved once. A clash is drawn in a view only when its overlap
             // region falls inside that view's volume — crop box in XY, a storey-height band in Z — so
@@ -275,9 +272,9 @@ namespace LemoineTools.Tools.Dimensioning
             {
                 string viewPhase = ReadViewPhaseName(view);
                 if (viewPhase.Length == 0)
-                    Log($"View '{view.Name}': no phase parameter — phase gate skipped for this view.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.viewNoPhase", view.Name), "info");
                 else if (!det.HostPhaseSeq.TryGetValue(viewPhase, out phaseSeq))
-                    Log($"View '{view.Name}': phase '{viewPhase}' not in the host phase sequence — phase gate skipped for this view.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.viewPhaseUnknown", view.Name, viewPhase), "info");
                 else
                     phaseGated = true;
             }
@@ -298,15 +295,15 @@ namespace LemoineTools.Tools.Dimensioning
                 }
                 catch (Exception ex)
                 {
-                    Log($"Error in '{view.Name}': {ex.Message}", "fail");
+                    Log(AppStrings.T("clash.autoDim.log.markerError", view.Name, ex.Message), "fail");
                     pr.Fails++;
                 }
             }
 
             if (volumeSkipped > 0)
-                Log($"View '{view.Name}': {volumeSkipped} clash(es) outside the view volume — skipped.", "info");
+                Log(AppStrings.T("clash.autoDim.log.volumeSkipped", view.Name, volumeSkipped), "info");
             if (phaseSkipped > 0)
-                Log($"View '{view.Name}': {phaseSkipped} clash(es) not in this view's phase — skipped.", "info");
+                Log(AppStrings.T("clash.autoDim.log.phaseSkipped", view.Name, phaseSkipped), "info");
             return pr;
         }
 
@@ -471,8 +468,7 @@ namespace LemoineTools.Tools.Dimensioning
         private void WarnUnmappedPhase(ClashDetection det, string phaseName)
         {
             if (!det.WarnedPhaseNames.Add(phaseName)) return;
-            Log($"Phase filter: phase '{phaseName}' (from a linked model) has no same-named host phase — "
-              + "its elements pass through unfiltered.", "info");
+            Log(AppStrings.T("clash.autoDim.log.phaseUnmapped", phaseName), "info");
             DiagnosticsLog.Warn("ClashEngine phase filter", $"unmapped phase name '{phaseName}'");
         }
 
@@ -486,21 +482,30 @@ namespace LemoineTools.Tools.Dimensioning
             switch (spec.Mode)
             {
                 case "Categories":
-                    return ScanCategories(spec.Categories, FilterSources(allSources, spec.SourceLinkIds), worksetExcl);
+                    return ScanCategories(spec.Categories, FilterSources(allSources, spec, label), worksetExcl);
                 case "Elements":
                     return ScanElements(spec.ElemIds, spec.ElemLinkIds, allSources);
                 default:
                     var rules = ResolveRules(spec.RuleKeys);
                     if (rules.Count == 0)
-                        Log($"{label}: no filter rules resolved — check Auto Filters or switch mode.", "info");
-                    return ScanRules(rules, FilterSources(allSources, spec.SourceLinkIds), worksetExcl);
+                        Log(AppStrings.T("clash.autoDim.log.noRules", label), "info");
+                    return ScanRules(rules, FilterSources(allSources, spec, label), worksetExcl);
             }
         }
 
-        private static List<(Document doc, RevitLinkInstance? link, Transform tx)> FilterSources(
-            List<(Document doc, RevitLinkInstance? link, Transform tx)> all, List<long> sourceLinkIds)
+        private List<(Document doc, RevitLinkInstance? link, Transform tx)> FilterSources(
+            List<(Document doc, RevitLinkInstance? link, Transform tx)> all, ClashGroupSpec spec, string label)
         {
-            if (sourceLinkIds == null || sourceLinkIds.Count == 0) return all;
+            var sourceLinkIds = spec.SourceLinkIds;
+            if (sourceLinkIds == null || sourceLinkIds.Count == 0)
+            {
+                // Legacy default (flag unset): empty = scan everything, links added later
+                // included. With the flag set, an empty list genuinely means "no documents"
+                // — the user unchecked them all — so say so instead of silently scanning all.
+                if (!spec.SourcesExplicit) return all;
+                Log(AppStrings.T("clash.autoDim.log.noSourceDocs", label), "warn");
+                return new List<(Document doc, RevitLinkInstance? link, Transform tx)>();
+            }
             var set = new HashSet<long>(sourceLinkIds);
             return all.Where(s => set.Contains(s.link?.Id.Value ?? 0L)).ToList();
         }
@@ -547,12 +552,18 @@ namespace LemoineTools.Tools.Dimensioning
 
                 var catIds = new List<BuiltInCategory>();
                 foreach (var bicStr in rule.BuiltInCategories ?? new List<string>())
+                {
                     if (Enum.TryParse<BuiltInCategory>(bicStr, false, out var bic))
                         catIds.Add(bic);
+                    else
+                        // A stored token this Revit no longer recognizes would otherwise
+                        // silently narrow the scan.
+                        Log(AppStrings.T("clash.autoDim.log.badCategoryToken", rule.Name, bicStr), "warn");
+                }
 
                 if (catIds.Count == 0)
                 {
-                    Log($"Rule '{rule.Name}' has no categories configured — skipped.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.ruleNoCategories", rule.Name), "info");
                     continue;
                 }
 
@@ -569,7 +580,11 @@ namespace LemoineTools.Tools.Dimensioning
                             elems = new FilteredElementCollector(srcDoc)
                                 .OfCategory(bic).WhereElementIsNotElementType().ToElements();
                         }
-                        catch { continue; }
+                        catch (Exception ex)
+                        {
+                            DiagnosticsLog.Swallowed($"ClashEngine: collect rule category {bic} in '{srcDoc.Title}'", ex);
+                            continue;
+                        }
 
                         foreach (var el in elems)
                         {
@@ -601,11 +616,11 @@ namespace LemoineTools.Tools.Dimensioning
                         }
                     }
                     if (srcCount > 0 || link != null)
-                        Log($"  [{srcDoc.Title}] '{rule.Name}': {srcCount} element(s)", "info");
+                        Log(AppStrings.T("clash.autoDim.log.ruleSourceCount", srcDoc.Title, rule.Name, srcCount), "info");
                     ruleTotal += srcCount;
                 }
                 if (ruleTotal == 0)
-                    Log($"  Rule '{rule.Name}': 0 matching elements — check categories/match criteria/source docs.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.ruleEmpty", rule.Name), "info");
             }
 
             return result;
@@ -619,8 +634,15 @@ namespace LemoineTools.Tools.Dimensioning
             var result = new List<ClashElement>();
             foreach (var ostStr in osts ?? new List<string>())
             {
-                if (!Enum.TryParse<BuiltInCategory>(ostStr, false, out var bic)) continue;
+                if (!Enum.TryParse<BuiltInCategory>(ostStr, false, out var bic))
+                {
+                    // A stored token this Revit no longer recognizes would otherwise
+                    // silently narrow the scan.
+                    Log(AppStrings.T("clash.autoDim.log.badCategory", ostStr), "warn");
+                    continue;
+                }
 
+                string catName = CategoryDisplayName(sources.Count > 0 ? sources[0].doc : null, bic, ostStr);
                 int catTotal = 0;
                 foreach (var (srcDoc, link, tx) in sources)
                 {
@@ -632,7 +654,11 @@ namespace LemoineTools.Tools.Dimensioning
                         elems = new FilteredElementCollector(srcDoc)
                             .OfCategory(bic).WhereElementIsNotElementType().ToElements();
                     }
-                    catch { continue; }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"ClashEngine: collect category {bic} in '{srcDoc.Title}'", ex);
+                        continue;
+                    }
 
                     foreach (var el in elems)
                     {
@@ -648,7 +674,7 @@ namespace LemoineTools.Tools.Dimensioning
                             LinkInstance  = link,
                             HostTransform = tx,
                             Id            = el.Id,
-                            Label         = ostStr,
+                            Label         = catName,
                             ColorHex      = ruleColor ?? _opts.FallbackColorHex,
                             RuleColored   = ruleColor != null,
                             HostBBox      = bb,
@@ -664,9 +690,25 @@ namespace LemoineTools.Tools.Dimensioning
                     }
                     catTotal += srcCount;
                 }
-                Log($"  Category {ostStr}: {catTotal} element(s)", "info");
+                Log(AppStrings.T("clash.autoDim.log.categoryCount", catName, catTotal), "info");
             }
             return result;
+        }
+
+        /// <summary>Revit's display name for a built-in category (e.g. "Ducts" instead of the raw
+        /// OST_DuctCurves token), falling back to the token when no document can resolve it.</summary>
+        private static string CategoryDisplayName(Document? doc, BuiltInCategory bic, string fallback)
+        {
+            try
+            {
+                if (doc != null)
+                {
+                    var c = Category.GetCategory(doc, bic);
+                    if (c != null && !string.IsNullOrEmpty(c.Name)) return c.Name;
+                }
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: resolve category display name", ex); }
+            return fallback;
         }
 
         private List<ClashElement> ScanElements(
@@ -709,7 +751,7 @@ namespace LemoineTools.Tools.Dimensioning
                     DemolishedPhaseName = phD,
                 });
             }
-            Log($"  Picked elements resolved: {result.Count}", "info");
+            Log(AppStrings.T("clash.autoDim.log.pickedResolved", result.Count), "info");
             return result;
         }
 
@@ -725,23 +767,38 @@ namespace LemoineTools.Tools.Dimensioning
             return result;
         }
 
-        private static string? ResolveRuleColor(Element el)
+        // Auto Filter rules indexed by category, built once per engine — the previous
+        // per-element walk of every trade × rule did parameter reads for rules whose
+        // categories could never match, which dominated large Categories-mode scans.
+        private Dictionary<string, List<FilterRuleConfig>>? _rulesByBic;
+
+        private string? ResolveRuleColor(Element el)
         {
             string? bic = ElementBicName(el);
             if (bic == null) return null;
 
-            foreach (var trade in AutoFiltersSettings.Instance.Trades)
+            if (_rulesByBic == null)
             {
-                if (trade?.Rules == null) continue;
-                foreach (var rule in trade.Rules)
+                _rulesByBic = new Dictionary<string, List<FilterRuleConfig>>(StringComparer.Ordinal);
+                foreach (var trade in AutoFiltersSettings.Instance.Trades)
                 {
-                    if (rule == null || !rule.Enabled) continue;
-                    if (rule.BuiltInCategories == null || !rule.BuiltInCategories.Contains(bic)) continue;
-                    if (!MatchesRule(el, rule)) continue;
-                    if (string.IsNullOrEmpty(rule.SurfColor)) continue;
-                    return rule.SurfColor;
+                    if (trade?.Rules == null) continue;
+                    foreach (var rule in trade.Rules)
+                    {
+                        if (rule == null || !rule.Enabled || string.IsNullOrEmpty(rule.SurfColor)) continue;
+                        foreach (var cat in rule.BuiltInCategories ?? new List<string>())
+                        {
+                            if (!_rulesByBic.TryGetValue(cat, out var list))
+                                _rulesByBic[cat] = list = new List<FilterRuleConfig>();
+                            list.Add(rule);   // trade/rule order preserved → same first-match winner
+                        }
+                    }
                 }
             }
+
+            if (!_rulesByBic.TryGetValue(bic, out var rules)) return null;
+            foreach (var rule in rules)
+                if (MatchesRule(el, rule)) return rule.SurfColor;
             return null;
         }
 
@@ -980,7 +1037,7 @@ namespace LemoineTools.Tools.Dimensioning
         {
             BoundingBoxXYZ? bb;
             try { bb = el.get_BoundingBox(null); }
-            catch { return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: element bounding box", ex); return null; }
             if (bb == null) return null;
 
             var pts = BoxCorners(bb.Min, bb.Max);
@@ -1010,6 +1067,10 @@ namespace LemoineTools.Tools.Dimensioning
         }
 
         // ── Clash detection ───────────────────────────────────────────────────
+        /// <summary>Identity of one scanned element across documents (link id 0 = host).</summary>
+        private static (long link, long elem) ElemKey(ClashElement e) =>
+            (e.LinkInstance?.Id.Value ?? 0L, e.Id.Value);
+
         private List<ClashResult> FindClashes(
             List<ClashElement> group1, List<ClashElement> group2, int maxClashes)
         {
@@ -1017,17 +1078,33 @@ namespace LemoineTools.Tools.Dimensioning
             var results = new List<ClashResult>();
             int booleanFails = 0;
 
-            // The pair test is O(group1 × group2) — the most expensive loop in the run.
-            // Report progress over the outer group at 5% intervals so it isn't silent.
+            // Spatial grid over Group 2 so each Group 1 element only tests nearby candidates —
+            // the previous full O(group1 × group2) pass dominated large runs.
+            var grid = new BBoxGrid(group2);
+
+            // The same element can land in BOTH groups (any same-trade definition), where it
+            // would "clash" with itself; and when two elements are in both groups, (A,B) and
+            // (B,A) would both be reported. Guard identity and dedupe unordered pairs.
+            var seenPairs = new HashSet<(long, long, long, long)>();
+
+            // Report progress over the outer group at 5% intervals so the pass isn't silent.
             var progress = new RunProgressReporter(Log, group1.Count, "source elements");
 
             foreach (var g1 in group1)
             {
                 var b1 = g1.HostBBox;
-                foreach (var g2 in group2)
+                var k1 = ElemKey(g1);
+                foreach (var g2 in grid.Candidates(b1))
                 {
                     var b2 = g2.HostBBox;
                     if (!BBoxOverlap(b1, b2)) continue;
+
+                    var k2 = ElemKey(g2);
+                    if (k1 == k2) continue;   // an element never clashes with itself
+                    var pairKey = k1.CompareTo(k2) <= 0
+                        ? (k1.link, k1.elem, k2.link, k2.elem)
+                        : (k2.link, k2.elem, k1.link, k1.elem);
+                    if (!seenPairs.Add(pairKey)) continue;   // mirrored (B,A) of a pair already tested
 
                     var s1 = EnsureSolid(g1);
                     var s2 = EnsureSolid(g2);
@@ -1041,7 +1118,15 @@ namespace LemoineTools.Tools.Dimensioning
                             inter = BooleanOperationsUtils.ExecuteBooleanOperation(
                                 s1, s2, BooleanOperationsType.Intersect);
                         }
-                        catch { inter = null; booleanFails++; }
+                        catch (Exception ex)
+                        {
+                            inter = null;
+                            booleanFails++;
+                            // Counted + summarized in the run log; only the first few go to
+                            // diagnostics so a bad-geometry model can't flood the log file.
+                            if (booleanFails <= 3)
+                                DiagnosticsLog.Swallowed("ClashEngine: boolean intersect (bbox fallback)", ex);
+                        }
 
                         if (inter != null && inter.Volume > eps)
                             overlap = SolidWorldBBox(inter);
@@ -1059,15 +1144,67 @@ namespace LemoineTools.Tools.Dimensioning
                     results.Add(new ClashResult { Group1 = g1, Group2 = g2, OverlapBBox = overlap });
                     if (results.Count >= maxClashes)
                     {
-                        if (booleanFails > 0) Log($"  ({booleanFails} boolean op fallback(s) to bbox)", "info");
+                        if (booleanFails > 0) Log(AppStrings.T("clash.autoDim.log.booleanFallbacks", booleanFails), "info");
                         return results;
                     }
                 }
 
                 progress.Tick();
             }
-            if (booleanFails > 0) Log($"  ({booleanFails} boolean op fallback(s) to bbox)", "info");
+            if (booleanFails > 0) Log(AppStrings.T("clash.autoDim.log.booleanFallbacks", booleanFails), "info");
             return results;
+        }
+
+        /// <summary>Uniform XY grid hash over Group 2 bounding boxes — Z overlap is left to the
+        /// exact per-pair test. Boxes spanning a huge cell count go to an always-tested overflow
+        /// list so a giant element (a slab plate, a linked topo) can't explode the index.
+        /// Candidates come back in stable input order so marker creation stays deterministic.</summary>
+        private sealed class BBoxGrid
+        {
+            private const double CellFt = 20.0;
+            private const int MaxCellsPerBox = 4096;
+            private readonly Dictionary<(int, int), List<int>> _cells = new Dictionary<(int, int), List<int>>();
+            private readonly List<int> _oversized = new List<int>();
+            private readonly List<ClashElement> _items;
+
+            public BBoxGrid(List<ClashElement> items)
+            {
+                _items = items;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var bb = items[i].HostBBox;
+                    int x0 = Cell(bb.Min.X), x1 = Cell(bb.Max.X);
+                    int y0 = Cell(bb.Min.Y), y1 = Cell(bb.Max.Y);
+                    if ((long)(x1 - x0 + 1) * (y1 - y0 + 1) > MaxCellsPerBox) { _oversized.Add(i); continue; }
+                    for (int x = x0; x <= x1; x++)
+                        for (int y = y0; y <= y1; y++)
+                        {
+                            if (!_cells.TryGetValue((x, y), out var list))
+                                _cells[(x, y)] = list = new List<int>();
+                            list.Add(i);
+                        }
+                }
+            }
+
+            private static int Cell(double v) => (int)Math.Floor(v / CellFt);
+
+            public IEnumerable<ClashElement> Candidates(BoundingBoxXYZ query)
+            {
+                int x0 = Cell(query.Min.X), x1 = Cell(query.Max.X);
+                int y0 = Cell(query.Min.Y), y1 = Cell(query.Max.Y);
+                if ((long)(x1 - x0 + 1) * (y1 - y0 + 1) > MaxCellsPerBox)
+                {
+                    // A query box this large sweeps most of the model — just test everything.
+                    foreach (var it in _items) yield return it;
+                    yield break;
+                }
+                var idx = new SortedSet<int>(_oversized);
+                for (int x = x0; x <= x1; x++)
+                    for (int y = y0; y <= y1; y++)
+                        if (_cells.TryGetValue((x, y), out var list))
+                            foreach (var i in list) idx.Add(i);
+                foreach (var i in idx) yield return _items[i];
+            }
         }
 
         private static bool BBoxOverlap(BoundingBoxXYZ a, BoundingBoxXYZ b)
@@ -1107,7 +1244,7 @@ namespace LemoineTools.Tools.Dimensioning
                     DetailLevel              = ViewDetailLevel.Medium,
                 });
             }
-            catch { return null; }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: element geometry", ex); return null; }
             if (ge == null) return null;
             return AccumulateSolids(ge, tx, null);
         }
@@ -1120,7 +1257,7 @@ namespace LemoineTools.Tools.Dimensioning
                 {
                     Solid hs;
                     try { hs = (tx == null || tx.IsIdentity) ? s : SolidUtils.CreateTransformed(s, tx); }
-                    catch { continue; }
+                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashEngine: transform solid to host", ex); continue; }
                     acc = Combine(acc, hs);
                 }
                 else if (obj is GeometryInstance gi)
@@ -1138,7 +1275,13 @@ namespace LemoineTools.Tools.Dimensioning
         {
             if (acc == null) return s;
             try { return BooleanOperationsUtils.ExecuteBooleanOperation(acc, s, BooleanOperationsType.Union); }
-            catch { return acc; }
+            catch (Exception ex)
+            {
+                // Partial-union fallback is deliberate (the accumulated solid still clashes);
+                // routed to diagnostics so a geometry problem is never fully invisible.
+                DiagnosticsLog.Swallowed("ClashEngine: union element solids (kept partial solid)", ex);
+                return acc;
+            }
         }
 
         private static BoundingBoxXYZ SolidWorldBBox(Solid solid)
@@ -1223,7 +1366,7 @@ namespace LemoineTools.Tools.Dimensioning
                 typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
                 regionTypeCache[cacheKey] = typeId;
                 if (typeId == null || typeId == ElementId.InvalidElementId)
-                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.noRegionType", hexColor), "info");
             }
 
             if (typeId != null && typeId != ElementId.InvalidElementId)
@@ -1324,7 +1467,7 @@ namespace LemoineTools.Tools.Dimensioning
                 typeId = GetOrCreateFilledRegionType(doc, hexColor, fallback);
                 regionTypeCache[cacheKey] = typeId;
                 if (typeId == null || typeId == ElementId.InvalidElementId)
-                    Log($"Clash marker: no filled region type for #{hexColor} — circles skipped.", "info");
+                    Log(AppStrings.T("clash.autoDim.log.noRegionType", hexColor), "info");
             }
 
             if (typeId != null && typeId != ElementId.InvalidElementId)

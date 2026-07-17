@@ -24,10 +24,17 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
     /// </summary>
     public static class ElevationTagRunner
     {
+        // Leader geometry in PAPER feet, multiplied by the view scale at placement — the old
+        // fixed 1.5 ft / 3.0 ft model offsets matched a 1:96 view and were wrong everywhere
+        // else (overlapping the round at coarse scales, miles away at fine ones). These paper
+        // values reproduce the old look exactly at 1:96. ⚠ tunable — verify on a Windows plot.
+        private const double LeaderBendPaperFt = 1.5 / 96.0;
+        private const double LeaderEndPaperFt  = 3.0 / 96.0;
+
         // anchorMode: "Top" | "Centre" | "Bottom"
         public static ElevationTagResult Run(
             Document doc, IList<ElementId> viewIds, string anchorMode,
-            ElementId spotTypeId, Action<string, string> log)
+            ElementId spotTypeId, Action<string, string> log, Action<int>? progress = null)
         {
             log = log ?? ((a, b) => { });
             var result = new ElevationTagResult();
@@ -38,8 +45,19 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                 tx.Start();
                 ConfigureFailures(tx);
 
+                int processed = 0;
                 foreach (var viewId in viewIds)
                 {
+                    // Cooperative cancel at the per-view boundary; tags already placed below
+                    // still commit, so a stopped run preserves the views finished so far.
+                    if (RunState.CancelRequested)
+                    {
+                        log(AppStrings.T("common.log.stoppedByUser", processed, viewIds.Count), "warn");
+                        break;
+                    }
+                    processed++;
+                    progress?.Invoke((int)(processed * 100.0 / viewIds.Count));
+
                     if (!(doc.GetElement(viewId) is View view)) continue;
 
                     XYZ up    = view.UpDirection.Normalize();
@@ -62,13 +80,13 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                     catch (Exception ex)
                     {
                         DiagnosticsLog.Swallowed("ElevationTagRunner: collect marker lines", ex);
-                        log($"Could not read markers in '{view.Name}': {ex.Message}", "fail");
+                        log(AppStrings.T("clash.elevationFinder.log.markersReadFail", view.Name, ex.Message), "fail");
                         result.Failures++;
                         continue;
                     }
 
                     if (markers.Count == 0) continue;
-                    log($"— '{view.Name}': {markers.Count} marker(s) —", "info");
+                    log(AppStrings.T("clash.elevationFinder.log.viewMarkers", view.Name, markers.Count), "info");
 
                     foreach (var ce in markers)
                     {
@@ -101,14 +119,17 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                             {
                                 DiagnosticsLog.Swallowed("ElevationTagRunner: marker line has no reference",
                                     new InvalidOperationException("null curve reference"));
-                                log($"Marker in '{view.Name}' had no usable reference — skipped.", "fail");
+                                log(AppStrings.T("clash.elevationFinder.log.noReference", view.Name), "fail");
                                 result.Failures++;
                                 continue;
                             }
 
-                            // Leader bend + text offset to the right of the round so the tag clears the fill.
-                            XYZ bend = anchor.Add(right.Multiply(1.5));
-                            XYZ end  = anchor.Add(right.Multiply(3.0));
+                            // Leader bend + text offset to the right of the round so the tag
+                            // clears the fill — paper-space distances × the view scale, so the
+                            // tag sits the same distance off the round on paper at every scale.
+                            double scale = view.Scale > 0 ? view.Scale : 96;
+                            XYZ bend = anchor.Add(right.Multiply(LeaderBendPaperFt * scale));
+                            XYZ end  = anchor.Add(right.Multiply(LeaderEndPaperFt * scale));
 
                             var spot = doc.Create.NewSpotElevation(
                                 view, reference, anchor, bend, end, anchor, true);
@@ -127,7 +148,7 @@ namespace LemoineTools.Tools.Dimensioning.ElevationTag
                         catch (Exception ex)
                         {
                             DiagnosticsLog.Swallowed("ElevationTagRunner: place spot elevation", ex);
-                            log($"Spot elevation failed in '{view.Name}': {ex.Message}", "fail");
+                            log(AppStrings.T("clash.elevationFinder.log.spotFail", view.Name, ex.Message), "fail");
                             result.Failures++;
                         }
                     }

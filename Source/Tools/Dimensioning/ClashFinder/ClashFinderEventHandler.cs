@@ -94,16 +94,21 @@ namespace LemoineTools.Tools.Dimensioning
                         var det = engine.Detect(doc, def.Group1, def.Group2);
                         dets.Add((engine, det, new Dictionary<string, ElementId?>()));
                         defsDetected++;
+                        // Detection often dominates the run — move the bar per definition
+                        // instead of parking it at 5% for the whole phase.
+                        Progress(5 + (int)(defsDetected * 5.0 / Definitions.Count),
+                                 totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
                     }
 
-                    // ── Dimension-pass prep: apply run-level config overrides once (restored in
-                    // finally), and pick manual datums up front so all picks stay together. ──
-                    var dimCfg = AutoDimensionConfig.Instance;
-                    var snapTarget     = dimCfg.TargetType;
-                    var snapMaxCallout = dimCfg.MaxCalloutScale;
+                    // ── Dimension-pass prep: run-level overrides go on a per-run CLONE of the
+                    // config — never the shared singleton, where a concurrent settings save
+                    // (e.g. the Dimensions settings window) would persist the temporary
+                    // override — and manual datums are picked up front so all picks stay
+                    // together. The block scope below is kept from the former try/finally so
+                    // the phase-2 locals stay contained.
+                    var dimCfg = AutoDimensionConfig.Instance.CloneForRun();
                     System.Collections.Generic.IDictionary<ElementId, System.Collections.Generic.List<AutoDimension.Resolvers.ManualDatum>>? datums = null;
                     bool slabEdge = string.Equals(DimTargetType, "SlabEdge", StringComparison.OrdinalIgnoreCase);
-                    try
                     {
                         if (RunDimensionPass)
                         {
@@ -131,6 +136,9 @@ namespace LemoineTools.Tools.Dimensioning
                             var view = doc.GetElement(viewId) as View;
                             if (view == null)
                             {
+                                // A selection can outlive its view (deleted between picking and
+                                // running) — say so instead of a bare "empty view" tally.
+                                Log(AppStrings.T("clash.finder.log.viewGone", viewId.Value), "warn");
                                 viewsSkipped++;
                                 Progress(10 + (int)(processed * 88.0 / ViewIds.Count),
                                      totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
@@ -196,12 +204,12 @@ namespace LemoineTools.Tools.Dimensioning
                                     // ingest then never sees their clashes (their parent markers
                                     // are deleted here), so they cannot cluster with anything else.
                                     if (AdoptUserCallouts)
-                                        calloutIds.AddRange(AdoptUserCalloutViews(doc, view, dets, deferred,
+                                        calloutIds.AddRange(AdoptUserCalloutViews(doc, view, dimCfg, dets, deferred,
                                             ref totalMarkers, ref totalMarkerFails));
 
+                                    var allRequests = new List<AutoDimension.DenseCalloutRequest>();
                                     if (dimCfg.DenseCalloutsEnabled)
                                     {
-                                        var allRequests = new List<AutoDimension.DenseCalloutRequest>();
                                         int calloutSeq  = 0;
                                         const int maxCalloutPasses = 4;   // each pass deletes markers, so this terminates fast
                                         for (int pass = 0; pass < maxCalloutPasses; pass++)
@@ -222,20 +230,23 @@ namespace LemoineTools.Tools.Dimensioning
                                             calloutIds.AddRange(ids);
                                             if (ids.Count == 0) break;   // every callout failed — re-surveying would loop on the same areas
                                         }
+                                    }
 
-                                        if (ClearPrevious)
+                                    if (ClearPrevious)
+                                    {
+                                        // Clear dense callouts a previous run left behind that this run
+                                        // did not reuse (their bubbles + stale markers) — after the loop,
+                                        // so the sweep keeps every callout created this run. Runs even
+                                        // when the dense tier is OFF: allRequests is then empty, so every
+                                        // "- Dense" callout of this parent is stale and swept (turning
+                                        // the tier off used to strand them forever). User callouts never
+                                        // match the "- Dense" prefix and are never swept.
+                                        using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
                                         {
-                                            // Clear callouts a previous run left behind that this run did
-                                            // not reuse (their bubbles + stale markers) — after the loop,
-                                            // so the sweep keeps every callout created this run. User
-                                            // callouts never match the "- Dense" prefix and are never swept.
-                                            using (var tx = new Transaction(doc, $"Lemoine - Stale Callout Cleanup · {view.Name}"))
-                                            {
-                                                tx.Start();
-                                                ConfigureFailures(tx);
-                                                SweepStaleCallouts(doc, view, allRequests);
-                                                tx.Commit();
-                                            }
+                                            tx.Start();
+                                            ConfigureFailures(tx);
+                                            SweepStaleCallouts(doc, view, allRequests);
+                                            tx.Commit();
                                         }
                                     }
 
@@ -270,11 +281,6 @@ namespace LemoineTools.Tools.Dimensioning
                                      totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
                         }
                     }
-                    finally
-                    {
-                        dimCfg.TargetType      = snapTarget;
-                        dimCfg.MaxCalloutScale = snapMaxCallout;
-                    }
 
                     Log(AppStrings.T("clash.finder.log.done", totalMarkers, totalDims, viewsDone, totalMarkerFails + totalDimFails, viewsFailed, viewsSkipped),
                         totalMarkers + totalDims > 0 ? "pass" : (totalMarkerFails + totalDimFails) > 0 ? "fail" : "info");
@@ -285,21 +291,30 @@ namespace LemoineTools.Tools.Dimensioning
                 Log(AppStrings.T("clash.finder.log.fatal", ex.Message), "fail");
                 totalMarkerFails++;
             }
-
-            Progress(100, totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
-            OnResultChips?.Invoke(new List<ResultChip>
+            finally
             {
-                new ResultChip("markers", totalMarkers,                       "LemoineGreen"),
-                new ResultChip("dims",    totalDims,                          "LemoineGreen"),
-                new ResultChip("failed",  totalMarkerFails + totalDimFails,   "LemoineRed"),
-                new ResultChip("empty views", viewsSkipped,                   "LemoineTextDim"),
-            });
-            Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+                // Report results, then drop the run's payload. The reporting is wrapped so a
+                // throwing callback can never skip the payload clear (memory discipline) —
+                // same structure as ClashElevationFinderEventHandler.
+                try
+                {
+                    Progress(100, totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+                    OnResultChips?.Invoke(new List<ResultChip>
+                    {
+                        new ResultChip("markers", totalMarkers,                       "LemoineGreen"),
+                        new ResultChip("dims",    totalDims,                          "LemoineGreen"),
+                        new ResultChip("failed",  totalMarkerFails + totalDimFails,   "LemoineRed"),
+                        new ResultChip("empty views", viewsSkipped,                   "LemoineTextDim"),
+                    });
+                    Complete(totalMarkers + totalDims, totalMarkerFails + totalDimFails, viewsSkipped);
+                }
+                catch (Exception cbEx) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: completion callback", cbEx); }
 
-            // Session-long static handler (App.ClashFinderHandler) — drop the run's payload.
-            ViewIds     = new List<ElementId>();
-            Definitions = new List<ClashDefinition>();
-            SlabScopes  = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();
+                // Session-long static handler (App.ClashFinderHandler) — drop the run's payload.
+                ViewIds     = new List<ElementId>();
+                Definitions = new List<ClashDefinition>();
+                SlabScopes  = new System.Collections.Generic.List<AutoDimension.Resolvers.SlabScope>();
+            }
         }
 
         // Clears this view's prior Lemoine clash markers (cross-lines + filled regions; deleting the
@@ -334,7 +349,7 @@ namespace LemoineTools.Tools.Dimensioning
                         if (ClearPrevious)
                         {
                             int removed = ClearViewMarkers(doc, cv.Id);
-                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                            if (removed > 0) Log(AppStrings.T("clash.finder.log.cleared", removed, cv.Name), "info");
                         }
 
                         int placed = 0;
@@ -376,9 +391,8 @@ namespace LemoineTools.Tools.Dimensioning
                             try { parentView.SetCategoryHidden(calloutsCat, false); unhidden = true; }
                             catch (Exception ex) { DiagnosticsLog.Swallowed("ClashFinderEventHandler: unhide Callouts category", ex); }
                             Log(unhidden
-                                ? $"'{parentView.Name}' had the Callouts annotation category hidden — enabled it so the bubbles show."
-                                : $"'{parentView.Name}' HIDES the Callouts annotation category (its view template controls visibility) — "
-                                  + "the callout bubbles exist but are invisible until that category is enabled in the template.",
+                                ? AppStrings.T("clash.finder.log.calloutsUnhidden", parentView.Name)
+                                : AppStrings.T("clash.finder.log.calloutsHidden", parentView.Name),
                                 unhidden ? "info" : "fail");
                         }
                     }
@@ -400,13 +414,13 @@ namespace LemoineTools.Tools.Dimensioning
         /// clashes dimensioning in the parent (degrade, never drop). One transaction for all.
         /// </summary>
         private List<ElementId> AdoptUserCalloutViews(
-            Document doc, View parentView,
+            Document doc, View parentView, AutoDimensionConfig dimCfg,
             List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)> dets,
             List<string> deferred, ref int totalMarkers, ref int totalMarkerFails)
         {
             var ids = new List<ElementId>();
             var requests = AutoDimension.AutoDimensionEngine.SurveyUserCallouts(
-                doc, parentView, AutoDimension.AutoDimensionConfig.Instance, (t, s) => Log(t, s));
+                doc, parentView, dimCfg, (t, s) => Log(t, s));
             if (requests.Count == 0) return ids;
 
             // Membership is tested geometrically (same basis as the survey): marker group ids
@@ -458,7 +472,7 @@ namespace LemoineTools.Tools.Dimensioning
                         if (ClearPrevious)
                         {
                             int removed = ClearViewMarkers(doc, cv.Id);
-                            if (removed > 0) Log($"Cleared {removed} previous marker element(s) in '{cv.Name}'.", "info");
+                            if (removed > 0) Log(AppStrings.T("clash.finder.log.cleared", removed, cv.Name), "info");
                         }
 
                         int placed = 0;

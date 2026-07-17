@@ -59,11 +59,11 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 catch (Exception ex) { DiagnosticsLog.Swallowed("AutoDimensionCommit: delete prior owned dim", ex); }
             }
             if (result.DeletedPrior > 0)
-                log($"Cleared {result.DeletedPrior} prior auto-dimension(s) ({result.StaleDeleted} stale).", "info");
+                log(AppStrings.T("clash.autoDim.log.clearedPrior", result.DeletedPrior, result.StaleDeleted), "info");
 
             // ── 2. Place the new plan ─────────────────────────────────────────
             if (plan.Dimensions.Count > 0)
-                log($"Placing {plan.Dimensions.Count} dimension(s) in '{view.Name}'…", "info");
+                log(AppStrings.T("clash.autoDim.log.placing", plan.Dimensions.Count, view.Name), "info");
 
             int processed = 0;
             // Realized text-box footprints (view-2D) of every moved tag placed so far, so a later
@@ -83,7 +83,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
             foreach (var pd in plan.Dimensions)
             {
                 if (++processed % 200 == 0)
-                    log($"  …{processed}/{plan.Dimensions.Count} dimension(s) committed", "info");
+                    log(AppStrings.T("clash.autoDim.log.commitProgress", processed, plan.Dimensions.Count), "info");
 
                 // Axis/perp are per-dimension now that X and Y strings coexist in one plan.
                 Core.Vec2 axis = pd.AxisDir.Normalized();
@@ -92,7 +92,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 if (!output.Refs.TryGetValue(pd.SourceKey, out var bundle) || bundle?.Ordered == null || bundle.Ordered.Count < 2)
                 {
                     result.Failures++;
-                    log($"Source {pd.SourceKey} → {pd.TargetKey}: missing reference bundle ({bundle?.Ordered?.Count ?? 0} ref) — skipped.", "fail");
+                    log(AppStrings.T("clash.autoDim.log.missingBundle", pd.SourceKey, pd.TargetKey, bundle?.Ordered?.Count ?? 0), "fail");
                     continue;
                 }
 
@@ -108,7 +108,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 if (lenFt < shortFt)
                 {
                     result.Failures++;
-                    log($"Source {pd.SourceKey} → {pd.TargetKey}: dimension too short ({lenFt * 304.8:0.#} mm < {shortFt * 304.8:0.##} mm tol) — skipped.", "fail");
+                    log(AppStrings.T("clash.autoDim.log.tooShort", pd.SourceKey, pd.TargetKey, lenFt * 304.8, shortFt * 304.8), "fail");
                     continue;
                 }
 
@@ -125,7 +125,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     if (dim == null)
                     {
                         result.Failures++;
-                        log($"Source {pd.SourceKey} → {pd.TargetKey}: NewDimension returned null ({bundle.Ordered.Count} refs) — the target edge may not be visible/dimensionable in this view (e.g. a linked element not shown by the host view).", "fail");
+                        log(AppStrings.T("clash.autoDim.log.nullDimension", pd.SourceKey, pd.TargetKey, bundle.Ordered.Count), "fail");
                         continue;
                     }
 
@@ -133,7 +133,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     {
                         // Placed but not reclaimable next run — surface it.
                         result.Failures++;
-                        log($"Source {pd.SourceKey}: placed but owner stamp failed (won't be reclaimed next run).", "fail");
+                        log(AppStrings.T("clash.autoDim.log.stampFailed", pd.SourceKey), "fail");
                         continue;
                     }
 
@@ -145,7 +145,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                 {
                     result.Failures++;
                     DiagnosticsLog.Error("AutoDimensionCommit: place dimension", ex);
-                    log($"Source {pd.SourceKey} → {pd.TargetKey} ({bundle.Ordered.Count} refs, {lenFt * 304.8:0} mm, axis {(Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y")}): {ex.Message}", "fail");
+                    log(AppStrings.T("clash.autoDim.log.placeFailed", pd.SourceKey, pd.TargetKey, bundle.Ordered.Count, lenFt * 304.8, Math.Abs(axis.X) >= Math.Abs(axis.Y) ? "x" : "y", ex.Message), "fail");
                 }
             }
 

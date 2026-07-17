@@ -59,7 +59,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension
                     catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: close view", ex); }
                 }
                 if (closed > 0)
-                    log?.Invoke($"Closed {closed} view(s) the pick pass opened.", "info");
+                    log?.Invoke(AppStrings.T("clash.autoDim.log.closedViews", closed), "info");
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed("PickerViewGuard: close opened views", ex); }
         }

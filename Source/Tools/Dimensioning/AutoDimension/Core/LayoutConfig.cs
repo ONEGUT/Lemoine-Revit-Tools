@@ -115,5 +115,10 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Core
 
         /// <summary>Max distinct offset steps to try when shifting a string off a collision.</summary>
         public int MaxOffsetSteps { get; set; } = 8;
+
+        /// <summary>Independent copy — every property is value-typed, so a memberwise clone is a
+        /// full copy. Used by <c>AutoDimensionConfig.CloneForRun</c> so per-run overrides never
+        /// mutate the persisted singleton.</summary>
+        public LayoutConfig CloneShallow() => (LayoutConfig)MemberwiseClone();
     }
 }

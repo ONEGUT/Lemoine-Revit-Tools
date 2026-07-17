@@ -25,9 +25,21 @@ namespace LemoineTools.Tools.Dimensioning
 
         /// <summary>
         /// Link-instance ids of the documents this group scans (0 = host).
-        /// Empty = scan every available document. Used in Rules and Categories modes.
+        /// Used in Rules and Categories modes. When <see cref="SourcesExplicit"/> is false
+        /// (the default, and every definition saved before the flag existed), an empty list
+        /// means "scan every available document, including links added later".
         /// </summary>
         public List<long> SourceLinkIds { get; set; } = new List<long>();
+
+        /// <summary>
+        /// True when <see cref="SourceLinkIds"/> is the authoritative selection — including an
+        /// EMPTY list meaning "scan nothing". Without this flag, unchecking every source
+        /// document in the editor saved an empty list, which the scanner read as "scan ALL
+        /// documents" — the exact opposite of what the UI showed. The editor writes
+        /// false + empty when every document is checked (preserving the future-links-included
+        /// semantics), true otherwise.
+        /// </summary>
+        [XmlAttribute] public bool SourcesExplicit { get; set; }
 
         /// <summary>
         /// Per-source-document workset exclusions (one entry per document that has any

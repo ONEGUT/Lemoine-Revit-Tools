@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -35,7 +36,11 @@ namespace LemoineTools.Commands
                     });
                     if (_window != null) return Result.Succeeded;
                 }
-                catch { _window = null; }
+                catch (Exception ex)
+                {
+                    DiagnosticsLog.Swallowed("ClashFinderCommand: reactivate existing window", ex);
+                    _window = null;
+                }
             }
 
             var uiApp = commandData.Application;

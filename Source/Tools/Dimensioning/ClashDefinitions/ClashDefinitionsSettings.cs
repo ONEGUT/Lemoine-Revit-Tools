@@ -201,30 +201,8 @@ namespace LemoineTools.Tools.Dimensioning
             };
         }
 
-        // ── Export / Import ───────────────────────────────────────────────────
-
-        public static void ExportTo(string path, List<ClashDefinition> definitions)
-        {
-            var s = new ClashDefinitionsSettings { Definitions = definitions };
-            var xs = new XmlSerializer(typeof(ClashDefinitionsSettings));
-            using (var w = new StreamWriter(path)) xs.Serialize(w, s);
-        }
-
-        public static bool TryImportFrom(string path, out string? error)
-        {
-            error = null;
-            try
-            {
-                var xs = new XmlSerializer(typeof(ClashDefinitionsSettings));
-                using (var r = new StreamReader(path))
-                {
-                    var s = (ClashDefinitionsSettings)xs.Deserialize(r)!;
-                    Instance.Definitions = s.Definitions ?? new List<ClashDefinition>();
-                    Instance.Save();
-                }
-                return true;
-            }
-            catch (Exception ex) { error = ex.Message; return false; }
-        }
+        // Export/import was removed as dead code: it had no call sites, and its import was a
+        // full library REPLACE — wiring it to a button later would have silently destroyed the
+        // user's saved definitions. Re-add as merge-by-id if the feature is ever wanted.
     }
 }

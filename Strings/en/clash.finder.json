@@ -27,7 +27,7 @@
     "clearDesc":     "Removes earlier Lemoine clash markers in the selected views first.",
     "oversizeLabel": "Marker oversize (in, 0 = exact element size)",
     "oversizeHint":  "Added to the Group 1 element's own cross-section. 0 draws the marker at the element's exact size (round pipe Ø, or rectangular-duct W×H); a value enlarges every marker by that much — e.g. 2 in makes a 4 in pipe a 6 in round and adds 2 in to a duct's width and height.",
-    "storeyNote":    "The storey depth margin (how far below a level a clash still counts as that level's storey) lives in Settings → Dimensions.",
+    "storeyNote":    "The story depth margin (how far below a level a clash still counts as that level's story) lives in Settings → Dimensions.",
     "dimDefaults":   "Chaining, callouts, grouping distances, and layout spacing are saved defaults (Settings → Dimensions) and apply to every run.",
     "dimPassLabel":  "Place dimensions after marking",
     "dimPassDesc":   "Runs the auto-dimension engine on the clash markers, dimensioning each out to the chosen destination below.",
@@ -61,10 +61,16 @@
     "note": "Detects clashes from the selected definitions across the chosen views, places colored ES-tagged markers, and (if the dimension pass is on) dimensions each run out to the chosen destination.",
     "warnManual": "Manual datum: you'll be prompted to pick one edge per view once the run starts."
   },
+  "pick": {
+    "slabPromptHost":   "Pick the slab/floor to dimension to.",     // Revit status-bar prompt
+    "slabPromptLinked": "Pick the linked slab/floor to dimension to.",
+    "slabFailed":       "Slab pick failed: {0}"                     // shown in the slab status text
+  },
   "log": {
     "pickedNotFloor":"Picked element is not a floor.",
     "noDefs":       "No clash definitions selected.",
     "noViews":      "No views selected.",
+    "viewGone":     "View id {0} no longer exists — skipped.",
     "detecting":    "— Detecting '{0}' —",
     "viewHeader":   "— View '{0}' —",
     "cleared":      "Cleared {0} previous marker element(s) in '{1}'.",
@@ -86,6 +92,8 @@
     "deleteStaleFail":"Could not delete stale callout '{0}' — remove it manually.",
     "noCalloutView":"Dense area {0}: Revit returned no callout view — skipped.",
     "scaleStuck":   "Callout '{0}': scale stayed 1:{1} after setting 1:{2} — check its view template.",
-    "scaleSetFail": "Callout '{0}': could not set scale 1:{1} (view template may pin it) — set it manually."
+    "scaleSetFail": "Callout '{0}': could not set scale 1:{1} (view template may pin it) — set it manually.",
+    "calloutsUnhidden": "'{0}' had the Callouts annotation category hidden — enabled it so the bubbles show.",
+    "calloutsHidden":   "'{0}' HIDES the Callouts annotation category (its view template controls visibility) — the callout bubbles exist but are invisible until that category is enabled in the template."
   }
 }

@@ -30,6 +30,13 @@ namespace LemoineTools.Framework
         private string?               _activeId;
         private string                _snapshot = "";
 
+        // Two-click delete: the first trash click arms this id (button turns red), the second
+        // performs the delete. Leaving the row disarms it — a misclick can no longer destroy a
+        // definition (the window auto-saves on close, so there is no undo after that).
+        private string? _pendingDeleteId;
+
+        private const double MmPerInch = 25.4;
+
         // ── Panels built in OnLoaded ──────────────────────────────────────────
         private StackPanel? _sidebarPanel;
         private readonly Dictionary<string, Border> _rowBorders = new Dictionary<string, Border>();
@@ -107,10 +114,14 @@ namespace LemoineTools.Framework
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
 
-            // A pick callback parked on the static handler outlives this window — sever it so a
+            // Callbacks parked on the static handler outlive this window — sever them so a
             // late pick can't marshal into this window's terminated dispatcher (and so the
             // editors/window aren't retained until the next pick).
-            if (_pickHandler != null) _pickHandler.OnPicked = null;
+            if (_pickHandler != null)
+            {
+                _pickHandler.OnPicked = null;
+                _pickHandler.PushLog  = null;
+            }
 
             if (Serialize(_defs) != _snapshot)
             {
@@ -186,7 +197,18 @@ namespace LemoineTools.Framework
             dupBtn.Click += (s, e) => DuplicateDefinition(def.Id);
 
             var delBtn = GlyphButton(char.ConvertFromUtf32(0xE74D), AppStrings.T("clashDefinitions.window.delTooltip"));   // Trash
-            delBtn.Click += (s, e) => DeleteDefinition(def.Id);
+            delBtn.Click += (s, e) =>
+            {
+                if (_pendingDeleteId == def.Id)
+                {
+                    _pendingDeleteId = null;
+                    DeleteDefinition(def.Id);
+                    return;
+                }
+                _pendingDeleteId = def.Id;
+                ((TextBlock)delBtn.Content).SetResourceReference(TextBlock.ForegroundProperty, "LemoineRed");
+                delBtn.ToolTip = AppStrings.T("clashDefinitions.window.delConfirmTooltip");
+            };
 
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -210,6 +232,14 @@ namespace LemoineTools.Framework
             row.SetResourceReference(Border.CornerRadiusProperty, "LemoineRadius_Card");
             ApplyRowStyle(row, def.Id == _activeId);
             row.MouseLeftButtonUp += (s, e) => SelectDefinition(def.Id);
+            row.MouseLeave += (s, e) =>
+            {
+                // Disarm a pending delete when the pointer leaves the row, so a stray click
+                // minutes later can't complete it. Rebuild resets the button's style.
+                if (_pendingDeleteId != def.Id) return;
+                _pendingDeleteId = null;
+                RefreshSidebar();
+            };
 
             _rowBorders[def.Id] = row;
             return row;
@@ -339,23 +369,37 @@ namespace LemoineTools.Framework
             // ── Marking settings ──────────────────────────────────────────────
             var marking = new StackPanel();
 
+            // Edited in inches (imperial-first, matching the finder's oversize field);
+            // stored in millimeters, unchanged on disk.
             AddStepperRow(marking, AppStrings.T("clashDefinitions.labels.tolerance"),
                 AppStrings.T("clashDefinitions.labels.toleranceDesc"),
-                def.ToleranceMm, 0, 100, 0.5, 1, v => def.ToleranceMm = v);
+                def.ToleranceMm / MmPerInch, 0, 4, 0.125, 3, v => def.ToleranceMm = v * MmPerInch);
 
             AddStepperRow(marking, AppStrings.T("clashDefinitions.labels.maxClashes"),
                 AppStrings.T("clashDefinitions.labels.maxClashesDesc"),
                 def.MaxClashes, 1, 100000, 1, 0, v => def.MaxClashes = (int)v);
 
+            // Persisted tokens ("Solid"/"Outline", "Edge"/"Centre") stay in code; the picker
+            // shows externalized display labels mapped back to them (US spelling on screen).
             AddLabel(marking, AppStrings.T("clashDefinitions.labels.fillStyle"));
-            var fillSelect = new SingleSelect { Items = new[] { "Solid", "Outline" }, SelectedItem = def.FillStyle };
-            fillSelect.SelectionChanged += val => { if (val != null) def.FillStyle = val; };
+            string fillSolid = AppStrings.T("clashDefinitions.fill.solid"), fillOutline = AppStrings.T("clashDefinitions.fill.outline");
+            var fillSelect = new SingleSelect
+            {
+                Items        = new[] { fillSolid, fillOutline },
+                SelectedItem = def.FillStyle == "Outline" ? fillOutline : fillSolid,
+            };
+            fillSelect.SelectionChanged += val => { if (val != null) def.FillStyle = val == fillOutline ? "Outline" : "Solid"; };
             marking.Children.Add(fillSelect);
 
             AddDivider(marking);
             AddLabel(marking, AppStrings.T("clashDefinitions.labels.markerReference"));
-            var targetSelect = new SingleSelect { Items = new[] { "Edge", "Centre" }, SelectedItem = def.DimTarget };
-            targetSelect.SelectionChanged += val => { if (val != null) def.DimTarget = val; };
+            string refEdge = AppStrings.T("clashDefinitions.marker.edge"), refCenter = AppStrings.T("clashDefinitions.marker.center");
+            var targetSelect = new SingleSelect
+            {
+                Items        = new[] { refEdge, refCenter },
+                SelectedItem = def.DimTarget == "Centre" ? refCenter : refEdge,
+            };
+            targetSelect.SelectionChanged += val => { if (val != null) def.DimTarget = val == refCenter ? "Centre" : "Edge"; };
             marking.Children.Add(targetSelect);
 
             AddDivider(marking);

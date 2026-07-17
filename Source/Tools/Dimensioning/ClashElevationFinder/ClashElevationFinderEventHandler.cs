@@ -13,8 +13,10 @@ namespace LemoineTools.Tools.Dimensioning
     /// Runs the Clash Finder for sections / elevations: for each selected <see cref="ClashDefinition"/>
     /// it detects clashes and draws coloured round markers in the view's vertical plane (one tagged
     /// diameter line per clash), then places a spot elevation at the chosen top / centre / bottom point
-    /// of each round. Detection + marking happen in one transaction; the elevation-tag pass opens its own
-    /// afterwards (so the freshly placed marker lines are queryable). Clear-previous is run-level.
+    /// of each round. Detection runs once per definition (view-independent, read-only); marking commits
+    /// one transaction per view so cancel preserves finished views; the elevation-tag pass opens its own
+    /// transaction afterwards (so the freshly placed marker lines are queryable). Clear-previous is
+    /// applied per view inside that view's marking transaction.
     /// </summary>
     public class ClashElevationFinderEventHandler : IExternalEventHandler
     {
@@ -56,57 +58,101 @@ namespace LemoineTools.Tools.Dimensioning
                 }
                 else
                 {
-                    using (var tx = new Transaction(doc, "Lemoine - Clash Finder (Elevation Tags)"))
+                    // ── Phase 1: detect each definition's clashes ONCE (view-independent,
+                    // read-only — no transaction needed) ──
+                    var dets = new List<(ClashEngine engine, ClashEngine.ClashDetection det, Dictionary<string, ElementId?> cache)>();
+                    int defsDetected = 0;
+                    foreach (var def in Definitions)
                     {
-                        tx.Start();
-                        ConfigureFailures(tx);
-
-                        if (ClearPrevious)
+                        // Abandon mid-run during detection: nothing is committed in this phase;
+                        // Phase 2 sees the same flag and stops too.
+                        if (RunState.CancelRequested)
                         {
-                            int removed = ClearPreviousMarkers(doc);
-                            if (removed > 0) Log(AppStrings.T("clash.elevationFinder.log.cleared", removed), "info");
+                            Log(AppStrings.T("common.log.stoppedByUser", defsDetected, Definitions.Count), "warn");
+                            break;
                         }
 
-                        int done = 0;
-                        foreach (var def in Definitions)
+                        Progress(5 + (int)(defsDetected * 25.0 / Definitions.Count), pass, fail, skip);
+                        Log(AppStrings.T("clash.elevationFinder.log.defHeader", def.Name), "info");
+
+                        var opts = new ClashMarkingOptions
                         {
-                            // Abandon mid-run: stop detecting/marking more definitions but let tx.Commit()
-                            // (below) still run so markers placed for definitions done so far are preserved.
-                            if (RunState.CancelRequested)
-                            {
-                                Log(AppStrings.T("common.log.stoppedByUser", done, Definitions.Count), "warn");
-                                break;
-                            }
+                            ToleranceMm       = def.ToleranceMm,
+                            FillStyle         = def.FillStyle,
+                            FallbackColorHex  = def.FallbackColorHex,
+                            CrossLineTypeName = def.CrossLineTypeName,
+                            DimTarget         = def.DimTarget,
+                            MaxClashes        = def.MaxClashes,
+                            StoreyMarginMm    = 0.0,        // no plan storey band — section/elevation views gate on their own crop
+                            RoundSizeMm       = RoundSizeMm,
+                            PhaseMode         = def.PhaseMode,
+                            SpecificPhaseName = def.SpecificPhaseName,
+                            ElevationMode     = true,
+                        };
 
-                            Progress(10 + (int)(done * 70.0 / Definitions.Count), pass, fail, skip);
-                            Log(AppStrings.T("clash.elevationFinder.log.defHeader", def.Name), "info");
-
-                            var opts = new ClashMarkingOptions
-                            {
-                                ToleranceMm       = def.ToleranceMm,
-                                FillStyle         = def.FillStyle,
-                                FallbackColorHex  = def.FallbackColorHex,
-                                CrossLineTypeName = def.CrossLineTypeName,
-                                DimTarget         = def.DimTarget,
-                                MaxClashes        = def.MaxClashes,
-                                StoreyMarginMm    = 0.0,        // no plan storey band — section/elevation views gate on their own crop
-                                RoundSizeMm       = RoundSizeMm,
-                                PhaseMode         = def.PhaseMode,
-                                SpecificPhaseName = def.SpecificPhaseName,
-                                ElevationMode     = true,
-                            };
-
-                            var engine = new ClashEngine(opts, (t, s) => Log(t, s));
-                            var r = engine.Run(doc, ViewIds, def.Group1, def.Group2);
-
-                            pass += r.Markers;
-                            fail += r.Fails;
-                            done++;
-                        }
-
-                        tx.Commit();
-                        Log(AppStrings.T("clash.elevationFinder.log.markingDone", pass, fail), pass > 0 ? "pass" : "fail");
+                        var engine = new ClashEngine(opts, (t, s) => Log(t, s));
+                        var det = engine.Detect(doc, def.Group1, def.Group2);
+                        dets.Add((engine, det, new Dictionary<string, ElementId?>()));
+                        defsDetected++;
                     }
+
+                    // ── Phase 2: mark one view per transaction, so cancel works per view and
+                    // every finished view's markers are preserved — the old single whole-run
+                    // transaction couldn't be stopped once the first definition started
+                    // (matches the plan-view Clash Finder's structure). ──
+                    int processed = 0;
+                    foreach (var viewId in ViewIds)
+                    {
+                        if (RunState.CancelRequested)
+                        {
+                            Log(AppStrings.T("common.log.stoppedByUser", processed, ViewIds.Count), "warn");
+                            break;
+                        }
+                        processed++;
+
+                        var view = doc.GetElement(viewId) as View;
+                        if (view == null)
+                        {
+                            // A selection can outlive its view — say so, don't just tally a skip.
+                            Log(AppStrings.T("clash.elevationFinder.log.viewGone", viewId.Value), "warn");
+                            skip++;
+                            continue;
+                        }
+
+                        try
+                        {
+                            using (var tx = new Transaction(doc, $"Lemoine - Clash Finder (Elevation Tags) · {view.Name}"))
+                            {
+                                tx.Start();
+                                ConfigureFailures(tx);
+
+                                if (ClearPrevious)
+                                {
+                                    int removed = ClearViewMarkers(doc, viewId);
+                                    if (removed > 0) Log(AppStrings.T("clash.elevationFinder.log.clearedView", removed, view.Name), "info");
+                                }
+
+                                foreach (var (engine, det, cache) in dets)
+                                {
+                                    if (det.Failed || det.ClashCount == 0) continue;
+                                    var pr = engine.PlaceInView(doc, view, det, cache);
+                                    pass += pr.Markers;
+                                    fail += pr.Fails;
+                                }
+
+                                tx.Commit();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            DiagnosticsLog.Error("ClashElevationFinder: mark view", ex);
+                            Log(AppStrings.T("clash.elevationFinder.log.viewFailed", view.Name, ex.Message), "fail");
+                            fail++;
+                        }
+
+                        Progress(30 + (int)(processed * 50.0 / ViewIds.Count), pass, fail, skip);
+                    }
+                    Log(AppStrings.T("clash.elevationFinder.log.markingDone", pass, fail), pass > 0 ? "pass" : "fail");
 
                     // Elevation-tag pass: place a spot elevation at each marker. Runs after the marking
                     // transaction has committed, so the freshly placed diameter lines are queryable.
@@ -122,7 +168,9 @@ namespace LemoineTools.Tools.Dimensioning
                             Progress(85, pass, fail, skip);
                             Log(AppStrings.T("clash.elevationFinder.log.placingTags"), "info");
 
-                            var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId, (t, s) => Log(t, s));
+                            var tagResult = ElevationTagRunner.Run(doc, ViewIds, AnchorMode, SpotTypeId,
+                                (t, s) => Log(t, s),
+                                p => Progress(85 + (int)(p * 0.13), pass, fail, skip));
                             tagsPlaced += tagResult.Placed;
                             fail       += tagResult.Failures;
                             Log(AppStrings.T("clash.elevationFinder.log.tagsDone", tagResult.Placed, tagResult.Failures),
@@ -161,48 +209,47 @@ namespace LemoineTools.Tools.Dimensioning
             }
         }
 
-        private int ClearPreviousMarkers(Document doc)
+        /// <summary>Clears ONE view's prior Lemoine markers and tags (tagged lines, filled
+        /// regions, and spot elevations), inside the caller's open per-view transaction.</summary>
+        private static int ClearViewMarkers(Document doc, ElementId viewId)
         {
             int removed = 0;
-            foreach (var viewId in ViewIds)
+            var toDelete = new List<ElementId>();
+
+            try
             {
-                var toDelete = new List<ElementId>();
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfCategory(BuiltInCategory.OST_Lines)
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged lines for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfCategory(BuiltInCategory.OST_Lines)
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged lines for cleanup", ex); }
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(FilledRegion))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged filled regions for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(FilledRegion))
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged filled regions for cleanup", ex); }
+            try
+            {
+                toDelete.AddRange(new FilteredElementCollector(doc, viewId)
+                    .OfClass(typeof(SpotDimension))
+                    .WhereElementIsNotElementType()
+                    .Where(ClashTagSchema.IsOurs)
+                    .Select(e => e.Id));
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged spot elevations for cleanup", ex); }
 
-                try
-                {
-                    toDelete.AddRange(new FilteredElementCollector(doc, viewId)
-                        .OfClass(typeof(SpotDimension))
-                        .WhereElementIsNotElementType()
-                        .Where(ClashTagSchema.IsOurs)
-                        .Select(e => e.Id));
-                }
-                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: collect tagged spot elevations for cleanup", ex); }
-
-                foreach (var id in toDelete)
-                {
-                    try { if (doc.Delete(id).Count > 0) removed++; }
-                    catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: delete tagged element", ex); }
-                }
+            foreach (var id in toDelete)
+            {
+                try { if (doc.Delete(id).Count > 0) removed++; }
+                catch (Exception ex) { DiagnosticsLog.Swallowed("ClashElevationFinder: delete tagged element", ex); }
             }
             return removed;
         }

@@ -269,8 +269,7 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                           + $"{stats.Vertical} vertical, kept {stats.Kept} (dropped {stats.NullRef} null-ref, {stats.ConvFail} link-conv-fail).", "info");
             }
 
-            ctx.Log($"Target cache: {list.Count} slab side-face(s) scanned across {ctx.Sources.Count} document(s) "
-                  + $"— host {hostKept}, linked {linkKept}.", "info");
+            ctx.Log(AppStrings.T("clash.autoDim.log.slabCache", list.Count, ctx.Sources.Count, hostKept, linkKept), "info");
             _cache = list;
             _cacheCtx = ctx;
             return list;
