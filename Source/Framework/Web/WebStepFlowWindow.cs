@@ -68,6 +68,7 @@ namespace LemoineTools.Framework.Web
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
             Dispatcher.UnhandledException      += OnUnhandled;   // last-resort net (non-StepFlowWindow)
+            Activated                          += OnActivated;   // route keyboard focus into the WebView2
             Closed                             += OnClosed;
 
             var host = new Grid();
@@ -121,6 +122,7 @@ namespace LemoineTools.Framework.Web
                     {
                         WebAssets.ApplyVariablesLive(_view);         // R12
                         if (_loading != null) _loading.Visibility = Visibility.Collapsed;
+                        FocusWebView();  // ensure HTML inputs are typeable once content is live
                     }
                     else DiagnosticsLog.Warn("WebStepFlowWindow: navigation", $"WebErrorStatus={e.WebErrorStatus}");
                 };
@@ -413,11 +415,23 @@ namespace LemoineTools.Framework.Web
             e.Handled = true; // keep the window (and Revit) alive
         }
 
+        // Borderless (WindowStyle=None) windows on a background STA thread don't reliably route
+        // keyboard focus into the hosted WebView2, so HTML inputs render but can't be typed into.
+        // Focusing the control (WPF) moves focus into the CoreWebView2, restoring text entry.
+        // Called on window activation and once the first navigation completes.
+        private void OnActivated(object? sender, EventArgs e) => FocusWebView();
+        private void FocusWebView()
+        {
+            try { _view?.Focus(); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("WebStepFlowWindow: focus view", ex); }
+        }
+
         private void OnClosed(object? sender, EventArgs e)
         {
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Dispatcher.UnhandledException      -= OnUnhandled;
+            Activated                          -= OnActivated;
             _tool.ValidationChanged            -= OnToolValidationChanged;
             if (_tool is IWebRunPausable pausable) pausable.AwaitingUserChanged -= OnAwaitingUserChanged;
             if (_tool is IWebStepRefresh refresh)  refresh.StepInputsChanged    -= OnStepInputsChanged;

@@ -57,6 +57,7 @@ namespace LemoineTools.Framework.Web
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
             Dispatcher.UnhandledException      += OnUnhandled;
+            Activated                          += OnActivated;   // route keyboard focus into the WebView2
             Closed                             += OnClosed;
 
             var host = new Grid();
@@ -101,6 +102,7 @@ namespace LemoineTools.Framework.Web
                     {
                         if (_loading != null) _loading.Visibility = Visibility.Collapsed;
                         WebAssets.ApplyVariablesLive(_view);
+                        FocusWebView();  // ensure HTML inputs are typeable once content is live
                     }
                     else DiagnosticsLog.Warn("WebSettingsWindow: navigation", $"WebErrorStatus={ev.WebErrorStatus}");
                 };
@@ -212,10 +214,21 @@ namespace LemoineTools.Framework.Web
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Dispatcher.UnhandledException      -= OnUnhandled;
+            Activated                          -= OnActivated;
             try { _view?.Dispose(); }
             catch (Exception ex) { DiagnosticsLog.Swallowed("WebSettingsWindow: dispose view", ex); }
             _view = null;
             _bridge = null;
+        }
+
+        // Borderless (WindowStyle=None) windows on a background STA thread don't reliably route
+        // keyboard focus into the hosted WebView2, so HTML inputs render but can't be typed into.
+        // Focusing the control (WPF) moves focus into the CoreWebView2, restoring text entry.
+        private void OnActivated(object? sender, EventArgs e) => FocusWebView();
+        private void FocusWebView()
+        {
+            try { _view?.Focus(); }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("WebSettingsWindow: focus view", ex); }
         }
 
         private void SafeUi(Action action)
