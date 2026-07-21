@@ -836,8 +836,9 @@ html, body { height:100%; }
 
 /* ── FileTable (file-queue rows: UpgradeLinks-style table) ────────────────── */
 .l-ftable { border:1px solid var(--l-border); border-radius:6px; overflow:hidden; }
-.l-ftable .frow { display:grid; grid-template-columns:4px 1fr 128px 168px 40px; gap:8px;
-                  padding:9px 12px; align-items:start; }
+.l-ftable .frow { display:grid; grid-template-columns:4px minmax(96px,1fr) auto minmax(112px,1.1fr) 32px;
+                  gap:8px; padding:9px 12px; align-items:start; }
+.l-ftable .frow > * { min-width:0; }  /* the save-as/placement columns share space and shrink; floors keep them usable */
 .l-ftable .frow.hdr { background:var(--l-raised); padding:6px 12px; }
 .l-ftable .frow.hdr div { font-size:var(--l-fs-sm); color:var(--l-text-dim); }
 .l-ftable .frow + .frow { border-top:1px solid var(--l-border); }
@@ -888,3 +889,14 @@ html, body { height:100%; }
 /* A standalone dropdown input stays compact like the WPF 180px combo; the fileTable's
    column-width dropdowns are exempt (they fill their 168px grid cell). */
 .l-flow .inputs > .field-row .l-dropdown { width:220px; }
+
+/* ── Window resize handles (overlay; see lemoine.js attachResizeHandles) ───── */
+#l-resize-layer .l-resize { position:fixed; z-index:9999; }
+.l-resize-top    { top:0; left:6px; right:6px; height:5px; cursor:ns-resize; }
+.l-resize-bottom { bottom:0; left:6px; right:6px; height:5px; cursor:ns-resize; }
+.l-resize-left   { left:0; top:6px; bottom:6px; width:5px; cursor:ew-resize; }
+.l-resize-right  { right:0; top:6px; bottom:6px; width:5px; cursor:ew-resize; }
+.l-resize-topleft     { top:0; left:0; width:8px; height:8px; cursor:nwse-resize; }
+.l-resize-topright    { top:0; right:0; width:8px; height:8px; cursor:nesw-resize; }
+.l-resize-bottomleft  { bottom:0; left:0; width:8px; height:8px; cursor:nesw-resize; }
+.l-resize-bottomright { bottom:0; right:0; width:12px; height:12px; cursor:nwse-resize; }

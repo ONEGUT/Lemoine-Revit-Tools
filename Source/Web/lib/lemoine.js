@@ -684,3 +684,33 @@ Lemoine.ui = (function () {
     dropdown: dropdown, fileTable: fileTable
   };
 })();
+
+// ── Window resize handles ─────────────────────────────────────────────────────
+// The WebView2 child HWND covers the WPF WindowChrome resize border, so edge-drag
+// resize silently fails. These thin fixed-position handles at each edge/corner post
+// a `resize` action to C#, which drives the native OS resize loop (same technique as
+// the title-bar drag). Attached once per page, only when a bridge is present (so
+// headless screenshot renders are untouched). Idempotent.
+Lemoine.attachResizeHandles = function () {
+  if (!Lemoine.hasBridge || !Lemoine.hasBridge()) return;
+  if (document.getElementById('l-resize-layer')) return;
+  var layer = document.createElement('div');
+  layer.id = 'l-resize-layer';
+  var dirs = ['top', 'bottom', 'left', 'right', 'topleft', 'topright', 'bottomleft', 'bottomright'];
+  dirs.forEach(function (dir) {
+    var h = document.createElement('div');
+    h.className = 'l-resize l-resize-' + dir;
+    h.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      Lemoine.send('action', { action: 'resize', dir: dir });
+    });
+    layer.appendChild(h);
+  });
+  document.body.appendChild(layer);
+};
+
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', Lemoine.attachResizeHandles);
+else
+  Lemoine.attachResizeHandles();

@@ -29,7 +29,6 @@
     title.addEventListener('mousedown', function (e) { if (e.button === 0) action('drag'); });
     bar.appendChild(title);
     var tools = el('div', 'tools');
-    tools.appendChild(winBtn('\u2013', 'minimize', 'Minimize'));
     tools.appendChild(winBtn('\u25A1', 'maximize', 'Maximize'));
     tools.appendChild(winBtn('\u00d7', 'close', 'Close'));
     bar.appendChild(tools);

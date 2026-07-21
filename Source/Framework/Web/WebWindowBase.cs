@@ -138,6 +138,7 @@ namespace LemoineTools.Framework.Web
             switch (action)
             {
                 case "drag":     BeginNativeDrag(); return;
+                case "resize":   BeginNativeResize(Str(p, "dir")); return;
                 case "minimize": WindowState = WindowState.Minimized; return;
                 case "maximize": WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; return;
                 case "close":    Close(); return;
@@ -206,6 +207,14 @@ namespace LemoineTools.Framework.Web
         // ── Native window drag from the HTML title bar (mirrors WebSettingsWindow) ──
         private const int WM_NCLBUTTONDOWN = 0x00A1;
         private const int HTCAPTION        = 0x0002;
+        private const int HTLEFT           = 0x000A;
+        private const int HTRIGHT          = 0x000B;
+        private const int HTTOP            = 0x000C;
+        private const int HTTOPLEFT        = 0x000D;
+        private const int HTTOPRIGHT       = 0x000E;
+        private const int HTBOTTOM         = 0x000F;
+        private const int HTBOTTOMLEFT     = 0x0010;
+        private const int HTBOTTOMRIGHT    = 0x0011;
         [DllImport("user32.dll")] private static extern bool ReleaseCapture();
         [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
@@ -219,6 +228,39 @@ namespace LemoineTools.Framework.Web
                 SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
             }
             catch (Exception ex) { DiagnosticsLog.Swallowed($"{GetType().Name}: begin drag", ex); }
+        }
+
+        // Starts the native resize loop from an HTML edge/corner handle. The WebView2 child HWND
+        // covers the WPF WindowChrome resize border and steals its hit-testing, so send
+        // WM_NCLBUTTONDOWN with the matching HT* code straight to the top-level HWND instead.
+        private void BeginNativeResize(string dir)
+        {
+            int ht = HitTestFor(dir);
+            if (ht == 0) return;
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                ReleaseCapture();
+                SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)ht, IntPtr.Zero);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed($"{GetType().Name}: begin resize", ex); }
+        }
+
+        private static int HitTestFor(string dir)
+        {
+            switch (dir)
+            {
+                case "left":        return HTLEFT;
+                case "right":       return HTRIGHT;
+                case "top":         return HTTOP;
+                case "bottom":      return HTBOTTOM;
+                case "topleft":     return HTTOPLEFT;
+                case "topright":    return HTTOPRIGHT;
+                case "bottomleft":  return HTBOTTOMLEFT;
+                case "bottomright": return HTBOTTOMRIGHT;
+                default:            return 0;
+            }
         }
     }
 }

@@ -131,17 +131,15 @@ Lemoine.stepflow = function (container, opts) {
     container.innerHTML = '';
     container.className = 'l-flow';
 
-    // ── Toolbar: mono title | step chip + minimize + close ───────────────────
+    // ── Toolbar: mono title | step chip + close ───────────────────
     var toolbar = U.el('div', 'toolbar');
     toolbar.appendChild(U.el('span', 'title', spec.title || ''));
     var tools = U.el('div', 'tools');
     chipEl = U.el('div', 'step-chip', 'Step 1 / 1');
     tools.appendChild(chipEl);
-    var minBtn = U.el('button', 'win-btn', '\u2013'); minBtn.type = 'button'; minBtn.title = 'Minimize';
-    minBtn.addEventListener('click', function () { send('action', { action: 'minimize' }); });
     var closeBtn = U.el('button', 'win-btn close', '\u00D7'); closeBtn.type = 'button'; closeBtn.title = 'Close';
     closeBtn.addEventListener('click', function () { send('action', { action: 'close' }); });
-    tools.appendChild(minBtn); tools.appendChild(closeBtn);
+    tools.appendChild(closeBtn);
     toolbar.appendChild(tools);
     // Drag-to-move: mousedown on the bar (not a button) starts a native window move (C# side).
     toolbar.addEventListener('mousedown', function (e) {
@@ -183,7 +181,7 @@ Lemoine.stepflow = function (container, opts) {
     // ── Footer: Reset only (Back/Confirm/Run live inside the steps, like WPF) ──
     var footer = U.el('div', 'footer');
     var mid = U.el('div', 'mid');
-    var resetBtn = U.button({ label: 'Reset', variant: 'ghost', onClick: function () { send('action', { action: 'reset' }); } }).el;
+    var resetBtn = U.button({ label: 'Reset', onClick: function () { send('action', { action: 'reset' }); } }).el;
     mid.appendChild(resetBtn);
     footer.appendChild(mid);
     container.appendChild(footer);

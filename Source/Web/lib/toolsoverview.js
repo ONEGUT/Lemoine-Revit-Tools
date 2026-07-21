@@ -42,7 +42,7 @@
       title.addEventListener('mousedown', function (e) { if (e.button === 0) action('drag'); });
       bar.appendChild(title);
       var tools = el('div', 'tools');
-      [['\u2013', 'minimize', 'Minimize'], ['\u25A1', 'maximize', 'Maximize'], ['\u00d7', 'close', 'Close']]
+      [['\u25A1', 'maximize', 'Maximize'], ['\u00d7', 'close', 'Close']]
         .forEach(function (b) { var x = el('button', 'win-btn', b[0]); x.title = b[2]; x.addEventListener('click', function () { action(b[1]); }); tools.appendChild(x); });
       bar.appendChild(tools);
       return bar;

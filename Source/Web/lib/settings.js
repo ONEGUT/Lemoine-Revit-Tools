@@ -96,13 +96,9 @@
       bar.appendChild(title);
 
       var tools = el('div', 'tools');
-      var min = el('button', 'win-btn', '\u2013');
-      min.title = 'Minimize';
-      min.addEventListener('click', function () { action('minimize'); });
       var close = el('button', 'win-btn', '\u00d7');
       close.title = 'Close';
       close.addEventListener('click', function () { action('close'); });
-      tools.appendChild(min);
       tools.appendChild(close);
       bar.appendChild(tools);
       return bar;

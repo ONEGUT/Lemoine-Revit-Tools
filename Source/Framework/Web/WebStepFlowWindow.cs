@@ -44,7 +44,7 @@ namespace LemoineTools.Framework.Web
             Title     = tool.Title;
             Width     = 520;
             Height    = 660;
-            MinWidth  = 380;
+            MinWidth  = 470;
             MinHeight = 520;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
@@ -231,6 +231,7 @@ namespace LemoineTools.Framework.Web
                 case "skipItem":    (_tool as IWebRunPausable)?.SkipCurrentItem(); break;
                 // ── Window chrome (the HTML top bar replaces the OS title bar) ──────
                 case "drag":     BeginNativeDrag(); break;
+                case "resize":   BeginNativeResize(Str(p, "dir")); break;
                 case "minimize": WindowState = WindowState.Minimized; break;
                 case "close":    Close(); break;
                 case "confirm":
@@ -296,8 +297,52 @@ namespace LemoineTools.Framework.Web
             catch (Exception ex) { DiagnosticsLog.Swallowed("WebStepFlowWindow: begin drag", ex); }
         }
 
+        // Starts the OS window-resize loop from an HTML edge/corner handle's mousedown. The
+        // WebView2 child HWND covers the WPF WindowChrome resize border and steals its mouse
+        // hit-testing, so edge-drag resize silently fails; sending WM_NCLBUTTONDOWN with the
+        // matching HT* hit-test code straight to the top-level HWND drives the native resize
+        // regardless of the airspace (same technique as BeginNativeDrag).
+        private void BeginNativeResize(string dir)
+        {
+            int ht = HitTestFor(dir);
+            if (ht == 0) return;
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                ReleaseCapture();
+                SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)ht, IntPtr.Zero);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("WebStepFlowWindow: begin resize", ex); }
+        }
+
+        // Maps an HTML handle direction to its Win32 hit-test code (0 = unknown → ignore).
+        internal static int HitTestFor(string dir)
+        {
+            switch (dir)
+            {
+                case "left":        return HTLEFT;
+                case "right":       return HTRIGHT;
+                case "top":         return HTTOP;
+                case "bottom":      return HTBOTTOM;
+                case "topleft":     return HTTOPLEFT;
+                case "topright":    return HTTOPRIGHT;
+                case "bottomleft":  return HTBOTTOMLEFT;
+                case "bottomright": return HTBOTTOMRIGHT;
+                default:            return 0;
+            }
+        }
+
         private const uint WM_NCLBUTTONDOWN = 0x00A1;
         private const int  HTCAPTION        = 0x0002;
+        private const int  HTLEFT           = 0x000A;
+        private const int  HTRIGHT          = 0x000B;
+        private const int  HTTOP            = 0x000C;
+        private const int  HTTOPLEFT        = 0x000D;
+        private const int  HTTOPRIGHT       = 0x000E;
+        private const int  HTBOTTOM         = 0x000F;
+        private const int  HTBOTTOMLEFT     = 0x0010;
+        private const int  HTBOTTOMRIGHT    = 0x0011;
         [DllImport("user32.dll")] private static extern bool   ReleaseCapture();
         [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
