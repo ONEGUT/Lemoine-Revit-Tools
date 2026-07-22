@@ -35,9 +35,12 @@
   #define AddinsRoot GetEnv('ProgramData') + "\Autodesk\Revit\Addins"
 #endif
 
-; DESTINATION on the TARGET machine — the same standard per-machine folder.
-; {commonappdata} resolves to ProgramData at install time.
-#define AddinsFor(str Year) "{commonappdata}\Autodesk\Revit\Addins\" + Year
+; DESTINATION on the TARGET machine. {autoappdata} adapts to the chosen install
+; mode: for an all-users (admin) install it resolves to {commonappdata}
+; (%ProgramData%\...) — the machine-wide add-ins folder; for a per-user (no-admin)
+; install it resolves to {userappdata} (%AppData%\Roaming\...). Revit reads add-in
+; manifests from BOTH locations, so either install makes the plugin load.
+#define AddinsFor(str Year) "{autoappdata}\Autodesk\Revit\Addins\" + Year
 
 ; True when year <Year>'s build is actually present at the source (our DLL there).
 #define YearBuilt(str Year) FileExists(AddinsRoot + "\" + Year + "\LemoineTools.dll")
@@ -59,8 +62,13 @@ DisableProgramGroupPage=yes
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\unins000.exe
 
-; Writing to ProgramData requires elevation.
-PrivilegesRequired=admin
+; Default to a per-user install that needs NO admin rights (installs into
+; %AppData%\Roaming\Autodesk\Revit\Addins\<year>\). PrivilegesRequiredOverridesAllowed=dialog
+; adds a "for all users / for me only" chooser at the start, so anyone with admin
+; can still pick the machine-wide ProgramData install; a standard user just picks
+; "for me only" and is never prompted for elevation.
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 
