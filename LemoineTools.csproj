@@ -81,6 +81,19 @@
     <EmbeddedResource Remove="LemoineNavisworks\**\*" />
   </ItemGroup>
 
+  <!-- Exclude the LemoineTools.PdfGeometry sibling project (netstandard2.0). It is
+       not part of this branch's tree, but a checkout switched here from a branch that
+       has it leaves the (git-ignored) LemoineTools.PdfGeometry\obj\ folder on disk.
+       This project's SDK wildcard then sweeps its generated
+       .NETStandard,Version=v2.0.AssemblyAttributes.cs, colliding with this project's
+       own TargetFrameworkAttribute -> CS0579. -->
+  <ItemGroup>
+    <Compile          Remove="LemoineTools.PdfGeometry\**\*" />
+    <Page             Remove="LemoineTools.PdfGeometry\**\*" />
+    <None             Remove="LemoineTools.PdfGeometry\**\*" />
+    <EmbeddedResource Remove="LemoineTools.PdfGeometry\**\*" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="RevitAPI">
       <HintPath>$(RevitDir)\RevitAPI.dll</HintPath>
