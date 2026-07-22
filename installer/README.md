@@ -9,9 +9,17 @@ Setup**) to install the plugin into Revit's add-ins folder on any Windows machin
 
 - Installs into `C:\ProgramData\Autodesk\Revit\Addins\<year>\` for each Revit year
   it was built with (2024–2027).
-- Ships only Lemoine's own files (`LemoineTools.dll`, `LemoineTools.addin`,
-  `WebView2Loader.dll`, the WebView2 managed DLLs, and the `Strings\` and `Web\`
-  folders). It never ships `RevitAPI.dll` / `RevitAPIUI.dll` — Revit provides those.
+- Ships only Lemoine's own files (`LemoineTools.dll`, `LemoineTools.addin`, the
+  `.deps.json` where present, `WebView2Loader.dll`, the WebView2 managed DLLs, and
+  the `Strings\` and `Web\` folders). It never ships `RevitAPI.dll` /
+  `RevitAPIUI.dll` — Revit provides those.
+
+The installer packages these **straight from the location `LemoineTools.csproj`
+deploys to** — its `DeployDir` / `OutputPath`,
+`%ProgramData%\Autodesk\Revit\Addins\<year>\` — so a normal build is all the
+staging that's needed. Because that is Revit's *shared* add-ins folder, the script
+copies only Lemoine's named files, never the whole folder, so other vendors'
+add-ins are left alone.
 - Lets the user tick which Revit versions to install (only versions that were built
   are offered).
 - Warns if Revit is running (the plugin DLL is file-locked while Revit is open).
@@ -38,17 +46,22 @@ Options:
 
 - `-Version <x.y.z>` — stamped into the installer and the output filename. Default `1.0.0`.
 - `-Years 2024,2025` — build only specific years. Default is all four.
+- `-SkipBuild` — don't rebuild; just package whatever is already deployed (e.g. after
+  a Visual Studio build).
 - `-Iscc "<path>\ISCC.exe"` — if Inno Setup isn't on `PATH`.
 
 The script:
 
-1. Builds each `Release<year>` straight into a clean `installer\stage\<year>\`
-   (via a `DeployDir` override, so it never touches the live ProgramData Addins
-   folder or picks up another vendor's add-in files).
-2. Skips any year that doesn't build and warns you.
-3. Runs `ISCC` to emit `installer\output\LemoineToolsSetup-<version>.exe`.
+1. Builds each `Release<year>` to the location the csproj already deploys to
+   (`%ProgramData%\Autodesk\Revit\Addins\<year>\`) — unless `-SkipBuild` is passed.
+2. Detects which years are actually present there and packages only those.
+3. Runs `ISCC`, which copies Lemoine's own files from that same location into
+   `installer\output\LemoineToolsSetup-<version>.exe`.
 
-`installer\stage\` and `installer\output\` are git-ignored build artifacts.
+`installer\output\` is a git-ignored build artifact.
+
+> If you redirected the csproj's `DeployDir` somewhere non-standard, point the
+> installer at it with `ISCC /DAddinsRoot=<parent-of-year-folders> ...`.
 
 ## Install / uninstall on a target machine
 

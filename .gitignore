@@ -23,7 +23,6 @@ packages/
 *.addin.bak
 
 # Inno Setup installer build artifacts
-installer/stage/
 installer/output/
 
 # Python cache (devtools scripts)
