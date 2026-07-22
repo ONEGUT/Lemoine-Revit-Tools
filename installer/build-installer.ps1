@@ -4,15 +4,16 @@
     Build the Lemoine Tools Inno Setup installer (setup.exe).
 
 .DESCRIPTION
-    For each requested Revit year, builds the matching Release<year> configuration
-    straight into a clean installer\stage\<year>\ folder (overriding DeployDir so
-    packaging never touches — or sweeps files out of — the shared ProgramData
-    Addins folder), then compiles installer\LemoineTools.iss with ISCC into
-    installer\output\LemoineToolsSetup-<version>.exe.
+    Builds each requested Revit year to the location LemoineTools.csproj already
+    deploys to — its DeployDir / OutputPath, %ProgramData%\Autodesk\Revit\Addins\<year>\ —
+    then compiles installer\LemoineTools.iss, which packages Lemoine's files straight
+    from that same location into installer\output\LemoineToolsSetup-<version>.exe.
 
-    A year that fails to build (e.g. libs<year>\ has only placeholder READMEs, not
-    the real Revit API DLLs) is warned and skipped; the installer bundles only the
-    years that produced output.
+    Pass -SkipBuild to package whatever is already deployed there (e.g. after a
+    Visual Studio build) without rebuilding.
+
+    A year that isn't present at the deploy location is simply left out of the
+    installer; only the years actually found are packaged.
 
 .PREREQUISITES
     - .NET SDK, plus the Revit API DLLs in libs\ / libs2025\ / libs2026\ / libs2027\
@@ -24,13 +25,14 @@
     installer\build-installer.ps1 -Version 1.2.0
 
 .EXAMPLE
-    installer\build-installer.ps1 -Years 2024 -Iscc "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    installer\build-installer.ps1 -SkipBuild        # package the current VS build
 #>
 [CmdletBinding()]
 param(
-    [string]  $Version = "1.0.0",
-    [string]  $Iscc    = "ISCC.exe",
-    [int[]]   $Years   = @(2024, 2025, 2026, 2027)
+    [string] $Version = "1.0.0",
+    [string] $Iscc    = "ISCC.exe",
+    [int[]]  $Years   = @(2024, 2025, 2026, 2027),
+    [switch] $SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,38 +40,38 @@ $ErrorActionPreference = "Stop"
 $here   = Split-Path -Parent $MyInvocation.MyCommand.Path   # installer\
 $root   = Split-Path -Parent $here                          # repo root
 $proj   = Join-Path $root "LemoineTools.csproj"
-$stage  = Join-Path $here "stage"
-$outdir = Join-Path $here "output"
 $iss    = Join-Path $here "LemoineTools.iss"
+$outdir = Join-Path $here "output"
+
+# Where LemoineTools.csproj deploys each year's build (DeployDir / OutputPath).
+$addinsRoot = Join-Path $env:ProgramData "Autodesk\Revit\Addins"
 
 Write-Host "== Lemoine Tools installer build (v$Version) ==" -ForegroundColor Cyan
+Write-Host "Source (csproj deploy): $addinsRoot\<year>\" -ForegroundColor DarkGray
 
-# 1. Clean staging so a removed/renamed file from a prior build can't linger.
-if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-New-Item -ItemType Directory -Path $stage | Out-Null
+# 1. Build each year to its default (csproj-configured) location, unless -SkipBuild.
+if (-not $SkipBuild) {
+    foreach ($y in $Years) {
+        Write-Host "`n-- Building Release$y --" -ForegroundColor Yellow
+        & dotnet build $proj -c "Release$y" /nodeReuse:false
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Release$y build failed (missing libs$y\ Revit API DLLs?) — it will be packaged only if a prior build is present."
+        }
+    }
+}
 
-# 2. Build each year into its own clean stage\<year>\ folder.
+# 2. Find which years are actually present at the deploy location.
 $built = @()
 foreach ($y in $Years) {
-    $dest = Join-Path $stage "$y"
-    Write-Host "`n-- Building Release$y -> $dest --" -ForegroundColor Yellow
-    & dotnet build $proj -c "Release$y" "/p:DeployDir=$dest\" /nodeReuse:false
-    if (($LASTEXITCODE -eq 0) -and (Test-Path (Join-Path $dest "LemoineTools.dll"))) {
-        Write-Host "   Release$y OK" -ForegroundColor Green
-        $built += $y
-    }
-    else {
-        Write-Warning "Release$y produced no output (missing libs$y\ Revit API DLLs?) — skipping."
-        if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-    }
+    if (Test-Path (Join-Path $addinsRoot "$y\LemoineTools.dll")) { $built += $y }
 }
-
 if ($built.Count -eq 0) {
-    throw "No Revit year built. Populate libs\ (and libs2025\ .. libs2027\) with the Revit API DLLs, then retry."
+    throw "No built plugin found under $addinsRoot\<year>\. Build the plugin first (or run without -SkipBuild)."
 }
-Write-Host "`nBundling Revit years: $($built -join ', ')" -ForegroundColor Cyan
+Write-Host "`nPackaging Revit years: $($built -join ', ')" -ForegroundColor Cyan
 
-# 3. Compile the installer.
+# 3. Compile the installer. LemoineTools.iss reads the same deploy location from
+#    %ProgramData% and packages only Lemoine's own files from each year folder.
 if (-not (Test-Path $outdir)) { New-Item -ItemType Directory -Path $outdir | Out-Null }
 Write-Host "`n-- Compiling installer --" -ForegroundColor Yellow
 & $Iscc "/DMyAppVersion=$Version" $iss
