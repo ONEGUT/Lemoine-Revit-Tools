@@ -20,7 +20,17 @@ namespace LemoineTools.Framework.Web
             get { lock (_gate) { return _instance ??= Load(); } }
         }
 
-        public bool Enabled { get; set; }
+        /// <summary>
+        /// WPF-only distribution build: the Web UI is hard-disabled. This getter always
+        /// reports <c>false</c>, so every production command and bespoke window opens its
+        /// WPF window; the setter is a no-op so a persisted flag can never turn it back on.
+        /// (The web stack still compiles — see plan-wpf-only-distribution.md.)
+        /// </summary>
+        public bool Enabled
+        {
+            get => false;
+            set { /* no-op: the Web UI cannot be enabled in this build. */ }
+        }
 
         private static string FilePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
