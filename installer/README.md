@@ -14,9 +14,12 @@ Setup**) to install the plugin into Revit's add-ins folder on any Windows machin
   `C:\ProgramData\Autodesk\Revit\Addins\<year>\`. Revit loads the plugin from either
   location.
 - Ships only Lemoine's own files (`LemoineTools.dll`, `LemoineTools.addin`, the
-  `.deps.json` where present, `WebView2Loader.dll`, the WebView2 managed DLLs, and
-  the `Strings\` and `Web\` folders). It never ships `RevitAPI.dll` /
-  `RevitAPIUI.dll` — Revit provides those.
+  `.deps.json` where present, and the `Strings\` folder). It never ships
+  `RevitAPI.dll` / `RevitAPIUI.dll` — Revit provides those.
+- **WPF-only build:** the WebView2 runtime DLLs and the `Web\` HTML assets are
+  deliberately *not* shipped. Web UI is disabled on this branch, so WebView2 never
+  loads; omitting our pinned `WebView2.Core` avoids the assembly-version clash with
+  the copy Revit itself preloads (the crash seen on Revit 2024).
 
 The installer packages these **straight from the location `LemoineTools.csproj`
 deploys to** — its `DeployDir` / `OutputPath`,

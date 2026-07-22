@@ -101,8 +101,15 @@ Name: "y2027"; Description: "Revit 2027"; Types: full custom
 ; Ships ONLY Lemoine's own artifacts from each year's deploy folder — never the
 ; whole (shared) folder, so other vendors' add-ins are untouched. RevitAPI /
 ; RevitAPIUI are Private=False in the csproj (never deployed there), so they are
-; never shipped. The .deps.json / WebView2 / Strings\ / Web\ entries are guarded
-; so both the net48 (2024) and net8 (2025+) output shapes package cleanly.
+; never shipped. The .deps.json / Strings\ entries are guarded so both the net48
+; (2024) and net8 (2025+) output shapes package cleanly.
+;
+; WPF-ONLY BUILD: the WebView2 runtime DLLs (WebView2Loader.dll,
+; Microsoft.Web.WebView2.*.dll) and the Web\ HTML assets are DELIBERATELY NOT
+; shipped. Web UI is hard-disabled on this branch, so WebView2 never initializes;
+; shipping our pinned WebView2.Core would only risk the assembly-version clash with
+; the copy Revit itself preloads (the "Assembly version conflict" crash). Leaving
+; them out removes that risk and slims the installer.
 [Files]
 #if YearBuilt("2024")
 Source: "{#AddinsRoot}\2024\LemoineTools.dll";   DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
@@ -110,23 +117,8 @@ Source: "{#AddinsRoot}\2024\LemoineTools.addin"; DestDir: "{#AddinsFor('2024')}"
   #if FileExists(AddinsRoot + "\2024\LemoineTools.deps.json")
 Source: "{#AddinsRoot}\2024\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
   #endif
-  #if FileExists(AddinsRoot + "\2024\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2024\WebView2Loader.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
-  #endif
-  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.Core.dll")
-Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
-  #endif
-  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.WinForms.dll")
-Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
-  #endif
-  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.Wpf.dll")
-Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
-  #endif
   #if DirExists(AddinsRoot + "\2024\Strings")
 Source: "{#AddinsRoot}\2024\Strings\*"; DestDir: "{#AddinsFor('2024')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2024
-  #endif
-  #if DirExists(AddinsRoot + "\2024\Web")
-Source: "{#AddinsRoot}\2024\Web\*"; DestDir: "{#AddinsFor('2024')}\Web"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2024
   #endif
 #endif
 
@@ -136,23 +128,8 @@ Source: "{#AddinsRoot}\2025\LemoineTools.addin"; DestDir: "{#AddinsFor('2025')}"
   #if FileExists(AddinsRoot + "\2025\LemoineTools.deps.json")
 Source: "{#AddinsRoot}\2025\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
   #endif
-  #if FileExists(AddinsRoot + "\2025\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2025\WebView2Loader.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
-  #endif
-  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.Core.dll")
-Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
-  #endif
-  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.WinForms.dll")
-Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
-  #endif
-  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.Wpf.dll")
-Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
-  #endif
   #if DirExists(AddinsRoot + "\2025\Strings")
 Source: "{#AddinsRoot}\2025\Strings\*"; DestDir: "{#AddinsFor('2025')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2025
-  #endif
-  #if DirExists(AddinsRoot + "\2025\Web")
-Source: "{#AddinsRoot}\2025\Web\*"; DestDir: "{#AddinsFor('2025')}\Web"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2025
   #endif
 #endif
 
@@ -162,23 +139,8 @@ Source: "{#AddinsRoot}\2026\LemoineTools.addin"; DestDir: "{#AddinsFor('2026')}"
   #if FileExists(AddinsRoot + "\2026\LemoineTools.deps.json")
 Source: "{#AddinsRoot}\2026\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
   #endif
-  #if FileExists(AddinsRoot + "\2026\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2026\WebView2Loader.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
-  #endif
-  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.Core.dll")
-Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
-  #endif
-  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.WinForms.dll")
-Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
-  #endif
-  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.Wpf.dll")
-Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
-  #endif
   #if DirExists(AddinsRoot + "\2026\Strings")
 Source: "{#AddinsRoot}\2026\Strings\*"; DestDir: "{#AddinsFor('2026')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2026
-  #endif
-  #if DirExists(AddinsRoot + "\2026\Web")
-Source: "{#AddinsRoot}\2026\Web\*"; DestDir: "{#AddinsFor('2026')}\Web"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2026
   #endif
 #endif
 
@@ -188,23 +150,8 @@ Source: "{#AddinsRoot}\2027\LemoineTools.addin"; DestDir: "{#AddinsFor('2027')}"
   #if FileExists(AddinsRoot + "\2027\LemoineTools.deps.json")
 Source: "{#AddinsRoot}\2027\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
   #endif
-  #if FileExists(AddinsRoot + "\2027\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2027\WebView2Loader.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
-  #endif
-  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.Core.dll")
-Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
-  #endif
-  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.WinForms.dll")
-Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
-  #endif
-  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.Wpf.dll")
-Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
-  #endif
   #if DirExists(AddinsRoot + "\2027\Strings")
 Source: "{#AddinsRoot}\2027\Strings\*"; DestDir: "{#AddinsFor('2027')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2027
-  #endif
-  #if DirExists(AddinsRoot + "\2027\Web")
-Source: "{#AddinsRoot}\2027\Web\*"; DestDir: "{#AddinsFor('2027')}\Web"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2027
   #endif
 #endif
 
