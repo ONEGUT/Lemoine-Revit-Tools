@@ -103,8 +103,16 @@ Source: "{#AddinsRoot}\2024\LemoineTools.addin"; DestDir: "{#AddinsFor('2024')}"
 Source: "{#AddinsRoot}\2024\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
   #endif
   #if FileExists(AddinsRoot + "\2024\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2024\WebView2Loader.dll";           DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
-Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.*.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
+Source: "{#AddinsRoot}\2024\WebView2Loader.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
+  #endif
+  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.Core.dll")
+Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
+  #endif
+  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.WinForms.dll")
+Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
+  #endif
+  #if FileExists(AddinsRoot + "\2024\Microsoft.Web.WebView2.Wpf.dll")
+Source: "{#AddinsRoot}\2024\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2024')}"; Flags: ignoreversion; Components: y2024
   #endif
   #if DirExists(AddinsRoot + "\2024\Strings")
 Source: "{#AddinsRoot}\2024\Strings\*"; DestDir: "{#AddinsFor('2024')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2024
@@ -121,8 +129,16 @@ Source: "{#AddinsRoot}\2025\LemoineTools.addin"; DestDir: "{#AddinsFor('2025')}"
 Source: "{#AddinsRoot}\2025\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
   #endif
   #if FileExists(AddinsRoot + "\2025\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2025\WebView2Loader.dll";           DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
-Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.*.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
+Source: "{#AddinsRoot}\2025\WebView2Loader.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
+  #endif
+  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.Core.dll")
+Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
+  #endif
+  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.WinForms.dll")
+Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
+  #endif
+  #if FileExists(AddinsRoot + "\2025\Microsoft.Web.WebView2.Wpf.dll")
+Source: "{#AddinsRoot}\2025\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2025')}"; Flags: ignoreversion; Components: y2025
   #endif
   #if DirExists(AddinsRoot + "\2025\Strings")
 Source: "{#AddinsRoot}\2025\Strings\*"; DestDir: "{#AddinsFor('2025')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2025
@@ -139,8 +155,16 @@ Source: "{#AddinsRoot}\2026\LemoineTools.addin"; DestDir: "{#AddinsFor('2026')}"
 Source: "{#AddinsRoot}\2026\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
   #endif
   #if FileExists(AddinsRoot + "\2026\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2026\WebView2Loader.dll";           DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
-Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.*.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
+Source: "{#AddinsRoot}\2026\WebView2Loader.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
+  #endif
+  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.Core.dll")
+Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
+  #endif
+  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.WinForms.dll")
+Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
+  #endif
+  #if FileExists(AddinsRoot + "\2026\Microsoft.Web.WebView2.Wpf.dll")
+Source: "{#AddinsRoot}\2026\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2026')}"; Flags: ignoreversion; Components: y2026
   #endif
   #if DirExists(AddinsRoot + "\2026\Strings")
 Source: "{#AddinsRoot}\2026\Strings\*"; DestDir: "{#AddinsFor('2026')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2026
@@ -157,8 +181,16 @@ Source: "{#AddinsRoot}\2027\LemoineTools.addin"; DestDir: "{#AddinsFor('2027')}"
 Source: "{#AddinsRoot}\2027\LemoineTools.deps.json"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
   #endif
   #if FileExists(AddinsRoot + "\2027\WebView2Loader.dll")
-Source: "{#AddinsRoot}\2027\WebView2Loader.dll";           DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
-Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.*.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
+Source: "{#AddinsRoot}\2027\WebView2Loader.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
+  #endif
+  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.Core.dll")
+Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.Core.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
+  #endif
+  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.WinForms.dll")
+Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
+  #endif
+  #if FileExists(AddinsRoot + "\2027\Microsoft.Web.WebView2.Wpf.dll")
+Source: "{#AddinsRoot}\2027\Microsoft.Web.WebView2.Wpf.dll"; DestDir: "{#AddinsFor('2027')}"; Flags: ignoreversion; Components: y2027
   #endif
   #if DirExists(AddinsRoot + "\2027\Strings")
 Source: "{#AddinsRoot}\2027\Strings\*"; DestDir: "{#AddinsFor('2027')}\Strings"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: y2027
