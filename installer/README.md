@@ -5,10 +5,14 @@ Setup**) to install the plugin into Revit's add-ins folder on any Windows machin
 
 ## What it produces
 
-`installer/output/LemoineToolsSetup-<version>.exe` — a per-machine installer that:
+`installer/output/LemoineToolsSetup-<version>.exe` — an installer that:
 
-- Installs into `C:\ProgramData\Autodesk\Revit\Addins\<year>\` for each Revit year
-  it was built with (2024–2027).
+- Installs **per-user by default, no admin rights needed**, into
+  `%AppData%\Roaming\Autodesk\Revit\Addins\<year>\` for each Revit year it was built
+  with (2024–2027). A "for all users / for me only" chooser appears at the start, so
+  anyone with admin can instead do a machine-wide install into
+  `C:\ProgramData\Autodesk\Revit\Addins\<year>\`. Revit loads the plugin from either
+  location.
 - Ships only Lemoine's own files (`LemoineTools.dll`, `LemoineTools.addin`, the
   `.deps.json` where present, `WebView2Loader.dll`, the WebView2 managed DLLs, and
   the `Strings\` and `Web\` folders). It never ships `RevitAPI.dll` /
@@ -65,9 +69,10 @@ The script:
 
 ## Install / uninstall on a target machine
 
-- Run `LemoineToolsSetup-<version>.exe`, accept the elevation prompt (writing to
-  ProgramData needs admin), pick the Revit versions, finish. Start Revit — the
-  **Lemoine Tools** ribbon loads.
+- Run `LemoineToolsSetup-<version>.exe`. Choose **"Install for me only"** for a
+  no-admin per-user install, or **"Install for all users"** (needs admin) for a
+  machine-wide one. Pick the Revit versions, finish. Start Revit — the **Lemoine
+  Tools** ribbon loads.
 - Uninstall from **Settings → Apps** (or Control Panel). Only the files the
   installer placed are removed; user settings in `%AppData%\LemoineTools\` are left
   in place so a reinstall keeps them.
