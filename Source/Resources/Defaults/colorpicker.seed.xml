@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Company-standard color picker defaults. Embedded in LemoineTools.dll and loaded by
+     ColorPickerPanel.LoadPersisted() as the fallback on a machine that has no personal
+     %AppData%\LemoineTools\colorpicker.xml yet. The user's first save writes their own copy,
+     which then takes precedence over this seed. Update this file to change the shipped standard. -->
+<LemoineColorPicker>
+  <ColorSets activeIndex="1">
+    <Set name="Duct">
+      <Slot>#FF005EBD</Slot>
+      <Slot>#FFFFAAAA</Slot>
+      <Slot>#FFE78F36</Slot>
+      <Slot>#FF815681</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot>#FFB3B3B3</Slot>
+      <Slot>#FFC81E1E</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+    </Set>
+    <Set name="Plumbing">
+      <Slot>#FF3FB3D9</Slot>
+      <Slot>#D9D93F3F</Slot>
+      <Slot></Slot>
+      <Slot>#D9FFC61A</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot>#D936E600</Slot>
+      <Slot>#D91F8100</Slot>
+      <Slot>#D994A857</Slot>
+      <Slot>#D9EAAAFF</Slot>
+      <Slot>#D9BD7EAD</Slot>
+      <Slot></Slot>
+    </Set>
+    <Set name="Mpipe">
+      <Slot>#D9AAD4FF</Slot>
+      <Slot></Slot>
+      <Slot>#D9FFAABF</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot>#D9FFAA55</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot>#D953CFDF</Slot>
+    </Set>
+    <Set name="Elec &amp; Fire">
+      <Slot>#D9F4F406</Slot>
+      <Slot></Slot>
+      <Slot>#D996D9BA</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot>#D9C81414</Slot>
+      <Slot></Slot>
+      <Slot>#D900BD8D</Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+      <Slot></Slot>
+    </Set>
+  </ColorSets>
+  <RecentColors>
+    <Color>#FF000000</Color>
+    <Color>#FFE30F0F</Color>
+    <Color>#D9DC72C1</Color>
+    <Color>#D9D93F3F</Color>
+    <Color>#FF6F3737</Color>
+    <Color>#FFC81E1E</Color>
+    <Color>#FFB23739</Color>
+    <Color>#FF7570B3</Color>
+  </RecentColors>
+</LemoineColorPicker>

@@ -131,44 +131,71 @@ namespace LemoineTools.Framework.Controls
         {
             try
             {
-                if (!File.Exists(PersistPath)) return;
-                var doc  = XDocument.Load(PersistPath);
-                var root = doc.Root;
-                if (root == null) return;
-
-                var setsEl = root.Element("ColorSets");
-                if (setsEl != null)
-                {
-                    int activeIdx = 0;
-                    int.TryParse(setsEl.Attribute("activeIndex")?.Value, out activeIdx);
-
-                    foreach (var setEl in setsEl.Elements("Set"))
-                    {
-                        var name  = setEl.Attribute("name")?.Value ?? AppStrings.T("controls.pickers.colorPickerPanel.defaults.setFallbackName");
-                        var cs    = new ColorSet(name);
-                        var slots = setEl.Elements("Slot").ToList();
-                        for (int i = 0; i < Math.Min(slots.Count, SetSlotCount); i++)
-                            cs.Colors[i] = string.IsNullOrEmpty(slots[i].Value)
-                                ? (Color?)null
-                                : TryParseHexColor(slots[i].Value);
-                        _colorSets.Add(cs);
-                    }
-
-                    _activeSetIdx = Math.Max(0, Math.Min(activeIdx, _colorSets.Count - 1));
-                }
-
-                _recentColors = root.Element("RecentColors")?
-                    .Elements("Color")
-                    .Select(el => TryParseHexColor(el.Value))
-                    .Where(c => c.HasValue)
-                    .Select(c => c!.Value)
-                    .Take(MaxRecentColors)
-                    .ToList() ?? new List<Color>();
+                // Prefer the user's own saved file. On a machine that has never saved one (a fresh
+                // install — e.g. a colleague's first run), fall back to the company-standard seed
+                // embedded in the DLL so the picker opens populated instead of empty. The user's
+                // first save writes their own PersistPath copy, which then takes precedence.
+                XDocument? doc = File.Exists(PersistPath) ? XDocument.Load(PersistPath) : LoadSeedDocument();
+                if (doc != null) ParsePersisted(doc);
             }
             catch (Exception __lex) { DiagnosticsLog.Swallowed("ColorPicker: load saved swatches", __lex); }
 
             if (_colorSets.Count == 0)
                 _colorSets.Add(new ColorSet(AppStrings.T("controls.pickers.colorPickerPanel.defaults.setOneName")));
+        }
+
+        // Reads the embedded company-standard defaults (see the csproj EmbeddedResource). Returns
+        // null if the resource is missing or unreadable — the caller then falls through to a single
+        // empty default set, exactly as the pre-seed behavior.
+        private static XDocument? LoadSeedDocument()
+        {
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                string? name = asm.GetManifestResourceNames()
+                    .FirstOrDefault(n => n.EndsWith("colorpicker.seed.xml", System.StringComparison.OrdinalIgnoreCase));
+                if (name == null) return null;
+                using (var s = asm.GetManifestResourceStream(name))
+                    return s == null ? null : XDocument.Load(s);
+            }
+            catch (Exception ex) { DiagnosticsLog.Swallowed("ColorPicker: load seed defaults", ex); return null; }
+        }
+
+        // Parses a loaded color-picker document (the user's file or the embedded seed) into
+        // _colorSets / _recentColors / _activeSetIdx.
+        private void ParsePersisted(XDocument doc)
+        {
+            var root = doc.Root;
+            if (root == null) return;
+
+            var setsEl = root.Element("ColorSets");
+            if (setsEl != null)
+            {
+                int activeIdx = 0;
+                int.TryParse(setsEl.Attribute("activeIndex")?.Value, out activeIdx);
+
+                foreach (var setEl in setsEl.Elements("Set"))
+                {
+                    var name  = setEl.Attribute("name")?.Value ?? AppStrings.T("controls.pickers.colorPickerPanel.defaults.setFallbackName");
+                    var cs    = new ColorSet(name);
+                    var slots = setEl.Elements("Slot").ToList();
+                    for (int i = 0; i < Math.Min(slots.Count, SetSlotCount); i++)
+                        cs.Colors[i] = string.IsNullOrEmpty(slots[i].Value)
+                            ? (Color?)null
+                            : TryParseHexColor(slots[i].Value);
+                    _colorSets.Add(cs);
+                }
+
+                _activeSetIdx = Math.Max(0, Math.Min(activeIdx, _colorSets.Count - 1));
+            }
+
+            _recentColors = root.Element("RecentColors")?
+                .Elements("Color")
+                .Select(el => TryParseHexColor(el.Value))
+                .Where(c => c.HasValue)
+                .Select(c => c!.Value)
+                .Take(MaxRecentColors)
+                .ToList() ?? new List<Color>();
         }
 
         private void SavePersisted()
