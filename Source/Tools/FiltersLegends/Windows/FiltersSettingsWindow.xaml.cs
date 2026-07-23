@@ -85,6 +85,14 @@ namespace LemoineTools.Framework
             AppSettings.Instance.ThemeChanged  += OnThemeChanged;
             AppSettings.Instance.UiSizeChanged += OnUiSizeChanged;
 
+            // Last-resort safety net for this window's dedicated STA thread. Without it, an
+            // unhandled exception while building or using this window tears down the dispatcher
+            // and hard-crashes Revit with NO diagnostics.log entry (StepFlowWindow has this net;
+            // this bespoke window did not — which is how a colleague-machine crash in only this
+            // window went untraced). Route it through DiagnosticsLog and keep the window alive.
+            // Named handler, detached in OnClosed.
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
+
             // Reload discovered rules when focus returns from the Discover window.
             Activated += OnWindowActivated;
         }
@@ -113,18 +121,37 @@ namespace LemoineTools.Framework
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            AppSettings.Instance.ApplyTo(Resources);
-            ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
-            Background = AppSettings.Instance.ActiveTheme.PageBg;
-            _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
-            _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
-            _outerBorder.CornerRadius = new CornerRadius(8);
+            try
+            {
+                AppSettings.Instance.ApplyTo(Resources);
+                ControlStyles.InjectInto(Resources, scrollBarWidth: 8);
+                Background = AppSettings.Instance.ActiveTheme.PageBg;
+                _root.SetResourceReference(Grid.BackgroundProperty, "LemoineBg");
+                _outerBorder.SetResourceReference(Border.BorderBrushProperty, "LemoineBorder");
+                _outerBorder.CornerRadius = new CornerRadius(8);
 
-            UpdateRowHeights();
-            BuildToolbar();
-            _contentBorder.Child = BuildFiltersContent();
-            BuildFloatingStatus();
-            SetupHistory();
+                UpdateRowHeights();
+                BuildToolbar();
+                _contentBorder.Child = BuildFiltersContent();
+                BuildFloatingStatus();
+                SetupHistory();
+            }
+            catch (Exception ex)
+            {
+                // Building this window's content on its own STA thread has no other net; a throw
+                // here would hard-crash Revit (observed on colleague machines while every other tool
+                // worked). Log the real cause and leave the window open rather than taking Revit down.
+                DiagnosticsLog.Error("FiltersSettingsWindow: build content (OnLoaded)", ex);
+            }
+        }
+
+        // Last-resort net for this window's STA dispatcher (see the constructor). Logs the real
+        // exception — so a crash on another machine is finally diagnosable — and keeps Revit alive.
+        private void OnDispatcherUnhandledException(
+            object? sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            DiagnosticsLog.Error("FiltersSettingsWindow unhandled UI exception", e.Exception);
+            e.Handled = true;
         }
 
         // ── Undo/redo history ─────────────────────────────────────────────────
@@ -376,6 +403,7 @@ namespace LemoineTools.Framework
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Activated -= OnWindowActivated;
+            Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
             _historyTimer?.Stop();
             _historyTimer = null;
 
