@@ -69,6 +69,9 @@ UninstallDisplayIcon={app}\unins000.exe
 ; "for me only" and is never prompted for elevation.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Ask for the install mode on EVERY run instead of silently reusing the previous
+; choice (Inno's default), so "for me only" vs "for all users" can be re-picked each time.
+UsePreviousPrivileges=no
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 
