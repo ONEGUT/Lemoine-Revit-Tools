@@ -222,6 +222,14 @@
     <EmbeddedResource Include="Source\Resources\RevitFamilys\Ceiling Tag.rfa" />
   </ItemGroup>
 
+  <!-- Company-standard color picker defaults, embedded in the DLL and loaded by
+       ColorPickerPanel.LoadPersisted() as the seed when a machine has no personal
+       %AppData%\LemoineTools\colorpicker.xml yet. Travels with the DLL, so it ships
+       with every build/installer and every install location. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Source\Resources\Defaults\colorpicker.seed.xml" />
+  </ItemGroup>
+
   <!-- IcoMoon Free icon font — embedded as a WPF pack resource -->
   <ItemGroup>
     <Resource Include="Source\Resources\Fonts\IcoMoonFree.ttf" />
