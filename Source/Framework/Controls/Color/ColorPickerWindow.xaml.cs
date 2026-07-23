@@ -90,11 +90,23 @@ namespace LemoineTools.Framework.Controls
         /// </summary>
         public static Color? PickColor(Window? owner, Color initial)
         {
-            var w = new ColorPickerWindow(initial)
+            try
             {
-                Owner = owner,
-            };
-            return w.ShowDialog() == true ? w.Result : null;
+                var w = new ColorPickerWindow(initial)
+                {
+                    Owner = owner,
+                };
+                return w.ShowDialog() == true ? w.Result : null;
+            }
+            catch (Exception ex)
+            {
+                // Constructing/showing the picker must never hard-crash the host window. An
+                // exception raised inside the modal loop is caught by the host window's dispatcher
+                // net; this also captures the construction phase and any host that lacks a net.
+                // Log the real cause and behave as a cancel.
+                DiagnosticsLog.Error("ColorPickerWindow.PickColor", ex);
+                return null;
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────
