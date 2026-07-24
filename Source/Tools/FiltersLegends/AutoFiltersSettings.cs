@@ -756,6 +756,9 @@ namespace LemoineTools.Tools.AutoFilters
             { "OST_GenericModel",        new[]{ "Type Name","Family Name","Mark","Comments","Level","Description" } },
             { "OST_Furniture",           new[]{ "Type Name","Family Name","Mark","Comments","Level","Phase Created","Department","Occupancy" } },
             { "OST_SpecialityEquipment", new[]{ "Type Name","Family Name","Mark","Comments","Level","Phase Created" } },
+            // Datum group
+            { "OST_Grids",               new[]{ "Name","Type Name","Scope Box","Comments" } },
+            { "OST_Levels",              new[]{ "Name","Type Name","Elevation","Structural","Comments" } },
         };
 
         /// <summary>
@@ -855,6 +858,9 @@ namespace LemoineTools.Tools.AutoFilters
             { "Rooms",                    "OST_Rooms" },
             { "Areas",                    "OST_Areas" },
             { "Spaces",                   "OST_MEPSpaces" },
+            // ── Datum (non-Model but filterable) ───────────────────────────
+            { "Grids",                    "OST_Grids" },
+            { "Levels",                   "OST_Levels" },
             // ── Architectural — additional model categories / subcategories ──
             { "Curtain Systems",          "OST_Curtain_Systems" },
             { "Wall Sweeps",              "OST_Cornices" },
@@ -1020,7 +1026,11 @@ namespace LemoineTools.Tools.AutoFilters
                     try { cat = Category.GetCategory(doc, id); }
                     catch (Exception __cex) { DiagnosticsLog.Swallowed("CaptureFilterableCategories.GetCategory", __cex); }
                     if (cat == null) continue;
-                    if (cat.CategoryType != CategoryType.Model) continue;
+                    // Model categories only, plus an explicit allowlist of datum categories
+                    // (Grids, Levels) that Revit reports as non-Model but are genuinely
+                    // filterable and requested here. All other annotation categories stay out.
+                    if (cat.CategoryType != CategoryType.Model &&
+                        !AllowedNonModelCategories.Contains((BuiltInCategory)(int)raw)) continue;
 
                     string name = cat.Name;
                     if (string.IsNullOrWhiteSpace(name)) continue;
@@ -1104,6 +1114,19 @@ namespace LemoineTools.Tools.AutoFilters
             public long?   ParentRaw { get; }
         }
 
+
+        /// <summary>
+        /// Datum categories that are not <see cref="CategoryType.Model"/> but are still
+        /// genuinely filterable and deliberately surfaced in the category picker. Every
+        /// other non-Model (annotation) category stays excluded — see
+        /// <see cref="CaptureFilterableCategories"/>.
+        /// </summary>
+        private static readonly HashSet<BuiltInCategory> AllowedNonModelCategories =
+            new HashSet<BuiltInCategory>
+            {
+                BuiltInCategory.OST_Grids,
+                BuiltInCategory.OST_Levels,
+            };
 
         /// <summary>
         /// True when <paramref name="ost"/> parses to a valid, non-INVALID
