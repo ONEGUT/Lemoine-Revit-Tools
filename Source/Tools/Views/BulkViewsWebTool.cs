@@ -103,8 +103,12 @@ namespace LemoineTools.Tools.LinkViews
 
             foreach (var (mode, tool) in Inners())
             {
-                foreach (var inner in tool.BuildSteps())
+                // Drop each inner tool's OWN final review step — the shared "run" step below
+                // carries the active mode's review, so keeping it would render a duplicate.
+                var innerSteps = tool.BuildSteps();
+                for (int i = 0; i < innerSteps.Count - 1; i++)
                 {
+                    var inner = innerSteps[i];
                     var prefixed = new WebStep(mode + "_" + inner.Id, inner.Title, inner.Required);
                     foreach (var input in inner.Inputs) prefixed.Add(input);
                     list.Add(prefixed);
@@ -113,6 +117,11 @@ namespace LemoineTools.Tools.LinkViews
 
             var runStep = new WebStep("run", AppStrings.T("linkviews.bulkViews.steps.run"), required: false)
                 .Add(WebInput.Hint("runNote", AppStrings.T("linkviews.bulkViews.review.modeNote", ModeLabel(_mode))));
+            // Surface the active mode's own review (its inner tool's final step inputs) here so
+            // the shared run step is the single, complete "Review & Run" screen.
+            var innerReview = CurrentInner.BuildSteps().LastOrDefault();
+            if (innerReview != null)
+                foreach (var input in innerReview.Inputs) runStep.Add(input);
             list.Add(runStep);
 
             return list;

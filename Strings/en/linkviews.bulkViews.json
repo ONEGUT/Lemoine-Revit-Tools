@@ -52,7 +52,7 @@
       "itemLinks":   "Links",
       "itemPattern": "Name pattern",
       "linksValue":  "{0} link(s) — one view each",
-      "note":        "Each view hides every other loaded link and every host model/annotation/analytical/imported category, so only the chosen link's own geometry (rendered by its own default 3D view) remains visible."
+      "note":        "Each view hides every other loaded link and every host model/annotation/analytical/imported category, so only the chosen link's own geometry remains visible."
     },
 
     "summaries": {
@@ -70,7 +70,7 @@
     "byLinkError":     "Run aborted: {0}",
     "byLinkNoLinks":   "No links selected.",
     "byLinkNo3dType":  "No 3D view family type found in this document.",
-    "byLinkNoOverride":"'{0}': could not set the link to render by its own default 3D view — the target link's geometry may also be affected by the host category hides.",
+    "byLinkNoOverride":"'{0}': could not isolate the link's graphics from the host view — the host category hides may also blank the link's own geometry.",
     "byLinkCreated":   "Created '{0}' isolating link '{1}'.",
     "byLinkFailed":    "Failed to create a view for link '{0}': {1}",
     "byLinkDone":      "Done — {0} view(s) created, {1} failed."
