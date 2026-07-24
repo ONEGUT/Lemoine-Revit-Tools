@@ -293,7 +293,7 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 
 **Disabled items** — `MultiSelectTabs` accepts a `DisabledItems` property (`IReadOnlyCollection<string>?`). Set it before `SetGroups`. A disabled item is still listed (so the user sees WHY it's absent, not a silently shrinking list) but rendered dimmed with a non-interactive checkbox, is excluded from the per-group "All" toggle's all-checked/some-checked math and from what "All" adds/removes, and can never appear in `SelectionChanged` results. This is the mechanism Copy Datums uses to show grids/levels that already exist in the host, greyed out, instead of hiding them. Only the flat (non-`Hierarchy`) list path honours it today.
 
-**Annotation categories** — Annotation categories (`CategoryType != Model`) must never appear in model-element category pickers. `AutoFiltersSettings.CaptureFilterableCategories` already filters them out; do not re-introduce them.
+**Annotation categories** — Annotation categories (`CategoryType != Model`) must never appear in model-element category pickers. `AutoFiltersSettings.CaptureFilterableCategories` already filters them out; do not re-introduce them. **Exception:** the datum categories in `AutoFiltersSettings.AllowedNonModelCategories` (`OST_Grids`, `OST_Levels`) are deliberately allowed through despite being non-Model — they are genuinely filterable and were explicitly requested for Auto Filters. Add another non-Model category to that allowlist only on an equally explicit request; never widen it to all annotation categories.
 
 ---
 
