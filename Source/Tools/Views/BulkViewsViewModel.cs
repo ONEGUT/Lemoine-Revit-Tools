@@ -109,8 +109,17 @@ namespace LemoineTools.Tools.LinkViews
 
         private static void AddPrefixed(List<StepDefinition> list, string mode, StepDefinition[] inner)
         {
-            foreach (var s in inner)
+            // Drop each inner tool's OWN final review/run step. The framework renders the review
+            // summary only on the ABSOLUTE last step, which is the composite's shared "run" step
+            // (added after all modes). Keeping an inner review step here would leave a middle step
+            // whose content resolves to null and render an empty duplicate "Review & Run" row just
+            // before the real one. The composite delegates IReviewableTool to the active inner, so
+            // its shared run step carries the full review.
+            for (int i = 0; i < inner.Length - 1; i++)
+            {
+                var s = inner[i];
                 list.Add(new StepDefinition(mode + "_" + s.Id, s.Title, s.Required));
+            }
         }
 
         // ── IConditionalSteps — only the active mode's own steps (+ mode/run) are visible ──
