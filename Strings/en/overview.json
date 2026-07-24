@@ -188,8 +188,8 @@
       "intro": "Get views onto sheets, line up matching viewports, and rename sheets or views in bulk.",
       "tools": {
         "placeDependent": {
-          "name": "Place Dependent Views",
-          "blurb": "Makes one sheet per view and drops that view's dependents onto it, each trimmed to its crop and packed so nothing overlaps.",
+          "name": "Create Sheets",
+          "blurb": "Makes sheets from views: one sheet per parent packed with its dependents, one composite sheet per view with its callouts and sections, or one sheet per view holding just that single view.",
           "example": "a parent view and its 6 dependents land on a single packed sheet"
         },
         "alignViews": {

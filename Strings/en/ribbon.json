@@ -112,8 +112,8 @@
     },
 
     "placeDependentViews": {
-      "label": "Place Dep.\nViews",
-      "tip":   "Create one sheet per view and place its dependents, trimmed and packed without overlap."
+      "label": "Create\nSheets",
+      "tip":   "Create sheets from views: one sheet per parent holding its dependents, one composite sheet per view with its callouts/sections, or one sheet per view holding just that single view."
     },
     "alignSheetViews": {
       "label": "Align\nSheet Views",

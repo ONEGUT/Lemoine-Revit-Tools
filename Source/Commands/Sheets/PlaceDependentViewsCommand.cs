@@ -31,6 +31,19 @@ namespace LemoineTools.Commands
             ViewType.Detail,
         };
 
+        /// <summary>View types that cannot be placed on a sheet as a viewport — excluded from the
+        /// Place Views (one-view-per-sheet) candidate list. Everything else non-template is offered.</summary>
+        private static readonly HashSet<ViewType> NonPlaceableTypes = new HashSet<ViewType>
+        {
+            ViewType.Schedule,
+            ViewType.Legend,
+            ViewType.DrawingSheet,
+            ViewType.ProjectBrowser,
+            ViewType.SystemBrowser,
+            ViewType.Internal,
+            ViewType.Undefined,
+        };
+
         public Result Execute(
             ExternalCommandData commandData,
             ref string          message,
@@ -73,6 +86,7 @@ namespace LemoineTools.Commands
                 // discovered at run time, so no per-view marker scan happens here.
                 var parents    = new List<ParentViewEntry>();
                 var composites = new List<ParentViewEntry>();
+                var placeable  = new List<ParentViewEntry>();
                 foreach (var v in new FilteredElementCollector(doc)
                              .OfClass(typeof(View)).Cast<View>()
                              .Where(v => !v.IsTemplate))
@@ -91,12 +105,16 @@ namespace LemoineTools.Commands
 
                     if (CompositeSourceTypes.Contains(v.ViewType))
                         composites.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
+
+                    // Place Views mode: any non-template, sheet-placeable graphical view.
+                    if (!NonPlaceableTypes.Contains(v.ViewType))
+                        placeable.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
                 }
 
                 var vm = new PlaceDependentViewsViewModel(
                     App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
                     parents, composites, titleblocks,
-                    BrowserTreeCapture.Capture(doc));
+                    BrowserTreeCapture.Capture(doc), placeable);
 
                 return vm;
             }
@@ -116,6 +134,7 @@ namespace LemoineTools.Commands
 
                     var parents    = new List<ParentViewEntry>();
                     var composites = new List<ParentViewEntry>();
+                    var placeable  = new List<ParentViewEntry>();
                     foreach (var v in new FilteredElementCollector(doc)
                                  .OfClass(typeof(View)).Cast<View>()
                                  .Where(v => !v.IsTemplate))
@@ -133,12 +152,15 @@ namespace LemoineTools.Commands
 
                         if (CompositeSourceTypes.Contains(v.ViewType))
                             composites.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
+
+                        if (!NonPlaceableTypes.Contains(v.ViewType))
+                            placeable.Add(new ParentViewEntry(v.Id, v.Name, v.ViewType.ToString(), level, -1));
                     }
 
                     return new PlaceDependentViewsWebTool(
                         App.PlaceDependentViewsHandler!, App.PlaceDependentViewsEvent!,
                         parents, composites, titleblocks,
-                        BrowserTreeCapture.Capture(doc));
+                        BrowserTreeCapture.Capture(doc), placeable);
                 });
                 return Result.Succeeded;
             }
