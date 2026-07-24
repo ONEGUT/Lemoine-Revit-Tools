@@ -459,7 +459,15 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         else
                         {
-                            placements.Add((new Reference(el), tagPt, false, el.Id));
+                            // Guard the reference build per element so one bad ceiling fails
+                            // only its own tag (as before) instead of throwing out of the read
+                            // phase and aborting the whole run.
+                            try { placements.Add((new Reference(el), tagPt, false, el.Id)); }
+                            catch (Exception ex)
+                            {
+                                Log(AppStrings.T("ceilings.heatmap.log.tagHostFailed", el.Id, ex.Message), "fail");
+                                fail++;
+                            }
                         }
                         tagProgress.Tick();
                     }
@@ -474,8 +482,20 @@ namespace LemoineTools.Tools.Ceilings
                         }
                         else
                         {
-                            Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
-                            placements.Add((linkedRef, lc.Xform.OfPoint(localPt), true, lc.El.Id));
+                            // CreateLinkReference can throw for a linked element that won't
+                            // produce a valid reference — keep it inside the per-element guard
+                            // (as the original create loop did) so it fails just this tag, not
+                            // the whole read phase.
+                            try
+                            {
+                                Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
+                                placements.Add((linkedRef, lc.Xform.OfPoint(localPt), true, lc.El.Id));
+                            }
+                            catch (Exception ex)
+                            {
+                                Log(AppStrings.T("ceilings.heatmap.log.tagLinkedFailed", lc.El.Id, ex.Message), "fail");
+                                fail++;
+                            }
                         }
                         tagProgress.Tick();
                     }
