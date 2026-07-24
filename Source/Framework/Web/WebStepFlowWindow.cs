@@ -370,6 +370,17 @@ namespace LemoineTools.Framework.Web
 
         private void OnClosed(object? sender, EventArgs e)
         {
+            // Closing the window mid-run must CANCEL the run, not let the function keep going
+            // against a disposed window. Cooperative stop (mirrors the footer Cancel / "reset"
+            // action): set the shared flag so the looping handler halts at its next
+            // RunState.CancelRequested check and commits work done so far; if paused on a manual
+            // step there is no loop watching the flag, so nudge it via Skip. Do this BEFORE the
+            // teardown below. The flag is cleared by RunState.Begin() at the next run's start.
+            if (_isRunning && !RunState.CancelRequested)
+            {
+                RunState.RequestCancel();
+                (_tool as IWebRunPausable)?.SkipCurrentItem();
+            }
             AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
             AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
             Dispatcher.UnhandledException      -= OnUnhandled;

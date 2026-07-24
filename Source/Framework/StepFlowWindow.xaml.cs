@@ -107,6 +107,11 @@ namespace LemoineTools.Framework
             Dispatcher.UnhandledException += OnDispatcherUnhandledException;
             Closed += (s, e) =>
             {
+                // Closing the window mid-run must CANCEL the run, not let the function keep
+                // going against a window that is being torn down. Signal the cooperative stop
+                // BEFORE severing the sink/tool wiring below (the handler still needs to observe
+                // the flag and, if paused, be nudged off its manual step).
+                CancelRunOnClose();
                 Dispatcher.UnhandledException -= OnDispatcherUnhandledException;
                 AppSettings.Instance.ThemeChanged  -= OnThemeChanged;
                 AppSettings.Instance.UiSizeChanged -= OnUiSizeChanged;
@@ -1497,6 +1502,20 @@ namespace LemoineTools.Framework
             PushLog("Cancelling — will stop at the next checkpoint…", "warn");
             // If paused on a manual step (Continue/Skip visible), there's no running loop left to
             // observe the cancel flag — nudge it via Skip so the run can actually stop.
+            if (_continueBtn?.Visibility == Visibility.Visible)
+                (_tool as IRunPausable)?.SkipCurrentItem();
+        }
+
+        // Window closed while a run was in flight. Same cooperative stop as the footer Cancel,
+        // minus the UI touch-ups (the window is going away): set the shared cancel flag so the
+        // looping handler halts at its next RunState.CancelRequested check, commits the work done
+        // so far, and calls onComplete (which no-ops once the sink is severed). A run paused on a
+        // manual step has no loop watching the flag, so nudge it via Skip so it can actually stop.
+        // The flag is left set — it is cleared by RunState.Begin() at the next run's start.
+        private void CancelRunOnClose()
+        {
+            if (!_isRunning || RunState.CancelRequested) return;
+            RunState.RequestCancel();
             if (_continueBtn?.Visibility == Visibility.Visible)
                 (_tool as IRunPausable)?.SkipCurrentItem();
         }
