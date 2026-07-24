@@ -441,26 +441,25 @@ namespace LemoineTools.Tools.Ceilings
                         Log, hostCeilings.Count + linkedCeilings.Count,
                         $"ceiling tags (view {vi + 1} of {viewCount})");
 
+                    // Phase A — compute every tag's anchor point up front (pure geometry
+                    // reads, no model mutation). Interleaving IndependentTag.Create (a
+                    // mutation) with GetTagPoint's get_Geometry call forced Revit to
+                    // regenerate the whole model before every single read — the per-tag
+                    // "graphics regeneration" the user saw. Batching all reads, then all
+                    // creates, drops that to at most one regen for the view.
+                    var placements = new List<(Reference Ref, XYZ Pt, bool Linked, ElementId ElId)>();
+
                     foreach (Element el in hostCeilings)
                     {
                         XYZ? tagPt = GetTagPoint(el as Ceiling, doc);
                         if (tagPt == null)
                         {
                             Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", el.Id), "warn");
-                            skip++; tagProgress.Tick(); continue;
+                            skip++;
                         }
-                        try
+                        else
                         {
-                            IndependentTag.Create(
-                                doc, viewId, new Reference(el),
-                                false, TagMode.TM_ADDBY_CATEGORY,
-                                TagOrientation.Horizontal, tagPt);
-                            tagPlaced++;   // folded into the pass total at the end of this method
-                        }
-                        catch (Exception ex)
-                        {
-                            Log(AppStrings.T("ceilings.heatmap.log.tagHostFailed", el.Id, ex.Message), "fail");
-                            fail++;
+                            placements.Add((new Reference(el), tagPt, false, el.Id));
                         }
                         tagProgress.Tick();
                     }
@@ -471,25 +470,37 @@ namespace LemoineTools.Tools.Ceilings
                         if (localPt == null)
                         {
                             Log(AppStrings.T("ceilings.heatmap.log.tagNoPoint", lc.El.Id), "warn");
-                            skip++; tagProgress.Tick(); continue;
+                            skip++;
                         }
-                        try
+                        else
                         {
                             Reference linkedRef = new Reference(lc.El).CreateLinkReference(lc.Link);
-                            XYZ tagPt = lc.Xform.OfPoint(localPt);
+                            placements.Add((linkedRef, lc.Xform.OfPoint(localPt), true, lc.El.Id));
+                        }
+                        tagProgress.Tick();
+                    }
 
+                    // Phase B — create every tag from the precomputed points (pure
+                    // mutations, no geometry reads interleaved, so no forced per-tag
+                    // regeneration).
+                    foreach (var p in placements)
+                    {
+                        try
+                        {
                             IndependentTag.Create(
-                                doc, viewId, linkedRef,
+                                doc, viewId, p.Ref,
                                 false, TagMode.TM_ADDBY_CATEGORY,
-                                TagOrientation.Horizontal, tagPt);
+                                TagOrientation.Horizontal, p.Pt);
                             tagPlaced++;   // folded into the pass total at the end of this method
                         }
                         catch (Exception ex)
                         {
-                            Log(AppStrings.T("ceilings.heatmap.log.tagLinkedFailed", lc.El.Id, ex.Message), "fail");
+                            Log(AppStrings.T(
+                                p.Linked ? "ceilings.heatmap.log.tagLinkedFailed"
+                                         : "ceilings.heatmap.log.tagHostFailed",
+                                p.ElId, ex.Message), "fail");
                             fail++;
                         }
-                        tagProgress.Tick();
                     }
 
                     Progress(90 + (int)((vi + 1) * 8.0 / viewCount), pass, fail, skip);
