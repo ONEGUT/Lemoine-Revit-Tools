@@ -437,6 +437,15 @@ namespace LemoineTools.Framework
             handler.OnProgress                = null;
             handler.OnComplete                = null;
 
+            // Reset the cooperative cancel flag before starting the run — exactly what
+            // StepFlowWindow.StartRun does. A step-flow tool window closed mid-run leaves the
+            // flag SET on purpose (StepFlowWindow.CancelRunOnClose; its CompleteRun/RunState.End
+            // never runs), and AutoFiltersEventHandler's loops test it. Without this reset that
+            // stale flag stops this pass at its first checkpoint — and PushLog is null here, so
+            // the "Stopped by user" line goes nowhere and the filters are silently never created.
+            // No matching End(): this window has no Cancel affordance, so nothing sets the flag
+            // during the run, and the next Begin() clears it regardless.
+            RunState.Begin();
             evt.Raise();
         }
 
@@ -550,6 +559,9 @@ namespace LemoineTools.Framework
             handler.PushLog    = null;
             handler.OnProgress = null;
             handler.OnComplete = null;
+            // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+            // RaiseAutoCreate above. DeleteFiltersEventHandler's delete loop tests it.
+            RunState.Begin();
             evt.Raise();
             FlashStatus(selected.Count == 1
                 ? AppStrings.T("autofilters.filtersWindow.window.status.removingOne", selected[0].Label)
@@ -609,6 +621,9 @@ namespace LemoineTools.Framework
             handler.OnProgress                       = null;
             handler.OnComplete                       = null;
 
+            // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+            // RaiseAutoCreate above.
+            RunState.Begin();
             evt.Raise();
             FlashStatus(trades.Count == 1
                 ? AppStrings.T("autofilters.filtersWindow.window.status.applyingOne", trades[0].Label)

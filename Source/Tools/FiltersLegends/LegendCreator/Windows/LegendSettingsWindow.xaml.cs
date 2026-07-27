@@ -1322,6 +1322,13 @@ namespace LemoineTools.Framework
             SetCreateBusy(true, isUpdate ? AppStrings.T("testing.legendCreator.builder.window.status.updating") : AppStrings.T("testing.legendCreator.builder.window.status.creating"));
 
             LegendCreatorSettings.Instance.Save();
+            // Reset the cooperative cancel flag before starting the run — exactly what
+            // StepFlowWindow.StartRun does. A step-flow tool window closed mid-run leaves the flag
+            // SET on purpose (StepFlowWindow.CancelRunOnClose; its RunState.End never runs), and
+            // LegendCreatorEventHandler tests it per BLOCK — without this reset that stale flag
+            // would stop the build at the first block and produce an empty legend view. No
+            // matching End(): this window has no Cancel affordance.
+            RunState.Begin();
             App.LegendCreatorEvent.Raise();
         }
 
