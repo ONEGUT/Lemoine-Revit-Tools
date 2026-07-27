@@ -99,7 +99,16 @@ namespace LemoineTools.Tools.Dimensioning.AutoDimension.Resolvers
                     Curve? gc = grid.Curve;
                     if (gc == null) continue;
 
-                    Reference? gref = new Reference(grid);
+                    // Guard the reference build per grid: a grid that won't produce a valid
+                    // reference must fail only itself, not throw out of the cache build and
+                    // abort the whole dimension run.
+                    Reference? gref;
+                    try { gref = new Reference(grid); }
+                    catch (Exception ex)
+                    {
+                        DiagnosticsLog.Swallowed($"GridTargetResolver: build reference for grid {grid.Id}", ex);
+                        continue;
+                    }
                     if (sd.Link != null)
                     {
                         gref = LinkRefHelper.ToHostReference(sd.Link, gref!, ctx.ReportMissingLink);
