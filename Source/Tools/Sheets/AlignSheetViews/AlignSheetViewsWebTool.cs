@@ -133,7 +133,9 @@ namespace LemoineTools.Tools.Sheets.AlignSheetViews
             {
                 case "source":   _sourceSheetIds = IdList(value).Select(id => new ElementId(id)).ToList(); Fire(); break;
                 case "targets":  _targetSheetIds = IdList(value).Select(id => new ElementId(id)).ToList(); Fire(); break;
-                case "overlap":  { var v = (int)AsDouble(value, _overlapPercent); if (v > 0) _overlapPercent = v; Fire(); break; }
+                // Clamped to the stepper's own [5, 100] range so the web input cannot express a
+                // threshold the WPF input cannot.
+                case "overlap":  { var v = (int)AsDouble(value, _overlapPercent); if (v >= 5 && v <= 100) _overlapPercent = v; Fire(); break; }
                 case "titles":   _alignTitles           = AsBool(value, _alignTitles);           Fire(); break;
                 case "scopeBox": _inheritScopeBox       = AsBool(value, _inheritScopeBox);       Fire(); break;
                 case "grids":    _inheritGrids          = AsBool(value, _inheritGrids);          Fire(); break;

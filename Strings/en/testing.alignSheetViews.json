@@ -105,6 +105,33 @@
     "couldNotAlignTitle": "[{0}] Could not align title for '{1}'.",
     "viewTitlesOk":       "View titles: {0} aligned.",
     "viewTitlesSome":     "View titles: {0} aligned, {1} could not be adjusted.",
-    "noteNoCrop":         "[note] View '{0}' has no active crop — region matched from its default crop box."
+    "noteNoCrop":         "[note] View '{0}' has no active crop — region matched from its default crop box.",
+    "couldNotReadAnnoCrop": "[warn] Could not read the annotation crop on view '{0}' — it is treated as having none, so this view may not register exactly.",
+    "annoScaleDiffers":   "[{0}] '{1}' scale differs from its source — annotation-crop margins are copied in model feet, so the printed margin will differ.",
+
+    // Preview-only diagnostics. Emitted per matched pair when \"Preview only\" is ticked.
+    // Their purpose is to settle, on a real plot, whether a viewport's on-sheet footprint
+    // includes the annotation crop (the assumption the alignment maths rests on) and to name
+    // which views the old and new formulas place differently.
+    "diagHeader":         "[diag] [{0}] '{1}' → source '{2}'",
+    "diagScale":          "[diag]   scale src 1:{0} / tgt 1:{1}   rotation {2}   basisX dot {3}  basisY dot {4}",
+    "diagCrop":           "[diag]   model crop (ft)              src {0} x {1} / tgt {2} x {3}",
+    "diagAnno":           "[diag]   annotation crop active       src {0} / tgt {1}",
+    "diagAnnoOff":        "[diag]   anno offsets (ft) src L{0} R{1} B{2} T{3}  |  tgt L{4} R{5} B{6} T{7}",
+    "diagOutline":        "[diag]   ACTUAL box outline (sheet ft) src {0} x {1} / tgt {2} x {3}",
+    "diagPredNoAnno":     "[diag]   predicted WITHOUT anno crop   src {0} x {1} / tgt {2} x {3}",
+    "diagPredAnno":       "[diag]   predicted WITH anno crop      src {0} x {1} / tgt {2} x {3}",
+    "diagVerdict":        "[diag]   → viewport footprint includes the annotation crop: {0}",
+    "diagVerdictYes":     "YES — the alignment fix's assumption holds.",
+    "diagVerdictNo":      "NO — the alignment fix's assumption does NOT hold here; report this line.",
+    "diagCentres":        "[diag]   box centre (current)          src {0} / tgt {1}",
+    "diagNewCentre":      "[diag]   target box centre — old formula {0} → new formula {1}   delta {2} ft",
+    "diagRotCandidates":  "[diag]   ROTATED viewport — candidate A (x,y)→(y,-x) gives {0}; candidate B (x,y)→(-y,x) gives {1}. Confirm which is right on the plot.",
+    "diagFailed":         "[diag] [{0}] Could not produce diagnostics for '{1}'.",
+    "diagMissingHdr":     "[diag] [{0}] No counterpart for source view '{1}' — candidates considered:",
+    "diagMissingCand":    "[diag]   '{0}' in-plane overlap {1}% (threshold {2}%), depth ranges {3}",
+    "diagNoCands":        "[diag]   (no candidate of the same view type and orientation on this sheet)",
+    "diagDepthOk":        "overlap",
+    "diagDepthNo":        "DO NOT overlap — candidate vetoed on depth"
   }
 }
