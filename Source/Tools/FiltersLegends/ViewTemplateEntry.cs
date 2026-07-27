@@ -2,11 +2,11 @@ namespace LemoineTools.Tools.AutoFilters
 {
     /// <summary>
     /// One Revit VIEW TEMPLATE, captured on the Revit main thread so the Auto Filters window
-    /// (which runs on its own STA / WebUi thread) can list templates without touching the API.
+    /// (which runs on its own STA thread) can list templates without touching the API.
     ///
     /// Deliberately Revit-free — <see cref="Id"/> is the raw <c>ElementId.Value</c> rather than
-    /// an <c>ElementId</c> — so the Revit-free web view model (<c>WebAutoFilters</c>) can hold
-    /// these without gaining an Autodesk dependency. The Revit-side caller converts back with
+    /// an <c>ElementId</c> — so the window can hold these without gaining an Autodesk
+    /// dependency. The Revit-side caller converts back with
     /// <c>new ElementId(entry.Id)</c>. Capture lives in the launching command, which is already
     /// on the Revit thread and already imports the API.
     ///
