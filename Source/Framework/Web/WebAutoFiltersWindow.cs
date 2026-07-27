@@ -145,6 +145,13 @@ namespace LemoineTools.Framework.Web
             handler.OnProgress                       = null;
             handler.OnComplete                       = null;
 
+            // Reset the cooperative cancel flag before starting the run — exactly what
+            // WebStepFlowWindow/StepFlowWindow do at run start. A step-flow window closed mid-run
+            // leaves the flag SET on purpose (CancelRunOnClose; its RunState.End never runs), and
+            // AutoFiltersEventHandler's loops test it — without this reset that stale flag stops
+            // this run at its first checkpoint. No matching End(): this window has no Cancel
+            // affordance, so nothing sets the flag during the run.
+            RunState.Begin();
             evt.Raise();
             Flash(trades.Count == 1
                 ? TW("window.status.applyingOne", trades[0].Label)
@@ -173,6 +180,9 @@ namespace LemoineTools.Framework.Web
             handler.PushLog    = null;
             handler.OnProgress = null;
             handler.OnComplete = null;
+            // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+            // ApplyTradesToView above. DeleteFiltersEventHandler's delete loop tests it.
+            RunState.Begin();
             evt.Raise();
             Flash(trades.Count == 1
                 ? TW("window.status.removingOne", trades[0].Label)
@@ -261,6 +271,10 @@ namespace LemoineTools.Framework.Web
                 handler.PushLog                  = null;
                 handler.OnProgress               = null;
                 handler.OnComplete               = null;
+                // Clear any stale cancel flag left by a step-flow window closed mid-run — see
+                // ApplyTradesToView above. PushLog is null here, so a stale flag would abort this
+                // close-time create pass with no visible trace at all.
+                RunState.Begin();
                 evt.Raise();
             }
             catch (Exception ex) { DiagnosticsLog.Error("WebAutoFiltersWindow: close flush", ex); }
