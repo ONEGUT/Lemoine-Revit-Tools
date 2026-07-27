@@ -132,9 +132,13 @@ namespace LemoineTools.Framework.Web
                     _model.SetTargetTemplate(GetLong(p, "id"), GetBool(p, "value"));
                     return true;
                 case "clearTargets":
+                    // Active view must be set true BEFORE clearing templates: SetTargetTemplate's
+                    // own zero-targets guard refuses to remove the last template while active
+                    // view is still false, so removing in the other order left one template
+                    // stuck checked whenever the user had unchecked active view beforehand.
+                    _model.SetTargetActiveView(true);
                     foreach (var id in _model.TargetTemplateIds.ToList())
                         _model.SetTargetTemplate(id, false);
-                    _model.SetTargetActiveView(true);
                     return true;
 
                 case "discover":         LaunchDiscover(); return true;
@@ -177,7 +181,11 @@ namespace LemoineTools.Framework.Web
             handler.OnComplete                       = null;
 
             evt.Raise();
-            Flash(_model.TargetCount > 1
+            // "Active view" wording only when that's actually the sole target — TargetCount == 1
+            // is also reachable with active view unchecked and exactly one template checked, and
+            // that run does NOT touch the active view at all.
+            bool activeViewOnly = _model.TargetActiveView && _model.TargetTemplateIds.Count == 0;
+            Flash(!activeViewOnly
                 ? TW("window.status.applyingToTargets", trades.Count, _model.TargetCount)
                 : trades.Count == 1
                     ? TW("window.status.applyingOne", trades[0].Label)

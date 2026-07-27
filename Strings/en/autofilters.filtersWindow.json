@@ -57,7 +57,7 @@
       "applyUnavailable": "Apply unavailable.",
       "applyingOne": "Applying “{0}” to the active view…",
       "applyingToTargets": "Applying {0} trade(s) to {1} targets…",
-    "applyingMany": "Applying {0} trades to the active view…"
+      "applyingMany": "Applying {0} trades to the active view…"
     },
 
     "common": {

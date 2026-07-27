@@ -161,6 +161,7 @@ namespace LemoineTools.Tools.AutoFilters
                 IncludeSelectedExternallyManaged = false;
                 ApplyOverrideFilterNames = null;
                 TargetViewIds       = new List<ElementId>();
+                IncludeActiveView   = true;
             }
 
             Progress(100, pass, fail, skip);
@@ -277,7 +278,7 @@ namespace LemoineTools.Tools.AutoFilters
 
                 // Name the targets up front so the log always shows WHERE the run landed —
                 // especially important once a run can write to a template the user can't see.
-                int templateCount = targets.Count(t => t.IsTemplate);
+                int templateCount = targets.Where(t => t.IsTemplate).Count();
                 Log(AppStrings.T("autofilters.filtersWindow.log.applyingToTargets",
                                  targets.Count, templateCount,
                                  string.Join(", ", targets.Select(t => t.Name))), "info");
@@ -720,7 +721,8 @@ namespace LemoineTools.Tools.AutoFilters
                 {
                     AttachToTargets(targets, pfe!, rule, keepExistingForThis,
                                     solidFillId, solidLineId, fillPatternMap, linePatternMap,
-                                    existingViewFilterIds, ref fail);
+                                    existingViewFilterIds, out int targetFails);
+                    if (targetFails > 0) fail++; // at most one increment per rule
                 }
             }
             catch (Exception ex)
@@ -812,11 +814,10 @@ namespace LemoineTools.Tools.AutoFilters
                 return;
             }
 
-            int before = fail;
             AttachToTargets(targets, pfe, rule, false,
                             solidFillId, solidLineId, fillPatternMap, linePatternMap,
-                            existingViewFilterIds, ref fail);
-            if (fail == before) pass++;
+                            existingViewFilterIds, out int targetFails);
+            if (targetFails > 0) fail++; else pass++; // at most one increment per rule
 
             rulesDone++;
             Progress(5 + (int)(rulesDone * 90.0 / totalRules), pass, fail, skip);
@@ -827,6 +828,14 @@ namespace LemoineTools.Tools.AutoFilters
         // the filter's categories aren't valid for that target's view type, and one incompatible
         // template must never sink the rest of the run. Every failure is logged with the target's
         // name — never silently swallowed. Increments _placements per successful attach.
+        //
+        // failedTargetCount reports how many targets failed, for the caller's OWN target-level
+        // reporting — it is deliberately NOT the same counter as the caller's rule-level `fail`.
+        // With a single target the two used to be the same thing (at most one failure per rule),
+        // but with several targets a rule can now fail on some and succeed on others; folding
+        // every target failure into the shared rule-level `fail` would let one bad rule inflate
+        // that count past the total rule count. Callers add at most 1 to their own `fail` when
+        // failedTargetCount > 0, preserving the original "fail counts rules, not attempts" meaning.
         private void AttachToTargets(
             IList<View> targets, ParameterFilterElement pfe, FilterRuleConfig rule,
             bool keepExistingForThis,
@@ -834,8 +843,9 @@ namespace LemoineTools.Tools.AutoFilters
             Dictionary<string, ElementId> fillPatternMap,
             Dictionary<string, ElementId> linePatternMap,
             Dictionary<long, HashSet<long>> existingViewFilterIds,
-            ref int fail)
+            out int failedTargetCount)
         {
+            failedTargetCount = 0;
             foreach (var target in targets)
             {
                 try
@@ -874,7 +884,7 @@ namespace LemoineTools.Tools.AutoFilters
                                      pfe.Name, target.Name, ex.Message), "fail");
                     DiagnosticsLog.Swallowed(
                         $"AutoFilters: attach '{pfe.Name}' to target {target.Id.Value}", ex);
-                    fail++;
+                    failedTargetCount++;
                 }
             }
         }

@@ -670,7 +670,11 @@ namespace LemoineTools.Framework
             handler.OnComplete                       = null;
 
             evt.Raise();
-            FlashStatus(FTargetCount > 1
+            // "Active view" wording only when that's actually the sole target — FTargetCount == 1
+            // is also reachable with active view unchecked and exactly one template checked, and
+            // that run does NOT touch the active view at all.
+            bool activeViewOnly = _fTargetActiveView && _fTargetTemplateNames.Count == 0;
+            FlashStatus(!activeViewOnly
                 ? AppStrings.T("autofilters.filtersWindow.window.status.applyingToTargets", trades.Count, FTargetCount)
                 : trades.Count == 1
                     ? AppStrings.T("autofilters.filtersWindow.window.status.applyingOne", trades[0].Label)
