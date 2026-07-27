@@ -8,7 +8,6 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Helpers;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Web;
 using LemoineTools.Tools.Dimensioning.AutoDimension.Refine;
 
 namespace LemoineTools.Commands
@@ -63,24 +62,6 @@ namespace LemoineTools.Commands
                     BrowserTreeCapture.Capture(doc));
 
                 return vm;
-            }
-            if (WebToolLauncher.Enabled)
-            {
-                WebToolLauncher.Open("refineDimensions", () =>
-                {
-                    var doc = uiApp.ActiveUIDocument.Document;
-                    var allViews = new FilteredElementCollector(doc)
-                        .OfClass(typeof(View)).Cast<View>()
-                        .Where(v => !v.IsTemplate
-                                 && (v.ViewType == ViewType.FloorPlan
-                                  || v.ViewType == ViewType.CeilingPlan))
-                        .OrderBy(v => v.Name)
-                        .ToList();
-                    return new RefineDimensionsWebTool(
-                        App.RefineDimensionsHandler, App.RefineDimensionsEvent, allViews,
-                        BrowserTreeCapture.Capture(doc));
-                });
-                return Result.Succeeded;
             }
             var vm = BuildTool();
             var ready = new ManualResetEventSlim(false);

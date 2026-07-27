@@ -14,7 +14,7 @@ namespace LemoineTools.Framework
     // genuine Lemoine input controls with representative sample data, validates,
     // and simulates a run (progress + log) with NO Revit API.
     //
-    // Same idea as LemoinePreview.DemoTool, but data-driven from an OverviewDemoSpec
+    // Data-driven from an OverviewDemoSpec
     // so one engine covers every tool. Opened in the real StepFlowWindow on its own
     // STA thread (see ToolsOverviewWindow.LaunchDemo).
     // ─────────────────────────────────────────────────────────────────────────

@@ -3,7 +3,6 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using LemoineTools.Framework;
-using LemoineTools.Framework.Web;
 
 namespace LemoineTools.Commands
 {
@@ -11,42 +10,8 @@ namespace LemoineTools.Commands
     [Regeneration(RegenerationOption.Manual)]
     public class OpenOverviewCommand : IExternalCommand
     {
-        private static WebToolsOverviewWindow? _webWindow;
-
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            if (WebUiSettings.Instance.Enabled)
-            {
-                if (_webWindow != null)
-                {
-                    try
-                    {
-                        WebUiThread.Invoke(() =>
-                        {
-                            var w = _webWindow;
-                            if (w != null && w.IsVisible) w.Activate();
-                            else _webWindow = null;
-                        });
-                        if (_webWindow != null) return Result.Succeeded;
-                    }
-                    catch (Exception ex)
-                    {
-                        DiagnosticsLog.Swallowed("OpenOverview: activate web window", ex);
-                        _webWindow = null;
-                    }
-                }
-
-                CaptureSamples(commandData);
-                WebUiThread.Invoke(() =>
-                {
-                    var win = new WebToolsOverviewWindow();
-                    win.Closed += (s, e) => { _webWindow = null; OverviewSamples.Clear(); ToolsOverviewDemos.DropCache(); };
-                    win.Show();
-                    _webWindow = win;
-                });
-                return Result.Succeeded;
-            }
-
             if (App.Overview != null && App.Overview.IsVisible)
             {
                 App.Overview.Activate();

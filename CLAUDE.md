@@ -15,7 +15,7 @@ The harness is an `IStepFlowTool` opened in `StepFlowWindow` (model: `MotionTest
 - **Lazily construct each suspect** behind a button, so merely opening the harness or navigating a step does NOT trigger the crash. `StepFlowWindow` builds every step's content eagerly at construction, so a crashing construct must be deferred to a button `Click` to be isolatable.
 - Give each step/button ONE suspect (a single control, or the same control at scale — e.g. "build 60 swatches", "MultiSelectTabs with 8×40 items"). The button press that crashes Revit names the culprit.
 - Hard crashes (no entry in `%AppData%\LemoineTools\diagnostics.log`) are native/WPF/message-loop or stack-overflow faults that `try/catch` cannot catch — only a probe harness isolates them. A managed exception WILL appear in the log via `DiagnosticsLog`.
-- Keep the harness in `Source/Tools/Debuggers/` and reachable from the reserved Developer-panel button; remove or repoint it once the issue is found.
+- Keep the harness in `Source/Tools/Debuggers/`, reachable from a temporary ribbon button you add for the investigation; delete both once the issue is found. The repo ships with no Developer panel — do not leave one behind.
 
 Only after the harness pinpoints the construct should the fix be written.
 
@@ -164,28 +164,20 @@ Always read the relevant source files before recommending or writing code. Never
 
 ---
 
-## WebView2 UI Migration
+## Distribution — WPF Only
 
-The UI is migrating from WPF to WebView2-hosted HTML. **`plan-webview2-ui-migration.md`
-is the authoritative rules + phase plan** — read it before any WebView2/host/bridge/HTML-page
-work, and append verified Windows findings to its §5 log. The WebView2 Test harness
-(Developer ribbon panel; `Source/Tools/Debuggers/`) is the proving ground: WebView2 renders
-inside Revit tool windows, the JS↔C# bridge works, and HTML recreations of the house inputs
-match the WPF originals. The four silent-blank-control failure modes (unwritable default
-user-data folder, missing `WebView2Loader.dll`, navigating before `EnsureCoreWebView2Async`
-completes, version clash with Revit's own WebView2) are encoded as rules R1–R4 there — never
-regress them, and never create a `CoreWebView2Environment` outside the shared host layer.
+**This plugin ships as a WPF-only Revit add-in. There is no WebView2 / HTML UI layer.**
 
-Porting rules (apply to any recreation of an existing surface, WPF→web or otherwise):
+The WebView2 migration was evaluated and then removed wholesale for distribution: the
+`Source/Framework/Web/` host + bridge, the `Source/Web/` HTML/CSS/JS assets, all 34
+`*WebTool.cs` ports, the machine-wide Web UI toggle, the entire Developer ribbon panel,
+and the `LemoinePreview` sub-project are gone. Every tool it covered still exists as its
+WPF original — that equivalence was verified tool-by-tool before deletion.
 
-- **Match the original by default; list deliberate deviations in chat for approval.** The user's
-  explicit instruction for the Auto Filters / Legend Creator ports: "build them as close as you
-  can to the original… if you see any [improvements] let me know what you change." Improvements
-  are welcome but must be called out as a numbered list, never slipped in silently.
-- **Never silently drop feature parity.** Any WPF feature deferred from a port must be listed
-  explicitly (in chat and in `web-migration-questions.md`) so the user can decide which get
-  built — when the batch-edit/merge and group-drag deferrals were surfaced, the immediate answer
-  was "one and two are important go ahead and build those."
+Do **not** reintroduce any of it. Specifically: no `Microsoft.Web.WebView2`
+`PackageReference`, no `CoreWebView2` / `WebView2` code, no `Source/Web/` asset folder,
+no HTML-hosting window base, and no per-tool WPF-vs-web branch in a command. New tools
+are `IStepFlowTool` implementations opened in `StepFlowWindow`, or a bespoke WPF window.
 
 ---
 
@@ -204,8 +196,6 @@ The Edit tool cannot match C# string literals that contain `\uXXXX` escape seque
 The same failure applies to literal Private Use Area (PUA) characters already in source (e.g. Segoe MDL2 Assets glyphs stored directly as Unicode chars). Additionally, Segoe MDL2 `Text` fields can be silently empty strings `""` in source — not a corrupt escape sequence, just never written. Always verify Segoe MDL2 glyph fields with Python before assuming they render correctly. Use Python `str.replace()` for any edit that inserts or modifies a Segoe MDL2 glyph.
 
 When writing *new* code that needs a Segoe MDL2 glyph, prefer `char.ConvertFromUtf32(0xE74D)` (e.g. `Text = char.ConvertFromUtf32(0xE74D)` for the trash icon) over embedding the literal glyph. The codepoint is plain ASCII in source, so the Edit tool handles it normally and no Python pass is needed.
-
-**The same failure applies to the web JS under `Source/Web/`** — those files are ASCII-only (migration rule R13), so every glyph is stored as a `\uXXXX` escape, and the Edit tool's parser converts the escape before matching (the edit fails with "old_string and new_string are exactly the same" or a no-match). Any edit that touches a line carrying `\uXXXX` escapes — C# or JS — must go through a Python `str.replace()` script with count-checked `(old, new, expected_count)` tuples.
 
 ---
 
@@ -302,8 +292,8 @@ For a **single-choice** picker, set `SingleSelect = true` **before** `SetGroups`
 - **Step content is built eagerly at window construction.** A step whose content depends on an earlier step's choice (the live selection, the export mode, etc.) must implement `IStepAware` and rebuild itself in `OnStepActivated(stepId)` via the content-refresh callback — otherwise it renders once with stale/empty state and never updates. This was the root cause of Bulk Export's "Build Packs" appearing empty: the pack editor read the selection at construction (before anything was selected) and was never refreshed.
 - **Hide steps conditionally with `IConditionalSteps`.** `IsStepVisible(stepId)` returning false collapses that step's accordion row and progress pip and skips it during forward/back navigation; visibility is re-evaluated on activation and on `ValidationChanged`. A conditional (hideable) step must **never be the last step** — the final step carries the Run button, log area, and review summary and is always shown. Tools that don't implement the interface are unaffected (every step visible).
 - **Refresh a step ONLY through `IStepAware` — never re-parent children by hand.** To rebuild a step's content live (e.g. after a "Load preset" button), implement `IStepAware`, store the `SetContentRefreshCallback` delegate, and call it with the step id so `StepFlowWindow.RefreshStepContent` swaps the content child in place. **Do not** hand-roll a rebuild that moves children out of a freshly-built throwaway panel into the live container (`foreach (child in newPanel.Children) container.Children.Add(child)`) — a WPF `UIElement` can have only one logical parent, so `Children.Add` **throws `InvalidOperationException`** ("already the logical child of another element"), and that unhandled throw in a click handler hard-crashed Revit (Ceiling Heatmap "Load color ramp"). Even if it didn't throw, the rebuilt content's handlers would close over the orphan panel, not the live tree.
-- **Step headers never show a step-id tag.** No mono `files`/`dest`/`run`-style id label next to the step title, in either the WPF `StepFlowWindow` header or the web shell (`stepflow.js`) — this was tried once for cross-stack parity and explicitly rejected. Title + pip number is the whole header.
-- **Navigation lives inside each step, not in a shared footer.** Back (hidden on the first visible step) and, on non-last steps, Confirm belong in that step's own nav row; the final step's nav row carries Run (and the pausable-run Continue/Skip pair when `IRunPausable`/`IWebRunPausable` is implemented). The footer holds only Reset. This is the WPF pattern and, as of the Upgrade Links parity pass, also the web shell's (`stepflow.js`) pattern for all step-flow tools.
+- **Step headers never show a step-id tag.** No mono `files`/`dest`/`run`-style id label next to the step title in the `StepFlowWindow` header — this was tried once and explicitly rejected. Title + pip number is the whole header.
+- **Navigation lives inside each step, not in a shared footer.** Back (hidden on the first visible step) and, on non-last steps, Confirm belong in that step's own nav row; the final step's nav row carries Run (and the pausable-run Continue/Skip pair when `IRunPausable` is implemented). The footer holds only Reset.
 
 ---
 
@@ -530,7 +520,7 @@ Revit 2024 runs .NET Framework 4.8; Revit 2025, 2026, and 2027 all run .NET 8. B
 - **Revit 2027 has not shipped as of writing.** `Debug2027`/`Release2027` exist so the project is ready the day Autodesk releases it, but that Configuration cannot build until real 2027 API DLLs exist to reference.
 - Only add `#if REVIT2024` / `#if REVIT2025` / etc. branches at a specific call site once a real build against that year's SDK actually breaks — never speculatively.
 
-**`LemoineTools.csproj` is a root-level SDK-style project, so its default `**\*` globs sweep every subfolder — including sibling sub-projects' `obj\` output.** Each sibling project (`LemoinePreview`, `LemoineNavisworks`, any future one) must be `Remove`-excluded from `Compile`/`Page`/`None`/`EmbeddedResource`, or MSBuild compiles its generated `*.AssemblyAttributes.cs` (→ **CS0579** duplicate `TargetFrameworkAttribute`, sometimes for *both* net48 and net8 targets) and its XAML `*.g.cs` (→ **CS0102** duplicate `_root`/`_outer` field). Keep the exclusion **unconditional**: an untracked `obj\` folder survives a branch switch, so a sibling project that lives only on another branch can still poison this build locally.
+**`LemoineTools.csproj` is a root-level SDK-style project, so its default `**\*` globs sweep every subfolder — including sibling sub-projects' `obj\` output.** Each sibling project (`LemoineNavisworks`, `LemoineTools.PdfGeometry`, any future one) must be `Remove`-excluded from `Compile`/`Page`/`None`/`EmbeddedResource`, or MSBuild compiles its generated `*.AssemblyAttributes.cs` (→ **CS0579** duplicate `TargetFrameworkAttribute`, sometimes for *both* net48 and net8 targets) and its XAML `*.g.cs` (→ **CS0102** duplicate `_root`/`_outer` field). Keep the exclusion **unconditional**: an untracked `obj\` folder survives a branch switch, so a sibling project that lives only on another branch can still poison this build locally.
 
 ---
 
